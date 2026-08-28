@@ -134,6 +134,22 @@ class BillingPayerManager:
             lease_owner=lease_owner,
         )
         operation = claimed["operation"]
+        disposition = provider_operation_disposition(claimed)
+        recovery = disposition in {"recovery_safe_retry", "recovery_reconcile_only"}
+        if recovery:
+            resource = claimed.get("resource") or {}
+            if (
+                resource.get("studio_id") != studio_id
+                or resource.get("operation_type") != PAYER_SYNC_OPERATION_TYPE
+                or resource.get("resource_type") != "payer"
+                or str(resource.get("resource_id") or "") != payer_id
+                or str(resource.get("payer_id") or "") != payer_id
+                or str(resource.get("operation_id") or "") != str(operation["id"])
+            ):
+                raise HTTPException(
+                    status_code=503,
+                    detail=PAYER_SYNC_AMBIGUOUS_DETAIL,
+                )
         context = BillingProviderOperationContext(
             operation_id=str(operation["id"]),
             studio_id=studio_id,
@@ -143,9 +159,8 @@ class BillingPayerManager:
             request_sha256=str(operation["request_sha256"]),
             stripe_connected_account_id=account_id,
             connect_account_generation=generation,
-            lease_owner=lease_owner,
+            lease_owner=str(operation["lease_owner"]) if recovery else lease_owner,
         )
-        disposition = provider_operation_disposition(claimed)
         if disposition == "replay":
             try:
                 self._payer_sync_mode(operation)
@@ -204,18 +219,38 @@ class BillingPayerManager:
             return BillingPayerResponse(**payer)
 
         sync_mode = (
-            "update"
-            if payer.get("stripe_customer_id")
-            and payer.get("stripe_account_id") == account_id
-            else "create"
+            self._payer_sync_mode(operation)
+            if recovery
+            else (
+                "update"
+                if payer.get("stripe_customer_id")
+                and payer.get("stripe_account_id") == account_id
+                else "create"
+            )
         )
-        operation = coordinator.transition(
-            context,
-            operation,
-            "provider_request_in_flight",
-            result_code=f"payer_sync_{sync_mode}_started",
-            result_summary=f"sync_mode:{sync_mode}",
+        target_customer_id = (
+            self._payer_sync_evidence(operation)[1]
+            if recovery
+            else (
+                str(payer.get("stripe_customer_id"))
+                if sync_mode == "update"
+                else None
+            )
         )
+        if recovery and (
+            (sync_mode == "create" and payer.get("stripe_customer_id") is not None)
+            or (
+                sync_mode == "update"
+                and str(payer.get("stripe_customer_id") or "")
+                != str(target_customer_id or "")
+            )
+        ):
+            coordinator.reject_recovery_source_drift_v2(
+                context, operation,
+                error_code="payer_sync_recovery_source_drift",
+            )
+            raise HTTPException(status_code=409, detail=PAYER_SYNC_AMBIGUOUS_DETAIL)
+        saved_summary = self._payer_sync_summary(sync_mode, target_customer_id)
         stripe_key = self._idempotency_key("payer-sync", context.operation_id)
         metadata = {
             "studio_id": payer["studio_id"],
@@ -228,76 +263,120 @@ class BillingPayerManager:
             "state": payer.get("address_state"),
             "postal_code": payer.get("address_zip"),
         }
-        try:
-            stripe_service = self.stripe_service_cls()
-            if sync_mode == "update":
-                provider_customer = stripe_service.update_connected_customer(
+        stripe_service = self.stripe_service_cls()
+        if disposition == "recovery_reconcile_only":
+            customer_id = str(operation.get("provider_object_id") or "")
+            try:
+                provider_customer = stripe_service.retrieve_connected_customer(
                     account_id=account_id,
-                    studio_id=studio_id,
-                    customer_id=str(payer["stripe_customer_id"]),
-                    name=payer.get("display_name") or "Koaryu payer",
-                    email=payer.get("email"),
-                    phone=payer.get("phone"),
-                    address=address,
-                    metadata=metadata,
+                    customer_id=customer_id,
                     expand=["invoice_settings.default_payment_method"],
-                    idempotency_key=stripe_key,
                 )
-            else:
-                provider_customer = stripe_service.create_connected_customer(
-                    account_id=account_id,
-                    studio_id=studio_id,
-                    name=payer.get("display_name") or "Koaryu payer",
-                    email=payer.get("email"),
-                    phone=payer.get("phone"),
-                    address=address,
+                self._verify_recovered_customer(
+                    provider_customer,
+                    payer=payer,
+                    customer_id=customer_id,
+                    sync_mode=sync_mode,
                     metadata=metadata,
-                    expand=["invoice_settings.default_payment_method"],
-                    idempotency_key=stripe_key,
+                    address=address,
                 )
-        except StripeMutationBlocked:
-            coordinator.transition(
-                context,
-                operation,
-                "definitive_rejected",
-                error_code="provider_mutation_blocked",
-            )
-            raise
-        except Exception as exc:
-            self._mark_payer_sync_reconciliation(
-                coordinator,
-                context,
-                operation,
-                "payer_sync_provider_outcome_ambiguous",
-                exc,
-            )
-        customer_id = _stripe_id(provider_customer)
-        if not customer_id or (
-            sync_mode == "update" and customer_id != payer.get("stripe_customer_id")
-        ):
-            self._mark_payer_sync_reconciliation(
-                coordinator,
-                context,
-                operation,
-                "payer_sync_provider_identity_ambiguous",
-                RuntimeError("payer_sync_provider_identity_ambiguous"),
-            )
-        try:
+            except Exception as exc:
+                self._mark_payer_sync_reconciliation(
+                    coordinator,
+                    context,
+                    operation,
+                    "payer_sync_recovered_customer_mismatch",
+                    exc,
+                )
             operation = coordinator.transition(
                 context,
                 operation,
                 "provider_succeeded",
                 provider_object_id=customer_id,
                 result_code=f"payer_sync_{sync_mode}_succeeded",
+                result_summary=saved_summary,
             )
-        except Exception as exc:
-            self._mark_payer_sync_reconciliation(
-                coordinator,
+        else:
+            operation = coordinator.transition(
                 context,
                 operation,
-                "payer_sync_provider_result_not_recorded",
-                exc,
+                "provider_request_in_flight",
+                result_code=f"payer_sync_{sync_mode}_started",
+                result_summary=saved_summary,
             )
+            if disposition == "recovery_safe_retry" and int(
+                operation.get("provider_request_attempt_count") or 0
+            ) != 2:
+                raise HTTPException(status_code=503, detail=PAYER_SYNC_AMBIGUOUS_DETAIL)
+            try:
+                if sync_mode == "update":
+                    provider_customer = stripe_service.update_connected_customer(
+                        account_id=account_id,
+                        studio_id=studio_id,
+                        customer_id=str(payer["stripe_customer_id"]),
+                        name=payer.get("display_name") or "Koaryu payer",
+                        email=payer.get("email"),
+                        phone=payer.get("phone"),
+                        address=address,
+                        metadata=metadata,
+                        expand=["invoice_settings.default_payment_method"],
+                        idempotency_key=stripe_key,
+                    )
+                else:
+                    provider_customer = stripe_service.create_connected_customer(
+                        account_id=account_id,
+                        studio_id=studio_id,
+                        name=payer.get("display_name") or "Koaryu payer",
+                        email=payer.get("email"),
+                        phone=payer.get("phone"),
+                        address=address,
+                        metadata=metadata,
+                        expand=["invoice_settings.default_payment_method"],
+                        idempotency_key=stripe_key,
+                    )
+            except StripeMutationBlocked:
+                coordinator.transition(
+                    context,
+                    operation,
+                    "definitive_rejected",
+                    error_code="provider_mutation_blocked",
+                )
+                raise
+            except Exception as exc:
+                self._mark_payer_sync_reconciliation(
+                    coordinator,
+                    context,
+                    operation,
+                    "payer_sync_provider_outcome_ambiguous",
+                    exc,
+                )
+            customer_id = _stripe_id(provider_customer)
+            if not customer_id or (
+                sync_mode == "update" and customer_id != payer.get("stripe_customer_id")
+            ):
+                self._mark_payer_sync_reconciliation(
+                    coordinator,
+                    context,
+                    operation,
+                    "payer_sync_provider_identity_ambiguous",
+                    RuntimeError("payer_sync_provider_identity_ambiguous"),
+                )
+            try:
+                operation = coordinator.transition(
+                    context,
+                    operation,
+                    "provider_succeeded",
+                    provider_object_id=customer_id,
+                    result_code=f"payer_sync_{sync_mode}_succeeded",
+                )
+            except Exception as exc:
+                self._mark_payer_sync_reconciliation(
+                    coordinator,
+                    context,
+                    operation,
+                    "payer_sync_provider_result_not_recorded",
+                    exc,
+                )
         try:
             payer = self._project_payer_sync_result(
                 payer=payer,
@@ -325,6 +404,45 @@ class BillingPayerManager:
             "sync_mode": sync_mode,
         })
         return BillingPayerResponse(**payer)
+
+    @staticmethod
+    def _verify_recovered_customer(
+        customer: Any,
+        *,
+        payer: dict[str, Any],
+        customer_id: str,
+        sync_mode: str,
+        metadata: dict[str, Any],
+        address: dict[str, Any],
+    ) -> None:
+        provider_address = _object_get(customer, "address") or {}
+        provider_metadata = _object_get(customer, "metadata") or {}
+        if (
+            _stripe_id(customer) != customer_id
+            or (
+                sync_mode == "update"
+                and customer_id != payer.get("stripe_customer_id")
+            )
+            or (
+                sync_mode == "create"
+                and payer.get("stripe_customer_id") not in {None, customer_id}
+            )
+            or str(_object_get(customer, "name") or "")
+            != str(payer.get("display_name") or "Koaryu payer")
+            or str(_object_get(customer, "email") or "") != str(payer.get("email") or "")
+            or str(_object_get(customer, "phone") or "") != str(payer.get("phone") or "")
+            or any(
+                str(_object_get(provider_address, key) or "")
+                != str(value or "")
+                for key, value in address.items()
+            )
+            or any(
+                str(_object_get(provider_metadata, key) or "")
+                != str(value)
+                for key, value in metadata.items()
+            )
+        ):
+            raise RuntimeError("payer_sync_recovered_customer_mismatch")
 
     def _local_ready_connect_account(self, studio_id: str) -> dict[str, Any]:
         account = self._connect_accounts().ensure_row(studio_id)
@@ -356,11 +474,32 @@ class BillingPayerManager:
 
     @staticmethod
     def _payer_sync_mode(operation: dict[str, Any]) -> str:
+        return BillingPayerManager._payer_sync_evidence(operation)[0]
+
+    @staticmethod
+    def _payer_sync_summary(mode: str, target_customer_id: str | None) -> str:
+        if mode == "create" and target_customer_id is None:
+            return "sync_mode:create:target_customer_id:none"
+        if (
+            mode == "update"
+            and isinstance(target_customer_id, str)
+            and target_customer_id.startswith("cus_")
+            and target_customer_id[4:].isalnum()
+        ):
+            return f"sync_mode:update:target_customer_id:{target_customer_id}"
+        raise RuntimeError("payer_sync_saved_target_invalid")
+
+    @staticmethod
+    def _payer_sync_evidence(operation: dict[str, Any]) -> tuple[str, str | None]:
         summary = str(operation.get("result_summary") or "")
-        if summary == "sync_mode:create":
-            return "create"
-        if summary == "sync_mode:update":
-            return "update"
+        create = "sync_mode:create:target_customer_id:none"
+        update_prefix = "sync_mode:update:target_customer_id:"
+        if summary == create:
+            return "create", None
+        if summary.startswith(update_prefix):
+            target = summary[len(update_prefix):]
+            BillingPayerManager._payer_sync_summary("update", target)
+            return "update", target
         raise RuntimeError("payer_sync_saved_mode_invalid")
 
     @staticmethod
@@ -434,13 +573,20 @@ class BillingPayerManager:
             "connect_account_generation": context.connect_account_generation,
             **payment_fields,
         }
-        result = (
+        query = (
             self.supabase.table("billing_payers")
             .update(update)
             .eq("id", payer["id"])
             .eq("studio_id", context.studio_id)
-            .execute()
         )
+        for field in (
+            "display_name", "email", "phone", "address_line1", "address_city",
+            "address_state", "address_zip", "stripe_account_id",
+            "stripe_customer_id", "connect_account_generation",
+        ):
+            value = payer.get(field)
+            query = query.is_(field, "null") if value is None else query.eq(field, value)
+        result = query.execute()
         if not result.data:
             raise RuntimeError("payer_sync_projection_not_persisted")
         return result.data[0]
@@ -471,12 +617,19 @@ class BillingPayerManager:
         exc: Exception,
     ) -> None:
         try:
-            coordinator.transition(
-                context,
-                operation,
-                "reconciliation_required",
-                reconciliation_reason_code=reason_code,
-            )
+            if operation.get("state") == "recovery_authorized":
+                coordinator.mark_recovery_reconciliation_v2(
+                    context,
+                    operation,
+                    reconciliation_reason_code=reason_code,
+                )
+            else:
+                coordinator.transition(
+                    context,
+                    operation,
+                    "reconciliation_required",
+                    reconciliation_reason_code=reason_code,
+                )
         except Exception:
             pass
         raise HTTPException(

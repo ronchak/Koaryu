@@ -270,6 +270,16 @@ anchors. It:
   new-key recovery, and terminally rejects deterministic provider-identity drift;
 - keeps invoice/payment webhooks from rewriting the payer's consent-bound default
   payment method; only the payer-owned setup projection may establish that field;
+- applies the same exact payer/consent and payment-method boundary to automatic-invoice
+  finalization, while hosted invoices remain independent of autopay consent;
+- consumes proof-authorized generic recovery for product-only plan sync, payer sync, and
+  refunds: safe retry makes one original-key attempt two, while reconcile-only performs
+  exact provider readback with zero mutation before projection;
+- binds recovery to the original provider target and saved request evidence, rejects
+  source drift before Stripe, and keeps stepped plan recovery on its dedicated step owner;
+- projects plan/provider identity through exact source CAS, recovers insert or update
+  response loss by owned readback, and compensates an inserted price only after a
+  conclusive zero-row plan CAS;
 - derives live Connect Payments scope readiness from the dedicated capability sentinel,
   then enables each workflow only when its exact required Stripe operations are granted;
 - treats recorded external payments as local accounting evidence only. They never mark a
@@ -303,17 +313,17 @@ anchors. It:
 - advances the exact release state through schedule V25 to 126/V31 and adds independent V24-to-V25 and
   V30-to-V31 PostgreSQL 17 restore assertions;
 - pins resource ownership
-  `0:87eb5a6ad0f3c4316f1a743132b48b22605c7fce3f630f6c40aa11576b1ef98e`,
+  `0:13d573e2bf03109923f5bb72b7a578c02908761732e3c906aba2c3c52011e700`,
   the V31 operational contract
-  `0:58fe9579f8b5fc7ec7c1bcc62ae681e1d42e1fa0dc2b5618992ad4b402c3d72c`,
+  `0:f5500e1bc303ed77564dc5d77dddccfcc7f42cf8f2716afcb0d62d372e63f197`,
   the V31 operational manifest
-  `b77405d712b62a33f64caf5b05088caf397e570f8d0f3880eb02b993fa675457`,
+  `0954794f138ec5f9257f93183a7cc67d8116359a9ae6dd1222ddc24c763d2614`,
   and expectation state
-  `1:a10e48d2e20a6620c79428a1703b2d0cb705d91e14d522a1b6fb1fbb9b2d4507`.
+  `1:96ef86c6e18e5920e61d4d5d9a1f32e7a35bf5e4328320b650d1a7328c77ad9d`.
 
 Latest local candidate evidence before publication:
 
-- backend: all 1,383 tests passed;
+- backend: all 1,411 tests passed;
 - frontend: all 728 tests passed outside the sandbox, including the three
   Chromium-backed print-geometry tests;
 - frontend TypeScript, full ESLint, and the production build with safe
@@ -326,7 +336,7 @@ Latest local candidate evidence before publication:
   every concurrency suite, and all 44 SQL contracts passed on ephemeral PostgreSQL 17;
 - a disposable Supabase provider-image reset applied all 126 migrations with the same
   V31 trust anchors and canonical
-  `functions=106:2410b2433b85f0c5a573e6218e89900de5e258d6f0f3b333d35307f00c68ae41:0`
+  `functions=109:3cbd5087fed1b1a6d3452c82ab9947486df8f40b82dd290d4c1f032e098358d5:0`
   catalog state, the release UI atomic contract passed, and database lint reported no
   errors;
 - `git diff --check` passed.

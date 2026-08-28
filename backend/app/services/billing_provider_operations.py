@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Optional
+from uuid import UUID
 
 from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -63,6 +65,67 @@ def provider_operation_disposition(claimed: dict[str, Any]) -> str:
             detail="Billing operation state could not be verified.",
         )
     state = str(operation.get("state") or "")
+    if state == "recovery_authorized":
+        recovery_outcome = str(operation.get("recovery_outcome") or "")
+        requested_key = claimed.get("requested_caller_request_key")
+        canonical_key = claimed.get("canonical_caller_request_key")
+        attempts = int(operation.get("provider_request_attempt_count") or 0)
+        provider_object_id = str(operation.get("provider_object_id") or "")
+        expected_prefix = {
+            PLAN_SYNC_OPERATION_TYPE: "prod_",
+            PAYER_SYNC_OPERATION_TYPE: "cus_",
+            PAYMENT_REFUND_OPERATION_TYPE: "re_",
+        }.get(str(operation.get("operation_type") or ""))
+        try:
+            proof = str(operation["recovery_proof_sha256"])
+            UUID(str(operation["recovery_actor_id"]))
+            UUID(str(operation["lease_owner"]))
+            datetime.fromisoformat(
+                str(operation["recovery_authorized_at"]).replace("Z", "+00:00")
+            )
+            datetime.fromisoformat(
+                str(operation["lease_expires_at"]).replace("Z", "+00:00")
+            )
+            recovery_evidence_valid = (
+                len(proof) == 64
+                and all(character in "0123456789abcdef" for character in proof)
+            )
+        except (KeyError, TypeError, ValueError):
+            recovery_evidence_valid = False
+        if (
+            outcome not in {"replay", "adopted", "recovery_authorized"}
+            or requested_key != canonical_key
+            or canonical_key != operation.get("caller_request_key")
+            or not recovery_evidence_valid
+            or operation.get("provider_step_plan_sha256") is not None
+            or operation.get("provider_step_expected_count") is not None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Billing operation recovery state could not be verified.",
+            )
+        if recovery_outcome == "provider_no_object_safe_to_retry":
+            if (
+                attempts != 1
+                or provider_object_id
+                or operation.get("provider_secondary_object_id")
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Billing operation recovery state could not be verified.",
+                )
+            return "recovery_safe_retry"
+        if recovery_outcome == "provider_succeeded_reconcile_only":
+            if attempts not in {1, 2} or not expected_prefix or not provider_object_id.startswith(expected_prefix):
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Billing operation recovery state could not be verified.",
+                )
+            return "recovery_reconcile_only"
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Billing operation recovery state could not be verified.",
+        )
     if outcome in {"busy", "provider_request_in_flight"} or state == "provider_request_in_flight":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -333,6 +396,90 @@ class BillingProviderOperationCoordinator:
                 "p_lease_owner": lease_owner,
                 "p_lease_seconds": lease_seconds,
                 "p_expected_revision": int(operation["revision"]),
+            },
+            expected_key="operation",
+        )["operation"]
+
+    def authorize_recovery_v2(
+        self,
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        *,
+        recovery_actor_id: str,
+        recovery_proof_sha256: str,
+        recovery_outcome: str,
+        recovered_provider_object_id: Optional[str],
+        lease_owner: str,
+        lease_seconds: int = 30,
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "authorize_billing_provider_operation_recovery_v2",
+            {
+                "p_operation_id": context.operation_id,
+                "p_studio_id": context.studio_id,
+                "p_actor_id": context.actor_id,
+                "p_operation_type": context.operation_type,
+                "p_caller_request_key": context.caller_request_key,
+                "p_request_sha256": context.request_sha256,
+                "p_stripe_connected_account_id": context.stripe_connected_account_id,
+                "p_connect_account_generation": context.connect_account_generation,
+                "p_recovery_actor_id": recovery_actor_id,
+                "p_recovery_proof_sha256": recovery_proof_sha256,
+                "p_recovery_outcome": recovery_outcome,
+                "p_recovered_provider_object_id": recovered_provider_object_id,
+                "p_lease_owner": lease_owner,
+                "p_lease_seconds": lease_seconds,
+                "p_expected_revision": int(operation["revision"]),
+            },
+            expected_key="operation",
+        )["operation"]
+
+    def mark_recovery_reconciliation_v2(
+        self,
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        *,
+        reconciliation_reason_code: str,
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "mark_billing_provider_recovery_reconciliation_v2",
+            {
+                "p_operation_id": context.operation_id,
+                "p_studio_id": context.studio_id,
+                "p_actor_id": context.actor_id,
+                "p_operation_type": context.operation_type,
+                "p_caller_request_key": context.caller_request_key,
+                "p_request_sha256": context.request_sha256,
+                "p_stripe_connected_account_id": context.stripe_connected_account_id,
+                "p_connect_account_generation": context.connect_account_generation,
+                "p_lease_owner": context.lease_owner,
+                "p_expected_revision": int(operation["revision"]),
+                "p_reconciliation_reason_code": reconciliation_reason_code,
+            },
+            expected_key="operation",
+        )["operation"]
+
+    def reject_recovery_source_drift_v2(
+        self,
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        *,
+        error_code: str,
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "reject_billing_provider_recovery_source_drift_v2",
+            {
+                "p_operation_id": context.operation_id,
+                "p_studio_id": context.studio_id,
+                "p_actor_id": context.actor_id,
+                "p_operation_type": context.operation_type,
+                "p_caller_request_key": context.caller_request_key,
+                "p_request_sha256": context.request_sha256,
+                "p_stripe_connected_account_id": context.stripe_connected_account_id,
+                "p_connect_account_generation": context.connect_account_generation,
+                "p_lease_owner": context.lease_owner,
+                "p_expected_revision": int(operation["revision"]),
+                "p_error_code": error_code,
             },
             expected_key="operation",
         )["operation"]

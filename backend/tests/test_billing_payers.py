@@ -7,7 +7,10 @@ from fastapi import HTTPException
 
 from app.schemas.billing import BillingPayerCreate, BillingPayerUpdate
 from app.services.billing_payers import BillingPayerManager
-from app.services.billing_provider_operations import BillingProviderOperationContext
+from app.services.billing_provider_operations import (
+    BillingProviderOperationContext,
+    BillingProviderOperationCoordinator,
+)
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
@@ -83,6 +86,7 @@ class _FakeStripeService:
     updated_customers: list[dict] = []
     retrieved_customers: list[dict] = []
     provider_error: Exception | None = None
+    customer_response: dict | None = None
 
     @classmethod
     def reset(cls) -> None:
@@ -90,6 +94,7 @@ class _FakeStripeService:
         cls.updated_customers = []
         cls.retrieved_customers = []
         cls.provider_error = None
+        cls.customer_response = None
 
     def create_connected_customer(self, **payload):
         self.__class__.created_customers.append(payload)
@@ -122,7 +127,7 @@ class _FakeStripeService:
 
     def retrieve_connected_customer(self, **_payload):
         self.__class__.retrieved_customers.append(_payload)
-        return {
+        return self.__class__.customer_response or {
             "id": "cus_created",
             "invoice_settings": {
                 "default_payment_method": {
@@ -304,7 +309,10 @@ class BillingPayerManagerTests(unittest.TestCase):
         operation = next(iter(facade.supabase.billing_provider_operations.values()))
         self.assertEqual(operation["state"], "completed")
         self.assertEqual(operation["provider_object_id"], "cus_created")
-        self.assertEqual(operation["result_summary"], "sync_mode:create")
+        self.assertEqual(
+            operation["result_summary"],
+            "sync_mode:create:target_customer_id:none",
+        )
         self.assertEqual(facade.supabase.tables["billing_payers"][0]["metadata"], {})
         self.assertNotIn("Pat", repr(operation))
 
@@ -344,7 +352,10 @@ class BillingPayerManagerTests(unittest.TestCase):
         self.assertEqual(len(_FakeStripeService.updated_customers), 1)
         operation = next(iter(facade.supabase.billing_provider_operations.values()))
         self.assertEqual(operation["result_code"], "payer_sync_completed")
-        self.assertEqual(operation["result_summary"], "sync_mode:update")
+        self.assertEqual(
+            operation["result_summary"],
+            "sync_mode:update:target_customer_id:cus_existing",
+        )
         self.assertEqual(facade.supabase.tables["billing_payers"][0]["metadata"], {})
 
     def test_payer_sync_different_key_collapses_and_old_key_replays_without_metadata_receipts(self):
@@ -399,7 +410,7 @@ class BillingPayerManagerTests(unittest.TestCase):
             for operation in operations
         }
         self.assertEqual(summaries, {
-            "payer-sync-key-1": "sync_mode:create",
+            "payer-sync-key-1": "sync_mode:create:target_customer_id:none",
         })
 
     def test_payer_sync_same_key_rejects_changed_desired_customer_state(self):
@@ -629,3 +640,176 @@ class BillingPayerManagerTests(unittest.TestCase):
         payer = facade.supabase.tables["billing_payers"][0]
         self.assertEqual(payer["balance_cents"], 2000)
         self.assertEqual(payer["billing_status"], "past_due")
+
+    def _payer_recovery(self, outcome, recovered_id=None):
+        _FakeStripeService.reset()
+        facade = _BillingFacade({
+            "billing_payers": [{
+                "id": "payer_1", "studio_id": "studio_1",
+                "display_name": "Pat", "metadata": {},
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            }],
+            "audit_logs": [],
+        }, account={
+            "charges_enabled": True, "status": "charges_enabled",
+            "stripe_connected_account_id": "acct_1",
+            "metadata": {"connect_account_generation": 1},
+        })
+        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        _FakeStripeService.provider_error = RuntimeError("lost customer response")
+        with self.assertRaises(HTTPException):
+            asyncio.run(manager.sync_payer(
+                "payer_1", "studio_1", "actor_1", "payer-recovery-key"
+            ))
+        operation = next(iter(facade.supabase.billing_provider_operations.values()))
+        context = BillingProviderOperationContext(
+            operation["id"], "studio_1", "actor_1", "payer.sync",
+            operation["caller_request_key"], operation["request_sha256"],
+            "acct_1", 1, str(operation["lease_owner"]),
+        )
+        BillingProviderOperationCoordinator(facade.supabase).authorize_recovery_v2(
+            context,
+            operation,
+            recovery_actor_id="00000000-0000-4000-8000-000000000202",
+            recovery_proof_sha256="b" * 64,
+            recovery_outcome=outcome,
+            recovered_provider_object_id=recovered_id,
+            lease_owner="00000000-0000-4000-8000-000000000102",
+        )
+        return facade, manager, operation
+
+    def test_payer_safe_retry_reuses_exact_create_payload(self):
+        facade, manager, operation = self._payer_recovery(
+            "provider_no_object_safe_to_retry"
+        )
+        first = dict(_FakeStripeService.created_customers[0])
+        _FakeStripeService.provider_error = None
+        result = asyncio.run(manager.sync_payer(
+            "payer_1", "studio_1", "actor_1", "payer-recovery-key"
+        ))
+        self.assertEqual(result.stripe_customer_id, "cus_created")
+        self.assertEqual(_FakeStripeService.created_customers, [first, first])
+        self.assertEqual(operation["provider_request_attempt_count"], 2)
+        self.assertEqual(operation["state"], "completed")
+        asyncio.run(manager.sync_payer(
+            "payer_1", "studio_1", "actor_1", "payer-recovery-key"
+        ))
+        self.assertEqual(len(_FakeStripeService.created_customers), 2)
+        self.assertEqual(len(facade.supabase.billing_provider_operations), 1)
+
+    def test_payer_safe_retry_rejects_customer_id_drift_before_stripe(self):
+        facade, manager, operation = self._payer_recovery(
+            "provider_no_object_safe_to_retry"
+        )
+        payer = facade.supabase.tables["billing_payers"][0]
+        payer["stripe_customer_id"] = "cus_drifted"
+        payer["stripe_account_id"] = "acct_1"
+        _FakeStripeService.provider_error = None
+        with self.assertRaises(HTTPException):
+            asyncio.run(manager.sync_payer(
+                "payer_1", "studio_1", "actor_1", "payer-recovery-key"
+            ))
+        self.assertEqual(len(_FakeStripeService.created_customers), 1)
+        self.assertEqual(_FakeStripeService.updated_customers, [])
+        self.assertEqual(operation["state"], "definitive_rejected")
+        self.assertEqual(
+            operation["error_code"], "payer_sync_recovery_source_drift"
+        )
+
+    def test_payer_reconcile_only_gets_exact_customer_without_mutation(self):
+        facade, manager, operation = self._payer_recovery(
+            "provider_succeeded_reconcile_only", "cus_recovered"
+        )
+        _FakeStripeService.provider_error = None
+        _FakeStripeService.customer_response = {
+            "id": "cus_recovered", "name": "Pat", "email": "", "phone": "",
+            "address": {},
+            "metadata": {
+                "studio_id": "studio_1", "payer_id": "payer_1",
+                "product": "koaryu_payments",
+            },
+            "invoice_settings": {"default_payment_method": None},
+        }
+        result = asyncio.run(manager.sync_payer(
+            "payer_1", "studio_1", "actor_1", "payer-recovery-key"
+        ))
+        self.assertEqual(result.stripe_customer_id, "cus_recovered")
+        self.assertEqual(len(_FakeStripeService.created_customers), 1)
+        self.assertEqual(_FakeStripeService.retrieved_customers, [{
+            "account_id": "acct_1", "customer_id": "cus_recovered",
+            "expand": ["invoice_settings.default_payment_method"],
+        }])
+        self.assertEqual(operation["provider_request_attempt_count"], 1)
+        self.assertEqual(operation["state"], "completed")
+
+    def test_payer_reconcile_only_wrong_metadata_never_projects(self):
+        facade, manager, operation = self._payer_recovery(
+            "provider_succeeded_reconcile_only", "cus_recovered"
+        )
+        _FakeStripeService.customer_response = {
+            "id": "cus_recovered", "name": "Pat", "email": "", "phone": "",
+            "address": {}, "metadata": {"studio_id": "wrong"},
+            "invoice_settings": {"default_payment_method": None},
+        }
+        with self.assertRaises(HTTPException):
+            asyncio.run(manager.sync_payer(
+                "payer_1", "studio_1", "actor_1", "payer-recovery-key"
+            ))
+        self.assertEqual(operation["state"], "reconciliation_required")
+        self.assertIsNone(
+            facade.supabase.tables["billing_payers"][0].get("stripe_customer_id")
+        )
+        self.assertEqual(len(_FakeStripeService.created_customers), 1)
+        self.assertEqual(facade.supabase.tables["audit_logs"], [])
+
+    def test_payer_reconcile_only_rejects_stale_address_when_saved_address_is_empty(self):
+        metadata = {
+            "studio_id": "studio_1",
+            "payer_id": "payer_1",
+            "product": "koaryu_payments",
+        }
+        empty_address = {
+            "line1": None,
+            "city": None,
+            "state": None,
+            "postal_code": None,
+        }
+        for sync_mode, local_customer_id, recovered_customer_id in (
+            ("create", None, "cus_recovered"),
+            ("update", "cus_existing", "cus_existing"),
+        ):
+            with self.subTest(sync_mode=sync_mode):
+                payer = {
+                    "id": "payer_1",
+                    "studio_id": "studio_1",
+                    "display_name": "Pat",
+                    "email": None,
+                    "phone": None,
+                    "stripe_customer_id": local_customer_id,
+                }
+                customer = {
+                    "id": recovered_customer_id,
+                    "name": "Pat",
+                    "email": "",
+                    "phone": "",
+                    "address": {
+                        "line1": "STALE",
+                        "city": "STALE",
+                        "state": "ST",
+                        "postal_code": "99999",
+                    },
+                    "metadata": metadata,
+                }
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "payer_sync_recovered_customer_mismatch",
+                ):
+                    BillingPayerManager._verify_recovered_customer(
+                        customer,
+                        payer=payer,
+                        customer_id=recovered_customer_id,
+                        sync_mode=sync_mode,
+                        metadata=metadata,
+                        address=empty_address,
+                    )

@@ -69,6 +69,22 @@ BEGIN
         'authenticated',
         'public.reject_billing_autopay_activation_without_provider_v31(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,text,text,bigint)',
         'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.authorize_billing_provider_operation_recovery_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,text,text,text,uuid,integer,bigint)',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'authenticated',
+        'public.authorize_billing_provider_operation_recovery_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,text,text,text,uuid,integer,bigint)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.mark_billing_provider_recovery_reconciliation_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.reject_billing_provider_recovery_source_drift_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text)',
+        'EXECUTE'
     ) THEN
         RAISE EXCEPTION 'Billing provider RPC privileges are not service-only.';
     END IF;
@@ -92,7 +108,7 @@ BEGIN
         id, studio_id, display_name, stripe_account_id, stripe_customer_id
     ) VALUES (
         v_payer, v_studio, 'Operation payer',
-        'acct_OperationContract123', 'cus_operation_contract'
+        'acct_OperationContract123', 'cus_operationcontract123'
     );
     IF (SELECT connect_account_generation FROM public.billing_payers WHERE id = v_payer)
        IS NOT NULL THEN
@@ -244,6 +260,171 @@ BEGIN
         RAISE EXCEPTION 'Expected a third provider attempt authorization to fail.';
     EXCEPTION WHEN check_violation THEN
         IF SQLERRM <> 'billing_provider_operation_retry_limit_reached' THEN RAISE; END IF;
+    END;
+
+    v_lease:=gen_random_uuid();
+    v_recovery_lease:=gen_random_uuid();
+    v_result:=public.claim_billing_provider_operation_resource_v1(
+        v_studio,v_owner,'payer.sync','payer',v_payer,v_payer,
+        'payer-recovery-v2',repeat('6',64),'acct_OperationContract123',1,
+        v_lease,30
+    );
+    v_operation_id:=(v_result->'operation'->>'id')::UUID;
+    v_result:=public.transition_billing_provider_operation_v1(
+        v_operation_id,v_studio,v_owner,'payer.sync',
+        v_result->>'canonical_caller_request_key',repeat('6',64),
+        'acct_OperationContract123',1,v_lease,
+        (v_result->'operation'->>'revision')::BIGINT,
+        'provider_request_in_flight',NULL,NULL,NULL,
+        'payer_sync_update_started',
+        'sync_mode:update:target_customer_id:cus_operationcontract123',NULL,NULL,NULL
+    );
+    v_result:=public.transition_billing_provider_operation_v1(
+        v_operation_id,v_studio,v_owner,'payer.sync','payer-recovery-v2',
+        repeat('6',64),'acct_OperationContract123',1,v_lease,
+        (v_result->'operation'->>'revision')::BIGINT,
+        'reconciliation_required',NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+        'payer_sync_provider_outcome_ambiguous'
+    );
+    v_result:=public.authorize_billing_provider_operation_recovery_v2(
+        v_operation_id,v_studio,v_owner,'payer.sync','payer-recovery-v2',
+        repeat('6',64),'acct_OperationContract123',1,v_owner,repeat('7',64),
+        'provider_no_object_safe_to_retry',NULL,v_recovery_lease,30,
+        (v_result->'operation'->>'revision')::BIGINT
+    );
+    IF v_result->'operation'->>'state'<>'recovery_authorized'
+       OR (v_result->'operation'->>'provider_request_attempt_count')::INTEGER<>1
+       OR v_result->'operation'->>'provider_object_id' IS NOT NULL THEN
+        RAISE EXCEPTION 'V2 no-object recovery evidence did not converge.';
+    END IF;
+    IF public.authorize_billing_provider_operation_recovery_v2(
+        v_operation_id,v_studio,v_owner,'payer.sync','payer-recovery-v2',
+        repeat('6',64),'acct_OperationContract123',1,v_owner,repeat('7',64),
+        'provider_no_object_safe_to_retry',NULL,v_recovery_lease,30,
+        (v_result->'operation'->>'revision')::BIGINT
+    )->>'outcome'<>'replay' THEN
+        RAISE EXCEPTION 'Exact V2 recovery authorization did not replay.';
+    END IF;
+    BEGIN
+        PERFORM public.claim_billing_provider_operation_resource_v1(
+            v_studio,v_owner,'payer.sync','payer',v_payer,v_payer,
+            'payer-recovery-v2-alias',repeat('6',64),
+            'acct_OperationContract123',1,gen_random_uuid(),30
+        );
+        RAISE EXCEPTION 'New alias entered an authorized recovery.';
+    EXCEPTION WHEN lock_not_available THEN
+        IF SQLERRM<>'billing_provider_operation_recovery_in_progress' THEN RAISE; END IF;
+    END;
+    v_result:=public.transition_billing_provider_operation_v1(
+        v_operation_id,v_studio,v_owner,'payer.sync','payer-recovery-v2',
+        repeat('6',64),'acct_OperationContract123',1,v_recovery_lease,
+        (v_result->'operation'->>'revision')::BIGINT,
+        'provider_request_in_flight',NULL,NULL,NULL,
+        'payer_sync_update_started',
+        'sync_mode:update:target_customer_id:cus_operationcontract123',NULL,NULL,NULL
+    );
+    IF (v_result->'operation'->>'provider_request_attempt_count')::INTEGER<>2 THEN
+        RAISE EXCEPTION 'V2 safe retry did not CAS to attempt two.';
+    END IF;
+
+    UPDATE public.billing_provider_operations
+    SET state='reconciliation_required',provider_request_attempt_count=1,
+        provider_request_in_flight_at=v_now,reconciliation_required_at=v_now,
+        reconciliation_reason_code='payer_sync_provider_outcome_ambiguous',
+        provider_object_id=NULL,lease_owner=NULL,lease_acquired_at=NULL,
+        lease_expires_at=NULL,revision=revision+1,updated_at=clock_timestamp()
+    WHERE id=v_operation_id;
+    SELECT revision INTO v_revision FROM public.billing_provider_operations
+    WHERE id=v_operation_id;
+    BEGIN
+        PERFORM public.authorize_billing_provider_operation_recovery_v2(
+            v_operation_id,v_studio,v_owner,'payer.sync','payer-recovery-v2',
+            repeat('6',64),'acct_OperationContract123',1,v_owner,repeat('8',64),
+            'provider_succeeded_reconcile_only','cusXbad',v_recovery_lease,30,
+            v_revision
+        );
+        RAISE EXCEPTION 'V2 accepted a wildcard-like recovered customer ID.';
+    EXCEPTION WHEN check_violation THEN
+        IF SQLERRM<>'billing_provider_operation_reconcile_evidence_invalid' THEN RAISE; END IF;
+    END;
+    UPDATE public.billing_provider_operations
+    SET result_summary='sync_mode:tampered',revision=revision+1,
+        updated_at=clock_timestamp() WHERE id=v_operation_id;
+    SELECT revision INTO v_revision FROM public.billing_provider_operations
+    WHERE id=v_operation_id;
+    BEGIN
+        PERFORM public.authorize_billing_provider_operation_recovery_v2(
+            v_operation_id,v_studio,v_owner,'payer.sync','payer-recovery-v2',
+            repeat('6',64),'acct_OperationContract123',1,v_owner,repeat('8',64),
+            'provider_no_object_safe_to_retry',NULL,v_recovery_lease,30,v_revision
+        );
+        RAISE EXCEPTION 'V2 accepted malformed saved payer mode.';
+    EXCEPTION WHEN check_violation THEN
+        IF SQLERRM<>'billing_provider_operation_recovery_saved_evidence_invalid' THEN RAISE; END IF;
+    END;
+    UPDATE public.billing_provider_operations
+    SET result_summary='sync_mode:update:target_customer_id:cus_operationcontract123',
+        provider_secondary_object_id='seti_bad',
+        revision=revision+1,updated_at=clock_timestamp() WHERE id=v_operation_id;
+    SELECT revision INTO v_revision FROM public.billing_provider_operations
+    WHERE id=v_operation_id;
+    BEGIN
+        PERFORM public.authorize_billing_provider_operation_recovery_v2(
+            v_operation_id,v_studio,v_owner,'payer.sync','payer-recovery-v2',
+            repeat('6',64),'acct_OperationContract123',1,v_owner,repeat('8',64),
+            'provider_succeeded_reconcile_only','cus_recovered',v_recovery_lease,30,
+            v_revision
+        );
+        RAISE EXCEPTION 'V2 accepted reconcile-only with a secondary object.';
+    EXCEPTION WHEN check_violation THEN
+        IF SQLERRM<>'billing_provider_operation_reconcile_evidence_invalid' THEN RAISE; END IF;
+    END;
+    UPDATE public.billing_provider_operations
+    SET provider_secondary_object_id=NULL,revision=revision+1,
+        updated_at=clock_timestamp() WHERE id=v_operation_id;
+    SELECT revision INTO v_revision FROM public.billing_provider_operations
+    WHERE id=v_operation_id;
+    v_result:=public.authorize_billing_provider_operation_recovery_v2(
+        v_operation_id,v_studio,v_owner,'payer.sync','payer-recovery-v2',
+        repeat('6',64),'acct_OperationContract123',1,v_owner,repeat('8',64),
+        'provider_succeeded_reconcile_only','cus_recovered',v_recovery_lease,30,
+        v_revision
+    );
+    IF v_result->'operation'->>'provider_object_id'<>'cus_recovered' THEN
+        RAISE EXCEPTION 'V2 reconcile-only did not bind recovered object.';
+    END IF;
+    v_result:=public.mark_billing_provider_recovery_reconciliation_v2(
+        v_operation_id,v_studio,v_owner,'payer.sync','payer-recovery-v2',
+        repeat('6',64),'acct_OperationContract123',1,v_recovery_lease,
+        (v_result->'operation'->>'revision')::BIGINT,
+        'payer_sync_recovered_customer_mismatch'
+    );
+    IF v_result->'operation'->>'state'<>'reconciliation_required' THEN
+        RAISE EXCEPTION 'Reconcile-only readback failure did not return to reconciliation.';
+    END IF;
+    v_operation_id:=gen_random_uuid();
+    INSERT INTO public.billing_provider_operations(
+        id,studio_id,actor_id,operation_type,caller_request_key,request_sha256,
+        stripe_connected_account_id,connect_account_generation,state,
+        provider_request_attempt_count,provider_request_in_flight_at,
+        reconciliation_required_at,reconciliation_reason_code,
+        provider_step_plan_sha256,provider_step_expected_count,
+        provider_step_plan_registered_at,started_at,created_at,updated_at
+    ) VALUES(
+        v_operation_id,v_studio,v_owner,'plan.sync','stepped-parent-recovery',
+        repeat('9',64),'acct_OperationContract123',1,'reconciliation_required',1,
+        v_now,v_now,'provider_outcome_ambiguous',repeat('a',64),2,v_now,
+        v_now,v_now,v_now
+    );
+    BEGIN
+        PERFORM public.authorize_billing_provider_operation_recovery_v2(
+            v_operation_id,v_studio,v_owner,'plan.sync','stepped-parent-recovery',
+            repeat('9',64),'acct_OperationContract123',1,v_owner,repeat('a',64),
+            'provider_no_object_safe_to_retry',NULL,gen_random_uuid(),30,1
+        );
+        RAISE EXCEPTION 'Generic recovery accepted a stepped parent.';
+    EXCEPTION WHEN check_violation THEN
+        IF SQLERRM<>'billing_provider_operation_parent_step_recovery_denied' THEN RAISE; END IF;
     END;
 
     BEGIN

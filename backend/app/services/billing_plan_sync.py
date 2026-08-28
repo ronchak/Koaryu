@@ -26,6 +26,10 @@ PLAN_SYNC_AMBIGUOUS_DETAIL = (
 )
 
 
+class _PlanProjectionCasMissError(RuntimeError):
+    """The exact plan snapshot no longer owns the projection write."""
+
+
 class BillingPlanSyncWorkflow:
     def __init__(self, owner: Any, *, stripe_service_cls: type[StripeService] = StripeService):
         self.owner = owner
@@ -68,6 +72,9 @@ class BillingPlanSyncWorkflow:
             lease_owner=lease_owner,
         )
         operation = claimed["operation"]
+        plan = self._bind_claimed_plan_resource(plan, claimed, operation)
+        disposition = provider_operation_disposition(claimed)
+        recovery = disposition in {"recovery_safe_retry", "recovery_reconcile_only"}
         context = BillingProviderOperationContext(
             operation_id=str(operation["id"]),
             studio_id=studio_id,
@@ -77,9 +84,12 @@ class BillingPlanSyncWorkflow:
             request_sha256=str(operation["request_sha256"]),
             stripe_connected_account_id=account_id,
             connect_account_generation=generation,
-            lease_owner=lease_owner,
+            lease_owner=(
+                str(operation["lease_owner"])
+                if recovery
+                else lease_owner
+            ),
         )
-        disposition = provider_operation_disposition(claimed)
         if disposition == "replay":
             try:
                 projected = self._load_projected_plan(plan_id, context, operation)
@@ -122,13 +132,14 @@ class BillingPlanSyncWorkflow:
                         version=version,
                         lookup_key=lookup_key,
                         generation=generation,
+                        allow_existing_projection=True,
                     )
                 else:
                     if (
                         operation.get("result_code") != "plan_sync_product_updated"
-                        or operation.get("result_summary")
-                        != "plan_sync_mode:product_update_only"
-                        or int(operation.get("provider_request_attempt_count") or 0) != 1
+                        or self._product_update_target(operation)
+                        != operation.get("provider_object_id")
+                        or int(operation.get("provider_request_attempt_count") or 0) not in {1, 2}
                     ):
                         self._mark_parent_reconciliation(
                             operations,
@@ -152,6 +163,7 @@ class BillingPlanSyncWorkflow:
                         context,
                         product_id=product_id,
                         price=price,
+                        allow_existing_projection=True,
                     )
             operation = operations.transition(
                 context,
@@ -163,6 +175,25 @@ class BillingPlanSyncWorkflow:
             self._audit(context, projected)
             return self._response(projected, account)
 
+        if recovery:
+            try:
+                saved_target = self._product_update_target(operation)
+            except Exception as exc:
+                operations.reject_recovery_source_drift_v2(
+                    context, operation,
+                    error_code="plan_sync_recovery_source_drift",
+                )
+                raise HTTPException(status_code=409, detail=PLAN_SYNC_AMBIGUOUS_DETAIL) from exc
+            if (
+                plan.get("status") != "active"
+                or plan.get("archived_at") is not None
+                or str(plan.get("stripe_product_id") or "") != saved_target
+            ):
+                operations.reject_recovery_source_drift_v2(
+                    context, operation,
+                    error_code="plan_sync_recovery_source_drift",
+                )
+                raise HTTPException(status_code=409, detail=PLAN_SYNC_AMBIGUOUS_DETAIL)
         exact_price = self._exact_active_price(plan, account_id, generation)
         if exact_price and not plan.get("stripe_product_id"):
             raise HTTPException(
@@ -170,14 +201,25 @@ class BillingPlanSyncWorkflow:
                 detail="Plan has an active Stripe price without an established product identity.",
             )
         if plan.get("stripe_product_id") and exact_price:
-            projected = self._run_product_update_only(
-                plan,
-                context,
-                operation,
-                operations,
-                exact_price,
-            )
+            if disposition == "recovery_reconcile_only":
+                projected = self._reconcile_product_update_only(
+                    plan,
+                    context,
+                    operation,
+                    operations,
+                    exact_price,
+                )
+            else:
+                projected = self._run_product_update_only(
+                    plan,
+                    context,
+                    operation,
+                    operations,
+                    exact_price,
+                )
         else:
+            if recovery:
+                raise HTTPException(status_code=409, detail=PLAN_SYNC_AMBIGUOUS_DETAIL)
             projected = self._run_two_step_sync(
                 plan,
                 context,
@@ -197,13 +239,16 @@ class BillingPlanSyncWorkflow:
         price: dict[str, Any],
     ) -> dict[str, Any]:
         product_id = str(plan["stripe_product_id"])
+        recovering = operation.get("state") == "recovery_authorized"
         operation = operations.transition(
             context,
             operation,
             "provider_request_in_flight",
             result_code="plan_sync_product_update_started",
-            result_summary="plan_sync_mode:product_update_only",
+            result_summary=self._product_update_summary(product_id),
         )
+        if recovering and int(operation.get("provider_request_attempt_count") or 0) != 2:
+            raise HTTPException(status_code=503, detail=PLAN_SYNC_AMBIGUOUS_DETAIL)
         try:
             product = self.stripe_service_cls().update_connected_product(
                 account_id=context.stripe_connected_account_id,
@@ -270,6 +315,72 @@ class BillingPlanSyncWorkflow:
             operation,
             "projected",
             result_code="plan_sync_projected",
+        )
+        operations.complete(context, operation, result_code="plan_sync_completed")
+        return projected
+
+    def _reconcile_product_update_only(
+        self,
+        plan: dict[str, Any],
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        operations: BillingProviderOperationCoordinator,
+        price: dict[str, Any],
+    ) -> dict[str, Any]:
+        product_id = str(operation.get("provider_object_id") or "")
+        try:
+            product = self.stripe_service_cls().retrieve_connected_product(
+                account_id=context.stripe_connected_account_id,
+                product_id=product_id,
+            )
+            metadata = getattr(product, "metadata", None) or (
+                product.get("metadata") if isinstance(product, dict) else {}
+            ) or {}
+            if (
+                _stripe_id(product) != product_id
+                or product_id != str(plan.get("stripe_product_id") or "")
+                or (product.get("name") if isinstance(product, dict) else getattr(product, "name", None))
+                != plan["name"]
+                or str(
+                    (product.get("description") if isinstance(product, dict)
+                     else getattr(product, "description", None)) or ""
+                ) != str(plan.get("description") or "")
+                or metadata != self._product_metadata(plan)
+            ):
+                raise RuntimeError("plan_sync_recovered_product_mismatch")
+        except Exception as exc:
+            self._mark_parent_reconciliation(
+                operations,
+                context,
+                operation,
+                "plan_sync_recovered_product_mismatch",
+                exc,
+            )
+        operation = operations.transition(
+            context,
+            operation,
+            "provider_succeeded",
+            provider_object_id=product_id,
+            result_code="plan_sync_product_updated",
+            result_summary=self._product_update_summary(product_id),
+        )
+        try:
+            projected = self._project_plan(
+                plan,
+                context,
+                product_id=product_id,
+                price=price,
+            )
+        except Exception as exc:
+            self._mark_parent_reconciliation(
+                operations,
+                context,
+                operation,
+                "plan_sync_local_projection_failed",
+                exc,
+            )
+        operation = operations.transition(
+            context, operation, "projected", result_code="plan_sync_projected"
         )
         operations.complete(context, operation, result_code="plan_sync_completed")
         return projected
@@ -633,7 +744,30 @@ class BillingPlanSyncWorkflow:
         version: int,
         lookup_key: str,
         generation: int,
+        allow_existing_projection: bool = False,
     ) -> dict[str, Any]:
+        recurring, interval_count = self.owner._stripe_recurring_for_interval(
+            plan.get("billing_interval") or "monthly"
+        )
+        price_payload = {
+            "studio_id": context.studio_id,
+            "billing_plan_id": plan["id"],
+            "stripe_account_id": context.stripe_connected_account_id,
+            "stripe_product_id": product_id,
+            "stripe_price_id": price_id,
+            "amount_cents": int(plan.get("amount_cents") or 0),
+            "currency": plan.get("currency") or "usd",
+            "billing_interval": plan.get("billing_interval") or "monthly",
+            "interval_count": interval_count,
+            "recurring": bool(recurring),
+            "active": True,
+            "version": version,
+            "metadata": {
+                "connect_account_generation": generation,
+                "provider_operation_id": context.operation_id,
+            },
+        }
+        owned_price_id = None
         existing = (
             self.supabase.table("billing_plan_prices")
             .select("*")
@@ -651,37 +785,46 @@ class BillingPlanSyncWorkflow:
                 generation=generation,
                 product_id=product_id,
             )
+            if self._is_exact_owned_price(price, price_payload):
+                owned_price_id = price.get("id")
         else:
-            recurring, interval_count = self.owner._stripe_recurring_for_interval(
-                plan.get("billing_interval") or "monthly"
+            try:
+                inserted = (
+                    self.supabase.table("billing_plan_prices")
+                    .insert(price_payload)
+                    .execute()
+                )
+            except Exception as exc:
+                price = self._recover_owned_price_projection(
+                    price_payload,
+                    original_error=exc,
+                )
+            else:
+                candidate = inserted.data[0] if inserted.data else None
+                if isinstance(candidate, dict) and self._is_exact_owned_price(
+                    candidate, price_payload
+                ):
+                    price = candidate
+                else:
+                    price = self._recover_owned_price_projection(
+                        price_payload,
+                        original_error=RuntimeError(
+                            "plan_sync_price_projection_response_unverified"
+                        ),
+                    )
+            owned_price_id = price.get("id")
+        try:
+            return self._project_plan(
+                plan,
+                context,
+                product_id=product_id,
+                price={**price, "stripe_price_lookup_key": lookup_key},
+                allow_existing_projection=allow_existing_projection,
             )
-            inserted = self.supabase.table("billing_plan_prices").insert({
-                "studio_id": context.studio_id,
-                "billing_plan_id": plan["id"],
-                "stripe_account_id": context.stripe_connected_account_id,
-                "stripe_product_id": product_id,
-                "stripe_price_id": price_id,
-                "amount_cents": int(plan.get("amount_cents") or 0),
-                "currency": plan.get("currency") or "usd",
-                "billing_interval": plan.get("billing_interval") or "monthly",
-                "interval_count": interval_count,
-                "recurring": bool(recurring),
-                "active": True,
-                "version": version,
-                "metadata": {
-                    "connect_account_generation": generation,
-                    "provider_operation_id": context.operation_id,
-                },
-            }).execute()
-            if not inserted.data:
-                raise RuntimeError("plan_sync_price_projection_failed")
-            price = inserted.data[0]
-        return self._project_plan(
-            plan,
-            context,
-            product_id=product_id,
-            price={**price, "stripe_price_lookup_key": lookup_key},
-        )
+        except _PlanProjectionCasMissError:
+            if owned_price_id:
+                self._remove_exact_owned_price(owned_price_id, price_payload)
+            raise
 
     def _project_plan(
         self,
@@ -690,7 +833,10 @@ class BillingPlanSyncWorkflow:
         *,
         product_id: str,
         price: dict[str, Any],
+        allow_existing_projection: bool = False,
     ) -> dict[str, Any]:
+        if not plan.get("_sync_resource_claim_id"):
+            raise RuntimeError("plan_sync_resource_owner_missing")
         update = {
             "stripe_account_id": context.stripe_connected_account_id,
             "stripe_product_id": product_id,
@@ -700,16 +846,181 @@ class BillingPlanSyncWorkflow:
             "stripe_price_version": int(price.get("version") or 1),
             "status": "active",
         }
-        result = (
+        if allow_existing_projection:
+            projected = self._read_exact_projected_plan(plan, context, update)
+            if projected is not None:
+                return projected
+        query = (
             self.supabase.table("billing_plans")
             .update(update)
             .eq("id", plan["id"])
             .eq("studio_id", context.studio_id)
+        )
+        for field, value in self._plan_projection_snapshot(plan).items():
+            query = query.is_(field, "null") if value is None else query.eq(field, value)
+        try:
+            result = query.execute()
+        except Exception as exc:
+            try:
+                projected = self._read_exact_projected_plan(plan, context, update)
+            except Exception as readback_exc:
+                raise RuntimeError("plan_sync_plan_projection_ambiguous") from readback_exc
+            if projected is not None:
+                return projected
+            raise RuntimeError("plan_sync_plan_projection_ambiguous") from exc
+        if result.data:
+            projected = result.data[0]
+            if self._is_exact_projected_plan(projected, plan, update):
+                return projected
+            raise RuntimeError("plan_sync_plan_projection_response_unverified")
+        try:
+            projected = self._read_exact_projected_plan(plan, context, update)
+        except Exception as exc:
+            raise RuntimeError("plan_sync_plan_projection_ambiguous") from exc
+        if projected is not None:
+            return projected
+        raise _PlanProjectionCasMissError("plan_sync_plan_projection_stale")
+
+    def _read_exact_projected_plan(
+        self,
+        plan: dict[str, Any],
+        context: BillingProviderOperationContext,
+        update: dict[str, Any],
+    ) -> Optional[dict[str, Any]]:
+        result = (
+            self.supabase.table("billing_plans")
+            .select("*")
+            .eq("id", plan["id"])
+            .eq("studio_id", context.studio_id)
+            .limit(1)
             .execute()
         )
-        if not result.data:
-            raise RuntimeError("plan_sync_plan_projection_failed")
-        return result.data[0]
+        row = result.data[0] if result.data else None
+        return row if self._is_exact_projected_plan(row, plan, update) else None
+
+    @staticmethod
+    def _is_exact_projected_plan(
+        row: Any,
+        plan: dict[str, Any],
+        update: dict[str, Any],
+    ) -> bool:
+        if not isinstance(row, dict):
+            return False
+        source = {
+            "archived_at": plan.get("archived_at"),
+            "name": plan.get("name"),
+            "description": plan.get("description"),
+            "amount_cents": int(plan.get("amount_cents") or 0),
+            "currency": plan.get("currency") or "usd",
+            "billing_interval": plan.get("billing_interval") or "monthly",
+        }
+        return all(row.get(field) == value for field, value in source.items()) and all(
+            row.get(field) == value for field, value in update.items()
+        )
+
+    def _recover_owned_price_projection(
+        self,
+        payload: dict[str, Any],
+        *,
+        original_error: Exception,
+    ) -> dict[str, Any]:
+        try:
+            result = (
+                self.supabase.table("billing_plan_prices")
+                .select("*")
+                .eq("studio_id", payload["studio_id"])
+                .eq("stripe_account_id", payload["stripe_account_id"])
+                .eq("stripe_price_id", payload["stripe_price_id"])
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            raise RuntimeError("plan_sync_price_projection_ambiguous") from exc
+        row = result.data[0] if result.data else None
+        if not self._is_exact_owned_price(row, payload):
+            raise RuntimeError("plan_sync_price_projection_ambiguous") from original_error
+        return row
+
+    @staticmethod
+    def _is_exact_owned_price(row: Any, payload: dict[str, Any]) -> bool:
+        return (
+            isinstance(row, dict)
+            and bool(row.get("id"))
+            and all(row.get(field) == value for field, value in payload.items())
+        )
+
+    def _remove_exact_owned_price(
+        self,
+        price_row_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        removed = (
+            self.supabase.table("billing_plan_prices")
+            .delete()
+            .eq("id", price_row_id)
+            .eq("studio_id", payload["studio_id"])
+            .eq("billing_plan_id", payload["billing_plan_id"])
+            .eq("stripe_account_id", payload["stripe_account_id"])
+            .eq("stripe_product_id", payload["stripe_product_id"])
+            .eq("stripe_price_id", payload["stripe_price_id"])
+            .eq("amount_cents", payload["amount_cents"])
+            .eq("currency", payload["currency"])
+            .eq("billing_interval", payload["billing_interval"])
+            .eq("interval_count", payload["interval_count"])
+            .eq("recurring", payload["recurring"])
+            .eq("active", True)
+            .eq("version", payload["version"])
+            .eq(
+                "metadata->>connect_account_generation",
+                str(payload["metadata"]["connect_account_generation"]),
+            )
+            .eq(
+                "metadata->>provider_operation_id",
+                payload["metadata"]["provider_operation_id"],
+            )
+            .execute()
+        )
+        if not removed.data:
+            raise RuntimeError("plan_sync_stale_price_compensation_failed")
+
+    @staticmethod
+    def _bind_claimed_plan_resource(
+        plan: dict[str, Any],
+        claimed: dict[str, Any],
+        operation: dict[str, Any],
+    ) -> dict[str, Any]:
+        resource = claimed.get("resource")
+        if (
+            not isinstance(resource, dict)
+            or not resource.get("id")
+            or resource.get("studio_id") != plan.get("studio_id")
+            or resource.get("operation_type") != PLAN_SYNC_OPERATION_TYPE
+            or resource.get("resource_type") != "plan"
+            or resource.get("resource_id") != plan.get("id")
+            or resource.get("operation_id") != operation.get("id")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Plan sync resource ownership could not be verified.",
+            )
+        return {**plan, "_sync_resource_claim_id": str(resource["id"])}
+
+    @staticmethod
+    def _plan_projection_snapshot(plan: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "status": plan.get("status"),
+            "archived_at": plan.get("archived_at"),
+            "name": plan.get("name"),
+            "description": plan.get("description"),
+            "amount_cents": int(plan.get("amount_cents") or 0),
+            "currency": plan.get("currency") or "usd",
+            "billing_interval": plan.get("billing_interval") or "monthly",
+            "stripe_account_id": plan.get("stripe_account_id"),
+            "stripe_product_id": plan.get("stripe_product_id"),
+            "stripe_price_id": plan.get("stripe_price_id"),
+            "stripe_price_lookup_key": plan.get("stripe_price_lookup_key"),
+            "stripe_price_version": int(plan.get("stripe_price_version") or 1),
+        }
 
     def _load_projected_plan(
         self,
@@ -735,8 +1046,13 @@ class BillingPlanSyncWorkflow:
         if not price or price.get("stripe_price_id") != plan.get("stripe_price_id"):
             raise RuntimeError("plan_sync_saved_price_mismatch")
         summary = str(operation.get("result_summary") or "")
-        if summary == "plan_sync_mode:product_update_only":
-            if operation.get("provider_object_id") != plan.get("stripe_product_id"):
+        if summary.startswith("plan_sync_mode:product_update_only:"):
+            if (
+                self._product_update_target(operation)
+                != plan.get("stripe_product_id")
+                or operation.get("provider_object_id")
+                != plan.get("stripe_product_id")
+            ):
                 raise RuntimeError("plan_sync_saved_product_mismatch")
         elif summary == "plan_sync_mode:product_price_steps":
             if operation.get("provider_object_id") != plan.get("stripe_price_id"):
@@ -927,6 +1243,22 @@ class BillingPlanSyncWorkflow:
         })
 
     @staticmethod
+    def _product_update_summary(product_id: str) -> str:
+        if not product_id.startswith("prod_") or not product_id[5:].isalnum():
+            raise RuntimeError("plan_sync_target_product_invalid")
+        return f"plan_sync_mode:product_update_only:target_product_id:{product_id}"
+
+    @classmethod
+    def _product_update_target(cls, operation: dict[str, Any]) -> str:
+        prefix = "plan_sync_mode:product_update_only:target_product_id:"
+        summary = str(operation.get("result_summary") or "")
+        if not summary.startswith(prefix):
+            raise RuntimeError("plan_sync_saved_target_invalid")
+        target = summary[len(prefix):]
+        cls._product_update_summary(target)
+        return target
+
+    @staticmethod
     def _product_metadata(plan: dict[str, Any]) -> dict[str, str]:
         return {
             "studio_id": str(plan["studio_id"]),
@@ -995,12 +1327,19 @@ class BillingPlanSyncWorkflow:
         exc: Exception,
     ) -> None:
         try:
-            operations.transition(
-                context,
-                operation,
-                "reconciliation_required",
-                reconciliation_reason_code=reason,
-            )
+            if operation.get("state") == "recovery_authorized":
+                operations.mark_recovery_reconciliation_v2(
+                    context,
+                    operation,
+                    reconciliation_reason_code=reason,
+                )
+            else:
+                operations.transition(
+                    context,
+                    operation,
+                    "reconciliation_required",
+                    reconciliation_reason_code=reason,
+                )
         except Exception:
             pass
         raise HTTPException(status_code=503, detail=PLAN_SYNC_AMBIGUOUS_DETAIL) from exc

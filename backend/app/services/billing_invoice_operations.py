@@ -473,6 +473,27 @@ class BillingInvoiceOperationWorkflow:
                 invoice, context=context, operation=operation, operations=operations
             )
         else:
+            try:
+                finalize_autopay_consent = self._require_finalize_autopay_consent(
+                    invoice,
+                    provider_invoice=provider_before,
+                    studio_id=studio_id,
+                    generation=generation,
+                )
+                self._require_autopay_consent_current(
+                    invoice,
+                    studio_id=studio_id,
+                    generation=generation,
+                    expected=finalize_autopay_consent,
+                )
+            except HTTPException:
+                operations.transition(
+                    context,
+                    operation,
+                    "definitive_rejected",
+                    error_code="invoice_finalize_autopay_consent_invalid",
+                )
+                raise
             finalized, operation = self._execute_finalize_single(
                 invoice, context=context, operation=operation, operations=operations
             )
@@ -791,7 +812,7 @@ class BillingInvoiceOperationWorkflow:
 
         if retry_autopay_consent is not None:
             try:
-                self._require_retry_autopay_consent_current(
+                self._require_autopay_consent_current(
                     invoice,
                     studio_id=studio_id,
                     generation=generation,
@@ -901,15 +922,54 @@ class BillingInvoiceOperationWorkflow:
         studio_id: str,
         generation: int,
     ) -> dict[str, Any]:
-        payer, consent, payment_method_id = self._read_retry_autopay_consent(
+        try:
+            provider_invoice = self._read_invoice(invoice)
+        except Exception:
+            raise HTTPException(
+                status_code=409,
+                detail=self._autopay_consent_detail(),
+            ) from None
+        return self._require_autopay_consent(
+            invoice,
+            provider_invoice=provider_invoice,
+            provider_status="open",
+            studio_id=studio_id,
+            generation=generation,
+        )
+
+    def _require_finalize_autopay_consent(
+        self,
+        invoice: dict[str, Any],
+        *,
+        provider_invoice: Any,
+        studio_id: str,
+        generation: int,
+    ) -> dict[str, Any]:
+        return self._require_autopay_consent(
+            invoice,
+            provider_invoice=provider_invoice,
+            provider_status="draft",
+            studio_id=studio_id,
+            generation=generation,
+        )
+
+    def _require_autopay_consent(
+        self,
+        invoice: dict[str, Any],
+        *,
+        provider_invoice: Any,
+        provider_status: str,
+        studio_id: str,
+        generation: int,
+    ) -> dict[str, Any]:
+        payer, consent, payment_method_id = self._read_autopay_consent(
             invoice,
             studio_id=studio_id,
             generation=generation,
         )
-        detail = self._retry_autopay_consent_detail()
+        detail = self._autopay_consent_detail()
         setup_intent_id = str(consent["stripe_setup_intent_id"])
         try:
-            provider_invoice = self._read_invoice(invoice)
             setup_intent = self.stripe_service_cls().retrieve_connected_setup_intent(
                 account_id=str(invoice["stripe_account_id"]),
                 setup_intent_id=setup_intent_id,
@@ -923,7 +983,8 @@ class BillingInvoiceOperationWorkflow:
             _stripe_id(provider_invoice) != invoice.get("stripe_invoice_id")
             or _stripe_id(_object_get(provider_invoice, "customer"))
             != invoice.get("stripe_customer_id")
-            or str(_object_get(provider_invoice, "status") or "") != "open"
+            or str(_object_get(provider_invoice, "status") or "")
+            != provider_status
             or str(_object_get(provider_invoice, "collection_method") or "")
             != "charge_automatically"
             or _stripe_id(_object_get(provider_invoice, "default_payment_method"))
@@ -950,9 +1011,9 @@ class BillingInvoiceOperationWorkflow:
             or setup_metadata.get("connect_account_generation") != str(generation)
         ):
             raise HTTPException(status_code=409, detail=detail)
-        return self._retry_autopay_consent_snapshot(payer, consent)
+        return self._autopay_consent_snapshot(payer, consent)
 
-    def _require_retry_autopay_consent_current(
+    def _require_autopay_consent_current(
         self,
         invoice: dict[str, Any],
         *,
@@ -960,25 +1021,25 @@ class BillingInvoiceOperationWorkflow:
         generation: int,
         expected: dict[str, Any],
     ) -> None:
-        payer, consent, _ = self._read_retry_autopay_consent(
+        payer, consent, _ = self._read_autopay_consent(
             invoice,
             studio_id=studio_id,
             generation=generation,
         )
-        if self._retry_autopay_consent_snapshot(payer, consent) != expected:
+        if self._autopay_consent_snapshot(payer, consent) != expected:
             raise HTTPException(
                 status_code=409,
-                detail=self._retry_autopay_consent_detail(),
+                detail=self._autopay_consent_detail(),
             )
 
-    def _read_retry_autopay_consent(
+    def _read_autopay_consent(
         self,
         invoice: dict[str, Any],
         *,
         studio_id: str,
         generation: int,
     ) -> tuple[dict[str, Any], dict[str, Any], str]:
-        detail = self._retry_autopay_consent_detail()
+        detail = self._autopay_consent_detail()
         payer = self.owner._get_row_or_404(
             "billing_payers",
             invoice["payer_id"],
@@ -1024,13 +1085,13 @@ class BillingInvoiceOperationWorkflow:
                 or consent.get("accepted_at")
                 != payer.get("autopay_terms_accepted_at")
             ):
-                raise RuntimeError("invoice_retry_autopay_consent_not_active")
+                raise RuntimeError("invoice_autopay_consent_not_active")
         except Exception:
             raise HTTPException(status_code=409, detail=detail) from None
         return payer, consent, payment_method_id
 
     @staticmethod
-    def _retry_autopay_consent_snapshot(
+    def _autopay_consent_snapshot(
         payer: dict[str, Any],
         consent: dict[str, Any],
     ) -> dict[str, Any]:
@@ -1069,7 +1130,7 @@ class BillingInvoiceOperationWorkflow:
         }
 
     @staticmethod
-    def _retry_autopay_consent_detail() -> str:
+    def _autopay_consent_detail() -> str:
         return (
             "Autopay consent no longer matches this invoice. "
             "Restore verified payer consent and retry with a new Idempotency-Key."

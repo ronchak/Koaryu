@@ -179,11 +179,11 @@ export const EXPECTED_V30_LEGACY_OPERATIONAL_MANIFEST =
 export const EXPECTED_V30_RESTORED_LEGACY_OPERATIONAL_MANIFEST =
   "b1b7b4d041878aaa9a2a33ee530376ac906f5e6f4cea0a5d001516c99273e91b";
 export const EXPECTED_V31_RESOURCE_OWNERSHIP_MANIFEST =
-  "0:87eb5a6ad0f3c4316f1a743132b48b22605c7fce3f630f6c40aa11576b1ef98e";
+  "0:13d573e2bf03109923f5bb72b7a578c02908761732e3c906aba2c3c52011e700";
 export const EXPECTED_V31_OPERATIONAL_CONTRACT =
-  "0:58fe9579f8b5fc7ec7c1bcc62ae681e1d42e1fa0dc2b5618992ad4b402c3d72c";
+  "0:f5500e1bc303ed77564dc5d77dddccfcc7f42cf8f2716afcb0d62d372e63f197";
 export const EXPECTED_V31_OPERATIONAL_MANIFEST =
-  "b77405d712b62a33f64caf5b05088caf397e570f8d0f3880eb02b993fa675457";
+  "0954794f138ec5f9257f93183a7cc67d8116359a9ae6dd1222ddc24c763d2614";
 export const EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST =
   "7a2e9ab68d2c99c81d04f767821ead1a7b6bf3ea1cfe6a819ff2b3e36ab2135b";
 export const EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST =
@@ -416,7 +416,7 @@ export const EXPECTED_V31_CATALOG_STATE =
   "column_acls=228:44119eb2d0f6a6f4d130b4353519eb478e6e830791ccef778e4c261e705269fc:0;" +
   "columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;" +
   "constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;" +
-  "functions=106:2410b2433b85f0c5a573e6218e89900de5e258d6f0f3b333d35307f00c68ae41:0;" +
+  "functions=109:3cbd5087fed1b1a6d3452c82ab9947486df8f40b82dd290d4c1f032e098358d5:0;" +
   "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=176:f71ef6881d9692d2f8d59c7a55753aa7c637f72473fca97c8293ee6c640f7fdf:0;" +
@@ -429,7 +429,7 @@ export const EXPECTED_V31_RESTORED_CATALOG_STATE =
   "column_acls=228:44119eb2d0f6a6f4d130b4353519eb478e6e830791ccef778e4c261e705269fc:0;" +
   "columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;" +
   "constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;" +
-  "functions=106:2410b2433b85f0c5a573e6218e89900de5e258d6f0f3b333d35307f00c68ae41:0;" +
+  "functions=109:3cbd5087fed1b1a6d3452c82ab9947486df8f40b82dd290d4c1f032e098358d5:0;" +
   "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=176:66315b7b7d9fc49b9b0ab73171fcf0dbfa0c1c279c8668269cf637e5d2aa53b5:0;" +
@@ -462,7 +462,7 @@ export const EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE =
 export const EXPECTED_V30_EXPECTATION_STATE =
   "1:64daabcda5df9823fa4b32e7320e715d1d96dd0d0acc697ebed4570256655643";
 export const EXPECTED_V31_EXPECTATION_STATE =
-  "1:a10e48d2e20a6620c79428a1703b2d0cb705d91e14d522a1b6fb1fbb9b2d4507";
+  "1:96ef86c6e18e5920e61d4d5d9a1f32e7a35bf5e4328320b650d1a7328c77ad9d";
 
 export function validateOperationalManifest(value) {
   if (
@@ -1704,6 +1704,9 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.claim_due_billing_enrollment_transitions_v1(uuid, integer, integer)', 'search_path=""', true, true),
     ('public.disable_billing_payer_autopay_v1(uuid, uuid, uuid, timestamp with time zone, text)', 'search_path=""', true, true),
     ('public.finalize_billing_payer_setup_projection_v1(uuid, uuid, uuid, uuid, uuid, text, text, text, integer)', 'search_path=""', true, true),
+    ('public.authorize_billing_provider_operation_recovery_v2(uuid, uuid, uuid, text, text, text, text, integer, uuid, text, text, text, uuid, integer, bigint)', 'search_path=""', true, true),
+    ('public.mark_billing_provider_recovery_reconciliation_v2(uuid, uuid, uuid, text, text, text, text, integer, uuid, bigint, text)', 'search_path=""', true, true),
+    ('public.reject_billing_provider_recovery_source_drift_v2(uuid, uuid, uuid, text, text, text, text, integer, uuid, bigint, text)', 'search_path=""', true, true),
     ('public.read_billing_enrollment_item_schedule_identity_v31(uuid, uuid)', 'search_path=""', true, true),
     ('public.reject_billing_autopay_activation_without_provider_v31(uuid, uuid, uuid, uuid, uuid, uuid, text, text, text, integer, uuid, text, text, bigint)', 'search_path=""', true, true),
     ('public.reserve_billing_autopay_activation_v31(uuid, uuid, uuid, uuid, uuid, text, integer, text, text, numeric)', 'search_path=""', true, true),

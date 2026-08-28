@@ -1237,6 +1237,30 @@ assert_attestation_rejects \
   "V31 activation-reservation RPC service-role ACL loss" \
   "REVOKE EXECUTE ON FUNCTION public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,text,numeric) FROM service_role;" \
   "f"
+assert_attestation_rejects \
+  "V31 provider-recovery authorization RPC exact-signature omission" \
+  "ALTER FUNCTION public.authorize_billing_provider_operation_recovery_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,text,text,text,uuid,integer,bigint) RENAME TO koaryu_provider_recovery_authorization_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery authorization RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.authorize_billing_provider_operation_recovery_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,text,text,text,uuid,integer,bigint) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery reconciliation RPC exact-signature omission" \
+  "ALTER FUNCTION public.mark_billing_provider_recovery_reconciliation_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text) RENAME TO koaryu_provider_recovery_reconciliation_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery reconciliation RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.mark_billing_provider_recovery_reconciliation_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery source-drift RPC exact-signature omission" \
+  "ALTER FUNCTION public.reject_billing_provider_recovery_source_drift_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text) RENAME TO koaryu_provider_recovery_source_drift_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery source-drift RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.reject_billing_provider_recovery_source_drift_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text) FROM service_role;" \
+  "f"
 
 assert_attestation_rejects \
   "stored function-body drift" \

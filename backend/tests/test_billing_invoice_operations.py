@@ -200,6 +200,7 @@ class _Stripe:
     retrieve_calls: list[dict] = []
     setup_intent_retrieve_calls: list[dict] = []
     setup_intent_retrieve_hook = None
+    finalize_before_mutation_hook = None
     pay_before_mutation_hook = None
     finalize_calls: list[dict] = []
     send_calls: list[dict] = []
@@ -223,6 +224,7 @@ class _Stripe:
         cls.retrieve_calls = []
         cls.setup_intent_retrieve_calls = []
         cls.setup_intent_retrieve_hook = None
+        cls.finalize_before_mutation_hook = None
         cls.pay_before_mutation_hook = None
         cls.finalize_calls = []
         cls.send_calls = []
@@ -281,6 +283,8 @@ class _Stripe:
         return setup_intent
 
     def finalize_connected_invoice(self, **payload):
+        if self.__class__.finalize_before_mutation_hook is not None:
+            self.__class__.finalize_before_mutation_hook()
         self.__class__.finalize_calls.append(copy.deepcopy(payload))
         if self.__class__.finalize_exception:
             raise self.__class__.finalize_exception
@@ -839,6 +843,7 @@ def test_finalize_send_registers_two_steps_and_replays_without_duplicates():
     assert first.status == replay.status == "open"
     assert len(_Stripe.finalize_calls) == 1
     assert len(_Stripe.send_calls) == 1
+    assert _Stripe.setup_intent_retrieve_calls == []
     assert len(facade.supabase.tables["audit_logs"]) == 1
     parent = _operation(facade, "invoice.finalize")
     assert parent["state"] == "completed"
@@ -848,6 +853,36 @@ def test_finalize_send_registers_two_steps_and_replays_without_duplicates():
         "connected_invoice.finalize",
         "connected_invoice.send",
     ]
+
+
+def test_finalize_send_does_not_hold_the_autopay_consent_guard():
+    invoice = _draft_invoice()
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    committed_changes = []
+
+    def change_autopay_during_hosted_finalize():
+        facade.supabase.mutate_billing_payer(
+            "payer_1",
+            autopay_status="disabled",
+        )
+        facade.supabase.mutate_billing_payer_payment_consent(
+            "consent_1",
+            revoked_at="2026-08-27T00:05:00Z",
+        )
+        committed_changes.append(True)
+
+    _Stripe.finalize_before_mutation_hook = change_autopay_during_hosted_finalize
+    finalized = asyncio.run(_manager(facade).finalize_invoice(
+        invoice["id"], "studio_1", "actor_1", "finalize-send-no-consent-guard"
+    ))
+
+    assert finalized.status == "open"
+    assert committed_changes == [True]
+    assert _Stripe.setup_intent_retrieve_calls == []
+    assert len(_Stripe.finalize_calls) == 1
+    assert len(_Stripe.send_calls) == 1
 
 
 def test_finalize_completed_replay_does_not_require_fresh_provider_read():
@@ -962,9 +997,13 @@ def test_finalize_partial_send_failure_never_repeats_finalize_or_send():
 
 
 def test_finalize_autopay_uses_one_parent_mutation_without_step_plan():
-    invoice = _draft_invoice(collection_method="charge_automatically")
-    facade = _Facade(invoice=invoice)
+    invoice = _draft_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_1",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
 
     result = asyncio.run(_manager(facade).finalize_invoice(
         invoice["id"], "studio_1", "actor_1", "finalize-autopay"
@@ -979,10 +1018,14 @@ def test_finalize_autopay_uses_one_parent_mutation_without_step_plan():
 
 
 def test_finalize_autopay_projection_failure_recovers_by_readback_only():
-    invoice = _draft_invoice(collection_method="charge_automatically")
-    facade = _Facade(invoice=invoice)
+    invoice = _draft_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_1",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
     facade.projection_failures = 1
     _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
     manager = _manager(facade)
 
     with pytest.raises(HTTPException) as first:
@@ -999,6 +1042,131 @@ def test_finalize_autopay_projection_failure_recovers_by_readback_only():
     assert len(_Stripe.finalize_calls) == 1
     assert _Stripe.send_calls == []
     assert _operation(facade, "invoice.finalize")["state"] == "completed"
+
+
+@pytest.mark.parametrize(
+    ("consent_overrides", "provider_method", "setup_method"),
+    [
+        ({"revoked_at": "2026-08-27T00:05:00Z"}, "pm_1", "pm_1"),
+        ({"superseded_at": "2026-08-27T00:05:00Z"}, "pm_1", "pm_1"),
+        ({}, "pm_other", "pm_1"),
+        ({}, "pm_1", "pm_other"),
+        ({"connect_account_generation": 3}, "pm_1", "pm_1"),
+    ],
+)
+def test_finalize_autopay_rejects_nonexact_consent_before_provider_mutation(
+    consent_overrides,
+    provider_method,
+    setup_method,
+):
+    invoice = _draft_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id=provider_method,
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    facade.supabase.tables["billing_payer_payment_consents"][0].update(
+        consent_overrides
+    )
+    _Stripe.setup_intents["seti_1"]["payment_method"] = setup_method
+
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(_manager(facade).finalize_invoice(
+            invoice["id"], "studio_1", "actor_1", "finalize-invalid-consent"
+        ))
+
+    assert rejected.value.status_code == 409
+    assert _Stripe.finalize_calls == []
+    operation = _operation(facade, "invoice.finalize")
+    assert operation["state"] == "definitive_rejected"
+    assert operation["error_code"] == "invoice_finalize_autopay_consent_invalid"
+
+
+@pytest.mark.parametrize("closed_field", ["revoked_at", "superseded_at"])
+def test_finalize_autopay_rechecks_consent_after_setup_intent_read(
+    closed_field,
+):
+    invoice = _draft_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_1",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+
+    def close_consent_after_provider_read():
+        facade.supabase.tables["billing_payer_payment_consents"][0][closed_field] = (
+            "2026-08-27T00:05:00Z"
+        )
+
+    _Stripe.setup_intent_retrieve_hook = close_consent_after_provider_read
+
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(_manager(facade).finalize_invoice(
+            invoice["id"], "studio_1", "actor_1", f"finalize-race-{closed_field}"
+        ))
+
+    assert rejected.value.status_code == 409
+    assert _Stripe.finalize_calls == []
+    assert _operation(facade, "invoice.finalize")["state"] == "definitive_rejected"
+
+
+def test_finalize_autopay_owner_blocks_disable_inside_provider_mutation_boundary():
+    invoice = _draft_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_1",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    blocked_changes = []
+
+    def attempt_disable_after_final_validation():
+        for mutate in (
+            lambda: facade.supabase.mutate_billing_payer(
+                "payer_1",
+                autopay_status="disabled",
+            ),
+            lambda: facade.supabase.mutate_billing_payer_payment_consent(
+                "consent_1",
+                revoked_at="2026-08-27T00:05:00Z",
+            ),
+        ):
+            try:
+                mutate()
+            except PostgrestAPIError as exc:
+                blocked_changes.append((exc.code, exc.message))
+
+    _Stripe.finalize_before_mutation_hook = attempt_disable_after_final_validation
+    manager = _manager(facade)
+    finalized = asyncio.run(manager.finalize_invoice(
+        invoice["id"], "studio_1", "actor_1", "finalize-consent-owner"
+    ))
+
+    assert finalized.status == "open"
+    assert blocked_changes == [
+        ("55P03", "billing_invoice_mutation_in_progress"),
+        ("55P03", "billing_invoice_mutation_in_progress"),
+    ]
+    assert facade.supabase.tables["billing_payers"][0]["autopay_status"] == "enabled"
+    assert facade.supabase.tables["billing_payer_payment_consents"][0][
+        "revoked_at"
+    ] is None
+    assert len(_Stripe.finalize_calls) == 1
+
+    facade.supabase.mutate_billing_payer("payer_1", autopay_status="disabled")
+    facade.supabase.mutate_billing_payer_payment_consent(
+        "consent_1",
+        revoked_at="2026-08-27T00:05:00Z",
+    )
+    replay = asyncio.run(manager.finalize_invoice(
+        invoice["id"], "studio_1", "actor_1", "finalize-consent-owner"
+    ))
+
+    assert replay.status == "open"
+    assert len(_Stripe.finalize_calls) == 1
+    assert len(_Stripe.setup_intent_retrieve_calls) == 1
 
 
 def test_void_resource_replays_without_duplicate_provider_mutation():

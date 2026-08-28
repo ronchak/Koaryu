@@ -366,6 +366,13 @@ class StripeService:
             **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
         )
 
+    def retrieve_connected_product(self, *, account_id: str, product_id: str):
+        stripe = self._stripe()
+        return stripe.Product.retrieve(
+            product_id,
+            **self._request_options(account_id=account_id),
+        )
+
     @stripe_mutation("connected_price.create")
     def create_connected_price(
         self,
@@ -767,6 +774,13 @@ class StripeService:
         return stripe.Refund.create(
             **payload,
             **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
+
+    def retrieve_connected_refund(self, *, account_id: str, refund_id: str):
+        stripe = self._stripe()
+        return stripe.Refund.retrieve(
+            refund_id,
+            **self._request_options(account_id=account_id),
         )
 
     @stripe_mutation("core_checkout_session.create")

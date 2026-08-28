@@ -929,9 +929,18 @@ BEGIN
         FROM public.billing_invoice_mutation_owners AS owner
         JOIN public.billing_provider_operations AS operation
           ON operation.id=owner.operation_id
+        JOIN public.billing_invoices AS invoice
+          ON invoice.id=owner.invoice_id
+         AND invoice.studio_id=owner.studio_id
         WHERE owner.studio_id=NEW.studio_id
           AND owner.payer_id=NEW.id
-          AND owner.operation_type='invoice.retry'
+          AND (
+              owner.operation_type='invoice.retry'
+              OR (
+                  owner.operation_type='invoice.finalize'
+                  AND invoice.collection_method='charge_automatically'
+              )
+          )
           AND operation.state IN (
               'started','provider_request_in_flight','recovery_authorized'
           )
@@ -977,9 +986,18 @@ BEGIN
         FROM public.billing_invoice_mutation_owners AS owner
         JOIN public.billing_provider_operations AS operation
           ON operation.id=owner.operation_id
+        JOIN public.billing_invoices AS invoice
+          ON invoice.id=owner.invoice_id
+         AND invoice.studio_id=owner.studio_id
         WHERE owner.studio_id=v_studio_id
           AND owner.payer_id=v_payer_id
-          AND owner.operation_type='invoice.retry'
+          AND (
+              owner.operation_type='invoice.retry'
+              OR (
+                  owner.operation_type='invoice.finalize'
+                  AND invoice.collection_method='charge_automatically'
+              )
+          )
           AND operation.state IN (
               'started','provider_request_in_flight','recovery_authorized'
           )
@@ -1150,6 +1168,12 @@ BEGIN
            OR v_operation.connect_account_generation IS DISTINCT FROM p_connect_account_generation THEN
             RAISE EXCEPTION USING ERRCODE='23505',MESSAGE='billing_provider_operation_resource_request_conflict';
         END IF;
+        IF v_operation.state<>'completed'
+           AND v_resource.resource_version_sha256 IS DISTINCT FROM
+               v_current_resource_version THEN
+            RAISE EXCEPTION USING ERRCODE='23505',
+                MESSAGE='billing_provider_operation_resource_version_conflict';
+        END IF;
         IF v_operation.state IN ('started','recovery_authorized','provider_succeeded','projected')
            AND (v_operation.lease_owner IS NULL OR v_operation.lease_owner=p_lease_owner
                 OR v_operation.lease_expires_at<=v_now) THEN
@@ -1282,9 +1306,14 @@ BEGIN
             IF v_operation.result_code IS DISTINCT FROM 'plan_sync_completed' THEN
                 RAISE EXCEPTION USING ERRCODE='23514',
                     MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
-            ELSIF v_operation.result_summary='plan_sync_mode:product_update_only' THEN
+            ELSIF v_operation.result_summary~
+                  '^plan_sync_mode:product_update_only:target_product_id:prod_[A-Za-z0-9]+$' THEN
                 IF v_operation.provider_object_id IS NULL
                    OR v_plan.stripe_product_id IS DISTINCT FROM v_operation.provider_object_id
+                   OR v_plan.stripe_product_id IS DISTINCT FROM (regexp_match(
+                        v_operation.result_summary,
+                        'target_product_id:(prod_[A-Za-z0-9]+)$'
+                      ))[1]
                    OR v_operation.provider_step_plan_sha256 IS NOT NULL
                    OR v_operation.provider_step_expected_count IS NOT NULL
                    OR EXISTS (
@@ -1333,8 +1362,21 @@ BEGIN
                 RAISE EXCEPTION USING ERRCODE='23514',
                     MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
             END IF;
-        ELSIF p_resource_type='payer'
-              AND v_payer.stripe_customer_id IS DISTINCT FROM v_operation.provider_object_id THEN
+        ELSIF p_resource_type='payer' AND (
+            v_payer.stripe_customer_id IS DISTINCT FROM v_operation.provider_object_id
+            OR NOT (
+                (v_operation.result_summary=
+                    'sync_mode:create:target_customer_id:none')
+                OR (
+                    v_operation.result_summary~
+                        '^sync_mode:update:target_customer_id:cus_[A-Za-z0-9]+$'
+                    AND (regexp_match(
+                        v_operation.result_summary,
+                        'target_customer_id:(cus_[A-Za-z0-9]+)$'
+                    ))[1] IS NOT NULL
+                )
+            )
+        ) THEN
             RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
         END IF;
         INSERT INTO public.billing_provider_operations(studio_id,actor_id,operation_type,caller_request_key,request_sha256,stripe_connected_account_id,connect_account_generation,lease_owner,lease_acquired_at,lease_expires_at,started_at,created_at,updated_at)
@@ -1365,6 +1407,11 @@ BEGIN
     IF v_existing_key_operation_id IS NOT NULL
        AND v_existing_key_operation_id IS DISTINCT FROM v_operation.id THEN
         RAISE EXCEPTION USING ERRCODE='23505',MESSAGE='billing_provider_operation_resource_alias_conflict';
+    END IF;
+    IF v_operation.state='recovery_authorized'
+       AND p_caller_request_key IS DISTINCT FROM v_operation.caller_request_key THEN
+        RAISE EXCEPTION USING ERRCODE='55P03',
+            MESSAGE='billing_provider_operation_recovery_in_progress';
     END IF;
     IF (SELECT count(*) FROM public.billing_provider_operation_resource_aliases
         WHERE operation_id=v_operation.id)>=64 THEN
@@ -1694,6 +1741,304 @@ REVOKE ALL ON FUNCTION public.claim_billing_invoice_closeout_operation_v1(
 ) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.claim_billing_invoice_closeout_operation_v1(
     UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
+) TO service_role;
+
+CREATE FUNCTION public.authorize_billing_provider_operation_recovery_v2(
+    p_operation_id UUID,p_studio_id UUID,p_actor_id UUID,p_operation_type TEXT,
+    p_caller_request_key TEXT,p_request_sha256 TEXT,
+    p_stripe_connected_account_id TEXT,p_connect_account_generation INTEGER,
+    p_recovery_actor_id UUID,p_recovery_proof_sha256 TEXT,p_recovery_outcome TEXT,
+    p_recovered_provider_object_id TEXT,p_lease_owner UUID,p_lease_seconds INTEGER,
+    p_expected_revision BIGINT
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_now TIMESTAMPTZ:=clock_timestamp();
+    v_expected_prefix TEXT;
+    v_saved_evidence_valid BOOLEAN:=false;
+    v_resource public.billing_provider_operation_resources%ROWTYPE;
+    v_plan public.billing_plans%ROWTYPE;
+    v_payer public.billing_payers%ROWTYPE;
+    v_saved_target TEXT;
+BEGIN
+    v_expected_prefix:=CASE p_operation_type
+        WHEN 'plan.sync' THEN 'prod_'
+        WHEN 'payer.sync' THEN 'cus_'
+        WHEN 'payment.refund' THEN 're_'
+        ELSE NULL
+    END;
+    IF p_recovery_proof_sha256 !~ '^[0-9a-f]{64}$'
+       OR p_recovery_outcome NOT IN(
+            'provider_no_object_safe_to_retry',
+            'provider_succeeded_reconcile_only'
+       )
+       OR p_lease_owner IS NULL OR p_lease_seconds NOT BETWEEN 5 AND 300
+       OR v_expected_prefix IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='22023',
+            MESSAGE='billing_provider_operation_recovery_invalid';
+    END IF;
+    IF NOT EXISTS(
+        SELECT 1 FROM public.staff_roles AS membership
+        WHERE membership.studio_id=p_studio_id
+          AND membership.user_id=p_recovery_actor_id
+          AND membership.archived_at IS NULL AND membership.role='admin'
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='42501',
+            MESSAGE='billing_provider_operation_recovery_actor_not_admin';
+    END IF;
+    SELECT * INTO v_operation FROM public.billing_provider_operations
+    WHERE id=p_operation_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='P0002',
+            MESSAGE='billing_provider_operation_not_found';
+    END IF;
+    IF v_operation.studio_id IS DISTINCT FROM p_studio_id
+       OR v_operation.actor_id IS DISTINCT FROM p_actor_id
+       OR v_operation.operation_type IS DISTINCT FROM p_operation_type
+       OR v_operation.caller_request_key IS DISTINCT FROM p_caller_request_key
+       OR v_operation.request_sha256 IS DISTINCT FROM p_request_sha256
+       OR v_operation.stripe_connected_account_id IS DISTINCT FROM
+            p_stripe_connected_account_id
+       OR v_operation.connect_account_generation IS DISTINCT FROM
+            p_connect_account_generation THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_identity_mismatch';
+    END IF;
+    IF v_operation.provider_step_plan_sha256 IS NOT NULL
+       OR v_operation.provider_step_expected_count IS NOT NULL THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_parent_step_recovery_denied';
+    END IF;
+    SELECT * INTO v_resource FROM public.billing_provider_operation_resources
+    WHERE operation_id=v_operation.id FOR UPDATE;
+    IF v_resource.id IS NULL OR v_resource.studio_id IS DISTINCT FROM p_studio_id
+       OR v_resource.operation_type IS DISTINCT FROM p_operation_type THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_recovery_resource_invalid';
+    END IF;
+    IF p_operation_type='plan.sync' THEN
+        SELECT * INTO v_plan FROM public.billing_plans
+        WHERE id=v_resource.resource_id AND studio_id=p_studio_id FOR UPDATE;
+    ELSIF p_operation_type='payer.sync' THEN
+        SELECT * INTO v_payer FROM public.billing_payers
+        WHERE id=v_resource.resource_id AND studio_id=p_studio_id FOR UPDATE;
+    END IF;
+    v_saved_evidence_valid:=CASE v_operation.operation_type
+        WHEN 'plan.sync' THEN
+            v_operation.result_code='plan_sync_product_update_started'
+            AND v_operation.result_summary~
+                '^plan_sync_mode:product_update_only:target_product_id:prod_[A-Za-z0-9]+$'
+            AND v_plan.id IS NOT NULL AND v_plan.status='active'
+            AND v_plan.archived_at IS NULL
+            AND v_plan.stripe_product_id=(regexp_match(
+                v_operation.result_summary,
+                'target_product_id:(prod_[A-Za-z0-9]+)$'
+            ))[1]
+        WHEN 'payer.sync' THEN
+            (
+                v_operation.result_code='payer_sync_create_started'
+                AND v_operation.result_summary=
+                    'sync_mode:create:target_customer_id:none'
+                AND v_payer.id IS NOT NULL
+                AND v_payer.stripe_customer_id IS NULL
+            ) OR (
+                v_operation.result_code='payer_sync_update_started'
+                AND v_operation.result_summary~
+                    '^sync_mode:update:target_customer_id:cus_[A-Za-z0-9]+$'
+                AND v_payer.id IS NOT NULL
+                AND v_payer.stripe_customer_id=(regexp_match(
+                    v_operation.result_summary,
+                    'target_customer_id:(cus_[A-Za-z0-9]+)$'
+                ))[1]
+            )
+        WHEN 'payment.refund' THEN
+            v_operation.result_code='payment_refund_started'
+            AND v_operation.result_summary~'^amount_cents:[1-9][0-9]*$'
+        ELSE false END;
+    IF NOT v_saved_evidence_valid THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_recovery_saved_evidence_invalid';
+    END IF;
+    IF v_operation.state='recovery_authorized' THEN
+        IF v_operation.recovery_proof_sha256=p_recovery_proof_sha256
+           AND v_operation.recovery_outcome=p_recovery_outcome
+           AND v_operation.recovery_actor_id=p_recovery_actor_id
+           AND (
+                (p_recovery_outcome='provider_no_object_safe_to_retry'
+                 AND p_recovered_provider_object_id IS NULL
+                 AND v_operation.provider_object_id IS NULL)
+                OR
+                (p_recovery_outcome='provider_succeeded_reconcile_only'
+                 AND v_operation.provider_object_id IS NOT DISTINCT FROM
+                     p_recovered_provider_object_id)
+           ) THEN
+            RETURN private.billing_provider_operation_json_v1(v_operation,'replay');
+        END IF;
+        RAISE EXCEPTION USING ERRCODE='23505',
+            MESSAGE='billing_provider_operation_recovery_conflict';
+    END IF;
+    IF v_operation.revision IS DISTINCT FROM p_expected_revision THEN
+        RAISE EXCEPTION USING ERRCODE='40001',
+            MESSAGE='billing_provider_operation_stale_revision';
+    END IF;
+    IF v_operation.state NOT IN('provider_request_in_flight','reconciliation_required') THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_recovery_state_invalid';
+    END IF;
+    IF p_recovery_outcome='provider_no_object_safe_to_retry' AND (
+        p_recovered_provider_object_id IS NOT NULL
+        OR v_operation.provider_object_id IS NOT NULL
+        OR v_operation.provider_secondary_object_id IS NOT NULL
+        OR v_operation.provider_request_attempt_count<>1
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_retry_evidence_invalid';
+    END IF;
+    IF p_recovery_outcome='provider_succeeded_reconcile_only' AND (
+        p_recovered_provider_object_id IS NULL
+        OR NOT CASE v_operation.operation_type
+            WHEN 'plan.sync' THEN p_recovered_provider_object_id~'^prod_[A-Za-z0-9]+$'
+            WHEN 'payer.sync' THEN p_recovered_provider_object_id~'^cus_[A-Za-z0-9]+$'
+            WHEN 'payment.refund' THEN p_recovered_provider_object_id~'^re_[A-Za-z0-9]+$'
+            ELSE false END
+        OR v_operation.provider_request_attempt_count NOT IN(1,2)
+        OR v_operation.provider_secondary_object_id IS NOT NULL
+        OR (v_operation.provider_object_id IS NOT NULL AND
+            v_operation.provider_object_id IS DISTINCT FROM
+                p_recovered_provider_object_id)
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_reconcile_evidence_invalid';
+    END IF;
+    UPDATE public.billing_provider_operations
+    SET state='recovery_authorized',
+        provider_object_id=CASE
+            WHEN p_recovery_outcome='provider_succeeded_reconcile_only'
+            THEN p_recovered_provider_object_id ELSE provider_object_id END,
+        recovery_proof_sha256=p_recovery_proof_sha256,
+        recovery_outcome=p_recovery_outcome,recovery_actor_id=p_recovery_actor_id,
+        recovery_authorized_at=v_now,reconciliation_reason_code=NULL,
+        lease_owner=p_lease_owner,lease_acquired_at=v_now,
+        lease_expires_at=v_now+make_interval(secs=>p_lease_seconds),
+        revision=revision+1,updated_at=v_now
+    WHERE id=v_operation.id RETURNING * INTO v_operation;
+    RETURN private.billing_provider_operation_json_v1(v_operation,'recovery_authorized');
+END;
+$$;
+ALTER FUNCTION public.authorize_billing_provider_operation_recovery_v2(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,UUID,TEXT,TEXT,TEXT,UUID,INTEGER,BIGINT
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.authorize_billing_provider_operation_recovery_v2(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,UUID,TEXT,TEXT,TEXT,UUID,INTEGER,BIGINT
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.authorize_billing_provider_operation_recovery_v2(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,UUID,TEXT,TEXT,TEXT,UUID,INTEGER,BIGINT
+) TO service_role;
+
+CREATE FUNCTION public.mark_billing_provider_recovery_reconciliation_v2(
+    p_operation_id UUID,p_studio_id UUID,p_actor_id UUID,p_operation_type TEXT,
+    p_caller_request_key TEXT,p_request_sha256 TEXT,
+    p_stripe_connected_account_id TEXT,p_connect_account_generation INTEGER,
+    p_lease_owner UUID,p_expected_revision BIGINT,
+    p_reconciliation_reason_code TEXT
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_now TIMESTAMPTZ:=clock_timestamp();
+BEGIN
+    SELECT * INTO v_operation FROM public.billing_provider_operations
+    WHERE id=p_operation_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='billing_provider_operation_not_found';
+    END IF;
+    IF v_operation.studio_id IS DISTINCT FROM p_studio_id
+       OR v_operation.actor_id IS DISTINCT FROM p_actor_id
+       OR v_operation.operation_type IS DISTINCT FROM p_operation_type
+       OR v_operation.caller_request_key IS DISTINCT FROM p_caller_request_key
+       OR v_operation.request_sha256 IS DISTINCT FROM p_request_sha256
+       OR v_operation.stripe_connected_account_id IS DISTINCT FROM p_stripe_connected_account_id
+       OR v_operation.connect_account_generation IS DISTINCT FROM p_connect_account_generation
+       OR v_operation.lease_owner IS DISTINCT FROM p_lease_owner THEN
+        RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='billing_provider_operation_identity_mismatch';
+    END IF;
+    IF v_operation.revision IS DISTINCT FROM p_expected_revision THEN
+        RAISE EXCEPTION USING ERRCODE='40001',MESSAGE='billing_provider_operation_stale_revision';
+    END IF;
+    IF v_operation.state<>'recovery_authorized'
+       OR v_operation.recovery_outcome<>'provider_succeeded_reconcile_only'
+       OR p_reconciliation_reason_code IS NULL
+       OR octet_length(p_reconciliation_reason_code) NOT BETWEEN 1 AND 128 THEN
+        RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='billing_provider_operation_recovery_reconciliation_invalid';
+    END IF;
+    UPDATE public.billing_provider_operations
+    SET state='reconciliation_required',
+        reconciliation_reason_code=p_reconciliation_reason_code,
+        reconciliation_required_at=v_now,lease_owner=NULL,lease_acquired_at=NULL,
+        lease_expires_at=NULL,revision=revision+1,updated_at=v_now
+    WHERE id=v_operation.id RETURNING * INTO v_operation;
+    RETURN private.billing_provider_operation_json_v1(v_operation,'reconciliation_required');
+END;
+$$;
+ALTER FUNCTION public.mark_billing_provider_recovery_reconciliation_v2(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,UUID,BIGINT,TEXT
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.mark_billing_provider_recovery_reconciliation_v2(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,UUID,BIGINT,TEXT
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.mark_billing_provider_recovery_reconciliation_v2(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,UUID,BIGINT,TEXT
+) TO service_role;
+
+CREATE FUNCTION public.reject_billing_provider_recovery_source_drift_v2(
+    p_operation_id UUID,p_studio_id UUID,p_actor_id UUID,p_operation_type TEXT,
+    p_caller_request_key TEXT,p_request_sha256 TEXT,
+    p_stripe_connected_account_id TEXT,p_connect_account_generation INTEGER,
+    p_lease_owner UUID,p_expected_revision BIGINT,p_error_code TEXT
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_now TIMESTAMPTZ:=clock_timestamp();
+BEGIN
+    SELECT * INTO v_operation FROM public.billing_provider_operations
+    WHERE id=p_operation_id FOR UPDATE;
+    IF v_operation.id IS NULL
+       OR v_operation.studio_id IS DISTINCT FROM p_studio_id
+       OR v_operation.actor_id IS DISTINCT FROM p_actor_id
+       OR v_operation.operation_type IS DISTINCT FROM p_operation_type
+       OR v_operation.caller_request_key IS DISTINCT FROM p_caller_request_key
+       OR v_operation.request_sha256 IS DISTINCT FROM p_request_sha256
+       OR v_operation.stripe_connected_account_id IS DISTINCT FROM p_stripe_connected_account_id
+       OR v_operation.connect_account_generation IS DISTINCT FROM p_connect_account_generation
+       OR v_operation.lease_owner IS DISTINCT FROM p_lease_owner THEN
+        RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='billing_provider_operation_identity_mismatch';
+    END IF;
+    IF v_operation.revision IS DISTINCT FROM p_expected_revision THEN
+        RAISE EXCEPTION USING ERRCODE='40001',MESSAGE='billing_provider_operation_stale_revision';
+    END IF;
+    IF v_operation.state<>'recovery_authorized'
+       OR (p_operation_type,p_error_code) NOT IN(
+            ('plan.sync','plan_sync_recovery_source_drift'),
+            ('payer.sync','payer_sync_recovery_source_drift'),
+            ('payment.refund','payment_refund_recovery_source_drift')
+       ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='billing_provider_operation_recovery_source_drift_invalid';
+    END IF;
+    UPDATE public.billing_provider_operations
+    SET state='definitive_rejected',error_code=p_error_code,
+        definitive_rejected_at=v_now,lease_owner=NULL,lease_acquired_at=NULL,
+        lease_expires_at=NULL,revision=revision+1,updated_at=v_now
+    WHERE id=v_operation.id RETURNING * INTO v_operation;
+    RETURN private.billing_provider_operation_json_v1(v_operation,'definitive_rejected');
+END;
+$$;
+ALTER FUNCTION public.reject_billing_provider_recovery_source_drift_v2(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,UUID,BIGINT,TEXT
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.reject_billing_provider_recovery_source_drift_v2(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,UUID,BIGINT,TEXT
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.reject_billing_provider_recovery_source_drift_v2(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,UUID,BIGINT,TEXT
 ) TO service_role;
 
 CREATE FUNCTION public.reserve_billing_autopay_activation_v31(
@@ -4733,12 +5078,15 @@ BEGIN
             ('public.claim_billing_provider_operation_resource_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, true, 'search_path=""'),
             ('public.claim_billing_provider_operation_resource_v30(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
             ('public.claim_due_billing_enrollment_transitions_v1(uuid,integer,integer)', true, true, 'search_path=""'),
+            ('public.authorize_billing_provider_operation_recovery_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,text,text,text,uuid,integer,bigint)', true, true, 'search_path=""'),
             ('public.complete_billing_provider_operation_provider_phase_v31(uuid,uuid,uuid,text,text,text,text,integer,text,integer,bigint,uuid)', true, true, 'search_path=""'),
             ('public.complete_due_billing_enrollment_item_transition_v31(uuid,uuid,uuid,bigint,text,jsonb)', true, true, 'search_path=""'),
             ('public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text)', true, true, 'search_path=""'),
             ('public.finalize_billing_payer_setup_projection_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer)', true, true, 'search_path=""'),
+            ('public.mark_billing_provider_recovery_reconciliation_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text)', true, true, 'search_path=""'),
             ('public.read_billing_enrollment_item_schedule_identity_v31(uuid,uuid)', true, true, 'search_path=""'),
             ('public.reject_billing_payer_setup_without_provider_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,bigint,bigint)', true, true, 'search_path=""'),
+            ('public.reject_billing_provider_recovery_source_drift_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text)', true, true, 'search_path=""'),
             ('public.reject_billing_autopay_activation_without_provider_v31(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,text,text,bigint)', true, true, 'search_path=""'),
             ('public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,text,numeric)', true, true, 'search_path=""'),
             ('public.revoke_billing_enrollment_transition_v1(uuid,uuid,uuid,bigint,text,text,text,uuid,integer)', true, true, 'search_path=""'),
@@ -5171,7 +5519,7 @@ INSERT INTO private.koaryu_release_v31_expectations(
     expectation_key, expected_sha256
 ) VALUES (
     'operational_contract_v31',
-    '58fe9579f8b5fc7ec7c1bcc62ae681e1d42e1fa0dc2b5618992ad4b402c3d72c'
+    'f5500e1bc303ed77564dc5d77dddccfcc7f42cf8f2716afcb0d62d372e63f197'
 );
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v12()
@@ -5244,7 +5592,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       <> '0:87eb5a6ad0f3c4316f1a743132b48b22605c7fce3f630f6c40aa11576b1ef98e' THEN
+       <> '0:13d573e2bf03109923f5bb72b7a578c02908761732e3c906aba2c3c52011e700' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     IF private.koaryu_release_schedule_window_manifest_v1()
@@ -5464,7 +5812,7 @@ BEGIN
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_resource_ownership_manifest_v31()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> '306134e387999e4b738d14ca38df2d730d5b021d1310ded0b5a3c14530643216' THEN
+       <> '76661107eafe92cedb39e5312cbdcde9e7a3d1f734917fc3c3389a93427c633d' THEN
         v_failures:=array_append(v_failures,'resource_ownership_manifest_v31_function');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -5552,7 +5900,7 @@ BEGIN
         );
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       <> 'b77405d712b62a33f64caf5b05088caf397e570f8d0f3880eb02b993fa675457' THEN
+       <> '0954794f138ec5f9257f93183a7cc67d8116359a9ae6dd1222ddc24c763d2614' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(

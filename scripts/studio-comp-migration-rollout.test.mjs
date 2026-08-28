@@ -708,8 +708,11 @@ describe("studio-comp migration rollout guard", () => {
     assert.match(WRITER_RETURN_CONTRACT_STATE_SQL, /TABLE\(student_id uuid, guardian_imported boolean\)/);
   });
 
-  it("includes every final V31 activation and schedule-identity RPC in the raw catalog", () => {
+  it("includes every final V31 recovery, activation, and schedule-identity RPC in the raw catalog", () => {
     const requiredRows = [
+      "('public.authorize_billing_provider_operation_recovery_v2(uuid, uuid, uuid, text, text, text, text, integer, uuid, text, text, text, uuid, integer, bigint)', 'search_path=\"\"', true, true)",
+      "('public.mark_billing_provider_recovery_reconciliation_v2(uuid, uuid, uuid, text, text, text, text, integer, uuid, bigint, text)', 'search_path=\"\"', true, true)",
+      "('public.reject_billing_provider_recovery_source_drift_v2(uuid, uuid, uuid, text, text, text, text, integer, uuid, bigint, text)', 'search_path=\"\"', true, true)",
       "('public.read_billing_enrollment_item_schedule_identity_v31(uuid, uuid)', 'search_path=\"\"', true, true)",
       "('public.reject_billing_autopay_activation_without_provider_v31(uuid, uuid, uuid, uuid, uuid, uuid, text, text, text, integer, uuid, text, text, bigint)', 'search_path=\"\"', true, true)",
       "('public.reserve_billing_autopay_activation_v31(uuid, uuid, uuid, uuid, uuid, text, integer, text, text, numeric)', 'search_path=\"\"', true, true)",
@@ -720,11 +723,11 @@ describe("studio-comp migration rollout guard", () => {
     }
     assert.match(
       EXPECTED_V31_CATALOG_STATE,
-      /functions=106:2410b2433b85f0c5a573e6218e89900de5e258d6f0f3b333d35307f00c68ae41:0/,
+      /functions=109:3cbd5087fed1b1a6d3452c82ab9947486df8f40b82dd290d4c1f032e098358d5:0/,
     );
     assert.match(
       EXPECTED_V31_RESTORED_CATALOG_STATE,
-      /functions=106:2410b2433b85f0c5a573e6218e89900de5e258d6f0f3b333d35307f00c68ae41:0/,
+      /functions=109:3cbd5087fed1b1a6d3452c82ab9947486df8f40b82dd290d4c1f032e098358d5:0/,
     );
   });
 

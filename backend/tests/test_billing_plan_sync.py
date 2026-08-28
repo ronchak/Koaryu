@@ -3,12 +3,17 @@ from __future__ import annotations
 import asyncio
 import hashlib
 
+import pytest
 from fastapi import HTTPException
 
 from app.schemas.billing import BillingPlanCreate, BillingPlanUpdate
 from app.services.billing_plan_sync import BillingPlanSyncWorkflow
 from app.services.billing_plans import BillingPlanManager
-from app.services.billing_provider_operations import billing_provider_step_plan_sha256
+from app.services.billing_provider_operations import (
+    BillingProviderOperationContext,
+    BillingProviderOperationCoordinator,
+    billing_provider_step_plan_sha256,
+)
 from app.services.platform_billing_helpers import build_idempotency_key
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
@@ -96,20 +101,32 @@ class _Stripe:
     created_products = []
     updated_products = []
     created_prices = []
+    retrieved_products = []
+    update_error = None
+    product_response = None
 
     @classmethod
     def reset(cls):
         cls.created_products = []
         cls.updated_products = []
         cls.created_prices = []
+        cls.retrieved_products = []
+        cls.update_error = None
+        cls.product_response = None
 
     def create_connected_product(self, **payload):
         self.__class__.created_products.append(payload)
         return {"id": "prod_created"}
 
     def update_connected_product(self, **payload):
-        self.__class__.updated_products.append(payload)
+        self.__class__.updated_products.append(dict(payload))
+        if self.__class__.update_error:
+            raise self.__class__.update_error
         return {"id": payload["product_id"]}
+
+    def retrieve_connected_product(self, **payload):
+        self.__class__.retrieved_products.append(dict(payload))
+        return self.__class__.product_response
 
     def create_connected_price(self, **payload):
         self.__class__.created_prices.append(payload)
@@ -520,6 +537,205 @@ class TestBillingPlanSync:
         parent = next(iter(facade.supabase.billing_provider_operations.values()))
         assert parent["state"] == "reconciliation_required"
 
+    def test_plan_projection_commit_then_lost_response_converges_and_replays(self):
+        plan = _plan()
+        facade = _Facade(_tables(plan))
+        lost = {"pending": True}
+
+        def commit_then_lose_response(query, _rows):
+            if (
+                lost["pending"]
+                and query.name == "billing_plans"
+                and (query.update_payload or {}).get("stripe_price_id")
+            ):
+                lost["pending"] = False
+                plan.update(query.update_payload)
+                raise RuntimeError("plan projection response lost")
+            return None
+
+        facade.supabase.on_update_query = commit_then_lose_response
+        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+
+        completed = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "plan-update-lost"
+        ))
+        replay = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "plan-update-lost"
+        ))
+
+        assert completed.status == "active"
+        assert replay.stripe_price_id == completed.stripe_price_id == "price_1"
+        assert len(facade.supabase.tables["billing_plan_prices"]) == 1
+        assert facade.supabase.tables["billing_plan_prices"][0]["metadata"][
+            "provider_operation_id"
+        ]
+        assert len(facade.supabase.tables["audit_logs"]) == 1
+        parent = next(iter(facade.supabase.billing_provider_operations.values()))
+        assert parent["state"] == "completed"
+        assert len(_Stripe.created_products) == 1
+        assert len(_Stripe.created_prices) == 1
+
+    def test_price_insert_commit_then_lost_response_recovers_owned_row(self):
+        facade = _Facade(_tables())
+        lost = {"pending": True}
+
+        def commit_price_then_lose_response(name, payloads, rows):
+            if name == "billing_plan_prices" and lost["pending"]:
+                lost["pending"] = False
+                rows.append({
+                    "id": "price_projection_lost",
+                    "created_at": "2026-08-27T00:00:00Z",
+                    **payloads[0],
+                })
+                raise RuntimeError("price projection response lost")
+
+        facade.supabase.before_insert = commit_price_then_lose_response
+        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+
+        completed = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "price-insert-lost"
+        ))
+        replay = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "price-insert-lost"
+        ))
+
+        prices = facade.supabase.tables["billing_plan_prices"]
+        assert completed.status == "active"
+        assert replay.stripe_price_id == completed.stripe_price_id == "price_1"
+        assert [price["id"] for price in prices] == ["price_projection_lost"]
+        parent = next(iter(facade.supabase.billing_provider_operations.values()))
+        assert prices[0]["metadata"] == {
+            "connect_account_generation": 1,
+            "provider_operation_id": parent["id"],
+        }
+        assert parent["state"] == "completed"
+        assert len(facade.supabase.tables["audit_logs"]) == 1
+
+    def test_archive_committing_during_two_step_sync_wins_projection_cas(self):
+        plan = _plan()
+        tables = _tables(plan)
+        preexisting_price = _price_row(
+            id="price_preexisting",
+            stripe_product_id="prod_preexisting",
+            stripe_price_id="price_preexisting",
+            active=False,
+        )
+        tables["billing_plan_prices"].append(preexisting_price)
+        facade = _Facade(tables)
+
+        def archive_before_projection(_rows):
+            plan["status"] = "archived"
+            plan["archived_at"] = "2026-08-27T01:00:00Z"
+
+        facade.supabase.before_update = archive_before_projection
+
+        with pytest.raises(HTTPException) as failed:
+            asyncio.run(BillingPlanManager(
+                facade,
+                stripe_service_cls=_Stripe,
+            ).sync_plan("plan_1", "studio_1", "actor_1", "archive-race"))
+
+        assert failed.value.status_code == 503
+        assert plan["status"] == "archived"
+        assert plan["archived_at"] == "2026-08-27T01:00:00Z"
+        assert plan["stripe_account_id"] is None
+        assert plan["stripe_product_id"] is None
+        assert plan["stripe_price_id"] is None
+        assert len(_Stripe.created_products) == 1
+        assert len(_Stripe.created_prices) == 1
+        parent = next(iter(facade.supabase.billing_provider_operations.values()))
+        assert parent["state"] == "reconciliation_required"
+        assert parent["reconciliation_reason_code"] == "plan_sync_local_projection_failed"
+        assert facade.supabase.tables["audit_logs"] == []
+        assert facade.supabase.tables["billing_plan_prices"] == [preexisting_price]
+
+    def test_conclusive_cas_miss_never_deletes_price_owned_by_other_operation(self):
+        plan = _plan()
+        other_owned_price = _price_row(
+            id="price_owned_elsewhere",
+            stripe_product_id="prod_created",
+            stripe_price_id="price_1",
+            metadata={
+                "connect_account_generation": 1,
+                "provider_operation_id": "other_operation",
+            },
+        )
+        facade = _Facade(_tables(plan))
+        price_reads = {"count": 0}
+
+        def expose_other_owned_price_after_provider(_columns):
+            price_reads["count"] += 1
+            if price_reads["count"] == 2:
+                facade.supabase.tables["billing_plan_prices"].append(
+                    other_owned_price
+                )
+
+        facade.supabase.select_assertions["billing_plan_prices"] = (
+            expose_other_owned_price_after_provider
+        )
+
+        def archive_before_projection(_rows):
+            plan["status"] = "archived"
+            plan["archived_at"] = "2026-08-27T02:00:00Z"
+
+        facade.supabase.before_update = archive_before_projection
+
+        with pytest.raises(HTTPException) as failed:
+            asyncio.run(BillingPlanManager(
+                facade,
+                stripe_service_cls=_Stripe,
+            ).sync_plan("plan_1", "studio_1", "actor_1", "other-owned-price"))
+
+        assert failed.value.status_code == 503
+        assert plan["status"] == "archived"
+        assert facade.supabase.tables["billing_plan_prices"] == [other_owned_price]
+        assert not any(
+            query["delete"]
+            for query in facade.supabase.query_log
+            if query["table"] == "billing_plan_prices"
+        )
+        parent = next(iter(facade.supabase.billing_provider_operations.values()))
+        assert parent["state"] == "reconciliation_required"
+
+    def test_amount_interval_edit_during_product_sync_wins_projection_cas(self):
+        plan = _plan(
+            status="active",
+            stripe_account_id="acct_1",
+            stripe_product_id="prod_existing",
+            stripe_price_id="price_existing",
+            stripe_price_lookup_key="koaryu_studio_1_plan_1_v1",
+        )
+        tables = _tables(plan)
+        tables["billing_plan_prices"].append(_price_row())
+        facade = _Facade(tables)
+
+        def edit_before_projection(_rows):
+            plan["amount_cents"] = 18000
+            plan["billing_interval"] = "annual"
+            plan["status"] = "pending"
+
+        facade.supabase.before_update = edit_before_projection
+
+        with pytest.raises(HTTPException) as failed:
+            asyncio.run(BillingPlanManager(
+                facade,
+                stripe_service_cls=_Stripe,
+            ).sync_plan("plan_1", "studio_1", "actor_1", "terms-race"))
+
+        assert failed.value.status_code == 503
+        assert plan["amount_cents"] == 18000
+        assert plan["billing_interval"] == "annual"
+        assert plan["status"] == "pending"
+        assert plan["stripe_product_id"] == "prod_existing"
+        assert plan["stripe_price_id"] == "price_existing"
+        assert len(_Stripe.updated_products) == 1
+        assert _Stripe.created_products == []
+        assert _Stripe.created_prices == []
+        parent = next(iter(facade.supabase.billing_provider_operations.values()))
+        assert parent["state"] == "reconciliation_required"
+        assert parent["reconciliation_reason_code"] == "plan_sync_local_projection_failed"
+        assert facade.supabase.tables["audit_logs"] == []
+
     def test_different_key_same_desired_plan_collapses_and_old_key_replays(self):
         facade = _Facade(_tables())
         manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
@@ -642,3 +858,121 @@ class TestBillingPlanSync:
         assert billing_provider_step_plan_sha256(steps) == hashlib.sha256(
             postgres_text.encode("utf-8")
         ).hexdigest()
+
+    def _product_update_recovery(self, outcome, recovered_id=None):
+        plan = _plan(
+            status="active",
+            stripe_account_id="acct_1",
+            stripe_product_id="prod_existing",
+            stripe_price_id="price_existing",
+        )
+        facade = _Facade(_tables(plan))
+        facade.supabase.tables["billing_plan_prices"] = [_price_row()]
+        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        _Stripe.update_error = RuntimeError("lost update response")
+        with pytest.raises(HTTPException):
+            asyncio.run(manager.sync_plan(
+                "plan_1", "studio_1", "actor_1", "plan-recovery-key"
+            ))
+        operation = next(iter(facade.supabase.billing_provider_operations.values()))
+        context = BillingProviderOperationContext(
+            operation["id"], "studio_1", "actor_1", "plan.sync",
+            operation["caller_request_key"], operation["request_sha256"],
+            "acct_1", 1, str(operation["lease_owner"]),
+        )
+        BillingProviderOperationCoordinator(facade.supabase).authorize_recovery_v2(
+            context,
+            operation,
+            recovery_actor_id="00000000-0000-4000-8000-000000000201",
+            recovery_proof_sha256="a" * 64,
+            recovery_outcome=outcome,
+            recovered_provider_object_id=recovered_id,
+            lease_owner="00000000-0000-4000-8000-000000000101",
+        )
+        return facade, manager, operation, plan
+
+    def test_product_update_safe_retry_reuses_exact_payload_and_key(self):
+        facade, manager, operation, _plan_row = self._product_update_recovery(
+            "provider_no_object_safe_to_retry"
+        )
+        first_payload = dict(_Stripe.updated_products[0])
+        _Stripe.update_error = None
+        result = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "plan-recovery-key"
+        ))
+        assert result.status == "active"
+        assert _Stripe.updated_products == [first_payload, first_payload]
+        assert operation["provider_request_attempt_count"] == 2
+        assert operation["state"] == "completed"
+        asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "plan-recovery-key"
+        ))
+        assert len(_Stripe.updated_products) == 2
+        assert len(facade.supabase.billing_provider_operations) == 1
+        assert len(facade.supabase.billing_provider_operation_resources) == 1
+        assert len(facade.supabase.billing_provider_operation_aliases) == 1
+
+    def test_product_update_safe_retry_rejects_provider_id_drift_before_stripe(self):
+        facade, manager, operation, plan = self._product_update_recovery(
+            "provider_no_object_safe_to_retry"
+        )
+        plan["stripe_product_id"] = "prod_drifted"
+        _Stripe.update_error = None
+        with pytest.raises(HTTPException):
+            asyncio.run(manager.sync_plan(
+                "plan_1", "studio_1", "actor_1", "plan-recovery-key"
+            ))
+        assert len(_Stripe.updated_products) == 1
+        assert operation["state"] == "definitive_rejected"
+        assert operation["error_code"] == "plan_sync_recovery_source_drift"
+
+    def test_product_update_reconcile_only_gets_without_second_mutation(self):
+        facade, manager, operation, plan = self._product_update_recovery(
+            "provider_succeeded_reconcile_only", "prod_existing"
+        )
+        _Stripe.update_error = None
+        _Stripe.product_response = {
+            "id": "prod_existing",
+            "name": plan["name"],
+            "description": plan["description"],
+            "metadata": BillingPlanSyncWorkflow(
+                facade, stripe_service_cls=_Stripe
+            )._product_metadata(plan),
+        }
+        result = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "plan-recovery-key"
+        ))
+        assert result.status == "active"
+        assert len(_Stripe.updated_products) == 1
+        assert _Stripe.retrieved_products == [{
+            "account_id": "acct_1", "product_id": "prod_existing"
+        }]
+        assert operation["provider_request_attempt_count"] == 1
+        assert operation["state"] == "completed"
+
+    @pytest.mark.parametrize("mismatch", ["id", "name", "metadata"])
+    def test_product_reconcile_only_mismatch_returns_to_reconciliation(self, mismatch):
+        facade, manager, operation, plan = self._product_update_recovery(
+            "provider_succeeded_reconcile_only", "prod_existing"
+        )
+        response = {
+            "id": "prod_existing", "name": plan["name"],
+            "description": plan["description"],
+            "metadata": BillingPlanSyncWorkflow(
+                facade, stripe_service_cls=_Stripe
+            )._product_metadata(plan),
+        }
+        if mismatch == "id":
+            response["id"] = "prod_wrong"
+        elif mismatch == "name":
+            response["name"] = "Wrong"
+        else:
+            response["metadata"] = {"studio_id": "wrong"}
+        _Stripe.product_response = response
+        with pytest.raises(HTTPException):
+            asyncio.run(manager.sync_plan(
+                "plan_1", "studio_1", "actor_1", "plan-recovery-key"
+            ))
+        assert len(_Stripe.updated_products) == 1
+        assert operation["state"] == "reconciliation_required"
+        assert facade.supabase.tables["audit_logs"] == []

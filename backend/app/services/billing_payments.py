@@ -18,7 +18,7 @@ from app.schemas.billing import (
     ExportJobResponse,
     ExternalPaymentCreate,
 )
-from app.services.billing_invoice_projection import _stripe_id
+from app.services.billing_invoice_projection import _object_get, _stripe_id
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
@@ -397,6 +397,8 @@ class BillingPaymentManager:
             lease_owner=lease_owner,
         )
         operation = claimed["operation"]
+        disposition = provider_operation_disposition(claimed)
+        recovery = disposition in {"recovery_safe_retry", "recovery_reconcile_only"}
         context = BillingProviderOperationContext(
             operation_id=str(operation["id"]),
             studio_id=studio_id,
@@ -406,9 +408,8 @@ class BillingPaymentManager:
             request_sha256=str(operation["request_sha256"]),
             stripe_connected_account_id=account_id,
             connect_account_generation=generation,
-            lease_owner=lease_owner,
+            lease_owner=str(operation["lease_owner"]) if recovery else lease_owner,
         )
-        disposition = provider_operation_disposition(claimed)
         if disposition == "replay":
             try:
                 amount = self._refund_operation_amount(operation, data.amount_cents)
@@ -487,8 +488,12 @@ class BillingPaymentManager:
                 - int(payment.get("disputed_amount_cents") or 0)
             ),
         )
-        amount = data.amount_cents or refundable_remaining
-        if amount < 1:
+        amount = (
+            self._refund_operation_amount(operation, data.amount_cents)
+            if recovery
+            else (data.amount_cents or refundable_remaining)
+        )
+        if not recovery and amount < 1:
             coordinator.transition(
                 context,
                 operation,
@@ -496,7 +501,7 @@ class BillingPaymentManager:
                 error_code="payment_refund_no_balance",
             )
             raise HTTPException(status_code=409, detail="This payment has no refundable balance.")
-        if amount > refundable_remaining:
+        if not recovery and amount > refundable_remaining:
             coordinator.transition(
                 context,
                 operation,
@@ -507,55 +512,32 @@ class BillingPaymentManager:
                 status_code=409,
                 detail="Refund amount exceeds the remaining refundable payment balance.",
             )
-        operation = coordinator.transition(
-            context,
-            operation,
-            "provider_request_in_flight",
-            result_code="payment_refund_started",
-            result_summary=f"amount_cents:{amount}",
-        )
-        try:
-            refund = self.stripe_service_cls().create_connected_refund(
-                account_id=account_id,
-                studio_id=studio_id,
-                charge_id=payment["stripe_charge_id"],
-                amount=amount,
-                reason=data.reason,
-                refund_application_fee=True,
-                metadata={
-                    "studio_id": studio_id,
-                    "payment_id": payment_id,
-                    "product": "koaryu_payments",
-                },
-                idempotency_key=self._idempotency_key("payment-refund", context.operation_id),
-            )
-        except StripeMutationBlocked:
-            coordinator.transition(
-                context,
-                operation,
-                "definitive_rejected",
-                error_code="provider_mutation_blocked",
-            )
-            raise
-        except Exception as exc:
-            self._mark_refund_reconciliation(
-                coordinator,
-                context,
-                operation,
-                "payment_refund_provider_outcome_ambiguous",
-                exc,
-            )
-        refund_id = _stripe_id(refund)
-        provider_status = self._safe_refund_status(refund)
-        if not refund_id:
-            self._mark_refund_reconciliation(
-                coordinator,
-                context,
-                operation,
-                "payment_refund_provider_identity_ambiguous",
-                RuntimeError("payment_refund_provider_identity_ambiguous"),
-            )
-        try:
+        stripe_service = self.stripe_service_cls()
+        if disposition == "recovery_reconcile_only":
+            refund_id = str(operation.get("provider_object_id") or "")
+            try:
+                refund = stripe_service.retrieve_connected_refund(
+                    account_id=account_id,
+                    refund_id=refund_id,
+                )
+                self._verify_recovered_refund(
+                    refund,
+                    refund_id=refund_id,
+                    payment=payment,
+                    studio_id=studio_id,
+                    payment_id=payment_id,
+                    amount=amount,
+                    reason=data.reason,
+                )
+            except Exception as exc:
+                self._mark_refund_reconciliation(
+                    coordinator,
+                    context,
+                    operation,
+                    "payment_refund_recovered_object_mismatch",
+                    exc,
+                )
+            provider_status = self._safe_refund_status(refund)
             operation = coordinator.transition(
                 context,
                 operation,
@@ -564,14 +546,76 @@ class BillingPaymentManager:
                 result_code=f"payment_refund_status_{provider_status}",
                 result_summary=f"amount_cents:{amount}",
             )
-        except Exception as exc:
-            self._mark_refund_reconciliation(
-                coordinator,
+            if disposition == "recovery_safe_retry" and int(
+                operation.get("provider_request_attempt_count") or 0
+            ) != 2:
+                raise HTTPException(status_code=503, detail=REFUND_AMBIGUOUS_DETAIL)
+        else:
+            operation = coordinator.transition(
                 context,
                 operation,
-                "payment_refund_provider_result_not_recorded",
-                exc,
+                "provider_request_in_flight",
+                result_code="payment_refund_started",
+                result_summary=f"amount_cents:{amount}",
             )
+            try:
+                refund = stripe_service.create_connected_refund(
+                    account_id=account_id,
+                    studio_id=studio_id,
+                    charge_id=payment["stripe_charge_id"],
+                    amount=amount,
+                    reason=data.reason,
+                    refund_application_fee=True,
+                    metadata={
+                        "studio_id": studio_id,
+                        "payment_id": payment_id,
+                        "product": "koaryu_payments",
+                    },
+                    idempotency_key=self._idempotency_key("payment-refund", context.operation_id),
+                )
+            except StripeMutationBlocked:
+                coordinator.transition(
+                    context,
+                    operation,
+                    "definitive_rejected",
+                    error_code="provider_mutation_blocked",
+                )
+                raise
+            except Exception as exc:
+                self._mark_refund_reconciliation(
+                    coordinator,
+                    context,
+                    operation,
+                    "payment_refund_provider_outcome_ambiguous",
+                    exc,
+                )
+            refund_id = _stripe_id(refund)
+            provider_status = self._safe_refund_status(refund)
+            if not refund_id:
+                self._mark_refund_reconciliation(
+                    coordinator,
+                    context,
+                    operation,
+                    "payment_refund_provider_identity_ambiguous",
+                    RuntimeError("payment_refund_provider_identity_ambiguous"),
+                )
+            try:
+                operation = coordinator.transition(
+                    context,
+                    operation,
+                    "provider_succeeded",
+                    provider_object_id=refund_id,
+                    result_code=f"payment_refund_status_{provider_status}",
+                    result_summary=f"amount_cents:{amount}",
+                )
+            except Exception as exc:
+                self._mark_refund_reconciliation(
+                    coordinator,
+                    context,
+                    operation,
+                    "payment_refund_provider_result_not_recorded",
+                    exc,
+                )
         try:
             row = self._project_refund(refund, account_id)
             self._verify_refund_projection(
@@ -609,6 +653,32 @@ class BillingPaymentManager:
             "operation_id": context.operation_id,
         })
         return BillingRefundResponse(**row)
+
+    @staticmethod
+    def _verify_recovered_refund(
+        refund: Any,
+        *,
+        refund_id: str,
+        payment: dict[str, Any],
+        studio_id: str,
+        payment_id: str,
+        amount: int,
+        reason: str | None,
+    ) -> None:
+        metadata = _object_get(refund, "metadata") or {}
+        if (
+            _stripe_id(refund) != refund_id
+            or _stripe_id(_object_get(refund, "charge"))
+            != str(payment.get("stripe_charge_id") or "")
+            or int(_object_get(refund, "amount") or 0) != amount
+            or (_object_get(refund, "reason") or None) != reason
+            or dict(metadata) != {
+                "studio_id": studio_id,
+                "payment_id": payment_id,
+                "product": "koaryu_payments",
+            }
+        ):
+            raise RuntimeError("payment_refund_recovered_object_mismatch")
 
     def _exact_payment_account_generation(
         self,
@@ -783,12 +853,19 @@ class BillingPaymentManager:
         exc: Exception,
     ) -> None:
         try:
-            coordinator.transition(
-                context,
-                operation,
-                "reconciliation_required",
-                reconciliation_reason_code=reason_code,
-            )
+            if operation.get("state") == "recovery_authorized":
+                coordinator.mark_recovery_reconciliation_v2(
+                    context,
+                    operation,
+                    reconciliation_reason_code=reason_code,
+                )
+            else:
+                coordinator.transition(
+                    context,
+                    operation,
+                    "reconciliation_required",
+                    reconciliation_reason_code=reason_code,
+                )
         except Exception:
             pass
         raise HTTPException(status_code=503, detail=REFUND_AMBIGUOUS_DETAIL) from exc
