@@ -183,15 +183,15 @@ DECLARE
 BEGIN
   v_first:=public.reserve_billing_autopay_activation_v31(
     '$studio_id','$admin_id','$enrollment_id','$payer_id','$plan_id',
-    '$account_id',1,'koaryu-autopay-v1',0.5
+    '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
   );
   v_group_id:=(v_first->'subscription'->>'id')::UUID;
   v_replay:=public.reserve_billing_autopay_activation_v31(
     '$studio_id','$admin_id','$enrollment_id','$payer_id','$plan_id',
-    '$account_id',1,'koaryu-autopay-v1',0.5
+    '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
   );
   IF v_first->>'outcome'<>'created'
-     OR v_replay->>'outcome'<>'existing'
+     OR v_replay->>'outcome'<>'created'
      OR (v_replay->'subscription'->>'id')::UUID IS DISTINCT FROM v_group_id
      OR (SELECT count(*) FROM public.billing_subscriptions
          WHERE studio_id='$studio_id'::UUID AND payer_id='$payer_id'::UUID)<>1 THEN
@@ -219,7 +219,7 @@ BEGIN
   );
   v_result:=public.reserve_billing_autopay_activation_v31(
     '$studio_id','$admin_id','$enrollment_id','$payer_id','$plan_id',
-    '$account_id',1,'koaryu-autopay-v1',0.5
+    '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
   );
   IF v_result->>'outcome'<>'existing'
      OR (v_result->'subscription'->>'id')::UUID IS DISTINCT FROM v_group_id
@@ -262,7 +262,7 @@ BEGIN
     BEGIN
       PERFORM public.reserve_billing_autopay_activation_v31(
         '$studio_id','$admin_id','$enrollment_id','$payer_id','$plan_id',
-        '$account_id',1,'koaryu-autopay-v1',0.5
+        '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
       );
       RAISE EXCEPTION 'Malformed group metadata was accepted: %',v_metadata;
     EXCEPTION WHEN SQLSTATE '55000' THEN
@@ -333,7 +333,7 @@ reservation_wait_outcome="$("$psql_bin" "${psql_args[@]}" --tuples-only --no-ali
 SET statement_timeout='6s';
 SELECT public.reserve_billing_autopay_activation_v31(
   '$studio_id','$admin_id','$enrollment_id','$payer_id','$plan_id',
-  '$account_id',1,'koaryu-autopay-v1',0.5
+  '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
 )->>'outcome';
 SQL
 )"
@@ -346,7 +346,7 @@ grep -q '^claimed$' "$transition_first_log"
 BEGIN;
 SELECT public.reserve_billing_autopay_activation_v31(
   '$studio_id','$admin_id','$enrollment_id','$payer_id','$plan_id',
-  '$account_id',1,'koaryu-autopay-v1',0.5
+  '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
 )->>'outcome';
 SELECT pg_advisory_xact_lock(980100004);
 SELECT pg_sleep(1);
@@ -469,7 +469,7 @@ SELECT (result->>'outcome')||':'||(result->'subscription'->>'id')
 FROM (
   SELECT public.reserve_billing_autopay_activation_v31(
     '$studio_id','$admin_id','$sibling_enrollment_id','$payer_id','$plan_id',
-    '$account_id',1,'koaryu-autopay-v1',0.5
+    '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
   ) AS result
 ) AS reservation;
 SQL
@@ -488,7 +488,7 @@ SELECT (result->>'outcome')||':'||(result->'subscription'->>'id')
 FROM (
   SELECT public.reserve_billing_autopay_activation_v31(
     '$studio_id','$admin_id','$sibling_enrollment_id','$payer_id','$plan_id',
-    '$account_id',1,'koaryu-autopay-v1',0.5
+    '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
   ) AS result
 ) AS reservation;
 SELECT pg_advisory_xact_lock(980100006);
@@ -601,7 +601,7 @@ SELECT (result->>'outcome')||':'||(result->'subscription'->>'id')
 FROM (
   SELECT public.reserve_billing_autopay_activation_v31(
     '$studio_id','$admin_id','$linked_enrollment_one_id','$payer_id','$plan_id',
-    '$account_id',1,'koaryu-autopay-v1',0.5
+    '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
   ) AS result
 ) AS reservation;
 COMMIT;
@@ -622,7 +622,7 @@ SELECT (result->>'outcome')||':'||(result->'subscription'->>'id')
 FROM (
   SELECT public.reserve_billing_autopay_activation_v31(
     '$studio_id','$admin_id','$linked_enrollment_two_id','$payer_id','$linked_plan_two_id',
-    '$account_id',1,'koaryu-autopay-v1',0.5
+    '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
   ) AS result
 ) AS reservation;
 SQL
@@ -641,7 +641,7 @@ SELECT (result->>'outcome')||':'||(result->'subscription'->>'id')
 FROM (
   SELECT public.reserve_billing_autopay_activation_v31(
     '$studio_id','$admin_id','$linked_enrollment_two_id','$payer_id','$linked_plan_two_id',
-    '$account_id',1,'koaryu-autopay-v1',0.5
+    '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
   ) AS result
 ) AS reservation;
 SELECT pg_advisory_xact_lock(980100008);
@@ -664,7 +664,7 @@ SELECT (result->>'outcome')||':'||(result->'subscription'->>'id')
 FROM (
   SELECT public.reserve_billing_autopay_activation_v31(
     '$studio_id','$admin_id','$linked_enrollment_one_id','$payer_id','$plan_id',
-    '$account_id',1,'koaryu-autopay-v1',0.5
+    '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
   ) AS result
 ) AS reservation;
 SQL
@@ -741,7 +741,7 @@ BEGIN
   BEGIN
     PERFORM public.reserve_billing_autopay_activation_v31(
       '$studio_id','$admin_id','$enrollment_id','$payer_id','$plan_id',
-      '$account_id',1,'koaryu-autopay-v1',0.5
+      '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
     );
     RAISE EXCEPTION 'Reservation accepted a phantom payer group.';
   EXCEPTION WHEN SQLSTATE '40001' THEN
@@ -921,7 +921,7 @@ WHERE id='$disable_phantom_group_id'::UUID
 BEGIN;
 SELECT public.reserve_billing_autopay_activation_v31(
   '$studio_id','$admin_id','$enrollment_id','$payer_id','$plan_id',
-  '$account_id',1,'koaryu-autopay-v1',0.5
+  '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
 )->>'outcome';
 SELECT pg_advisory_xact_lock(980100001);
 SELECT pg_sleep(1);
@@ -1008,7 +1008,7 @@ set +e
 SET statement_timeout='6s';
 SELECT public.reserve_billing_autopay_activation_v31(
   '$studio_id','$admin_id','$enrollment_id','$payer_id','$plan_id',
-  '$account_id',1,'koaryu-autopay-v1',0.5
+  '$account_id',1,repeat('f',64),'koaryu-autopay-v1',0.5
 );
 SQL
 activation_rc=$?

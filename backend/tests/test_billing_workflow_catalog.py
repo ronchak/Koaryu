@@ -178,11 +178,23 @@ def test_catalog_is_immutable_data_without_callable_provider_logic():
     assert all(not inspect.isroutine(value) for workflow in BILLING_WORKFLOWS for value in workflow.stripe_operations)
 
 
+def test_period_end_execute_declares_schedule_release_owned_by_due_worker():
+    execute = WORKFLOWS_BY_ROUTE["process_due_billing_enrollment_transitions"]
+
+    assert execute.workflow_id == "enrollment.cancel.period_end.execute"
+    assert execute.stripe_operations == (
+        "connected_subscription_item.delete",
+        "connected_subscription_item.update",
+        "connected_subscription_schedule.release",
+    )
+
+
 @pytest.mark.parametrize(
     "missing_operation",
     (
         "connected_subscription.update",
         "connected_subscription_schedule.create",
+        "connected_subscription_schedule.release",
         "connected_subscription_schedule.update",
     ),
 )

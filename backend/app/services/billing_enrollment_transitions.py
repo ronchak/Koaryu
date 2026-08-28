@@ -300,6 +300,11 @@ class BillingEnrollmentTransitionWorkflow:
                         )
                         if item_transitions is None:
                             continue
+                        provider = self._release_owned_item_schedule_after_due(
+                            intent,
+                            snapshot,
+                            provider,
+                        )
                         proof = self._provider_proof(snapshot, provider)
                         self.operations.complete_due_enrollment_item_transition(
                             intent_id=str(intent["id"]),
@@ -1682,6 +1687,104 @@ class BillingEnrollmentTransitionWorkflow:
             raise RuntimeError("enrollment_item_schedule_provider_item_count_drift")
         return transitions
 
+    def _release_owned_item_schedule_after_due(
+        self,
+        intent: dict[str, Any],
+        snapshot: dict[str, Any],
+        provider: Any,
+    ) -> Any:
+        schedule_identity = self._canonical_item_schedule_identity(intent)
+        canonical_schedule_id = schedule_identity["schedule_id"]
+        schedule_id = _stripe_id(_object_get(provider, "schedule"))
+        if not schedule_id:
+            released = self._find_released_item_schedule(
+                intent,
+                snapshot,
+                expected_schedule_id=canonical_schedule_id,
+            )
+            self._verify_item_schedule_owner(intent, released)
+            if str(_object_get(released, "status") or "") != "released":
+                raise RuntimeError("enrollment_item_schedule_due_release_unconfirmed")
+            snapshot["_released_schedule"] = released
+            return provider
+
+        if schedule_id != canonical_schedule_id:
+            raise RuntimeError("enrollment_item_schedule_due_identity_mismatch")
+
+        schedule = self.stripe_service_cls().retrieve_connected_subscription_schedule(
+            account_id=snapshot["account_id"],
+            schedule_id=schedule_id,
+        )
+        self._verify_item_schedule_due_phase(intent, snapshot, provider, schedule)
+        key = self.owner._idempotency_key(
+            "enrollment-transition",
+            str(intent["source_intent_id"]),
+            "boundary-schedule-release",
+        )
+        release_error: Exception | None = None
+        try:
+            released = self.stripe_service_cls().release_connected_subscription_schedule(
+                account_id=snapshot["account_id"],
+                studio_id=str(intent["studio_id"]),
+                schedule_id=schedule_id,
+                idempotency_key=key,
+            )
+        except Exception as exc:
+            release_error = exc
+            released = None
+
+        refreshed = self._retrieve_subscription(snapshot)
+        if _stripe_id(_object_get(refreshed, "schedule")):
+            if release_error is not None:
+                raise release_error
+            raise RuntimeError("enrollment_item_schedule_due_release_unconfirmed")
+        if released is None:
+            released = self._find_released_item_schedule(
+                intent,
+                snapshot,
+                expected_schedule_id=canonical_schedule_id,
+            )
+        self._verify_item_schedule_owner(intent, released)
+        if (
+            _stripe_id(released) != schedule_id
+            or str(_object_get(released, "status") or "") != "released"
+        ):
+            raise RuntimeError("enrollment_item_schedule_due_release_unconfirmed")
+        snapshot["_released_schedule"] = released
+        return refreshed
+
+    def _verify_item_schedule_due_phase(
+        self,
+        intent: dict[str, Any],
+        snapshot: dict[str, Any],
+        provider: Any,
+        schedule: Any,
+    ) -> None:
+        self._verify_item_schedule_owner(intent, schedule)
+        boundary = epoch_seconds(intent["period_boundary"])
+        phases = self._schedule_phases(schedule)
+        due_phases = [
+            phase
+            for phase in phases
+            if epoch_seconds(_object_get(phase, "start_date")) == boundary
+        ]
+        current_phase = _object_get(schedule, "current_phase") or {}
+        provider_items = list(
+            _object_get(_object_get(provider, "items") or {}, "data", []) or []
+        )
+        if (
+            boundary is None
+            or len(due_phases) != 1
+            or str(_object_get(schedule, "status") or "") != "active"
+            or str(_object_get(schedule, "end_behavior") or "") != "release"
+            or epoch_seconds(_object_get(current_phase, "start_date")) != boundary
+            or self._phase_item_signature(
+                list(_object_get(due_phases[0], "items") or [])
+            )
+            != self._phase_item_signature(provider_items)
+        ):
+            raise RuntimeError("enrollment_item_schedule_due_phase_mismatch")
+
     def _verify_item_schedule_revoke_before(
         self,
         snapshot: dict[str, Any],
@@ -1695,8 +1798,13 @@ class BillingEnrollmentTransitionWorkflow:
             provider,
             require_cancel_at_period_end=False,
         )
+        schedule_identity = self._canonical_item_schedule_identity(intent)
+        canonical_schedule_id = schedule_identity["schedule_id"]
+        snapshot["_canonical_schedule_id"] = canonical_schedule_id
         schedule_id = _stripe_id(_object_get(provider, "schedule"))
         if schedule_id:
+            if schedule_id != canonical_schedule_id:
+                raise RuntimeError("enrollment_item_schedule_owner_mismatch")
             schedule = self.stripe_service_cls().retrieve_connected_subscription_schedule(
                 account_id=snapshot["account_id"],
                 schedule_id=schedule_id,
@@ -1704,7 +1812,11 @@ class BillingEnrollmentTransitionWorkflow:
             self._verify_item_schedule_transition(intent, snapshot, schedule)
             snapshot["_attached_schedule_id"] = schedule_id
             return
-        released = self._find_released_item_schedule(intent, snapshot)
+        released = self._find_released_item_schedule(
+            intent,
+            snapshot,
+            expected_schedule_id=canonical_schedule_id,
+        )
         self._verify_item_schedule_owner(intent, released)
         if str(_object_get(released, "status") or "") != "released":
             raise RuntimeError("enrollment_item_schedule_release_state_mismatch")
@@ -1714,6 +1826,8 @@ class BillingEnrollmentTransitionWorkflow:
         self,
         intent: dict[str, Any],
         snapshot: dict[str, Any],
+        *,
+        expected_schedule_id: str,
     ) -> Any:
         listed = self.stripe_service_cls().list_connected_subscription_schedules(
             account_id=snapshot["account_id"],
@@ -1723,7 +1837,7 @@ class BillingEnrollmentTransitionWorkflow:
         candidates = []
         for schedule in list(_object_get(listed, "data", []) or []):
             metadata = _object_get(schedule, "metadata") or {}
-            if all(
+            if _stripe_id(schedule) == expected_schedule_id and all(
                 str(metadata.get(key) or "") == value
                 for key, value in self._item_schedule_metadata(intent).items()
             ):
@@ -1731,6 +1845,36 @@ class BillingEnrollmentTransitionWorkflow:
         if len(candidates) != 1:
             raise RuntimeError("enrollment_item_schedule_release_identity_ambiguous")
         return candidates[0]
+
+    def _canonical_item_schedule_identity(
+        self,
+        intent: dict[str, Any],
+    ) -> dict[str, str]:
+        identity = self.operations.read_enrollment_item_schedule_identity(
+            intent_id=str(intent["id"]),
+            studio_id=str(intent["studio_id"]),
+        )
+        expected_source_id = str(
+            intent["id"]
+            if intent.get("transition_kind") == "schedule_period_end"
+            else intent.get("source_intent_id") or ""
+        )
+        if (
+            set(identity) != {
+                "source_intent_id",
+                "provider_operation_id",
+                "schedule_id",
+            }
+            or str(identity.get("source_intent_id") or "") != expected_source_id
+            or not str(identity.get("provider_operation_id") or "")
+            or not str(identity.get("schedule_id") or "").startswith("sub_sched_")
+        ):
+            raise RuntimeError("enrollment_item_schedule_durable_identity_mismatch")
+        return {
+            "source_intent_id": expected_source_id,
+            "provider_operation_id": str(identity["provider_operation_id"]),
+            "schedule_id": str(identity["schedule_id"]),
+        }
 
     def _whole_subscription_due_readback_is_pending(
         self,
@@ -2012,7 +2156,15 @@ class BillingEnrollmentTransitionWorkflow:
                     raise RuntimeError("enrollment_item_schedule_release_readback_mismatch")
                 released = snapshot.get("_released_schedule")
                 if not released:
-                    released = self._find_released_item_schedule(intent, snapshot)
+                    canonical_schedule_id = str(
+                        snapshot.get("_canonical_schedule_id")
+                        or self._canonical_item_schedule_identity(intent)["schedule_id"]
+                    )
+                    released = self._find_released_item_schedule(
+                        intent,
+                        snapshot,
+                        expected_schedule_id=canonical_schedule_id,
+                    )
                 self._verify_item_schedule_owner(intent, released)
                 if str(_object_get(released, "status") or "") != "released":
                     raise RuntimeError("enrollment_item_schedule_release_state_mismatch")

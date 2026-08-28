@@ -429,7 +429,7 @@ def _draft_invoice(**overrides):
 def _create_data(amount: int = 5000):
     return BillingInvoiceCreate(
         payer_id="payer_1",
-        due_date="2026-09-15",
+        due_date="2099-09-15",
         items=[
             {"description": "Tuition", "amount_cents": amount, "quantity": 1},
             {"description": "Uniform", "amount_cents": 1200, "quantity": 2},
@@ -437,8 +437,12 @@ def _create_data(amount: int = 5000):
     )
 
 
-def _manager(facade: _Facade) -> BillingInvoiceManager:
-    return BillingInvoiceManager(facade, stripe_service_cls=_Stripe)
+def _manager(facade: _Facade, *, utc_today=None) -> BillingInvoiceManager:
+    return BillingInvoiceManager(
+        facade,
+        stripe_service_cls=_Stripe,
+        utc_today=utc_today,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -509,6 +513,86 @@ def test_create_requires_byte_bounded_key_and_exact_payer_generation():
     assert facade.supabase.billing_provider_operations == {}
     assert facade.customer_sync_calls == 0
     assert _Stripe.invoice_create_calls == []
+
+
+def test_create_rejects_malformed_due_date_before_local_or_provider_claim():
+    facade = _Facade()
+    manager = _manager(facade)
+    malformed = _create_data().model_copy(update={"due_date": "2026-99-99"})
+
+    with pytest.raises(HTTPException) as invalid:
+        manager.create_invoice_sync(
+            malformed, "studio_1", "actor_1", "invoice-invalid-date"
+        )
+
+    assert invalid.value.status_code == 400
+    assert "YYYY-MM-DD" in invalid.value.detail
+    assert facade.supabase.tables["billing_invoices"] == []
+    assert facade.supabase.tables["billing_invoice_items"] == []
+    assert facade.supabase.billing_provider_operations == {}
+    assert _Stripe.invoice_create_calls == []
+    assert _Stripe.item_create_calls == []
+
+    created = manager.create_invoice_sync(
+        _create_data(), "studio_1", "actor_1", "invoice-valid-date"
+    )
+
+    assert created.status == "draft"
+    assert len(facade.supabase.billing_provider_operations) == 1
+    assert len(_Stripe.invoice_create_calls) == 1
+    expected_due_date = int(datetime.combine(
+        date(2099, 9, 15),
+        time.min,
+        tzinfo=timezone.utc,
+    ).timestamp())
+    assert _Stripe.invoice_create_calls[0]["collection_method"] == "send_invoice"
+    assert _Stripe.invoice_create_calls[0]["due_date"] == expected_due_date
+
+
+def test_create_due_date_freshness_does_not_block_exact_replay_after_midnight():
+    facade = _Facade()
+    observed_today = {"value": date(2099, 9, 14)}
+    manager = _manager(
+        facade,
+        utc_today=lambda: observed_today["value"],
+    )
+    data = _create_data()
+
+    first = manager.create_invoice_sync(
+        data, "studio_1", "actor_1", "invoice-clock-crossing"
+    )
+    request_hash = facade.supabase.tables["billing_invoices"][0]["request_hash"]
+    observed_today["value"] = date(2099, 9, 16)
+    provider_counts = (
+        len(_Stripe.invoice_create_calls),
+        len(_Stripe.item_create_calls),
+    )
+
+    replay = manager.create_invoice_sync(
+        data, "studio_1", "actor_1", "invoice-clock-crossing"
+    )
+
+    assert replay.id == first.id
+    assert provider_counts == (
+        len(_Stripe.invoice_create_calls),
+        len(_Stripe.item_create_calls),
+    )
+    assert len(facade.supabase.tables["billing_invoices"]) == 1
+    assert facade.supabase.tables["billing_invoices"][0]["request_hash"] == request_hash
+
+    with pytest.raises(HTTPException) as stale:
+        manager.create_invoice_sync(
+            data, "studio_1", "actor_1", "invoice-now-past"
+        )
+
+    assert stale.value.status_code == 400
+    assert stale.value.detail == "Invoice due date must be a future date."
+    assert len(facade.supabase.tables["billing_invoices"]) == 1
+    assert len(facade.supabase.billing_provider_operations) == 1
+    assert provider_counts == (
+        len(_Stripe.invoice_create_calls),
+        len(_Stripe.item_create_calls),
+    )
 
 
 def test_create_registers_real_v28_evidence_and_replays_without_duplicates():

@@ -14,8 +14,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR_PATH = ROOT / "scripts" / "verify-stripe-provider-rehearsal.py"
 DEFAULT_WORKSHEET = ROOT / "docs" / "stripe-test-provider-rehearsal-capture.md"
-TEMPLATE_START = "<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V3_TEMPLATE:START -->"
-TEMPLATE_END = "<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V3_TEMPLATE:END -->"
+TEMPLATE_START = "<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V4_TEMPLATE:START -->"
+TEMPLATE_END = "<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V4_TEMPLATE:END -->"
 STUDIO = "<STUDIO_ID>"
 ACCOUNT = "<STRIPE_CONNECT_ACCOUNT_ID>"
 GENERATION = "<CONNECT_ACCOUNT_GENERATION>"
@@ -40,13 +40,13 @@ def load_template(worksheet: Path) -> dict[str, Any]:
     pattern = re.escape(TEMPLATE_START) + r"\s*```json\s*(\{.*?\})\s*```\s*" + re.escape(TEMPLATE_END)
     matches = re.findall(pattern, text, flags=re.DOTALL)
     if len(matches) != 1:
-        raise ValueError("worksheet must contain exactly one marked JSON schema-v3 template")
+        raise ValueError("worksheet must contain exactly one marked JSON schema-v4 template")
     try:
         template = json.loads(matches[0])
     except json.JSONDecodeError as exc:
-        raise ValueError(f"worksheet schema-v3 template is not valid JSON: {exc}") from exc
+        raise ValueError(f"worksheet schema-v4 template is not valid JSON: {exc}") from exc
     if not isinstance(template, dict):
-        raise ValueError("worksheet schema-v3 template must be a JSON object")
+        raise ValueError("worksheet schema-v4 template must be a JSON object")
     return template
 
 
@@ -186,7 +186,7 @@ def validate_template(template: dict[str, Any]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Stripe rehearsal worksheet schema-v3 drift.")
+    parser = argparse.ArgumentParser(description="Check Stripe rehearsal worksheet schema-v4 drift.")
     parser.add_argument("--worksheet", type=Path, default=DEFAULT_WORKSHEET)
     args = parser.parse_args(argv)
     try:
@@ -198,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Worksheet check failed:", file=sys.stderr)
         print("\n".join(f"- {error}" for error in errors), file=sys.stderr)
         return 1
-    print("Stripe provider rehearsal worksheet matches validator schema v3.")
+    print("Stripe provider rehearsal worksheet matches validator schema v4.")
     return 0
 
 

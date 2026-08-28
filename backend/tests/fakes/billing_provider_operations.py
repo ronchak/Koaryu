@@ -919,6 +919,47 @@ class BillingProviderOperationRpcMixin:
         })
         return {"outcome": "completed", "intent": dict(intent)}
 
+    def _rpc_read_billing_enrollment_item_schedule_identity_v31(
+        self,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        intent = self.billing_enrollment_transition_intents[params["p_intent_id"]]
+        source = (
+            intent
+            if intent.get("transition_kind") == "schedule_period_end"
+            else self.billing_enrollment_transition_intents[intent["source_intent_id"]]
+        )
+        operation = self._operation_by_id(source["provider_operation_id"])
+        steps = self.billing_provider_step_plans[operation["id"]]["steps"]
+        update_step = steps[1]
+        schedule_id = operation.get("provider_secondary_object_id")
+        if (
+            intent.get("studio_id") != params["p_studio_id"]
+            or source.get("studio_id") != params["p_studio_id"]
+            or source.get("transition_kind") != "schedule_period_end"
+            or source.get("mutation_strategy")
+            != "subscription_item_delete_at_period_end"
+            or operation.get("operation_type")
+            != "enrollment.cancel.period_end.schedule"
+            or operation.get("state") not in {"provider_succeeded", "projected", "completed"}
+            or operation.get("provider_object_id")
+            != source.get("stripe_subscription_item_id")
+            or not schedule_id
+            or update_step.get("step_order") != 2
+            or update_step.get("step_name") != "schedule_update"
+            or update_step.get("state") != "provider_succeeded"
+            or update_step.get("provider_secondary_object_id") != schedule_id
+        ):
+            raise AssertionError("item schedule identity mismatch")
+        return {
+            "outcome": "read",
+            "schedule_identity": {
+                "source_intent_id": source["id"],
+                "provider_operation_id": operation["id"],
+                "schedule_id": schedule_id,
+            },
+        }
+
     def _rpc_mark_billing_enrollment_due_readback_reconciliation_v1(
         self,
         params: dict[str, Any],

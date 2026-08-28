@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import date, datetime, time, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -13,9 +13,16 @@ from app.services.billing_invoice_operations import BillingInvoiceOperationWorkf
 from app.services.stripe_service import StripeService
 
 class BillingInvoiceManager:
-    def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
+    def __init__(
+        self,
+        billing_service: Any,
+        *,
+        stripe_service_cls: type[StripeService] = StripeService,
+        utc_today: Callable[[], date] | None = None,
+    ):
         self.billing_service = billing_service
         self.stripe_service_cls = stripe_service_cls
+        self._utc_today = utc_today or (lambda: datetime.now(timezone.utc).date())
 
     @property
     def supabase(self):
@@ -53,6 +60,9 @@ class BillingInvoiceManager:
 
     def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
         self.billing_service._recompute_payer_balance(studio_id, payer_id)
+
+    def _invoice_today_utc(self) -> date:
+        return self._utc_today()
 
     async def list_invoices(self, studio_id: str) -> list[BillingInvoiceResponse]:
         result = (

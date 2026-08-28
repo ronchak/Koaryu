@@ -98,6 +98,14 @@ BEGIN
         'public.complete_due_billing_enrollment_item_transition_v31(uuid,uuid,uuid,bigint,text,jsonb)',
         'EXECUTE'
     ) OR has_function_privilege(
+        'authenticated',
+        'public.read_billing_enrollment_item_schedule_identity_v31(uuid,uuid)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.read_billing_enrollment_item_schedule_identity_v31(uuid,uuid)',
+        'EXECUTE'
+    ) OR has_function_privilege(
         'service_role',
         'public.claim_billing_enrollment_transition_v29(uuid,uuid,text,text,text,uuid,uuid,uuid,text,text,text,integer,timestamp with time zone,integer,integer,integer,integer,text,text,uuid,integer)',
         'EXECUTE'
@@ -871,6 +879,17 @@ BEGIN
     IF v_item_schedule.state<>'scheduled' THEN
         RAISE EXCEPTION 'Completed item schedule intent did not return scheduled: %',
             v_result;
+    END IF;
+    v_result:=public.read_billing_enrollment_item_schedule_identity_v31(
+        v_item_schedule.id,v_studio
+    );
+    IF (v_result->'schedule_identity'->>'source_intent_id')::UUID<>
+            v_item_schedule.id
+       OR (v_result->'schedule_identity'->>'provider_operation_id')::UUID<>
+            v_item_operation
+       OR v_result->'schedule_identity'->>'schedule_id'<>
+            'sub_sched_transitionitem' THEN
+        RAISE EXCEPTION 'Durable item schedule identity read drifted: %',v_result;
     END IF;
 
     PERFORM pg_sleep(0.6);

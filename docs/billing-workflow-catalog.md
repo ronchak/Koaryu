@@ -42,3 +42,8 @@ never replace the payer's consent-bound default payment method.
 Catalog tests compare the live FastAPI router and decorated Stripe methods to the
 catalog. A new mutation route or connected sink therefore fails CI until it receives an
 explicit owner and classification.
+
+The internal `enrollment.cancel.period_end.execute` workflow owns both the final
+subscription-item mutation and release of the exact durable Subscription Schedule after
+the transition becomes due. Its catalog entry must therefore retain
+`connected_subscription_schedule.release` alongside the item delete/update operations.

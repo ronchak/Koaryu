@@ -1699,7 +1699,8 @@ GRANT EXECUTE ON FUNCTION public.claim_billing_invoice_closeout_operation_v1(
 CREATE FUNCTION public.reserve_billing_autopay_activation_v31(
     p_studio_id UUID,p_actor_id UUID,p_enrollment_id UUID,p_payer_id UUID,
     p_billing_plan_id UUID,p_stripe_connected_account_id TEXT,
-    p_connect_account_generation INTEGER,p_terms_version TEXT,
+    p_connect_account_generation INTEGER,p_caller_request_key_sha256 TEXT,
+    p_terms_version TEXT,
     p_application_fee_percent NUMERIC
 ) RETURNS JSONB
 LANGUAGE plpgsql
@@ -1719,10 +1720,13 @@ DECLARE
     v_group_generation INTEGER;
     v_generation_text TEXT;
     v_outcome TEXT:='existing';
+    v_rejection JSONB;
+    v_rejected_operation public.billing_provider_operations%ROWTYPE;
 BEGIN
     IF p_studio_id IS NULL OR p_actor_id IS NULL OR p_enrollment_id IS NULL
        OR p_payer_id IS NULL OR p_billing_plan_id IS NULL
        OR p_connect_account_generation<=0
+       OR p_caller_request_key_sha256 !~ '^[0-9a-f]{64}$'
        OR p_terms_version IS DISTINCT FROM 'koaryu-autopay-v1'
        OR octet_length(p_stripe_connected_account_id) NOT BETWEEN 1 AND 255
        OR p_application_fee_percent<0 OR p_application_fee_percent>100 THEN
@@ -1838,6 +1842,44 @@ BEGIN
             MESSAGE='billing_autopay_activation_consent_invalid';
     END IF;
 
+    v_rejection:=COALESCE(v_enrollment.metadata,'{}'::JSONB)
+        ->'provider_activation_rejection';
+    IF jsonb_typeof(v_rejection)='object' THEN
+        IF v_rejection->>'caller_request_key_sha256'=
+           p_caller_request_key_sha256 THEN
+            SELECT * INTO v_rejected_operation
+            FROM public.billing_provider_operations
+            WHERE id=(v_rejection->>'operation_id')::UUID;
+            IF v_rejected_operation.id IS NULL
+               OR v_rejected_operation.state<>'definitive_rejected'
+               OR v_rejected_operation.error_code<>'provider_mutation_blocked'
+               OR v_rejected_operation.operation_type<>
+                    'enrollment.activate.autopay'
+               OR v_rejected_operation.studio_id IS DISTINCT FROM p_studio_id
+               OR v_rejected_operation.actor_id IS DISTINCT FROM p_actor_id
+               OR v_rejected_operation.request_sha256 IS DISTINCT FROM
+                    v_rejection->>'request_sha256' THEN
+                RAISE EXCEPTION USING ERRCODE='23514',
+                    MESSAGE='billing_autopay_activation_rejection_invalid';
+            END IF;
+            RETURN jsonb_build_object(
+                'outcome','definitive_rejected',
+                'payer',to_jsonb(v_payer),
+                'subscription','{}'::JSONB,
+                'consent',to_jsonb(v_consent),
+                'operation',private.billing_provider_operation_json_v1(
+                    v_rejected_operation,'replay'
+                )->'operation'
+            );
+        END IF;
+        UPDATE public.student_billing_enrollments
+        SET metadata=COALESCE(metadata,'{}'::JSONB)-
+                'provider_activation_rejection',
+            updated_at=clock_timestamp()
+        WHERE id=p_enrollment_id AND studio_id=p_studio_id
+        RETURNING * INTO v_enrollment;
+    END IF;
+
     IF v_existing_group_id IS NOT NULL THEN
         SELECT * INTO v_group
         FROM public.billing_subscriptions
@@ -1872,7 +1914,11 @@ BEGIN
             v_plan.currency,'pending',v_payer.default_payment_method_id,
             p_application_fee_percent,
             jsonb_build_object(
-                'connect_account_generation',p_connect_account_generation
+                'connect_account_generation',p_connect_account_generation,
+                'activation_reservation',jsonb_build_object(
+                    'version',1,
+                    'enrollment_id',p_enrollment_id
+                )
             )
         ) RETURNING * INTO v_group;
         v_outcome:='created';
@@ -1923,6 +1969,18 @@ BEGIN
             RAISE EXCEPTION USING ERRCODE='55000',
                 MESSAGE='billing_autopay_activation_group_invalid';
         END IF;
+        IF v_group.stripe_subscription_id IS NULL
+           AND v_group.metadata ? 'activation_reservation' THEN
+            IF v_group.metadata->'activation_reservation' IS DISTINCT FROM
+               jsonb_build_object(
+                   'version',1,
+                   'enrollment_id',p_enrollment_id
+               ) THEN
+                RAISE EXCEPTION USING ERRCODE='55000',
+                    MESSAGE='billing_autopay_activation_group_invalid';
+            END IF;
+            v_outcome:='created';
+        END IF;
     END IF;
     RETURN jsonb_build_object(
         'outcome',v_outcome,
@@ -1933,13 +1991,185 @@ BEGIN
 END;
 $$;
 ALTER FUNCTION public.reserve_billing_autopay_activation_v31(
-    UUID,UUID,UUID,UUID,UUID,TEXT,INTEGER,TEXT,NUMERIC
+    UUID,UUID,UUID,UUID,UUID,TEXT,INTEGER,TEXT,TEXT,NUMERIC
 ) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.reserve_billing_autopay_activation_v31(
-    UUID,UUID,UUID,UUID,UUID,TEXT,INTEGER,TEXT,NUMERIC
+    UUID,UUID,UUID,UUID,UUID,TEXT,INTEGER,TEXT,TEXT,NUMERIC
 ) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.reserve_billing_autopay_activation_v31(
-    UUID,UUID,UUID,UUID,UUID,TEXT,INTEGER,TEXT,NUMERIC
+    UUID,UUID,UUID,UUID,UUID,TEXT,INTEGER,TEXT,TEXT,NUMERIC
+) TO service_role;
+
+CREATE FUNCTION public.reject_billing_autopay_activation_without_provider_v31(
+    p_operation_id UUID,p_studio_id UUID,p_actor_id UUID,
+    p_enrollment_id UUID,p_payer_id UUID,p_billing_subscription_id UUID,
+    p_caller_request_key TEXT,p_request_sha256 TEXT,
+    p_stripe_connected_account_id TEXT,p_connect_account_generation INTEGER,
+    p_lease_owner UUID,p_quantity_lock_token TEXT,
+    p_caller_request_key_sha256 TEXT,
+    p_expected_operation_revision BIGINT
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=''
+AS $$
+DECLARE
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_enrollment public.student_billing_enrollments%ROWTYPE;
+    v_payer public.billing_payers%ROWTYPE;
+    v_group public.billing_subscriptions%ROWTYPE;
+    v_resource public.billing_provider_operation_resources%ROWTYPE;
+    v_intent JSONB;
+    v_delete_safe BOOLEAN:=false;
+    v_deleted BOOLEAN:=false;
+    v_now TIMESTAMPTZ:=clock_timestamp();
+BEGIN
+    SELECT * INTO v_group FROM public.billing_subscriptions
+    WHERE id=p_billing_subscription_id AND studio_id=p_studio_id FOR UPDATE;
+    SELECT * INTO v_enrollment FROM public.student_billing_enrollments
+    WHERE id=p_enrollment_id AND studio_id=p_studio_id FOR UPDATE;
+    SELECT * INTO v_payer FROM public.billing_payers
+    WHERE id=p_payer_id AND studio_id=p_studio_id FOR UPDATE;
+    SELECT * INTO v_operation FROM public.billing_provider_operations
+    WHERE id=p_operation_id FOR UPDATE;
+    SELECT * INTO v_resource FROM public.billing_provider_operation_resources
+    WHERE operation_id=p_operation_id FOR UPDATE;
+
+    IF v_operation.id IS NULL OR v_enrollment.id IS NULL OR v_payer.id IS NULL
+       OR v_operation.studio_id IS DISTINCT FROM p_studio_id
+       OR v_operation.actor_id IS DISTINCT FROM p_actor_id
+       OR v_operation.operation_type<>'enrollment.activate.autopay'
+       OR v_operation.caller_request_key IS DISTINCT FROM p_caller_request_key
+       OR v_operation.request_sha256 IS DISTINCT FROM p_request_sha256
+       OR v_operation.stripe_connected_account_id IS DISTINCT FROM
+            p_stripe_connected_account_id
+       OR v_operation.connect_account_generation IS DISTINCT FROM
+            p_connect_account_generation
+       OR v_enrollment.payer_id IS DISTINCT FROM p_payer_id
+       OR v_resource.operation_id IS DISTINCT FROM p_operation_id
+       OR v_resource.studio_id IS DISTINCT FROM p_studio_id
+       OR v_resource.operation_type<>'enrollment.activate.autopay'
+       OR v_resource.resource_type<>'enrollment'
+       OR v_resource.resource_id IS DISTINCT FROM p_enrollment_id
+       OR v_resource.payer_id IS DISTINCT FROM p_payer_id THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_autopay_activation_policy_rejection_identity_mismatch';
+    END IF;
+    IF v_operation.state='definitive_rejected'
+       AND v_operation.error_code='provider_mutation_blocked'
+       AND v_operation.provider_object_id IS NULL
+       AND v_operation.provider_secondary_object_id IS NULL
+       AND v_operation.provider_request_id IS NULL THEN
+        RETURN private.billing_provider_operation_json_v1(v_operation,'replay')
+            ||jsonb_build_object(
+                'subscription_deleted',v_group.id IS NULL
+            );
+    END IF;
+    IF v_operation.revision IS DISTINCT FROM p_expected_operation_revision
+       OR NOT (
+            (v_operation.state='started'
+             AND v_operation.provider_request_attempt_count=0)
+            OR
+            (v_operation.state='provider_request_in_flight'
+             AND v_operation.provider_request_attempt_count=1
+             AND v_operation.lease_owner IS NOT DISTINCT FROM p_lease_owner)
+       )
+       OR v_operation.provider_object_id IS NOT NULL
+       OR v_operation.provider_secondary_object_id IS NOT NULL
+       OR v_operation.provider_request_id IS NOT NULL THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_autopay_activation_policy_rejection_invalid';
+    END IF;
+
+    v_intent:=COALESCE(v_enrollment.metadata,'{}'::JSONB)
+        ->'provider_activation_intent';
+    v_delete_safe:=v_group.id IS NOT NULL
+        AND v_group.payer_id IS NOT DISTINCT FROM p_payer_id
+        AND v_group.stripe_account_id IS NOT DISTINCT FROM
+            p_stripe_connected_account_id
+        AND v_group.stripe_customer_id IS NOT DISTINCT FROM
+            v_payer.stripe_customer_id
+        AND v_group.stripe_subscription_id IS NULL
+        AND v_group.status='pending'
+        AND v_group.collection_mode='autopay'
+        AND v_group.metadata->'activation_reservation' IS NOT DISTINCT FROM
+            jsonb_build_object('version',1,'enrollment_id',p_enrollment_id)
+        AND v_group.metadata->'stripe_quantity_sync_lock'->>'token'
+            IS NOT DISTINCT FROM p_quantity_lock_token
+        AND (v_group.metadata-
+            ARRAY['connect_account_generation','activation_reservation',
+                  'stripe_quantity_sync_lock'])='{}'::JSONB
+        AND v_intent->>'operation_type'='enrollment.activate.autopay'
+        AND v_intent->>'branch'='create_subscription'
+        AND v_intent->>'studio_id'=p_studio_id::TEXT
+        AND v_intent->>'enrollment_id'=p_enrollment_id::TEXT
+        AND v_intent->>'payer_id'=p_payer_id::TEXT
+        AND v_intent->>'group_id'=p_billing_subscription_id::TEXT
+        AND v_intent->>'account_id'=p_stripe_connected_account_id
+        AND (v_intent->>'generation')::INTEGER=p_connect_account_generation
+        AND v_intent->>'desired_sha256'=p_request_sha256
+        AND v_enrollment.billing_subscription_id IS NULL
+        AND v_enrollment.stripe_subscription_id IS NULL
+        AND v_enrollment.stripe_subscription_item_id IS NULL
+        AND NOT EXISTS(
+            SELECT 1 FROM public.student_billing_enrollments AS linked
+            WHERE linked.billing_subscription_id=p_billing_subscription_id
+        )
+        AND NOT EXISTS(
+            SELECT 1 FROM public.student_billing_enrollments AS competing
+            WHERE competing.id<>p_enrollment_id
+              AND competing.studio_id=p_studio_id
+              AND competing.metadata->'provider_activation_intent'->>'group_id'
+                    =p_billing_subscription_id::TEXT
+        )
+        AND NOT EXISTS(
+            SELECT 1 FROM public.billing_enrollment_transition_intents AS transition
+            WHERE transition.billing_subscription_id=p_billing_subscription_id
+              AND transition.state IN(
+                  'scheduled','due_claimed','provider_request_in_flight',
+                  'provider_succeeded','projected','recovery_authorized',
+                  'reconciliation_required'
+              )
+        );
+    IF v_delete_safe THEN
+        UPDATE public.student_billing_enrollments
+        SET metadata=(COALESCE(metadata,'{}'::JSONB)-'provider_activation_intent')
+                ||jsonb_build_object(
+                    'provider_activation_rejection',jsonb_build_object(
+                        'version',1,
+                        'operation_id',p_operation_id,
+                        'caller_request_key_sha256',p_caller_request_key_sha256,
+                        'request_sha256',p_request_sha256
+                    )
+                ),
+            updated_at=v_now
+        WHERE id=p_enrollment_id AND studio_id=p_studio_id;
+        DELETE FROM public.billing_subscriptions
+        WHERE id=p_billing_subscription_id AND studio_id=p_studio_id;
+        v_deleted:=FOUND;
+        IF NOT v_deleted THEN
+            RAISE EXCEPTION USING ERRCODE='40001',
+                MESSAGE='billing_autopay_activation_policy_rejection_delete_race';
+        END IF;
+    END IF;
+    UPDATE public.billing_provider_operations
+    SET state='definitive_rejected',error_code='provider_mutation_blocked',
+        error_summary=NULL,reconciliation_reason_code=NULL,
+        definitive_rejected_at=v_now,lease_owner=NULL,lease_acquired_at=NULL,
+        lease_expires_at=NULL,revision=revision+1,updated_at=v_now
+    WHERE id=p_operation_id RETURNING * INTO v_operation;
+    RETURN private.billing_provider_operation_json_v1(v_operation,'rejected')
+        ||jsonb_build_object('subscription_deleted',v_deleted);
+END;
+$$;
+ALTER FUNCTION public.reject_billing_autopay_activation_without_provider_v31(
+    UUID,UUID,UUID,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,TEXT,TEXT,BIGINT
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.reject_billing_autopay_activation_without_provider_v31(
+    UUID,UUID,UUID,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,TEXT,TEXT,BIGINT
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.reject_billing_autopay_activation_without_provider_v31(
+    UUID,UUID,UUID,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,TEXT,TEXT,BIGINT
 ) TO service_role;
 
 CREATE FUNCTION public.disable_billing_payer_autopay_v1(
@@ -4158,6 +4388,114 @@ GRANT EXECUTE ON FUNCTION public.complete_due_billing_enrollment_item_transition
     UUID,UUID,UUID,BIGINT,TEXT,JSONB
 ) TO service_role;
 
+CREATE FUNCTION public.read_billing_enrollment_item_schedule_identity_v31(
+    p_intent_id UUID,
+    p_studio_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path=''
+AS $$
+DECLARE
+    v_intent public.billing_enrollment_transition_intents%ROWTYPE;
+    v_source public.billing_enrollment_transition_intents%ROWTYPE;
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_update_step public.billing_provider_operation_steps%ROWTYPE;
+BEGIN
+    IF p_intent_id IS NULL OR p_studio_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='22023',
+            MESSAGE='billing_enrollment_item_schedule_identity_read_invalid';
+    END IF;
+    SELECT * INTO v_intent
+    FROM public.billing_enrollment_transition_intents
+    WHERE id=p_intent_id AND studio_id=p_studio_id;
+    IF v_intent.id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_enrollment_item_schedule_identity_mismatch';
+    END IF;
+    IF v_intent.transition_kind='schedule_period_end' THEN
+        v_source:=v_intent;
+    ELSIF v_intent.transition_kind IN ('execute_due','revoke_scheduled')
+          AND v_intent.source_intent_id IS NOT NULL THEN
+        SELECT * INTO v_source
+        FROM public.billing_enrollment_transition_intents
+        WHERE id=v_intent.source_intent_id AND studio_id=p_studio_id;
+    ELSE
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_enrollment_item_schedule_identity_mismatch';
+    END IF;
+    SELECT * INTO v_operation
+    FROM public.billing_provider_operations
+    WHERE id=v_source.provider_operation_id
+      AND studio_id=p_studio_id;
+    SELECT * INTO v_update_step
+    FROM public.billing_provider_operation_steps
+    WHERE operation_id=v_operation.id
+      AND step_order=2;
+    IF v_source.id IS NULL
+       OR v_source.transition_kind<>'schedule_period_end'
+       OR v_source.mutation_strategy<>
+            'subscription_item_delete_at_period_end'
+       OR v_intent.enrollment_id IS DISTINCT FROM v_source.enrollment_id
+       OR v_intent.payer_id IS DISTINCT FROM v_source.payer_id
+       OR v_intent.billing_subscription_id IS DISTINCT FROM
+            v_source.billing_subscription_id
+       OR v_intent.stripe_connected_account_id IS DISTINCT FROM
+            v_source.stripe_connected_account_id
+       OR v_intent.connect_account_generation IS DISTINCT FROM
+            v_source.connect_account_generation
+       OR v_intent.stripe_subscription_id IS DISTINCT FROM
+            v_source.stripe_subscription_id
+       OR v_intent.stripe_subscription_item_id IS DISTINCT FROM
+            v_source.stripe_subscription_item_id
+       OR v_operation.id IS NULL
+       OR v_operation.operation_type<>'enrollment.cancel.period_end.schedule'
+       OR v_operation.actor_id IS DISTINCT FROM v_source.initiated_by
+       OR v_operation.caller_request_key IS DISTINCT FROM
+            v_source.provider_caller_request_key
+       OR v_operation.request_sha256 IS DISTINCT FROM
+            v_source.provider_request_sha256
+       OR v_operation.stripe_connected_account_id IS DISTINCT FROM
+            v_source.stripe_connected_account_id
+       OR v_operation.connect_account_generation IS DISTINCT FROM
+            v_source.connect_account_generation
+       OR v_operation.state NOT IN ('provider_succeeded','projected','completed')
+       OR v_operation.provider_object_id IS DISTINCT FROM
+            v_source.stripe_subscription_item_id
+       OR v_operation.provider_secondary_object_id IS NULL
+       OR v_operation.provider_secondary_object_id !~
+            '^sub_sched_[A-Za-z0-9][A-Za-z0-9_.:-]{0,244}$'
+       OR v_update_step.id IS NULL
+       OR v_update_step.step_name<>'schedule_update'
+       OR v_update_step.provider_operation<>
+            'connected_subscription_schedule.update'
+       OR v_update_step.state<>'provider_succeeded'
+       OR v_update_step.provider_object_id IS DISTINCT FROM
+            v_source.stripe_subscription_item_id
+       OR v_update_step.provider_secondary_object_id IS DISTINCT FROM
+            v_operation.provider_secondary_object_id THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_enrollment_item_schedule_identity_mismatch';
+    END IF;
+    RETURN jsonb_build_object(
+        'outcome','read',
+        'schedule_identity',jsonb_build_object(
+            'source_intent_id',v_source.id,
+            'provider_operation_id',v_operation.id,
+            'schedule_id',v_operation.provider_secondary_object_id
+        )
+    );
+END;
+$$;
+ALTER FUNCTION public.read_billing_enrollment_item_schedule_identity_v31(UUID,UUID)
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.read_billing_enrollment_item_schedule_identity_v31(UUID,UUID)
+    FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.read_billing_enrollment_item_schedule_identity_v31(UUID,UUID)
+    TO service_role;
+
 ALTER TABLE public.billing_payer_setup_requests
     DROP CONSTRAINT billing_payer_setup_requests_close_evidence;
 ALTER TABLE public.billing_payer_setup_requests
@@ -4399,8 +4737,10 @@ BEGIN
             ('public.complete_due_billing_enrollment_item_transition_v31(uuid,uuid,uuid,bigint,text,jsonb)', true, true, 'search_path=""'),
             ('public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text)', true, true, 'search_path=""'),
             ('public.finalize_billing_payer_setup_projection_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer)', true, true, 'search_path=""'),
+            ('public.read_billing_enrollment_item_schedule_identity_v31(uuid,uuid)', true, true, 'search_path=""'),
             ('public.reject_billing_payer_setup_without_provider_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,bigint,bigint)', true, true, 'search_path=""'),
-            ('public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,numeric)', true, true, 'search_path=""'),
+            ('public.reject_billing_autopay_activation_without_provider_v31(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,text,text,bigint)', true, true, 'search_path=""'),
+            ('public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,text,numeric)', true, true, 'search_path=""'),
             ('public.revoke_billing_enrollment_transition_v1(uuid,uuid,uuid,bigint,text,text,text,uuid,integer)', true, true, 'search_path=""'),
             ('public.revoke_billing_enrollment_transition_v29(uuid,uuid,uuid,bigint,text,text,text,uuid,integer)', true, false, 'search_path=""'),
             ('public.transition_billing_enrollment_transition_v1(uuid,uuid,uuid,bigint,uuid,bigint,text,text)', true, true, 'search_path=""'),
@@ -4831,7 +5171,7 @@ INSERT INTO private.koaryu_release_v31_expectations(
     expectation_key, expected_sha256
 ) VALUES (
     'operational_contract_v31',
-    '9ef16a6d074fa8bd819958cf20072e41aaa462266ad20a5a59cd92722655138b'
+    '58fe9579f8b5fc7ec7c1bcc62ae681e1d42e1fa0dc2b5618992ad4b402c3d72c'
 );
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v12()
@@ -4904,7 +5244,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       <> '0:b0a798cb45cd30332423e6ea40c66273ea822852441e41dfc380d18de1cc17fb' THEN
+       <> '0:87eb5a6ad0f3c4316f1a743132b48b22605c7fce3f630f6c40aa11576b1ef98e' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     IF private.koaryu_release_schedule_window_manifest_v1()
@@ -5124,7 +5464,7 @@ BEGIN
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_resource_ownership_manifest_v31()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> '23ee7f24f18a0dabf2273018b75ee186c1db65d3c9294fa9712586d9f54b4c4c' THEN
+       <> '306134e387999e4b738d14ca38df2d730d5b021d1310ded0b5a3c14530643216' THEN
         v_failures:=array_append(v_failures,'resource_ownership_manifest_v31_function');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -5212,7 +5552,7 @@ BEGIN
         );
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       <> '5c87717b8392b111f2688746eaba8a74ce4a9fec4cc2afb0bfe4cb78c6822f29' THEN
+       <> 'b77405d712b62a33f64caf5b05088caf397e570f8d0f3880eb02b993fa675457' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(

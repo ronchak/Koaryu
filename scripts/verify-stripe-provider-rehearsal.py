@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 EVENT_ID_PATTERN = re.compile(r"^evt_[A-Za-z0-9]+$")
 ACCOUNT_ID_PATTERN = re.compile(r"^acct_[A-Za-z0-9]+$")
-EVIDENCE_SCHEMA_VERSION = 3
+EVIDENCE_SCHEMA_VERSION = 4
 REQUIRED_STEPS = {
     "health_exact_candidate",
     "operation_bounded_role_capabilities",
@@ -51,7 +51,12 @@ REQUIRED_MUTATIONS = {
     "automatic.finalize": ("invoice.finalize", "connected_invoice.finalize", "connect_payments", "admin", True),
     "automatic.pay": ("invoice.retry", "connected_invoice.pay", "connect_payments", "admin", True),
     "invoice_retry.pay": ("invoice.retry", "connected_invoice.pay", "connect_payments", "admin", True),
-    "period_end.due_quantity_update": ("enrollment.cancel.period_end.execute", "connected_subscription_item.update", "connect_payments", "internal", True),
+    "period_end.revoke_schedule_create": ("enrollment.cancel.period_end.schedule", "connected_subscription_schedule.create", "connect_payments", "front_desk", True),
+    "period_end.revoke_schedule_update": ("enrollment.cancel.period_end.schedule", "connected_subscription_schedule.update", "connect_payments", "front_desk", True),
+    "period_end.revoke_release": ("enrollment.cancel.period_end.revoke", "connected_subscription_schedule.release", "connect_payments", "front_desk", True),
+    "period_end.due_schedule_create": ("enrollment.cancel.period_end.schedule", "connected_subscription_schedule.create", "connect_payments", "front_desk", True),
+    "period_end.due_schedule_update": ("enrollment.cancel.period_end.schedule", "connected_subscription_schedule.update", "connect_payments", "front_desk", True),
+    "period_end.due_release": ("enrollment.cancel.period_end.execute", "connected_subscription_schedule.release", "connect_payments", "internal", True),
     "payment.refund": ("payment.refund", "connected_refund.create", "connect_payments", "admin", True),
 }
 PLATFORM_EVENTS = {
@@ -150,7 +155,8 @@ WORKFLOW_FACT_KEYS = {
     "failed_payment_retry_workflow", "failed_payment_retry_outcome",
     "failed_payment_retry_mutation_count", "period_schedule_state", "period_revoke_state",
     "period_due_state", "period_schedule_intent_id", "period_revoke_intent_id",
-    "period_due_intent_id", "period_strategy", "period_quantity_before",
+    "period_due_intent_id", "period_revoke_schedule_id", "period_due_schedule_id",
+    "period_strategy", "period_quantity_before",
     "period_quantity_after", "adjusted_payment_id", "refund_id", "dispute_id",
     "gross_paid_cents", "refunded_cents", "disputed_cents", "net_collected_cents",
     "refundable_remaining_cents", "invoice_remaining_before_cents",
@@ -243,7 +249,7 @@ def validate_evidence(
     if set(evidence) != TOP_LEVEL_KEYS:
         errors.append("rehearsal evidence must contain only the exact sanitized schema fields")
     if evidence.get("schema_version") != EVIDENCE_SCHEMA_VERSION:
-        errors.append("rehearsal evidence must use schema_version 3")
+        errors.append("rehearsal evidence must use schema_version 4")
     if evidence.get("candidate_sha") != expected_sha or evidence.get("health_commit_sha") != expected_sha:
         errors.append("evidence and backend health must match the exact candidate SHA")
     if evidence.get("health_ready_url") != f"{origin}/health/ready":
@@ -278,7 +284,7 @@ def validate_evidence(
 
     facts = evidence.get("workflow_facts")
     if not isinstance(facts, dict) or set(facts) != WORKFLOW_FACT_KEYS:
-        errors.append("workflow facts must contain only exact schema-v3 fields")
+        errors.append("workflow facts must contain only exact schema-v4 fields")
         facts = {}
     if facts.get("consent_payer_id") != facts.get("payer_id") or not all(isinstance(facts.get(field), str) and facts.get(field) for field in ("setup_request_id", "consent_id", "terms_version")):
         errors.append("consent evidence does not bind the exact payer, request, consent, and terms")
@@ -306,7 +312,10 @@ def validate_evidence(
         errors.append("period-end schedule, revoke, and due states did not converge")
     if not all(isinstance(facts.get(field), str) and facts.get(field) for field in ("period_schedule_intent_id", "period_revoke_intent_id", "period_due_intent_id")):
         errors.append("period-end evidence lacks exact schedule, revoke, and due intent identities")
-    if facts.get("period_strategy") != "subscription_item_delete_at_period_end" or (facts.get("period_quantity_before"), facts.get("period_quantity_after")) != (2, 1):
+    schedule_ids = (facts.get("period_revoke_schedule_id"), facts.get("period_due_schedule_id"))
+    if not all(isinstance(value, str) and value.startswith("sub_sched_") for value in schedule_ids) or len(set(schedule_ids)) != 2:
+        errors.append("period-end evidence lacks distinct sanitized revoke and due Subscription Schedule identities")
+    if facts.get("period_strategy") != "subscription_schedule_shared_item_delete_at_period_end" or (facts.get("period_quantity_before"), facts.get("period_quantity_after")) != (2, 1):
         errors.append("shared-family period-end due transition did not converge from two to one")
     gross, refunded, disputed, net = (facts.get(key) for key in ("gross_paid_cents", "refunded_cents", "disputed_cents", "net_collected_cents"))
     if not all(type(value) is int and value >= 0 for value in (gross, refunded, disputed, net)) or refunded + disputed + net != gross or facts.get("refundable_remaining_cents") != net:
@@ -357,7 +366,7 @@ def validate_evidence(
     mutations = evidence.get("mutation_attempts") or []
     by_step = {mutation.get("step_name"): mutation for mutation in mutations if isinstance(mutation, dict)}
     if len(by_step) != len(mutations) or set(by_step) != set(REQUIRED_MUTATIONS):
-        errors.append("mutation step names do not match the exact schema-v3 workflow plan")
+        errors.append("mutation step names do not match the exact schema-v4 workflow plan")
     for mutation in mutations:
         if not isinstance(mutation, dict):
             errors.append("mutation evidence entries must be objects")

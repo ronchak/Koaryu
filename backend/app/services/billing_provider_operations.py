@@ -578,6 +578,7 @@ class BillingProviderOperationCoordinator:
         stripe_connected_account_id: str,
         connect_account_generation: int,
         application_fee_percent: float,
+        caller_request_key_sha256: str,
     ) -> dict[str, Any]:
         return self._rpc(
             "reserve_billing_autopay_activation_v31",
@@ -589,10 +590,43 @@ class BillingProviderOperationCoordinator:
                 "p_billing_plan_id": billing_plan_id,
                 "p_stripe_connected_account_id": stripe_connected_account_id,
                 "p_connect_account_generation": connect_account_generation,
+                "p_caller_request_key_sha256": caller_request_key_sha256,
                 "p_terms_version": AUTOPAY_TERMS_VERSION,
                 "p_application_fee_percent": application_fee_percent,
             },
             expected_key="subscription",
+        )
+
+    def reject_autopay_activation_without_provider(
+        self,
+        context: BillingProviderOperationContext,
+        *,
+        operation: dict[str, Any],
+        enrollment_id: str,
+        payer_id: str,
+        billing_subscription_id: str,
+        quantity_lock_token: str,
+        caller_request_key_sha256: str,
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "reject_billing_autopay_activation_without_provider_v31",
+            {
+                "p_operation_id": context.operation_id,
+                "p_studio_id": context.studio_id,
+                "p_actor_id": context.actor_id,
+                "p_enrollment_id": enrollment_id,
+                "p_payer_id": payer_id,
+                "p_billing_subscription_id": billing_subscription_id,
+                "p_caller_request_key": context.caller_request_key,
+                "p_request_sha256": context.request_sha256,
+                "p_stripe_connected_account_id": context.stripe_connected_account_id,
+                "p_connect_account_generation": context.connect_account_generation,
+                "p_lease_owner": context.lease_owner,
+                "p_quantity_lock_token": quantity_lock_token,
+                "p_caller_request_key_sha256": caller_request_key_sha256,
+                "p_expected_operation_revision": int(operation["revision"]),
+            },
+            expected_key="operation",
         )
 
     def mark_payer_setup_reconciliation(
@@ -879,6 +913,21 @@ class BillingProviderOperationCoordinator:
             },
             expected_key="intent",
         )
+
+    def read_enrollment_item_schedule_identity(
+        self,
+        *,
+        intent_id: str,
+        studio_id: str,
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "read_billing_enrollment_item_schedule_identity_v31",
+            {
+                "p_intent_id": intent_id,
+                "p_studio_id": studio_id,
+            },
+            expected_key="schedule_identity",
+        )["schedule_identity"]
 
     def mark_due_enrollment_readback_reconciliation(
         self,

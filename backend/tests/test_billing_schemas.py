@@ -194,6 +194,28 @@ class BillingRequestSchemaTest(unittest.TestCase):
         self.assertIsNone(payment.payer_id)
         self.assertIsNone(payment.invoice_id)
 
+    def test_invoice_due_date_enforces_format_and_stripe_collection_method(self):
+        invoice = BillingInvoiceCreate(
+            payer_id="payer_1",
+            due_date="2099-09-15",
+        )
+        self.assertEqual(invoice.due_date, "2099-09-15")
+        self.assertEqual(
+            BillingInvoiceCreate(
+                payer_id="payer_1",
+                due_date="2000-01-01",
+            ).due_date,
+            "2000-01-01",
+        )
+
+        invalid_cases = (
+            {"due_date": "2026-99-99"},
+            {"collection_mode": "autopay", "due_date": "2099-09-15"},
+        )
+        for payload in invalid_cases:
+            with self.subTest(payload=payload), self.assertRaises(ValidationError):
+                BillingInvoiceCreate(payer_id="payer_1", **payload)
+
     def test_refund_reason_accepts_only_stripe_create_values(self):
         for reason in ("duplicate", "fraudulent", "requested_by_customer"):
             with self.subTest(reason=reason):

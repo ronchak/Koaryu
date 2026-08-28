@@ -68,6 +68,7 @@ class _TransitionStripe(_Stripe):
     schedule_release_error = None
     schedule_create_response_error_after = None
     schedule_update_response_error_after = None
+    schedule_release_response_error_after = None
 
     @classmethod
     def reset(cls):
@@ -85,6 +86,7 @@ class _TransitionStripe(_Stripe):
         cls.schedule_release_error = None
         cls.schedule_create_response_error_after = None
         cls.schedule_update_response_error_after = None
+        cls.schedule_release_response_error_after = None
 
     def update_connected_subscription(self, **payload):
         self.__class__.subscription_update_calls.append(copy.deepcopy(payload))
@@ -219,6 +221,8 @@ class _TransitionStripe(_Stripe):
         })
         self.__class__.subscriptions[subscription_id]["schedule"] = None
         self.__class__.schedule_idempotency[payload["idempotency_key"]] = schedule_id
+        if self.__class__.schedule_release_response_error_after:
+            raise self.__class__.schedule_release_response_error_after
         return copy.deepcopy(schedule)
 
     def list_connected_subscription_schedules(self, **payload):
@@ -873,6 +877,8 @@ def test_item_provider_schedule_applies_before_due_readback_and_converges_source
     assert _TransitionStripe.delete_item_calls == []
     assert len(_TransitionStripe.schedule_create_calls) == 1
     assert len(_TransitionStripe.schedule_update_calls) == 1
+    assert len(_TransitionStripe.schedule_release_calls) == 1
+    assert _TransitionStripe.subscriptions["sub_1"]["schedule"] is None
     assert facade.supabase.billing_enrollment_transition_intents[
         scheduled["intent"]["id"]
     ]["state"] == "completed"
@@ -1178,6 +1184,8 @@ def test_item_due_waits_for_provider_phase_through_grace_without_local_cancellat
         "reconciliation_required": 0,
         "failed": 0,
     }
+    assert len(_TransitionStripe.schedule_release_calls) == 1
+    assert _TransitionStripe.subscriptions["sub_1"]["schedule"] is None
 
 
 def test_item_schedule_update_step_recovery_reuses_exact_step_key():
@@ -1425,12 +1433,241 @@ def test_item_due_replacement_item_id_rebinds_every_surviving_shared_enrollment(
         len(_TransitionStripe.schedule_update_calls),
         len(_TransitionStripe.schedule_release_calls),
         len(_TransitionStripe.delete_item_calls),
-    ) == mutation_counts
+    ) == (
+        mutation_counts[0],
+        mutation_counts[1],
+        mutation_counts[2] + 1,
+        mutation_counts[3],
+    )
     target, survivor = facade.supabase.tables["student_billing_enrollments"]
     assert target["status"] == "canceled"
     assert target["stripe_subscription_item_id"] is None
     assert survivor["status"] == "active"
     assert survivor["stripe_subscription_item_id"] == "si_replacement"
+
+
+def test_item_due_release_lost_response_converges_without_duplicate_release():
+    peer = _enrollment(
+        id="enrollment_2",
+        student_id="student_2",
+        billing_plan_id="plan_2",
+        status="active",
+        billing_subscription_id="group_1",
+        stripe_subscription_id="sub_1",
+        stripe_subscription_item_id="si_2",
+    )
+    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade.supabase.tables["billing_plans"].append(
+        _plan(id="plan_2", stripe_price_id="price_2")
+    )
+    _TransitionStripe.subscriptions["sub_1"] = _provider(
+        items=[_item(), _item("si_2", price_id="price_2")]
+    )
+    workflow = _workflow(facade)
+    scheduled = workflow.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "due-release-lost", "staff_requested"
+    )
+    _apply_scheduled_item_phase()
+    _TransitionStripe.schedule_release_response_error_after = RuntimeError(
+        "release response lost"
+    )
+
+    completed = workflow.process_due(worker_id="worker_1", limit=25)
+    replay = workflow.process_due(worker_id="worker_2", limit=25)
+
+    assert completed == {
+        "claimed": 1,
+        "completed": 1,
+        "reconciliation_required": 0,
+        "failed": 0,
+    }
+    assert replay == {
+        "claimed": 0,
+        "completed": 0,
+        "reconciliation_required": 0,
+        "failed": 0,
+    }
+    assert len(_TransitionStripe.schedule_release_calls) == 1
+    release_call = _TransitionStripe.schedule_release_calls[0]
+    assert release_call["schedule_id"] == "sub_sched_1"
+    assert str(scheduled["intent"]["id"]) in release_call["idempotency_key"]
+    assert _TransitionStripe.subscriptions["sub_1"]["schedule"] is None
+
+
+def test_item_due_reclaim_after_release_before_completion_does_not_release_twice():
+    peer = _enrollment(
+        id="enrollment_2",
+        student_id="student_2",
+        billing_plan_id="plan_2",
+        status="active",
+        billing_subscription_id="group_1",
+        stripe_subscription_id="sub_1",
+        stripe_subscription_item_id="si_2",
+    )
+    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade.supabase.tables["billing_plans"].append(
+        _plan(id="plan_2", stripe_price_id="price_2")
+    )
+    _TransitionStripe.subscriptions["sub_1"] = _provider(
+        items=[_item(), _item("si_2", price_id="price_2")]
+    )
+    workflow = _workflow(facade)
+    workflow.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "due-release-crash", "staff_requested"
+    )
+    _apply_scheduled_item_phase()
+    execute = workflow.operations.claim_due_enrollment_transitions(
+        worker_id="worker_1",
+        limit=25,
+    )[0]
+    snapshot = workflow._snapshot_for_replay(execute)
+    provider = workflow._retrieve_subscription(snapshot)
+    workflow._release_owned_item_schedule_after_due(
+        execute,
+        snapshot,
+        provider,
+    )
+
+    completed = workflow.process_due(worker_id="worker_2", limit=25)
+
+    assert completed == {
+        "claimed": 1,
+        "completed": 1,
+        "reconciliation_required": 0,
+        "failed": 0,
+    }
+    assert len(_TransitionStripe.schedule_release_calls) == 1
+    assert _TransitionStripe.subscriptions["sub_1"]["schedule"] is None
+
+
+def test_item_due_release_failure_reconciles_with_owned_schedule_still_attached():
+    peer = _enrollment(
+        id="enrollment_2",
+        student_id="student_2",
+        billing_plan_id="plan_2",
+        status="active",
+        billing_subscription_id="group_1",
+        stripe_subscription_id="sub_1",
+        stripe_subscription_item_id="si_2",
+    )
+    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade.supabase.tables["billing_plans"].append(
+        _plan(id="plan_2", stripe_price_id="price_2")
+    )
+    _TransitionStripe.subscriptions["sub_1"] = _provider(
+        items=[_item(), _item("si_2", price_id="price_2")]
+    )
+    workflow = _workflow(facade)
+    scheduled = workflow.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "due-release-failed", "staff_requested"
+    )
+    _apply_scheduled_item_phase()
+    _TransitionStripe.schedule_release_error = RuntimeError("release unavailable")
+
+    result = workflow.process_due(worker_id="worker_1", limit=25)
+
+    assert result == {
+        "claimed": 1,
+        "completed": 0,
+        "reconciliation_required": 1,
+        "failed": 0,
+    }
+    assert len(_TransitionStripe.schedule_release_calls) == 1
+    assert _TransitionStripe.subscriptions["sub_1"]["schedule"] == "sub_sched_1"
+    assert facade.supabase.billing_enrollment_transition_intents[
+        scheduled["intent"]["id"]
+    ]["state"] == "reconciliation_required"
+
+
+def test_item_due_never_releases_schedule_with_mismatched_owner_metadata():
+    peer = _enrollment(
+        id="enrollment_2",
+        student_id="student_2",
+        billing_plan_id="plan_2",
+        status="active",
+        billing_subscription_id="group_1",
+        stripe_subscription_id="sub_1",
+        stripe_subscription_item_id="si_2",
+    )
+    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade.supabase.tables["billing_plans"].append(
+        _plan(id="plan_2", stripe_price_id="price_2")
+    )
+    _TransitionStripe.subscriptions["sub_1"] = _provider(
+        items=[_item(), _item("si_2", price_id="price_2")]
+    )
+    workflow = _workflow(facade)
+    scheduled = workflow.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "due-release-owner", "staff_requested"
+    )
+    _apply_scheduled_item_phase()
+    _TransitionStripe.schedules["sub_sched_1"]["metadata"][
+        "koaryu_transition_intent_id"
+    ] = "00000000-0000-4000-8000-000000000999"
+
+    result = workflow.process_due(worker_id="worker_1", limit=25)
+
+    assert result == {
+        "claimed": 1,
+        "completed": 0,
+        "reconciliation_required": 1,
+        "failed": 0,
+    }
+    assert _TransitionStripe.schedule_release_calls == []
+    assert _TransitionStripe.subscriptions["sub_1"]["schedule"] == "sub_sched_1"
+    assert facade.supabase.billing_enrollment_transition_intents[
+        scheduled["intent"]["id"]
+    ]["state"] == "reconciliation_required"
+
+
+def test_item_due_recovery_rejects_copied_metadata_on_different_schedule_id():
+    peer = _enrollment(
+        id="enrollment_2",
+        student_id="student_2",
+        billing_plan_id="plan_2",
+        status="active",
+        billing_subscription_id="group_1",
+        stripe_subscription_id="sub_1",
+        stripe_subscription_item_id="si_2",
+    )
+    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade.supabase.tables["billing_plans"].append(
+        _plan(id="plan_2", stripe_price_id="price_2")
+    )
+    _TransitionStripe.subscriptions["sub_1"] = _provider(
+        items=[_item(), _item("si_2", price_id="price_2")]
+    )
+    workflow = _workflow(facade)
+    scheduled = workflow.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "due-release-copy", "staff_requested"
+    )
+    _apply_scheduled_item_phase()
+    copied = copy.deepcopy(_TransitionStripe.schedules.pop("sub_sched_1"))
+    copied.update({
+        "id": "sub_sched_copied",
+        "status": "released",
+        "subscription": None,
+        "released_subscription": "sub_1",
+    })
+    _TransitionStripe.schedules[copied["id"]] = copied
+    _TransitionStripe.subscriptions["sub_1"]["schedule"] = None
+
+    result = workflow.process_due(worker_id="worker_1", limit=25)
+
+    assert result == {
+        "claimed": 1,
+        "completed": 0,
+        "reconciliation_required": 1,
+        "failed": 0,
+    }
+    assert _TransitionStripe.schedule_release_calls == []
+    assert facade.supabase.tables["student_billing_enrollments"][0]["status"] == "active"
+    assert "complete_due_billing_enrollment_item_transition_v31" not in {
+        name for name, _params in facade.supabase.rpc_calls
+    }
+    assert facade.supabase.billing_enrollment_transition_intents[
+        scheduled["intent"]["id"]
+    ]["state"] == "reconciliation_required"
 
 
 def test_whole_due_unconfirmed_readback_marks_source_reconciliation_without_mutation():

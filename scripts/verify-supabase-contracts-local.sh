@@ -1214,6 +1214,31 @@ assert_preflight_rejects \
   "GRANT EXECUTE ON FUNCTION public.finalize_billing_payer_setup_projection_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer) TO service_role WITH GRANT OPTION;"
 
 assert_attestation_rejects \
+  "V31 schedule-identity RPC exact-signature omission" \
+  "ALTER FUNCTION public.read_billing_enrollment_item_schedule_identity_v31(uuid,uuid) RENAME TO koaryu_schedule_identity_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 schedule-identity RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.read_billing_enrollment_item_schedule_identity_v31(uuid,uuid) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "V31 activation-rejection RPC exact-signature omission" \
+  "ALTER FUNCTION public.reject_billing_autopay_activation_without_provider_v31(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,text,text,bigint) RENAME TO koaryu_activation_rejection_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 activation-rejection RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.reject_billing_autopay_activation_without_provider_v31(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,text,text,bigint) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "V31 activation-reservation RPC exact-signature omission" \
+  "ALTER FUNCTION public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,text,numeric) RENAME TO koaryu_activation_reservation_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 activation-reservation RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,text,numeric) FROM service_role;" \
+  "f"
+
+assert_attestation_rejects \
   "stored function-body drift" \
   "UPDATE pg_proc SET prosrc = 'BEGIN RETURN false; END;' WHERE oid = 'private.live_billing_event_is_in_scope(text,text)'::regprocedure;" \
   "f"

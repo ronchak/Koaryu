@@ -1,4 +1,4 @@
-# Stripe test-provider rehearsal capture worksheet (schema v3)
+# Stripe test-provider rehearsal capture worksheet (schema v4)
 
 Use this worksheet for one approved staging rehearsal of one exact candidate. It is an offline evidence contract, not a provider client. Never paste secrets, hosted URLs, payment details, KYC data, request or response payloads, or live financial data into the evidence file.
 
@@ -17,14 +17,14 @@ Run the named workflows once, in template order. Preserve the original caller ke
 
 The rehearsal must finish with zero failed, stuck, unmapped, wrong-mode, wrong-generation, pending-transition, and reconciliation-required rows. Stop if any count is nonzero.
 
-## Canonical schema-v3 template
+## Canonical schema-v4 template
 
 Copy this block to a private evidence file and replace every angle-bracket placeholder. Keep the field set exact.
 
-<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V3_TEMPLATE:START -->
+<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V4_TEMPLATE:START -->
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "candidate_sha": "<40-CHARACTER-CANDIDATE-SHA>",
   "health_commit_sha": "<40-CHARACTER-CANDIDATE-SHA>",
   "health_ready_url": "<PINNED_STAGING_BACKEND_ORIGIN>/health/ready",
@@ -55,7 +55,8 @@ Copy this block to a private evidence file and replace every angle-bracket place
     "failed_payment_retry_workflow": "invoice.retry", "failed_payment_retry_outcome": "succeeded", "failed_payment_retry_mutation_count": 1,
     "period_schedule_state": "scheduled", "period_revoke_state": "revoked", "period_due_state": "completed",
     "period_schedule_intent_id": "<SCHEDULE_INTENT_ID>", "period_revoke_intent_id": "<REVOKE_INTENT_ID>", "period_due_intent_id": "<DUE_INTENT_ID>",
-    "period_strategy": "subscription_item_delete_at_period_end", "period_quantity_before": 2, "period_quantity_after": 1,
+    "period_revoke_schedule_id": "<SUB_SCHED_REVOKE_ID>", "period_due_schedule_id": "<SUB_SCHED_DUE_ID>",
+    "period_strategy": "subscription_schedule_shared_item_delete_at_period_end", "period_quantity_before": 2, "period_quantity_after": 1,
     "adjusted_payment_id": "<PAYMENT_LOCAL_ID>", "refund_id": "<REFUND_ID>", "dispute_id": "<DISPUTE_ID>",
     "gross_paid_cents": 10000, "refunded_cents": 1000, "disputed_cents": 0, "net_collected_cents": 9000,
     "refundable_remaining_cents": 9000, "invoice_remaining_before_cents": 0, "invoice_remaining_after_cents": 0,
@@ -99,7 +100,12 @@ Copy this block to a private evidence file and replace every angle-bracket place
     {"step_name":"automatic.finalize","workflow_id":"invoice.finalize","operation":"connected_invoice.finalize","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:automatic.finalize>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
     {"step_name":"automatic.pay","workflow_id":"invoice.retry","operation":"connected_invoice.pay","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:automatic.pay>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
     {"step_name":"invoice_retry.pay","workflow_id":"invoice.retry","operation":"connected_invoice.pay","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:invoice_retry.pay>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
-    {"step_name":"period_end.due_quantity_update","workflow_id":"enrollment.cancel.period_end.execute","operation":"connected_subscription_item.update","actor_role":"internal","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:period_end.due_quantity_update>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"period_end.revoke_schedule_create","workflow_id":"enrollment.cancel.period_end.schedule","operation":"connected_subscription_schedule.create","actor_role":"front_desk","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:period_end.revoke_schedule_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"period_end.revoke_schedule_update","workflow_id":"enrollment.cancel.period_end.schedule","operation":"connected_subscription_schedule.update","actor_role":"front_desk","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:period_end.revoke_schedule_update>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"period_end.revoke_release","workflow_id":"enrollment.cancel.period_end.revoke","operation":"connected_subscription_schedule.release","actor_role":"front_desk","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:period_end.revoke_release>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"period_end.due_schedule_create","workflow_id":"enrollment.cancel.period_end.schedule","operation":"connected_subscription_schedule.create","actor_role":"front_desk","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:period_end.due_schedule_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"period_end.due_schedule_update","workflow_id":"enrollment.cancel.period_end.schedule","operation":"connected_subscription_schedule.update","actor_role":"front_desk","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:period_end.due_schedule_update>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"period_end.due_release","workflow_id":"enrollment.cancel.period_end.execute","operation":"connected_subscription_schedule.release","actor_role":"internal","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:period_end.due_release>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
     {"step_name":"payment.refund","workflow_id":"payment.refund","operation":"connected_refund.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:payment.refund>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"}
   ],
   "webhook_delivery_evidence": {
@@ -109,7 +115,7 @@ Copy this block to a private evidence file and replace every angle-bracket place
   "terminal_counts": {"failed":0,"stuck":0,"unmapped":0,"wrong_mode":0,"wrong_generation":0,"pending_transition":0,"reconciliation_required":0}
 }
 ```
-<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V3_TEMPLATE:END -->
+<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V4_TEMPLATE:END -->
 
 Validate the worksheet and then the private evidence file offline:
 

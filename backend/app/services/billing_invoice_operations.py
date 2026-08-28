@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -15,7 +15,11 @@ from stripe import (
     RateLimitError as StripeRateLimitError,
 )
 
-from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceResponse
+from app.schemas.billing import (
+    BillingInvoiceCreate,
+    BillingInvoiceResponse,
+    validate_billing_invoice_due_date,
+)
 from app.services.billing_invoice_projection import _object_get, _stripe_id
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
@@ -79,6 +83,16 @@ class BillingInvoiceOperationWorkflow:
         idempotency_key: str | None,
     ) -> BillingInvoiceResponse:
         request_key = self._required_key(idempotency_key, "invoice creation")
+        try:
+            due_date = validate_billing_invoice_due_date(
+                data.due_date,
+                collection_mode=data.collection_mode,
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
         if data.send_hosted_invoice:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -107,6 +121,12 @@ class BillingInvoiceOperationWorkflow:
         amount_due = sum(item["amount_cents"] * item["quantity"] for item in items)
         application_fee = self.owner._application_fee_amount(amount_due, account)
         caller_hash = self.owner._invoice_request_hash(data)
+        existing_invoice = self.owner._find_invoice_by_idempotency_key(
+            studio_id,
+            request_key,
+        )
+        if existing_invoice is None:
+            self._require_future_invoice_due_date(due_date)
         invoice_row = {
             "studio_id": studio_id,
             "payer_id": data.payer_id,
@@ -118,7 +138,7 @@ class BillingInvoiceOperationWorkflow:
             "amount_paid_cents": 0,
             "amount_remaining_cents": amount_due,
             "currency": data.currency,
-            "due_date": data.due_date,
+            "due_date": due_date,
             "stripe_account_id": account_id,
             "stripe_customer_id": payer["stripe_customer_id"],
             "collection_method": (
@@ -160,7 +180,7 @@ class BillingInvoiceOperationWorkflow:
             "collection_method": invoice_row["collection_method"],
             "application_fee_amount_cents": application_fee,
             "currency": data.currency,
-            "due_date": str(data.due_date) if data.due_date else None,
+            "due_date": due_date,
             "items": items,
         })
         operations = BillingProviderOperationCoordinator(self.supabase)
@@ -220,7 +240,7 @@ class BillingInvoiceOperationWorkflow:
             context=context,
             items=items,
             application_fee=application_fee,
-            due_date=data.due_date,
+            due_date=due_date,
         )
         if state == "provider_succeeded":
             if operation.get("result_code") != "provider_step_phase_completed":
@@ -259,7 +279,7 @@ class BillingInvoiceOperationWorkflow:
                 spec=spec,
                 items=items,
                 application_fee=application_fee,
-                due_date=data.due_date,
+                due_date=due_date,
             )
         operation = operations.transition(
             context,
@@ -272,6 +292,15 @@ class BillingInvoiceOperationWorkflow:
         self._audit_created_once(context, invoice)
         self.owner._recompute_payer_balance(studio_id, payer["id"])
         return BillingInvoiceResponse(**invoice)
+
+    def _require_future_invoice_due_date(self, due_date: str | None) -> None:
+        if due_date is None:
+            return
+        if date.fromisoformat(due_date) <= self.owner._invoice_today_utc():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invoice due date must be a future date.",
+            )
 
     async def finalize_invoice(
         self,

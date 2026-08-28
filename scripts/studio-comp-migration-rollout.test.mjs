@@ -708,6 +708,26 @@ describe("studio-comp migration rollout guard", () => {
     assert.match(WRITER_RETURN_CONTRACT_STATE_SQL, /TABLE\(student_id uuid, guardian_imported boolean\)/);
   });
 
+  it("includes every final V31 activation and schedule-identity RPC in the raw catalog", () => {
+    const requiredRows = [
+      "('public.read_billing_enrollment_item_schedule_identity_v31(uuid, uuid)', 'search_path=\"\"', true, true)",
+      "('public.reject_billing_autopay_activation_without_provider_v31(uuid, uuid, uuid, uuid, uuid, uuid, text, text, text, integer, uuid, text, text, bigint)', 'search_path=\"\"', true, true)",
+      "('public.reserve_billing_autopay_activation_v31(uuid, uuid, uuid, uuid, uuid, text, integer, text, text, numeric)', 'search_path=\"\"', true, true)",
+    ];
+
+    for (const row of requiredRows) {
+      assert.equal(CATALOG_STATE_SQL.split(row).length - 1, 1);
+    }
+    assert.match(
+      EXPECTED_V31_CATALOG_STATE,
+      /functions=106:2410b2433b85f0c5a573e6218e89900de5e258d6f0f3b333d35307f00c68ae41:0/,
+    );
+    assert.match(
+      EXPECTED_V31_RESTORED_CATALOG_STATE,
+      /functions=106:2410b2433b85f0c5a573e6218e89900de5e258d6f0f3b333d35307f00c68ae41:0/,
+    );
+  });
+
   it("decodes the pinned CLI single-field CSV contract before exact V31 validation", () => {
     const quotedReadiness = singleValueCsv(
       "operational_readiness",

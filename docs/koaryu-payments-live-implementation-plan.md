@@ -303,30 +303,30 @@ anchors. It:
 - advances the exact release state through schedule V25 to 126/V31 and adds independent V24-to-V25 and
   V30-to-V31 PostgreSQL 17 restore assertions;
 - pins resource ownership
-  `0:b0a798cb45cd30332423e6ea40c66273ea822852441e41dfc380d18de1cc17fb`,
+  `0:87eb5a6ad0f3c4316f1a743132b48b22605c7fce3f630f6c40aa11576b1ef98e`,
   the V31 operational contract
-  `0:9ef16a6d074fa8bd819958cf20072e41aaa462266ad20a5a59cd92722655138b`,
+  `0:58fe9579f8b5fc7ec7c1bcc62ae681e1d42e1fa0dc2b5618992ad4b402c3d72c`,
   the V31 operational manifest
-  `5c87717b8392b111f2688746eaba8a74ce4a9fec4cc2afb0bfe4cb78c6822f29`,
+  `b77405d712b62a33f64caf5b05088caf397e570f8d0f3880eb02b993fa675457`,
   and expectation state
-  `1:7ae9391adc970483ea85bf0256346272a898cc8ee0d3a37c483a2508a7734afd`.
+  `1:a10e48d2e20a6620c79428a1703b2d0cb705d91e14d522a1b6fb1fbb9b2d4507`.
 
 Latest local candidate evidence before publication:
 
-- backend: all 1,364 tests passed;
+- backend: all 1,383 tests passed;
 - frontend: all 728 tests passed outside the sandbox, including the three
   Chromium-backed print-geometry tests;
 - frontend TypeScript, full ESLint, and the production build with safe
   placeholder build-time configuration passed;
 - API contract generation, 52 environment tests, and the explicit nine-check staging
   isolation guard passed;
-- the rollout tool passed all 63 tests and the aggregate release-workflow gate
-  passed all 125 tests;
+- the rollout tool passed all 64 tests and the aggregate release-workflow gate
+  passed all 126 tests;
 - all 126 migrations, every inherited and new restore path, every negative attestation,
   every concurrency suite, and all 44 SQL contracts passed on ephemeral PostgreSQL 17;
 - a disposable Supabase provider-image reset applied all 126 migrations with the same
   V31 trust anchors and canonical
-  `functions=103:48b5c5646d360aff775dc72dd50144a98683dcc33429d666261972cd278db8c4:0`
+  `functions=106:2410b2433b85f0c5a573e6218e89900de5e258d6f0f3b333d35307f00c68ae41:0`
   catalog state, the release UI atomic contract passed, and database lint reported no
   errors;
 - `git diff --check` passed.

@@ -55,11 +55,19 @@ BEGIN
         'EXECUTE'
     ) OR NOT has_function_privilege(
         'service_role',
-        'public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,numeric)',
+        'public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,text,numeric)',
         'EXECUTE'
     ) OR has_function_privilege(
         'authenticated',
-        'public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,numeric)',
+        'public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,text,numeric)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.reject_billing_autopay_activation_without_provider_v31(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,text,text,bigint)',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'authenticated',
+        'public.reject_billing_autopay_activation_without_provider_v31(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,text,text,bigint)',
         'EXECUTE'
     ) THEN
         RAISE EXCEPTION 'Billing provider RPC privileges are not service-only.';
@@ -1023,6 +1031,226 @@ BEGIN
        OR (SELECT superseded_at FROM public.billing_payer_setup_requests
            WHERE id=v_rejected_request) IS NULL THEN
         RAISE EXCEPTION 'Fresh setup request did not proceed after policy rejection.';
+    END IF;
+END;
+$$;
+
+DO $$
+DECLARE
+    v_admin UUID:=gen_random_uuid();
+    v_studio UUID:=gen_random_uuid();
+    v_payer UUID:=gen_random_uuid();
+    v_student UUID:=gen_random_uuid();
+    v_plan UUID:=gen_random_uuid();
+    v_enrollment UUID:=gen_random_uuid();
+    v_consent_operation UUID:=gen_random_uuid();
+    v_consent_request UUID:=gen_random_uuid();
+    v_consent UUID:=gen_random_uuid();
+    v_group UUID;
+    v_operation UUID;
+    v_lease UUID:=gen_random_uuid();
+    v_lock TEXT:='activation-policy-lock-a';
+    v_now TIMESTAMPTZ:=clock_timestamp();
+    v_result JSONB;
+    v_intent JSONB;
+    v_revision BIGINT;
+BEGIN
+    INSERT INTO auth.users(
+        id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at
+    ) VALUES(
+        v_admin,'authenticated','authenticated',
+        'activation-policy-contract@example.invalid','{}','{}',v_now,v_now
+    );
+    INSERT INTO public.studios(id,name,slug,owner_id) VALUES(
+        v_studio,'Activation policy contract',
+        'activation-policy-'||replace(v_studio::TEXT,'-',''),v_admin
+    );
+    INSERT INTO public.staff_roles(studio_id,user_id,role)
+    VALUES(v_studio,v_admin,'admin');
+    INSERT INTO public.studio_payment_accounts(
+        studio_id,stripe_connected_account_id,status,charges_enabled,metadata
+    ) VALUES(
+        v_studio,'acct_ActivationPolicyContract','charges_enabled',true,
+        jsonb_build_object('connect_account_generation',1)
+    );
+    INSERT INTO public.billing_payers(
+        id,studio_id,display_name,stripe_account_id,stripe_customer_id,
+        connect_account_generation,default_payment_method_id,autopay_status,
+        autopay_authorized_at,autopay_terms_accepted_at
+    ) VALUES(
+        v_payer,v_studio,'Activation policy payer',
+        'acct_ActivationPolicyContract','cus_activation_policy',1,
+        'pm_activation_policy','enabled',v_now-interval '2 minutes',
+        v_now-interval '3 minutes'
+    );
+    INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name)
+    VALUES(v_student,v_studio,'Activation','Policy');
+    INSERT INTO public.billing_plans(
+        id,studio_id,name,amount_cents,currency,billing_interval,status
+    ) VALUES(v_plan,v_studio,'Activation policy plan',5000,'usd','monthly','active');
+    INSERT INTO public.student_billing_enrollments(
+        id,studio_id,student_id,payer_id,billing_plan_id,collection_mode,status,
+        metadata
+    ) VALUES(
+        v_enrollment,v_studio,v_student,v_payer,v_plan,'autopay','pending','{}'
+    );
+    INSERT INTO public.billing_provider_operations(
+        id,studio_id,actor_id,operation_type,caller_request_key,request_sha256,
+        stripe_connected_account_id,connect_account_generation,state,
+        provider_request_attempt_count,provider_object_id,
+        provider_secondary_object_id,provider_request_in_flight_at,
+        provider_succeeded_at,projected_at,completed_at,started_at,created_at,updated_at
+    ) VALUES(
+        v_consent_operation,v_studio,v_admin,'payer.setup','activation-consent',
+        repeat('a',64),'acct_ActivationPolicyContract',1,'completed',1,
+        'cs_activation_consent','seti_activation_consent',v_now-interval '4 minutes',
+        v_now-interval '3 minutes',v_now-interval '2 minutes',
+        v_now-interval '2 minutes',v_now-interval '5 minutes',
+        v_now-interval '5 minutes',v_now
+    );
+    INSERT INTO public.billing_payer_setup_requests(
+        id,operation_id,studio_id,payer_id,initiated_by,terms_version,
+        stripe_checkout_session_id,stripe_setup_intent_id,
+        stripe_connected_account_id,connect_account_generation,
+        setup_request_expires_at,accepted_at,completed_at,created_at,updated_at
+    ) VALUES(
+        v_consent_request,v_consent_operation,v_studio,v_payer,v_admin,
+        'koaryu-autopay-v1','cs_activation_consent','seti_activation_consent',
+        'acct_ActivationPolicyContract',1,v_now+interval '30 minutes',
+        v_now-interval '3 minutes',v_now-interval '2 minutes',
+        v_now-interval '5 minutes',v_now
+    );
+    INSERT INTO public.billing_payer_payment_consents(
+        id,setup_request_id,studio_id,payer_id,terms_version,
+        stripe_checkout_session_id,stripe_setup_intent_id,
+        stripe_connected_account_id,connect_account_generation,
+        acceptance_proof_sha256,accepted_at,completed_at,
+        setup_request_expires_at,created_at,updated_at
+    ) VALUES(
+        v_consent,v_consent_request,v_studio,v_payer,'koaryu-autopay-v1',
+        'cs_activation_consent','seti_activation_consent',
+        'acct_ActivationPolicyContract',1,repeat('b',64),
+        v_now-interval '3 minutes',v_now-interval '2 minutes',
+        v_now+interval '30 minutes',v_now-interval '5 minutes',v_now
+    );
+
+    v_result:=public.reserve_billing_autopay_activation_v31(
+        v_studio,v_admin,v_enrollment,v_payer,v_plan,
+        'acct_ActivationPolicyContract',1,repeat('c',64),
+        'koaryu-autopay-v1',0.5
+    );
+    v_group:=(v_result->'subscription'->>'id')::UUID;
+    IF v_result->>'outcome'<>'created'
+       OR v_result->'subscription'->'metadata'->'activation_reservation'
+          IS DISTINCT FROM jsonb_build_object(
+              'version',1,'enrollment_id',v_enrollment
+          ) THEN
+        RAISE EXCEPTION 'Activation reservation did not persist exact ownership.';
+    END IF;
+    v_intent:=jsonb_build_object(
+        'version',1,'operation_type','enrollment.activate.autopay',
+        'studio_id',v_studio,'enrollment_id',v_enrollment,
+        'student_id',v_student,'payer_id',v_payer,'plan_id',v_plan,
+        'account_id','acct_ActivationPolicyContract','generation',1,
+        'customer_id','cus_activation_policy','product_id','prod_contract',
+        'price_id','price_contract','group_id',v_group,
+        'branch','create_subscription','expected_subscription_id',NULL,
+        'expected_item_id',NULL,'expected_quantity',1,
+        'desired_sha256',repeat('d',64)
+    );
+    UPDATE public.student_billing_enrollments
+    SET metadata=jsonb_build_object('provider_activation_intent',v_intent)
+    WHERE id=v_enrollment;
+    v_result:=public.claim_billing_provider_operation_resource_v1(
+        v_studio,v_admin,'enrollment.activate.autopay','enrollment',v_enrollment,
+        v_payer,'activation-policy-key',repeat('d',64),
+        'acct_ActivationPolicyContract',1,v_lease,30
+    );
+    v_operation:=(v_result->'operation'->>'id')::UUID;
+    v_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    PERFORM public.claim_billing_subscription_quantity_sync(
+        v_studio,v_group,v_lock,120
+    );
+    v_result:=public.reject_billing_autopay_activation_without_provider_v31(
+        v_operation,v_studio,v_admin,v_enrollment,v_payer,v_group,
+        v_result->'operation'->>'caller_request_key',repeat('d',64),
+        'acct_ActivationPolicyContract',1,gen_random_uuid(),v_lock,
+        repeat('c',64),v_revision
+    );
+    IF v_result->>'outcome'<>'rejected'
+       OR (v_result->>'subscription_deleted')::BOOLEAN IS DISTINCT FROM true
+       OR v_result->'operation'->>'state'<>'definitive_rejected'
+       OR (v_result->'operation'->>'provider_request_attempt_count')::INTEGER<>0
+       OR EXISTS(SELECT 1 FROM public.billing_subscriptions WHERE id=v_group)
+       OR (SELECT metadata ? 'provider_activation_intent'
+           FROM public.student_billing_enrollments WHERE id=v_enrollment)
+       OR NOT (SELECT metadata ? 'provider_activation_rejection'
+           FROM public.student_billing_enrollments WHERE id=v_enrollment) THEN
+        RAISE EXCEPTION 'Exact no-object activation rejection did not converge.';
+    END IF;
+    IF public.reject_billing_autopay_activation_without_provider_v31(
+        v_operation,v_studio,v_admin,v_enrollment,v_payer,v_group,
+        v_result->'operation'->>'caller_request_key',repeat('d',64),
+        'acct_ActivationPolicyContract',1,v_lease,v_lock,repeat('c',64),v_revision
+    )->>'outcome'<>'replay' THEN
+        RAISE EXCEPTION 'Exact activation rejection did not replay.';
+    END IF;
+    v_result:=public.reserve_billing_autopay_activation_v31(
+        v_studio,v_admin,v_enrollment,v_payer,v_plan,
+        'acct_ActivationPolicyContract',1,repeat('c',64),
+        'koaryu-autopay-v1',0.5
+    );
+    IF v_result->>'outcome'<>'definitive_rejected'
+       OR EXISTS(SELECT 1 FROM public.billing_subscriptions
+                 WHERE studio_id=v_studio AND payer_id=v_payer) THEN
+        RAISE EXCEPTION 'Same-key retry recreated a rejected reservation.';
+    END IF;
+
+    v_result:=public.reserve_billing_autopay_activation_v31(
+        v_studio,v_admin,v_enrollment,v_payer,v_plan,
+        'acct_ActivationPolicyContract',1,repeat('e',64),
+        'koaryu-autopay-v1',0.5
+    );
+    v_group:=(v_result->'subscription'->>'id')::UUID;
+    v_intent:=jsonb_set(v_intent,'{group_id}',to_jsonb(v_group));
+    v_intent:=jsonb_set(v_intent,'{desired_sha256}',to_jsonb(repeat('f',64)));
+    UPDATE public.student_billing_enrollments
+    SET metadata=jsonb_build_object('provider_activation_intent',v_intent)
+    WHERE id=v_enrollment;
+    v_lease:=gen_random_uuid();
+    v_lock:='activation-policy-lock-b';
+    v_result:=public.claim_billing_provider_operation_resource_v1(
+        v_studio,v_admin,'enrollment.activate.autopay','enrollment',v_enrollment,
+        v_payer,'activation-policy-fresh',repeat('f',64),
+        'acct_ActivationPolicyContract',1,v_lease,30
+    );
+    v_operation:=(v_result->'operation'->>'id')::UUID;
+    PERFORM public.claim_billing_subscription_quantity_sync(
+        v_studio,v_group,v_lock,120
+    );
+    v_result:=public.transition_billing_provider_operation_v1(
+        v_operation,v_studio,v_admin,'enrollment.activate.autopay',
+        v_result->>'canonical_caller_request_key',repeat('f',64),
+        'acct_ActivationPolicyContract',1,v_lease,
+        (v_result->'operation'->>'revision')::BIGINT,
+        'provider_request_in_flight',NULL,NULL,NULL,
+        'enrollment_activation_started',NULL,NULL,NULL,NULL
+    );
+    UPDATE public.billing_subscriptions
+    SET stripe_subscription_id='sub_provider_backed_contract'
+    WHERE id=v_group;
+    v_result:=public.reject_billing_autopay_activation_without_provider_v31(
+        v_operation,v_studio,v_admin,v_enrollment,v_payer,v_group,
+        v_result->'operation'->>'caller_request_key',repeat('f',64),
+        'acct_ActivationPolicyContract',1,v_lease,v_lock,repeat('e',64),
+        (v_result->'operation'->>'revision')::BIGINT
+    );
+    IF (v_result->>'subscription_deleted')::BOOLEAN IS DISTINCT FROM false
+       OR NOT EXISTS(SELECT 1 FROM public.billing_subscriptions
+                     WHERE id=v_group
+                       AND stripe_subscription_id='sub_provider_backed_contract')
+       OR v_result->'operation'->>'state'<>'definitive_rejected' THEN
+        RAISE EXCEPTION 'Provider-backed activation group was not preserved.';
     END IF;
 END;
 $$;

@@ -96,6 +96,10 @@ class BillingEnrollmentActivationWorkflow:
             else ENROLLMENT_ACTIVATE_INVOICE_OPERATION_TYPE
         )
         operations = BillingProviderOperationCoordinator(self.supabase)
+        caller_request_key_sha256 = stable_hash({
+            "caller_request_key": request_key,
+        })
+        reservation_created = False
         if collection_mode == "autopay":
             try:
                 reservation = operations.reserve_autopay_activation(
@@ -109,6 +113,7 @@ class BillingEnrollmentActivationWorkflow:
                     application_fee_percent=self.owner._application_fee_percent(
                         account
                     ),
+                    caller_request_key_sha256=caller_request_key_sha256,
                 )
             except PostgrestAPIError as exc:
                 if exc.message in {
@@ -123,8 +128,14 @@ class BillingEnrollmentActivationWorkflow:
                         ),
                     ) from exc
                 raise
+            if reservation.get("outcome") == "definitive_rejected":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Enrollment activation was rejected. Use a new Idempotency-Key.",
+                )
             payer = reservation["payer"]
             group = reservation["subscription"]
+            reservation_created = reservation.get("outcome") == "created"
         else:
             group = self.owner._find_or_create_billing_subscription(
                 enrollment, plan, payer, account
@@ -240,6 +251,9 @@ class BillingEnrollmentActivationWorkflow:
                     operation=operation,
                     operations=operations,
                     intent=intent,
+                    reservation_created=reservation_created,
+                    quantity_lock_token=lock_token,
+                    caller_request_key_sha256=caller_request_key_sha256,
                 )
             else:
                 raise HTTPException(status_code=503, detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL)
@@ -258,9 +272,21 @@ class BillingEnrollmentActivationWorkflow:
             self._audit_once(context, result)
             return StudentBillingEnrollmentResponse(**result)
         finally:
-            self.lifecycle._release_subscription_quantity_sync_lock(
-                studio_id, group["id"], lock_token
-            )
+            cleanup_attempted = group.get("_policy_rejection_cleanup_attempted")
+            group_exists = True
+            if cleanup_attempted:
+                group_exists = bool((
+                    self.supabase.table("billing_subscriptions")
+                    .select("id")
+                    .eq("id", group["id"])
+                    .eq("studio_id", studio_id)
+                    .limit(1)
+                    .execute()
+                ).data)
+            if group_exists:
+                self.lifecycle._release_subscription_quantity_sync_lock(
+                    studio_id, group["id"], lock_token
+                )
 
     def _execute_one_mutation(
         self,
@@ -274,8 +300,12 @@ class BillingEnrollmentActivationWorkflow:
         operation: dict[str, Any],
         operations: BillingProviderOperationCoordinator,
         intent: dict[str, Any],
+        reservation_created: bool,
+        quantity_lock_token: str,
+        caller_request_key_sha256: str,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         branch = intent["branch"]
+        stripe_service = self.stripe_service_cls()
         if branch in {"add_item", "update_quantity"}:
             try:
                 self._require_subscription_open_for_activation(
@@ -288,6 +318,37 @@ class BillingEnrollmentActivationWorkflow:
                 self._reject_scheduled_subscription_activation(
                     operations, context, operation, exc,
                 )
+        if branch == "create_subscription" and reservation_created:
+            mutation_authorizer = getattr(
+                stripe_service,
+                "_authorize_stripe_mutation",
+                None,
+            )
+            if callable(mutation_authorizer):
+                try:
+                    mutation_authorizer(
+                        "connected_subscription.create",
+                        studio_id=context.studio_id,
+                        account_id=context.stripe_connected_account_id,
+                    )
+                except StripeMutationBlocked as exc:
+                    self._reject_policy_blocked_activation(
+                        operations=operations,
+                        context=context,
+                        operation=operation,
+                        enrollment=enrollment,
+                        payer=payer,
+                        group=group,
+                        quantity_lock_token=quantity_lock_token,
+                        caller_request_key_sha256=caller_request_key_sha256,
+                    )
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "Enrollment activation was rejected. "
+                            "Use a new Idempotency-Key."
+                        ),
+                    ) from exc
         operation = operations.transition(
             context,
             operation,
@@ -312,7 +373,7 @@ class BillingEnrollmentActivationWorkflow:
         )
         try:
             if branch == "create_subscription":
-                provider = self.stripe_service_cls().create_connected_subscription(
+                provider = stripe_service.create_connected_subscription(
                     account_id=context.stripe_connected_account_id,
                     studio_id=context.studio_id,
                     customer_id=payer["stripe_customer_id"],
@@ -339,7 +400,7 @@ class BillingEnrollmentActivationWorkflow:
                     provider, enrollment["id"]
                 )
             elif branch == "add_item":
-                provider = self.stripe_service_cls().create_connected_subscription_item(
+                provider = stripe_service.create_connected_subscription_item(
                     account_id=context.stripe_connected_account_id,
                     studio_id=context.studio_id,
                     subscription_id=intent["expected_subscription_id"],
@@ -350,7 +411,7 @@ class BillingEnrollmentActivationWorkflow:
                 subscription_id = intent["expected_subscription_id"]
                 item_id = _stripe_id(provider)
             else:
-                provider = self.stripe_service_cls().update_connected_subscription_item(
+                provider = stripe_service.update_connected_subscription_item(
                     account_id=context.stripe_connected_account_id,
                     studio_id=context.studio_id,
                     subscription_item_id=intent["expected_item_id"],
@@ -361,10 +422,22 @@ class BillingEnrollmentActivationWorkflow:
                 subscription_id = intent["expected_subscription_id"]
                 item_id = _stripe_id(provider)
         except StripeMutationBlocked:
-            operations.transition(
-                context, operation, "definitive_rejected",
-                error_code="provider_mutation_blocked",
-            )
+            if branch == "create_subscription" and reservation_created:
+                self._reject_policy_blocked_activation(
+                    operations=operations,
+                    context=context,
+                    operation=operation,
+                    enrollment=enrollment,
+                    payer=payer,
+                    group=group,
+                    quantity_lock_token=quantity_lock_token,
+                    caller_request_key_sha256=caller_request_key_sha256,
+                )
+            else:
+                operations.transition(
+                    context, operation, "definitive_rejected",
+                    error_code="provider_mutation_blocked",
+                )
             raise
         except Exception as exc:
             self._mark_reconciliation(
@@ -392,6 +465,56 @@ class BillingEnrollmentActivationWorkflow:
             enrollment, context, operation, intent, plan=plan, payer=payer, group=group
         )
         return result, operation
+
+    def _reject_policy_blocked_activation(
+        self,
+        *,
+        operations: BillingProviderOperationCoordinator,
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        enrollment: dict[str, Any],
+        payer: dict[str, Any],
+        group: dict[str, Any],
+        quantity_lock_token: str,
+        caller_request_key_sha256: str,
+    ) -> None:
+        group["_policy_rejection_cleanup_attempted"] = True
+        cleanup_attempts = (
+            2
+            if operation.get("state") == "provider_request_in_flight"
+            and int(operation.get("provider_request_attempt_count") or 0) == 1
+            and operation.get("lease_owner") == context.lease_owner
+            else 1
+        )
+        rejected = None
+        last_error = None
+        for _attempt in range(cleanup_attempts):
+            try:
+                rejected = operations.reject_autopay_activation_without_provider(
+                    context,
+                    operation=operation,
+                    enrollment_id=str(enrollment["id"]),
+                    payer_id=str(payer["id"]),
+                    billing_subscription_id=str(group["id"]),
+                    quantity_lock_token=quantity_lock_token,
+                    caller_request_key_sha256=caller_request_key_sha256,
+                )
+                break
+            except Exception as exc:
+                last_error = exc
+        if rejected is None:
+            raise HTTPException(
+                status_code=503,
+                detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL,
+            ) from last_error
+        if (
+            rejected.get("outcome") not in {"rejected", "replay"}
+            or (rejected.get("operation") or {}).get("state")
+            != "definitive_rejected"
+        ):
+            raise RuntimeError("autopay_activation_policy_rejection_not_converged")
+        if rejected.get("subscription_deleted") is True:
+            group["_deleted_after_policy_rejection"] = True
 
     def _require_subscription_open_for_activation(
         self,

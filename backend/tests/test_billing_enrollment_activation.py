@@ -9,6 +9,7 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.billing_enrollments import BillingEnrollmentManager
 from app.services.platform_billing_helpers import build_idempotency_key
+from app.services.stripe_mutation_policy import StripeMutationBlocked
 from tests.billing_lifecycle_helpers import _FakeSupabase
 
 
@@ -18,6 +19,9 @@ class _ActivationSupabase(_FakeSupabase):
         self.lose_provider_success_response_once = False
         self.autopay_consent_active = True
         self.autopay_reservation_hook = None
+        self.lose_autopay_rejection_response_once = False
+        self.fail_autopay_rejection_before_commit_once = False
+        self.autopay_rejection_calls = 0
 
     def _rpc_reserve_billing_autopay_activation_v31(self, params):
         if self.autopay_reservation_hook is not None:
@@ -33,6 +37,29 @@ class _ActivationSupabase(_FakeSupabase):
             row for row in self.tables["billing_payers"]
             if row["id"] == params["p_payer_id"]
         )
+        enrollment = next(
+            row for row in self.tables["student_billing_enrollments"]
+            if row["id"] == params["p_enrollment_id"]
+        )
+        rejection = (enrollment.get("metadata") or {}).get(
+            "provider_activation_rejection"
+        )
+        if isinstance(rejection, dict):
+            if rejection.get("caller_request_key_sha256") == params[
+                "p_caller_request_key_sha256"
+            ]:
+                operation = next(
+                    row for row in self.billing_provider_operations.values()
+                    if row["id"] == rejection["operation_id"]
+                )
+                return {
+                    "outcome": "definitive_rejected",
+                    "payer": dict(payer),
+                    "subscription": {},
+                    "consent": {"completed_at": "2026-08-27T00:00:00Z"},
+                    "operation": dict(operation),
+                }
+            enrollment["metadata"].pop("provider_activation_rejection", None)
         group = next(
             (
                 row for row in self.tables.setdefault(
@@ -66,10 +93,20 @@ class _ActivationSupabase(_FakeSupabase):
                 "metadata": {
                     "connect_account_generation": params[
                         "p_connect_account_generation"
-                    ]
+                    ],
+                    "activation_reservation": {
+                        "version": 1,
+                        "enrollment_id": params["p_enrollment_id"],
+                    },
                 },
             }
             self.tables["billing_subscriptions"].append(group)
+            outcome = "created"
+        elif (
+            group.get("stripe_subscription_id") is None
+            and (group.get("metadata") or {}).get("activation_reservation")
+            == {"version": 1, "enrollment_id": params["p_enrollment_id"]}
+        ):
             outcome = "created"
         return {
             "outcome": outcome,
@@ -77,6 +114,91 @@ class _ActivationSupabase(_FakeSupabase):
             "subscription": dict(group),
             "consent": {"completed_at": "2026-08-27T00:00:00Z"},
         }
+
+    def _rpc_reject_billing_autopay_activation_without_provider_v31(self, params):
+        self.autopay_rejection_calls += 1
+        if self.fail_autopay_rejection_before_commit_once:
+            self.fail_autopay_rejection_before_commit_once = False
+            raise RuntimeError("autopay rejection cleanup failed before commit")
+        operation = next(
+            row for row in self.billing_provider_operations.values()
+            if row["id"] == params["p_operation_id"]
+        )
+        group = next(
+            (
+                row for row in self.tables["billing_subscriptions"]
+                if row["id"] == params["p_billing_subscription_id"]
+            ),
+            None,
+        )
+        enrollment = next(
+            row for row in self.tables["student_billing_enrollments"]
+            if row["id"] == params["p_enrollment_id"]
+        )
+        if (
+            operation["state"] == "definitive_rejected"
+            and operation.get("error_code") == "provider_mutation_blocked"
+        ):
+            return {
+                "outcome": "replay",
+                "operation": dict(operation),
+                "subscription_deleted": group is None,
+            }
+        assert operation["state"] in {"started", "provider_request_in_flight"}
+        assert operation["provider_request_attempt_count"] == (
+            0 if operation["state"] == "started" else 1
+        )
+        assert operation.get("provider_object_id") is None
+        assert operation["revision"] == params["p_expected_operation_revision"]
+        intent = (enrollment.get("metadata") or {}).get(
+            "provider_activation_intent"
+        ) or {}
+        metadata = (group or {}).get("metadata") or {}
+        linked = [
+            row for row in self.tables["student_billing_enrollments"]
+            if row.get("billing_subscription_id") == params[
+                "p_billing_subscription_id"
+            ]
+        ]
+        safe = bool(
+            group
+            and group.get("stripe_subscription_id") is None
+            and group.get("status") == "pending"
+            and metadata.get("activation_reservation") == {
+                "version": 1,
+                "enrollment_id": params["p_enrollment_id"],
+            }
+            and (metadata.get("stripe_quantity_sync_lock") or {}).get("token")
+            == params["p_quantity_lock_token"]
+            and intent.get("branch") == "create_subscription"
+            and intent.get("desired_sha256") == params["p_request_sha256"]
+            and not linked
+        )
+        if safe:
+            enrollment["metadata"].pop("provider_activation_intent", None)
+            enrollment["metadata"]["provider_activation_rejection"] = {
+                "version": 1,
+                "operation_id": params["p_operation_id"],
+                "caller_request_key_sha256": params[
+                    "p_caller_request_key_sha256"
+                ],
+                "request_sha256": params["p_request_sha256"],
+            }
+            self.tables["billing_subscriptions"].remove(group)
+        operation.update({
+            "state": "definitive_rejected",
+            "error_code": "provider_mutation_blocked",
+            "revision": operation["revision"] + 1,
+        })
+        result = {
+            "outcome": "rejected",
+            "operation": dict(operation),
+            "subscription_deleted": safe,
+        }
+        if self.lose_autopay_rejection_response_once:
+            self.lose_autopay_rejection_response_once = False
+            raise RuntimeError("lost autopay rejection cleanup response")
+        return result
 
     def _rpc_transition_billing_provider_operation_v1(self, params):
         result = super()._rpc_transition_billing_provider_operation_v1(params)
@@ -860,6 +982,241 @@ def test_autopay_create_reservation_rejects_disable_first_without_stale_group():
     assert facade.supabase.tables["billing_subscriptions"] == []
     assert _Stripe.create_subscription_calls == []
     assert facade.supabase.billing_provider_operations == {}
+
+
+class _PolicyBlockedStripe(_Stripe):
+    def _authorize_stripe_mutation(self, _operation, **_scope):
+        raise StripeMutationBlocked(status_code=503, detail="provider blocked")
+
+    def create_connected_subscription(self, **_payload):
+        raise StripeMutationBlocked(status_code=503, detail="provider blocked")
+
+    def create_connected_subscription_item(self, **_payload):
+        raise StripeMutationBlocked(status_code=503, detail="provider blocked")
+
+    def update_connected_subscription_item(self, **_payload):
+        raise StripeMutationBlocked(status_code=503, detail="provider blocked")
+
+
+class _BoundaryRecheckBlockedStripe(_Stripe):
+    authorization_calls = 0
+    raw_create_calls = 0
+
+    def _authorize_stripe_mutation(self, _operation, **_scope):
+        self.__class__.authorization_calls += 1
+        if self.__class__.authorization_calls == 2:
+            raise StripeMutationBlocked(status_code=503, detail="provider blocked")
+
+    def create_connected_subscription(self, **payload):
+        self._authorize_stripe_mutation(
+            "connected_subscription.create",
+            studio_id=payload["studio_id"],
+            account_id=payload["account_id"],
+        )
+        self.__class__.raw_create_calls += 1
+        return super().create_connected_subscription(**payload)
+
+
+def test_policy_blocked_autopay_create_deletes_exact_empty_reservation():
+    facade = _Facade(_tables(enrollment=_enrollment(collection_mode="autopay")))
+    manager = BillingEnrollmentManager(
+        facade,
+        stripe_service_cls=_PolicyBlockedStripe,
+    )
+
+    with pytest.raises(HTTPException) as blocked:
+        asyncio.run(manager.activate_enrollment(
+            "enrollment_1", "studio_1", "actor_1", "policy-blocked-create"
+        ))
+
+    assert blocked.value.status_code == 409
+    operation = _operation(facade)
+    enrollment = facade.supabase.tables["student_billing_enrollments"][0]
+    assert operation["state"] == "definitive_rejected"
+    assert operation["provider_request_attempt_count"] == 0
+    assert operation["provider_object_id"] is None
+    assert facade.supabase.tables["billing_subscriptions"] == []
+    assert "provider_activation_intent" not in enrollment["metadata"]
+    assert _Stripe.subscriptions == {}
+
+
+def test_lost_policy_cleanup_response_same_key_never_recreates_group():
+    facade = _Facade(_tables(enrollment=_enrollment(collection_mode="autopay")))
+    facade.supabase.lose_autopay_rejection_response_once = True
+    blocked_manager = BillingEnrollmentManager(
+        facade,
+        stripe_service_cls=_PolicyBlockedStripe,
+    )
+
+    with pytest.raises(HTTPException) as lost:
+        asyncio.run(blocked_manager.activate_enrollment(
+            "enrollment_1", "studio_1", "actor_1", "lost-policy-cleanup"
+        ))
+    assert lost.value.status_code == 503
+    assert facade.supabase.tables["billing_subscriptions"] == []
+    assert _operation(facade)["state"] == "definitive_rejected"
+
+    with pytest.raises(HTTPException) as replay:
+        asyncio.run(blocked_manager.activate_enrollment(
+            "enrollment_1", "studio_1", "actor_1", "lost-policy-cleanup"
+        ))
+    assert replay.value.status_code == 409
+    assert "new Idempotency-Key" in replay.value.detail
+    assert facade.supabase.tables["billing_subscriptions"] == []
+    assert _Stripe.subscriptions == {}
+
+    result = asyncio.run(_manager(facade).activate_enrollment(
+        "enrollment_1", "studio_1", "actor_1", "fresh-after-policy-cleanup"
+    ))
+    assert result.status == "active"
+    assert len(facade.supabase.tables["billing_subscriptions"]) == 1
+    assert facade.supabase.tables["billing_subscriptions"][0][
+        "stripe_subscription_id"
+    ] == "sub_created"
+
+
+def test_precommit_cleanup_failure_same_key_reestablishes_policy_proof():
+    facade = _Facade(_tables(enrollment=_enrollment(collection_mode="autopay")))
+    facade.supabase.fail_autopay_rejection_before_commit_once = True
+    blocked_manager = BillingEnrollmentManager(
+        facade,
+        stripe_service_cls=_PolicyBlockedStripe,
+    )
+
+    with pytest.raises(HTTPException) as failed_cleanup:
+        asyncio.run(blocked_manager.activate_enrollment(
+            "enrollment_1", "studio_1", "actor_1", "precommit-policy-cleanup"
+        ))
+    operation = _operation(facade)
+    assert failed_cleanup.value.status_code == 503
+    assert operation["state"] == "started"
+    assert operation["provider_request_attempt_count"] == 0
+    assert len(facade.supabase.tables["billing_subscriptions"]) == 1
+    assert _Stripe.subscriptions == {}
+
+    with pytest.raises(HTTPException) as converged:
+        asyncio.run(blocked_manager.activate_enrollment(
+            "enrollment_1", "studio_1", "actor_1", "precommit-policy-cleanup"
+        ))
+    assert converged.value.status_code == 409
+    assert "new Idempotency-Key" in converged.value.detail
+    assert operation["state"] == "definitive_rejected"
+    assert operation["provider_request_attempt_count"] == 0
+    assert facade.supabase.tables["billing_subscriptions"] == []
+    assert _Stripe.subscriptions == {}
+
+    result = asyncio.run(_manager(facade).activate_enrollment(
+        "enrollment_1", "studio_1", "actor_1", "fresh-precommit-policy-cleanup"
+    ))
+    assert result.status == "active"
+
+
+@pytest.mark.parametrize("cleanup_failure", ["before_commit", "after_commit"])
+def test_boundary_policy_block_retries_exact_cleanup_once_before_returning(
+    cleanup_failure,
+):
+    _BoundaryRecheckBlockedStripe.authorization_calls = 0
+    _BoundaryRecheckBlockedStripe.raw_create_calls = 0
+    facade = _Facade(_tables(enrollment=_enrollment(collection_mode="autopay")))
+    if cleanup_failure == "before_commit":
+        facade.supabase.fail_autopay_rejection_before_commit_once = True
+    else:
+        facade.supabase.lose_autopay_rejection_response_once = True
+    manager = BillingEnrollmentManager(
+        facade,
+        stripe_service_cls=_BoundaryRecheckBlockedStripe,
+    )
+
+    with pytest.raises(StripeMutationBlocked):
+        asyncio.run(manager.activate_enrollment(
+            "enrollment_1",
+            "studio_1",
+            "actor_1",
+            f"boundary-policy-cleanup-{cleanup_failure}",
+        ))
+
+    operation = _operation(facade)
+    assert _BoundaryRecheckBlockedStripe.authorization_calls == 2
+    assert _BoundaryRecheckBlockedStripe.raw_create_calls == 0
+    assert facade.supabase.autopay_rejection_calls == 2
+    assert operation["state"] == "definitive_rejected"
+    assert operation["provider_request_attempt_count"] == 1
+    assert operation["provider_object_id"] is None
+    assert facade.supabase.tables["billing_subscriptions"] == []
+    enrollment = facade.supabase.tables["student_billing_enrollments"][0]
+    assert "provider_activation_intent" not in enrollment["metadata"]
+    assert "provider_activation_rejection" in enrollment["metadata"]
+
+    with pytest.raises(HTTPException) as replay:
+        asyncio.run(manager.activate_enrollment(
+            "enrollment_1",
+            "studio_1",
+            "actor_1",
+            f"boundary-policy-cleanup-{cleanup_failure}",
+        ))
+    assert replay.value.status_code == 409
+    assert facade.supabase.tables["billing_subscriptions"] == []
+    assert _BoundaryRecheckBlockedStripe.raw_create_calls == 0
+
+    result = asyncio.run(_manager(facade).activate_enrollment(
+        "enrollment_1",
+        "studio_1",
+        "actor_1",
+        f"fresh-boundary-policy-cleanup-{cleanup_failure}",
+    ))
+    assert result.status == "active"
+
+
+@pytest.mark.parametrize("protected_kind", ["reused", "provider", "linked"])
+def test_policy_blocked_autopay_never_deletes_protected_group(protected_kind):
+    group = _group(
+        collection_mode="autopay",
+        status="pending",
+        stripe_subscription_id=None,
+    )
+    peers = []
+    if protected_kind == "provider":
+        group["stripe_subscription_id"] = "sub_existing"
+        group["status"] = "active"
+        provider = _provider_subscription()
+        provider["id"] = "sub_existing"
+        _Stripe.subscriptions["sub_existing"] = provider
+    elif protected_kind == "linked":
+        group["metadata"]["activation_reservation"] = {
+            "version": 1,
+            "enrollment_id": "enrollment_1",
+        }
+        peers = [{
+            **_enrollment(
+                id="enrollment_peer",
+                student_id="student_peer",
+                status="active",
+            ),
+            "billing_subscription_id": "group_1",
+        }]
+    facade = _Facade(_tables(
+        enrollment=_enrollment(collection_mode="autopay"),
+        group=group,
+        peers=peers,
+    ))
+    manager = BillingEnrollmentManager(
+        facade,
+        stripe_service_cls=_PolicyBlockedStripe,
+    )
+
+    with pytest.raises((StripeMutationBlocked, HTTPException)):
+        asyncio.run(manager.activate_enrollment(
+            "enrollment_1",
+            "studio_1",
+            "actor_1",
+            f"policy-blocked-{protected_kind}",
+        ))
+
+    assert facade.supabase.tables["billing_subscriptions"] == [group]
+    assert _operation(facade)["state"] == "definitive_rejected"
+    assert group.get("stripe_subscription_id") == (
+        "sub_existing" if protected_kind == "provider" else None
+    )
 
 
 def test_lost_provider_success_response_replays_without_second_mutation():

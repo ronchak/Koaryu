@@ -13,6 +13,8 @@ _TARGETS = {
     "staging": "https://koaryu-staging.onrender.com/api/v1",
 }
 _MAX_RESPONSE_BYTES = 4096
+_BATCH_LIMIT = 25
+_REQUEST_TIMEOUT_SECONDS = 130.0
 
 
 @dataclass(frozen=True)
@@ -48,11 +50,10 @@ class BillingTransitionCronConfig:
 
 def process_due_billing_transitions(
     config: BillingTransitionCronConfig,
-    *,
-    timeout_seconds: float = 60.0,
 ) -> dict[str, int]:
     request = Request(
-        f"{config.backend_api_url}/internal/billing/enrollment-transitions/process-due?limit=100",
+        f"{config.backend_api_url}/internal/billing/enrollment-transitions/process-due"
+        f"?limit={_BATCH_LIMIT}",
         data=b"",
         headers={
             "Accept": "application/json",
@@ -66,7 +67,12 @@ def process_due_billing_transitions(
         # Bandit B310 is not applicable: `backend_api_url` must equal one exact
         # HTTPS origin from `_TARGETS`; arbitrary schemes, hosts, paths, and ports
         # are rejected before this Request is constructed.
-        with urlopen(request, timeout=timeout_seconds) as response:  # nosec B310
+        # The backend bulk lane waits at most 120 seconds. Keep this client
+        # deadline just beyond that boundary so it receives the backend's
+        # retry-safe error instead of abandoning a request that is still
+        # running. The 130-second bound also finishes before the next
+        # five-minute Render Cron invocation.
+        with urlopen(request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:  # nosec B310
             payload_bytes = response.read(_MAX_RESPONSE_BYTES + 1)
             status_code = response.status
     except (HTTPError, URLError, TimeoutError) as exc:

@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any, Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -506,6 +507,26 @@ class BillingInvoiceItemCreate(BaseModel):
     billing_plan_id: Optional[str] = None
 
 
+def validate_billing_invoice_due_date(
+    value: str | None,
+    *,
+    collection_mode: str,
+) -> str | None:
+    if value is None:
+        return None
+    if collection_mode != "invoice_link":
+        raise ValueError("Invoice due date is only valid for invoice_link collection.")
+    if not isinstance(value, str):
+        raise ValueError("Invoice due date must use YYYY-MM-DD format.")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Invoice due date must use YYYY-MM-DD format.") from exc
+    if parsed.isoformat() != value:
+        raise ValueError("Invoice due date must use YYYY-MM-DD format.")
+    return value
+
+
 class BillingInvoiceCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -525,6 +546,14 @@ class BillingInvoiceCreate(BaseModel):
     @classmethod
     def normalize_currency(cls, value: str) -> str:
         return value.strip().lower() or "usd"
+
+    @model_validator(mode="after")
+    def validate_due_date(self):
+        self.due_date = validate_billing_invoice_due_date(
+            self.due_date,
+            collection_mode=self.collection_mode,
+        )
+        return self
 
 
 class BillingInvoiceResponse(BaseModel):

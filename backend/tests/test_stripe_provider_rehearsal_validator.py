@@ -64,7 +64,7 @@ def _valid_evidence() -> dict:
             "caller_request_key_sha256": key_digest if step_name == "payer.customer_create" else "d" * 64,
         })
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "candidate_sha": SHA,
         "health_commit_sha": SHA,
         "health_ready_url": f"{ORIGIN}/health/ready",
@@ -91,7 +91,8 @@ def _valid_evidence() -> dict:
             "failed_payment_retry_workflow": "invoice.retry", "failed_payment_retry_outcome": "succeeded", "failed_payment_retry_mutation_count": 1,
             "period_schedule_state": "scheduled", "period_revoke_state": "revoked", "period_due_state": "completed",
             "period_schedule_intent_id": "intent_schedule_1", "period_revoke_intent_id": "intent_revoke_1", "period_due_intent_id": "intent_due_1",
-            "period_strategy": "subscription_item_delete_at_period_end", "period_quantity_before": 2, "period_quantity_after": 1,
+            "period_revoke_schedule_id": "sub_sched_Revoke1", "period_due_schedule_id": "sub_sched_Due1",
+            "period_strategy": "subscription_schedule_shared_item_delete_at_period_end", "period_quantity_before": 2, "period_quantity_after": 1,
             "adjusted_payment_id": "payment_1", "refund_id": "re_Test1", "dispute_id": "dp_Test1",
             "gross_paid_cents": 10000, "refunded_cents": 1000, "disputed_cents": 0, "net_collected_cents": 9000,
             "refundable_remaining_cents": 9000, "invoice_remaining_before_cents": 0, "invoice_remaining_after_cents": 0,
@@ -220,10 +221,38 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
 
         errors = self.errors(evidence)
 
-        self.assertTrue(any("schema-v3 workflow plan" in error for error in errors))
+        self.assertTrue(any("schema-v4 workflow plan" in error for error in errors))
         self.assertTrue(any("retried" in error for error in errors))
         self.assertTrue(any("successful idempotency/event readback" in error for error in errors))
 
+    def test_rejects_missing_retried_or_misattributed_schedule_lifecycle_mutations(self):
+        for step_name in (
+            "period_end.revoke_schedule_create",
+            "period_end.revoke_schedule_update",
+            "period_end.revoke_release",
+            "period_end.due_schedule_create",
+            "period_end.due_schedule_update",
+            "period_end.due_release",
+        ):
+            with self.subTest(step_name=step_name):
+                evidence = _valid_evidence()
+                mutation = next(
+                    row for row in evidence["mutation_attempts"]
+                    if row["step_name"] == step_name
+                )
+                mutation["automatic_retry_count"] = 1
+                mutation["workflow_id"] = "enrollment.cancel.period_end.schedule"
+                errors = self.errors(evidence)
+                self.assertTrue(any("retried" in error for error in errors))
+                if step_name in {"period_end.revoke_release", "period_end.due_release"}:
+                    self.assertTrue(any("exact workflow contract" in error for error in errors))
+
+                evidence = _valid_evidence()
+                evidence["mutation_attempts"] = [
+                    row for row in evidence["mutation_attempts"]
+                    if row["step_name"] != step_name
+                ]
+                self.assertTrue(any("schema-v4 workflow plan" in error for error in self.errors(evidence)))
     def test_rejects_wrong_candidate_mode_origin_and_live_financial_claim(self):
         evidence = _valid_evidence()
         evidence["health_commit_sha"] = "b" * 40

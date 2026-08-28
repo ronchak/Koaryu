@@ -79,7 +79,10 @@ Both web services and the staging billing-transition cron are declared in
 `koaryu-billing-transitions-staging` is a starter Render Cron Job that tracks the
 `staging` branch, runs every five minutes, and calls only the protected staging
 transition endpoint. It reuses the staging web service's worker secret through a
-Render service reference. Render bills cron execution by runtime with a $1 monthly
+Render service reference. Each run claims at most 25 transitions and waits up to 130
+seconds, beyond the backend bulk lane's 120-second deadline but below the five-minute
+cadence. A lost or failed response is safe to retry because the transition intent and
+provider mutation keep their durable idempotency identity. Render bills cron execution by runtime with a $1 monthly
 minimum for the service. The production web service keeps
 `BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
 release task.

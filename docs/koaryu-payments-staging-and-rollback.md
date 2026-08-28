@@ -122,7 +122,7 @@ python3 scripts/verify-stripe-provider-rehearsal.py \
   --expected-backend-origin https://koaryu-staging.onrender.com
 ```
 
-The schema-v3 evidence must finish with zero failed, stuck, unmapped, wrong-mode,
+The schema-v4 evidence must finish with zero failed, stuck, unmapped, wrong-mode,
 wrong-generation, pending-transition, and reconciliation-required records.
 An externally recorded payment must remain a local accounting entry and must not call
 Stripe's connected-invoice pay endpoint or change a connected invoice out of band.

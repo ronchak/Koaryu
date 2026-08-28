@@ -159,7 +159,12 @@ Enrollment period transitions expose a separate fail-closed backend worker at
 `BILLING_TRANSITION_WORKER_SECRET`. The repository declares
 `koaryu-billing-transitions-staging` as a five-minute Render Cron Job. It reuses the
 staging web service secret by Render service reference and posts only to the pinned
-staging origin. `BILLING_TRANSITION_SCHEDULER_ENABLED` keeps the public scheduling
+staging origin. Each invocation claims at most 25 transitions and uses a 130-second
+HTTP timeout. That timeout is ten seconds longer than the backend bulk lane's
+120-second request deadline, so the cron receives the backend's retry-safe result,
+and it still expires before the next five-minute invocation. Timed-out or failed
+work is retried through the durable transition intent and provider idempotency key.
+`BILLING_TRANSITION_SCHEDULER_ENABLED` keeps the public scheduling
 route and capability closed unless that environment's worker is intentionally active.
 The production value remains `false`, and no production cron may be created in the
 staging release task. After separate production approval, mirror the staging cron with

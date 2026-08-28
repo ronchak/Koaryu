@@ -70,11 +70,11 @@ def test_cron_posts_to_exact_internal_route_without_logging_secret():
     outgoing = request.call_args.args[0]
     assert outgoing.full_url == (
         "https://koaryu-staging.onrender.com/api/v1/internal/billing/"
-        "enrollment-transitions/process-due?limit=100"
+        "enrollment-transitions/process-due?limit=25"
     )
     assert outgoing.method == "POST"
     assert outgoing.headers["X-internal-secret"] == "s" * 40
-    assert request.call_args.kwargs == {"timeout": 60.0}
+    assert request.call_args.kwargs == {"timeout": 130.0}
     assert result == {
         "claimed": 2,
         "completed": 2,
