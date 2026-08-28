@@ -83,6 +83,8 @@ export type BillingInvoice = ApiContracts.ApiBillingInvoiceResponse;
 export type BillingInvoiceCreate = ApiContracts.ApiBillingInvoiceCreate;
 export type BillingPayment = ApiContracts.ApiBillingPaymentResponse;
 export type BillingPaymentCohortSummary = ApiContracts.ApiBillingPaymentCohortSummaryResponse;
+export type BillingRefundCreate = ApiContracts.ApiBillingRefundCreate;
+export type BillingRefundResponse = ApiContracts.ApiBillingRefundResponse;
 export type ExternalPaymentCreate = ApiContracts.ApiExternalPaymentCreate;
 export type ExportJob = ApiContracts.ApiExportJobResponse;
 

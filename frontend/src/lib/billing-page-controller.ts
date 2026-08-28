@@ -24,6 +24,7 @@ import {
 } from "@/lib/billing-page-state";
 import { requirementGroupItems } from "@/lib/billing-page-utils";
 import { useBillingInvoiceController } from "@/lib/billing-invoice-controller";
+import { useBillingRefundController } from "@/lib/billing-refund-controller";
 import {
   areProviderMutationsEnabled,
   canManageRoutineBilling,
@@ -204,6 +205,18 @@ export function useBillingPageController({
     setMessage,
     token,
     enabledWorkflowIds,
+  });
+  const refundController = useBillingRefundController({
+    enabledWorkflowIds,
+    identity: currentUserId && currentStudioId
+      ? { userId: currentUserId, studioId: currentStudioId }
+      : null,
+    isPreviewMode,
+    refreshBilling,
+    role: currentRole,
+    setError,
+    setMessage,
+    token,
   });
   const isEnrollmentPayerSelectDisabled = shouldDisableStudentBillingEnrollmentPayerSelect({
     canManageStudioBilling: canManageRoutineBillingActions,
@@ -512,6 +525,7 @@ export function useBillingPageController({
         coreProviderMutationsEnabled,
         connectOnboardingEnabled,
         invoiceController,
+        refundController,
         koaryuFeeBasis,
         onConnectClick: handleConnectClick,
         openInvoiceTotal,

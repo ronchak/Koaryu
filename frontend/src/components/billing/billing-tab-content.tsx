@@ -10,6 +10,7 @@ import { BillingReportsTab } from "@/components/billing/billing-reports-tab";
 import type { BillingActionController } from "@/lib/billing-action-controller";
 import type { BillingInvoiceController } from "@/lib/billing-invoice-controller";
 import type { BillingProviderCopy } from "@/lib/billing-policy";
+import type { BillingRefundController } from "@/lib/billing-refund-controller";
 import type {
   BillingInvoice,
   BillingPayment,
@@ -50,6 +51,7 @@ type BillingTabContentProps = {
   failedInvoiceCount: number;
   hasStripeConnectedAccount: boolean;
   invoiceController: BillingInvoiceController;
+  refundController: BillingRefundController;
   isEnrollmentPayerSelectDisabled: boolean;
   isPreviewMode: boolean;
   koaryuFeeBasis: number;
@@ -96,6 +98,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
     failedInvoiceCount,
     hasStripeConnectedAccount,
     invoiceController,
+    refundController,
     isEnrollmentPayerSelectDisabled,
     isPreviewMode,
     koaryuFeeBasis,
@@ -258,6 +261,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
       <BillingReportsTab
         billingPayers={billingPayers}
         billingPayments={billingPayments}
+        refundController={refundController}
         canManageRoutineBilling={canManageRoutineBilling}
         externalAmount={externalAmount}
         externalMethod={externalMethod}
