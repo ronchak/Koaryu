@@ -97,13 +97,18 @@ def process_due_billing_transitions(
         raise RuntimeError("Billing transition cron returned an invalid result shape.")
     if payload["failed"] or payload["reconciliation_required"]:
         raise RuntimeError("Billing transition cron requires operator attention.")
-    return {key: payload[key] for key in sorted(expected_keys)}
+    return {
+        "claimed": payload["claimed"],
+        "completed": payload["completed"],
+        "reconciliation_required": payload["reconciliation_required"],
+        "failed": payload["failed"],
+    }
 
 
 def main() -> None:
     config = BillingTransitionCronConfig.from_environment()
-    process_due_billing_transitions(config)
-    print("Billing transition cron completed successfully.")
+    result = process_due_billing_transitions(config)
+    print(json.dumps(result, separators=(",", ":")))
 
 
 if __name__ == "__main__":

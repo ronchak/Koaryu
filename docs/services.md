@@ -87,11 +87,36 @@ minimum for the service. The production web service keeps
 `BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
 release task.
 
-The two web services track **different branches**. For an unmerged release candidate,
-move `staging` to the exact reviewed commit with
-`git push origin <PR_HEAD_SHA>:staging`, then trigger manual exact-commit deploys for
-the staging web service and cron. Never substitute `main` or an older PR head; auto-deploy
-is off on both services.
+The two web services track **different branches**. Render auto-deploy is off for the
+staging web service and cron, so deploy each from the exact reviewed commit and read
+back that deployed SHA. Keep the cron suspended until the exact-candidate backend is
+deployed and `/health/ready` succeeds against the migrated staging database.
+
+Vercel staging is different: `frontend/vercel.json` enables automatic deployment from
+`refs/heads/staging`. Move that ref only after the database, backend readiness, and
+manual cron proof are complete, so the frontend is last. As observed on 2026-08-28,
+`refs/remotes/origin/staging` is
+`ee6137a709e4215efac1319dedd0e55ed2b60e1c`. That is context, not an execution
+assumption. The operator must fetch the current old SHA and candidate ref, bind the
+update to the observed old SHA with `--force-with-lease`, and read the remote ref back
+immediately:
+
+```bash
+PR_HEAD_SHA='<PR_HEAD_SHA>'
+git fetch origin \
+  refs/heads/staging:refs/remotes/origin/staging \
+  refs/heads/codex/koaryu-payments-live:refs/remotes/origin/codex/koaryu-payments-live
+OLD_STAGING_SHA="$(git rev-parse refs/remotes/origin/staging)"
+test "$(git rev-parse refs/remotes/origin/codex/koaryu-payments-live)" = "${PR_HEAD_SHA}"
+git push origin \
+  "${PR_HEAD_SHA}:refs/heads/staging" \
+  --force-with-lease=refs/heads/staging:"${OLD_STAGING_SHA}"
+test "$(git ls-remote --heads origin refs/heads/staging | awk '{print $1}')" = "${PR_HEAD_SHA}"
+```
+
+Abort if any command fails or the readback differs. Never use unchecked `--force`.
+If Render cannot deploy the exact candidate before this move, stop and prove another
+safe provider route. Do not move staging early to make Render see the candidate.
 
 The Render API reported both live services in Oregon on 2026-08-24. Render does
 not support changing an existing service's region. The Oregon declarations in

@@ -103,13 +103,34 @@ def test_cron_fails_closed_on_unsafe_or_attention_required_results(payload: byte
             process_due_billing_transitions(_config())
 
 
-def test_cron_main_does_not_log_environment_or_work_counts(capsys):
-    result = {
-        "claimed": 17,
-        "completed": 16,
-        "failed": 0,
-        "reconciliation_required": 0,
-    }
+@pytest.mark.parametrize(
+    ("result", "expected_output"),
+    (
+        (
+            {
+                "claimed": 0,
+                "completed": 0,
+                "reconciliation_required": 0,
+                "failed": 0,
+            },
+            '{"claimed":0,"completed":0,"reconciliation_required":0,"failed":0}\n',
+        ),
+        (
+            {
+                "claimed": 17,
+                "completed": 17,
+                "reconciliation_required": 0,
+                "failed": 0,
+            },
+            '{"claimed":17,"completed":17,"reconciliation_required":0,"failed":0}\n',
+        ),
+    ),
+)
+def test_cron_main_prints_sanitized_machine_readable_result(
+    capsys,
+    result: dict[str, int],
+    expected_output: str,
+):
     with patch(
         "app.services.billing_transition_cron.BillingTransitionCronConfig.from_environment",
         return_value=_config(),
@@ -119,7 +140,18 @@ def test_cron_main_does_not_log_environment_or_work_counts(capsys):
     ):
         main()
 
-    output = capsys.readouterr().out
-    assert output == "Billing transition cron completed successfully.\n"
-    assert "staging" not in output
-    assert "17" not in output
+    assert capsys.readouterr().out == expected_output
+
+
+def test_cron_main_prints_nothing_when_processing_requires_attention(capsys):
+    with patch(
+        "app.services.billing_transition_cron.BillingTransitionCronConfig.from_environment",
+        return_value=_config(),
+    ), patch(
+        "app.services.billing_transition_cron.process_due_billing_transitions",
+        side_effect=RuntimeError("Billing transition cron requires operator attention."),
+    ):
+        with pytest.raises(RuntimeError):
+            main()
+
+    assert capsys.readouterr().out == ""

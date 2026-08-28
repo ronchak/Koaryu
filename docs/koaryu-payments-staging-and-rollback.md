@@ -1,7 +1,7 @@
 # Koaryu Payments staging, rollback, and production packet
 
 This runbook is for the single unmerged Koaryu Payments pull request. Replace every
-`<PR_HEAD_SHA>` and evidence placeholder with the exact current PR head before use. The
+`<PR_HEAD_SHA>` and evidence placeholder with the exact final head before use. The
 staging rehearsal is Stripe test mode only. Nothing here authorizes a production write,
 Stripe live-mode change, production webhook change, or real-money transaction.
 
@@ -62,11 +62,18 @@ node scripts/studio-comp-migration-rollout.mjs \
   --candidate-sha <PR_HEAD_SHA>
 ```
 
-Confirm the exact project ref, inspected state, pending set, and inspection token. Then
-use the guarded staging apply with its exact generated arguments and a PR #134 issue
-comment whose exact body binds the candidate SHA, staging ref, inspected state, seven
-migrations, and remaining manifest emitted by inspect. Do not use direct SQL, `db reset`,
-or a production link. After apply, require
+Treat this fresh inspect output as the only authority for the starting state,
+`remaining_migrations`, `remaining_manifest_sha256`, and `inspection_token`. Do not copy
+a count or set from this runbook into the approval record. The rollout selection logic
+maps `schedule-v25` to seven remaining files and `v25` to six. Later accepted partial
+states select smaller suffixes. The last coordinator readback on 2026-08-28 found exact
+`v25`, migration 120/head `20260826030234`, with six files remaining, but the next fresh
+inspect supersedes that observation. Then use the
+guarded staging apply with the generated token and a PR #134 issue comment whose exact
+body matches the inspect-emitted approval record, including candidate SHA, staging ref,
+inspected state, remaining count and set, and remaining manifest. A stale six-file or
+seven-file claim is not approval for a different observed state. Do not use direct SQL,
+`db reset`, or a production link. After apply, require
 the exact candidate readiness version, migration count, migration head, and zero security
 failures recorded by the guarded packet. Do not reuse the older V30/125 expectation after
 the additive V31 correction. The required post-state is V31, 126 migrations, head
@@ -74,21 +81,58 @@ the additive V31 correction. The required post-state is V31, 126 migrations, hea
 
 ## Exact-SHA application deploy
 
-Create or update only `koaryu-billing-transitions-staging`, populate its secret through
-the staging web-service reference, and deploy the cron from `<PR_HEAD_SHA>`. Manually
-trigger one zero-work run and require a successful bounded result. Production keeps
-`BILLING_TRANSITION_SCHEDULER_ENABLED=false` and receives no cron in this task.
-The Blueprint's `branch: staging` is configuration metadata, not release evidence;
-verify the cron deployment itself reports `<PR_HEAD_SHA>` before enabling the route.
+After the database apply, deploy the staging backend from `<PR_HEAD_SHA>` and require
+its exact-SHA deployment readback plus successful `/health/ready`. Create or update only
+`koaryu-billing-transitions-staging`, populate its secret through the staging web-service
+reference, and deploy the cron from the same SHA while keeping it suspended. The
+Blueprint's `branch: staging` is configuration metadata, not release evidence. Verify
+the cron deployment itself reports the candidate SHA before allowing any run.
 
 Before deploying the backend or cron, confirm the staging `koaryu-staging` web service
 already owns `BILLING_TRANSITION_WORKER_SECRET`; the candidate intentionally refuses to
 boot or run the worker without it. Do not create or rotate the production value in this
 task.
 
-Then deploy the staging backend and frontend from `<PR_HEAD_SHA>`. The backend may expose
-period-end scheduling only after the staging cron is active. Verify the exact deployed
-pair before any provider mutation:
+After the exact-candidate backend is ready, keep recurring cron execution suspended and
+trigger one manual run if the provider controls permit it. Zero-work proof requires this
+exact compact stdout line:
+
+```json
+{"claimed":0,"completed":0,"reconciliation_required":0,"failed":0}
+```
+
+A successful process exit without that line is insufficient. Nonzero `claimed` and
+`completed` with both error counters at zero is successful work, but it is not zero-work
+evidence. Any nonzero `reconciliation_required` or `failed` requires operator attention.
+Resume the five-minute schedule only after the exact zero-work proof. If Render cannot
+run the job manually while its schedule is suspended, stop and prove a safe provider
+route that cannot start recurring execution before the proof. Production keeps
+`BILLING_TRANSITION_SCHEDULER_ENABLED=false` and receives no cron in this task.
+
+Deploy the frontend last. `origin/staging` was
+`ee6137a709e4215efac1319dedd0e55ed2b60e1c` when this packet was written. That dated SHA
+is context, not an execution assumption. Because Vercel automatically deploys
+`refs/heads/staging`, do not move it before backend readiness and cron proof. At this
+final step, fetch the operator-observed old ref, verify the candidate ref, use a
+full-destination-ref guarded update, and read back the remote immediately:
+
+```bash
+PR_HEAD_SHA='<PR_HEAD_SHA>'
+git fetch origin \
+  refs/heads/staging:refs/remotes/origin/staging \
+  refs/heads/codex/koaryu-payments-live:refs/remotes/origin/codex/koaryu-payments-live
+OLD_STAGING_SHA="$(git rev-parse refs/remotes/origin/staging)"
+test "$(git rev-parse refs/remotes/origin/codex/koaryu-payments-live)" = "${PR_HEAD_SHA}"
+git push origin \
+  "${PR_HEAD_SHA}:refs/heads/staging" \
+  --force-with-lease=refs/heads/staging:"${OLD_STAGING_SHA}"
+test "$(git ls-remote --heads origin refs/heads/staging | awk '{print $1}')" = "${PR_HEAD_SHA}"
+```
+
+Abort on any failure or readback mismatch. Never use unchecked `--force`. Wait for the
+resulting Vercel staging deployment, then verify the exact deployed pair before any
+provider mutation. If Render cannot deploy the exact candidate before this ref move,
+stop and prove a safe provider route. Do not move staging early to unblock Render.
 
 ```text
 npm run verify:deployed-release -- \
@@ -148,8 +192,10 @@ Rollback closes new writes and preserves evidence:
 1. Stop the rehearsal and record the last known operation and event state.
 2. Set `BILLING_TRANSITION_SCHEDULER_ENABLED=false`, suspend the staging transition
    cron, and prove no due worker run remains active.
-3. Redeploy only the prior staging frontend/backend SHA proven compatible with the
-   retained V31 sparse-payment identity contract. Do not promote or modify production.
+3. Preserve the V31 database and its evidence. A pre-V31 staging application SHA is not
+   a rollback artifact. Redeploy an application only if separate evidence proves that
+   exact SHA compatible with the retained V31 sparse-payment identity contract. Do not
+   promote or modify production.
 4. Disable only test-mode webhook endpoints introduced for the rehearsal after all
    delivered events have a local terminal readback.
 5. Leave the additive V25 through V31 migrations in staging. Do not down-migrate or
