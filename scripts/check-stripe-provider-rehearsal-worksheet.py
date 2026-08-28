@@ -22,6 +22,11 @@ GENERATION = "<CONNECT_ACCOUNT_GENERATION>"
 PLATFORM_EVENT = "<PLATFORM_EVT_ID>"
 CONNECT_EVENT = "<CONNECT_EVT_ID>"
 BOUNDARY = "<CAPTURE_BOUNDARY>"
+PERIOD_SENTINEL_INSTRUCTION = (
+    "Replace both `period_advancement.advances_to` and "
+    "`period_advancement.observed_provider_boundary` sentinel values with the same "
+    "positive Unix timestamp returned by the Stripe test clock."
+)
 
 
 def _load_validator():
@@ -49,6 +54,17 @@ def load_template(worksheet: Path) -> dict[str, Any]:
     if not isinstance(template, dict):
         raise ValueError("worksheet schema-v4 template must be a JSON object")
     return template
+
+
+def validate_instructions(text: str) -> list[str]:
+    if PERIOD_SENTINEL_INSTRUCTION not in text:
+        return ["worksheet must instruct operators to replace both period-advance sentinels"]
+    return []
+
+
+def validate_worksheet(worksheet: Path) -> list[str]:
+    text = worksheet.read_text()
+    return validate_template(load_template(worksheet)) + validate_instructions(text)
 
 
 def _exact_keys(errors: list[str], label: str, value: Any, expected: set[str]) -> bool:
@@ -129,8 +145,11 @@ def validate_template(template: dict[str, Any]) -> list[str]:
             errors.append("immediate cancellation worksheet strategy and operation do not match")
         if supplemental.get("external_payment", {}).get("provider_mutation_count") != 0:
             errors.append("external payment worksheet must document zero provider mutations")
-        if supplemental.get("period_advancement", {}).get("direct_database_timestamp_edit") is not False:
+        period = supplemental.get("period_advancement", {})
+        if period.get("direct_database_timestamp_edit") is not False:
             errors.append("period advancement worksheet must prohibit direct database timestamp edits")
+        if period.get("advances_to") != 0 or period.get("observed_provider_boundary") != 0:
+            errors.append("period advancement worksheet must use zero non-live timestamp sentinels")
         readbacks = (
             (supplemental.get("invoice_void", {}).get("provider_readback"), "invoice void provider readback", "invoice_void.provider", "void"),
             (supplemental.get("invoice_void", {}).get("local_readback"), "invoice void local readback", "invoice_void.local", "void"),
@@ -288,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--worksheet", type=Path, default=DEFAULT_WORKSHEET)
     args = parser.parse_args(argv)
     try:
-        errors = validate_template(load_template(args.worksheet))
+        errors = validate_worksheet(args.worksheet)
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"Worksheet check failed: {exc}", file=sys.stderr)
         return 1

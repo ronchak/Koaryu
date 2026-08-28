@@ -413,6 +413,16 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
         self.assertTrue(any("test-clock advancement" in error for error in errors))
         self.assertTrue(any("does not bind workflow facts" in error for error in errors))
 
+    def test_private_validator_rejects_period_timestamp_sentinels(self):
+        evidence = _valid_evidence()
+        period = evidence["supplemental_evidence"]["period_advancement"]
+        period["advances_to"] = 0
+        period["observed_provider_boundary"] = 0
+
+        self.assertTrue(any(
+            "test-clock advancement" in error for error in self.errors(evidence)
+        ))
+
     def test_rejects_provider_activity_for_external_and_unsupported_cases(self):
         evidence = _valid_evidence()
         evidence["supplemental_evidence"]["external_payment"]["provider_mutation_count"] = 1

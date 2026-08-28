@@ -22,7 +22,7 @@ VALIDATOR_SPEC.loader.exec_module(VALIDATOR_MODULE)
 
 class StripeProviderRehearsalWorksheetTest(unittest.TestCase):
     def test_template_matches_validator_source(self):
-        self.assertEqual(MODULE.validate_template(MODULE.load_template(WORKSHEET)), [])
+        self.assertEqual(MODULE.validate_worksheet(WORKSHEET), [])
         self.assertEqual(MODULE.VALIDATOR.TOP_LEVEL_KEYS, VALIDATOR_MODULE.TOP_LEVEL_KEYS)
 
     def test_representative_schema_drift_fails(self):
@@ -72,6 +72,22 @@ class StripeProviderRehearsalWorksheetTest(unittest.TestCase):
         self.assertTrue(any("invoice void provider readback" in error and "canonical" in error for error in errors))
         self.assertTrue(any("terminal count failed" in error for error in errors))
         self.assertTrue(any("wrong-mode provider component" in error for error in errors))
+
+    def test_period_sentinel_and_replacement_instruction_drift_fail(self):
+        template = copy.deepcopy(MODULE.load_template(WORKSHEET))
+        period = template["supplemental_evidence"]["period_advancement"]
+        self.assertEqual((period["advances_to"], period["observed_provider_boundary"]), (0, 0))
+        period["advances_to"] = 1787936400
+        period["observed_provider_boundary"] = 1787936400
+
+        errors = MODULE.validate_template(template)
+
+        self.assertTrue(any("zero non-live timestamp sentinels" in error for error in errors))
+        worksheet_text = WORKSHEET.read_text()
+        self.assertEqual(MODULE.validate_instructions(worksheet_text), [])
+        self.assertTrue(MODULE.validate_instructions(
+            worksheet_text.replace(MODULE.PERIOD_SENTINEL_INSTRUCTION, "")
+        ))
 
 
 if __name__ == "__main__":
