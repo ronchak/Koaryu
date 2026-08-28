@@ -15,6 +15,10 @@ _TARGETS = {
 _MAX_RESPONSE_BYTES = 4096
 _BATCH_LIMIT = 25
 _REQUEST_TIMEOUT_SECONDS = 130.0
+_ZERO_WORK_OUTPUT = (
+    '{"claimed":0,"completed":0,"reconciliation_required":0,"failed":0}'
+)
+_NONZERO_WORK_OUTPUT = "Billing transition cron completed nonzero work."
 
 
 @dataclass(frozen=True)
@@ -108,7 +112,15 @@ def process_due_billing_transitions(
 def main() -> None:
     config = BillingTransitionCronConfig.from_environment()
     result = process_due_billing_transitions(config)
-    print(json.dumps(result, separators=(",", ":")))
+    if (
+        result["claimed"] == 0
+        and result["completed"] == 0
+        and result["reconciliation_required"] == 0
+        and result["failed"] == 0
+    ):
+        print(_ZERO_WORK_OUTPUT)
+    else:
+        print(_NONZERO_WORK_OUTPUT)
 
 
 if __name__ == "__main__":

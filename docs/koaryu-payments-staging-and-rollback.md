@@ -102,8 +102,14 @@ exact compact stdout line:
 ```
 
 A successful process exit without that line is insufficient. Nonzero `claimed` and
-`completed` with both error counters at zero is successful work, but it is not zero-work
-evidence. Any nonzero `reconciliation_required` or `failed` requires operator attention.
+`completed` with both error counters at zero prints only this fixed line:
+
+```text
+Billing transition cron completed nonzero work.
+```
+
+That line contains no response-derived values. It proves successful nonzero work, never
+zero work. Any nonzero `reconciliation_required` or `failed` requires operator attention.
 Resume the five-minute schedule only after the exact zero-work proof. If Render cannot
 run the job manually while its schedule is suspended, stop and prove a safe provider
 route that cannot start recurring execution before the proof. Production keeps

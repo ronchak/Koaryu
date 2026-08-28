@@ -122,11 +122,11 @@ def test_cron_fails_closed_on_unsafe_or_attention_required_results(payload: byte
                 "reconciliation_required": 0,
                 "failed": 0,
             },
-            '{"claimed":17,"completed":17,"reconciliation_required":0,"failed":0}\n',
+            "Billing transition cron completed nonzero work.\n",
         ),
     ),
 )
-def test_cron_main_prints_sanitized_machine_readable_result(
+def test_cron_main_prints_fixed_result_without_response_values(
     capsys,
     result: dict[str, int],
     expected_output: str,
