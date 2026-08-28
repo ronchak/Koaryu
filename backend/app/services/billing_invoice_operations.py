@@ -62,6 +62,10 @@ INVOICE_VOID_AMBIGUOUS_DETAIL = (
     "Invoice void outcome is not confirmed. "
     "Retry with the same Idempotency-Key after reconciliation."
 )
+INVOICE_VOID_PREREAD_UNAVAILABLE_DETAIL = (
+    "Invoice void was not attempted because the provider invoice could not be read. "
+    "Retry with a new Idempotency-Key."
+)
 INVOICE_CREATE_MODE = "invoice_create_mode:invoice_items"
 INVOICE_FINALIZE_MODE = "invoice_finalize_mode:finalize"
 INVOICE_FINALIZE_SEND_MODE = "invoice_finalize_mode:finalize_send"
@@ -545,8 +549,6 @@ class BillingInvoiceOperationWorkflow:
                 detail="Invoice provider identity is incomplete and requires reconciliation.",
             )
         _account, generation = self._invoice_generation(invoice, studio_id)
-        provider_before = self._read_invoice(invoice)
-        provider_status = self._verify_void_preread(invoice, provider_before)
         desired_hash = stable_hash({
             "operation_type": INVOICE_VOID_OPERATION_TYPE,
             "studio_id": studio_id,
@@ -583,11 +585,27 @@ class BillingInvoiceOperationWorkflow:
             self._audit_voided_once(context, voided)
             return BillingInvoiceResponse(**voided)
         if state == "projected":
-            voided = self._load_void_invoice(invoice_id, context, operation)
+            try:
+                voided = self._load_void_invoice(invoice_id, context, operation)
+            except Exception as exc:
+                self._mark_parent_reconciliation(
+                    operations,
+                    context,
+                    operation,
+                    "invoice_void_projection_unverified",
+                    exc,
+                    INVOICE_VOID_AMBIGUOUS_DETAIL,
+                )
             self.owner._recompute_payer_balance(studio_id, voided.get("payer_id"))
             operations.complete(context, operation, result_code="invoice_void_completed")
             self._audit_voided_once(context, voided)
             return BillingInvoiceResponse(**voided)
+        if state == "provider_request_in_flight" or outcome in {
+            "busy", "provider_request_in_flight"
+        }:
+            raise HTTPException(status_code=409, detail=INVOICE_VOID_AMBIGUOUS_DETAIL)
+        if state in {"definitive_failed", "definitive_rejected"}:
+            provider_operation_disposition(claimed)
         if state == "provider_succeeded":
             try:
                 voided = self._project_void_invoice(invoice, context, operation)
@@ -611,24 +629,48 @@ class BillingInvoiceOperationWorkflow:
             voided = self._project_void_invoice(
                 invoice, context, operation, provider=readback
             )
-        elif state == "provider_request_in_flight" or outcome in {
-            "busy", "provider_request_in_flight"
-        }:
-            raise HTTPException(status_code=409, detail=INVOICE_VOID_AMBIGUOUS_DETAIL)
-        elif state in {"definitive_failed", "definitive_rejected"}:
-            provider_operation_disposition(claimed)
-        elif provider_status == "void":
-            operations.transition(
-                context,
-                operation,
-                "definitive_rejected",
-                error_code="invoice_already_void",
-            )
-            raise HTTPException(
-                status_code=409,
-                detail="Invoice was voided outside this workflow and requires reconciliation.",
-            )
         else:
+            try:
+                provider_before = self._read_invoice(invoice)
+                provider_status = self._verify_void_preread(
+                    invoice,
+                    provider_before,
+                )
+            except HTTPException:
+                if state == "started":
+                    operations.transition(
+                        context,
+                        operation,
+                        "definitive_rejected",
+                        error_code="invoice_void_preread_invalid",
+                    )
+                raise
+            except Exception as exc:
+                if state == "started":
+                    operations.transition(
+                        context,
+                        operation,
+                        "definitive_failed",
+                        error_code="invoice_void_preread_unavailable",
+                    )
+                raise HTTPException(
+                    status_code=503,
+                    detail=INVOICE_VOID_PREREAD_UNAVAILABLE_DETAIL,
+                ) from exc
+            if provider_status == "void":
+                operations.transition(
+                    context,
+                    operation,
+                    "definitive_rejected",
+                    error_code="invoice_already_void",
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Invoice was voided outside this workflow and requires "
+                        "reconciliation."
+                    ),
+                )
             operation = operations.transition(
                 context,
                 operation,

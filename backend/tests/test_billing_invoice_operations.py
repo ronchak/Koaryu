@@ -16,6 +16,7 @@ from app.services.billing_invoice_operations import (
     INVOICE_CREATE_AMBIGUOUS_DETAIL,
     INVOICE_FINALIZE_PREREAD_UNAVAILABLE_DETAIL,
     INVOICE_RETRY_AMBIGUOUS_DETAIL,
+    INVOICE_VOID_PREREAD_UNAVAILABLE_DETAIL,
 )
 from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_provider_operations import (
@@ -1178,16 +1179,122 @@ def test_void_resource_replays_without_duplicate_provider_mutation():
     first = asyncio.run(manager.void_invoice(
         invoice["id"], "studio_1", "actor_1", "void-key"
     ))
+    reads_after_first = len(_Stripe.retrieve_calls)
+    _Stripe.retrieve_exception = TimeoutError("provider unavailable after void")
     replay = asyncio.run(manager.void_invoice(
         invoice["id"], "studio_1", "actor_1", "void-key"
     ))
 
     assert first.status == replay.status == "void"
+    assert reads_after_first == 1
+    assert len(_Stripe.retrieve_calls) == reads_after_first
     assert len(_Stripe.void_calls) == 1
     assert len(facade.supabase.tables["audit_logs"]) == 1
     parent = _operation(facade, "invoice.void")
     assert parent["state"] == "completed"
     assert parent["result_summary"] == "invoice_void_mode:void"
+
+
+def test_void_projected_replay_completes_from_exact_local_evidence_offline():
+    invoice = _open_invoice()
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    manager = _manager(facade)
+    first = asyncio.run(manager.void_invoice(
+        invoice["id"], "studio_1", "actor_1", "void-projected-replay"
+    ))
+    operation = _operation(facade, "invoice.void")
+    operation["state"] = "projected"
+    reads_before = len(_Stripe.retrieve_calls)
+    _Stripe.retrieve_exception = TimeoutError("provider unavailable after projection")
+
+    replay = asyncio.run(manager.void_invoice(
+        invoice["id"], "studio_1", "actor_1", "void-projected-replay"
+    ))
+
+    assert first.status == replay.status == "void"
+    assert len(_Stripe.retrieve_calls) == reads_before
+    assert len(_Stripe.void_calls) == 1
+    assert operation["state"] == "completed"
+
+
+def test_void_completed_replay_fails_closed_on_corrupt_local_projection():
+    invoice = _open_invoice()
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    manager = _manager(facade)
+    asyncio.run(manager.void_invoice(
+        invoice["id"], "studio_1", "actor_1", "void-local-corrupt"
+    ))
+    facade.supabase.tables["billing_invoices"][0]["status"] = "open"
+    reads_before = len(_Stripe.retrieve_calls)
+    _Stripe.retrieve_exception = TimeoutError("provider unavailable after projection")
+
+    with pytest.raises(HTTPException) as failed_closed:
+        asyncio.run(manager.void_invoice(
+            invoice["id"], "studio_1", "actor_1", "void-local-corrupt"
+        ))
+
+    assert failed_closed.value.status_code == 503
+    assert len(_Stripe.retrieve_calls) == reads_before
+    assert len(_Stripe.void_calls) == 1
+
+
+def test_void_fresh_claim_rejects_provider_identity_mismatch_before_mutation():
+    invoice = _open_invoice()
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    _Stripe.readback_overrides = {"customer": "cus_other"}
+
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(_manager(facade).void_invoice(
+            invoice["id"], "studio_1", "actor_1", "void-provider-mismatch"
+        ))
+
+    assert rejected.value.status_code == 409
+    assert len(_Stripe.retrieve_calls) == 1
+    assert _Stripe.void_calls == []
+    operation = _operation(facade, "invoice.void")
+    assert operation["state"] == "definitive_rejected"
+    assert operation["error_code"] == "invoice_void_preread_invalid"
+
+
+def test_void_preread_failure_is_terminal_and_new_key_can_retry():
+    invoice = _open_invoice()
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    manager = _manager(facade)
+    _Stripe.retrieve_exception = TimeoutError("provider preread unavailable")
+
+    with pytest.raises(HTTPException) as unavailable:
+        asyncio.run(manager.void_invoice(
+            invoice["id"], "studio_1", "actor_1", "void-preread-failed"
+        ))
+
+    assert unavailable.value.status_code == 503
+    assert unavailable.value.detail == INVOICE_VOID_PREREAD_UNAVAILABLE_DETAIL
+    operation = _operation(facade, "invoice.void")
+    assert operation["state"] == "definitive_failed"
+    assert operation["error_code"] == "invoice_void_preread_unavailable"
+    assert _Stripe.void_calls == []
+
+    reads_before_replay = len(_Stripe.retrieve_calls)
+    _Stripe.retrieve_exception = None
+    with pytest.raises(HTTPException) as terminal:
+        asyncio.run(manager.void_invoice(
+            invoice["id"], "studio_1", "actor_1", "void-preread-failed"
+        ))
+    assert terminal.value.status_code == 409
+    assert terminal.value.detail == OPERATION_TERMINAL_DETAIL
+    assert len(_Stripe.retrieve_calls) == reads_before_replay
+
+    recovered = asyncio.run(manager.void_invoice(
+        invoice["id"], "studio_1", "actor_1", "void-preread-retry"
+    ))
+
+    assert recovered.status == "void"
+    assert len(_Stripe.retrieve_calls) == reads_before_replay + 1
+    assert len(_Stripe.void_calls) == 1
 
 
 def test_local_void_records_timestamp_without_provider_mutation():

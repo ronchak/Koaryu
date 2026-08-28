@@ -61,6 +61,8 @@ class _TransitionStripe(_Stripe):
     schedule_create_calls = []
     schedule_update_calls = []
     schedule_release_calls = []
+    schedule_retrieve_calls = []
+    schedule_list_calls = []
     schedules = {}
     schedule_idempotency = {}
     schedule_create_error = None
@@ -69,6 +71,8 @@ class _TransitionStripe(_Stripe):
     schedule_create_response_error_after = None
     schedule_update_response_error_after = None
     schedule_release_response_error_after = None
+    schedule_retrieve_error = None
+    schedule_retrieve_override = None
 
     @classmethod
     def reset(cls):
@@ -79,6 +83,8 @@ class _TransitionStripe(_Stripe):
         cls.schedule_create_calls = []
         cls.schedule_update_calls = []
         cls.schedule_release_calls = []
+        cls.schedule_retrieve_calls = []
+        cls.schedule_list_calls = []
         cls.schedules = {}
         cls.schedule_idempotency = {}
         cls.schedule_create_error = None
@@ -87,6 +93,8 @@ class _TransitionStripe(_Stripe):
         cls.schedule_create_response_error_after = None
         cls.schedule_update_response_error_after = None
         cls.schedule_release_response_error_after = None
+        cls.schedule_retrieve_error = None
+        cls.schedule_retrieve_override = None
 
     def update_connected_subscription(self, **payload):
         self.__class__.subscription_update_calls.append(copy.deepcopy(payload))
@@ -173,6 +181,11 @@ class _TransitionStripe(_Stripe):
         return copy.deepcopy(schedule)
 
     def retrieve_connected_subscription_schedule(self, **payload):
+        self.__class__.schedule_retrieve_calls.append(copy.deepcopy(payload))
+        if self.__class__.schedule_retrieve_error:
+            raise self.__class__.schedule_retrieve_error
+        if self.__class__.schedule_retrieve_override is not None:
+            return copy.deepcopy(self.__class__.schedule_retrieve_override)
         return copy.deepcopy(self.__class__.schedules[payload["schedule_id"]])
 
     def update_connected_subscription_schedule(self, **payload):
@@ -226,6 +239,7 @@ class _TransitionStripe(_Stripe):
         return copy.deepcopy(schedule)
 
     def list_connected_subscription_schedules(self, **payload):
+        self.__class__.schedule_list_calls.append(copy.deepcopy(payload))
         return {
             "data": [
                 copy.deepcopy(schedule)
@@ -1468,6 +1482,18 @@ def test_item_due_release_lost_response_converges_without_duplicate_release():
         "enrollment_1", "studio_1", "actor_1", "due-release-lost", "staff_requested"
     )
     _apply_scheduled_item_phase()
+    for index in range(15):
+        unrelated_id = f"sub_sched_unrelated_{index}"
+        _TransitionStripe.schedules[unrelated_id] = {
+            "id": unrelated_id,
+            "status": "released",
+            "subscription": None,
+            "released_subscription": f"sub_unrelated_{index}",
+            "customer": "cus_1",
+            "metadata": {"koaryu_transition_intent_id": f"unrelated-{index}"},
+            "phases": [],
+        }
+    retrieve_count_before_due = len(_TransitionStripe.schedule_retrieve_calls)
     _TransitionStripe.schedule_release_response_error_after = RuntimeError(
         "release response lost"
     )
@@ -1492,6 +1518,13 @@ def test_item_due_release_lost_response_converges_without_duplicate_release():
     assert release_call["schedule_id"] == "sub_sched_1"
     assert str(scheduled["intent"]["id"]) in release_call["idempotency_key"]
     assert _TransitionStripe.subscriptions["sub_1"]["schedule"] is None
+    assert _TransitionStripe.schedule_list_calls == []
+    assert {
+        call["schedule_id"]
+        for call in _TransitionStripe.schedule_retrieve_calls[
+            retrieve_count_before_due:
+        ]
+    } == {"sub_sched_1"}
 
 
 def test_item_due_reclaim_after_release_before_completion_does_not_release_twice():
@@ -1614,7 +1647,77 @@ def test_item_due_never_releases_schedule_with_mismatched_owner_metadata():
         "failed": 0,
     }
     assert _TransitionStripe.schedule_release_calls == []
+    assert _TransitionStripe.schedule_list_calls == []
+    assert _TransitionStripe.schedule_retrieve_calls[-1]["schedule_id"] == "sub_sched_1"
     assert _TransitionStripe.subscriptions["sub_1"]["schedule"] == "sub_sched_1"
+    assert facade.supabase.billing_enrollment_transition_intents[
+        scheduled["intent"]["id"]
+    ]["state"] == "reconciliation_required"
+
+
+@pytest.mark.parametrize("readback_mode", ["failure", "mismatch"])
+def test_item_due_exact_schedule_readback_failure_never_projects(
+    readback_mode,
+):
+    peer = _enrollment(
+        id="enrollment_2",
+        student_id="student_2",
+        billing_plan_id="plan_2",
+        status="active",
+        billing_subscription_id="group_1",
+        stripe_subscription_id="sub_1",
+        stripe_subscription_item_id="si_2",
+    )
+    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade.supabase.tables["billing_plans"].append(
+        _plan(id="plan_2", stripe_price_id="price_2")
+    )
+    _TransitionStripe.subscriptions["sub_1"] = _provider(
+        items=[_item(), _item("si_2", price_id="price_2")]
+    )
+    workflow = _workflow(facade)
+    scheduled = workflow.schedule_period_end(
+        "enrollment_1",
+        "studio_1",
+        "actor_1",
+        f"due-release-read-{readback_mode}",
+        "staff_requested",
+    )
+    _apply_scheduled_item_phase()
+    released = _TransitionStripe.schedules["sub_sched_1"]
+    released.update({
+        "status": "released",
+        "subscription": None,
+        "released_subscription": "sub_1",
+    })
+    _TransitionStripe.subscriptions["sub_1"]["schedule"] = None
+    if readback_mode == "failure":
+        _TransitionStripe.schedule_retrieve_error = RuntimeError(
+            "schedule read unavailable"
+        )
+    else:
+        mismatched = copy.deepcopy(released)
+        mismatched["id"] = "sub_sched_mismatch"
+        _TransitionStripe.schedule_retrieve_override = mismatched
+
+    result = workflow.process_due(worker_id="worker_1", limit=25)
+
+    assert result == {
+        "claimed": 1,
+        "completed": 0,
+        "reconciliation_required": 1,
+        "failed": 0,
+    }
+    assert _TransitionStripe.schedule_release_calls == []
+    assert _TransitionStripe.schedule_list_calls == []
+    assert _TransitionStripe.schedule_retrieve_calls[-1] == {
+        "account_id": "acct_1",
+        "schedule_id": "sub_sched_1",
+    }
+    assert facade.supabase.tables["student_billing_enrollments"][0]["status"] == "active"
+    assert "complete_due_billing_enrollment_item_transition_v31" not in {
+        name for name, _params in facade.supabase.rpc_calls
+    }
     assert facade.supabase.billing_enrollment_transition_intents[
         scheduled["intent"]["id"]
     ]["state"] == "reconciliation_required"
@@ -1661,6 +1764,11 @@ def test_item_due_recovery_rejects_copied_metadata_on_different_schedule_id():
         "failed": 0,
     }
     assert _TransitionStripe.schedule_release_calls == []
+    assert _TransitionStripe.schedule_list_calls == []
+    assert _TransitionStripe.schedule_retrieve_calls[-1] == {
+        "account_id": "acct_1",
+        "schedule_id": "sub_sched_1",
+    }
     assert facade.supabase.tables["student_billing_enrollments"][0]["status"] == "active"
     assert "complete_due_billing_enrollment_item_transition_v31" not in {
         name for name, _params in facade.supabase.rpc_calls
