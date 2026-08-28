@@ -677,9 +677,10 @@ Local implementation is complete on the single integration branch:
 - persisted caller keys remain scoped to user, studio, workflow, and resource; ambiguous
   outcomes retain the key, while confirmed success or a terminal 409 rotates it so the
   backend's corrected-request path is reachable;
-- the Stripe rehearsal worksheet and validator are schema v3 and structurally require
-  the complete launch flow, exact 50-basis-point arithmetic, same-key ambiguous recovery,
-  distinct webhook surfaces, and zero unsafe terminal counts;
+- the Stripe rehearsal worksheet and validator are schema v4. They require exactly 15
+  core proof steps and 24 core mutation-attempt rows, plus structured readbacks for
+  void, immediate cancellation, external payment, unsupported operations, retry,
+  period advancement, dispute closure, ambiguity recovery, and seven sourced zero counts;
 - `docs/koaryu-payments-staging-and-rollback.md` owns exact staging order, rollback, and
   the unexecuted production packet.
 
@@ -747,23 +748,17 @@ Use one exact candidate SHA, one staging studio, one connected test account, and
 account generation. Verify the deployed staging frontend and backend report that exact
 SHA and Stripe test mode.
 
-The private rehearsal must cover:
+The private rehearsal uses the schema-v4 inventory of exactly 15 core proof steps and 24
+core mutation-attempt rows. Its supplemental evidence separately proves invoice void,
+one declared Admin immediate-cancellation strategy, same-key local external-payment
+replay, four unsupported operations with zero provider activity, failed-payment retry,
+test-clock period advancement, dispute created-to-closed convergence at `won`, and
+same-key ambiguity recovery bound to one durable operation and step. Platform and Connect
+webhook delivery remain distinct core proofs with matching local processed readbacks.
 
-1. Connect onboarding and readiness.
-2. Exact operation authorization and role-aware capabilities.
-3. Plan and price convergence.
-4. Payer and customer convergence.
-5. Payer-owned consent and duplicate completion replay.
-6. Two students sharing one payer, plan, subscription item, and quantity two.
-7. One supported invoice-link flow.
-8. One successful automatic payment with exact 50-basis-point fee evidence.
-9. A failed-payment and supported retry.
-10. Period-end schedule, revocation, and shared-family transition proof.
-11. Refund and dispute convergence.
-12. Separate platform and Connect webhook delivery plus local processed readback.
-13. Same-key recovery after an ambiguous response with no second mutation.
-14. Zero failed, stuck, unmapped, wrong-mode, wrong-generation, or
-    reconciliation-required rows at completion.
+At one shared UTC capture boundary, record exact zero counts for failed, stuck, unmapped,
+wrong-mode, wrong-generation, pending-transition, and reconciliation-required state.
+The wrong-mode total retains separate provider and local source components.
 
 Keep completed evidence private and sanitized. Commit only the template and validator.
 

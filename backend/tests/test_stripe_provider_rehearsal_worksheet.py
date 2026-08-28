@@ -39,13 +39,39 @@ class StripeProviderRehearsalWorksheetTest(unittest.TestCase):
         template = copy.deepcopy(MODULE.load_template(WORKSHEET))
         template["role_capabilities"]["instructor"] = ["payment.refund"]
         del template["workflow_facts"]["consent_id"]
-        template["terminal_counts"]["reconciliation_required"] = 1
+        template["terminal_counts"]["counts"]["reconciliation_required"]["count"] = 1
 
         errors = MODULE.validate_template(template)
 
         self.assertTrue(any("Instructor" in error for error in errors))
         self.assertTrue(any("workflow facts" in error for error in errors))
         self.assertTrue(any("terminal count" in error for error in errors))
+
+    def test_supplemental_and_inventory_drift_fail(self):
+        template = copy.deepcopy(MODULE.load_template(WORKSHEET))
+        del template["supplemental_evidence"]["invoice_void"]["provider_readback"]
+        template["supplemental_evidence"]["immediate_cancellation"]["operation"] = "connected_subscription_item.delete"
+        template["steps"].pop()
+        template["mutation_attempts"].pop()
+
+        errors = MODULE.validate_template(template)
+
+        self.assertTrue(any("invoice void" in error and "keys" in error for error in errors))
+        self.assertTrue(any("strategy and operation" in error for error in errors))
+        self.assertTrue(any("exactly 15" in error for error in errors))
+        self.assertTrue(any("exactly 24" in error for error in errors))
+
+    def test_canonical_source_label_drift_fails(self):
+        template = copy.deepcopy(MODULE.load_template(WORKSHEET))
+        template["supplemental_evidence"]["invoice_void"]["provider_readback"]["source"] = "arbitrary.source"
+        template["terminal_counts"]["counts"]["failed"]["source"] = "arbitrary.count"
+        template["terminal_counts"]["wrong_mode_components"][0]["source"] = "arbitrary.provider"
+
+        errors = MODULE.validate_template(template)
+
+        self.assertTrue(any("invoice void provider readback" in error and "canonical" in error for error in errors))
+        self.assertTrue(any("terminal count failed" in error for error in errors))
+        self.assertTrue(any("wrong-mode provider component" in error for error in errors))
 
 
 if __name__ == "__main__":

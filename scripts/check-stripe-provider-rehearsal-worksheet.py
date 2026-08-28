@@ -21,6 +21,7 @@ ACCOUNT = "<STRIPE_CONNECT_ACCOUNT_ID>"
 GENERATION = "<CONNECT_ACCOUNT_GENERATION>"
 PLATFORM_EVENT = "<PLATFORM_EVT_ID>"
 CONNECT_EVENT = "<CONNECT_EVT_ID>"
+BOUNDARY = "<CAPTURE_BOUNDARY>"
 
 
 def _load_validator():
@@ -57,6 +58,13 @@ def _exact_keys(errors: list[str], label: str, value: Any, expected: set[str]) -
     return True
 
 
+def _canonical_readback(errors: list[str], value: Any, *, label: str, source: str, status: str) -> None:
+    if not _exact_keys(errors, label, value, VALIDATOR.READBACK_KEYS):
+        return
+    if value.get("source") != source or value.get("status") != status or value.get("capture_boundary") != BOUNDARY:
+        errors.append(f"{label} does not use its canonical source, status, and boundary")
+
+
 def validate_template(template: dict[str, Any]) -> list[str]:
     """Return drift errors using expectations derived only from validator constants."""
     errors: list[str] = []
@@ -89,10 +97,96 @@ def validate_template(template: dict[str, Any]) -> list[str]:
     if capabilities.get("instructor") != []:
         errors.append("Instructor worksheet capabilities must be empty")
     _exact_keys(errors, "workflow facts", template.get("workflow_facts"), VALIDATOR.WORKFLOW_FACT_KEYS)
+    supplemental = template.get("supplemental_evidence")
+    if _exact_keys(errors, "supplemental evidence", supplemental, VALIDATOR.SUPPLEMENTAL_KEYS):
+        expected_shapes = {
+            "invoice_void": VALIDATOR.INVOICE_VOID_KEYS,
+            "immediate_cancellation": VALIDATOR.IMMEDIATE_CANCELLATION_KEYS,
+            "external_payment": VALIDATOR.EXTERNAL_PAYMENT_KEYS,
+            "failed_payment_retry": VALIDATOR.FAILED_RETRY_KEYS,
+            "period_advancement": VALIDATOR.PERIOD_ADVANCEMENT_KEYS,
+            "dispute_lifecycle": VALIDATOR.DISPUTE_LIFECYCLE_KEYS,
+            "ambiguity_recovery": VALIDATOR.AMBIGUITY_KEYS,
+        }
+        for name, keys in expected_shapes.items():
+            _exact_keys(errors, name.replace("_", " "), supplemental.get(name), keys)
+        unsupported = supplemental.get("unsupported_operations")
+        if not isinstance(unsupported, list) or len(unsupported) != 4:
+            errors.append("worksheet must contain four unsupported operation rows")
+        else:
+            by_subject = {row.get("subject"): row for row in unsupported if isinstance(row, dict)}
+            if set(by_subject) != set(VALIDATOR.UNSUPPORTED_CONTRACT):
+                errors.append("worksheet unsupported subjects do not match the validator")
+            for subject, reason in VALIDATOR.UNSUPPORTED_CONTRACT.items():
+                row = by_subject.get(subject)
+                if _exact_keys(errors, f"unsupported operation {subject}", row, VALIDATOR.UNSUPPORTED_ROW_KEYS):
+                    if row.get("classification") != "unsupported" or row.get("denial_reason_code") != reason or row.get("provider_mutation_count") != 0:
+                        errors.append(f"unsupported operation {subject} does not use its canonical denial contract")
+        if supplemental.get("invoice_void", {}).get("operation") != "connected_invoice.void":
+            errors.append("invoice void worksheet operation is not canonical")
+        immediate = supplemental.get("immediate_cancellation", {})
+        if immediate.get("strategy") not in VALIDATOR.IMMEDIATE_STRATEGIES or immediate.get("operation") != VALIDATOR.IMMEDIATE_STRATEGIES.get(immediate.get("strategy")):
+            errors.append("immediate cancellation worksheet strategy and operation do not match")
+        if supplemental.get("external_payment", {}).get("provider_mutation_count") != 0:
+            errors.append("external payment worksheet must document zero provider mutations")
+        if supplemental.get("period_advancement", {}).get("direct_database_timestamp_edit") is not False:
+            errors.append("period advancement worksheet must prohibit direct database timestamp edits")
+        readbacks = (
+            (supplemental.get("invoice_void", {}).get("provider_readback"), "invoice void provider readback", "invoice_void.provider", "void"),
+            (supplemental.get("invoice_void", {}).get("local_readback"), "invoice void local readback", "invoice_void.local", "void"),
+            (immediate.get("provider_readback"), "immediate cancellation provider readback", "immediate_cancellation.provider", "canceled"),
+            (immediate.get("local_readback"), "immediate cancellation local readback", "immediate_cancellation.local", "canceled"),
+            (supplemental.get("external_payment", {}).get("provider_operation_inventory_readback"), "external payment inventory readback", "external_payment.inventory", "zero"),
+            (supplemental.get("external_payment", {}).get("local_readback"), "external payment local readback", "external_payment.local", "externally_recorded"),
+            (supplemental.get("failed_payment_retry", {}).get("failed_provider_readback"), "failed retry pre-provider readback", "failed_payment_retry.failed_provider", "failed"),
+            (supplemental.get("failed_payment_retry", {}).get("failed_local_readback"), "failed retry pre-local readback", "failed_payment_retry.failed_local", "failed"),
+            (supplemental.get("failed_payment_retry", {}).get("provider_readback"), "failed retry provider readback", "failed_payment_retry.provider", "paid"),
+            (supplemental.get("failed_payment_retry", {}).get("local_readback"), "failed retry local readback", "failed_payment_retry.local", "succeeded"),
+            (supplemental.get("period_advancement", {}).get("provider_readback"), "period provider readback", "period_advancement.provider", "advanced"),
+            (supplemental.get("period_advancement", {}).get("local_readback"), "period local readback", "period_advancement.local", "completed"),
+            (supplemental.get("dispute_lifecycle", {}).get("provider_readback"), "dispute provider readback", "dispute.provider", "won"),
+            (supplemental.get("ambiguity_recovery", {}).get("provider_readback"), "ambiguity provider readback", "ambiguity.provider", "found"),
+            (supplemental.get("ambiguity_recovery", {}).get("local_readback"), "ambiguity local readback", "ambiguity.local", "completed"),
+        )
+        for value, label, source_key, status in readbacks:
+            _canonical_readback(errors, value, label=label, source=VALIDATOR.SUPPLEMENTAL_SOURCES[source_key], status=status)
+        for row in unsupported if isinstance(unsupported, list) else []:
+            _canonical_readback(errors, row.get("denial_readback"), label=f"{row.get('subject')} denial readback", source=VALIDATOR.SUPPLEMENTAL_SOURCES["unsupported.denial"], status="denied")
+            _canonical_readback(errors, row.get("provider_operation_inventory_readback"), label=f"{row.get('subject')} inventory readback", source=VALIDATOR.SUPPLEMENTAL_SOURCES["unsupported.inventory"], status="zero")
+        dispute = supplemental.get("dispute_lifecycle", {})
+        local_dispute = dispute.get("local_readback")
+        if not _exact_keys(errors, "dispute local readback", local_dispute, VALIDATOR.DISPUTE_LOCAL_READBACK_KEYS) or local_dispute.get("source") != VALIDATOR.SUPPLEMENTAL_SOURCES["dispute.local"] or local_dispute.get("status") != "won" or local_dispute.get("state_category") != "won" or local_dispute.get("capture_boundary") != BOUNDARY:
+            errors.append("dispute local readback does not use canonical won evidence")
+        created, closed = dispute.get("created_event"), dispute.get("closed_event")
+        for label, event, event_type in (("created", created, "charge.dispute.created"), ("closed", closed, "charge.dispute.closed")):
+            if _exact_keys(errors, f"dispute {label} event", event, VALIDATOR.DISPUTE_EVENT_KEYS):
+                if event.get("event_type") != event_type or event.get("local_event_id") != event.get("event_id") or event.get("local_processing_status") != "processed":
+                    errors.append(f"dispute {label} event does not use canonical processed evidence")
+        if isinstance(created, dict) and isinstance(closed, dict) and created.get("event_id") == closed.get("event_id"):
+            errors.append("dispute event placeholders must be distinct")
+
     terminal = template.get("terminal_counts")
-    if _exact_keys(errors, "terminal counts", terminal, VALIDATOR.TERMINAL_COUNT_KEYS):
-        if any(terminal.get(key) != 0 for key in VALIDATOR.TERMINAL_COUNT_KEYS):
-            errors.append("terminal count worksheet values must all be zero")
+    if _exact_keys(errors, "terminal counts", terminal, VALIDATOR.TERMINAL_KEYS):
+        if terminal.get("capture_boundary") != BOUNDARY:
+            errors.append("terminal counts must use the canonical shared capture boundary")
+        counts = terminal.get("counts")
+        if _exact_keys(errors, "terminal count rows", counts, VALIDATOR.TERMINAL_COUNT_KEYS):
+            for name, row in counts.items():
+                if _exact_keys(errors, f"terminal count {name}", row, VALIDATOR.TERMINAL_ROW_KEYS):
+                    if row.get("count") != 0 or row.get("readback_boundary") != BOUNDARY or row.get("source") != VALIDATOR.TERMINAL_SOURCES[name]:
+                        errors.append(f"terminal count {name} must be sourced zero at the shared boundary")
+        components = terminal.get("wrong_mode_components")
+        if not isinstance(components, list) or len(components) != 2:
+            errors.append("wrong-mode components must be exact provider and local rows")
+        else:
+            by_surface = {row.get("surface"): row for row in components if isinstance(row, dict)}
+            if set(by_surface) != {"provider", "local"}:
+                errors.append("wrong-mode components must be exact provider and local rows")
+            for surface in ("provider", "local"):
+                row = by_surface.get(surface)
+                if _exact_keys(errors, f"wrong-mode {surface} component", row, VALIDATOR.WRONG_MODE_COMPONENT_KEYS):
+                    if row.get("count") != 0 or row.get("readback_boundary") != BOUNDARY or row.get("source") != VALIDATOR.WRONG_MODE_SOURCES[surface]:
+                        errors.append(f"wrong-mode {surface} component must be a sourced zero at the shared boundary")
 
     steps = template.get("steps")
     if not isinstance(steps, list):
@@ -101,6 +195,8 @@ def validate_template(template: dict[str, Any]) -> list[str]:
         by_name = {step.get("name"): step for step in steps if isinstance(step, dict)}
         if len(by_name) != len(steps) or set(by_name) != VALIDATOR.REQUIRED_STEPS:
             errors.append("step names do not match the validator required steps")
+        if len(steps) != 15:
+            errors.append("worksheet must contain exactly 15 core proof steps")
         for name in VALIDATOR.REQUIRED_STEPS:
             step = by_name.get(name)
             expected_keys = {"name", "status", "stripe_account_id"}
@@ -129,6 +225,8 @@ def validate_template(template: dict[str, Any]) -> list[str]:
         }
         if len(by_step) != len(mutations) or set(by_step) != set(VALIDATOR.REQUIRED_MUTATIONS):
             errors.append("mutation steps do not match the validator workflow plan")
+        if len(mutations) != 24:
+            errors.append("worksheet must contain exactly 24 core mutation rows")
         for step_name, expected_mutation in VALIDATOR.REQUIRED_MUTATIONS.items():
             mutation = by_step.get(step_name)
             if not _exact_keys(errors, f"mutation {step_name}", mutation, VALIDATOR.MUTATION_KEYS):

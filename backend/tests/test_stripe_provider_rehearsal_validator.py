@@ -63,6 +63,9 @@ def _valid_evidence() -> dict:
             "outcome": "reconciled" if step_name == "payer.customer_create" else "succeeded",
             "caller_request_key_sha256": key_digest if step_name == "payer.customer_create" else "d" * 64,
         })
+    boundary = "2026-08-28T17:00:00Z"
+    def readback(source: str, status: str) -> dict:
+        return {"source": source, "status": status, "capture_boundary": boundary}
     return {
         "schema_version": 4,
         "candidate_sha": SHA,
@@ -101,7 +104,20 @@ def _valid_evidence() -> dict:
             "ambiguous_provider_mutation_count": 1, "ambiguous_automatic_retry_count": 0,
             "ambiguous_provider_readback_count": 1, "ambiguous_recovery_outcome": "reconciled", "ambiguous_final_state": "completed",
         },
-        "terminal_counts": {key: 0 for key in MODULE.TERMINAL_COUNT_KEYS},
+        "supplemental_evidence": {
+            "invoice_void": {"workflow_id": "invoice.void", "operation": "connected_invoice.void", "actor_role": "admin", "provider_attempt_count": 1, "provider_mutation_count": 1, "automatic_retry_count": 0, "caller_request_key_sha256": "f" * 64, "durable_operation_id": "operation_void_1", "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["invoice_void.provider"], "void"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["invoice_void.local"], "void")},
+            "immediate_cancellation": {"workflow_id": "enrollment.cancel.immediate", "strategy": "whole_subscription_cancel", "operation": "connected_subscription.cancel", "actor_role": "admin", "provider_attempt_count": 1, "provider_mutation_count": 1, "automatic_retry_count": 0, "caller_request_key_sha256": "1" * 64, "durable_operation_id": "operation_cancel_1", "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["immediate_cancellation.provider"], "canceled"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["immediate_cancellation.local"], "canceled")},
+            "external_payment": {"workflow_id": "payment.external.record", "local_payment_id": "payment_external_1", "local_status": "externally_recorded", "replay_payment_id": "payment_external_1", "caller_request_key_sha256": "e" * 64, "replay_outcome": "same_row", "audit_count": 1, "invoice_id": None, "provider_mutation_count": 0, "provider_operation_inventory_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["external_payment.inventory"], "zero"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["external_payment.local"], "externally_recorded")},
+            "unsupported_operations": [
+                {"subject": subject, "classification": "unsupported", "denial_reason_code": reason, "provider_mutation_count": 0, "denial_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["unsupported.denial"], "denied"), "provider_operation_inventory_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["unsupported.inventory"], "zero")}
+                for subject, reason in MODULE.UNSUPPORTED_CONTRACT.items()
+            ],
+            "failed_payment_retry": {"workflow_id": "invoice.retry", "operation": "connected_invoice.pay", "failed_provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.failed_provider"], "failed"), "failed_local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.failed_local"], "failed"), "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.provider"], "paid"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.local"], "succeeded")},
+            "period_advancement": {"method": "stripe_test_clock.advance", "test_clock_id": "clock_Test1", "advances_to": 1787936400, "observed_provider_boundary": 1787936400, "direct_database_timestamp_edit": False, "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["period_advancement.provider"], "advanced"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["period_advancement.local"], "completed")},
+            "dispute_lifecycle": {"dispute_id": "dp_Test1", "created_event": {"event_id": "evt_disputeCreated1", "event_type": "charge.dispute.created", "local_event_id": "evt_disputeCreated1", "local_processing_status": "processed"}, "closed_event": {"event_id": "evt_disputeClosed1", "event_type": "charge.dispute.closed", "local_event_id": "evt_disputeClosed1", "local_processing_status": "processed"}, "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["dispute.provider"], "won"), "local_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["dispute.local"], "status": "won", "state_category": "won", "capture_boundary": boundary}},
+            "ambiguity_recovery": {"workflow_id": "payer.sync", "durable_operation_id": "operation_1", "durable_step_id": "step_1", "provider_mutation_count": 1, "automatic_retry_count": 0, "caller_request_key_sha256": key_digest, "mutation_step_name": "payer.customer_create", "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["ambiguity.provider"], "found"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["ambiguity.local"], "completed")},
+        },
+        "terminal_counts": {"capture_boundary": boundary, "counts": {key: {"count": 0, "source": MODULE.TERMINAL_SOURCES[key], "readback_boundary": boundary} for key in MODULE.TERMINAL_COUNT_KEYS}, "wrong_mode_components": [{"surface": surface, "count": 0, "source": MODULE.WRONG_MODE_SOURCES[surface], "readback_boundary": boundary} for surface in ("provider", "local")]},
         "steps": steps,
         "mutation_attempts": mutations,
         "webhook_delivery_evidence": {
@@ -125,6 +141,12 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
 
     def test_accepts_complete_sanitized_exact_candidate_test_evidence(self):
         self.assertEqual(self.errors(_valid_evidence()), [])
+
+    def test_role_capability_contract_includes_supplemental_supported_workflows(self):
+        self.assertIn("invoice.void", MODULE.ADMIN_WORKFLOWS)
+        self.assertIn("payment.external.record", MODULE.ADMIN_WORKFLOWS)
+        self.assertIn("payment.external.record", MODULE.FRONT_DESK_WORKFLOWS)
+        self.assertNotIn("invoice.void", MODULE.FRONT_DESK_WORKFLOWS)
 
     def test_rejects_legacy_flat_or_missing_endpoint_surfaces(self):
         for deliveries in (
@@ -307,14 +329,113 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
         facts["invoice_remaining_after_cents"] = 1
         facts["ambiguous_provider_mutation_count"] = 2
         facts["ambiguous_automatic_retry_count"] = 1
-        evidence["terminal_counts"]["wrong_generation"] = 1
+        evidence["terminal_counts"]["counts"]["wrong_generation"]["count"] = 1
 
         errors = self.errors(evidence)
 
         self.assertTrue(any("gross and refundable" in error for error in errors))
         self.assertTrue(any("invoice receivable" in error for error in errors))
         self.assertTrue(any("one mutation and zero retries" in error for error in errors))
-        self.assertTrue(any("terminal counts" in error for error in errors))
+        self.assertTrue(any("terminal count wrong_generation" in error for error in errors))
+
+    def test_rejects_missing_extra_and_contradictory_supplemental_fields(self):
+        evidence = _valid_evidence()
+        del evidence["supplemental_evidence"]["invoice_void"]["local_readback"]
+        evidence["supplemental_evidence"]["external_payment"]["provider_payload"] = {}
+        evidence["supplemental_evidence"]["external_payment"]["replay_payment_id"] = "payment_other"
+        errors = self.errors(evidence)
+        self.assertTrue(any("invoice void evidence" in error and "exact" in error for error in errors))
+        self.assertTrue(any("external payment evidence" in error and "exact" in error for error in errors))
+
+    def test_rejects_nonzero_unsourced_and_mismatched_terminal_counts(self):
+        evidence = _valid_evidence()
+        rows = evidence["terminal_counts"]["counts"]
+        rows["failed"]["count"] = 1
+        rows["stuck"]["source"] = ""
+        rows["unmapped"]["readback_boundary"] = "stale-boundary"
+        errors = self.errors(evidence)
+        for name in ("failed", "stuck", "unmapped"):
+            self.assertTrue(any(f"terminal count {name}" in error for error in errors))
+        evidence = _valid_evidence()
+        evidence["terminal_counts"]["wrong_mode_components"][0]["count"] = 1
+        self.assertTrue(any("wrong-mode provider component" in error for error in self.errors(evidence)))
+
+    def test_rejects_wrong_strategy_direct_timestamp_edit_and_missing_dispute_closure(self):
+        evidence = _valid_evidence()
+        evidence["supplemental_evidence"]["immediate_cancellation"]["strategy"] = "generic_cancel"
+        evidence["supplemental_evidence"]["period_advancement"]["direct_database_timestamp_edit"] = True
+        evidence["supplemental_evidence"]["dispute_lifecycle"]["closed_event"]["event_type"] = None
+        errors = self.errors(evidence)
+        self.assertTrue(any("wrong strategy or operation" in error for error in errors))
+        self.assertTrue(any("direct database timestamp" in error for error in errors))
+        self.assertTrue(any("created-to-closed" in error for error in errors))
+
+    def test_rejects_noncanonical_sources_and_malformed_boundary(self):
+        evidence = _valid_evidence()
+        evidence["supplemental_evidence"]["invoice_void"]["provider_readback"]["source"] = "arbitrary.source"
+        evidence["terminal_counts"]["counts"]["failed"]["source"] = "arbitrary.count"
+        evidence["terminal_counts"]["wrong_mode_components"][0]["source"] = "arbitrary.provider"
+        evidence["terminal_counts"]["capture_boundary"] = "2026-08-28 17:00:00"
+        errors = self.errors(evidence)
+        self.assertTrue(any("canonical source" in error for error in errors))
+        self.assertTrue(any("terminal count failed" in error for error in errors))
+        self.assertTrue(any("wrong-mode provider component" in error for error in errors))
+        self.assertTrue(any("UTC RFC3339" in error for error in errors))
+
+    def test_rejects_duplicate_mismatched_unprocessed_dispute_events_and_wrong_terminal(self):
+        evidence = _valid_evidence()
+        dispute = evidence["supplemental_evidence"]["dispute_lifecycle"]
+        dispute["closed_event"]["event_id"] = dispute["created_event"]["event_id"]
+        dispute["closed_event"]["local_event_id"] = "evt_other"
+        dispute["created_event"]["local_processing_status"] = "processing"
+        dispute["provider_readback"]["status"] = "closed"
+        dispute["local_readback"]["status"] = "closed"
+        dispute["local_readback"]["state_category"] = "active"
+        errors = self.errors(evidence)
+        self.assertTrue(any("created-to-closed" in error for error in errors))
+        self.assertTrue(any("provider readback has the wrong status" in error for error in errors))
+        self.assertTrue(any("canonical won status" in error for error in errors))
+
+    def test_rejects_unbound_mutation_inventory_retry_and_period_evidence(self):
+        evidence = _valid_evidence()
+        supplemental = evidence["supplemental_evidence"]
+        supplemental["invoice_void"]["caller_request_key_sha256"] = "raw-key"
+        supplemental["immediate_cancellation"]["durable_operation_id"] = ""
+        supplemental["external_payment"]["provider_operation_inventory_readback"]["status"] = "one"
+        supplemental["unsupported_operations"][0]["provider_operation_inventory_readback"]["status"] = "one"
+        supplemental["failed_payment_retry"]["failed_provider_readback"]["status"] = "paid"
+        supplemental["period_advancement"]["observed_provider_boundary"] += 1
+        supplemental["ambiguity_recovery"]["caller_request_key_sha256"] = "2" * 64
+        errors = self.errors(evidence)
+        self.assertTrue(any("invoice void evidence" in error for error in errors))
+        self.assertTrue(any("wrong strategy or operation" in error for error in errors))
+        self.assertGreaterEqual(sum("wrong status" in error for error in errors), 3)
+        self.assertTrue(any("test-clock advancement" in error for error in errors))
+        self.assertTrue(any("does not bind workflow facts" in error for error in errors))
+
+    def test_rejects_provider_activity_for_external_and_unsupported_cases(self):
+        evidence = _valid_evidence()
+        evidence["supplemental_evidence"]["external_payment"]["provider_mutation_count"] = 1
+        evidence["supplemental_evidence"]["unsupported_operations"][0]["provider_mutation_count"] = 1
+        errors = self.errors(evidence)
+        self.assertTrue(any("external payment" in error and "no invoice or provider mutation" in error for error in errors))
+        self.assertTrue(any("unsupported operation" in error and "provider activity" in error for error in errors))
+
+    def test_rejects_secret_url_and_card_values_in_supplemental_evidence(self):
+        for value in ("https://setup.example.invalid/private", "sk_test_sensitive", "4242 4242 4242 4242"):
+            with self.subTest(value=value):
+                evidence = _valid_evidence()
+                evidence["supplemental_evidence"]["external_payment"]["local_payment_id"] = value
+                evidence["supplemental_evidence"]["external_payment"]["replay_payment_id"] = value
+                self.assertTrue(any("raw URL, secret, or payment-card" in error for error in self.errors(evidence)))
+
+    def test_rejects_stale_supplemental_readback_boundary_and_missing_ambiguity_owner(self):
+        evidence = _valid_evidence()
+        evidence["supplemental_evidence"]["failed_payment_retry"]["provider_readback"]["capture_boundary"] = "stale-boundary"
+        evidence["supplemental_evidence"]["ambiguity_recovery"]["durable_step_id"] = ""
+        errors = self.errors(evidence)
+        self.assertTrue(any("shared capture boundary" in error for error in errors))
+        self.assertTrue(any("durable operation and step" in error for error in errors))
 
 
 if __name__ == "__main__":

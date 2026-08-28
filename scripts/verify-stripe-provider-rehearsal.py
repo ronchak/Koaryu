@@ -123,6 +123,7 @@ TOP_LEVEL_KEYS = {
     "webhook_delivery_evidence",
     "role_capabilities",
     "workflow_facts",
+    "supplemental_evidence",
     "terminal_counts",
 }
 MUTATION_KEYS = {
@@ -138,10 +139,96 @@ MUTATION_KEYS = {
     "caller_request_key_sha256",
     "provider_mutation_count",
 }
-ADMIN_WORKFLOWS = ["connect.onboarding", "enrollment.activate", "enrollment.cancel.immediate", "enrollment.cancel.period_end.revoke", "enrollment.cancel.period_end.schedule", "invoice.create", "invoice.finalize", "invoice.retry", "payer.setup", "payer.sync", "payment.refund", "plan.sync"]
-FRONT_DESK_WORKFLOWS = ["enrollment.activate", "enrollment.cancel.period_end.revoke", "enrollment.cancel.period_end.schedule", "payer.setup"]
+ADMIN_WORKFLOWS = ["connect.onboarding", "enrollment.activate", "enrollment.cancel.immediate", "enrollment.cancel.period_end.revoke", "enrollment.cancel.period_end.schedule", "invoice.create", "invoice.finalize", "invoice.retry", "invoice.void", "payer.setup", "payer.sync", "payment.external.record", "payment.refund", "plan.sync"]
+FRONT_DESK_WORKFLOWS = ["enrollment.activate", "enrollment.cancel.period_end.revoke", "enrollment.cancel.period_end.schedule", "payer.setup", "payment.external.record"]
 ROLE_CAPABILITY_KEYS = {"admin", "front_desk", "instructor"}
 TERMINAL_COUNT_KEYS = {"failed", "stuck", "unmapped", "wrong_mode", "wrong_generation", "pending_transition", "reconciliation_required"}
+TERMINAL_KEYS = {"capture_boundary", "counts", "wrong_mode_components"}
+TERMINAL_ROW_KEYS = {"count", "source", "readback_boundary"}
+WRONG_MODE_COMPONENT_KEYS = {"surface", "count", "source", "readback_boundary"}
+SUPPLEMENTAL_KEYS = {
+    "invoice_void", "immediate_cancellation", "external_payment",
+    "unsupported_operations", "failed_payment_retry", "period_advancement",
+    "dispute_lifecycle", "ambiguity_recovery",
+}
+READBACK_KEYS = {"source", "status", "capture_boundary"}
+INVOICE_VOID_KEYS = {
+    "workflow_id", "operation", "actor_role", "provider_attempt_count", "provider_mutation_count",
+    "automatic_retry_count", "caller_request_key_sha256", "durable_operation_id",
+    "provider_readback", "local_readback",
+}
+IMMEDIATE_CANCELLATION_KEYS = INVOICE_VOID_KEYS | {"strategy"}
+EXTERNAL_PAYMENT_KEYS = {
+    "workflow_id", "local_payment_id", "local_status", "replay_payment_id",
+    "caller_request_key_sha256", "replay_outcome", "audit_count", "invoice_id",
+    "provider_mutation_count", "provider_operation_inventory_readback", "local_readback",
+}
+UNSUPPORTED_ROW_KEYS = {
+    "subject", "classification", "denial_reason_code", "provider_mutation_count",
+    "denial_readback", "provider_operation_inventory_readback",
+}
+FAILED_RETRY_KEYS = {
+    "workflow_id", "operation", "failed_provider_readback", "failed_local_readback",
+    "provider_readback", "local_readback",
+}
+PERIOD_ADVANCEMENT_KEYS = {
+    "method", "test_clock_id", "advances_to", "observed_provider_boundary",
+    "direct_database_timestamp_edit", "provider_readback", "local_readback",
+}
+DISPUTE_LIFECYCLE_KEYS = {
+    "dispute_id", "created_event", "closed_event", "provider_readback", "local_readback",
+}
+DISPUTE_EVENT_KEYS = {"event_id", "event_type", "local_event_id", "local_processing_status"}
+DISPUTE_LOCAL_READBACK_KEYS = {"source", "status", "state_category", "capture_boundary"}
+AMBIGUITY_KEYS = {
+    "workflow_id", "durable_operation_id", "durable_step_id", "provider_mutation_count",
+    "automatic_retry_count", "caller_request_key_sha256", "mutation_step_name",
+    "provider_readback", "local_readback",
+}
+UNSUPPORTED_CONTRACT = {
+    "enrollment.pause.generic": "named_enrollment_pause_workflow_required",
+    "enrollment.resume.generic": "named_enrollment_resume_workflow_required",
+    "enrollment.cancel.generic": "named_enrollment_cancellation_workflow_required",
+    "connected_customer.default_payment_method.update": "payer_setup_must_not_mutate_customer_default_payment_method",
+}
+IMMEDIATE_STRATEGIES = {
+    "whole_subscription_cancel": "connected_subscription.cancel",
+    "shared_item_delete": "connected_subscription_item.delete",
+    "shared_item_quantity_decrement": "connected_subscription_item.update",
+}
+SUPPLEMENTAL_SOURCES = {
+    "invoice_void.provider": "stripe.invoice.retrieve",
+    "invoice_void.local": "billing_invoices.status",
+    "immediate_cancellation.provider": "stripe.subscription.retrieve",
+    "immediate_cancellation.local": "billing_enrollment_transition_intents_and_enrollments",
+    "external_payment.local": "billing_payments_and_audit",
+    "external_payment.inventory": "billing_provider_operation_inventory.payment_external_record",
+    "unsupported.denial": "billing_workflow_and_sink_catalog",
+    "unsupported.inventory": "billing_provider_operation_inventory.unsupported_subject",
+    "failed_payment_retry.failed_provider": "stripe.invoice.retrieve.failed_before_retry",
+    "failed_payment_retry.failed_local": "billing_invoices_and_payments.failed_before_retry",
+    "failed_payment_retry.provider": "stripe.invoice.retrieve.after_retry",
+    "failed_payment_retry.local": "billing_invoices_and_payments.after_retry",
+    "period_advancement.provider": "stripe.test_clock.retrieve",
+    "period_advancement.local": "billing_enrollment_transition_intents",
+    "dispute.provider": "stripe.dispute.retrieve",
+    "dispute.local": "billing_disputes.status_and_state_category",
+    "ambiguity.provider": "stripe.customer.retrieve",
+    "ambiguity.local": "billing_provider_operations_and_steps",
+}
+TERMINAL_SOURCES = {
+    "failed": "billing_provider_operations.failed_terminal_count",
+    "stuck": "billing_provider_operations.stuck_lease_count",
+    "unmapped": "stripe_webhook_events.unmapped_count",
+    "wrong_mode": "provider_local_wrong_mode_component_sum",
+    "wrong_generation": "billing_connect_generation_mismatch_count",
+    "pending_transition": "billing_enrollment_transition_intents.pending_count",
+    "reconciliation_required": "billing_reconciliation_required_union_count",
+}
+WRONG_MODE_SOURCES = {
+    "provider": "stripe_test_mode_object_inventory.wrong_mode_count",
+    "local": "stripe_webhook_events.wrong_mode_count",
+}
 WORKFLOW_FACT_KEYS = {
     "product_id", "price_id", "payer_id", "customer_id", "consent_accepted",
     "consent_payer_id", "setup_request_id", "consent_id", "setup_intent_id",
@@ -184,6 +271,118 @@ def _strict_https_origin(value: str) -> str | None:
         return None
     origin = f"https://{parsed.netloc}"
     return origin if value.rstrip("/") == origin else None
+
+
+def _exact_object(value: Any, keys: set[str], label: str, errors: list[str]) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != keys:
+        errors.append(f"{label} must contain only its exact schema-v4 fields")
+        return {}
+    return value
+
+
+def _validate_readback(value: Any, *, label: str, boundary: str, expected_source: str, expected_status: str, errors: list[str]) -> None:
+    row = _exact_object(value, READBACK_KEYS, label, errors)
+    if not row:
+        return
+    if row.get("source") != expected_source:
+        errors.append(f"{label} does not use its canonical source")
+    if row.get("status") != expected_status:
+        errors.append(f"{label} has the wrong status")
+    if row.get("capture_boundary") != boundary:
+        errors.append(f"{label} does not match the shared capture boundary")
+
+
+def _validate_supplemental(value: Any, *, boundary: str, errors: list[str]) -> None:
+    supplemental = _exact_object(value, SUPPLEMENTAL_KEYS, "supplemental evidence", errors)
+    if not supplemental:
+        return
+    serialized = json.dumps(supplemental, sort_keys=True)
+    string_values: list[str] = []
+    pending: list[Any] = [supplemental]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+        elif isinstance(item, str):
+            string_values.append(item)
+    has_card_value = any(
+        13 <= len(re.sub(r"[ -]", "", item)) <= 19
+        and re.fullmatch(r"[0-9 -]+", item) is not None
+        for item in string_values
+    )
+    if re.search(r"https?://|\b(?:sk|pk)_(?:test|live)_|client_secret", serialized, re.IGNORECASE) or has_card_value:
+        errors.append("supplemental evidence contains a raw URL, secret, or payment-card value")
+
+    void = _exact_object(supplemental.get("invoice_void"), INVOICE_VOID_KEYS, "invoice void evidence", errors)
+    if void and ((void.get("workflow_id"), void.get("operation"), void.get("actor_role"), void.get("provider_attempt_count"), void.get("provider_mutation_count"), void.get("automatic_retry_count")) != ("invoice.void", "connected_invoice.void", "admin", 1, 1, 0) or not re.fullmatch(r"[0-9a-f]{64}", str(void.get("caller_request_key_sha256") or "")) or not re.fullmatch(r"[A-Za-z0-9_-]{3,128}", str(void.get("durable_operation_id") or ""))):
+        errors.append("invoice void evidence must prove one exact Admin connected_invoice.void mutation")
+    _validate_readback(void.get("provider_readback"), label="invoice void provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["invoice_void.provider"], expected_status="void", errors=errors)
+    _validate_readback(void.get("local_readback"), label="invoice void local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["invoice_void.local"], expected_status="void", errors=errors)
+
+    immediate = _exact_object(supplemental.get("immediate_cancellation"), IMMEDIATE_CANCELLATION_KEYS, "immediate cancellation evidence", errors)
+    strategy = immediate.get("strategy")
+    if immediate and (strategy not in IMMEDIATE_STRATEGIES or immediate.get("operation") != IMMEDIATE_STRATEGIES.get(strategy) or immediate.get("workflow_id") != "enrollment.cancel.immediate" or immediate.get("actor_role") != "admin" or immediate.get("provider_attempt_count") != 1 or immediate.get("provider_mutation_count") != 1 or immediate.get("automatic_retry_count") != 0 or not re.fullmatch(r"[0-9a-f]{64}", str(immediate.get("caller_request_key_sha256") or "")) or not re.fullmatch(r"[A-Za-z0-9_-]{3,128}", str(immediate.get("durable_operation_id") or ""))):
+        errors.append("immediate cancellation evidence has the wrong strategy or operation")
+    _validate_readback(immediate.get("provider_readback"), label="immediate cancellation provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["immediate_cancellation.provider"], expected_status="canceled", errors=errors)
+    _validate_readback(immediate.get("local_readback"), label="immediate cancellation local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["immediate_cancellation.local"], expected_status="canceled", errors=errors)
+
+    external = _exact_object(supplemental.get("external_payment"), EXTERNAL_PAYMENT_KEYS, "external payment evidence", errors)
+    if external and (external.get("workflow_id") != "payment.external.record" or external.get("local_status") != "externally_recorded" or not external.get("local_payment_id") or external.get("replay_payment_id") != external.get("local_payment_id") or not re.fullmatch(r"[0-9a-f]{64}", str(external.get("caller_request_key_sha256") or "")) or external.get("replay_outcome") != "same_row" or external.get("audit_count") != 1 or external.get("invoice_id") is not None or external.get("provider_mutation_count") != 0):
+        errors.append("external payment must replay to one local externally_recorded row and one audit with no invoice or provider mutation")
+    _validate_readback(external.get("provider_operation_inventory_readback"), label="external payment provider-operation inventory readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["external_payment.inventory"], expected_status="zero", errors=errors)
+    _validate_readback(external.get("local_readback"), label="external payment local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["external_payment.local"], expected_status="externally_recorded", errors=errors)
+
+    unsupported = supplemental.get("unsupported_operations")
+    if not isinstance(unsupported, list) or len(unsupported) != len(UNSUPPORTED_CONTRACT):
+        errors.append("unsupported operation evidence must contain the exact four denied subjects")
+    else:
+        by_subject = {row.get("subject"): row for row in unsupported if isinstance(row, dict)}
+        if len(by_subject) != len(unsupported) or set(by_subject) != set(UNSUPPORTED_CONTRACT):
+            errors.append("unsupported operation evidence must contain the exact four denied subjects")
+        for subject, reason in UNSUPPORTED_CONTRACT.items():
+            row = _exact_object(by_subject.get(subject), UNSUPPORTED_ROW_KEYS, f"unsupported operation {subject}", errors)
+            if row and (row.get("classification"), row.get("denial_reason_code"), row.get("provider_mutation_count")) != ("unsupported", reason, 0):
+                errors.append(f"unsupported operation {subject} has the wrong denial contract or provider activity")
+            _validate_readback(row.get("denial_readback"), label=f"unsupported operation {subject} denial readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["unsupported.denial"], expected_status="denied", errors=errors)
+            _validate_readback(row.get("provider_operation_inventory_readback"), label=f"unsupported operation {subject} provider-operation inventory readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["unsupported.inventory"], expected_status="zero", errors=errors)
+
+    retry = _exact_object(supplemental.get("failed_payment_retry"), FAILED_RETRY_KEYS, "failed-payment retry evidence", errors)
+    if retry and (retry.get("workflow_id"), retry.get("operation")) != ("invoice.retry", "connected_invoice.pay"):
+        errors.append("failed-payment retry evidence has the wrong workflow or operation")
+    _validate_readback(retry.get("failed_provider_readback"), label="failed-payment pre-retry provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["failed_payment_retry.failed_provider"], expected_status="failed", errors=errors)
+    _validate_readback(retry.get("failed_local_readback"), label="failed-payment pre-retry local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["failed_payment_retry.failed_local"], expected_status="failed", errors=errors)
+    _validate_readback(retry.get("provider_readback"), label="failed-payment retry provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["failed_payment_retry.provider"], expected_status="paid", errors=errors)
+    _validate_readback(retry.get("local_readback"), label="failed-payment retry local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["failed_payment_retry.local"], expected_status="succeeded", errors=errors)
+
+    period = _exact_object(supplemental.get("period_advancement"), PERIOD_ADVANCEMENT_KEYS, "period advancement evidence", errors)
+    if period and (period.get("method") != "stripe_test_clock.advance" or not str(period.get("test_clock_id", "")).startswith("clock_") or type(period.get("advances_to")) is not int or period.get("advances_to") <= 0 or period.get("observed_provider_boundary") != period.get("advances_to") or period.get("direct_database_timestamp_edit") is not False):
+        errors.append("period advancement must use Stripe test-clock advancement without direct database timestamp editing")
+    _validate_readback(period.get("provider_readback"), label="period advancement provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["period_advancement.provider"], expected_status="advanced", errors=errors)
+    _validate_readback(period.get("local_readback"), label="period advancement local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["period_advancement.local"], expected_status="completed", errors=errors)
+
+    dispute = _exact_object(supplemental.get("dispute_lifecycle"), DISPUTE_LIFECYCLE_KEYS, "dispute lifecycle evidence", errors)
+    created = _exact_object(dispute.get("created_event"), DISPUTE_EVENT_KEYS, "dispute created event", errors)
+    closed = _exact_object(dispute.get("closed_event"), DISPUTE_EVENT_KEYS, "dispute closed event", errors)
+    event_contract_ok = True
+    for row, event_type in ((created, "charge.dispute.created"), (closed, "charge.dispute.closed")):
+        if not EVENT_ID_PATTERN.fullmatch(str(row.get("event_id") or "")) or row.get("event_type") != event_type or row.get("local_event_id") != row.get("event_id") or row.get("local_processing_status") != "processed":
+            event_contract_ok = False
+    if created.get("event_id") == closed.get("event_id"):
+        event_contract_ok = False
+    if dispute and (not str(dispute.get("dispute_id", "")).startswith("dp_") or not event_contract_ok):
+        errors.append("dispute evidence must prove one created-to-closed lifecycle")
+    _validate_readback(dispute.get("provider_readback"), label="dispute provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["dispute.provider"], expected_status="won", errors=errors)
+    local_dispute = _exact_object(dispute.get("local_readback"), DISPUTE_LOCAL_READBACK_KEYS, "dispute local readback", errors)
+    if local_dispute and (local_dispute.get("source") != SUPPLEMENTAL_SOURCES["dispute.local"] or local_dispute.get("status") != "won" or local_dispute.get("state_category") != "won" or local_dispute.get("capture_boundary") != boundary):
+        errors.append("dispute local readback must prove canonical won status and state category at the shared boundary")
+
+    ambiguity = _exact_object(supplemental.get("ambiguity_recovery"), AMBIGUITY_KEYS, "ambiguity recovery evidence", errors)
+    if ambiguity and (ambiguity.get("workflow_id") != "payer.sync" or not ambiguity.get("durable_operation_id") or not ambiguity.get("durable_step_id") or ambiguity.get("provider_mutation_count") != 1 or ambiguity.get("automatic_retry_count") != 0):
+        errors.append("ambiguity recovery must bind one durable operation and step with one mutation and zero retries")
+    _validate_readback(ambiguity.get("provider_readback"), label="ambiguity provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["ambiguity.provider"], expected_status="found", errors=errors)
+    _validate_readback(ambiguity.get("local_readback"), label="ambiguity local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["ambiguity.local"], expected_status="completed", errors=errors)
 
 
 def _validate_delivery(
@@ -331,14 +530,39 @@ def validate_evidence(
     if not re.fullmatch(r"[0-9a-f]{64}", str(facts.get("ambiguous_caller_key_sha256") or "")):
         errors.append("ambiguous recovery lacks a sanitized caller-key digest")
 
-    terminal = evidence.get("terminal_counts")
-    if not isinstance(terminal, dict) or set(terminal) != TERMINAL_COUNT_KEYS or any(terminal.get(key) != 0 for key in TERMINAL_COUNT_KEYS):
-        errors.append("terminal counts must be exact zero for every unresolved state")
+    terminal = _exact_object(evidence.get("terminal_counts"), TERMINAL_KEYS, "terminal count evidence", errors)
+    boundary = terminal.get("capture_boundary")
+    if not isinstance(boundary, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", boundary):
+        errors.append("terminal counts lack one exact UTC RFC3339 capture boundary")
+        boundary = ""
+    counts = terminal.get("counts")
+    if not isinstance(counts, dict) or set(counts) != TERMINAL_COUNT_KEYS:
+        errors.append("terminal counts must contain the exact seven unresolved states")
+    else:
+        for name in TERMINAL_COUNT_KEYS:
+            row = _exact_object(counts.get(name), TERMINAL_ROW_KEYS, f"terminal count {name}", errors)
+            if row and (row.get("count") != 0 or row.get("source") != TERMINAL_SOURCES[name] or row.get("readback_boundary") != boundary):
+                errors.append(f"terminal count {name} must be zero with a named source at the shared capture boundary")
+    components = terminal.get("wrong_mode_components")
+    if not isinstance(components, list) or len(components) != 2:
+        errors.append("wrong-mode zero must contain exact provider and local source components")
+    else:
+        by_surface = {row.get("surface"): row for row in components if isinstance(row, dict)}
+        if set(by_surface) != {"provider", "local"}:
+            errors.append("wrong-mode zero must contain exact provider and local source components")
+        for surface in ("provider", "local"):
+            row = _exact_object(by_surface.get(surface), WRONG_MODE_COMPONENT_KEYS, f"wrong-mode {surface} component", errors)
+            if row and (row.get("count") != 0 or row.get("source") != WRONG_MODE_SOURCES[surface] or row.get("readback_boundary") != boundary):
+                errors.append(f"wrong-mode {surface} component must be a sourced zero at the shared capture boundary")
+
+    _validate_supplemental(evidence.get("supplemental_evidence"), boundary=boundary, errors=errors)
 
     steps = evidence.get("steps") or []
     by_name = {row.get("name"): row for row in steps if isinstance(row, dict)}
     if len(by_name) != len(steps):
         errors.append("rehearsal step names must be present and unique")
+    if len(steps) != 15:
+        errors.append("rehearsal evidence must contain exactly 15 core proof steps")
     missing = sorted(REQUIRED_STEPS - set(by_name))
     if missing:
         errors.append(f"missing required rehearsal steps: {', '.join(missing)}")
@@ -367,6 +591,8 @@ def validate_evidence(
     by_step = {mutation.get("step_name"): mutation for mutation in mutations if isinstance(mutation, dict)}
     if len(by_step) != len(mutations) or set(by_step) != set(REQUIRED_MUTATIONS):
         errors.append("mutation step names do not match the exact schema-v4 workflow plan")
+    if len(mutations) != 24:
+        errors.append("rehearsal evidence must contain exactly 24 core mutation attempts")
     for mutation in mutations:
         if not isinstance(mutation, dict):
             errors.append("mutation evidence entries must be objects")
@@ -396,6 +622,9 @@ def validate_evidence(
     ambiguous = by_step.get(ambiguous_step)
     if not ambiguous or ambiguous.get("caller_request_key_sha256") != facts.get("ambiguous_caller_key_sha256") or ambiguous.get("outcome") != "reconciled":
         errors.append("ambiguous recovery does not bind one exact reconciled mutation row")
+    supplemental_ambiguity = (evidence.get("supplemental_evidence") or {}).get("ambiguity_recovery")
+    if not isinstance(supplemental_ambiguity, dict) or supplemental_ambiguity.get("caller_request_key_sha256") != facts.get("ambiguous_caller_key_sha256") or supplemental_ambiguity.get("mutation_step_name") != ambiguous_step or supplemental_ambiguity.get("caller_request_key_sha256") != (ambiguous or {}).get("caller_request_key_sha256"):
+        errors.append("supplemental ambiguity recovery does not bind workflow facts and payer.customer_create")
 
     deliveries = evidence.get("webhook_delivery_evidence")
     if not isinstance(deliveries, dict) or set(deliveries) != {"platform", "connect"}:
