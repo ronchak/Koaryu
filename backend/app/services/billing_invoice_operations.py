@@ -50,6 +50,10 @@ INVOICE_FINALIZE_AMBIGUOUS_DETAIL = (
     "Invoice finalization outcome is not confirmed. "
     "Retry with the same Idempotency-Key after reconciliation."
 )
+INVOICE_FINALIZE_PREREAD_UNAVAILABLE_DETAIL = (
+    "Invoice finalization was not attempted because the provider invoice "
+    "could not be read. Retry with a new Idempotency-Key."
+)
 INVOICE_VOID_AMBIGUOUS_DETAIL = (
     "Invoice void outcome is not confirmed. "
     "Retry with the same Idempotency-Key after reconciliation."
@@ -287,10 +291,12 @@ class BillingInvoiceOperationWorkflow:
             "billing_payers", invoice["payer_id"], studio_id, "Payer not found."
         )
         self._require_exact_payer(payer, str(invoice["stripe_account_id"]), generation)
-        provider_before = self._read_invoice(invoice)
-        collection_method, provider_before_status = self._verify_finalize_preread(
-            invoice, provider_before
-        )
+        collection_method = str(invoice.get("collection_method") or "")
+        if collection_method not in {"charge_automatically", "send_invoice"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Invoice collection method is not eligible for finalization.",
+            )
         desired_hash = stable_hash({
             "operation_type": INVOICE_FINALIZE_OPERATION_TYPE,
             "studio_id": studio_id,
@@ -352,6 +358,50 @@ class BillingInvoiceOperationWorkflow:
             )
             self._audit_finalized_once(context, finalized)
             return BillingInvoiceResponse(**finalized)
+        if state == "provider_request_in_flight" or outcome in {
+            "busy", "provider_request_in_flight"
+        }:
+            raise HTTPException(status_code=409, detail=INVOICE_FINALIZE_AMBIGUOUS_DETAIL)
+        if state in {"definitive_failed", "definitive_rejected"}:
+            provider_operation_disposition(claimed)
+        try:
+            provider_before = self._read_invoice(invoice)
+            provider_collection_method, provider_before_status = (
+                self._verify_finalize_preread(invoice, provider_before)
+            )
+        except HTTPException as exc:
+            if state == "started":
+                operations.transition(
+                    context,
+                    operation,
+                    "definitive_rejected",
+                    error_code="invoice_finalize_preread_invalid",
+                )
+            raise
+        except Exception as exc:
+            if state == "started":
+                operations.transition(
+                    context,
+                    operation,
+                    "definitive_failed",
+                    error_code="invoice_finalize_preread_unavailable",
+                )
+            raise HTTPException(
+                status_code=503,
+                detail=INVOICE_FINALIZE_PREREAD_UNAVAILABLE_DETAIL,
+            ) from exc
+        if provider_collection_method != collection_method:
+            if state == "started":
+                operations.transition(
+                    context,
+                    operation,
+                    "definitive_rejected",
+                    error_code="invoice_finalize_collection_method_conflict",
+                )
+            raise HTTPException(
+                status_code=409,
+                detail="Invoice collection method requires reconciliation.",
+            )
         if state == "provider_succeeded":
             try:
                 finalized = self._project_finalized_invoice(invoice, context, operation)
@@ -378,12 +428,6 @@ class BillingInvoiceOperationWorkflow:
             finalized = self._project_finalized_invoice(
                 invoice, context, operation, provider=provider_before
             )
-        elif state == "provider_request_in_flight" or outcome in {
-            "busy", "provider_request_in_flight"
-        }:
-            raise HTTPException(status_code=409, detail=INVOICE_FINALIZE_AMBIGUOUS_DETAIL)
-        elif state in {"definitive_failed", "definitive_rejected"}:
-            provider_operation_disposition(claimed)
         elif provider_before_status != "draft":
             operations.transition(
                 context,

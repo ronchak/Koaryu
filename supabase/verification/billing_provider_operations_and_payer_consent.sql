@@ -53,6 +53,14 @@ BEGIN
         'authenticated',
         'public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text)',
         'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,numeric)',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'authenticated',
+        'public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,numeric)',
+        'EXECUTE'
     ) THEN
         RAISE EXCEPTION 'Billing provider RPC privileges are not service-only.';
     END IF;

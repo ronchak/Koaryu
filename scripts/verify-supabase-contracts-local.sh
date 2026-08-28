@@ -1538,6 +1538,17 @@ else
   exit "$status"
 fi
 
+echo "[concurrency] RUN autopay activation/disable serialization"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-billing-autopay-activation-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS autopay activation/disable serialization"
+else
+  status=$?
+  echo "[concurrency] FAIL autopay activation/disable serialization (exit $status)" >&2
+  exit "$status"
+fi
+
 verification_total=${#verification_files[@]}
 verification_index=0
 for verification_file in "${verification_files[@]}"; do

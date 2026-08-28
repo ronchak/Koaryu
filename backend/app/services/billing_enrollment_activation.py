@@ -95,10 +95,40 @@ class BillingEnrollmentActivationWorkflow:
             if collection_mode == "autopay"
             else ENROLLMENT_ACTIVATE_INVOICE_OPERATION_TYPE
         )
-
-        group = self.owner._find_or_create_billing_subscription(
-            enrollment, plan, payer, account
-        )
+        operations = BillingProviderOperationCoordinator(self.supabase)
+        if collection_mode == "autopay":
+            try:
+                reservation = operations.reserve_autopay_activation(
+                    studio_id=studio_id,
+                    actor_id=actor_id,
+                    enrollment_id=enrollment_id,
+                    payer_id=str(payer["id"]),
+                    billing_plan_id=str(plan["id"]),
+                    stripe_connected_account_id=account_id,
+                    connect_account_generation=generation,
+                    application_fee_percent=self.owner._application_fee_percent(
+                        account
+                    ),
+                )
+            except PostgrestAPIError as exc:
+                if exc.message in {
+                    "billing_autopay_activation_consent_invalid",
+                    "billing_autopay_activation_group_invalid",
+                }:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "Autopay activation requires current payer consent "
+                            "and an eligible subscription reservation."
+                        ),
+                    ) from exc
+                raise
+            payer = reservation["payer"]
+            group = reservation["subscription"]
+        else:
+            group = self.owner._find_or_create_billing_subscription(
+                enrollment, plan, payer, account
+            )
         group = self._bind_local_group_generation(
             group, account_id=account_id, generation=generation, payer=payer,
         )
@@ -120,7 +150,6 @@ class BillingEnrollmentActivationWorkflow:
                 generation=generation,
                 operation_type=operation_type,
             )
-            operations = BillingProviderOperationCoordinator(self.supabase)
             lease_owner = str(uuid4())
             claimed = operations.claim_resource(
                 studio_id=studio_id,

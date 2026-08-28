@@ -567,6 +567,34 @@ class BillingProviderOperationCoordinator:
             expected_key="payer",
         )
 
+    def reserve_autopay_activation(
+        self,
+        *,
+        studio_id: str,
+        actor_id: str,
+        enrollment_id: str,
+        payer_id: str,
+        billing_plan_id: str,
+        stripe_connected_account_id: str,
+        connect_account_generation: int,
+        application_fee_percent: float,
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "reserve_billing_autopay_activation_v31",
+            {
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_enrollment_id": enrollment_id,
+                "p_payer_id": payer_id,
+                "p_billing_plan_id": billing_plan_id,
+                "p_stripe_connected_account_id": stripe_connected_account_id,
+                "p_connect_account_generation": connect_account_generation,
+                "p_terms_version": AUTOPAY_TERMS_VERSION,
+                "p_application_fee_percent": application_fee_percent,
+            },
+            expected_key="subscription",
+        )
+
     def mark_payer_setup_reconciliation(
         self,
         *,

@@ -5,6 +5,7 @@ import copy
 
 import pytest
 from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.billing_enrollments import BillingEnrollmentManager
 from app.services.platform_billing_helpers import build_idempotency_key
@@ -15,6 +16,67 @@ class _ActivationSupabase(_FakeSupabase):
     def __init__(self, tables):
         super().__init__(tables)
         self.lose_provider_success_response_once = False
+        self.autopay_consent_active = True
+        self.autopay_reservation_hook = None
+
+    def _rpc_reserve_billing_autopay_activation_v31(self, params):
+        if self.autopay_reservation_hook is not None:
+            self.autopay_reservation_hook()
+        if not self.autopay_consent_active:
+            raise PostgrestAPIError({
+                "code": "55000",
+                "message": "billing_autopay_activation_consent_invalid",
+                "details": "",
+                "hint": "",
+            })
+        payer = next(
+            row for row in self.tables["billing_payers"]
+            if row["id"] == params["p_payer_id"]
+        )
+        group = next(
+            (
+                row for row in self.tables.setdefault(
+                    "billing_subscriptions", []
+                )
+                if row.get("payer_id") == params["p_payer_id"]
+                and row.get("collection_mode") == "autopay"
+                and row.get("status")
+                in {"pending", "trialing", "active", "incomplete", "past_due"}
+            ),
+            None,
+        )
+        outcome = "existing"
+        if group is None:
+            group = {
+                **self.insert_defaults["billing_subscriptions"],
+                "studio_id": params["p_studio_id"],
+                "payer_id": params["p_payer_id"],
+                "stripe_account_id": params["p_stripe_connected_account_id"],
+                "stripe_customer_id": payer["stripe_customer_id"],
+                "collection_mode": "autopay",
+                "billing_interval": "monthly",
+                "currency": "usd",
+                "status": "pending",
+                "default_payment_method_id": payer[
+                    "default_payment_method_id"
+                ],
+                "application_fee_percent": params[
+                    "p_application_fee_percent"
+                ],
+                "metadata": {
+                    "connect_account_generation": params[
+                        "p_connect_account_generation"
+                    ]
+                },
+            }
+            self.tables["billing_subscriptions"].append(group)
+            outcome = "created"
+        return {
+            "outcome": outcome,
+            "payer": dict(payer),
+            "subscription": dict(group),
+            "consent": {"completed_at": "2026-08-27T00:00:00Z"},
+        }
 
     def _rpc_transition_billing_provider_operation_v1(self, params):
         result = super()._rpc_transition_billing_provider_operation_v1(params)
@@ -772,6 +834,32 @@ def test_autopay_requires_consent_and_passes_exact_payment_method():
     assert result.status == "active"
     assert _Stripe.create_subscription_calls[0]["default_payment_method"] == "pm_1"
     assert _Stripe.create_subscription_calls[0]["collection_method"] == "charge_automatically"
+
+
+def test_autopay_create_reservation_rejects_disable_first_without_stale_group():
+    enrollment = _enrollment(collection_mode="autopay")
+    facade = _Facade(_tables(enrollment=enrollment))
+    manager = _manager(facade)
+
+    def disable_before_reservation():
+        facade.authorized = False
+        facade.supabase.autopay_consent_active = False
+
+    facade.supabase.autopay_reservation_hook = disable_before_reservation
+
+    with pytest.raises(HTTPException) as blocked:
+        asyncio.run(manager.activate_enrollment(
+            "enrollment_1",
+            "studio_1",
+            "actor_1",
+            "autopay-disable-race",
+        ))
+
+    assert blocked.value.status_code == 409
+    assert "current payer consent" in blocked.value.detail
+    assert facade.supabase.tables["billing_subscriptions"] == []
+    assert _Stripe.create_subscription_calls == []
+    assert facade.supabase.billing_provider_operations == {}
 
 
 def test_lost_provider_success_response_replays_without_second_mutation():

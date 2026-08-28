@@ -259,9 +259,15 @@ anchors. It:
 - keeps an enabled payer's active consent authoritative while a replacement setup is in
   flight, and atomically closes a policy-blocked no-object setup without stranding its
   request, consent, or provider operation;
+- reserves autopay activation under the same payer and subscription locks as disable, so
+  disable-first creates no stale group while activation-first makes disable serialize once
+  and reject the durable pending group on retry;
 - requires a fresh automatic invoice retry to hold current consent for the exact payer,
   account generation, invoice payment method, and SetupIntent through the provider-pay
   boundary. Manual retries, completed replay, and reconciliation-only reads stay separate;
+- replays completed or projected invoice finalization from durable local evidence before
+  any provider read, terminally fails a transient preread outage before mutation with
+  new-key recovery, and terminally rejects deterministic provider-identity drift;
 - keeps invoice/payment webhooks from rewriting the payer's consent-bound default
   payment method; only the payer-owned setup projection may establish that field;
 - derives live Connect Payments scope readiness from the dedicated capability sentinel,
@@ -297,17 +303,17 @@ anchors. It:
 - advances the exact release state through schedule V25 to 126/V31 and adds independent V24-to-V25 and
   V30-to-V31 PostgreSQL 17 restore assertions;
 - pins resource ownership
-  `0:dff56b2572ace65f3d68f0b6e378604c2757356cf3d5057ca186343a76c12426`,
+  `0:b0a798cb45cd30332423e6ea40c66273ea822852441e41dfc380d18de1cc17fb`,
   the V31 operational contract
-  `0:7a2fb92bc9aee799df0a64228788e08d4d63e2df0a7e0fb255216d8716a9413d`,
+  `0:9ef16a6d074fa8bd819958cf20072e41aaa462266ad20a5a59cd92722655138b`,
   the V31 operational manifest
-  `441d38fe480a784c240e27467565b61d4477cece606da32737391d6d86c2eb3f`,
+  `5c87717b8392b111f2688746eaba8a74ce4a9fec4cc2afb0bfe4cb78c6822f29`,
   and expectation state
-  `1:afbce12f6f62d8cc55e4caf44d625915bb72f6a1d9cd9fb02f412103fcc154eb`.
+  `1:7ae9391adc970483ea85bf0256346272a898cc8ee0d3a37c483a2508a7734afd`.
 
 Latest local candidate evidence before publication:
 
-- backend: all 1,360 tests passed;
+- backend: all 1,364 tests passed;
 - frontend: all 728 tests passed outside the sandbox, including the three
   Chromium-backed print-geometry tests;
 - frontend TypeScript, full ESLint, and the production build with safe
@@ -320,7 +326,7 @@ Latest local candidate evidence before publication:
   every concurrency suite, and all 44 SQL contracts passed on ephemeral PostgreSQL 17;
 - a disposable Supabase provider-image reset applied all 126 migrations with the same
   V31 trust anchors and canonical
-  `functions=103:ff9c817084afa9d6651532503e87fe4c5fc04c82356e00012670526662bf6188:0`
+  `functions=103:48b5c5646d360aff775dc72dd50144a98683dcc33429d666261972cd278db8c4:0`
   catalog state, the release UI atomic contract passed, and database lint reported no
   errors;
 - `git diff --check` passed.

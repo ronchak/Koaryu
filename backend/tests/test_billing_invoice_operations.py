@@ -14,6 +14,7 @@ from stripe import CardError as StripeCardError
 from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceItemCreate
 from app.services.billing_invoice_operations import (
     INVOICE_CREATE_AMBIGUOUS_DETAIL,
+    INVOICE_FINALIZE_PREREAD_UNAVAILABLE_DETAIL,
     INVOICE_RETRY_AMBIGUOUS_DETAIL,
 )
 from app.services.billing_invoices import BillingInvoiceManager
@@ -21,6 +22,7 @@ from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
+    OPERATION_TERMINAL_DETAIL,
 )
 from app.services.platform_billing_helpers import build_idempotency_key
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
@@ -209,6 +211,7 @@ class _Stripe:
     finalize_exception: Exception | None = None
     send_exception: Exception | None = None
     void_exception: Exception | None = None
+    retrieve_exception: Exception | None = None
     readback_overrides: dict = {}
 
     @classmethod
@@ -231,6 +234,7 @@ class _Stripe:
         cls.finalize_exception = None
         cls.send_exception = None
         cls.void_exception = None
+        cls.retrieve_exception = None
         cls.readback_overrides = {}
 
     def create_connected_invoice(self, **payload):
@@ -261,6 +265,8 @@ class _Stripe:
 
     def retrieve_connected_invoice(self, **payload):
         self.__class__.retrieve_calls.append(copy.deepcopy(payload))
+        if self.__class__.retrieve_exception:
+            raise self.__class__.retrieve_exception
         invoice = copy.deepcopy(self.__class__.invoices[payload["invoice_id"]])
         invoice.update(copy.deepcopy(self.__class__.readback_overrides))
         return invoice
@@ -758,6 +764,93 @@ def test_finalize_send_registers_two_steps_and_replays_without_duplicates():
         "connected_invoice.finalize",
         "connected_invoice.send",
     ]
+
+
+def test_finalize_completed_replay_does_not_require_fresh_provider_read():
+    invoice = _draft_invoice()
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    manager = _manager(facade)
+    first = asyncio.run(manager.finalize_invoice(
+        invoice["id"], "studio_1", "actor_1", "finalize-offline-replay"
+    ))
+    reads_before = len(_Stripe.retrieve_calls)
+    _Stripe.retrieve_exception = TimeoutError("provider read unavailable")
+
+    replay = asyncio.run(manager.finalize_invoice(
+        invoice["id"], "studio_1", "actor_1", "finalize-offline-replay"
+    ))
+
+    assert first.status == replay.status == "open"
+    assert len(_Stripe.retrieve_calls) == reads_before
+    assert len(_Stripe.finalize_calls) == 1
+    assert len(_Stripe.send_calls) == 1
+
+
+def test_finalize_new_claim_fails_definitively_when_provider_preread_fails():
+    invoice = _draft_invoice()
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    _Stripe.retrieve_exception = TimeoutError("provider read unavailable")
+
+    with pytest.raises(HTTPException) as ambiguous:
+        asyncio.run(_manager(facade).finalize_invoice(
+            invoice["id"],
+            "studio_1",
+            "actor_1",
+            "finalize-preread-timeout",
+        ))
+
+    operation = _operation(facade, "invoice.finalize")
+    assert ambiguous.value.status_code == 503
+    assert ambiguous.value.detail == INVOICE_FINALIZE_PREREAD_UNAVAILABLE_DETAIL
+    assert operation["state"] == "definitive_failed"
+    assert operation["error_code"] == "invoice_finalize_preread_unavailable"
+    assert _Stripe.finalize_calls == []
+    assert _Stripe.send_calls == []
+
+    reads_before = len(_Stripe.retrieve_calls)
+    with pytest.raises(HTTPException) as replay:
+        asyncio.run(_manager(facade).finalize_invoice(
+            invoice["id"],
+            "studio_1",
+            "actor_1",
+            "finalize-preread-timeout",
+        ))
+    assert replay.value.status_code == 409
+    assert replay.value.detail == OPERATION_TERMINAL_DETAIL
+    assert len(_Stripe.retrieve_calls) == reads_before
+
+    _Stripe.retrieve_exception = None
+    recovered = asyncio.run(_manager(facade).finalize_invoice(
+        invoice["id"],
+        "studio_1",
+        "actor_1",
+        "finalize-preread-recovery",
+    ))
+    assert recovered.status == "open"
+
+
+def test_finalize_new_claim_terminally_rejects_deterministic_preread_drift():
+    invoice = _draft_invoice()
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    _Stripe.readback_overrides = {"customer": "cus_other"}
+
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(_manager(facade).finalize_invoice(
+            invoice["id"],
+            "studio_1",
+            "actor_1",
+            "finalize-preread-drift",
+        ))
+
+    operation = _operation(facade, "invoice.finalize")
+    assert rejected.value.status_code == 409
+    assert operation["state"] == "definitive_rejected"
+    assert operation["error_code"] == "invoice_finalize_preread_invalid"
+    assert _Stripe.finalize_calls == []
+    assert _Stripe.send_calls == []
 
 
 def test_finalize_partial_send_failure_never_repeats_finalize_or_send():

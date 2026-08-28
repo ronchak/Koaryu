@@ -473,6 +473,33 @@ class BillingProviderOperationRpcMixin:
         operation = self._operation_for_params(params)
         if operation["revision"] != params["p_expected_revision"]:
             raise AssertionError("stale operation revision")
+        legal_transitions = {
+            "started": {
+                "provider_request_in_flight", "definitive_failed",
+                "definitive_rejected",
+            },
+            "provider_request_in_flight": {
+                "provider_succeeded", "reconciliation_required",
+                "definitive_failed", "definitive_rejected",
+            },
+            "provider_succeeded": {"projected", "reconciliation_required"},
+            "projected": {"completed", "reconciliation_required"},
+            "reconciliation_required": {
+                "provider_succeeded", "projected", "definitive_failed",
+                "definitive_rejected",
+            },
+        }
+        allowed = legal_transitions.get(operation["state"], set())
+        if operation["state"] == "recovery_authorized":
+            recovery_outcome = operation.get("recovery_outcome")
+            if recovery_outcome == "provider_no_object_safe_to_retry":
+                allowed = {"provider_request_in_flight"}
+            elif recovery_outcome == "provider_succeeded_reconcile_only":
+                allowed = {"provider_succeeded"}
+            else:
+                allowed = set()
+        if params["p_to_state"] not in allowed:
+            raise AssertionError("billing_provider_operation_invalid_transition")
         operation["state"] = params["p_to_state"]
         if params["p_to_state"] == "provider_request_in_flight":
             operation["provider_request_attempt_count"] += 1

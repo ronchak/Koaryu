@@ -1696,6 +1696,252 @@ GRANT EXECUTE ON FUNCTION public.claim_billing_invoice_closeout_operation_v1(
     UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
 ) TO service_role;
 
+CREATE FUNCTION public.reserve_billing_autopay_activation_v31(
+    p_studio_id UUID,p_actor_id UUID,p_enrollment_id UUID,p_payer_id UUID,
+    p_billing_plan_id UUID,p_stripe_connected_account_id TEXT,
+    p_connect_account_generation INTEGER,p_terms_version TEXT,
+    p_application_fee_percent NUMERIC
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=''
+AS $$
+DECLARE
+    v_payer public.billing_payers%ROWTYPE;
+    v_enrollment public.student_billing_enrollments%ROWTYPE;
+    v_plan public.billing_plans%ROWTYPE;
+    v_account public.studio_payment_accounts%ROWTYPE;
+    v_consent public.billing_payer_payment_consents%ROWTYPE;
+    v_group public.billing_subscriptions%ROWTYPE;
+    v_existing_group_id UUID;
+    v_initial_group_ids UUID[]:=ARRAY[]::UUID[];
+    v_current_group_ids UUID[]:=ARRAY[]::UUID[];
+    v_group_generation INTEGER;
+    v_generation_text TEXT;
+    v_outcome TEXT:='existing';
+BEGIN
+    IF p_studio_id IS NULL OR p_actor_id IS NULL OR p_enrollment_id IS NULL
+       OR p_payer_id IS NULL OR p_billing_plan_id IS NULL
+       OR p_connect_account_generation<=0
+       OR p_terms_version IS DISTINCT FROM 'koaryu-autopay-v1'
+       OR octet_length(p_stripe_connected_account_id) NOT BETWEEN 1 AND 255
+       OR p_application_fee_percent<0 OR p_application_fee_percent>100 THEN
+        RAISE EXCEPTION USING ERRCODE='22023',
+            MESSAGE='billing_autopay_activation_reservation_invalid';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.staff_roles AS membership
+        WHERE membership.studio_id=p_studio_id
+          AND membership.user_id=p_actor_id
+          AND membership.archived_at IS NULL
+          AND membership.role IN ('admin','front_desk')
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='42501',
+            MESSAGE='billing_autopay_activation_actor_invalid';
+    END IF;
+
+    -- Existing transition workflows lock a subscription group before an
+    -- enrollment and payer. Lock every visible group for this payer in UUID
+    -- order before either row: an unlinked enrollment may join an existing
+    -- sibling group, and the schema permits multiple live groups per payer.
+    SELECT enrollment.billing_subscription_id INTO v_existing_group_id
+    FROM public.student_billing_enrollments AS enrollment
+    WHERE enrollment.id=p_enrollment_id
+      AND enrollment.studio_id=p_studio_id;
+    WITH locked_groups AS MATERIALIZED (
+        SELECT subscription.id
+        FROM public.billing_subscriptions AS subscription
+        WHERE subscription.studio_id=p_studio_id
+          AND subscription.payer_id=p_payer_id
+        ORDER BY subscription.id
+        FOR UPDATE
+    )
+    SELECT COALESCE(
+        array_agg(locked_groups.id ORDER BY locked_groups.id),
+        ARRAY[]::UUID[]
+    ) INTO v_initial_group_ids
+    FROM locked_groups;
+    SELECT * INTO v_enrollment
+    FROM public.student_billing_enrollments AS enrollment
+    WHERE enrollment.id=p_enrollment_id
+      AND enrollment.studio_id=p_studio_id
+    FOR UPDATE;
+    IF v_enrollment.billing_subscription_id IS DISTINCT FROM
+            v_existing_group_id THEN
+        RAISE EXCEPTION USING ERRCODE='40001',
+            MESSAGE='billing_autopay_activation_group_changed';
+    END IF;
+    SELECT * INTO v_payer
+    FROM public.billing_payers AS payer
+    WHERE payer.id=p_payer_id AND payer.studio_id=p_studio_id
+    FOR UPDATE;
+    SELECT COALESCE(
+        array_agg(subscription.id ORDER BY subscription.id),
+        ARRAY[]::UUID[]
+    ) INTO v_current_group_ids
+    FROM public.billing_subscriptions AS subscription
+    WHERE subscription.studio_id=p_studio_id
+      AND subscription.payer_id=p_payer_id;
+    IF v_current_group_ids IS DISTINCT FROM v_initial_group_ids THEN
+        RAISE EXCEPTION USING ERRCODE='40001',
+            MESSAGE='billing_autopay_activation_group_changed';
+    END IF;
+    SELECT * INTO v_plan
+    FROM public.billing_plans
+    WHERE id=p_billing_plan_id AND studio_id=p_studio_id
+    FOR UPDATE;
+    SELECT * INTO v_account
+    FROM public.studio_payment_accounts
+    WHERE studio_id=p_studio_id
+    FOR UPDATE;
+    PERFORM 1
+    FROM public.billing_payer_payment_consents AS consent
+    WHERE consent.studio_id=p_studio_id AND consent.payer_id=p_payer_id
+    ORDER BY consent.id
+    FOR UPDATE;
+    SELECT * INTO v_consent
+    FROM public.billing_payer_payment_consents AS consent
+    WHERE consent.studio_id=p_studio_id
+      AND consent.payer_id=p_payer_id
+      AND consent.terms_version=p_terms_version
+      AND consent.stripe_connected_account_id=p_stripe_connected_account_id
+      AND consent.connect_account_generation=p_connect_account_generation
+      AND consent.completed_at IS NOT NULL
+      AND consent.revoked_at IS NULL
+      AND consent.superseded_at IS NULL
+    ORDER BY consent.id
+    LIMIT 1;
+
+    IF v_payer.id IS NULL OR v_enrollment.id IS NULL OR v_plan.id IS NULL
+       OR v_account.studio_id IS NULL OR v_consent.id IS NULL
+       OR v_enrollment.payer_id IS DISTINCT FROM p_payer_id
+       OR v_enrollment.billing_plan_id IS DISTINCT FROM p_billing_plan_id
+       OR v_enrollment.collection_mode<>'autopay'
+       OR v_enrollment.status NOT IN ('pending','active')
+       OR v_plan.status<>'active' OR v_plan.billing_interval='paid_in_full'
+       OR v_payer.stripe_account_id IS DISTINCT FROM
+            p_stripe_connected_account_id
+       OR v_payer.connect_account_generation IS DISTINCT FROM
+            p_connect_account_generation
+       OR v_payer.stripe_customer_id IS NULL
+       OR v_payer.default_payment_method_id IS NULL
+       OR v_payer.autopay_status<>'enabled'
+       OR v_payer.autopay_terms_accepted_at IS NULL
+       OR v_consent.accepted_at IS DISTINCT FROM
+            v_payer.autopay_terms_accepted_at
+       OR v_account.stripe_connected_account_id IS DISTINCT FROM
+            p_stripe_connected_account_id
+       OR private.current_connect_account_generation(v_account.metadata)
+            IS DISTINCT FROM p_connect_account_generation
+       OR v_account.charges_enabled IS DISTINCT FROM true THEN
+        RAISE EXCEPTION USING ERRCODE='55000',
+            MESSAGE='billing_autopay_activation_consent_invalid';
+    END IF;
+
+    IF v_existing_group_id IS NOT NULL THEN
+        SELECT * INTO v_group
+        FROM public.billing_subscriptions
+        WHERE id=v_existing_group_id
+          AND studio_id=p_studio_id
+        FOR UPDATE;
+        IF v_group.id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE='55000',
+                MESSAGE='billing_autopay_activation_group_invalid';
+        END IF;
+    ELSE
+        SELECT * INTO v_group
+        FROM public.billing_subscriptions
+        WHERE studio_id=p_studio_id
+          AND payer_id=p_payer_id
+          AND collection_mode='autopay'
+          AND billing_interval=v_plan.billing_interval
+          AND currency=v_plan.currency
+          AND status IN ('pending','trialing','active','incomplete','past_due')
+        ORDER BY created_at,id
+        LIMIT 1
+        FOR UPDATE;
+    END IF;
+    IF v_group.id IS NULL THEN
+        INSERT INTO public.billing_subscriptions(
+            studio_id,payer_id,stripe_account_id,stripe_customer_id,
+            collection_mode,billing_interval,currency,status,
+            default_payment_method_id,application_fee_percent,metadata
+        ) VALUES (
+            p_studio_id,p_payer_id,p_stripe_connected_account_id,
+            v_payer.stripe_customer_id,'autopay',v_plan.billing_interval,
+            v_plan.currency,'pending',v_payer.default_payment_method_id,
+            p_application_fee_percent,
+            jsonb_build_object(
+                'connect_account_generation',p_connect_account_generation
+            )
+        ) RETURNING * INTO v_group;
+        v_outcome:='created';
+    ELSE
+        IF jsonb_typeof(v_group.metadata) IS DISTINCT FROM 'object' THEN
+            RAISE EXCEPTION USING ERRCODE='55000',
+                MESSAGE='billing_autopay_activation_group_invalid';
+        END IF;
+        v_generation_text:=v_group.metadata->>'connect_account_generation';
+        IF v_generation_text IS NULL
+           AND v_group.stripe_account_id IS NOT DISTINCT FROM
+                p_stripe_connected_account_id
+           AND v_group.stripe_customer_id IS NOT DISTINCT FROM
+                v_payer.stripe_customer_id THEN
+            UPDATE public.billing_subscriptions
+            SET metadata=COALESCE(metadata,'{}'::JSONB)||jsonb_build_object(
+                    'connect_account_generation',p_connect_account_generation
+                )
+            WHERE id=v_group.id
+            RETURNING * INTO v_group;
+            v_generation_text:=p_connect_account_generation::TEXT;
+        END IF;
+        IF v_generation_text IS NULL
+           OR octet_length(v_generation_text) NOT BETWEEN 1 AND 10
+           OR v_generation_text !~ '^[1-9][0-9]*$' THEN
+            RAISE EXCEPTION USING ERRCODE='55000',
+                MESSAGE='billing_autopay_activation_group_invalid';
+        END IF;
+        BEGIN
+            v_group_generation:=v_generation_text::INTEGER;
+        EXCEPTION WHEN numeric_value_out_of_range THEN
+            RAISE EXCEPTION USING ERRCODE='55000',
+                MESSAGE='billing_autopay_activation_group_invalid';
+        END;
+        IF v_group.payer_id IS DISTINCT FROM p_payer_id
+           OR v_group.collection_mode<>'autopay'
+           OR v_group.billing_interval IS DISTINCT FROM v_plan.billing_interval
+           OR v_group.currency IS DISTINCT FROM v_plan.currency
+           OR v_group.status NOT IN (
+                'pending','trialing','active','incomplete','past_due'
+           )
+           OR v_group.stripe_account_id IS DISTINCT FROM
+                p_stripe_connected_account_id
+           OR v_group.stripe_customer_id IS DISTINCT FROM
+                v_payer.stripe_customer_id
+           OR v_group_generation IS DISTINCT FROM
+                p_connect_account_generation THEN
+            RAISE EXCEPTION USING ERRCODE='55000',
+                MESSAGE='billing_autopay_activation_group_invalid';
+        END IF;
+    END IF;
+    RETURN jsonb_build_object(
+        'outcome',v_outcome,
+        'payer',to_jsonb(v_payer),
+        'subscription',to_jsonb(v_group),
+        'consent',to_jsonb(v_consent)
+    );
+END;
+$$;
+ALTER FUNCTION public.reserve_billing_autopay_activation_v31(
+    UUID,UUID,UUID,UUID,UUID,TEXT,INTEGER,TEXT,NUMERIC
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.reserve_billing_autopay_activation_v31(
+    UUID,UUID,UUID,UUID,UUID,TEXT,INTEGER,TEXT,NUMERIC
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.reserve_billing_autopay_activation_v31(
+    UUID,UUID,UUID,UUID,UUID,TEXT,INTEGER,TEXT,NUMERIC
+) TO service_role;
+
 CREATE FUNCTION public.disable_billing_payer_autopay_v1(
     p_studio_id UUID,
     p_payer_id UUID,
@@ -1711,6 +1957,8 @@ AS $$
 DECLARE
     v_payer public.billing_payers%ROWTYPE;
     v_active_consent public.billing_payer_payment_consents%ROWTYPE;
+    v_initial_group_ids UUID[] := ARRAY[]::UUID[];
+    v_current_group_ids UUID[] := ARRAY[]::UUID[];
     v_now TIMESTAMPTZ := clock_timestamp();
     v_outcome TEXT := 'disabled';
 BEGIN
@@ -1734,8 +1982,10 @@ BEGIN
             MESSAGE = 'billing_payer_autopay_disable_actor_invalid';
     END IF;
 
-    -- Match every payer-setup writer's operation -> payer -> request -> consent
-    -- order. Multiple historical setup operations are locked by immutable UUID.
+    -- Match payer-setup writers at the operation boundary. Existing enrollment
+    -- workflows lock subscription group -> enrollment -> payer, so pre-lock all
+    -- visible groups before payer. A second scan after payer catches a group
+    -- inserted by an activation that won the payer race.
     PERFORM 1
     FROM public.billing_provider_operations AS operation
     JOIN public.billing_payer_setup_requests AS request
@@ -1745,6 +1995,20 @@ BEGIN
     ORDER BY operation.id
     FOR UPDATE OF operation;
 
+    WITH locked_groups AS MATERIALIZED (
+        SELECT subscription.id
+        FROM public.billing_subscriptions AS subscription
+        WHERE subscription.studio_id = p_studio_id
+          AND subscription.payer_id = p_payer_id
+        ORDER BY subscription.id
+        FOR UPDATE
+    )
+    SELECT COALESCE(
+        array_agg(locked_groups.id ORDER BY locked_groups.id),
+        ARRAY[]::UUID[]
+    ) INTO v_initial_group_ids
+    FROM locked_groups;
+
     SELECT * INTO v_payer
     FROM public.billing_payers AS payer
     WHERE payer.id = p_payer_id
@@ -1753,6 +2017,18 @@ BEGIN
     IF NOT FOUND THEN
         RAISE EXCEPTION USING ERRCODE = 'P0002',
             MESSAGE = 'billing_payer_autopay_disable_payer_not_found';
+    END IF;
+
+    SELECT COALESCE(
+        array_agg(subscription.id ORDER BY subscription.id),
+        ARRAY[]::UUID[]
+    ) INTO v_current_group_ids
+    FROM public.billing_subscriptions AS subscription
+    WHERE subscription.studio_id = p_studio_id
+      AND subscription.payer_id = p_payer_id;
+    IF v_current_group_ids IS DISTINCT FROM v_initial_group_ids THEN
+        RAISE EXCEPTION USING ERRCODE = '40001',
+            MESSAGE = 'billing_payer_autopay_disable_group_changed';
     END IF;
 
     PERFORM 1
@@ -1767,13 +2043,6 @@ BEGIN
       AND consent.payer_id = p_payer_id
     ORDER BY consent.id
     FOR UPDATE;
-    PERFORM 1
-    FROM public.billing_subscriptions AS subscription
-    WHERE subscription.studio_id = p_studio_id
-      AND subscription.payer_id = p_payer_id
-    ORDER BY subscription.id
-    FOR UPDATE;
-
     IF EXISTS (
         SELECT 1
         FROM public.billing_subscriptions AS subscription
@@ -4131,6 +4400,7 @@ BEGIN
             ('public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text)', true, true, 'search_path=""'),
             ('public.finalize_billing_payer_setup_projection_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer)', true, true, 'search_path=""'),
             ('public.reject_billing_payer_setup_without_provider_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,bigint,bigint)', true, true, 'search_path=""'),
+            ('public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,numeric)', true, true, 'search_path=""'),
             ('public.revoke_billing_enrollment_transition_v1(uuid,uuid,uuid,bigint,text,text,text,uuid,integer)', true, true, 'search_path=""'),
             ('public.revoke_billing_enrollment_transition_v29(uuid,uuid,uuid,bigint,text,text,text,uuid,integer)', true, false, 'search_path=""'),
             ('public.transition_billing_enrollment_transition_v1(uuid,uuid,uuid,bigint,uuid,bigint,text,text)', true, true, 'search_path=""'),
@@ -4561,7 +4831,7 @@ INSERT INTO private.koaryu_release_v31_expectations(
     expectation_key, expected_sha256
 ) VALUES (
     'operational_contract_v31',
-    '7a2fb92bc9aee799df0a64228788e08d4d63e2df0a7e0fb255216d8716a9413d'
+    '9ef16a6d074fa8bd819958cf20072e41aaa462266ad20a5a59cd92722655138b'
 );
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v12()
@@ -4634,7 +4904,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       <> '0:dff56b2572ace65f3d68f0b6e378604c2757356cf3d5057ca186343a76c12426' THEN
+       <> '0:b0a798cb45cd30332423e6ea40c66273ea822852441e41dfc380d18de1cc17fb' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     IF private.koaryu_release_schedule_window_manifest_v1()
@@ -4854,7 +5124,7 @@ BEGIN
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_resource_ownership_manifest_v31()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> '08139ed0114e52021f7ad29cf849989b57599e96323797aac8974de54004a1de' THEN
+       <> '23ee7f24f18a0dabf2273018b75ee186c1db65d3c9294fa9712586d9f54b4c4c' THEN
         v_failures:=array_append(v_failures,'resource_ownership_manifest_v31_function');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -4942,7 +5212,7 @@ BEGIN
         );
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       <> '441d38fe480a784c240e27467565b61d4477cece606da32737391d6d86c2eb3f' THEN
+       <> '5c87717b8392b111f2688746eaba8a74ce4a9fec4cc2afb0bfe4cb78c6822f29' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
