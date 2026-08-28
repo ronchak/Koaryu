@@ -529,6 +529,57 @@ class StripeService:
             subscription_id, **payload, **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
         )
 
+    @stripe_mutation("connected_subscription_schedule.create")
+    def create_connected_subscription_schedule(
+        self,
+        *,
+        account_id: str,
+        studio_id: str,
+        subscription_id: str,
+        idempotency_key: str,
+    ):
+        stripe = self._stripe()
+        return stripe.SubscriptionSchedule.create(
+            from_subscription=subscription_id,
+            **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
+
+    @stripe_mutation("connected_subscription_schedule.update")
+    def update_connected_subscription_schedule(
+        self,
+        *,
+        account_id: str,
+        studio_id: str,
+        schedule_id: str,
+        metadata: dict[str, str],
+        phases: list[dict[str, Any]],
+        idempotency_key: str,
+    ):
+        stripe = self._stripe()
+        return stripe.SubscriptionSchedule.modify(
+            schedule_id,
+            end_behavior="release",
+            metadata=metadata,
+            phases=phases,
+            proration_behavior="none",
+            **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
+
+    @stripe_mutation("connected_subscription_schedule.release")
+    def release_connected_subscription_schedule(
+        self,
+        *,
+        account_id: str,
+        studio_id: str,
+        schedule_id: str,
+        idempotency_key: str,
+    ):
+        stripe = self._stripe()
+        return stripe.SubscriptionSchedule.release(
+            schedule_id,
+            **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
+
     @stripe_mutation("connected_subscription.cancel")
     def cancel_connected_subscription(
         self, *, account_id: str, studio_id: str, subscription_id: str, idempotency_key: Optional[str] = None,
@@ -668,6 +719,27 @@ class StripeService:
         stripe = self._stripe()
         payload: dict[str, Any] = {"expand": expand or ["items.data"]}
         return stripe.Subscription.retrieve(subscription_id, **payload, **self._request_options(account_id=account_id))
+
+    def retrieve_connected_subscription_schedule(self, *, account_id: str, schedule_id: str):
+        stripe = self._stripe()
+        return stripe.SubscriptionSchedule.retrieve(
+            schedule_id,
+            **self._request_options(account_id=account_id),
+        )
+
+    def list_connected_subscription_schedules(
+        self,
+        *,
+        account_id: str,
+        customer_id: str,
+        limit: int = 10,
+    ):
+        stripe = self._stripe()
+        return stripe.SubscriptionSchedule.list(
+            customer=customer_id,
+            limit=limit,
+            **self._request_options(account_id=account_id),
+        )
 
     @stripe_mutation("connected_refund.create")
     def create_connected_refund(

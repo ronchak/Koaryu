@@ -34,6 +34,9 @@ AUTOPAY_SETUP_IN_PROGRESS_DETAIL = (
 AUTOPAY_SETUP_AMBIGUOUS_DETAIL = (
     "Autopay setup outcome is not yet confirmed. Retry with the same Idempotency-Key after reconciliation."
 )
+AUTOPAY_EXISTING_CONSENT_UNVERIFIED_DETAIL = (
+    "Existing autopay consent could not be verified. Retry before starting a replacement setup."
+)
 
 
 class BillingAutopayManager:
@@ -203,6 +206,12 @@ class BillingAutopayManager:
             if setup_request
             else datetime.now(timezone.utc) + AUTOPAY_SETUP_PROVIDER_LIFETIME
         )
+        preserve_existing_autopay = self._preserve_existing_autopay(
+            coordinator,
+            payer=payer,
+            account_id=account_id,
+            generation=generation,
+        )
         setup_request = coordinator.prepare_payer_setup(
             context,
             operation,
@@ -226,16 +235,6 @@ class BillingAutopayManager:
                     "The autopay setup request is too close to expiry. "
                     "Start a new setup with a new Idempotency-Key."
                 ),
-            )
-        pending = self.supabase.table("billing_payers").update({
-            "autopay_status": "pending",
-            "autopay_authorized_at": None,
-            "autopay_terms_accepted_at": None,
-        }).eq("id", payer_id).eq("studio_id", studio_id).execute()
-        if not pending.data:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Payer changed before autopay setup could start. Retry with the same Idempotency-Key.",
             )
         operation = coordinator.transition(
             context,
@@ -267,12 +266,19 @@ class BillingAutopayManager:
                 expires_at=int(expires_at.timestamp()),
             )
         except StripeMutationBlocked:
-            coordinator.transition(
+            rejected = coordinator.reject_payer_setup_without_provider(
                 context,
-                operation,
-                "definitive_rejected",
-                error_code="provider_mutation_blocked",
+                operation=operation,
+                setup_request=setup_request,
+                payer_id=payer_id,
             )
+            if (
+                rejected.get("outcome") not in {"rejected", "replay"}
+                or (rejected.get("operation") or {}).get("state")
+                != "definitive_rejected"
+                or not (rejected.get("setup_request") or {}).get("superseded_at")
+            ):
+                raise RuntimeError("payer_setup_policy_rejection_not_converged")
             raise
         except Exception as exc:
             self._mark_ambiguous_provider_request(
@@ -325,6 +331,30 @@ class BillingAutopayManager:
                 detail=AUTOPAY_SETUP_AMBIGUOUS_DETAIL,
             ) from exc
 
+        if not preserve_existing_autopay:
+            pending = self.supabase.table("billing_payers").update({
+                "autopay_status": "pending",
+                "autopay_authorized_at": None,
+                "autopay_terms_accepted_at": None,
+            }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+            if not pending.data:
+                try:
+                    coordinator.mark_payer_setup_reconciliation(
+                        setup_request_id=setup_request_id,
+                        operation_id=context.operation_id,
+                        stripe_checkout_session_id=session_id,
+                        stripe_setup_intent_id=setup_intent_id,
+                        stripe_connected_account_id=account_id,
+                        connect_account_generation=generation,
+                        reconciliation_reason_code="setup_payer_pending_projection_failed",
+                    )
+                except Exception:
+                    pass
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=AUTOPAY_SETUP_AMBIGUOUS_DETAIL,
+                )
+
         self._audit(
             studio_id,
             actor_id,
@@ -337,6 +367,52 @@ class BillingAutopayManager:
             },
         )
         return BillingLinkResponse(url=hosted_url)
+
+    @staticmethod
+    def _preserve_existing_autopay(
+        coordinator: BillingProviderOperationCoordinator,
+        *,
+        payer: dict[str, Any],
+        account_id: str,
+        generation: int,
+    ) -> bool:
+        if payer.get("autopay_status") != "enabled":
+            return False
+        if (
+            not payer.get("autopay_terms_accepted_at")
+            or not payer.get("default_payment_method_id")
+            or payer.get("stripe_account_id") != account_id
+            or int(payer.get("connect_account_generation") or 0) != generation
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=AUTOPAY_EXISTING_CONSENT_UNVERIFIED_DETAIL,
+            )
+        try:
+            consent = coordinator.read_active_payer_consent(
+                studio_id=str(payer["studio_id"]),
+                payer_id=str(payer["id"]),
+                terms_version=AUTOPAY_TERMS_VERSION,
+                stripe_connected_account_id=account_id,
+                connect_account_generation=generation,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=AUTOPAY_EXISTING_CONSENT_UNVERIFIED_DETAIL,
+            ) from exc
+        if not (
+            consent.get("completed_at")
+            and not consent.get("revoked_at")
+            and not consent.get("superseded_at")
+            and consent.get("accepted_at")
+            == payer.get("autopay_terms_accepted_at")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=AUTOPAY_EXISTING_CONSENT_UNVERIFIED_DETAIL,
+            )
+        return True
 
     def _replay_autopay_setup_link(
         self,

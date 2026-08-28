@@ -1882,6 +1882,871 @@ GRANT EXECUTE ON FUNCTION public.disable_billing_payer_autopay_v1(
     UUID,UUID,UUID,TIMESTAMPTZ,TEXT
 ) TO service_role;
 
+CREATE OR REPLACE FUNCTION private.live_billing_operation_set_is_canonical_v1(
+    p_scope TEXT,
+    p_operations TEXT[]
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+IMMUTABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+    SELECT p_scope IN (
+            'core_subscription', 'connect_onboarding', 'connect_payments'
+        )
+        AND p_operations IS NOT NULL
+        AND cardinality(p_operations) BETWEEN 1 AND 32
+        AND p_operations = ARRAY(
+            SELECT operation
+            FROM unnest(p_operations) AS operation
+            ORDER BY operation COLLATE "C"
+        )
+        AND cardinality(p_operations) = (
+            SELECT count(DISTINCT operation)
+            FROM unnest(p_operations) AS operation
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM unnest(p_operations) AS operation
+            WHERE operation IS NULL
+               OR octet_length(operation) NOT BETWEEN 1 AND 128
+               OR operation <> btrim(operation)
+               OR operation ~ '[*%]'
+               OR operation ~ '[[:cntrl:]]'
+               OR NOT (
+                    (p_scope = 'core_subscription' AND operation = ANY (ARRAY[
+                        'core_checkout_session.create',
+                        'customer.create',
+                        'customer_portal_session.create'
+                    ]::TEXT[]))
+                    OR (p_scope = 'connect_onboarding' AND operation = ANY (ARRAY[
+                        'connect_account.branding.update',
+                        'connect_account.create',
+                        'connect_branding_file.create',
+                        'connect_dashboard_login_link.create',
+                        'connect_onboarding_link.create'
+                    ]::TEXT[]))
+                    OR (p_scope = 'connect_payments' AND operation = ANY (ARRAY[
+                        'connected_capability.readiness',
+                        'connected_customer.create',
+                        'connected_customer.default_payment_method.update',
+                        'connected_customer.update',
+                        'connected_invoice.create',
+                        'connected_invoice.finalize',
+                        'connected_invoice.pay',
+                        'connected_invoice.send',
+                        'connected_invoice.void',
+                        'connected_invoice_item.create',
+                        'connected_price.create',
+                        'connected_product.create',
+                        'connected_product.update',
+                        'connected_refund.create',
+                        'connected_setup_checkout_session.create',
+                        'connected_subscription.cancel',
+                        'connected_subscription.create',
+                        'connected_subscription_schedule.create',
+                        'connected_subscription_schedule.release',
+                        'connected_subscription_schedule.update',
+                        'connected_subscription.update',
+                        'connected_subscription_item.create',
+                        'connected_subscription_item.delete',
+                        'connected_subscription_item.update'
+                    ]::TEXT[]))
+               )
+        );
+$$;
+ALTER FUNCTION private.live_billing_operation_set_is_canonical_v1(TEXT,TEXT[])
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.live_billing_operation_set_is_canonical_v1(TEXT,TEXT[])
+    FROM PUBLIC,anon,authenticated,service_role;
+
+ALTER TABLE public.studio_live_billing_authorizations
+    DROP CONSTRAINT studio_live_billing_authorizations_operation_set_exact;
+ALTER TABLE public.studio_live_billing_authorizations
+    ADD CONSTRAINT studio_live_billing_authorizations_operation_set_exact CHECK (
+        allowed_operations=ARRAY[]::TEXT[]
+        OR private.live_billing_operation_set_is_canonical_v1(
+            scope,allowed_operations
+        )
+    );
+
+-- V31 turns shared-item period-end requests into provider-scheduled work.
+-- The historical V29 claim/revoke implementations remain private compatibility
+-- owners; these wrappers bind their newly-created item intents to one exact
+-- provider operation in the same transaction.
+ALTER FUNCTION public.claim_billing_enrollment_transition_v1(
+    UUID,UUID,TEXT,TEXT,TEXT,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,
+    TIMESTAMPTZ,INTEGER,INTEGER,INTEGER,INTEGER,TEXT,TEXT,UUID,INTEGER
+) RENAME TO claim_billing_enrollment_transition_v29;
+REVOKE ALL ON FUNCTION public.claim_billing_enrollment_transition_v29(
+    UUID,UUID,TEXT,TEXT,TEXT,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,
+    TIMESTAMPTZ,INTEGER,INTEGER,INTEGER,INTEGER,TEXT,TEXT,UUID,INTEGER
+) FROM PUBLIC,anon,authenticated,service_role;
+
+ALTER FUNCTION public.revoke_billing_enrollment_transition_v1(
+    UUID,UUID,UUID,BIGINT,TEXT,TEXT,TEXT,UUID,INTEGER
+) RENAME TO revoke_billing_enrollment_transition_v29;
+REVOKE ALL ON FUNCTION public.revoke_billing_enrollment_transition_v29(
+    UUID,UUID,UUID,BIGINT,TEXT,TEXT,TEXT,UUID,INTEGER
+) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION private.preserve_billing_enrollment_transition_identity_v1()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE
+    v_alias public.billing_enrollment_transition_aliases%ROWTYPE;
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_binding BOOLEAN := false;
+BEGIN
+    IF ROW(
+        NEW.id,NEW.studio_id,NEW.enrollment_id,NEW.payer_id,
+        NEW.billing_subscription_id,NEW.source_intent_id,NEW.transition_kind,
+        NEW.mutation_strategy,NEW.request_sha256,
+        NEW.stripe_connected_account_id,NEW.connect_account_generation,
+        NEW.stripe_subscription_id,NEW.stripe_subscription_item_id,
+        NEW.period_boundary,NEW.expected_quantity,
+        NEW.expected_subscription_item_count,NEW.same_item_active_count,
+        NEW.provider_quantity,NEW.initiated_by,NEW.reason_code,NEW.created_at
+    ) IS DISTINCT FROM ROW(
+        OLD.id,OLD.studio_id,OLD.enrollment_id,OLD.payer_id,
+        OLD.billing_subscription_id,OLD.source_intent_id,OLD.transition_kind,
+        OLD.mutation_strategy,OLD.request_sha256,
+        OLD.stripe_connected_account_id,OLD.connect_account_generation,
+        OLD.stripe_subscription_id,OLD.stripe_subscription_item_id,
+        OLD.period_boundary,OLD.expected_quantity,
+        OLD.expected_subscription_item_count,OLD.same_item_active_count,
+        OLD.provider_quantity,OLD.initiated_by,OLD.reason_code,OLD.created_at
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_enrollment_transition_identity_immutable';
+    END IF;
+    IF ROW(NEW.provider_caller_request_key,NEW.provider_request_sha256)
+       IS DISTINCT FROM ROW(OLD.provider_caller_request_key,OLD.provider_request_sha256) THEN
+        IF OLD.provider_caller_request_key IS NULL
+           AND OLD.provider_request_sha256 IS NULL
+           AND OLD.provider_operation_id IS NULL
+           AND NEW.provider_caller_request_key IS NOT NULL
+           AND NEW.provider_request_sha256 ~ '^[0-9a-f]{64}$'
+           AND NEW.provider_operation_id IS NOT NULL
+           AND NEW.mutation_strategy='subscription_item_delete_at_period_end'
+           AND (
+                (NEW.transition_kind='schedule_period_end'
+                 AND OLD.state='scheduled' AND NEW.state='scheduled')
+                OR
+                (NEW.transition_kind='revoke_scheduled'
+                 AND OLD.state='completed' AND NEW.state='due_claimed')
+           ) THEN
+            SELECT * INTO v_alias
+            FROM public.billing_enrollment_transition_aliases
+            WHERE intent_id=NEW.id
+              AND studio_id=NEW.studio_id
+              AND transition_kind=NEW.transition_kind
+              AND caller_request_key=NEW.provider_caller_request_key;
+            SELECT * INTO v_operation
+            FROM public.billing_provider_operations
+            WHERE id=NEW.provider_operation_id
+              AND studio_id=NEW.studio_id;
+            v_binding := v_alias.id IS NOT NULL
+                AND v_alias.actor_id IS NOT DISTINCT FROM NEW.initiated_by
+                AND v_alias.request_sha256 IS NOT DISTINCT FROM NEW.provider_request_sha256
+                AND v_operation.id IS NOT NULL
+                AND v_operation.operation_type IS NOT DISTINCT FROM CASE
+                    WHEN NEW.transition_kind='schedule_period_end'
+                        THEN 'enrollment.cancel.period_end.schedule'
+                    ELSE 'enrollment.cancel.period_end.revoke'
+                END
+                AND v_operation.actor_id IS NOT DISTINCT FROM NEW.initiated_by
+                AND v_operation.caller_request_key IS NOT DISTINCT FROM
+                    NEW.provider_caller_request_key
+                AND v_operation.request_sha256 IS NOT DISTINCT FROM
+                    NEW.provider_request_sha256
+                AND v_operation.stripe_connected_account_id IS NOT DISTINCT FROM
+                    NEW.stripe_connected_account_id
+                AND v_operation.connect_account_generation IS NOT DISTINCT FROM
+                    NEW.connect_account_generation
+                AND v_operation.state='started'
+                AND NEW.lease_owner IS NOT DISTINCT FROM v_operation.lease_owner
+                AND NEW.lease_acquired_at IS NOT DISTINCT FROM
+                    v_operation.lease_acquired_at
+                AND NEW.lease_expires_at IS NOT DISTINCT FROM
+                    v_operation.lease_expires_at;
+        END IF;
+        IF NOT v_binding THEN
+            RAISE EXCEPTION USING ERRCODE='23514',
+                MESSAGE='billing_enrollment_transition_identity_immutable';
+        END IF;
+    END IF;
+    IF OLD.provider_operation_id IS NOT NULL
+       AND NEW.provider_operation_id IS DISTINCT FROM OLD.provider_operation_id THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_enrollment_transition_provider_operation_immutable';
+    END IF;
+    IF NEW.revision IS DISTINCT FROM OLD.revision+1
+       OR NEW.updated_at<OLD.updated_at THEN
+        RAISE EXCEPTION USING ERRCODE='40001',
+            MESSAGE='billing_enrollment_transition_revision_invalid';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+ALTER FUNCTION private.preserve_billing_enrollment_transition_identity_v1()
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.preserve_billing_enrollment_transition_identity_v1()
+    FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE FUNCTION private.billing_enrollment_item_schedule_completed_v31(
+    p_operation public.billing_provider_operations,
+    p_source public.billing_enrollment_transition_intents
+) RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path=''
+AS $$
+    SELECT p_operation.id IS NOT NULL
+       AND p_source.id IS NOT NULL
+       AND p_source.transition_kind='schedule_period_end'
+       AND p_source.mutation_strategy=
+            'subscription_item_delete_at_period_end'
+       AND p_source.provider_operation_id=p_operation.id
+       AND p_operation.operation_type=
+            'enrollment.cancel.period_end.schedule'
+       AND p_operation.state='completed'
+       AND p_operation.actor_id IS NOT DISTINCT FROM p_source.initiated_by
+       AND p_operation.caller_request_key IS NOT DISTINCT FROM
+            p_source.provider_caller_request_key
+       AND p_operation.request_sha256 IS NOT DISTINCT FROM
+            p_source.provider_request_sha256
+       AND p_operation.stripe_connected_account_id IS NOT DISTINCT FROM
+            p_source.stripe_connected_account_id
+       AND p_operation.connect_account_generation IS NOT DISTINCT FROM
+            p_source.connect_account_generation
+       AND p_operation.provider_object_id IS NOT DISTINCT FROM
+            p_source.stripe_subscription_item_id
+       AND p_operation.provider_secondary_object_id IS NOT NULL
+       AND p_operation.completed_at IS NOT NULL
+       AND p_operation.provider_request_attempt_count=1
+       AND p_operation.result_code='enrollment_transition_completed'
+       AND p_operation.provider_step_expected_count=2
+       AND p_operation.provider_step_plan_sha256 IS NOT DISTINCT FROM (
+            SELECT encode(extensions.digest(convert_to(
+                COALESCE(jsonb_agg(jsonb_build_object(
+                    'step_name',step.step_name,
+                    'provider_operation',step.provider_operation,
+                    'request_sha256',step.request_sha256,
+                    'stripe_idempotency_key',step.stripe_idempotency_key
+                ) ORDER BY step.step_order),'[]'::JSONB)::TEXT,'UTF8'
+            ),'sha256'),'hex')
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=p_operation.id
+       )
+       AND (SELECT count(*) FROM public.billing_provider_operation_steps
+            WHERE operation_id=p_operation.id)=2
+       AND EXISTS (
+            SELECT 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=p_operation.id
+              AND step.step_order=1
+              AND step.step_name='schedule_create'
+              AND step.provider_operation=
+                    'connected_subscription_schedule.create'
+              AND step.state='provider_succeeded'
+              AND step.provider_request_attempt_count BETWEEN 1 AND 2
+              AND step.provider_object_id=
+                    p_operation.provider_secondary_object_id
+              AND step.provider_secondary_object_id IS NULL
+              AND step.result_code IN (
+                    'enrollment_item_schedule_created',
+                    'enrollment_item_schedule_create_reconciled'
+              )
+       )
+       AND EXISTS (
+            SELECT 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=p_operation.id
+              AND step.step_order=2
+              AND step.step_name='schedule_update'
+              AND step.provider_operation=
+                    'connected_subscription_schedule.update'
+              AND step.state='provider_succeeded'
+              AND step.provider_request_attempt_count BETWEEN 1 AND 2
+              AND step.provider_object_id=p_source.stripe_subscription_item_id
+              AND step.provider_secondary_object_id=
+                    p_operation.provider_secondary_object_id
+              AND step.result_code IN (
+                    'enrollment_item_schedule_updated',
+                    'enrollment_item_schedule_update_reconciled'
+              )
+       );
+$$;
+ALTER FUNCTION private.billing_enrollment_item_schedule_completed_v31(
+    public.billing_provider_operations,
+    public.billing_enrollment_transition_intents
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.billing_enrollment_item_schedule_completed_v31(
+    public.billing_provider_operations,
+    public.billing_enrollment_transition_intents
+) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE FUNCTION private.billing_enrollment_item_schedule_phase_succeeded_v31(
+    p_operation public.billing_provider_operations,
+    p_source public.billing_enrollment_transition_intents
+) RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path=''
+AS $$
+    SELECT p_operation.id IS NOT NULL
+       AND p_source.id IS NOT NULL
+       AND p_source.transition_kind='schedule_period_end'
+       AND p_source.mutation_strategy=
+            'subscription_item_delete_at_period_end'
+       AND p_source.provider_operation_id=p_operation.id
+       AND p_operation.operation_type=
+            'enrollment.cancel.period_end.schedule'
+       AND p_operation.state='provider_succeeded'
+       AND p_operation.actor_id IS NOT DISTINCT FROM p_source.initiated_by
+       AND p_operation.caller_request_key IS NOT DISTINCT FROM
+            p_source.provider_caller_request_key
+       AND p_operation.request_sha256 IS NOT DISTINCT FROM
+            p_source.provider_request_sha256
+       AND p_operation.stripe_connected_account_id IS NOT DISTINCT FROM
+            p_source.stripe_connected_account_id
+       AND p_operation.connect_account_generation IS NOT DISTINCT FROM
+            p_source.connect_account_generation
+       AND p_operation.provider_object_id IS NOT DISTINCT FROM
+            p_source.stripe_subscription_item_id
+       AND p_operation.provider_secondary_object_id IS NOT NULL
+       AND p_operation.provider_succeeded_at IS NOT NULL
+       AND p_operation.provider_request_attempt_count=1
+       AND p_operation.result_code='provider_step_phase_completed'
+       AND p_operation.lease_owner IS NOT NULL
+       AND p_operation.provider_step_expected_count=2
+       AND p_operation.provider_step_plan_sha256 IS NOT DISTINCT FROM (
+            SELECT encode(extensions.digest(convert_to(
+                COALESCE(jsonb_agg(jsonb_build_object(
+                    'step_name',step.step_name,
+                    'provider_operation',step.provider_operation,
+                    'request_sha256',step.request_sha256,
+                    'stripe_idempotency_key',step.stripe_idempotency_key
+                ) ORDER BY step.step_order),'[]'::JSONB)::TEXT,'UTF8'
+            ),'sha256'),'hex')
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=p_operation.id
+       )
+       AND (SELECT count(*) FROM public.billing_provider_operation_steps
+            WHERE operation_id=p_operation.id)=2
+       AND EXISTS (
+            SELECT 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=p_operation.id
+              AND step.step_order=1
+              AND step.step_name='schedule_create'
+              AND step.provider_operation=
+                    'connected_subscription_schedule.create'
+              AND step.state='provider_succeeded'
+              AND step.provider_request_attempt_count BETWEEN 1 AND 2
+              AND step.provider_object_id=
+                    p_operation.provider_secondary_object_id
+              AND step.provider_secondary_object_id IS NULL
+              AND step.result_code IN (
+                    'enrollment_item_schedule_created',
+                    'enrollment_item_schedule_create_reconciled'
+              )
+       )
+       AND EXISTS (
+            SELECT 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=p_operation.id
+              AND step.step_order=2
+              AND step.step_name='schedule_update'
+              AND step.provider_operation=
+                    'connected_subscription_schedule.update'
+              AND step.state='provider_succeeded'
+              AND step.provider_request_attempt_count BETWEEN 1 AND 2
+              AND step.provider_object_id=p_source.stripe_subscription_item_id
+              AND step.provider_secondary_object_id=
+                    p_operation.provider_secondary_object_id
+              AND step.result_code IN (
+                    'enrollment_item_schedule_updated',
+                    'enrollment_item_schedule_update_reconciled'
+              )
+       );
+$$;
+ALTER FUNCTION private.billing_enrollment_item_schedule_phase_succeeded_v31(
+    public.billing_provider_operations,
+    public.billing_enrollment_transition_intents
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.billing_enrollment_item_schedule_phase_succeeded_v31(
+    public.billing_provider_operations,
+    public.billing_enrollment_transition_intents
+) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE FUNCTION private.billing_enrollment_item_schedule_pre_provider_rejected_v31(
+    p_operation public.billing_provider_operations
+) RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path=''
+AS $$
+    SELECT p_operation.id IS NOT NULL
+       AND p_operation.operation_type=
+            'enrollment.cancel.period_end.schedule'
+       AND p_operation.state='definitive_rejected'
+       AND p_operation.provider_request_attempt_count=1
+       AND p_operation.error_code='provider_mutation_blocked'
+       AND p_operation.provider_object_id IS NULL
+       AND p_operation.provider_secondary_object_id IS NULL
+       AND p_operation.provider_request_id IS NULL
+       AND p_operation.provider_step_expected_count=2
+       AND p_operation.provider_step_plan_sha256 IS NOT DISTINCT FROM (
+            SELECT encode(extensions.digest(convert_to(
+                COALESCE(jsonb_agg(jsonb_build_object(
+                    'step_name',step.step_name,
+                    'provider_operation',step.provider_operation,
+                    'request_sha256',step.request_sha256,
+                    'stripe_idempotency_key',step.stripe_idempotency_key
+                ) ORDER BY step.step_order),'[]'::JSONB)::TEXT,'UTF8'
+            ),'sha256'),'hex')
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=p_operation.id
+       )
+       AND (SELECT count(*) FROM public.billing_provider_operation_steps
+            WHERE operation_id=p_operation.id)=2
+       AND EXISTS (
+            SELECT 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=p_operation.id
+              AND step.step_order=1
+              AND step.step_name='schedule_create'
+              AND step.provider_operation=
+                    'connected_subscription_schedule.create'
+              AND step.state='definitive_rejected'
+              AND step.provider_request_attempt_count=1
+              AND step.error_code='provider_mutation_blocked'
+              AND step.provider_object_id IS NULL
+              AND step.provider_secondary_object_id IS NULL
+              AND step.provider_request_id IS NULL
+       )
+       AND EXISTS (
+            SELECT 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=p_operation.id
+              AND step.step_order=2
+              AND step.step_name='schedule_update'
+              AND step.provider_operation=
+                    'connected_subscription_schedule.update'
+              AND step.state='pending'
+              AND step.provider_request_attempt_count=0
+              AND step.provider_object_id IS NULL
+              AND step.provider_secondary_object_id IS NULL
+              AND step.provider_request_id IS NULL
+       );
+$$;
+ALTER FUNCTION private.billing_enrollment_item_schedule_pre_provider_rejected_v31(
+    public.billing_provider_operations
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.billing_enrollment_item_schedule_pre_provider_rejected_v31(
+    public.billing_provider_operations
+) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION private.enforce_billing_provider_step_parent_v1()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path=''
+AS $$
+DECLARE
+    v_step_count INTEGER;
+    v_succeeded_count INTEGER;
+    v_final_provider_evidence TEXT;
+    v_final_provider_secondary_evidence TEXT;
+BEGIN
+    IF OLD.provider_step_plan_sha256 IS NOT NULL
+       AND (
+            OLD.provider_step_plan_sha256 IS DISTINCT FROM
+                NEW.provider_step_plan_sha256
+            OR OLD.provider_step_expected_count IS DISTINCT FROM
+                NEW.provider_step_expected_count
+            OR OLD.provider_step_plan_registered_at IS DISTINCT FROM
+                NEW.provider_step_plan_registered_at
+       ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_step_plan_immutable';
+    END IF;
+    IF OLD.provider_step_plan_sha256 IS NULL
+       AND NEW.provider_step_plan_sha256 IS NOT NULL
+       AND (
+            OLD.state<>'started' OR NEW.state<>'started'
+            OR OLD.provider_request_attempt_count<>0
+            OR NEW.provider_request_attempt_count<>0
+       ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_step_plan_registration_invalid';
+    END IF;
+    IF OLD.provider_step_plan_sha256 IS NULL THEN
+        RETURN NEW;
+    END IF;
+    IF NEW.state IN ('provider_request_in_flight','recovery_authorized') THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_step_plan_requires_step_rpc';
+    END IF;
+    IF NEW.state IN ('started','definitive_failed','definitive_rejected')
+       AND NEW.provider_request_attempt_count<>0
+       AND NOT (
+            OLD.state='reconciliation_required'
+            AND private.billing_enrollment_item_schedule_pre_provider_rejected_v31(
+                NEW
+            )
+       ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_step_parent_attempt_invalid';
+    END IF;
+    IF NEW.state IN (
+        'provider_succeeded','projected','completed','reconciliation_required'
+    ) AND NEW.provider_request_attempt_count<>1 THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_step_parent_attempt_invalid';
+    END IF;
+    IF OLD.state IS DISTINCT FROM NEW.state
+       AND NEW.state='provider_succeeded' THEN
+        SELECT count(*),
+               count(*) FILTER (WHERE step.state='provider_succeeded')
+        INTO v_step_count,v_succeeded_count
+        FROM public.billing_provider_operation_steps AS step
+        WHERE step.operation_id=OLD.id;
+        SELECT COALESCE(step.provider_object_id,step.provider_request_id),
+               step.provider_secondary_object_id
+        INTO v_final_provider_evidence,v_final_provider_secondary_evidence
+        FROM public.billing_provider_operation_steps AS step
+        WHERE step.operation_id=OLD.id
+        ORDER BY step.step_order DESC
+        LIMIT 1;
+        IF v_step_count IS DISTINCT FROM OLD.provider_step_expected_count
+           OR v_succeeded_count IS DISTINCT FROM
+                OLD.provider_step_expected_count
+           OR v_final_provider_evidence IS NULL
+           OR NEW.provider_object_id IS DISTINCT FROM
+                v_final_provider_evidence
+           OR NEW.provider_secondary_object_id IS DISTINCT FROM
+                v_final_provider_secondary_evidence THEN
+            RAISE EXCEPTION USING ERRCODE='23514',
+                MESSAGE='billing_provider_operation_step_phase_incomplete';
+        END IF;
+    END IF;
+    IF OLD.state IS DISTINCT FROM NEW.state
+       AND NEW.state='reconciliation_required'
+       AND OLD.state NOT IN ('provider_succeeded','projected','completed')
+       AND NOT EXISTS (
+            SELECT 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=OLD.id
+              AND (
+                    step.state NOT IN ('pending','provider_succeeded')
+                    OR step.provider_request_attempt_count>0
+              )
+       ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_step_reconciliation_without_evidence';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+ALTER FUNCTION private.enforce_billing_provider_step_parent_v1()
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.enforce_billing_provider_step_parent_v1()
+    FROM PUBLIC,anon,authenticated,service_role;
+
+ALTER FUNCTION public.transition_billing_enrollment_transition_v1(
+    UUID,UUID,UUID,BIGINT,UUID,BIGINT,TEXT,TEXT
+) RENAME TO transition_billing_enrollment_transition_v29;
+REVOKE ALL ON FUNCTION public.transition_billing_enrollment_transition_v29(
+    UUID,UUID,UUID,BIGINT,UUID,BIGINT,TEXT,TEXT
+) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE FUNCTION public.transition_billing_enrollment_transition_v1(
+    p_intent_id UUID,p_studio_id UUID,p_actor_id UUID,
+    p_expected_revision BIGINT,p_provider_operation_id UUID,
+    p_expected_operation_revision BIGINT,
+    p_provider_evidence_sha256 TEXT DEFAULT NULL,
+    p_reconciliation_reason_code TEXT DEFAULT NULL
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+    v_candidate public.billing_enrollment_transition_intents%ROWTYPE;
+    v_intent public.billing_enrollment_transition_intents%ROWTYPE;
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_enrollment_id UUID;
+    v_now TIMESTAMPTZ:=clock_timestamp();
+BEGIN
+    SELECT * INTO v_candidate
+    FROM public.billing_enrollment_transition_intents
+    WHERE id=p_intent_id AND studio_id=p_studio_id;
+    IF v_candidate.id IS NOT NULL
+       AND v_candidate.state='scheduled'
+       AND v_candidate.transition_kind='schedule_period_end'
+       AND v_candidate.mutation_strategy=
+            'subscription_item_delete_at_period_end' THEN
+        v_enrollment_id:=v_candidate.enrollment_id;
+        PERFORM 1
+        FROM public.student_billing_enrollments
+        WHERE id=v_enrollment_id AND studio_id=p_studio_id
+        FOR UPDATE;
+        SELECT * INTO v_intent
+        FROM public.billing_enrollment_transition_intents
+        WHERE id=p_intent_id AND studio_id=p_studio_id
+        FOR UPDATE;
+        SELECT * INTO v_operation
+        FROM public.billing_provider_operations
+        WHERE id=p_provider_operation_id AND studio_id=p_studio_id
+        FOR UPDATE;
+        PERFORM 1
+        FROM public.billing_provider_operation_steps AS step
+        WHERE step.operation_id=v_operation.id
+        ORDER BY step.step_order
+        FOR UPDATE;
+        IF v_intent.state='scheduled'
+           AND v_operation.state='provider_succeeded' THEN
+            IF v_intent.initiated_by IS DISTINCT FROM p_actor_id
+               OR v_intent.provider_operation_id IS DISTINCT FROM
+                    p_provider_operation_id
+               OR v_intent.revision IS DISTINCT FROM p_expected_revision
+               OR v_operation.revision IS DISTINCT FROM
+                    p_expected_operation_revision
+               OR p_provider_evidence_sha256 !~ '^[0-9a-f]{64}$'
+               OR p_reconciliation_reason_code IS NOT NULL
+               OR NOT private.billing_enrollment_item_schedule_phase_succeeded_v31(
+                    v_operation,v_intent
+               ) THEN
+                RAISE EXCEPTION USING ERRCODE='23514',
+                    MESSAGE='billing_enrollment_transition_state_invalid';
+            END IF;
+            UPDATE public.billing_enrollment_transition_intents
+            SET state='provider_succeeded',
+                provider_evidence_sha256=p_provider_evidence_sha256,
+                provider_succeeded_at=COALESCE(provider_succeeded_at,v_now),
+                lease_owner=v_operation.lease_owner,
+                lease_acquired_at=v_operation.lease_acquired_at,
+                lease_expires_at=v_operation.lease_expires_at,
+                revision=revision+1,updated_at=v_now
+            WHERE id=v_intent.id
+            RETURNING * INTO v_intent;
+            RETURN private.billing_enrollment_transition_json_v1(
+                v_intent,'transitioned',NULL
+            );
+        END IF;
+    END IF;
+    RETURN public.transition_billing_enrollment_transition_v29(
+        p_intent_id,p_studio_id,p_actor_id,p_expected_revision,
+        p_provider_operation_id,p_expected_operation_revision,
+        p_provider_evidence_sha256,p_reconciliation_reason_code
+    );
+END;
+$$;
+ALTER FUNCTION public.transition_billing_enrollment_transition_v1(
+    UUID,UUID,UUID,BIGINT,UUID,BIGINT,TEXT,TEXT
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.transition_billing_enrollment_transition_v1(
+    UUID,UUID,UUID,BIGINT,UUID,BIGINT,TEXT,TEXT
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.transition_billing_enrollment_transition_v1(
+    UUID,UUID,UUID,BIGINT,UUID,BIGINT,TEXT,TEXT
+) TO service_role;
+
+CREATE FUNCTION public.claim_billing_enrollment_transition_v1(
+    p_studio_id UUID, p_actor_id UUID, p_transition_kind TEXT,
+    p_caller_request_key TEXT, p_request_sha256 TEXT,
+    p_enrollment_id UUID, p_payer_id UUID, p_billing_subscription_id UUID,
+    p_stripe_subscription_id TEXT, p_stripe_subscription_item_id TEXT,
+    p_stripe_connected_account_id TEXT, p_connect_account_generation INTEGER,
+    p_period_boundary TIMESTAMPTZ, p_expected_quantity INTEGER,
+    p_expected_subscription_item_count INTEGER,p_same_item_active_count INTEGER,
+    p_provider_quantity INTEGER,p_mutation_strategy TEXT,p_reason_code TEXT,
+    p_lease_owner UUID, p_lease_seconds INTEGER DEFAULT 30
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+    v_result JSONB;
+    v_intent public.billing_enrollment_transition_intents%ROWTYPE;
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_now TIMESTAMPTZ:=clock_timestamp();
+BEGIN
+    -- V31 callers take the subscription-group lock before any enrollment row.
+    -- The compatibility owner will then re-lock the same group after its target,
+    -- preserving its checks while avoiding a group/peer inversion with due CAS.
+    PERFORM 1
+    FROM public.billing_subscriptions
+    WHERE id=p_billing_subscription_id AND studio_id=p_studio_id
+    FOR UPDATE;
+    v_result:=public.claim_billing_enrollment_transition_v29(
+        p_studio_id,p_actor_id,p_transition_kind,p_caller_request_key,
+        p_request_sha256,p_enrollment_id,p_payer_id,p_billing_subscription_id,
+        p_stripe_subscription_id,p_stripe_subscription_item_id,
+        p_stripe_connected_account_id,p_connect_account_generation,
+        p_period_boundary,p_expected_quantity,p_expected_subscription_item_count,
+        p_same_item_active_count,p_provider_quantity,p_mutation_strategy,
+        p_reason_code,p_lease_owner,p_lease_seconds
+    );
+    SELECT * INTO v_intent
+    FROM public.billing_enrollment_transition_intents
+    WHERE id=(v_result->'intent'->>'id')::UUID
+    FOR UPDATE;
+    IF v_intent.transition_kind='schedule_period_end'
+       AND v_intent.mutation_strategy='subscription_item_delete_at_period_end'
+       AND v_intent.state='scheduled'
+       AND v_intent.provider_operation_id IS NULL THEN
+        -- The V29 compatibility owner created or updated the intent. Refresh
+        -- the timestamp before the V31 provider binding so the revision
+        -- trigger observes a strictly forward update.
+        v_now:=clock_timestamp();
+        INSERT INTO public.billing_provider_operations(
+            studio_id,actor_id,operation_type,caller_request_key,request_sha256,
+            stripe_connected_account_id,connect_account_generation,state,
+            lease_owner,lease_acquired_at,lease_expires_at,started_at,created_at,updated_at
+        ) VALUES (
+            v_intent.studio_id,v_intent.initiated_by,
+            'enrollment.cancel.period_end.schedule',p_caller_request_key,
+            p_request_sha256,v_intent.stripe_connected_account_id,
+            v_intent.connect_account_generation,'started',p_lease_owner,v_now,
+            v_now+make_interval(secs=>p_lease_seconds),v_now,v_now,v_now
+        ) RETURNING * INTO v_operation;
+        UPDATE public.billing_enrollment_transition_intents
+        SET provider_caller_request_key=p_caller_request_key,
+            provider_request_sha256=p_request_sha256,
+            provider_operation_id=v_operation.id,
+            lease_owner=p_lease_owner,lease_acquired_at=v_now,
+            lease_expires_at=v_now+make_interval(secs=>p_lease_seconds),
+            revision=revision+1,updated_at=v_now
+        WHERE id=v_intent.id RETURNING * INTO v_intent;
+        RETURN private.billing_enrollment_transition_json_v1(
+            v_intent,COALESCE(v_result->>'outcome','claimed'),p_caller_request_key
+        ) || jsonb_build_object(
+            'operation',private.billing_provider_operation_json_v1(
+                v_operation,'claimed'
+            )->'operation'
+        );
+    END IF;
+    RETURN v_result;
+END;
+$$;
+ALTER FUNCTION public.claim_billing_enrollment_transition_v1(
+    UUID,UUID,TEXT,TEXT,TEXT,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,
+    TIMESTAMPTZ,INTEGER,INTEGER,INTEGER,INTEGER,TEXT,TEXT,UUID,INTEGER
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.claim_billing_enrollment_transition_v1(
+    UUID,UUID,TEXT,TEXT,TEXT,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,
+    TIMESTAMPTZ,INTEGER,INTEGER,INTEGER,INTEGER,TEXT,TEXT,UUID,INTEGER
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.claim_billing_enrollment_transition_v1(
+    UUID,UUID,TEXT,TEXT,TEXT,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,
+    TIMESTAMPTZ,INTEGER,INTEGER,INTEGER,INTEGER,TEXT,TEXT,UUID,INTEGER
+) TO service_role;
+
+CREATE FUNCTION public.revoke_billing_enrollment_transition_v1(
+    p_intent_id UUID,p_studio_id UUID,p_actor_id UUID,p_expected_revision BIGINT,
+    p_caller_request_key TEXT,p_request_sha256 TEXT,p_reason_code TEXT,
+    p_lease_owner UUID,p_lease_seconds INTEGER DEFAULT 30
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+    v_result JSONB;
+    v_source public.billing_enrollment_transition_intents%ROWTYPE;
+    v_revoke public.billing_enrollment_transition_intents%ROWTYPE;
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_source_operation public.billing_provider_operations%ROWTYPE;
+    v_now TIMESTAMPTZ:=clock_timestamp();
+BEGIN
+    v_result:=public.revoke_billing_enrollment_transition_v29(
+        p_intent_id,p_studio_id,p_actor_id,p_expected_revision,
+        p_caller_request_key,p_request_sha256,p_reason_code,
+        p_lease_owner,p_lease_seconds
+    );
+    SELECT * INTO v_revoke
+    FROM public.billing_enrollment_transition_intents
+    WHERE id=(v_result->'intent'->>'id')::UUID
+    FOR UPDATE;
+    IF v_revoke.transition_kind='revoke_scheduled'
+       AND v_revoke.mutation_strategy='subscription_item_delete_at_period_end'
+       AND v_revoke.provider_operation_id IS NULL THEN
+        SELECT * INTO v_source
+        FROM public.billing_enrollment_transition_intents
+        WHERE id=v_revoke.source_intent_id
+        FOR UPDATE;
+        IF v_revoke.state<>'completed'
+           OR v_source.id IS NULL
+           OR v_source.state<>'revoked'
+           OR v_source.revoked_at IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE='23514',
+                MESSAGE='billing_enrollment_transition_revoke_binding_invalid';
+        END IF;
+        -- A pre-V31 item schedule had no Stripe Subscription Schedule. Preserve
+        -- V29's completed local revoke instead of inventing release work for a
+        -- provider object that never existed.
+        IF v_source.provider_operation_id IS NULL THEN
+            RETURN v_result;
+        END IF;
+        SELECT * INTO v_source_operation
+        FROM public.billing_provider_operations
+        WHERE id=v_source.provider_operation_id
+          AND studio_id=v_source.studio_id
+        FOR UPDATE;
+        PERFORM 1
+        FROM public.billing_provider_operation_steps AS step
+        WHERE step.operation_id=v_source_operation.id
+        ORDER BY step.step_order
+        FOR UPDATE;
+        IF NOT private.billing_enrollment_item_schedule_completed_v31(
+            v_source_operation,v_source
+        ) THEN
+            RAISE EXCEPTION USING ERRCODE='23514',
+                MESSAGE='billing_enrollment_transition_revoke_binding_invalid';
+        END IF;
+        -- The V29 compatibility owner updates both rows. Refresh the timestamp
+        -- before the V31 provider binding so the revision trigger observes a
+        -- strictly forward update even when the wrapper began earlier.
+        v_now:=clock_timestamp();
+        INSERT INTO public.billing_provider_operations(
+            studio_id,actor_id,operation_type,caller_request_key,request_sha256,
+            stripe_connected_account_id,connect_account_generation,state,
+            lease_owner,lease_acquired_at,lease_expires_at,started_at,created_at,updated_at
+        ) VALUES (
+            v_revoke.studio_id,v_revoke.initiated_by,
+            'enrollment.cancel.period_end.revoke',p_caller_request_key,
+            p_request_sha256,v_revoke.stripe_connected_account_id,
+            v_revoke.connect_account_generation,'started',p_lease_owner,v_now,
+            v_now+make_interval(secs=>p_lease_seconds),v_now,v_now,v_now
+        ) RETURNING * INTO v_operation;
+        UPDATE public.billing_enrollment_transition_intents
+        SET state='scheduled',revoked_at=NULL,revision=revision+1,updated_at=v_now
+        WHERE id=v_source.id RETURNING * INTO v_source;
+        UPDATE public.billing_enrollment_transition_intents
+        SET state='due_claimed',provider_caller_request_key=p_caller_request_key,
+            provider_request_sha256=p_request_sha256,
+            provider_operation_id=v_operation.id,
+            lease_owner=p_lease_owner,lease_acquired_at=v_now,
+            lease_expires_at=v_now+make_interval(secs=>p_lease_seconds),
+            revision=revision+1,updated_at=v_now
+        WHERE id=v_revoke.id RETURNING * INTO v_revoke;
+        RETURN private.billing_enrollment_transition_json_v1(
+            v_revoke,'claimed',p_caller_request_key
+        ) || jsonb_build_object(
+            'operation',private.billing_provider_operation_json_v1(
+                v_operation,'claimed'
+            )->'operation'
+        );
+    END IF;
+    RETURN v_result;
+END;
+$$;
+ALTER FUNCTION public.revoke_billing_enrollment_transition_v1(
+    UUID,UUID,UUID,BIGINT,TEXT,TEXT,TEXT,UUID,INTEGER
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.revoke_billing_enrollment_transition_v1(
+    UUID,UUID,UUID,BIGINT,TEXT,TEXT,TEXT,UUID,INTEGER
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.revoke_billing_enrollment_transition_v1(
+    UUID,UUID,UUID,BIGINT,TEXT,TEXT,TEXT,UUID,INTEGER
+) TO service_role;
+
 CREATE OR REPLACE FUNCTION public.claim_due_billing_enrollment_transitions_v1(
     p_worker_id UUID, p_lease_seconds INTEGER DEFAULT 30, p_limit INTEGER DEFAULT 25
 ) RETURNS SETOF public.billing_enrollment_transition_intents
@@ -1892,11 +2757,13 @@ DECLARE
     v_schedule public.billing_enrollment_transition_intents%ROWTYPE;
     v_execute public.billing_enrollment_transition_intents%ROWTYPE;
     v_operation public.billing_provider_operations%ROWTYPE;
+    v_schedule_operation public.billing_provider_operations%ROWTYPE;
     v_alias public.billing_enrollment_transition_aliases%ROWTYPE;
     v_now TIMESTAMPTZ;
     v_provider_key TEXT;
     v_provider_hash TEXT;
     v_expected_provider_object_id TEXT;
+    v_readback_only BOOLEAN;
     v_returned INTEGER:=0;
 BEGIN
     IF p_worker_id IS NULL OR p_lease_seconds NOT BETWEEN 5 AND 300
@@ -2151,6 +3018,107 @@ BEGIN
         IF v_schedule.state<>'scheduled' THEN
             CONTINUE;
         END IF;
+        v_readback_only:=v_schedule.mutation_strategy=
+            'subscription_cancel_at_period_end';
+        IF v_schedule.mutation_strategy=
+                'subscription_item_delete_at_period_end'
+           AND v_schedule.provider_operation_id IS NOT NULL THEN
+            SELECT * INTO v_schedule_operation
+            FROM public.billing_provider_operations
+            WHERE id=v_schedule.provider_operation_id
+              AND studio_id=v_schedule.studio_id
+            FOR UPDATE;
+            PERFORM 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=v_schedule_operation.id
+            ORDER BY step.step_order
+            FOR UPDATE;
+            IF NOT private.billing_enrollment_item_schedule_completed_v31(
+                    v_schedule_operation,v_schedule
+               )
+               OR v_schedule_operation.id IS NULL
+               OR v_schedule_operation.operation_type IS DISTINCT FROM
+                    'enrollment.cancel.period_end.schedule'
+               OR v_schedule_operation.actor_id IS DISTINCT FROM
+                    v_schedule.initiated_by
+               OR v_schedule_operation.caller_request_key IS DISTINCT FROM
+                    v_schedule.provider_caller_request_key
+               OR v_schedule_operation.request_sha256 IS DISTINCT FROM
+                    v_schedule.provider_request_sha256
+               OR v_schedule_operation.stripe_connected_account_id
+                    IS DISTINCT FROM v_schedule.stripe_connected_account_id
+               OR v_schedule_operation.connect_account_generation
+                    IS DISTINCT FROM v_schedule.connect_account_generation
+               OR v_schedule_operation.state IS DISTINCT FROM 'completed'
+               OR v_schedule_operation.provider_object_id IS DISTINCT FROM
+                    v_schedule.stripe_subscription_item_id
+               OR v_schedule_operation.provider_secondary_object_id IS NULL
+               OR v_schedule_operation.completed_at IS NULL
+               OR v_schedule_operation.provider_request_attempt_count<>1
+               OR v_schedule_operation.result_code<>
+                    'enrollment_transition_completed'
+               OR v_schedule_operation.provider_step_expected_count IS DISTINCT FROM 2
+               OR v_schedule_operation.provider_step_plan_sha256 IS DISTINCT FROM (
+                    SELECT encode(extensions.digest(convert_to(
+                        COALESCE(jsonb_agg(jsonb_build_object(
+                            'step_name',step.step_name,
+                            'provider_operation',step.provider_operation,
+                            'request_sha256',step.request_sha256,
+                            'stripe_idempotency_key',step.stripe_idempotency_key
+                        ) ORDER BY step.step_order),'[]'::JSONB)::TEXT,
+                        'UTF8'
+                    ),'sha256'),'hex')
+                    FROM public.billing_provider_operation_steps AS step
+                    WHERE step.operation_id=v_schedule_operation.id
+               )
+               OR (SELECT count(*) FROM public.billing_provider_operation_steps
+                    WHERE operation_id=v_schedule_operation.id)<>2
+               OR NOT EXISTS (
+                    SELECT 1
+                    FROM public.billing_provider_operation_steps AS step
+                    WHERE step.operation_id=v_schedule_operation.id
+                      AND step.step_order=1
+                      AND step.step_name='schedule_create'
+                      AND step.provider_operation=
+                            'connected_subscription_schedule.create'
+                      AND step.state='provider_succeeded'
+                      AND step.provider_request_attempt_count BETWEEN 1 AND 2
+                      AND step.provider_object_id=
+                            v_schedule_operation.provider_secondary_object_id
+                      AND step.provider_secondary_object_id IS NULL
+                      AND step.result_code IN (
+                            'enrollment_item_schedule_created',
+                            'enrollment_item_schedule_create_reconciled'
+                      )
+               )
+               OR NOT EXISTS (
+                    SELECT 1
+                    FROM public.billing_provider_operation_steps AS step
+                    WHERE step.operation_id=v_schedule_operation.id
+                      AND step.step_order=2
+                      AND step.step_name='schedule_update'
+                      AND step.provider_operation=
+                            'connected_subscription_schedule.update'
+                      AND step.state='provider_succeeded'
+                      AND step.provider_request_attempt_count BETWEEN 1 AND 2
+                      AND step.provider_object_id=
+                            v_schedule.stripe_subscription_item_id
+                      AND step.provider_secondary_object_id=
+                            v_schedule_operation.provider_secondary_object_id
+                      AND step.result_code IN (
+                            'enrollment_item_schedule_updated',
+                            'enrollment_item_schedule_update_reconciled'
+                      )
+               ) THEN
+                CONTINUE;
+            END IF;
+            v_readback_only:=true;
+        ELSIF v_schedule.mutation_strategy=
+                'subscription_item_delete_at_period_end' THEN
+            -- Legacy V29 item schedules had no provider-side schedule. They
+            -- retain the exact execute key/hash and existing mutation path.
+            v_readback_only:=false;
+        END IF;
         v_provider_key:='enrollment-period-execute:'||v_schedule.id::TEXT;
         v_provider_hash:=encode(extensions.digest(convert_to(jsonb_build_object(
             'source_intent_id',v_schedule.id,
@@ -2183,8 +3151,10 @@ BEGIN
             v_schedule.billing_subscription_id,v_schedule.id,'execute_due',
             v_schedule.mutation_strategy,v_schedule.request_sha256,
             CASE WHEN v_schedule.mutation_strategy='subscription_item_delete_at_period_end'
+                           AND NOT v_readback_only
                 THEN v_provider_key END,
             CASE WHEN v_schedule.mutation_strategy='subscription_item_delete_at_period_end'
+                           AND NOT v_readback_only
                 THEN v_provider_hash END,
             v_schedule.stripe_connected_account_id,v_schedule.connect_account_generation,
             v_schedule.stripe_subscription_id,v_schedule.stripe_subscription_item_id,
@@ -2212,6 +3182,908 @@ GRANT EXECUTE ON FUNCTION public.claim_due_billing_enrollment_transitions_v1(
     UUID,INTEGER,INTEGER
 ) TO service_role;
 
+-- V28 phase completion intentionally released the parent lease and copied only
+-- the final primary provider ID. V31 workflows must continue the same parent
+-- through local projection, and schedule work also owns a secondary Schedule
+-- ID. This exact-head RPC carries both identities and rebinds one caller lease.
+CREATE FUNCTION public.complete_billing_provider_operation_provider_phase_v31(
+    p_operation_id UUID,p_studio_id UUID,p_actor_id UUID,
+    p_operation_type TEXT,p_caller_request_key TEXT,p_parent_request_sha256 TEXT,
+    p_stripe_connected_account_id TEXT,p_connect_account_generation INTEGER,
+    p_plan_sha256 TEXT,p_expected_step_count INTEGER,
+    p_expected_parent_revision BIGINT,p_lease_owner UUID
+)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_now TIMESTAMPTZ:=clock_timestamp();
+    v_step_count INTEGER;
+    v_succeeded_count INTEGER;
+    v_attempted_count INTEGER;
+    v_final_provider_evidence TEXT;
+    v_final_provider_secondary_evidence TEXT;
+BEGIN
+    IF p_lease_owner IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='22023',
+            MESSAGE='billing_provider_operation_step_phase_lease_invalid';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.staff_roles AS membership
+        WHERE membership.studio_id=p_studio_id
+          AND membership.user_id=p_actor_id
+          AND membership.archived_at IS NULL
+          AND membership.role IN ('admin','front_desk')
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='42501',
+            MESSAGE='billing_provider_operation_step_actor_not_active';
+    END IF;
+    SELECT * INTO v_operation
+    FROM public.billing_provider_operations
+    WHERE id=p_operation_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='P0002',
+            MESSAGE='billing_provider_operation_not_found';
+    END IF;
+    PERFORM 1
+    FROM public.billing_provider_operation_steps AS step
+    WHERE step.operation_id=p_operation_id
+    ORDER BY step.step_order
+    FOR UPDATE;
+    IF v_operation.studio_id IS DISTINCT FROM p_studio_id
+       OR v_operation.actor_id IS DISTINCT FROM p_actor_id
+       OR v_operation.operation_type IS DISTINCT FROM p_operation_type
+       OR v_operation.caller_request_key IS DISTINCT FROM p_caller_request_key
+       OR v_operation.request_sha256 IS DISTINCT FROM p_parent_request_sha256
+       OR v_operation.stripe_connected_account_id IS DISTINCT FROM
+            p_stripe_connected_account_id
+       OR v_operation.connect_account_generation IS DISTINCT FROM
+            p_connect_account_generation
+       OR v_operation.provider_step_plan_sha256 IS DISTINCT FROM p_plan_sha256
+       OR v_operation.provider_step_expected_count IS DISTINCT FROM
+            p_expected_step_count THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_step_plan_identity_mismatch';
+    END IF;
+    SELECT count(*),
+           count(*) FILTER (WHERE step.state='provider_succeeded'),
+           count(*) FILTER (WHERE step.provider_request_attempt_count>0)
+    INTO v_step_count,v_succeeded_count,v_attempted_count
+    FROM public.billing_provider_operation_steps AS step
+    WHERE step.operation_id=p_operation_id;
+    SELECT COALESCE(step.provider_object_id,step.provider_request_id),
+           step.provider_secondary_object_id
+    INTO v_final_provider_evidence,v_final_provider_secondary_evidence
+    FROM public.billing_provider_operation_steps AS step
+    WHERE step.operation_id=p_operation_id
+    ORDER BY step.step_order DESC
+    LIMIT 1;
+    IF v_step_count IS DISTINCT FROM p_expected_step_count THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_step_plan_incomplete';
+    END IF;
+    IF v_operation.state='provider_succeeded' THEN
+        IF v_succeeded_count IS DISTINCT FROM p_expected_step_count
+           OR v_operation.provider_object_id IS DISTINCT FROM
+                v_final_provider_evidence
+           OR v_operation.provider_secondary_object_id IS DISTINCT FROM
+                v_final_provider_secondary_evidence
+           OR v_operation.lease_owner IS DISTINCT FROM p_lease_owner THEN
+            RAISE EXCEPTION USING ERRCODE='23514',
+                MESSAGE='billing_provider_operation_step_phase_incomplete';
+        END IF;
+        RETURN private.billing_provider_operation_step_plan_json_v1(
+            v_operation,'replay'
+        );
+    END IF;
+    IF v_operation.revision IS DISTINCT FROM p_expected_parent_revision THEN
+        RAISE EXCEPTION USING ERRCODE='40001',
+            MESSAGE='billing_provider_operation_stale_revision';
+    END IF;
+    IF v_operation.state NOT IN ('started','reconciliation_required')
+       OR (
+            v_operation.lease_owner IS NOT NULL
+            AND v_operation.lease_owner IS DISTINCT FROM p_lease_owner
+       ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_provider_operation_step_parent_state_invalid';
+    END IF;
+    IF v_succeeded_count=p_expected_step_count THEN
+        IF v_final_provider_evidence IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE='23514',
+                MESSAGE='billing_provider_operation_step_final_evidence_missing';
+        END IF;
+        UPDATE public.billing_provider_operations
+        SET state='provider_succeeded',
+            provider_request_attempt_count=1,
+            provider_object_id=v_final_provider_evidence,
+            provider_secondary_object_id=v_final_provider_secondary_evidence,
+            result_code='provider_step_phase_completed',
+            provider_succeeded_at=COALESCE(provider_succeeded_at,v_now),
+            reconciliation_reason_code=NULL,
+            lease_owner=p_lease_owner,
+            lease_acquired_at=v_now,
+            lease_expires_at=v_now+interval '30 seconds',
+            revision=revision+1,
+            updated_at=v_now
+        WHERE id=p_operation_id
+        RETURNING * INTO v_operation;
+        RETURN private.billing_provider_operation_step_plan_json_v1(
+            v_operation,'provider_succeeded'
+        );
+    END IF;
+    IF v_attempted_count=0 THEN
+        RETURN private.billing_provider_operation_step_plan_json_v1(
+            v_operation,'incomplete'
+        );
+    END IF;
+    IF v_operation.state='reconciliation_required'
+       AND v_operation.reconciliation_reason_code=
+            'provider_step_phase_incomplete' THEN
+        RETURN private.billing_provider_operation_step_plan_json_v1(
+            v_operation,'reconciliation_required'
+        );
+    END IF;
+    UPDATE public.billing_provider_operations
+    SET state='reconciliation_required',
+        provider_request_attempt_count=1,
+        reconciliation_reason_code='provider_step_phase_incomplete',
+        reconciliation_required_at=COALESCE(reconciliation_required_at,v_now),
+        lease_owner=NULL,lease_acquired_at=NULL,lease_expires_at=NULL,
+        revision=revision+1,updated_at=v_now
+    WHERE id=p_operation_id
+    RETURNING * INTO v_operation;
+    RETURN private.billing_provider_operation_step_plan_json_v1(
+        v_operation,'reconciliation_required'
+    );
+END;
+$$;
+ALTER FUNCTION public.complete_billing_provider_operation_provider_phase_v31(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,TEXT,INTEGER,BIGINT,UUID
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.complete_billing_provider_operation_provider_phase_v31(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,TEXT,INTEGER,BIGINT,UUID
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.complete_billing_provider_operation_provider_phase_v31(
+    UUID,UUID,UUID,TEXT,TEXT,TEXT,TEXT,INTEGER,TEXT,INTEGER,BIGINT,UUID
+) TO service_role;
+
+CREATE FUNCTION public.complete_due_billing_enrollment_item_transition_v31(
+    p_intent_id UUID,
+    p_studio_id UUID,
+    p_worker_id UUID,
+    p_expected_revision BIGINT,
+    p_provider_evidence_sha256 TEXT,
+    p_item_transitions JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=''
+AS $$
+DECLARE
+    v_source_id UUID;
+    v_enrollment_id UUID;
+    v_group_id UUID;
+    v_target public.student_billing_enrollments%ROWTYPE;
+    v_group public.billing_subscriptions%ROWTYPE;
+    v_payer public.billing_payers%ROWTYPE;
+    v_account public.studio_payment_accounts%ROWTYPE;
+    v_source public.billing_enrollment_transition_intents%ROWTYPE;
+    v_execute public.billing_enrollment_transition_intents%ROWTYPE;
+    v_schedule_operation public.billing_provider_operations%ROWTYPE;
+    v_now TIMESTAMPTZ:=clock_timestamp();
+    v_distinct_item_count INTEGER;
+    v_target_item_count INTEGER;
+    v_null_item_count INTEGER;
+    v_active_count INTEGER;
+    v_mapping_count INTEGER;
+    v_expected_survivor_count INTEGER;
+    v_nonnull_new_count INTEGER;
+    v_survivor_updates INTEGER;
+    v_target_updates INTEGER;
+    v_canonical_item_transitions JSONB;
+    v_completion_evidence_sha256 TEXT;
+BEGIN
+    IF p_intent_id IS NULL OR p_studio_id IS NULL OR p_worker_id IS NULL
+       OR p_provider_evidence_sha256 !~ '^[0-9a-f]{64}$'
+       OR jsonb_typeof(p_item_transitions) IS DISTINCT FROM 'array'
+       OR jsonb_array_length(p_item_transitions) NOT BETWEEN 1 AND 32
+       OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(p_item_transitions) AS element(value)
+            WHERE jsonb_typeof(element.value) IS DISTINCT FROM 'object'
+               OR (SELECT count(*) FROM jsonb_object_keys(element.value))<>3
+               OR NOT (element.value ?& ARRAY[
+                    'old_item_id','new_item_id','expected_active_count'
+               ]::TEXT[])
+       ) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',
+            MESSAGE='billing_enrollment_item_due_completion_invalid';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+            old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+        )
+        WHERE octet_length(mapping.old_item_id) NOT BETWEEN 1 AND 255
+           OR mapping.old_item_id IS DISTINCT FROM btrim(mapping.old_item_id)
+           OR mapping.old_item_id~'[[:cntrl:]]'
+           OR (
+                mapping.new_item_id IS NOT NULL
+                AND (
+                    octet_length(mapping.new_item_id) NOT BETWEEN 1 AND 255
+                    OR mapping.new_item_id IS DISTINCT FROM btrim(mapping.new_item_id)
+                    OR mapping.new_item_id~'[[:cntrl:]]'
+                )
+           )
+           OR mapping.expected_active_count IS NULL
+           OR mapping.expected_active_count<0
+    ) OR (
+        SELECT count(*)<>count(DISTINCT mapping.old_item_id)
+        FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+            old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+        )
+    ) OR (
+        SELECT count(mapping.new_item_id)<>count(DISTINCT mapping.new_item_id)
+        FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+            old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+        )
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',
+            MESSAGE='billing_enrollment_item_due_mapping_invalid';
+    END IF;
+    SELECT jsonb_agg(
+        jsonb_build_object(
+            'old_item_id',mapping.old_item_id,
+            'new_item_id',mapping.new_item_id,
+            'expected_active_count',mapping.expected_active_count
+        ) ORDER BY mapping.old_item_id COLLATE "C"
+    )
+    INTO v_canonical_item_transitions
+    FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+        old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+    );
+    v_completion_evidence_sha256:=encode(extensions.digest(convert_to(
+        jsonb_build_object(
+            'provider_evidence_sha256',p_provider_evidence_sha256,
+            'item_transitions',v_canonical_item_transitions
+        )::TEXT,'UTF8'
+    ),'sha256'),'hex');
+
+    SELECT source_intent_id,enrollment_id,billing_subscription_id
+    INTO v_source_id,v_enrollment_id,v_group_id
+    FROM public.billing_enrollment_transition_intents
+    WHERE id=p_intent_id AND studio_id=p_studio_id;
+    SELECT * INTO v_group
+    FROM public.billing_subscriptions
+    WHERE id=v_group_id AND studio_id=p_studio_id
+    FOR UPDATE;
+    -- The V31 schedule wrapper locks the group before its target. Lock the
+    -- complete active family in deterministic order under that same group lock.
+    PERFORM 1
+    FROM public.student_billing_enrollments AS enrollment
+    WHERE enrollment.studio_id=p_studio_id
+      AND enrollment.billing_subscription_id=v_group_id
+      AND enrollment.status IN ('pending','active')
+      AND NOT (enrollment.metadata ? 'stripe_detach_pending')
+    ORDER BY enrollment.id
+    FOR UPDATE;
+    SELECT * INTO v_target
+    FROM public.student_billing_enrollments
+    WHERE id=v_enrollment_id AND studio_id=p_studio_id
+    FOR UPDATE;
+    SELECT * INTO v_payer
+    FROM public.billing_payers
+    WHERE id=v_group.payer_id AND studio_id=p_studio_id
+    FOR UPDATE;
+    SELECT * INTO v_account
+    FROM public.studio_payment_accounts
+    WHERE studio_id=p_studio_id
+    FOR UPDATE;
+    SELECT * INTO v_source
+    FROM public.billing_enrollment_transition_intents
+    WHERE id=v_source_id AND studio_id=p_studio_id
+    FOR UPDATE;
+    SELECT * INTO v_execute
+    FROM public.billing_enrollment_transition_intents
+    WHERE id=p_intent_id AND studio_id=p_studio_id
+    FOR UPDATE;
+    SELECT * INTO v_schedule_operation
+    FROM public.billing_provider_operations
+    WHERE id=v_source.provider_operation_id AND studio_id=p_studio_id
+    FOR UPDATE;
+    PERFORM 1
+    FROM public.billing_provider_operation_steps AS step
+    WHERE step.operation_id=v_schedule_operation.id
+    ORDER BY step.step_order
+    FOR UPDATE;
+
+    IF v_target.id IS NULL OR v_group.id IS NULL
+       OR v_payer.id IS NULL OR v_account.studio_id IS NULL
+       OR v_source.id IS NULL OR v_execute.id IS NULL
+       OR v_schedule_operation.id IS NULL
+       OR v_execute.transition_kind<>'execute_due'
+       OR v_execute.mutation_strategy<>'subscription_item_delete_at_period_end'
+       OR v_execute.source_intent_id IS DISTINCT FROM v_source.id
+       OR v_execute.provider_operation_id IS NOT NULL
+       OR v_execute.provider_caller_request_key IS NOT NULL
+       OR v_execute.provider_request_sha256 IS NOT NULL
+       OR v_source.transition_kind<>'schedule_period_end'
+       OR v_source.mutation_strategy<>'subscription_item_delete_at_period_end'
+       OR v_source.provider_operation_id IS NULL
+       OR NOT private.billing_enrollment_item_schedule_completed_v31(
+            v_schedule_operation,v_source
+       )
+       OR v_schedule_operation.operation_type<>
+            'enrollment.cancel.period_end.schedule'
+       OR v_schedule_operation.state<>'completed'
+       OR v_schedule_operation.actor_id IS DISTINCT FROM v_source.initiated_by
+       OR v_schedule_operation.caller_request_key IS DISTINCT FROM
+            v_source.provider_caller_request_key
+       OR v_schedule_operation.request_sha256 IS DISTINCT FROM
+            v_source.provider_request_sha256
+       OR v_schedule_operation.stripe_connected_account_id IS DISTINCT FROM
+            v_source.stripe_connected_account_id
+       OR v_schedule_operation.connect_account_generation IS DISTINCT FROM
+            v_source.connect_account_generation
+       OR v_schedule_operation.provider_object_id IS DISTINCT FROM
+            v_source.stripe_subscription_item_id
+       OR v_schedule_operation.provider_secondary_object_id IS NULL
+       OR v_schedule_operation.completed_at IS NULL
+       OR v_schedule_operation.provider_request_attempt_count<>1
+       OR v_schedule_operation.result_code<>
+            'enrollment_transition_completed'
+       OR v_schedule_operation.provider_step_expected_count IS DISTINCT FROM 2
+       OR v_schedule_operation.provider_step_plan_sha256 IS DISTINCT FROM (
+            SELECT encode(extensions.digest(convert_to(
+                COALESCE(jsonb_agg(jsonb_build_object(
+                    'step_name',step.step_name,
+                    'provider_operation',step.provider_operation,
+                    'request_sha256',step.request_sha256,
+                    'stripe_idempotency_key',step.stripe_idempotency_key
+                ) ORDER BY step.step_order),'[]'::JSONB)::TEXT,'UTF8'
+            ),'sha256'),'hex')
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=v_schedule_operation.id
+       )
+       OR (SELECT count(*) FROM public.billing_provider_operation_steps
+            WHERE operation_id=v_schedule_operation.id)<>2
+       OR NOT EXISTS (
+            SELECT 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=v_schedule_operation.id
+              AND step.step_order=1
+              AND step.step_name='schedule_create'
+              AND step.provider_operation='connected_subscription_schedule.create'
+              AND step.state='provider_succeeded'
+              AND step.provider_request_attempt_count BETWEEN 1 AND 2
+              AND step.provider_object_id=
+                    v_schedule_operation.provider_secondary_object_id
+              AND step.provider_secondary_object_id IS NULL
+              AND step.result_code IN (
+                    'enrollment_item_schedule_created',
+                    'enrollment_item_schedule_create_reconciled'
+              )
+       )
+       OR NOT EXISTS (
+            SELECT 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=v_schedule_operation.id
+              AND step.step_order=2
+              AND step.step_name='schedule_update'
+              AND step.provider_operation='connected_subscription_schedule.update'
+              AND step.state='provider_succeeded'
+              AND step.provider_request_attempt_count BETWEEN 1 AND 2
+              AND step.provider_object_id=v_source.stripe_subscription_item_id
+              AND step.provider_secondary_object_id=
+                    v_schedule_operation.provider_secondary_object_id
+              AND step.result_code IN (
+                    'enrollment_item_schedule_updated',
+                    'enrollment_item_schedule_update_reconciled'
+              )
+       )
+       OR v_execute.studio_id IS DISTINCT FROM v_source.studio_id
+       OR v_execute.enrollment_id IS DISTINCT FROM v_source.enrollment_id
+       OR v_execute.payer_id IS DISTINCT FROM v_source.payer_id
+       OR v_execute.billing_subscription_id IS DISTINCT FROM
+            v_source.billing_subscription_id
+       OR v_execute.request_sha256 IS DISTINCT FROM v_source.request_sha256
+       OR v_execute.stripe_connected_account_id IS DISTINCT FROM
+            v_source.stripe_connected_account_id
+       OR v_execute.connect_account_generation IS DISTINCT FROM
+            v_source.connect_account_generation
+       OR v_execute.stripe_subscription_id IS DISTINCT FROM
+            v_source.stripe_subscription_id
+       OR v_execute.stripe_subscription_item_id IS DISTINCT FROM
+            v_source.stripe_subscription_item_id
+       OR v_execute.period_boundary IS DISTINCT FROM v_source.period_boundary
+       OR v_execute.expected_quantity IS DISTINCT FROM v_source.expected_quantity
+       OR v_execute.expected_subscription_item_count IS DISTINCT FROM
+            v_source.expected_subscription_item_count
+       OR v_execute.same_item_active_count IS DISTINCT FROM
+            v_source.same_item_active_count
+       OR v_execute.provider_quantity IS DISTINCT FROM v_source.provider_quantity
+       OR v_execute.initiated_by IS DISTINCT FROM v_source.initiated_by
+       OR v_target.payer_id IS DISTINCT FROM v_execute.payer_id
+       OR v_group.payer_id IS DISTINCT FROM v_execute.payer_id
+       OR v_group.stripe_account_id IS DISTINCT FROM
+            v_execute.stripe_connected_account_id
+       OR private.current_connect_account_generation(v_group.metadata)
+            IS DISTINCT FROM v_execute.connect_account_generation
+       OR v_payer.id IS DISTINCT FROM v_execute.payer_id
+       OR v_payer.stripe_account_id IS DISTINCT FROM
+            v_execute.stripe_connected_account_id
+       OR v_payer.connect_account_generation IS DISTINCT FROM
+            v_execute.connect_account_generation
+       OR v_account.stripe_connected_account_id IS DISTINCT FROM
+            v_execute.stripe_connected_account_id
+       OR private.current_connect_account_generation(v_account.metadata)
+            IS DISTINCT FROM v_execute.connect_account_generation
+       OR v_group.stripe_subscription_id IS DISTINCT FROM
+            v_execute.stripe_subscription_id THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_enrollment_item_due_identity_mismatch';
+    END IF;
+
+    IF v_execute.state='completed' AND v_source.state='completed' THEN
+        IF v_execute.provider_evidence_sha256 IS DISTINCT FROM
+                v_completion_evidence_sha256
+           OR v_source.provider_evidence_sha256 IS DISTINCT FROM
+                v_completion_evidence_sha256
+           OR v_target.status<>'canceled'
+           OR v_target.billing_subscription_id IS NOT NULL
+           OR v_target.stripe_subscription_id IS NOT NULL
+           OR v_target.stripe_subscription_item_id IS NOT NULL
+           OR EXISTS (
+                SELECT 1
+                FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+                    old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+                )
+                WHERE mapping.new_item_id IS NOT NULL
+                  AND (
+                    SELECT count(*)
+                    FROM public.student_billing_enrollments AS enrollment
+                    WHERE enrollment.studio_id=p_studio_id
+                      AND enrollment.billing_subscription_id=v_group_id
+                      AND enrollment.status IN ('pending','active')
+                      AND NOT (enrollment.metadata ? 'stripe_detach_pending')
+                      AND enrollment.stripe_subscription_item_id=
+                            mapping.new_item_id
+                  )<>mapping.expected_active_count
+           )
+           OR EXISTS (
+                SELECT 1
+                FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+                    old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+                )
+                WHERE mapping.old_item_id<>mapping.new_item_id
+                  AND EXISTS (
+                    SELECT 1
+                    FROM public.student_billing_enrollments AS enrollment
+                    WHERE enrollment.studio_id=p_studio_id
+                      AND enrollment.billing_subscription_id=v_group_id
+                      AND enrollment.status IN ('pending','active')
+                      AND NOT (enrollment.metadata ? 'stripe_detach_pending')
+                      AND enrollment.stripe_subscription_item_id=
+                            mapping.old_item_id
+                  )
+           ) THEN
+            RAISE EXCEPTION USING ERRCODE='23505',
+                MESSAGE='billing_enrollment_item_due_completion_conflict';
+        END IF;
+        RETURN private.billing_enrollment_transition_json_v1(
+            v_execute,'replay',NULL
+        );
+    END IF;
+
+    IF v_execute.state<>'due_claimed' OR v_source.state<>'due_claimed'
+       OR v_execute.lease_owner IS DISTINCT FROM p_worker_id
+       OR v_execute.lease_expires_at IS NULL
+       OR v_execute.lease_expires_at<=v_now
+       OR v_execute.revision IS DISTINCT FROM p_expected_revision
+       OR v_target.status NOT IN ('pending','active')
+       OR v_target.billing_subscription_id IS DISTINCT FROM v_group_id
+       OR v_target.stripe_subscription_id IS DISTINCT FROM
+            v_execute.stripe_subscription_id
+       OR v_target.stripe_subscription_item_id IS DISTINCT FROM
+            v_execute.stripe_subscription_item_id THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_enrollment_item_due_completion_invalid';
+    END IF;
+
+    SELECT
+        count(DISTINCT enrollment.stripe_subscription_item_id)::INTEGER,
+        count(*) FILTER (
+            WHERE enrollment.stripe_subscription_item_id=
+                v_execute.stripe_subscription_item_id
+        )::INTEGER,
+        count(*) FILTER (
+            WHERE enrollment.stripe_subscription_item_id IS NULL
+        )::INTEGER,
+        count(*)::INTEGER
+    INTO v_distinct_item_count,v_target_item_count,v_null_item_count,v_active_count
+    FROM public.student_billing_enrollments AS enrollment
+    WHERE enrollment.studio_id=p_studio_id
+      AND enrollment.billing_subscription_id=v_group_id
+      AND enrollment.status IN ('pending','active')
+      AND NOT (enrollment.metadata ? 'stripe_detach_pending');
+    SELECT count(*)::INTEGER,
+           COALESCE(sum(mapping.expected_active_count),0)::INTEGER,
+           count(mapping.new_item_id)::INTEGER
+    INTO v_mapping_count,v_expected_survivor_count,v_nonnull_new_count
+    FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+        old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+    );
+    IF v_null_item_count<>0
+       OR v_distinct_item_count IS DISTINCT FROM
+            v_execute.expected_subscription_item_count
+       OR v_target_item_count IS DISTINCT FROM v_execute.same_item_active_count
+       OR v_mapping_count IS DISTINCT FROM v_distinct_item_count
+       OR v_expected_survivor_count IS DISTINCT FROM v_active_count-1
+       OR v_nonnull_new_count IS DISTINCT FROM (
+            v_execute.expected_subscription_item_count-
+                CASE WHEN v_execute.expected_quantity=0 THEN 1 ELSE 0 END
+       )
+       OR EXISTS (
+            (SELECT DISTINCT enrollment.stripe_subscription_item_id AS old_item_id
+             FROM public.student_billing_enrollments AS enrollment
+             WHERE enrollment.studio_id=p_studio_id
+               AND enrollment.billing_subscription_id=v_group_id
+               AND enrollment.status IN ('pending','active')
+               AND NOT (enrollment.metadata ? 'stripe_detach_pending'))
+            EXCEPT
+            (SELECT mapping.old_item_id
+             FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+                old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+             ))
+       )
+       OR EXISTS (
+            (SELECT mapping.old_item_id
+             FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+                old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+             ))
+            EXCEPT
+            (SELECT DISTINCT enrollment.stripe_subscription_item_id
+             FROM public.student_billing_enrollments AS enrollment
+             WHERE enrollment.studio_id=p_studio_id
+               AND enrollment.billing_subscription_id=v_group_id
+               AND enrollment.status IN ('pending','active')
+               AND NOT (enrollment.metadata ? 'stripe_detach_pending'))
+       )
+       OR EXISTS (
+            WITH local_counts AS (
+                SELECT enrollment.stripe_subscription_item_id AS old_item_id,
+                       count(*)::INTEGER AS active_count
+                FROM public.student_billing_enrollments AS enrollment
+                WHERE enrollment.studio_id=p_studio_id
+                  AND enrollment.billing_subscription_id=v_group_id
+                  AND enrollment.status IN ('pending','active')
+                  AND NOT (enrollment.metadata ? 'stripe_detach_pending')
+                GROUP BY enrollment.stripe_subscription_item_id
+            )
+            SELECT 1
+            FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+                old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+            )
+            JOIN local_counts USING(old_item_id)
+            WHERE mapping.expected_active_count IS DISTINCT FROM (
+                local_counts.active_count-
+                CASE WHEN mapping.old_item_id=
+                    v_execute.stripe_subscription_item_id THEN 1 ELSE 0 END
+            )
+               OR (
+                    mapping.old_item_id=v_execute.stripe_subscription_item_id
+                    AND (
+                        mapping.expected_active_count IS DISTINCT FROM
+                            v_execute.expected_quantity
+                        OR (mapping.new_item_id IS NULL) IS DISTINCT FROM
+                            (v_execute.expected_quantity=0)
+                    )
+               )
+               OR (
+                    mapping.old_item_id<>v_execute.stripe_subscription_item_id
+                    AND mapping.new_item_id IS NULL
+               )
+       ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_enrollment_item_due_mapping_mismatch';
+    END IF;
+
+    UPDATE public.student_billing_enrollments
+    SET status='canceled',billing_status='unpaid',
+        billing_subscription_id=NULL,stripe_subscription_id=NULL,
+        stripe_subscription_item_id=NULL,updated_at=v_now
+    WHERE id=v_target.id
+      AND studio_id=p_studio_id
+      AND billing_subscription_id=v_group_id
+      AND stripe_subscription_id=v_execute.stripe_subscription_id
+      AND stripe_subscription_item_id=v_execute.stripe_subscription_item_id
+      AND status IN ('pending','active');
+    GET DIAGNOSTICS v_target_updates=ROW_COUNT;
+    IF v_target_updates<>1 THEN
+        RAISE EXCEPTION USING ERRCODE='40001',
+            MESSAGE='billing_enrollment_item_due_target_stale';
+    END IF;
+
+    WITH mapping AS (
+        SELECT *
+        FROM jsonb_to_recordset(p_item_transitions) AS value(
+            old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+        )
+    )
+    UPDATE public.student_billing_enrollments AS enrollment
+    SET stripe_subscription_item_id=mapping.new_item_id,updated_at=v_now
+    FROM mapping
+    WHERE enrollment.studio_id=p_studio_id
+      AND enrollment.billing_subscription_id=v_group_id
+      AND enrollment.stripe_subscription_id=v_execute.stripe_subscription_id
+      AND enrollment.id<>v_target.id
+      AND enrollment.status IN ('pending','active')
+      AND NOT (enrollment.metadata ? 'stripe_detach_pending')
+      AND enrollment.stripe_subscription_item_id=mapping.old_item_id
+      AND mapping.new_item_id IS NOT NULL;
+    GET DIAGNOSTICS v_survivor_updates=ROW_COUNT;
+    IF v_survivor_updates<>v_expected_survivor_count
+       OR EXISTS (
+            SELECT 1
+            FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+                old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+            )
+            WHERE mapping.new_item_id IS NOT NULL
+              AND (
+                SELECT count(*)
+                FROM public.student_billing_enrollments AS enrollment
+                WHERE enrollment.studio_id=p_studio_id
+                  AND enrollment.billing_subscription_id=v_group_id
+                  AND enrollment.status IN ('pending','active')
+                  AND NOT (enrollment.metadata ? 'stripe_detach_pending')
+                  AND enrollment.stripe_subscription_item_id=mapping.new_item_id
+              )<>mapping.expected_active_count
+       )
+       OR EXISTS (
+            SELECT 1
+            FROM jsonb_to_recordset(p_item_transitions) AS mapping(
+                old_item_id TEXT,new_item_id TEXT,expected_active_count INTEGER
+            )
+            WHERE mapping.old_item_id<>mapping.new_item_id
+              AND EXISTS (
+                SELECT 1
+                FROM public.student_billing_enrollments AS enrollment
+                WHERE enrollment.studio_id=p_studio_id
+                  AND enrollment.billing_subscription_id=v_group_id
+                  AND enrollment.status IN ('pending','active')
+                  AND NOT (enrollment.metadata ? 'stripe_detach_pending')
+                  AND enrollment.stripe_subscription_item_id=mapping.old_item_id
+              )
+       ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_enrollment_item_due_projection_mismatch';
+    END IF;
+
+    UPDATE public.billing_enrollment_transition_intents
+    SET state='completed',provider_evidence_sha256=v_completion_evidence_sha256,
+        provider_succeeded_at=COALESCE(provider_succeeded_at,v_now),
+        projected_at=COALESCE(projected_at,v_now),
+        completed_at=COALESCE(completed_at,v_now),
+        lease_owner=NULL,lease_acquired_at=NULL,lease_expires_at=NULL,
+        revision=revision+1,updated_at=v_now
+    WHERE id=v_execute.id RETURNING * INTO v_execute;
+    UPDATE public.billing_enrollment_transition_intents
+    SET state='completed',provider_evidence_sha256=v_completion_evidence_sha256,
+        completed_at=COALESCE(completed_at,v_now),
+        revision=revision+1,updated_at=v_now
+    WHERE id=v_source.id;
+    RETURN private.billing_enrollment_transition_json_v1(
+        v_execute,'completed',NULL
+    );
+END;
+$$;
+ALTER FUNCTION public.complete_due_billing_enrollment_item_transition_v31(
+    UUID,UUID,UUID,BIGINT,TEXT,JSONB
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.complete_due_billing_enrollment_item_transition_v31(
+    UUID,UUID,UUID,BIGINT,TEXT,JSONB
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.complete_due_billing_enrollment_item_transition_v31(
+    UUID,UUID,UUID,BIGINT,TEXT,JSONB
+) TO service_role;
+
+ALTER TABLE public.billing_payer_setup_requests
+    DROP CONSTRAINT billing_payer_setup_requests_close_evidence;
+ALTER TABLE public.billing_payer_setup_requests
+    ADD CONSTRAINT billing_payer_setup_requests_close_evidence CHECK (
+        (
+            closed_at IS NULL
+            AND close_reason_code IS NULL
+            AND provider_read_proof_sha256 IS NULL
+        )
+        OR (
+            closed_at IS NOT NULL
+            AND closed_at = superseded_at
+            AND (
+                (
+                    close_reason_code IN (
+                        'checkout_session_expired',
+                        'checkout_session_terminal_unusable'
+                    )
+                    AND provider_read_proof_sha256 ~ '^[0-9a-f]{64}$'
+                )
+                OR (
+                    close_reason_code = 'provider_mutation_blocked'
+                    AND provider_read_proof_sha256 IS NULL
+                    AND stripe_checkout_session_id IS NULL
+                    AND stripe_setup_intent_id IS NULL
+                )
+            )
+        )
+    );
+
+CREATE FUNCTION public.reject_billing_payer_setup_without_provider_v1(
+    p_operation_id UUID,
+    p_setup_request_id UUID,
+    p_studio_id UUID,
+    p_actor_id UUID,
+    p_payer_id UUID,
+    p_caller_request_key TEXT,
+    p_request_sha256 TEXT,
+    p_stripe_connected_account_id TEXT,
+    p_connect_account_generation INTEGER,
+    p_lease_owner UUID,
+    p_expected_operation_revision BIGINT,
+    p_expected_setup_revision BIGINT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    v_operation public.billing_provider_operations%ROWTYPE;
+    v_request public.billing_payer_setup_requests%ROWTYPE;
+    v_now TIMESTAMPTZ := clock_timestamp();
+BEGIN
+    SELECT * INTO v_operation
+    FROM public.billing_provider_operations
+    WHERE id = p_operation_id
+    FOR UPDATE;
+    PERFORM 1
+    FROM public.billing_payers
+    WHERE id = p_payer_id AND studio_id = p_studio_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = '23514',
+            MESSAGE = 'billing_payer_setup_policy_rejection_identity_mismatch';
+    END IF;
+    SELECT * INTO v_request
+    FROM public.billing_payer_setup_requests
+    WHERE id = p_setup_request_id
+    FOR UPDATE;
+    PERFORM 1
+    FROM public.billing_payer_payment_consents AS locked_consent
+    WHERE locked_consent.setup_request_id = p_setup_request_id
+      AND locked_consent.completed_at IS NULL
+      AND locked_consent.revoked_at IS NULL
+      AND locked_consent.superseded_at IS NULL
+    ORDER BY locked_consent.id
+    FOR UPDATE;
+
+    IF v_operation.id IS NULL OR v_request.id IS NULL
+       OR v_operation.operation_type <> 'payer.setup'
+       OR v_operation.studio_id IS DISTINCT FROM p_studio_id
+       OR v_operation.actor_id IS DISTINCT FROM p_actor_id
+       OR v_operation.caller_request_key IS DISTINCT FROM p_caller_request_key
+       OR v_operation.request_sha256 IS DISTINCT FROM p_request_sha256
+       OR v_operation.stripe_connected_account_id IS DISTINCT FROM p_stripe_connected_account_id
+       OR v_operation.connect_account_generation IS DISTINCT FROM p_connect_account_generation
+       OR v_request.operation_id IS DISTINCT FROM p_operation_id
+       OR v_request.studio_id IS DISTINCT FROM p_studio_id
+       OR v_request.payer_id IS DISTINCT FROM p_payer_id
+       OR v_request.initiated_by IS DISTINCT FROM p_actor_id
+       OR v_request.stripe_connected_account_id IS DISTINCT FROM p_stripe_connected_account_id
+       OR v_request.connect_account_generation IS DISTINCT FROM p_connect_account_generation THEN
+        RAISE EXCEPTION USING ERRCODE = '23514',
+            MESSAGE = 'billing_payer_setup_policy_rejection_identity_mismatch';
+    END IF;
+    IF v_operation.state = 'definitive_rejected'
+       AND v_operation.error_code = 'provider_mutation_blocked'
+       AND v_operation.provider_object_id IS NULL
+       AND v_operation.provider_secondary_object_id IS NULL
+       AND v_operation.provider_request_id IS NULL
+       AND v_request.closed_at IS NOT NULL
+       AND v_request.closed_at = v_request.superseded_at
+       AND v_request.close_reason_code = 'provider_mutation_blocked'
+       AND v_request.provider_read_proof_sha256 IS NULL THEN
+        RETURN private.billing_payer_setup_request_json_v1(v_request, 'replay')
+            || jsonb_build_object(
+                'operation', private.billing_provider_operation_json_v1(
+                    v_operation,
+                    'replay'
+                )->'operation'
+            );
+    END IF;
+    IF v_operation.revision IS DISTINCT FROM p_expected_operation_revision
+       OR v_request.revision IS DISTINCT FROM p_expected_setup_revision THEN
+        RAISE EXCEPTION USING ERRCODE = '40001',
+            MESSAGE = 'billing_payer_setup_policy_rejection_stale_revision';
+    END IF;
+    IF v_operation.lease_owner IS DISTINCT FROM p_lease_owner
+       OR v_operation.state <> 'provider_request_in_flight'
+       OR v_operation.provider_request_attempt_count <> 1
+       OR v_operation.provider_object_id IS NOT NULL
+       OR v_operation.provider_secondary_object_id IS NOT NULL
+       OR v_operation.provider_request_id IS NOT NULL
+       OR v_request.stripe_checkout_session_id IS NOT NULL
+       OR v_request.stripe_setup_intent_id IS NOT NULL
+       OR v_request.accepted_at IS NOT NULL
+       OR v_request.completed_at IS NOT NULL
+       OR v_request.revoked_at IS NOT NULL
+       OR v_request.superseded_at IS NOT NULL
+       OR v_request.closed_at IS NOT NULL
+       OR EXISTS (
+            SELECT 1
+            FROM public.billing_payer_payment_consents AS consent
+            WHERE consent.setup_request_id = p_setup_request_id
+              AND (
+                  consent.completed_at IS NOT NULL
+                  OR consent.revoked_at IS NOT NULL
+                  OR consent.superseded_at IS NOT NULL
+              )
+       ) THEN
+        RAISE EXCEPTION USING ERRCODE = '23514',
+            MESSAGE = 'billing_payer_setup_policy_rejection_invalid';
+    END IF;
+
+    UPDATE public.billing_payer_payment_consents
+    SET superseded_at = v_now,
+        revision = revision + 1,
+        updated_at = v_now
+    WHERE setup_request_id = p_setup_request_id
+      AND completed_at IS NULL
+      AND revoked_at IS NULL
+      AND superseded_at IS NULL;
+    UPDATE public.billing_payer_setup_requests
+    SET superseded_at = v_now,
+        closed_at = v_now,
+        close_reason_code = 'provider_mutation_blocked',
+        provider_read_proof_sha256 = NULL,
+        revision = revision + 1,
+        updated_at = v_now
+    WHERE id = p_setup_request_id
+    RETURNING * INTO v_request;
+    UPDATE public.billing_provider_operations
+    SET state = 'definitive_rejected',
+        error_code = 'provider_mutation_blocked',
+        error_summary = NULL,
+        reconciliation_reason_code = NULL,
+        completed_at = NULL,
+        definitive_rejected_at = v_now,
+        lease_owner = NULL,
+        lease_acquired_at = NULL,
+        lease_expires_at = NULL,
+        revision = revision + 1,
+        updated_at = v_now
+    WHERE id = p_operation_id
+    RETURNING * INTO v_operation;
+    RETURN private.billing_payer_setup_request_json_v1(v_request, 'rejected')
+        || jsonb_build_object(
+            'operation', private.billing_provider_operation_json_v1(
+                v_operation,
+                'rejected'
+            )->'operation'
+        );
+END;
+$function$;
+ALTER FUNCTION public.reject_billing_payer_setup_without_provider_v1(
+    UUID,UUID,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,BIGINT,BIGINT
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.reject_billing_payer_setup_without_provider_v1(
+    UUID,UUID,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,BIGINT,BIGINT
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.reject_billing_payer_setup_without_provider_v1(
+    UUID,UUID,UUID,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,BIGINT,BIGINT
+) TO service_role;
+
 CREATE FUNCTION private.koaryu_release_resource_ownership_manifest_v31()
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -2228,12 +4100,17 @@ BEGIN
     ) AS (
         VALUES
             ('private.billing_operation_resource_version_v31(text,public.billing_payments,public.billing_payers,text,integer)', false, false, 'search_path=pg_catalog'),
+            ('private.billing_enrollment_item_schedule_completed_v31(public.billing_provider_operations,public.billing_enrollment_transition_intents)', false, false, 'search_path=""'),
+            ('private.billing_enrollment_item_schedule_phase_succeeded_v31(public.billing_provider_operations,public.billing_enrollment_transition_intents)', false, false, 'search_path=""'),
+            ('private.billing_enrollment_item_schedule_pre_provider_rejected_v31(public.billing_provider_operations)', false, false, 'search_path=""'),
             ('private.billing_plan_resource_version_v31(public.billing_plans,text,integer)', false, false, 'search_path=pg_catalog'),
             ('private.claim_billing_invoice_mutation_v31(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
             ('private.claim_payment_payer_operation_resource_v31(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
             ('private.enforce_billing_payer_connect_identity_v1()', true, false, 'search_path=""'),
             ('private.enforce_billing_provider_step_parent_v1()', false, false, 'search_path=""'),
             ('private.maintain_billing_invoice_mutation_owner_v31()', false, false, 'search_path=""'),
+            ('private.live_billing_operation_set_is_canonical_v1(text,text[])', false, false, 'search_path=""'),
+            ('private.preserve_billing_enrollment_transition_identity_v1()', false, false, 'search_path=""'),
             ('private.preserve_billing_provider_operation_resource_alias_v1()', false, false, 'search_path=""'),
             ('private.preserve_billing_provider_operation_resource_v1()', false, false, 'search_path=""'),
             ('private.preserve_billing_provider_operation_step_v1()', false, false, 'search_path=""'),
@@ -2244,11 +4121,20 @@ BEGIN
             ('private.validate_billing_payment_identity_change()', false, false, 'search_path=""'),
             ('public.claim_billing_invoice_closeout_operation_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, true, 'search_path=""'),
             ('public.claim_billing_invoice_closeout_operation_v30(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
+            ('public.claim_billing_enrollment_transition_v1(uuid,uuid,text,text,text,uuid,uuid,uuid,text,text,text,integer,timestamp with time zone,integer,integer,integer,integer,text,text,uuid,integer)', true, true, 'search_path=""'),
+            ('public.claim_billing_enrollment_transition_v29(uuid,uuid,text,text,text,uuid,uuid,uuid,text,text,text,integer,timestamp with time zone,integer,integer,integer,integer,text,text,uuid,integer)', true, false, 'search_path=""'),
             ('public.claim_billing_provider_operation_resource_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, true, 'search_path=""'),
             ('public.claim_billing_provider_operation_resource_v30(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
             ('public.claim_due_billing_enrollment_transitions_v1(uuid,integer,integer)', true, true, 'search_path=""'),
+            ('public.complete_billing_provider_operation_provider_phase_v31(uuid,uuid,uuid,text,text,text,text,integer,text,integer,bigint,uuid)', true, true, 'search_path=""'),
+            ('public.complete_due_billing_enrollment_item_transition_v31(uuid,uuid,uuid,bigint,text,jsonb)', true, true, 'search_path=""'),
             ('public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text)', true, true, 'search_path=""'),
             ('public.finalize_billing_payer_setup_projection_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer)', true, true, 'search_path=""'),
+            ('public.reject_billing_payer_setup_without_provider_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,bigint,bigint)', true, true, 'search_path=""'),
+            ('public.revoke_billing_enrollment_transition_v1(uuid,uuid,uuid,bigint,text,text,text,uuid,integer)', true, true, 'search_path=""'),
+            ('public.revoke_billing_enrollment_transition_v29(uuid,uuid,uuid,bigint,text,text,text,uuid,integer)', true, false, 'search_path=""'),
+            ('public.transition_billing_enrollment_transition_v1(uuid,uuid,uuid,bigint,uuid,bigint,text,text)', true, true, 'search_path=""'),
+            ('public.transition_billing_enrollment_transition_v29(uuid,uuid,uuid,bigint,uuid,bigint,text,text)', true, false, 'search_path=""'),
             ('public.schedule_window_read(uuid,date,date,text)', false, true, 'search_path=pg_catalog')
     ), function_state AS (
         SELECT
@@ -2345,7 +4231,9 @@ BEGIN
             'billing_invoice_mutation_owners_pkey',
             'billing_invoice_mutation_owners_studio_id_fkey',
             'billing_invoice_mutation_owners_payer_id_fkey',
-            'billing_invoice_mutation_owners_revision_check'
+            'billing_invoice_mutation_owners_revision_check',
+            'billing_payer_setup_requests_close_evidence',
+            'studio_live_billing_authorizations_operation_set_exact'
         )
     ), required_invoice_owner_columns(
         column_name,expected_type,expected_not_null,expected_default
@@ -2560,7 +4448,7 @@ BEGIN
              OR service_execute IS DISTINCT FROM expected_service_execute
              OR anon_execute OR auth_execute OR public_execute
              OR unexpected_execute OR service_execute_grant_option)
-        + CASE WHEN (SELECT count(*) FROM constraint_state) = 14 THEN 0 ELSE 1 END
+        + CASE WHEN (SELECT count(*) FROM constraint_state) = 16 THEN 0 ELSE 1 END
         + CASE WHEN (
             SELECT count(*)=1
                AND bool_and(owner_name='postgres')
@@ -2673,7 +4561,7 @@ INSERT INTO private.koaryu_release_v31_expectations(
     expectation_key, expected_sha256
 ) VALUES (
     'operational_contract_v31',
-    'c55c099d57cb1dfbe50644386b4b38d794d2ed1b9d71454f7d8c8a84ee1db4f0'
+    '7a2fb92bc9aee799df0a64228788e08d4d63e2df0a7e0fb255216d8716a9413d'
 );
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v12()
@@ -2685,7 +4573,7 @@ SET search_path = pg_catalog
 SET "TimeZone" = 'UTC'
 AS $$
     SELECT encode(extensions.digest(convert_to(
-        '7e563bb93c268757020448ed1a1213432fd6905b03b04b83abf89006deb36d78' || '|' ||
+        '7a2e9ab68d2c99c81d04f767821ead1a7b6bf3ea1cfe6a819ff2b3e36ab2135b' || '|' ||
         private.koaryu_release_resource_ownership_manifest_v31() || '|' ||
         private.koaryu_release_operational_contract_v31() || '|' ||
         (SELECT string_agg(
@@ -2746,7 +4634,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       <> '0:55f9397aba0a331d528b8f71d69599f14412c3c29f8eb0fe7d1a145d97a329c8' THEN
+       <> '0:dff56b2572ace65f3d68f0b6e378604c2757356cf3d5057ca186343a76c12426' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     IF private.koaryu_release_schedule_window_manifest_v1()
@@ -2927,19 +4815,19 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_contract_v26');
     END IF;
     IF private.koaryu_release_operational_contract_v27()
-       <> '0:2e8b9cdc5036c41d565b3f442eb968db70e7fb45255165310c15e978abeb0d45' THEN
+       <> '0:09560297818ee6b24bf69d29099912b22eb6517cd7d469a9266daa6fb93918df' THEN
         v_failures := array_append(v_failures, 'operational_contract_v27');
     END IF;
     IF private.koaryu_release_operational_contract_v28()
-       <> '0:34ac9f200fe9259be482894f3770e0e321b319d459bc604b4f88e26194d22a20' THEN
+       <> '0:6767a6ca22f208d3dde5856875ff51a82e8f95a1b84e09939363c7a9f328291c' THEN
         v_failures := array_append(v_failures, 'operational_contract_v28');
     END IF;
     IF private.koaryu_release_operational_contract_v29()
-       <> '0:553e9156f99f0d2af3b0d9b37b0492912ec7bda036f99717244ed9c7c4297ab1' THEN
+       <> '0:ff74240713fd9582f18c66f266935cee095320573c385c25693679d9f3cd782b' THEN
         v_failures := array_append(v_failures, 'operational_contract_v29');
     END IF;
     IF private.koaryu_release_operational_contract_v30()
-       <> '0:1a796981a4605be52bb488044f01124a968e2af20adad9bc929fa17c130cd6a5' THEN
+       <> '0:c2f7954566cae11fcd0635a6561f785a3364362a931d3393a3e6118d278494e9' THEN
         v_failures := array_append(v_failures, 'operational_contract_v30');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -2955,18 +4843,18 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_manifest_v11_function');
     END IF;
     IF private.koaryu_release_operational_manifest_v11()
-       <> '7e563bb93c268757020448ed1a1213432fd6905b03b04b83abf89006deb36d78' THEN
+       <> '7a2e9ab68d2c99c81d04f767821ead1a7b6bf3ea1cfe6a819ff2b3e36ab2135b' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v11');
     END IF;
     IF private.koaryu_release_provider_operation_steps_manifest_v28()
-       <> '0:17dc610684d147acfc18f8b5f777aa4b3a034bf328d4172bb9d87372166b7388' THEN
+       <> '0:61d0fbbd8ab29d9ea43dc0137f467daa86bb6da97b1be19222710c81aeadc318' THEN
         v_failures := array_append(v_failures, 'provider_operation_steps_manifest_v28');
         v_failures := array_append(v_failures, 'operational_contract_v28');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_resource_ownership_manifest_v31()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> 'ca33c3643dd1e0e3b65e16dfd0095bbf73a43728c73b4b8ad6372b4cd6db29bf' THEN
+       <> '08139ed0114e52021f7ad29cf849989b57599e96323797aac8974de54004a1de' THEN
         v_failures:=array_append(v_failures,'resource_ownership_manifest_v31_function');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -3030,14 +4918,37 @@ BEGIN
     ) THEN
         v_failures := array_append(v_failures, 'operation_allowlist_column');
     END IF;
+    IF private.live_billing_operation_set_is_canonical_v1(
+            'connect_payments',ARRAY[
+                'connected_subscription_schedule.create',
+                'connected_subscription_schedule.release',
+                'connected_subscription_schedule.update'
+            ]::TEXT[]
+       ) IS DISTINCT FROM true
+       OR private.live_billing_operation_set_is_canonical_v1(
+            'connect_payments',ARRAY[
+                'connected_subscription_schedule.update',
+                'connected_subscription_schedule.create'
+            ]::TEXT[]
+       ) IS DISTINCT FROM false
+       OR private.live_billing_operation_set_is_canonical_v1(
+            'connect_payments',ARRAY[
+                'connected_subscription_schedule.create',
+                'connected_subscription_schedule.unknown'
+            ]::TEXT[]
+       ) IS DISTINCT FROM false THEN
+        v_failures := array_append(
+            v_failures,'operation_allowlist_schedule_semantics'
+        );
+    END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       <> '091e95661d36feba5f7e296e54a6633dc5d0a55d0f00274ce1792d16a862d7fa' THEN
+       <> '441d38fe480a784c240e27467565b61d4477cece606da32737391d6d86c2eb3f' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_operational_manifest_v12()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> 'ce150bddf014fd310a1db9ccc5194e3d25b18e2570bd1c57bbb49430e31354c5' THEN
+       <> '57a017e4e7be92f023d31dc4a18e75b95c676765f42b54f9f5fb9f4b768ca3bd' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12_function');
     END IF;
     RETURN QUERY SELECT cardinality(v_failures) = 0,

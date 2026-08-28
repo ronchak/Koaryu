@@ -16,6 +16,7 @@ PayerBillingStatus = Literal["current", "upcoming", "past_due", "failed", "unpai
 AutopayStatus = Literal["not_configured", "pending", "enabled", "disabled"]
 InvoiceStatus = Literal["draft", "open", "paid", "void", "uncollectible", "refunded", "partially_refunded"]
 PaymentStatus = Literal["pending", "processing", "succeeded", "failed", "refunded", "disputed", "externally_recorded"]
+BillingRefundReason = Literal["duplicate", "fraudulent", "requested_by_customer"]
 BillingSystemCheckStatus = Literal["pass", "warn", "fail"]
 BillingReconcileObjectType = Literal["connect_account", "payer", "invoice", "subscription", "payment_intent"]
 CARD_BRAND_VALUES = {
@@ -697,7 +698,7 @@ class BillingRefundCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     amount_cents: Optional[int] = Field(default=None, ge=1)
-    reason: Optional[str] = None
+    reason: Optional[BillingRefundReason] = None
 
 
 class BillingRefundResponse(BaseModel):

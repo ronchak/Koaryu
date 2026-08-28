@@ -384,7 +384,6 @@ class BillingEnrollmentActivationWorkflow:
             .eq("studio_id", context.studio_id)
             .eq("billing_subscription_id", group["id"])
             .eq("transition_kind", "schedule_period_end")
-            .eq("mutation_strategy", "subscription_cancel_at_period_end")
             .in_("state", OPEN_WHOLE_SUBSCRIPTION_TRANSITION_STATES)
             .limit(1)
             .execute()
@@ -408,6 +407,7 @@ class BillingEnrollmentActivationWorkflow:
             or str(_object_get(provider, "status") or "")
             not in ACTIVATABLE_SUBSCRIPTION_STATUSES
             or bool(_object_get(provider, "cancel_at_period_end"))
+            or bool(_stripe_id(_object_get(provider, "schedule")))
         ):
             raise RuntimeError("subscription_not_open_for_activation")
 

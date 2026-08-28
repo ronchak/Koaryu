@@ -221,13 +221,78 @@ revoke_due_count="$(sed -n '1p' "$revoke_due_log" | tr -d '\r')"
 [[ "$revoke_outcome" == "revoked" ]]
 [[ "$revoke_due_count" == "0" ]]
 revoke_state="$("$psql_bin" "${psql_args[@]}" --tuples-only --no-align --command="
-SELECT source.state || ':' || count(child.id)::TEXT
+SELECT source.state || ':' || count(child.id)::TEXT || ':' ||
+       count(*) FILTER (
+         WHERE revoke.state='due_claimed'
+           AND operation.operation_type='enrollment.cancel.period_end.revoke'
+           AND operation.state='started'
+       )::TEXT
 FROM public.billing_enrollment_transition_intents source
 LEFT JOIN public.billing_enrollment_transition_intents child
   ON child.source_intent_id=source.id AND child.transition_kind='execute_due'
+LEFT JOIN public.billing_enrollment_transition_intents revoke
+  ON revoke.source_intent_id=source.id AND revoke.transition_kind='revoke_scheduled'
+LEFT JOIN public.billing_provider_operations operation
+  ON operation.id=revoke.provider_operation_id
 WHERE source.id='$schedule_revoke_id'::UUID
 GROUP BY source.state;
 " | tr -d '\r\n')"
-[[ "$revoke_state" == "revoked:0" ]]
+[[ "$revoke_state" == "revoked:0:0" ]]
 
-echo "PASS: enrollment transition due claims and revoke ordering serialize across sessions."
+# The V31 schedule wrapper must take the subscription-group lock before its
+# target enrollment. This reproduces the due CAS group->all-peers sequence,
+# pauses between the two locks, and races a schedule request for the peer. The
+# old target->group wrapper deadlocked here; the V31 order waits at the group.
+"$psql_bin" "${psql_args[@]}" >/dev/null --command="
+UPDATE public.billing_subscriptions
+SET current_period_end=clock_timestamp()+interval '1 day'
+WHERE id='$group_revoke_id'::UUID;
+"
+"$psql_bin" "${psql_args[@]}" >/dev/null 2>&1 <<SQL &
+BEGIN;
+SELECT id FROM public.billing_subscriptions
+WHERE id='$group_revoke_id'::UUID FOR UPDATE;
+SELECT pg_advisory_xact_lock(990100003);
+SELECT pg_sleep(1);
+DO \$\$
+BEGIN
+  PERFORM 1
+  FROM public.student_billing_enrollments
+  WHERE studio_id='$studio_id'::UUID
+    AND billing_subscription_id='$group_revoke_id'::UUID
+    AND status IN ('pending','active')
+  ORDER BY id
+  FOR UPDATE;
+END;
+\$\$;
+COMMIT;
+SQL
+first_pid="$!"
+
+held="f"
+for _attempt in {1..80}; do
+  held="$("$psql_bin" "${psql_args[@]}" --tuples-only --no-align --command='SELECT NOT pg_try_advisory_lock(990100003);')"
+  [[ "$held" == "t" ]] && break
+  sleep 0.05
+done
+[[ "$held" == "t" ]]
+
+peer_schedule_outcome="$("$psql_bin" "${psql_args[@]}" --tuples-only --no-align <<SQL | tr -d '\r\n'
+SET statement_timeout='6s';
+SELECT public.claim_billing_enrollment_transition_v1(
+  '$studio_id','$front_desk_id','schedule_period_end','peer-lock-order',
+  repeat('d',64),'$enrollment_revoke_peer_id','$payer_revoke_id',
+  '$group_revoke_id','sub_transition_revoke','si_transition_revoke_peer',
+  '$account_id',1,
+  (SELECT current_period_end FROM public.billing_subscriptions
+   WHERE id='$group_revoke_id'::UUID),
+  0,2,1,1,'subscription_item_delete_at_period_end',
+  'concurrency.peer_lock_order',gen_random_uuid(),30
+)->>'outcome';
+SQL
+)"
+wait "$first_pid"
+first_pid=""
+[[ "$peer_schedule_outcome" == "claimed" ]]
+
+echo "PASS: enrollment transition due claims, legacy revoke, and group/peer lock ordering serialize across sessions."

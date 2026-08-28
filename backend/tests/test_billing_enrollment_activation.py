@@ -517,6 +517,35 @@ def test_provider_scheduled_whole_subscription_rejects_activation_without_mutati
     assert _Stripe.update_item_calls == []
 
 
+@pytest.mark.parametrize("guard", ["open_item_intent", "provider_schedule"])
+def test_shared_item_schedule_blocks_activation_before_add_or_quantity_update(guard):
+    facade = _existing_subscription_case("add_item")
+    if guard == "open_item_intent":
+        facade.supabase.tables.setdefault(
+            "billing_enrollment_transition_intents",
+            [],
+        ).append({
+            "id": "item_schedule",
+            "studio_id": "studio_1",
+            "billing_subscription_id": "group_1",
+            "transition_kind": "schedule_period_end",
+            "mutation_strategy": "subscription_item_delete_at_period_end",
+            "state": "scheduled",
+        })
+    else:
+        _Stripe.subscriptions["sub_1"]["schedule"] = "sub_sched_item"
+
+    with pytest.raises(HTTPException) as blocked:
+        asyncio.run(_manager(facade).activate_enrollment(
+            "enrollment_1", "studio_1", "actor_1", f"item-schedule-{guard}"
+        ))
+
+    assert blocked.value.status_code == 409
+    assert "scheduled for cancellation" in blocked.value.detail
+    assert _Stripe.add_item_calls == []
+    assert _Stripe.update_item_calls == []
+
+
 @pytest.mark.parametrize("branch", ["add_item", "update_quantity"])
 def test_schedule_inserted_between_activation_checks_prevents_provider_mutation(branch):
     facade = _existing_subscription_case(branch)

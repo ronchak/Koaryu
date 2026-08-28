@@ -264,9 +264,10 @@ class TestBillingPlanSync:
         complete_phase = next(
             params
             for name, params in facade.supabase.rpc_calls
-            if name == "complete_billing_provider_operation_provider_phase_v1"
+            if name == "complete_billing_provider_operation_provider_phase_v31"
         )
         assert complete_phase["p_expected_parent_revision"] == 2
+        assert complete_phase["p_lease_owner"] == register_call["p_lease_owner"]
 
     def test_lost_product_success_response_resumes_at_price_step(self):
         facade = _Facade(_tables())

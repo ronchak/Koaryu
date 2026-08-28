@@ -572,14 +572,13 @@ class BillingProviderOperationRpcMixin:
                 "intent": dict(existing),
             }
         intent_id = f"00000000-0000-4000-8000-{len(self.billing_enrollment_transition_intents) + 9701:012d}"
-        whole_schedule = params["p_mutation_strategy"] == "subscription_cancel_at_period_end"
         operation_type = (
             "enrollment.cancel.immediate"
             if params["p_transition_kind"] == "immediate_cancel"
             else "enrollment.cancel.period_end.schedule"
         )
         operation = None
-        if params["p_transition_kind"] == "immediate_cancel" or whole_schedule:
+        if params["p_transition_kind"] in {"immediate_cancel", "schedule_period_end"}:
             operation = self._rpc_claim_billing_provider_operation_v1({
                 "p_studio_id": params["p_studio_id"],
                 "p_actor_id": params["p_actor_id"],
@@ -696,10 +695,7 @@ class BillingProviderOperationRpcMixin:
             }
         source = self.billing_enrollment_transition_intents[params["p_intent_id"]]
         intent_id = f"00000000-0000-4000-8000-{len(self.billing_enrollment_transition_intents) + 9701:012d}"
-        whole = source["mutation_strategy"] == "subscription_cancel_at_period_end"
-        operation = None
-        if whole:
-            operation = self._rpc_claim_billing_provider_operation_v1({
+        operation = self._rpc_claim_billing_provider_operation_v1({
                 "p_studio_id": params["p_studio_id"],
                 "p_actor_id": params["p_actor_id"],
                 "p_operation_type": "enrollment.cancel.period_end.revoke",
@@ -721,18 +717,15 @@ class BillingProviderOperationRpcMixin:
             "provider_request_sha256": operation and params["p_request_sha256"],
             "initiated_by": params["p_actor_id"],
             "reason_code": params["p_reason_code"],
-            "state": "due_claimed" if whole else "completed",
-            "revision": 2 if whole else 1,
+            "state": "due_claimed",
+            "revision": 2,
         }
-        if not whole:
-            source["state"] = "revoked"
-            source["revision"] += 1
         self.billing_enrollment_transition_intents[intent_id] = intent
         self.billing_enrollment_transition_aliases[alias_key] = intent_id
         return {
-            "outcome": "claimed" if whole else "revoked",
+            "outcome": "claimed",
             "intent": dict(intent),
-            **({"operation": dict(operation)} if operation else {}),
+            "operation": dict(operation),
         }
 
     def _rpc_claim_due_billing_enrollment_transitions_v1(self, params: dict[str, Any]) -> list[dict[str, Any]]:
@@ -757,7 +750,11 @@ class BillingProviderOperationRpcMixin:
             if source["state"] != "scheduled":
                 continue
             intent_id = f"00000000-0000-4000-8000-{len(self.billing_enrollment_transition_intents) + 9701:012d}"
-            item_strategy = source["mutation_strategy"] == "subscription_item_delete_at_period_end"
+            legacy_item_mutation = (
+                source.get("mutation_strategy")
+                == "subscription_item_delete_at_period_end"
+                and source.get("provider_operation_id") is None
+            )
             execute = {
                 **source,
                 "id": intent_id,
@@ -765,9 +762,17 @@ class BillingProviderOperationRpcMixin:
                 "transition_kind": "execute_due",
                 "provider_operation_id": None,
                 "provider_caller_request_key": (
-                    f"enrollment-period-execute:{source['id']}" if item_strategy else None
+                    f"enrollment-period-execute:{source['id']}"
+                    if legacy_item_mutation
+                    else None
                 ),
-                "provider_request_sha256": source["request_sha256"] if item_strategy else None,
+                "provider_request_sha256": (
+                    hashlib.sha256(
+                        f"legacy-due:{source['id']}".encode()
+                    ).hexdigest()
+                    if legacy_item_mutation
+                    else None
+                ),
                 "state": "due_claimed",
                 "lease_owner": params["p_worker_id"],
                 "revision": 1,
@@ -808,6 +813,83 @@ class BillingProviderOperationRpcMixin:
         source = self.billing_enrollment_transition_intents[intent["source_intent_id"]]
         source["state"] = "completed"
         source["revision"] += 1
+        return {"outcome": "completed", "intent": dict(intent)}
+
+    def _rpc_complete_due_billing_enrollment_item_transition_v31(
+        self,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        intent = self.billing_enrollment_transition_intents[params["p_intent_id"]]
+        canonical_mappings = sorted(
+            params["p_item_transitions"], key=lambda row: row["old_item_id"]
+        )
+        completion_evidence = hashlib.sha256(
+            json.dumps(
+                {
+                    "provider_evidence_sha256": params[
+                        "p_provider_evidence_sha256"
+                    ],
+                    "item_transitions": canonical_mappings,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        source = self.billing_enrollment_transition_intents[intent["source_intent_id"]]
+        if intent["state"] == "completed" and source["state"] == "completed":
+            if (
+                intent.get("provider_evidence_sha256") != completion_evidence
+                or source.get("provider_evidence_sha256") != completion_evidence
+            ):
+                raise AssertionError("due item completion replay conflict")
+            return {"outcome": "replay", "intent": dict(intent)}
+        if intent["revision"] != params["p_expected_revision"]:
+            raise AssertionError("stale due item transition revision")
+        target = next(
+            row
+            for row in self.tables["student_billing_enrollments"]
+            if row["id"] == intent["enrollment_id"]
+            and row["studio_id"] == params["p_studio_id"]
+        )
+        mappings = {
+            row["old_item_id"]: row
+            for row in params["p_item_transitions"]
+        }
+        old_target_id = intent["stripe_subscription_item_id"]
+        if old_target_id not in mappings:
+            raise AssertionError("target item transition mapping missing")
+        for row in self.tables["student_billing_enrollments"]:
+            if (
+                row["id"] != target["id"]
+                and row.get("studio_id") == params["p_studio_id"]
+                and row.get("billing_subscription_id")
+                == intent["billing_subscription_id"]
+                and row.get("status") in {"pending", "active"}
+                and row.get("stripe_subscription_item_id") in mappings
+            ):
+                replacement = mappings[row["stripe_subscription_item_id"]][
+                    "new_item_id"
+                ]
+                if replacement is None:
+                    raise AssertionError("surviving item transition mapping is null")
+                row["stripe_subscription_item_id"] = replacement
+        target.update({
+            "status": "canceled",
+            "billing_status": "unpaid",
+            "billing_subscription_id": None,
+            "stripe_subscription_id": None,
+            "stripe_subscription_item_id": None,
+        })
+        intent.update({
+            "state": "completed",
+            "provider_evidence_sha256": completion_evidence,
+            "revision": intent["revision"] + 1,
+        })
+        source.update({
+            "state": "completed",
+            "provider_evidence_sha256": completion_evidence,
+            "revision": source["revision"] + 1,
+        })
         return {"outcome": "completed", "intent": dict(intent)}
 
     def _rpc_mark_billing_enrollment_due_readback_reconciliation_v1(
@@ -955,6 +1037,23 @@ class BillingProviderOperationRpcMixin:
             if params.get(param) is not None:
                 step[field] = params[param]
         step["revision"] += 1
+        if (
+            operation.get("operation_type")
+            == "enrollment.cancel.period_end.schedule"
+            and step["state"] in {
+                "reconciliation_required",
+                "definitive_failed",
+                "definitive_rejected",
+            }
+        ):
+            operation.update({
+                "state": "reconciliation_required",
+                "reconciliation_reason_code": (
+                    params.get("p_reconciliation_reason_code")
+                    or "provider_step_phase_incomplete"
+                ),
+                "revision": operation["revision"] + 1,
+            })
         return {"outcome": "transitioned", "operation": dict(operation), "step": dict(step)}
 
     def _rpc_complete_billing_provider_operation_provider_phase_v1(
@@ -1002,14 +1101,81 @@ class BillingProviderOperationRpcMixin:
             "steps": [dict(step) for step in steps],
         }
 
+    def _rpc_complete_billing_provider_operation_provider_phase_v31(
+        self,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        operation = self._operation_for_params(params)
+        plan = self.billing_provider_step_plans[operation["id"]]
+        steps = plan["steps"]
+        final_step = steps[-1]
+        if (
+            operation["state"] == "provider_succeeded"
+            and operation.get("result_code") == "provider_step_phase_completed"
+        ):
+            if (
+                operation.get("provider_object_id")
+                != final_step.get("provider_object_id")
+                or operation.get("provider_secondary_object_id")
+                != final_step.get("provider_secondary_object_id")
+                or operation.get("lease_owner") != params["p_lease_owner"]
+            ):
+                raise AssertionError("provider phase replay identity mismatch")
+            return {
+                "outcome": "replay",
+                "operation": dict(operation),
+                "steps": [dict(step) for step in steps],
+            }
+        if operation["revision"] != params["p_expected_parent_revision"]:
+            raise AssertionError("stale provider phase parent revision")
+        if all(step["state"] == "provider_succeeded" for step in steps):
+            operation["state"] = "provider_succeeded"
+            operation["provider_request_attempt_count"] = 1
+            operation["provider_object_id"] = final_step["provider_object_id"]
+            operation["provider_secondary_object_id"] = final_step.get(
+                "provider_secondary_object_id"
+            )
+            operation["lease_owner"] = params["p_lease_owner"]
+            operation["result_code"] = "provider_step_phase_completed"
+            outcome = "provider_succeeded"
+        elif any(
+            step["state"]
+            in {
+                "provider_request_in_flight",
+                "reconciliation_required",
+                "definitive_failed",
+                "definitive_rejected",
+            }
+            for step in steps
+        ):
+            operation["state"] = "reconciliation_required"
+            operation["reconciliation_reason_code"] = (
+                "provider_step_phase_incomplete"
+            )
+            operation["lease_owner"] = None
+            outcome = "reconciliation_required"
+        else:
+            outcome = "incomplete"
+        operation["revision"] += 1
+        return {
+            "outcome": outcome,
+            "operation": dict(operation),
+            "steps": [dict(step) for step in steps],
+        }
+
     def _rpc_authorize_billing_provider_operation_step_recovery_v1(
         self,
         params: dict[str, Any],
     ) -> dict[str, Any]:
         operation = self._operation_for_params(params)
         step = self._step_for_params(operation, params)
-        step["state"] = "recovery_authorized"
-        step["revision"] += 1
+        step.update({
+            "state": "recovery_authorized",
+            "recovery_actor_id": params["p_recovery_actor_id"],
+            "recovery_proof_sha256": params["p_recovery_proof_sha256"],
+            "recovery_outcome": params["p_recovery_outcome"],
+            "revision": step["revision"] + 1,
+        })
         return {"outcome": "recovery_authorized", "operation": dict(operation), "step": dict(step)}
 
     def _operation_for_params(self, params: dict[str, Any]) -> dict[str, Any]:

@@ -621,6 +621,33 @@ class BillingProviderOperationCoordinator:
             expected_key="operation",
         )
 
+    def reject_payer_setup_without_provider(
+        self,
+        context: BillingProviderOperationContext,
+        *,
+        operation: dict[str, Any],
+        setup_request: dict[str, Any],
+        payer_id: str,
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "reject_billing_payer_setup_without_provider_v1",
+            {
+                "p_operation_id": context.operation_id,
+                "p_setup_request_id": setup_request["id"],
+                "p_studio_id": context.studio_id,
+                "p_actor_id": context.actor_id,
+                "p_payer_id": payer_id,
+                "p_caller_request_key": context.caller_request_key,
+                "p_request_sha256": context.request_sha256,
+                "p_stripe_connected_account_id": context.stripe_connected_account_id,
+                "p_connect_account_generation": context.connect_account_generation,
+                "p_lease_owner": context.lease_owner,
+                "p_expected_operation_revision": int(operation["revision"]),
+                "p_expected_setup_revision": int(setup_request["revision"]),
+            },
+            expected_key="operation",
+        )
+
     def claim_enrollment_transition(
         self,
         *,
@@ -798,6 +825,29 @@ class BillingProviderOperationCoordinator:
                 "p_expected_revision": expected_revision,
                 "p_provider_evidence_sha256": provider_evidence_sha256,
                 "p_provider_subscription_state": provider_subscription_state,
+            },
+            expected_key="intent",
+        )
+
+    def complete_due_enrollment_item_transition(
+        self,
+        *,
+        intent_id: str,
+        studio_id: str,
+        worker_id: str,
+        expected_revision: int,
+        provider_evidence_sha256: str,
+        item_transitions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "complete_due_billing_enrollment_item_transition_v31",
+            {
+                "p_intent_id": intent_id,
+                "p_studio_id": studio_id,
+                "p_worker_id": worker_id,
+                "p_expected_revision": expected_revision,
+                "p_provider_evidence_sha256": provider_evidence_sha256,
+                "p_item_transitions": item_transitions,
             },
             expected_key="intent",
         )
@@ -1066,7 +1116,7 @@ class BillingProviderStepCoordinator:
         expected_step_count: int,
     ) -> dict[str, Any]:
         return self._operations._rpc(
-            "complete_billing_provider_operation_provider_phase_v1",
+            "complete_billing_provider_operation_provider_phase_v31",
             {
                 "p_operation_id": context.operation_id,
                 "p_studio_id": context.studio_id,
@@ -1079,6 +1129,7 @@ class BillingProviderStepCoordinator:
                 "p_plan_sha256": plan_sha256,
                 "p_expected_step_count": expected_step_count,
                 "p_expected_parent_revision": int(operation["revision"]),
+                "p_lease_owner": context.lease_owner,
             },
             expected_key="operation",
         )

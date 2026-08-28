@@ -251,9 +251,14 @@ anchors. It:
 - rejects a new refund key with an explicit settling conflict while the prior refund is
   pending, while exact-key replay remains available and failed/canceled refunds may start
   a new owner after projection proof;
+- rejects unsupported refund reasons at the request boundary before any durable owner or
+  Stripe mutation can be claimed;
 - atomically revokes completed payer consent and setup evidence before disabling
   autopay, rejects usable pending setup and active subscription states, and prevents a
   later webhook replay from re-enabling the payer;
+- keeps an enabled payer's active consent authoritative while a replacement setup is in
+  flight, and atomically closes a policy-blocked no-object setup without stranding its
+  request, consent, or provider operation;
 - requires a fresh automatic invoice retry to hold current consent for the exact payer,
   account generation, invoice payment method, and SetupIntent through the provider-pay
   boundary. Manual retries, completed replay, and reconciliation-only reads stay separate;
@@ -277,26 +282,35 @@ anchors. It:
   webhook reaches local projection first, without issuing a second provider mutation;
 - returns each active scheduled period-end intent and revision through a narrow
   service-role RPC so reload preserves the exact revoke target;
+- schedules shared-item period-end removal through one exact two-step Stripe Subscription
+  Schedule plan, retains both the item and schedule IDs plus the parent lease, and proves
+  the same provider-backed state progression through projection and completion;
+- preserves local-only revoke for legacy schedules that never created a provider schedule,
+  while a provider-backed revoke locks and proves the completed create/update plan before
+  releasing it;
+- completes provider-scheduled shared-item work through a group-first, current-account
+  generation-bound CAS that rotates every surviving item family together and binds exact
+  replay to the canonical old-to-new item mapping;
 - normalizes only legacy `partially_refunded` and `refunded` invoice rows from immutable
   gross-payment evidence, recomputes affected payer receivables, and proves payment,
   refund, dispute, and provider-operation rows are byte-for-byte untouched;
 - advances the exact release state through schedule V25 to 126/V31 and adds independent V24-to-V25 and
   V30-to-V31 PostgreSQL 17 restore assertions;
 - pins resource ownership
-  `0:55f9397aba0a331d528b8f71d69599f14412c3c29f8eb0fe7d1a145d97a329c8`,
+  `0:dff56b2572ace65f3d68f0b6e378604c2757356cf3d5057ca186343a76c12426`,
   the V31 operational contract
-  `0:c55c099d57cb1dfbe50644386b4b38d794d2ed1b9d71454f7d8c8a84ee1db4f0`,
+  `0:7a2fb92bc9aee799df0a64228788e08d4d63e2df0a7e0fb255216d8716a9413d`,
   the V31 operational manifest
-  `091e95661d36feba5f7e296e54a6633dc5d0a55d0f00274ce1792d16a862d7fa`,
+  `441d38fe480a784c240e27467565b61d4477cece606da32737391d6d86c2eb3f`,
   and expectation state
-  `1:4a2d99d5ae0de5f9e2aeb6c07d8dfef8e5b4f729fe2f00aa9648a9286ead5ed2`.
+  `1:afbce12f6f62d8cc55e4caf44d625915bb72f6a1d9cd9fb02f412103fcc154eb`.
 
 Latest local candidate evidence before publication:
 
-- backend: 1,336 tests plus 5,119 subtests passed;
+- backend: all 1,360 tests passed;
 - frontend: all 728 tests passed outside the sandbox, including the three
   Chromium-backed print-geometry tests;
-- frontend TypeScript, targeted billing ESLint, and the production build with safe
+- frontend TypeScript, full ESLint, and the production build with safe
   placeholder build-time configuration passed;
 - API contract generation, 52 environment tests, and the explicit nine-check staging
   isolation guard passed;
@@ -305,8 +319,10 @@ Latest local candidate evidence before publication:
 - all 126 migrations, every inherited and new restore path, every negative attestation,
   every concurrency suite, and all 44 SQL contracts passed on ephemeral PostgreSQL 17;
 - a disposable Supabase provider-image reset applied all 126 migrations with the same
-  V31 trust anchors, the release UI atomic contract passed, and database lint reported
-  no errors;
+  V31 trust anchors and canonical
+  `functions=103:ff9c817084afa9d6651532503e87fe4c5fc04c82356e00012670526662bf6188:0`
+  catalog state, the release UI atomic contract passed, and database lint reported no
+  errors;
 - `git diff --check` passed.
 
 Before the exact-head staging phase, no live grant, provider mutation, hosted write, or

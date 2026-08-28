@@ -771,6 +771,50 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 self.assertEqual(context.exception.status_code, 400)
                 self.assertEqual(facade.supabase.billing_provider_operations, {})
 
+    def test_invalid_refund_reason_does_not_claim_payment_or_block_later_valid_request(self):
+        _FakeStripeService.reset()
+        facade = _BillingFacade({
+            "billing_payments": [{
+                "id": "payment_1",
+                "studio_id": "studio_1",
+                "stripe_charge_id": "ch_1",
+                "stripe_account_id": "acct_1",
+                "amount_cents": 1200,
+                "refunded_amount_cents": 0,
+            }]
+        })
+        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+
+        invalid_payload = BillingRefundCreate.model_construct(
+            amount_cents=500,
+            reason="expired_uncaptured_charge",
+        )
+        with self.assertRaises(HTTPException) as invalid:
+            asyncio.run(manager.refund_payment(
+                "payment_1",
+                invalid_payload,
+                "studio_1",
+                "actor_1",
+                "refund-key-invalid",
+            ))
+
+        self.assertEqual(invalid.exception.status_code, 400)
+        self.assertEqual(facade.supabase.billing_provider_operations, {})
+        self.assertEqual(_FakeStripeService.refunds, [])
+
+        refund = asyncio.run(manager.refund_payment(
+            "payment_1",
+            BillingRefundCreate(amount_cents=500, reason="requested_by_customer"),
+            "studio_1",
+            "actor_1",
+            "refund-key-valid",
+        ))
+
+        self.assertEqual(refund.status, "succeeded")
+        self.assertEqual(len(facade.supabase.billing_provider_operations), 1)
+        self.assertEqual(len(_FakeStripeService.refunds), 1)
+        self.assertEqual(_FakeStripeService.refunds[0]["reason"], "requested_by_customer")
+
     def test_refund_payment_rejects_amount_above_refundable_balance_before_stripe(self):
         _FakeStripeService.reset()
         facade = _BillingFacade({

@@ -194,6 +194,16 @@ class BillingRequestSchemaTest(unittest.TestCase):
         self.assertIsNone(payment.payer_id)
         self.assertIsNone(payment.invoice_id)
 
+    def test_refund_reason_accepts_only_stripe_create_values(self):
+        for reason in ("duplicate", "fraudulent", "requested_by_customer"):
+            with self.subTest(reason=reason):
+                self.assertEqual(BillingRefundCreate(reason=reason).reason, reason)
+
+        with self.assertRaises(ValidationError) as context:
+            BillingRefundCreate(reason="expired_uncaptured_charge")
+
+        self.assertIn("Input should be", str(context.exception))
+
     def test_public_billing_mutation_schemas_reject_extra_fields(self):
         cases = [
             (BillingReconcileRequest, {"object_type": "invoice", "unexpected": True}),

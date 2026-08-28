@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.platform_billing_helpers import stable_hash
+from app.services.stripe_mutation_policy import StripeMutationBlocked
 
 from tests.billing_lifecycle_helpers import (
     BillingInvoiceCreate,
@@ -67,8 +68,10 @@ class _AutopayOperationSupabase(_FakeSupabase):
         self.operation: dict | None = None
         self.setup_request: dict | None = None
         self.consent: dict | None = None
+        self.prior_consent: dict | None = None
         self.fail_bind = False
         self.fail_payer_enable_once = False
+        self.fail_active_consent_read = False
         self.closed_operations: list[dict] = []
         self.close_calls: list[dict] = []
         self.prepare_calls: list[dict] = []
@@ -110,9 +113,9 @@ class _AutopayOperationSupabase(_FakeSupabase):
         if (
             self.operation["caller_request_key"] != params["p_caller_request_key"]
             and self.operation["state"] == "definitive_rejected"
-            and self.setup_request is not None
             and (
-                self.setup_request.get("superseded_at")
+                self.setup_request is None
+                or self.setup_request.get("superseded_at")
                 or (
                     self.operation["provider_request_attempt_count"] == 0
                     and self.operation.get("provider_object_id") is None
@@ -120,11 +123,15 @@ class _AutopayOperationSupabase(_FakeSupabase):
                 )
             )
         ):
-            if not self.setup_request.get("superseded_at"):
+            if self.setup_request is not None and not self.setup_request.get("superseded_at"):
                 self.setup_request["superseded_at"] = "2026-08-26T12:27:00+00:00"
             self.closed_operations.append({
                 "operation": dict(self.operation),
-                "setup_request": dict(self.setup_request),
+                "setup_request": (
+                    dict(self.setup_request)
+                    if self.setup_request is not None
+                    else None
+                ),
             })
             self.operation = None
             self.setup_request = None
@@ -287,6 +294,13 @@ class _AutopayOperationSupabase(_FakeSupabase):
         self.operation["provider_secondary_object_id"] = params["p_stripe_setup_intent_id"]
         self.operation["state"] = "projected"
         self.operation["revision"] += 1
+        if (
+            self.prior_consent
+            and self.prior_consent.get("completed_at")
+            and not self.prior_consent.get("revoked_at")
+            and not self.prior_consent.get("superseded_at")
+        ):
+            self.prior_consent["superseded_at"] = params["p_completed_at"]
         return {
             "outcome": "completed",
             "consent": dict(self.consent),
@@ -316,10 +330,21 @@ class _AutopayOperationSupabase(_FakeSupabase):
         }
 
     def _rpc_read_active_billing_payer_payment_consent_v1(self, _params: dict) -> dict:
-        assert self.consent is not None and self.consent.get("completed_at")
-        assert not self.consent.get("revoked_at")
-        assert not self.consent.get("superseded_at")
-        return {"outcome": "read", "consent": dict(self.consent)}
+        if self.fail_active_consent_read:
+            raise RuntimeError("active consent read unavailable")
+        active_consent = next(
+            (
+                consent
+                for consent in (self.consent, self.prior_consent)
+                if consent is not None
+                and consent.get("completed_at")
+                and not consent.get("revoked_at")
+                and not consent.get("superseded_at")
+            ),
+            None,
+        )
+        assert active_consent is not None
+        return {"outcome": "read", "consent": dict(active_consent)}
 
     def _rpc_disable_billing_payer_autopay_v1(self, params: dict) -> dict:
         self.disable_calls.append(dict(params))
@@ -397,6 +422,55 @@ class _AutopayOperationSupabase(_FakeSupabase):
         self.operation["revision"] += 1
         return {"outcome": "transitioned", "operation": dict(self.operation)}
 
+    def _rpc_reject_billing_payer_setup_without_provider_v1(self, params: dict) -> dict:
+        assert self.operation is not None
+        assert self.setup_request is not None
+        assert self.operation["id"] == params["p_operation_id"]
+        assert self.setup_request["id"] == params["p_setup_request_id"]
+        assert self.operation["studio_id"] == params["p_studio_id"]
+        assert self.operation["actor_id"] == params["p_actor_id"]
+        assert self.setup_request["payer_id"] == params["p_payer_id"]
+        assert self.operation["caller_request_key"] == params["p_caller_request_key"]
+        assert self.operation["request_sha256"] == params["p_request_sha256"]
+        assert self.operation["stripe_connected_account_id"] == params[
+            "p_stripe_connected_account_id"
+        ]
+        assert self.operation["connect_account_generation"] == params[
+            "p_connect_account_generation"
+        ]
+        assert self.operation["revision"] == params["p_expected_operation_revision"]
+        assert self.setup_request["revision"] == params["p_expected_setup_revision"]
+        assert self.operation["state"] == "provider_request_in_flight"
+        assert self.operation["provider_request_attempt_count"] == 1
+        assert self.operation.get("provider_object_id") is None
+        assert self.operation.get("provider_secondary_object_id") is None
+        assert self.setup_request.get("stripe_checkout_session_id") is None
+        assert self.setup_request.get("stripe_setup_intent_id") is None
+        if (
+            self.consent
+            and not self.consent.get("completed_at")
+            and not self.consent.get("revoked_at")
+            and not self.consent.get("superseded_at")
+        ):
+            self.consent["superseded_at"] = "2026-08-26T12:21:00+00:00"
+        self.setup_request.update({
+            "superseded_at": "2026-08-26T12:21:00+00:00",
+            "closed_at": "2026-08-26T12:21:00+00:00",
+            "close_reason_code": "provider_mutation_blocked",
+            "provider_read_proof_sha256": None,
+            "revision": self.setup_request["revision"] + 1,
+        })
+        self.operation.update({
+            "state": "definitive_rejected",
+            "error_code": "provider_mutation_blocked",
+            "revision": self.operation["revision"] + 1,
+        })
+        return {
+            "outcome": "rejected",
+            "setup_request": dict(self.setup_request),
+            "operation": dict(self.operation),
+        }
+
     def _rpc_close_billing_payer_setup_request_v1(self, params: dict) -> dict:
         assert self.operation is not None
         assert self.setup_request is not None
@@ -443,6 +517,7 @@ def _autopay_tables(*, saved_card: bool = False) -> dict[str, list[dict]]:
         "display_name": "Rehearsal Payer",
         "stripe_account_id": "acct_1",
         "stripe_customer_id": "cus_1",
+        "connect_account_generation": 1,
         "autopay_status": "not_configured",
         "billing_status": "current",
         "metadata": {},
@@ -471,6 +546,45 @@ def _autopay_tables(*, saved_card: bool = False) -> dict[str, list[dict]]:
 
 
 class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
+    def _enabled_payer_replacement_setup(self):
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        tables = _autopay_tables(saved_card=True)
+        payer = tables["billing_payers"][0]
+        payer.update({
+            "autopay_status": "enabled",
+            "autopay_authorized_at": "2026-08-26T12:06:00+00:00",
+            "autopay_terms_accepted_at": "2026-08-26T12:05:00+00:00",
+        })
+        database = _AutopayOperationSupabase(tables)
+        database.prior_consent = {
+            "id": "00000000-0000-4000-8000-000000008099",
+            "setup_request_id": "00000000-0000-4000-8000-000000008098",
+            "studio_id": "studio_1",
+            "payer_id": "payer_1",
+            "terms_version": "koaryu-autopay-v1",
+            "stripe_checkout_session_id": "cs_setup_old",
+            "stripe_setup_intent_id": "seti_old",
+            "stripe_connected_account_id": "acct_1",
+            "connect_account_generation": 1,
+            "accepted_at": "2026-08-26T12:05:00+00:00",
+            "completed_at": "2026-08-26T12:06:00+00:00",
+            "revoked_at": None,
+            "superseded_at": None,
+        }
+        service.supabase = database
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        return service, database
+
     def _prepared_consent_setup(self):
         service = self.service()
         service.settings = type("Settings", (), {
@@ -612,6 +726,231 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         service.supabase = _AutopayOperationSupabase(tables)
 
         self.assertFalse(service._payer_autopay_authorized(payer))
+
+    def test_abandoned_replacement_setup_keeps_existing_consent_enabled(self):
+        service, database = self._enabled_payer_replacement_setup()
+        payer = database.tables["billing_payers"][0]
+        prior_projection = {
+            key: payer.get(key)
+            for key in (
+                "autopay_status",
+                "autopay_authorized_at",
+                "autopay_terms_accepted_at",
+                "default_payment_method_id",
+            )
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            link = asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "replacement-key",
+            ))
+
+        self.assertEqual(link.url, "https://checkout.stripe.test/setup")
+        self.assertEqual(
+            {
+                key: payer.get(key)
+                for key in prior_projection
+            },
+            prior_projection,
+        )
+        self.assertIsNone(database.prior_consent["superseded_at"])
+        self.assertIsNone(database.consent)
+        self.assertIsNone(database.setup_request["completed_at"])
+
+    def test_replacement_setup_fails_closed_when_active_consent_read_is_unavailable(self):
+        service, database = self._enabled_payer_replacement_setup()
+        payer = database.tables["billing_payers"][0]
+        prior_projection = dict(payer)
+        prior_consent = dict(database.prior_consent)
+        setup_call_count = len(_FakeStripeService.setup_calls)
+        database.fail_active_consent_read = True
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as blocked:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "replacement-consent-read-unavailable",
+                ))
+
+        self.assertEqual(blocked.exception.status_code, 503)
+        self.assertIn("Existing autopay consent could not be verified", blocked.exception.detail)
+        self.assertEqual(payer, prior_projection)
+        self.assertEqual(database.prior_consent, prior_consent)
+        self.assertEqual(len(_FakeStripeService.setup_calls), setup_call_count)
+        self.assertIsNone(database.setup_request)
+        self.assertEqual(database.operation["state"], "started")
+
+    def test_successful_replacement_switches_consent_and_payment_method_at_completion(self):
+        service, database = self._enabled_payer_replacement_setup()
+        payer = database.tables["billing_payers"][0]
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "replacement-key",
+            ))
+
+        self.assertEqual(payer["autopay_status"], "enabled")
+        self.assertEqual(payer["default_payment_method_id"], "pm_saved")
+        session = {
+            "id": "cs_setup_1",
+            "status": "complete",
+            "customer": "cus_1",
+            "setup_intent": "seti_replacement",
+            "consent": {"terms_of_service": "accepted"},
+            "metadata": dict(_FakeStripeService.setup_calls[0]["metadata"]),
+        }
+
+        class SuccessfulReplacementStripeService:
+            def retrieve_connected_setup_intent(self, **_payload):
+                return {
+                    "id": "seti_replacement",
+                    "status": "succeeded",
+                    "customer": "cus_1",
+                    "metadata": session["metadata"],
+                    "payment_method": {
+                        "id": "pm_replacement",
+                        "type": "card",
+                        "card": {"brand": "mastercard", "last4": "4444"},
+                    },
+                }
+
+        with patch(
+            "app.services.billing_service.StripeService",
+            SuccessfulReplacementStripeService,
+        ):
+            service._project_checkout_session(session, "acct_1", event_created=200)
+
+        self.assertEqual(payer["autopay_status"], "enabled")
+        self.assertEqual(payer["default_payment_method_id"], "pm_replacement")
+        self.assertEqual(payer["autopay_authorized_at"], database.consent["completed_at"])
+        self.assertEqual(
+            payer["autopay_terms_accepted_at"],
+            database.consent["accepted_at"],
+        )
+        self.assertEqual(
+            database.prior_consent["superseded_at"],
+            database.consent["completed_at"],
+        )
+        self.assertEqual(database.operation["state"], "completed")
+
+    def test_policy_rejection_restores_payer_and_new_key_supersedes_no_object_request(self):
+        class PolicyBlockedStripeService(_FakeStripeService):
+            blocked = True
+
+            def create_setup_checkout_session(self, **payload):
+                if self.__class__.blocked:
+                    raise StripeMutationBlocked(
+                        status_code=503,
+                        detail="provider mutation blocked",
+                    )
+                return super().create_setup_checkout_session(**payload)
+
+        PolicyBlockedStripeService.reset()
+        PolicyBlockedStripeService.blocked = True
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        PolicyBlockedStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        payer = database.tables["billing_payers"][0]
+        prior_projection = {
+            key: payer.get(key)
+            for key in (
+                "autopay_status",
+                "autopay_authorized_at",
+                "autopay_terms_accepted_at",
+            )
+        }
+
+        with (
+            patch(
+                "app.services.billing_service.StripeService",
+                PolicyBlockedStripeService,
+            ),
+            self.assertRaises(StripeMutationBlocked) as blocked,
+        ):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "blocked-key",
+            ))
+
+        self.assertEqual(blocked.exception.status_code, 503)
+        self.assertEqual(database.operation["state"], "definitive_rejected")
+        self.assertEqual(database.operation["provider_request_attempt_count"], 1)
+        self.assertIsNone(database.operation["provider_object_id"])
+        self.assertEqual(
+            database.setup_request["close_reason_code"],
+            "provider_mutation_blocked",
+        )
+        self.assertEqual(
+            database.setup_request["closed_at"],
+            database.setup_request["superseded_at"],
+        )
+        self.assertEqual(
+            {key: payer.get(key) for key in prior_projection},
+            prior_projection,
+        )
+        self.assertEqual(PolicyBlockedStripeService.setup_calls, [])
+        with (
+            patch(
+                "app.services.billing_service.StripeService",
+                PolicyBlockedStripeService,
+            ),
+            self.assertRaises(HTTPException) as same_key,
+        ):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "blocked-key",
+            ))
+
+        self.assertEqual(same_key.exception.status_code, 409)
+        PolicyBlockedStripeService.blocked = False
+        database.operation_started_at = datetime.now(timezone.utc).isoformat()
+        with patch(
+            "app.services.billing_service.StripeService",
+            PolicyBlockedStripeService,
+        ):
+            recovered = asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "fresh-key",
+            ))
+
+        self.assertEqual(recovered.url, "https://checkout.stripe.test/setup")
+        self.assertEqual(len(PolicyBlockedStripeService.setup_calls), 1)
+        self.assertEqual(len(database.closed_operations), 1)
+        closed = database.closed_operations[0]
+        self.assertEqual(closed["operation"]["state"], "definitive_rejected")
+        self.assertEqual(closed["operation"]["provider_request_attempt_count"], 1)
+        self.assertIsNotNone(closed["setup_request"]["superseded_at"])
 
     def test_autopay_setup_rejects_missing_or_malformed_idempotency_key(self):
         service = self.service()

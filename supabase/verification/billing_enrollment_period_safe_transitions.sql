@@ -10,22 +10,30 @@ DECLARE
     v_payer_item UUID := gen_random_uuid();
     v_payer_whole UUID := gen_random_uuid();
     v_payer_revoke UUID := gen_random_uuid();
+    v_payer_legacy UUID := gen_random_uuid();
     v_payer_immediate UUID := gen_random_uuid();
     v_group_item UUID := gen_random_uuid();
     v_group_whole UUID := gen_random_uuid();
     v_group_revoke UUID := gen_random_uuid();
+    v_group_legacy UUID := gen_random_uuid();
     v_group_immediate UUID := gen_random_uuid();
     v_enrollment_item UUID := gen_random_uuid();
     v_enrollment_item_peer UUID := gen_random_uuid();
+    v_enrollment_item_peer_two UUID := gen_random_uuid();
     v_enrollment_whole UUID := gen_random_uuid();
     v_enrollment_revoke UUID := gen_random_uuid();
     v_enrollment_revoke_peer UUID := gen_random_uuid();
+    v_enrollment_legacy UUID := gen_random_uuid();
+    v_enrollment_legacy_peer UUID := gen_random_uuid();
     v_enrollment_immediate UUID := gen_random_uuid();
     v_student_item UUID := gen_random_uuid();
     v_student_item_peer UUID := gen_random_uuid();
+    v_student_item_peer_two UUID := gen_random_uuid();
     v_student_whole UUID := gen_random_uuid();
     v_student_revoke UUID := gen_random_uuid();
     v_student_revoke_peer UUID := gen_random_uuid();
+    v_student_legacy UUID := gen_random_uuid();
+    v_student_legacy_peer UUID := gen_random_uuid();
     v_student_immediate UUID := gen_random_uuid();
     v_item_boundary TIMESTAMPTZ := clock_timestamp() + interval '150 milliseconds';
     v_whole_boundary TIMESTAMPTZ := clock_timestamp() + interval '450 milliseconds';
@@ -37,12 +45,22 @@ DECLARE
     v_item_schedule public.billing_enrollment_transition_intents%ROWTYPE;
     v_whole_schedule public.billing_enrollment_transition_intents%ROWTYPE;
     v_revoke_schedule public.billing_enrollment_transition_intents%ROWTYPE;
+    v_legacy_schedule public.billing_enrollment_transition_intents%ROWTYPE;
+    v_legacy_revoke public.billing_enrollment_transition_intents%ROWTYPE;
     v_execute public.billing_enrollment_transition_intents%ROWTYPE;
     v_started JSONB;
+    v_item_operation UUID;
     v_operation_count INTEGER;
     v_read_count INTEGER;
     v_read_intent UUID;
     v_read_revision BIGINT;
+    v_schedule_step_plan JSONB;
+    v_schedule_step_plan_sha TEXT;
+    v_parent_revision BIGINT;
+    v_step_revision BIGINT;
+    v_step_lease UUID;
+    v_revoke_lease UUID := gen_random_uuid();
+    v_policy_lease UUID := gen_random_uuid();
 BEGIN
     IF private.koaryu_release_enrollment_transition_manifest_v29()
        !~ '^0:[0-9a-f]{64}$' THEN
@@ -70,6 +88,22 @@ BEGIN
     ) OR NOT has_function_privilege(
         'service_role',
         'public.list_billing_enrollment_scheduled_transitions_v1(uuid,uuid[])',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'authenticated',
+        'public.complete_due_billing_enrollment_item_transition_v31(uuid,uuid,uuid,bigint,text,jsonb)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.complete_due_billing_enrollment_item_transition_v31(uuid,uuid,uuid,bigint,text,jsonb)',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'service_role',
+        'public.claim_billing_enrollment_transition_v29(uuid,uuid,text,text,text,uuid,uuid,uuid,text,text,text,integer,timestamp with time zone,integer,integer,integer,integer,text,text,uuid,integer)',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'service_role',
+        'public.revoke_billing_enrollment_transition_v29(uuid,uuid,uuid,bigint,text,text,text,uuid,integer)',
         'EXECUTE'
     ) THEN
         RAISE EXCEPTION 'Enrollment-transition tables or RPCs are not service-only.';
@@ -110,6 +144,8 @@ BEGIN
          'acct_transitioncontract', 'cus_transitionwhole', 1),
         (v_payer_revoke, v_studio, 'Revoke payer',
          'acct_transitioncontract', 'cus_transitionrevoke', 1),
+        (v_payer_legacy, v_studio, 'Legacy payer',
+         'acct_transitioncontract', 'cus_transitionlegacy', 1),
         (v_payer_immediate, v_studio, 'Immediate payer',
          'acct_transitioncontract', 'cus_transitionimmediate', 1);
     INSERT INTO public.billing_plans(
@@ -118,9 +154,12 @@ BEGIN
     INSERT INTO public.students(id, studio_id, legal_first_name, legal_last_name) VALUES
         (v_student_item, v_studio, 'Item', 'Target'),
         (v_student_item_peer, v_studio, 'Item', 'Peer'),
+        (v_student_item_peer_two, v_studio, 'Item', 'Peer Two'),
         (v_student_whole, v_studio, 'Whole', 'Target'),
         (v_student_revoke, v_studio, 'Revoke', 'Target'),
         (v_student_revoke_peer, v_studio, 'Revoke', 'Peer'),
+        (v_student_legacy, v_studio, 'Legacy', 'Target'),
+        (v_student_legacy_peer, v_studio, 'Legacy', 'Peer'),
         (v_student_immediate, v_studio, 'Immediate', 'Target');
     INSERT INTO public.billing_subscriptions(
         id, studio_id, payer_id, stripe_account_id, stripe_customer_id,
@@ -139,6 +178,10 @@ BEGIN
          'cus_transitionrevoke', 'sub_transitionrevoke', 'invoice_link', 'monthly',
          'usd', 'active', v_revoke_boundary,
          jsonb_build_object('connect_account_generation', 1)),
+        (v_group_legacy, v_studio, v_payer_legacy, 'acct_transitioncontract',
+         'cus_transitionlegacy', 'sub_transitionlegacy', 'invoice_link', 'monthly',
+         'usd', 'active', v_revoke_boundary,
+         jsonb_build_object('connect_account_generation', 1)),
         (v_group_immediate, v_studio, v_payer_immediate, 'acct_transitioncontract',
          'cus_transitionimmediate', 'sub_transitionimmediate', 'invoice_link', 'monthly',
          'usd', 'active', v_revoke_boundary,
@@ -153,7 +196,10 @@ BEGIN
          'sub_transitionitem', 'si_transitionitem', '{}'),
         (v_enrollment_item_peer, v_studio, v_student_item_peer, v_payer_item, v_plan,
          v_group_item, 'invoice_link', 'active',
-         'sub_transitionitem', 'si_transitionpeer', '{}'),
+         'sub_transitionitem', 'si_transitionitem', '{}'),
+        (v_enrollment_item_peer_two, v_studio, v_student_item_peer_two,
+         v_payer_item, v_plan, v_group_item, 'invoice_link', 'active',
+         'sub_transitionitem', 'si_transitionitem', '{}'),
         (v_enrollment_whole, v_studio, v_student_whole, v_payer_whole, v_plan,
          v_group_whole, 'invoice_link', 'active',
          'sub_transitionwhole', 'si_transitionwhole', '{}'),
@@ -163,6 +209,12 @@ BEGIN
         (v_enrollment_revoke_peer, v_studio, v_student_revoke_peer, v_payer_revoke, v_plan,
          v_group_revoke, 'invoice_link', 'active',
          'sub_transitionrevoke', 'si_transitionrevokepeer', '{}'),
+        (v_enrollment_legacy, v_studio, v_student_legacy, v_payer_legacy, v_plan,
+         v_group_legacy, 'invoice_link', 'active',
+         'sub_transitionlegacy', 'si_transitionlegacy', '{}'),
+        (v_enrollment_legacy_peer, v_studio, v_student_legacy_peer,
+         v_payer_legacy, v_plan, v_group_legacy, 'invoice_link', 'active',
+         'sub_transitionlegacy', 'si_transitionlegacypeer', '{}'),
         (v_enrollment_immediate, v_studio, v_student_immediate, v_payer_immediate, v_plan,
          v_group_immediate, 'invoice_link', 'active',
          'sub_transitionimmediate', 'si_transitionimmediate', '{}');
@@ -192,10 +244,10 @@ BEGIN
         p_stripe_connected_account_id => 'acct_transitioncontract',
         p_connect_account_generation => 1,
         p_period_boundary => v_item_boundary,
-        p_expected_quantity => 0,
-        p_expected_subscription_item_count => 2,
-        p_same_item_active_count => 1,
-        p_provider_quantity => 1,
+        p_expected_quantity => 2,
+        p_expected_subscription_item_count => 1,
+        p_same_item_active_count => 3,
+        p_provider_quantity => 3,
         p_mutation_strategy => 'subscription_item_delete_at_period_end',
         p_reason_code => 'contract.period_end',
         p_lease_owner => v_lease,
@@ -207,9 +259,12 @@ BEGIN
     );
     IF v_result->>'outcome' <> 'claimed'
        OR v_item_schedule.state <> 'scheduled'
-       OR v_item_schedule.provider_operation_id IS NOT NULL THEN
-        RAISE EXCEPTION 'Item schedule was not local-only and exact: %', v_result;
+       OR v_item_schedule.provider_operation_id IS NULL
+       OR (v_result->'operation'->>'operation_type')
+            <> 'enrollment.cancel.period_end.schedule' THEN
+        RAISE EXCEPTION 'Item schedule lacks its exact provider parent: %', v_result;
     END IF;
+    v_item_operation:=v_item_schedule.provider_operation_id;
     SELECT count(*)
     INTO v_read_count
     FROM public.list_billing_enrollment_scheduled_transitions_v1(
@@ -248,7 +303,7 @@ BEGIN
         v_studio, v_front_desk, 'schedule_period_end', 'item-schedule-key',
         repeat('a', 64), v_enrollment_item, v_payer_item, v_group_item,
         'sub_transitionitem', 'si_transitionitem', 'acct_transitioncontract', 1,
-        v_item_boundary, 0, 2, 1, 1,
+        v_item_boundary, 2, 1, 3, 3,
         'subscription_item_delete_at_period_end', 'contract.period_end',
         gen_random_uuid(), 30
     );
@@ -261,7 +316,7 @@ BEGIN
             v_studio, v_other_admin, 'schedule_period_end', 'item-cross-actor',
             repeat('a', 64), v_enrollment_item, v_payer_item, v_group_item,
             'sub_transitionitem', 'si_transitionitem', 'acct_transitioncontract', 1,
-            v_item_boundary, 0, 2, 1, 1,
+            v_item_boundary, 2, 1, 3, 3,
             'subscription_item_delete_at_period_end', 'contract.period_end',
             gen_random_uuid(), 30
         );
@@ -294,28 +349,325 @@ BEGIN
         'sub_transitionrevoke', 'si_transitionrevoke', 'acct_transitioncontract', 1,
         v_revoke_boundary, 0, 2, 1, 1,
         'subscription_item_delete_at_period_end', 'contract.period_end',
-        gen_random_uuid(), 30
+        v_revoke_lease, 30
     );
     v_revoke_schedule := jsonb_populate_record(
         NULL::public.billing_enrollment_transition_intents,
         v_result->'intent'
     );
+    v_result:=public.claim_billing_enrollment_transition_v29(
+        v_studio,v_front_desk,'schedule_period_end','legacy-source-key',
+        repeat('5',64),v_enrollment_legacy,v_payer_legacy,v_group_legacy,
+        'sub_transitionlegacy','si_transitionlegacy',
+        'acct_transitioncontract',1,v_revoke_boundary,0,2,1,1,
+        'subscription_item_delete_at_period_end','contract.legacy',
+        gen_random_uuid(),30
+    );
+    v_legacy_schedule:=jsonb_populate_record(
+        NULL::public.billing_enrollment_transition_intents,v_result->'intent'
+    );
+    IF v_legacy_schedule.provider_operation_id IS NOT NULL THEN
+        RAISE EXCEPTION 'V29 legacy source unexpectedly owns provider work: %',v_result;
+    END IF;
+    v_result:=public.revoke_billing_enrollment_transition_v1(
+        v_legacy_schedule.id,v_studio,v_front_desk,v_legacy_schedule.revision,
+        'legacy-revoke-key',repeat('6',64),'contract.legacy_revoke',
+        gen_random_uuid(),30
+    );
+    v_legacy_revoke:=jsonb_populate_record(
+        NULL::public.billing_enrollment_transition_intents,v_result->'intent'
+    );
+    IF v_result->>'outcome'<>'revoked'
+       OR (SELECT state FROM public.billing_enrollment_transition_intents
+            WHERE id=v_legacy_schedule.id)<>'revoked'
+       OR v_legacy_revoke.state<>'completed'
+       OR v_legacy_revoke.provider_operation_id IS NOT NULL
+       OR EXISTS (
+            SELECT 1 FROM public.billing_provider_operations
+            WHERE studio_id=v_studio
+              AND caller_request_key='legacy-revoke-key'
+       ) THEN
+        RAISE EXCEPTION 'Legacy V29 revoke invented provider release work: %',v_result;
+    END IF;
+    v_result:=public.claim_billing_enrollment_transition_v1(
+        v_studio,v_front_desk,'schedule_period_end','policy-source-key',
+        repeat('8',64),v_enrollment_legacy,v_payer_legacy,v_group_legacy,
+        'sub_transitionlegacy','si_transitionlegacy',
+        'acct_transitioncontract',1,v_revoke_boundary,0,2,1,1,
+        'subscription_item_delete_at_period_end','contract.policy_reject',
+        v_policy_lease,30
+    );
+    v_legacy_schedule:=jsonb_populate_record(
+        NULL::public.billing_enrollment_transition_intents,v_result->'intent'
+    );
+    v_schedule_step_plan:=jsonb_build_array(
+        jsonb_build_object(
+            'step_name','schedule_create',
+            'provider_operation','connected_subscription_schedule.create',
+            'request_sha256',repeat('9',64),
+            'stripe_idempotency_key','policy-schedule-create'
+        ),
+        jsonb_build_object(
+            'step_name','schedule_update',
+            'provider_operation','connected_subscription_schedule.update',
+            'request_sha256',repeat('a',64),
+            'stripe_idempotency_key','policy-schedule-update'
+        )
+    );
+    v_schedule_step_plan_sha:=encode(extensions.digest(convert_to(
+        v_schedule_step_plan::TEXT,'UTF8'
+    ),'sha256'),'hex');
+    v_parent_revision:=(SELECT revision FROM public.billing_provider_operations
+        WHERE id=v_legacy_schedule.provider_operation_id);
+    v_result:=public.register_billing_provider_operation_step_plan_v1(
+        v_legacy_schedule.provider_operation_id,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','policy-source-key',
+        repeat('8',64),'acct_transitioncontract',1,v_policy_lease,
+        v_parent_revision,v_schedule_step_plan_sha,2,v_schedule_step_plan
+    );
+    v_step_lease:=gen_random_uuid();
+    v_result:=public.claim_billing_provider_operation_step_v1(
+        v_legacy_schedule.provider_operation_id,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','policy-source-key',
+        repeat('8',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,
+        1,'schedule_create','connected_subscription_schedule.create',
+        repeat('9',64),'policy-schedule-create',v_step_lease,30
+    );
+    v_result:=public.transition_billing_provider_operation_step_v1(
+        v_legacy_schedule.provider_operation_id,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','policy-source-key',
+        repeat('8',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,
+        1,'schedule_create','connected_subscription_schedule.create',
+        repeat('9',64),'policy-schedule-create',v_step_lease,
+        (v_result->'step'->>'revision')::BIGINT,'provider_request_in_flight'
+    );
+    v_result:=public.transition_billing_provider_operation_step_v1(
+        p_operation_id=>v_legacy_schedule.provider_operation_id,
+        p_studio_id=>v_studio,p_actor_id=>v_front_desk,
+        p_operation_type=>'enrollment.cancel.period_end.schedule',
+        p_caller_request_key=>'policy-source-key',
+        p_parent_request_sha256=>repeat('8',64),
+        p_stripe_connected_account_id=>'acct_transitioncontract',
+        p_connect_account_generation=>1,p_plan_sha256=>v_schedule_step_plan_sha,
+        p_step_order=>1,p_step_name=>'schedule_create',
+        p_provider_operation=>'connected_subscription_schedule.create',
+        p_step_request_sha256=>repeat('9',64),
+        p_stripe_idempotency_key=>'policy-schedule-create',
+        p_lease_owner=>v_step_lease,
+        p_expected_step_revision=>(v_result->'step'->>'revision')::BIGINT,
+        p_to_state=>'definitive_rejected',
+        p_error_code=>'provider_mutation_blocked'
+    );
+    v_parent_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_provider_operation_v1(
+        p_operation_id=>v_legacy_schedule.provider_operation_id,
+        p_studio_id=>v_studio,p_actor_id=>v_front_desk,
+        p_operation_type=>'enrollment.cancel.period_end.schedule',
+        p_caller_request_key=>'policy-source-key',
+        p_request_sha256=>repeat('8',64),
+        p_stripe_connected_account_id=>'acct_transitioncontract',
+        p_connect_account_generation=>1,p_lease_owner=>v_policy_lease,
+        p_expected_revision=>v_parent_revision,
+        p_to_state=>'definitive_rejected',
+        p_error_code=>'provider_mutation_blocked'
+    );
+    v_parent_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_enrollment_transition_v1(
+        v_legacy_schedule.id,v_studio,v_front_desk,
+        v_legacy_schedule.revision,v_legacy_schedule.provider_operation_id,
+        v_parent_revision,NULL,NULL
+    );
+    IF v_result->'intent'->>'state'<>'definitive_rejected'
+       OR NOT private.billing_enrollment_item_schedule_pre_provider_rejected_v31(
+            jsonb_populate_record(
+                NULL::public.billing_provider_operations,
+                (SELECT to_jsonb(operation) FROM public.billing_provider_operations
+                 AS operation WHERE operation.id=v_legacy_schedule.provider_operation_id)
+            )
+       ) THEN
+        RAISE EXCEPTION 'Pre-provider schedule policy rejection did not converge: %',
+            v_result;
+    END IF;
+    BEGIN
+        PERFORM public.revoke_billing_enrollment_transition_v1(
+            v_revoke_schedule.id,v_studio,v_front_desk,
+            v_revoke_schedule.revision,'revoke-before-schedule-complete',
+            repeat('7',64),'contract.revoke',gen_random_uuid(),30
+        );
+        RAISE EXCEPTION 'Provider-backed source revoked before schedule completion.';
+    EXCEPTION WHEN check_violation THEN
+        IF SQLERRM<>'billing_enrollment_transition_revoke_binding_invalid' THEN
+            RAISE;
+        END IF;
+    END;
+    v_schedule_step_plan:=jsonb_build_array(
+        jsonb_build_object(
+            'step_name','schedule_create',
+            'provider_operation','connected_subscription_schedule.create',
+            'request_sha256',repeat('3',64),
+            'stripe_idempotency_key','revoke-schedule-create'
+        ),
+        jsonb_build_object(
+            'step_name','schedule_update',
+            'provider_operation','connected_subscription_schedule.update',
+            'request_sha256',repeat('4',64),
+            'stripe_idempotency_key','revoke-schedule-update'
+        )
+    );
+    v_schedule_step_plan_sha:=encode(extensions.digest(convert_to(
+        v_schedule_step_plan::TEXT,'UTF8'
+    ),'sha256'),'hex');
+    v_parent_revision:=(SELECT revision FROM public.billing_provider_operations
+        WHERE id=v_revoke_schedule.provider_operation_id);
+    v_result:=public.register_billing_provider_operation_step_plan_v1(
+        v_revoke_schedule.provider_operation_id,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','revoke-source-key',
+        repeat('c',64),'acct_transitioncontract',1,v_revoke_lease,
+        v_parent_revision,v_schedule_step_plan_sha,2,v_schedule_step_plan
+    );
+    v_parent_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    v_step_lease:=gen_random_uuid();
+    v_result:=public.claim_billing_provider_operation_step_v1(
+        v_revoke_schedule.provider_operation_id,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','revoke-source-key',
+        repeat('c',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,
+        1,'schedule_create','connected_subscription_schedule.create',
+        repeat('3',64),'revoke-schedule-create',v_step_lease,30
+    );
+    v_result:=public.transition_billing_provider_operation_step_v1(
+        v_revoke_schedule.provider_operation_id,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','revoke-source-key',
+        repeat('c',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,
+        1,'schedule_create','connected_subscription_schedule.create',
+        repeat('3',64),'revoke-schedule-create',v_step_lease,
+        (v_result->'step'->>'revision')::BIGINT,'provider_request_in_flight'
+    );
+    v_result:=public.transition_billing_provider_operation_step_v1(
+        p_operation_id=>v_revoke_schedule.provider_operation_id,
+        p_studio_id=>v_studio,p_actor_id=>v_front_desk,
+        p_operation_type=>'enrollment.cancel.period_end.schedule',
+        p_caller_request_key=>'revoke-source-key',
+        p_parent_request_sha256=>repeat('c',64),
+        p_stripe_connected_account_id=>'acct_transitioncontract',
+        p_connect_account_generation=>1,p_plan_sha256=>v_schedule_step_plan_sha,
+        p_step_order=>1,p_step_name=>'schedule_create',
+        p_provider_operation=>'connected_subscription_schedule.create',
+        p_step_request_sha256=>repeat('3',64),
+        p_stripe_idempotency_key=>'revoke-schedule-create',
+        p_lease_owner=>v_step_lease,
+        p_expected_step_revision=>(v_result->'step'->>'revision')::BIGINT,
+        p_to_state=>'provider_succeeded',
+        p_provider_object_id=>'sub_sched_transitionrevoke',
+        p_result_code=>'enrollment_item_schedule_created'
+    );
+    v_step_lease:=gen_random_uuid();
+    v_result:=public.claim_billing_provider_operation_step_v1(
+        v_revoke_schedule.provider_operation_id,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','revoke-source-key',
+        repeat('c',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,
+        2,'schedule_update','connected_subscription_schedule.update',
+        repeat('4',64),'revoke-schedule-update',v_step_lease,30
+    );
+    v_result:=public.transition_billing_provider_operation_step_v1(
+        v_revoke_schedule.provider_operation_id,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','revoke-source-key',
+        repeat('c',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,
+        2,'schedule_update','connected_subscription_schedule.update',
+        repeat('4',64),'revoke-schedule-update',v_step_lease,
+        (v_result->'step'->>'revision')::BIGINT,'provider_request_in_flight'
+    );
+    v_result:=public.transition_billing_provider_operation_step_v1(
+        p_operation_id=>v_revoke_schedule.provider_operation_id,
+        p_studio_id=>v_studio,p_actor_id=>v_front_desk,
+        p_operation_type=>'enrollment.cancel.period_end.schedule',
+        p_caller_request_key=>'revoke-source-key',
+        p_parent_request_sha256=>repeat('c',64),
+        p_stripe_connected_account_id=>'acct_transitioncontract',
+        p_connect_account_generation=>1,p_plan_sha256=>v_schedule_step_plan_sha,
+        p_step_order=>2,p_step_name=>'schedule_update',
+        p_provider_operation=>'connected_subscription_schedule.update',
+        p_step_request_sha256=>repeat('4',64),
+        p_stripe_idempotency_key=>'revoke-schedule-update',
+        p_lease_owner=>v_step_lease,
+        p_expected_step_revision=>(v_result->'step'->>'revision')::BIGINT,
+        p_to_state=>'provider_succeeded',
+        p_provider_object_id=>'si_transitionrevoke',
+        p_provider_secondary_object_id=>'sub_sched_transitionrevoke',
+        p_result_code=>'enrollment_item_schedule_updated'
+    );
+    v_result:=public.complete_billing_provider_operation_provider_phase_v31(
+        v_revoke_schedule.provider_operation_id,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','revoke-source-key',
+        repeat('c',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,2,
+        v_parent_revision,v_revoke_lease
+    );
+    v_parent_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_enrollment_transition_v1(
+        v_revoke_schedule.id,v_studio,v_front_desk,
+        v_revoke_schedule.revision,v_revoke_schedule.provider_operation_id,
+        v_parent_revision,repeat('f',64),NULL
+    );
+    v_revoke_schedule:=jsonb_populate_record(
+        NULL::public.billing_enrollment_transition_intents,v_result->'intent'
+    );
+    v_result:=public.transition_billing_provider_operation_v1(
+        p_operation_id=>v_revoke_schedule.provider_operation_id,
+        p_studio_id=>v_studio,p_actor_id=>v_front_desk,
+        p_operation_type=>'enrollment.cancel.period_end.schedule',
+        p_caller_request_key=>'revoke-source-key',
+        p_request_sha256=>repeat('c',64),
+        p_stripe_connected_account_id=>'acct_transitioncontract',
+        p_connect_account_generation=>1,p_lease_owner=>v_revoke_lease,
+        p_expected_revision=>v_parent_revision,
+        p_to_state=>'projected',p_provider_object_id=>'si_transitionrevoke',
+        p_provider_secondary_object_id=>'sub_sched_transitionrevoke'
+    );
+    v_parent_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_enrollment_transition_v1(
+        v_revoke_schedule.id,v_studio,v_front_desk,
+        v_revoke_schedule.revision,v_revoke_schedule.provider_operation_id,
+        v_parent_revision,repeat('f',64),NULL
+    );
+    v_revoke_schedule:=jsonb_populate_record(
+        NULL::public.billing_enrollment_transition_intents,v_result->'intent'
+    );
+    v_result:=public.complete_billing_provider_operation_v1(
+        v_revoke_schedule.provider_operation_id,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','revoke-source-key',
+        repeat('c',64),'acct_transitioncontract',1,v_revoke_lease,
+        v_parent_revision,
+        'enrollment_transition_completed',NULL
+    );
+    v_parent_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_enrollment_transition_v1(
+        v_revoke_schedule.id,v_studio,v_front_desk,
+        v_revoke_schedule.revision,v_revoke_schedule.provider_operation_id,
+        v_parent_revision,repeat('f',64),NULL
+    );
+    v_revoke_schedule:=jsonb_populate_record(
+        NULL::public.billing_enrollment_transition_intents,v_result->'intent'
+    );
+    IF v_revoke_schedule.state<>'scheduled' THEN
+        RAISE EXCEPTION 'Provider-completed revoke source did not stay scheduled: %',
+            v_result;
+    END IF;
     v_result := public.revoke_billing_enrollment_transition_v1(
         v_revoke_schedule.id, v_studio, v_front_desk, v_revoke_schedule.revision,
         'revoke-key', repeat('d', 64), 'contract.revoke', gen_random_uuid(), 30
     );
-    IF v_result->>'outcome' <> 'revoked'
-       OR v_result->'operation' IS NOT NULL
+    IF v_result->>'outcome' <> 'claimed'
+       OR (v_result->'operation'->>'operation_type')
+            <> 'enrollment.cancel.period_end.revoke'
        OR (SELECT state FROM public.billing_enrollment_transition_intents
-            WHERE id=v_revoke_schedule.id) <> 'revoked' THEN
-        RAISE EXCEPTION 'Local item revoke did not converge exactly: %', v_result;
+            WHERE id=v_revoke_schedule.id) <> 'scheduled' THEN
+        RAISE EXCEPTION 'Item revoke lacks its exact release parent: %', v_result;
     END IF;
     SELECT count(*) INTO v_read_count
     FROM public.list_billing_enrollment_scheduled_transitions_v1(
         v_studio, ARRAY[v_enrollment_revoke]
     );
-    IF v_read_count <> 0 THEN
-        RAISE EXCEPTION 'Revoked transition remained visible as scheduled.';
+    IF v_read_count <> 1 THEN
+        RAISE EXCEPTION 'Provider-backed revoke hid the schedule before release.';
     END IF;
     v_replay := public.revoke_billing_enrollment_transition_v1(
         v_revoke_schedule.id, v_studio, v_front_desk, v_revoke_schedule.revision,
@@ -349,27 +701,287 @@ BEGIN
         RAISE EXCEPTION 'Admin immediate cancellation lacks exact provider parent: %', v_result;
     END IF;
 
+    v_schedule_step_plan:=jsonb_build_array(
+        jsonb_build_object(
+            'step_name','schedule_create',
+            'provider_operation','connected_subscription_schedule.create',
+            'request_sha256',repeat('1',64),
+            'stripe_idempotency_key','item-schedule-create'
+        ),
+        jsonb_build_object(
+            'step_name','schedule_update',
+            'provider_operation','connected_subscription_schedule.update',
+            'request_sha256',repeat('2',64),
+            'stripe_idempotency_key','item-schedule-update'
+        )
+    );
+    v_schedule_step_plan_sha:=encode(extensions.digest(convert_to(
+        v_schedule_step_plan::TEXT,'UTF8'
+    ),'sha256'),'hex');
+    v_parent_revision:=(SELECT revision FROM public.billing_provider_operations
+        WHERE id=v_item_operation);
+    v_result:=public.register_billing_provider_operation_step_plan_v1(
+        v_item_operation,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','item-schedule-key',
+        repeat('a',64),'acct_transitioncontract',1,v_lease,
+        v_parent_revision,v_schedule_step_plan_sha,2,v_schedule_step_plan
+    );
+    v_parent_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    v_step_lease:=gen_random_uuid();
+    v_result:=public.claim_billing_provider_operation_step_v1(
+        v_item_operation,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','item-schedule-key',
+        repeat('a',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,
+        1,'schedule_create','connected_subscription_schedule.create',
+        repeat('1',64),'item-schedule-create',v_step_lease,30
+    );
+    v_step_revision:=(v_result->'step'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_provider_operation_step_v1(
+        v_item_operation,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','item-schedule-key',
+        repeat('a',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,
+        1,'schedule_create','connected_subscription_schedule.create',
+        repeat('1',64),'item-schedule-create',v_step_lease,v_step_revision,
+        'provider_request_in_flight'
+    );
+    v_step_revision:=(v_result->'step'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_provider_operation_step_v1(
+        p_operation_id=>v_item_operation,p_studio_id=>v_studio,
+        p_actor_id=>v_front_desk,
+        p_operation_type=>'enrollment.cancel.period_end.schedule',
+        p_caller_request_key=>'item-schedule-key',
+        p_parent_request_sha256=>repeat('a',64),
+        p_stripe_connected_account_id=>'acct_transitioncontract',
+        p_connect_account_generation=>1,p_plan_sha256=>v_schedule_step_plan_sha,
+        p_step_order=>1,p_step_name=>'schedule_create',
+        p_provider_operation=>'connected_subscription_schedule.create',
+        p_step_request_sha256=>repeat('1',64),
+        p_stripe_idempotency_key=>'item-schedule-create',
+        p_lease_owner=>v_step_lease,p_expected_step_revision=>v_step_revision,
+        p_to_state=>'provider_succeeded',
+        p_provider_object_id=>'sub_sched_transitionitem',
+        p_result_code=>'enrollment_item_schedule_created'
+    );
+    v_step_lease:=gen_random_uuid();
+    v_result:=public.claim_billing_provider_operation_step_v1(
+        v_item_operation,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','item-schedule-key',
+        repeat('a',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,
+        2,'schedule_update','connected_subscription_schedule.update',
+        repeat('2',64),'item-schedule-update',v_step_lease,30
+    );
+    v_step_revision:=(v_result->'step'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_provider_operation_step_v1(
+        v_item_operation,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','item-schedule-key',
+        repeat('a',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,
+        2,'schedule_update','connected_subscription_schedule.update',
+        repeat('2',64),'item-schedule-update',v_step_lease,v_step_revision,
+        'provider_request_in_flight'
+    );
+    v_step_revision:=(v_result->'step'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_provider_operation_step_v1(
+        p_operation_id=>v_item_operation,p_studio_id=>v_studio,
+        p_actor_id=>v_front_desk,
+        p_operation_type=>'enrollment.cancel.period_end.schedule',
+        p_caller_request_key=>'item-schedule-key',
+        p_parent_request_sha256=>repeat('a',64),
+        p_stripe_connected_account_id=>'acct_transitioncontract',
+        p_connect_account_generation=>1,p_plan_sha256=>v_schedule_step_plan_sha,
+        p_step_order=>2,p_step_name=>'schedule_update',
+        p_provider_operation=>'connected_subscription_schedule.update',
+        p_step_request_sha256=>repeat('2',64),
+        p_stripe_idempotency_key=>'item-schedule-update',
+        p_lease_owner=>v_step_lease,p_expected_step_revision=>v_step_revision,
+        p_to_state=>'provider_succeeded',
+        p_provider_object_id=>'si_transitionitem',
+        p_provider_secondary_object_id=>'sub_sched_transitionitem',
+        p_result_code=>'enrollment_item_schedule_updated'
+    );
+    v_result:=public.complete_billing_provider_operation_provider_phase_v31(
+        v_item_operation,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','item-schedule-key',
+        repeat('a',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,2,
+        v_parent_revision,v_lease
+    );
+    IF v_result->'operation'->>'provider_object_id'<>'si_transitionitem'
+       OR v_result->'operation'->>'provider_secondary_object_id'<>
+            'sub_sched_transitionitem'
+       OR (v_result->'operation'->>'lease_owner')::UUID<>v_lease THEN
+        RAISE EXCEPTION 'V31 provider phase lost schedule evidence or lease: %',v_result;
+    END IF;
+    v_parent_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_enrollment_transition_v1(
+        v_item_schedule.id,v_studio,v_front_desk,v_item_schedule.revision,
+        v_item_operation,v_parent_revision,repeat('e',64),NULL
+    );
+    v_item_schedule:=jsonb_populate_record(
+        NULL::public.billing_enrollment_transition_intents,v_result->'intent'
+    );
+    IF v_item_schedule.state<>'provider_succeeded' THEN
+        RAISE EXCEPTION 'Item schedule intent skipped provider success: %',v_result;
+    END IF;
+    v_replay:=public.complete_billing_provider_operation_provider_phase_v31(
+        v_item_operation,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','item-schedule-key',
+        repeat('a',64),'acct_transitioncontract',1,v_schedule_step_plan_sha,2,
+        v_parent_revision,v_lease
+    );
+    IF v_replay->>'outcome'<>'replay' THEN
+        RAISE EXCEPTION 'V31 provider phase did not replay exactly: %',v_replay;
+    END IF;
+    v_result:=public.transition_billing_provider_operation_v1(
+        p_operation_id=>v_item_operation,p_studio_id=>v_studio,
+        p_actor_id=>v_front_desk,
+        p_operation_type=>'enrollment.cancel.period_end.schedule',
+        p_caller_request_key=>'item-schedule-key',
+        p_request_sha256=>repeat('a',64),
+        p_stripe_connected_account_id=>'acct_transitioncontract',
+        p_connect_account_generation=>1,p_lease_owner=>v_lease,
+        p_expected_revision=>v_parent_revision,
+        p_to_state=>'projected',p_provider_object_id=>'si_transitionitem',
+        p_provider_secondary_object_id=>'sub_sched_transitionitem'
+    );
+    v_parent_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_enrollment_transition_v1(
+        v_item_schedule.id,v_studio,v_front_desk,v_item_schedule.revision,
+        v_item_operation,v_parent_revision,repeat('e',64),NULL
+    );
+    v_item_schedule:=jsonb_populate_record(
+        NULL::public.billing_enrollment_transition_intents,v_result->'intent'
+    );
+    IF v_item_schedule.state<>'projected' THEN
+        RAISE EXCEPTION 'Item schedule intent skipped projection: %',v_result;
+    END IF;
+    v_result:=public.complete_billing_provider_operation_v1(
+        v_item_operation,v_studio,v_front_desk,
+        'enrollment.cancel.period_end.schedule','item-schedule-key',
+        repeat('a',64),'acct_transitioncontract',1,v_lease,
+        v_parent_revision,
+        'enrollment_transition_completed',NULL
+    );
+    v_parent_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    v_result:=public.transition_billing_enrollment_transition_v1(
+        v_item_schedule.id,v_studio,v_front_desk,v_item_schedule.revision,
+        v_item_operation,v_parent_revision,repeat('e',64),NULL
+    );
+    v_item_schedule:=jsonb_populate_record(
+        NULL::public.billing_enrollment_transition_intents,v_result->'intent'
+    );
+    IF v_item_schedule.state<>'scheduled' THEN
+        RAISE EXCEPTION 'Completed item schedule intent did not return scheduled: %',
+            v_result;
+    END IF;
+
     PERFORM pg_sleep(0.6);
     SELECT * INTO v_execute
     FROM public.claim_due_billing_enrollment_transitions_v1(v_worker, 30, 1)
     LIMIT 1;
     IF v_execute.source_intent_id IS DISTINCT FROM v_item_schedule.id
        OR v_execute.mutation_strategy <> 'subscription_item_delete_at_period_end'
-       OR v_execute.provider_operation_id IS NOT NULL THEN
+       OR v_execute.provider_operation_id IS NOT NULL
+       OR v_execute.provider_caller_request_key IS NOT NULL
+       OR v_execute.provider_request_sha256 IS NOT NULL THEN
         RAISE EXCEPTION 'Item due claim was not exact: %', to_jsonb(v_execute);
     END IF;
-    v_started := public.start_due_billing_enrollment_transition_v1(
-        v_execute.id, v_worker, v_execute.revision, 30
+    BEGIN
+        UPDATE public.billing_subscriptions
+        SET stripe_account_id='acct_transitiondrift'
+        WHERE id=v_group_item;
+        PERFORM public.complete_due_billing_enrollment_item_transition_v31(
+            v_execute.id,v_studio,v_worker,v_execute.revision,repeat('8',64),
+            jsonb_build_array(
+                jsonb_build_object(
+                    'old_item_id','si_transitionitem',
+                    'new_item_id','si_transitionrotated',
+                    'expected_active_count',2
+                )
+            )
+        );
+        RAISE EXCEPTION 'Drifted group provider identity was accepted.';
+    EXCEPTION WHEN check_violation THEN
+        IF SQLERRM<>'billing_enrollment_item_due_identity_mismatch' THEN
+            RAISE;
+        END IF;
+    END;
+    BEGIN
+        UPDATE public.studio_payment_accounts
+        SET metadata=jsonb_set(
+            metadata,'{connect_account_generation}','2'::JSONB,true
+        )
+        WHERE studio_id=v_studio;
+        PERFORM public.complete_due_billing_enrollment_item_transition_v31(
+            v_execute.id,v_studio,v_worker,v_execute.revision,repeat('8',64),
+            jsonb_build_array(
+                jsonb_build_object(
+                    'old_item_id','si_transitionitem',
+                    'new_item_id','si_transitionrotated',
+                    'expected_active_count',2
+                )
+            )
+        );
+        RAISE EXCEPTION 'Drifted current account generation was accepted.';
+    EXCEPTION WHEN check_violation THEN
+        IF SQLERRM<>'billing_enrollment_item_due_identity_mismatch' THEN
+            RAISE;
+        END IF;
+    END;
+    v_result:=public.complete_due_billing_enrollment_item_transition_v31(
+        v_execute.id,v_studio,v_worker,v_execute.revision,repeat('8',64),
+        jsonb_build_array(
+            jsonb_build_object(
+                'old_item_id','si_transitionitem',
+                'new_item_id','si_transitionrotated',
+                'expected_active_count',2
+            )
+        )
     );
-    IF (v_started->'operation'->>'operation_type')
-       <> 'enrollment.cancel.period_end.execute' THEN
-        RAISE EXCEPTION 'Item due start lacks exact provider parent: %', v_started;
+    IF v_result->>'outcome'<>'completed'
+       OR (SELECT status FROM public.student_billing_enrollments
+            WHERE id=v_enrollment_item)<>'canceled'
+       OR (SELECT count(*) FROM public.student_billing_enrollments
+            WHERE id IN (v_enrollment_item_peer,v_enrollment_item_peer_two)
+              AND status='active'
+              AND stripe_subscription_item_id='si_transitionrotated')<>2
+       OR (SELECT count(*) FROM public.student_billing_enrollments
+            WHERE billing_subscription_id=v_group_item
+              AND status IN ('pending','active')
+              AND stripe_subscription_item_id='si_transitionitem')<>0
+       OR (SELECT state FROM public.billing_enrollment_transition_intents
+            WHERE id=v_item_schedule.id)<>'completed' THEN
+        RAISE EXCEPTION 'Item due CAS did not converge exactly: %',v_result;
     END IF;
+    v_replay:=public.complete_due_billing_enrollment_item_transition_v31(
+        v_execute.id,v_studio,v_worker,v_execute.revision,repeat('8',64),
+        jsonb_build_array(jsonb_build_object(
+            'old_item_id','si_transitionitem',
+            'new_item_id','si_transitionrotated',
+            'expected_active_count',2
+        ))
+    );
+    IF v_replay->>'outcome'<>'replay' THEN
+        RAISE EXCEPTION 'Exact item due CAS did not replay: %',v_replay;
+    END IF;
+    BEGIN
+        PERFORM public.complete_due_billing_enrollment_item_transition_v31(
+            v_execute.id,v_studio,v_worker,v_execute.revision,repeat('8',64),
+            jsonb_build_array(jsonb_build_object(
+                'old_item_id','si_conflicting_old',
+                'new_item_id','si_transitionrotated',
+                'expected_active_count',2
+            ))
+        );
+        RAISE EXCEPTION 'Same-evidence, different-mapping replay was accepted.';
+    EXCEPTION WHEN unique_violation THEN
+        IF SQLERRM<>'billing_enrollment_item_due_completion_conflict' THEN
+            RAISE;
+        END IF;
+    END;
     SELECT count(*) INTO v_operation_count
     FROM public.billing_provider_operations
     WHERE operation_type='enrollment.cancel.period_end.execute';
-    IF v_operation_count <> 1 THEN
-        RAISE EXCEPTION 'Item due start created an unexpected provider-operation count: %',
+    IF v_operation_count <> 0 THEN
+        RAISE EXCEPTION 'Provider-scheduled item due invented an execute operation: %',
             v_operation_count;
     END IF;
 
@@ -386,7 +998,7 @@ BEGIN
     SELECT count(*) INTO v_operation_count
     FROM public.billing_provider_operations
     WHERE operation_type='enrollment.cancel.period_end.execute';
-    IF v_operation_count <> 1 THEN
+    IF v_operation_count <> 0 THEN
         RAISE EXCEPTION 'Whole due claim created a second provider operation.';
     END IF;
     UPDATE public.student_billing_enrollments

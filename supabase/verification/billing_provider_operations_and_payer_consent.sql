@@ -808,4 +808,215 @@ BEGIN
 END;
 $$;
 
+DO $$
+DECLARE
+    v_admin UUID := gen_random_uuid();
+    v_studio UUID := gen_random_uuid();
+    v_payer UUID := gen_random_uuid();
+    v_prior_operation UUID := gen_random_uuid();
+    v_prior_request UUID := gen_random_uuid();
+    v_prior_consent UUID := gen_random_uuid();
+    v_rejected_operation UUID := gen_random_uuid();
+    v_rejected_request UUID := gen_random_uuid();
+    v_unfinished_consent UUID := gen_random_uuid();
+    v_lease UUID := gen_random_uuid();
+    v_fresh_lease UUID := gen_random_uuid();
+    v_fresh_request UUID := gen_random_uuid();
+    v_now TIMESTAMPTZ := clock_timestamp();
+    v_result JSONB;
+    v_operation_revision BIGINT;
+    v_setup_revision BIGINT;
+BEGIN
+    IF NOT has_function_privilege(
+        'service_role',
+        'public.reject_billing_payer_setup_without_provider_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,bigint,bigint)',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'anon',
+        'public.reject_billing_payer_setup_without_provider_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,bigint,bigint)',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'authenticated',
+        'public.reject_billing_payer_setup_without_provider_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,bigint,bigint)',
+        'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'No-object payer setup rejection RPC is not service-only.';
+    END IF;
+
+    INSERT INTO auth.users(
+        id,aud,role,email,raw_app_meta_data,raw_user_meta_data,
+        created_at,updated_at
+    ) VALUES (
+        v_admin,'authenticated','authenticated',
+        'payer-setup-policy-rejection@example.invalid','{}','{}',v_now,v_now
+    );
+    INSERT INTO public.studios(id,name,slug,owner_id) VALUES (
+        v_studio,'Payer setup policy rejection contract',
+        'payer-setup-policy-'||replace(v_studio::TEXT,'-',''),v_admin
+    );
+    INSERT INTO public.staff_roles(studio_id,user_id,role)
+    VALUES(v_studio,v_admin,'admin');
+    INSERT INTO public.studio_payment_accounts(
+        studio_id,stripe_connected_account_id,metadata
+    ) VALUES(
+        v_studio,'acct_PayerSetupPolicyContract',
+        jsonb_build_object('connect_account_generation',1)
+    );
+    INSERT INTO public.billing_payers(
+        id,studio_id,display_name,stripe_account_id,stripe_customer_id,
+        connect_account_generation,default_payment_method_id,
+        autopay_status,autopay_authorized_at,autopay_terms_accepted_at
+    ) VALUES(
+        v_payer,v_studio,'Enabled replacement payer',
+        'acct_PayerSetupPolicyContract','cus_payer_setup_policy',1,
+        'pm_existing_consent','enabled',v_now-interval '2 minutes',
+        v_now-interval '3 minutes'
+    );
+    INSERT INTO public.billing_provider_operations(
+        id,studio_id,actor_id,operation_type,caller_request_key,request_sha256,
+        stripe_connected_account_id,connect_account_generation,state,
+        provider_request_attempt_count,provider_object_id,
+        provider_secondary_object_id,result_code,started_at,
+        provider_request_in_flight_at,provider_succeeded_at,projected_at,
+        completed_at,created_at,updated_at
+    ) VALUES(
+        v_prior_operation,v_studio,v_admin,'payer.setup','prior-consent-key',
+        repeat('a',64),'acct_PayerSetupPolicyContract',1,'completed',1,
+        'cs_prior_consent','seti_prior_consent','payer_setup_completed',
+        v_now-interval '5 minutes',v_now-interval '4 minutes',
+        v_now-interval '3 minutes',v_now-interval '2 minutes',
+        v_now-interval '2 minutes',v_now-interval '5 minutes',v_now
+    );
+    INSERT INTO public.billing_payer_setup_requests(
+        id,operation_id,studio_id,payer_id,initiated_by,terms_version,
+        stripe_checkout_session_id,stripe_setup_intent_id,
+        stripe_connected_account_id,connect_account_generation,
+        setup_request_expires_at,accepted_at,completed_at,created_at,updated_at
+    ) VALUES(
+        v_prior_request,v_prior_operation,v_studio,v_payer,v_admin,
+        'koaryu-autopay-v1','cs_prior_consent','seti_prior_consent',
+        'acct_PayerSetupPolicyContract',1,v_now+interval '30 minutes',
+        v_now-interval '3 minutes',v_now-interval '2 minutes',
+        v_now-interval '5 minutes',v_now
+    );
+    INSERT INTO public.billing_payer_payment_consents(
+        id,setup_request_id,studio_id,payer_id,terms_version,
+        stripe_checkout_session_id,stripe_setup_intent_id,
+        stripe_connected_account_id,connect_account_generation,
+        acceptance_proof_sha256,accepted_at,completed_at,
+        setup_request_expires_at,created_at,updated_at
+    ) VALUES(
+        v_prior_consent,v_prior_request,v_studio,v_payer,'koaryu-autopay-v1',
+        'cs_prior_consent','seti_prior_consent','acct_PayerSetupPolicyContract',1,
+        repeat('b',64),v_now-interval '3 minutes',v_now-interval '2 minutes',
+        v_now+interval '30 minutes',v_now-interval '5 minutes',v_now
+    );
+
+    INSERT INTO public.billing_provider_operations(
+        id,studio_id,actor_id,operation_type,caller_request_key,request_sha256,
+        stripe_connected_account_id,connect_account_generation,state,
+        provider_request_attempt_count,lease_owner,lease_acquired_at,
+        lease_expires_at,provider_request_in_flight_at,result_code,
+        started_at,created_at,updated_at
+    ) VALUES(
+        v_rejected_operation,v_studio,v_admin,'payer.setup','blocked-setup-key',
+        repeat('c',64),'acct_PayerSetupPolicyContract',1,
+        'provider_request_in_flight',1,v_lease,v_now-interval '5 seconds',
+        v_now+interval '25 seconds',v_now-interval '5 seconds',
+        'payer_setup_requested',v_now-interval '10 seconds',
+        v_now-interval '10 seconds',v_now
+    );
+    INSERT INTO public.billing_payer_setup_requests(
+        id,operation_id,studio_id,payer_id,initiated_by,terms_version,
+        stripe_connected_account_id,connect_account_generation,
+        setup_request_expires_at,created_at,updated_at
+    ) VALUES(
+        v_rejected_request,v_rejected_operation,v_studio,v_payer,v_admin,
+        'koaryu-autopay-v1','acct_PayerSetupPolicyContract',1,
+        v_now+interval '35 minutes',v_now-interval '10 seconds',v_now
+    );
+    INSERT INTO public.billing_payer_payment_consents(
+        id,setup_request_id,studio_id,payer_id,terms_version,
+        stripe_checkout_session_id,stripe_connected_account_id,
+        connect_account_generation,acceptance_proof_sha256,accepted_at,
+        setup_request_expires_at,created_at,updated_at
+    ) VALUES(
+        v_unfinished_consent,v_rejected_request,v_studio,v_payer,
+        'koaryu-autopay-v1','cs_never_created','acct_PayerSetupPolicyContract',1,
+        repeat('d',64),v_now-interval '1 second',v_now+interval '35 minutes',
+        v_now-interval '1 second',v_now
+    );
+    SELECT revision INTO v_operation_revision
+    FROM public.billing_provider_operations WHERE id=v_rejected_operation;
+    SELECT revision INTO v_setup_revision
+    FROM public.billing_payer_setup_requests WHERE id=v_rejected_request;
+
+    v_result:=public.reject_billing_payer_setup_without_provider_v1(
+        v_rejected_operation,v_rejected_request,v_studio,v_admin,v_payer,
+        'blocked-setup-key',repeat('c',64),'acct_PayerSetupPolicyContract',1,
+        v_lease,v_operation_revision,v_setup_revision
+    );
+    IF v_result->>'outcome'<>'rejected'
+       OR v_result->'operation'->>'state'<>'definitive_rejected'
+       OR v_result->'operation'->>'error_code'<>'provider_mutation_blocked'
+       OR (v_result->'operation'->>'provider_request_attempt_count')::INTEGER<>1
+       OR v_result->'operation'->>'provider_object_id' IS NOT NULL
+       OR v_result->'setup_request'->>'close_reason_code'<>'provider_mutation_blocked'
+       OR (v_result->'setup_request'->>'closed_at') IS DISTINCT FROM
+          (v_result->'setup_request'->>'superseded_at')
+       OR (SELECT superseded_at FROM public.billing_payer_payment_consents
+           WHERE id=v_unfinished_consent) IS NULL
+       OR (SELECT superseded_at FROM public.billing_payer_payment_consents
+           WHERE id=v_prior_consent) IS NOT NULL
+       OR (SELECT autopay_status FROM public.billing_payers WHERE id=v_payer)<>'enabled'
+       OR (SELECT default_payment_method_id FROM public.billing_payers
+           WHERE id=v_payer)<>'pm_existing_consent'
+       OR (SELECT autopay_authorized_at FROM public.billing_payers
+           WHERE id=v_payer) IS DISTINCT FROM v_now-interval '2 minutes'
+       OR (SELECT autopay_terms_accepted_at FROM public.billing_payers
+           WHERE id=v_payer) IS DISTINCT FROM v_now-interval '3 minutes' THEN
+        RAISE EXCEPTION 'No-object setup rejection did not close exact new state and preserve prior consent.';
+    END IF;
+    BEGIN
+        UPDATE public.billing_payer_setup_requests
+        SET stripe_checkout_session_id='cs_contradictory_after_policy_rejection',
+            revision=revision+1,
+            updated_at=clock_timestamp()
+        WHERE id=v_rejected_request;
+        RAISE EXCEPTION 'Policy-rejected setup accepted a contradictory provider object.';
+    EXCEPTION WHEN check_violation THEN
+        IF SQLERRM NOT LIKE '%billing_payer_setup_requests_close_evidence%' THEN
+            RAISE;
+        END IF;
+    END;
+    IF public.reject_billing_payer_setup_without_provider_v1(
+        v_rejected_operation,v_rejected_request,v_studio,v_admin,v_payer,
+        'blocked-setup-key',repeat('c',64),'acct_PayerSetupPolicyContract',1,
+        v_lease,v_operation_revision,v_setup_revision
+    )->>'outcome'<>'replay' THEN
+        RAISE EXCEPTION 'Exact no-object setup rejection did not replay.';
+    END IF;
+
+    v_result:=public.claim_billing_provider_operation_v1(
+        v_studio,v_admin,'payer.setup','fresh-setup-key',repeat('e',64),
+        'acct_PayerSetupPolicyContract',1,v_fresh_lease,30
+    );
+    IF v_result->>'outcome'<>'claimed' THEN
+        RAISE EXCEPTION 'Fresh setup key did not claim after no-object rejection.';
+    END IF;
+    v_result:=public.prepare_billing_payer_setup_request_v1(
+        (v_result->'operation'->>'id')::UUID,v_fresh_request,v_studio,v_admin,
+        v_payer,'koaryu-autopay-v1','acct_PayerSetupPolicyContract',1,
+        v_fresh_lease,(v_result->'operation'->>'revision')::BIGINT,
+        v_now+interval '35 minutes'
+    );
+    IF v_result->>'outcome'<>'prepared'
+       OR (v_result->'setup_request'->>'id')::UUID<>v_fresh_request
+       OR (SELECT superseded_at FROM public.billing_payer_setup_requests
+           WHERE id=v_rejected_request) IS NULL THEN
+        RAISE EXCEPTION 'Fresh setup request did not proceed after policy rejection.';
+    END IF;
+END;
+$$;
+
 ROLLBACK;

@@ -38,6 +38,7 @@ EXTERNAL_PAYMENT_TARGET_REQUIRED_DETAIL = "External payments must target a payer
 REFUND_AMBIGUOUS_DETAIL = (
     "Refund outcome is not confirmed. Retry with the same Idempotency-Key after reconciliation."
 )
+SUPPORTED_REFUND_REASONS = frozenset({"duplicate", "fraudulent", "requested_by_customer"})
 
 
 def build_external_payment_request_hash(
@@ -350,6 +351,11 @@ class BillingPaymentManager:
         normalized_idempotency_key = normalize_idempotency_key(idempotency_key)
         if not normalized_idempotency_key:
             raise HTTPException(status_code=400, detail="Idempotency-Key is required for refunds.")
+        if data.reason is not None and data.reason not in SUPPORTED_REFUND_REASONS:
+            raise HTTPException(
+                status_code=400,
+                detail="Refund reason must be duplicate, fraudulent, or requested_by_customer.",
+            )
         payment = self._get_row_or_404("billing_payments", payment_id, studio_id, "Payment not found.")
         if not payment.get("stripe_charge_id") or not payment.get("stripe_account_id"):
             raise HTTPException(status_code=409, detail="Only Stripe payments can be refunded through Koaryu.")

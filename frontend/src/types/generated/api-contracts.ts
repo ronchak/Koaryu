@@ -427,7 +427,7 @@ export interface ApiBillingReconcileResponse {
 
 export interface ApiBillingRefundCreate {
   amount_cents?: number | null;
-  reason?: string | null;
+  reason?: "duplicate" | "fraudulent" | "requested_by_customer" | null;
 }
 
 export interface ApiBillingRefundResponse {

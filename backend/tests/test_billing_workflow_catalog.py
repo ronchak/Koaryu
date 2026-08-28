@@ -176,3 +176,39 @@ def test_role_capabilities_are_sanitized_and_fail_closed():
 
 def test_catalog_is_immutable_data_without_callable_provider_logic():
     assert all(not inspect.isroutine(value) for workflow in BILLING_WORKFLOWS for value in workflow.stripe_operations)
+
+
+@pytest.mark.parametrize(
+    "missing_operation",
+    (
+        "connected_subscription.update",
+        "connected_subscription_schedule.create",
+        "connected_subscription_schedule.update",
+    ),
+)
+def test_period_end_schedule_capability_requires_every_provider_side_schedule_operation(
+    missing_operation,
+):
+    allowed = {
+        scope: frozenset(operations)
+        for scope, operations in LIVE_SCOPE_OPERATIONS.items()
+    }
+    allowed["connect_payments"] = frozenset(
+        operation
+        for operation in allowed["connect_payments"]
+        if operation != missing_operation
+    )
+    capabilities = workflow_capabilities_for_role(
+        "admin",
+        stripe_mode="live",
+        scope_ready={scope: True for scope in LIVE_SCOPE_OPERATIONS},
+        allowed_operations=allowed,
+        transition_scheduler_ready=True,
+    )
+    schedule = next(
+        capability
+        for capability in capabilities
+        if capability["workflow_id"] == "enrollment.cancel.period_end.schedule"
+    )
+    assert schedule["enabled"] is False
+    assert schedule["denial_reason_code"] == "billing_workflow_live_grant_operations_missing"

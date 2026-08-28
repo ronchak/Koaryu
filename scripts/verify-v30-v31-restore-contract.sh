@@ -371,12 +371,12 @@ echo "RESTORED_V31_PLAN_PRICE_GENERATION_STATE=$plan_price_generation_state"
 echo "RESTORED_V31_SUBSCRIPTION_GENERATION_STATE=$subscription_generation_state"
 echo "RESTORED_V31_UNTOUCHED_ROW_FINGERPRINTS=$payments_after|$refunds_after|$disputes_after|$operations_after"
 
-if [[ "$resource_manifest" != "0:55f9397aba0a331d528b8f71d69599f14412c3c29f8eb0fe7d1a145d97a329c8" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
-if [[ "$operational_contract" != "0:c55c099d57cb1dfbe50644386b4b38d794d2ed1b9d71454f7d8c8a84ee1db4f0" ]]; then echo "Restored V31 operational contract mismatch." >&2; exit 1; fi
-if [[ "$operational_manifest" != "091e95661d36feba5f7e296e54a6633dc5d0a55d0f00274ce1792d16a862d7fa" ]]; then echo "Restored V31 operational manifest mismatch." >&2; exit 1; fi
+if [[ "$resource_manifest" != "0:dff56b2572ace65f3d68f0b6e378604c2757356cf3d5057ca186343a76c12426" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
+if [[ "$operational_contract" != "0:7a2fb92bc9aee799df0a64228788e08d4d63e2df0a7e0fb255216d8716a9413d" ]]; then echo "Restored V31 operational contract mismatch." >&2; exit 1; fi
+if [[ "$operational_manifest" != "441d38fe480a784c240e27467565b61d4477cece606da32737391d6d86c2eb3f" ]]; then echo "Restored V31 operational manifest mismatch." >&2; exit 1; fi
 if [[ "$readiness" != "true|126|20260826185651|0||release-db-attestation-v31" ]]; then echo "Restored V31 readiness mismatch: $readiness" >&2; exit 1; fi
 if [[ "$compat_readiness" != "true|125|20260826155911|0||release-db-attestation-v30" ]]; then echo "Restored V30 compatibility readiness mismatch: $compat_readiness" >&2; exit 1; fi
-if [[ "$expectation_state" != "1:4a2d99d5ae0de5f9e2aeb6c07d8dfef8e5b4f729fe2f00aa9648a9286ead5ed2" ]]; then echo "Restored V31 expectation mismatch." >&2; exit 1; fi
+if [[ "$expectation_state" != "1:afbce12f6f62d8cc55e4caf44d625915bb72f6a1d9cd9fb02f412103fcc154eb" ]]; then echo "Restored V31 expectation mismatch." >&2; exit 1; fi
 if ! (
   cd "$repository_root"
   node --input-type=module --eval '
