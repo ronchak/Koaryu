@@ -28,6 +28,7 @@ from tests.billing_lifecycle_helpers import (
 )
 from stripe import CardError as StripeCardError, IdempotencyError as StripeIdempotencyError
 from app.services.billing_invoices import BillingInvoiceManager
+from app.services.billing_payment_projection import BillingPaymentEventProjector
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
@@ -1267,6 +1268,103 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(refund["payment_id"], "payment_1")
         self.assertEqual(refund["stripe_payment_intent_id"], "pi_1")
         self.assertEqual(service.supabase.tables["billing_payments"][0]["refunded_amount_cents"], 50)
+
+    def test_payment_intent_update_preserves_pending_refund_reservation(self):
+        service = self.service()
+        tables = _settled_payment_tables()
+        tables["billing_refunds"] = [
+            {
+                "id": "refund_pending", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_1",
+                "connect_account_generation": 1, "stripe_charge_id": "ch_1",
+                "stripe_payment_intent_id": "pi_1", "amount_cents": 30,
+                "status": "pending",
+            },
+            {
+                "id": "refund_wrong_studio", "studio_id": "studio_other",
+                "payment_id": "payment_1", "stripe_account_id": "acct_1",
+                "connect_account_generation": 1, "stripe_charge_id": "ch_1",
+                "amount_cents": 90, "status": "pending",
+            },
+            {
+                "id": "refund_wrong_account", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_other",
+                "connect_account_generation": 1, "stripe_charge_id": "ch_1",
+                "amount_cents": 90, "status": "pending",
+            },
+            {
+                "id": "refund_wrong_generation", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_1",
+                "connect_account_generation": 2, "stripe_charge_id": "ch_1",
+                "amount_cents": 90, "status": "pending",
+            },
+        ]
+        service.supabase = _FakeSupabase(tables)
+
+        service._project_payment_intent({
+            "id": "pi_1", "status": "succeeded", "amount": 200,
+            "amount_received": 200, "application_fee_amount": 0,
+            "currency": "usd", "customer": "cus_1", "invoice": "in_1",
+            "latest_charge": "ch_1", "payment_method_types": ["card"],
+            "metadata": {},
+        }, "acct_1", "payment_intent.succeeded")
+
+        payment = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(payment["refunded_amount_cents"], 0)
+        self.assertEqual(payment["net_collected_amount_cents"], 200)
+        self.assertEqual(payment["refundable_amount_cents"], 170)
+
+    def test_reconcile_payment_adjustments_reserves_only_matching_pending_refunds(self):
+        service = self.service()
+        tables = _settled_payment_tables()
+        tables["billing_refunds"] = [
+            {
+                "id": "refund_succeeded", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_1",
+                "connect_account_generation": 1, "amount_cents": 50,
+                "status": "succeeded",
+            },
+            {
+                "id": "refund_pending", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_1",
+                "connect_account_generation": 1, "amount_cents": 40,
+                "status": "pending",
+            },
+            {
+                "id": "refund_failed", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_1",
+                "connect_account_generation": 1, "amount_cents": 80,
+                "status": "failed",
+            },
+            {
+                "id": "refund_unknown", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_1",
+                "connect_account_generation": 1, "amount_cents": 80,
+                "status": "unknown",
+            },
+            {
+                "id": "refund_wrong_account", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_other",
+                "connect_account_generation": 1, "amount_cents": 80,
+                "status": "pending",
+            },
+            {
+                "id": "refund_wrong_generation", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_1",
+                "connect_account_generation": 2, "amount_cents": 80,
+                "status": "pending",
+            },
+        ]
+        service.supabase = _FakeSupabase(tables)
+
+        payment = BillingPaymentEventProjector(service)._reconcile_payment_adjustments(
+            service.supabase.tables["billing_payments"][0],
+            "acct_1",
+        )
+
+        self.assertEqual(payment["refunded_amount_cents"], 50)
+        self.assertEqual(payment["net_collected_amount_cents"], 150)
+        self.assertEqual(payment["refundable_amount_cents"], 110)
 
     def test_terminal_won_dispute_does_not_regress_or_reverse_balance(self):
         service = self.service()

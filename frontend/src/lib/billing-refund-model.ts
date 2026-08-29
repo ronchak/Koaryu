@@ -203,7 +203,6 @@ export function isRefundReconciliationBlocked(
   try {
     const persisted = parseStoredAttempt(storage?.getItem(key) ?? null);
     if (!persisted) return false;
-    memoryAttempts.set(key, persisted);
     return persisted.disposition === "reconciliation_required";
   } catch {
     return false;

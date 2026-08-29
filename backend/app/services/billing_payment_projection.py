@@ -268,8 +268,10 @@ class BillingPaymentEventProjector:
             row["refunded_amount_cents"] = refunded_amount
             row["disputed_amount_cents"] = disputed_amount
             row["net_collected_amount_cents"] = net_collected_amount
-            row["refundable_amount_cents"] = (
-                net_collected_amount if row.get("stripe_charge_id") else 0
+            row["refundable_amount_cents"] = self._refundable_amount_after_pending_refunds(
+                {**existing_payment, **row},
+                account_id,
+                net_collected_amount,
             )
             query = self.supabase.table("billing_payments").update(row).eq("id", existing_payment["id"])
             query = add_stripe_event_created_guard(query, event_created)
@@ -813,6 +815,12 @@ class BillingPaymentEventProjector:
         )
         disputed_amount = min(max(0, payment_amount - refunded_amount), reversing_dispute_amount)
         net_collected_amount = max(0, payment_amount - refunded_amount - disputed_amount)
+        refundable_amount = self._refundable_amount_after_pending_refunds(
+            payment,
+            account_id,
+            net_collected_amount,
+            refund_rows=matching_refunds,
+        )
         reconciliation_reason = None
         if (
             payment.get("adjustment_reconciliation_reason_code")
@@ -842,7 +850,7 @@ class BillingPaymentEventProjector:
             "refunded_amount_cents": refunded_amount,
             "disputed_amount_cents": disputed_amount,
             "net_collected_amount_cents": net_collected_amount,
-            "refundable_amount_cents": net_collected_amount if payment.get("stripe_charge_id") else 0,
+            "refundable_amount_cents": refundable_amount,
             "adjustment_reconciliation_required": reconciliation_reason is not None,
             "adjustment_reconciliation_reason_code": reconciliation_reason,
         }
@@ -855,6 +863,46 @@ class BillingPaymentEventProjector:
         )
         updated_payment = payment_result.data[0] if payment_result.data else {**payment, **payment_update}
         return updated_payment
+
+    def _refundable_amount_after_pending_refunds(
+        self,
+        payment: dict[str, Any],
+        account_id: Optional[str],
+        net_collected_amount: int,
+        *,
+        refund_rows: Optional[list[dict[str, Any]]] = None,
+    ) -> int:
+        confirmed_net = max(0, int(net_collected_amount or 0))
+        if not payment.get("stripe_charge_id"):
+            return 0
+
+        if refund_rows is None:
+            payment_id = payment.get("id")
+            studio_id = payment.get("studio_id")
+            if not payment_id or not studio_id:
+                return confirmed_net
+            refunds = (
+                self.supabase.table("billing_refunds")
+                .select(
+                    "amount_cents, status, stripe_account_id, "
+                    "connect_account_generation"
+                )
+                .eq("studio_id", studio_id)
+                .eq("payment_id", payment_id)
+                .execute()
+            )
+            refund_rows = [
+                row
+                for row in refunds.data or []
+                if self._row_matches_adjustment_identity(row, payment, account_id)
+            ]
+
+        pending_reserved = sum(
+            max(0, int(row.get("amount_cents") or 0))
+            for row in refund_rows
+            if row.get("status") == "pending"
+        )
+        return max(0, confirmed_net - min(confirmed_net, pending_reserved))
 
     def _row_matches_adjustment_identity(
         self,
