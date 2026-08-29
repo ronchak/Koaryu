@@ -825,7 +825,14 @@ class BillingPayerManagerTests(unittest.TestCase):
         self.assertEqual(payer["balance_cents"], 2000)
         self.assertEqual(payer["billing_status"], "past_due")
 
-    def _payer_recovery(self, outcome, recovered_id=None, *, test_clock_id=None):
+    def _payer_recovery(
+        self,
+        outcome,
+        recovered_id=None,
+        *,
+        test_clock_id=None,
+        payer_overrides=None,
+    ):
         _FakeStripeService.reset()
         facade = _BillingFacade({
             "billing_payers": [{
@@ -833,6 +840,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "display_name": "Pat", "metadata": {},
                 "created_at": "2026-01-01T00:00:00Z",
                 "updated_at": "2026-01-01T00:00:00Z",
+                **(payer_overrides or {}),
             }],
             "audit_logs": [],
         }, account={
@@ -868,6 +876,45 @@ class BillingPayerManagerTests(unittest.TestCase):
             lease_owner="00000000-0000-4000-8000-000000000102",
         )
         return facade, manager, operation
+
+    def test_payer_update_reconcile_only_allows_existing_provider_test_clock(self):
+        facade, manager, operation = self._payer_recovery(
+            "provider_succeeded_reconcile_only",
+            "cus_existing",
+            payer_overrides={
+                "stripe_customer_id": "cus_existing",
+                "stripe_account_id": "acct_1",
+            },
+        )
+        _FakeStripeService.provider_error = None
+        _FakeStripeService.customer_response = {
+            "id": "cus_existing",
+            "name": "Pat",
+            "email": "",
+            "phone": "",
+            "address": {},
+            "metadata": {
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "product": "koaryu_payments",
+            },
+            "test_clock": "clock_existing",
+            "invoice_settings": {"default_payment_method": None},
+        }
+
+        result = asyncio.run(manager.sync_payer(
+            "payer_1", "studio_1", "actor_1", "payer-recovery-key",
+        ))
+
+        self.assertEqual(result.stripe_customer_id, "cus_existing")
+        self.assertEqual(operation["state"], "completed")
+        self.assertEqual(len(_FakeStripeService.updated_customers), 1)
+        self.assertEqual(_FakeStripeService.created_customers, [])
+        self.assertEqual(_FakeStripeService.retrieved_customers, [{
+            "account_id": "acct_1",
+            "customer_id": "cus_existing",
+            "expand": ["invoice_settings.default_payment_method"],
+        }])
 
     def test_payer_reconcile_only_requires_exact_provider_test_clock(self):
         for provider_clock, should_succeed in (

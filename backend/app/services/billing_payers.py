@@ -465,7 +465,7 @@ class BillingPayerManager:
                 != str(value)
                 for key, value in metadata.items()
             )
-            or provider_test_clock != test_clock_id
+            or (sync_mode == "create" and provider_test_clock != test_clock_id)
         ):
             raise RuntimeError("payer_sync_recovered_customer_mismatch")
 
