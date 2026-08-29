@@ -7,8 +7,15 @@ export type RefundReason = NonNullable<ApiBillingRefundCreate["reason"]>;
 
 const STORAGE_PREFIX = "koaryu.billing.payment-refund.v1";
 const memoryAttempts = new Map<string, RefundAttempt>();
-type RefundAttempt = { amountCents: number; reason: RefundReason; requestKey: string };
+type RefundAttempt = {
+  amountCents: number;
+  reason: RefundReason;
+  requestKey: string;
+  disposition?: "reconciliation_required";
+};
 const REFUND_REASONS = new Set<RefundReason>(["duplicate", "fraudulent", "requested_by_customer"]);
+const RECONCILIATION_REQUIRED_DETAIL = "This billing operation requires reconciliation and will not be retried automatically.";
+const REFUND_STORAGE_UNAVAILABLE_DETAIL = "Refunds are unavailable because this browser cannot safely save the request. Enable browser storage and reload this page.";
 
 function validRequestKey(value: unknown): value is string {
   return typeof value === "string"
@@ -30,6 +37,7 @@ function parseStoredAttempt(value: string | null): RefundAttempt | null {
       || typeof record.reason !== "string"
       || !REFUND_REASONS.has(record.reason as RefundReason)
       || !validRequestKey(record.requestKey)
+      || (record.disposition !== undefined && record.disposition !== "reconciliation_required")
     ) return null;
     return record as RefundAttempt;
   } catch {
@@ -86,14 +94,26 @@ export function resolveRefundRequestKey(
   storage: RefundStorage | null,
 ) {
   const key = storageKey(identity, paymentId);
-  let existing = memoryAttempts.get(key);
+  if (!storage) {
+    memoryAttempts.delete(key);
+    throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
+  }
+  let stored: string | null;
   try {
-    const stored = storage?.getItem(key) ?? null;
-    const parsed = parseStoredAttempt(stored);
-    if (parsed) existing = parsed;
-    else if (stored) storage?.removeItem(key);
+    stored = storage.getItem(key);
   } catch {
-    // The exact scoped in-memory attempt remains authoritative for this page lifetime.
+    memoryAttempts.delete(key);
+    throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
+  }
+  if (stored === null && memoryAttempts.has(key)) {
+    memoryAttempts.delete(key);
+    throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
+  }
+  const existing = parseStoredAttempt(stored);
+  if (stored && !existing) {
+    memoryAttempts.delete(key);
+    try { storage.removeItem(key); } catch {}
+    throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
   }
   if (existing) {
     if (existing.amountCents !== amountCents || existing.reason !== reason) {
@@ -105,8 +125,24 @@ export function resolveRefundRequestKey(
   const requestKey = createKey();
   if (!validRequestKey(requestKey)) throw new Error("Refund request key is invalid.");
   const attempt = { amountCents, reason, requestKey };
+  try {
+    storage.setItem(key, JSON.stringify(attempt));
+    const persisted = parseStoredAttempt(storage.getItem(key));
+    if (
+      !persisted
+      || persisted.amountCents !== attempt.amountCents
+      || persisted.reason !== attempt.reason
+      || persisted.requestKey !== attempt.requestKey
+      || persisted.disposition !== undefined
+    ) {
+      throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
+    }
+  } catch {
+    memoryAttempts.delete(key);
+    try { storage.removeItem(key); } catch {}
+    throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
+  }
   memoryAttempts.set(key, attempt);
-  try { storage?.setItem(key, JSON.stringify(attempt)); } catch {}
   return attempt.requestKey;
 }
 
@@ -127,6 +163,51 @@ export function clearRefundRequestKey(identity: RefundIdentity, paymentId: strin
   const key = storageKey(identity, paymentId);
   memoryAttempts.delete(key);
   try { storage?.removeItem(key); } catch {}
+}
+
+export function isRefundReconciliationRequiredError(error: unknown) {
+  return error instanceof Error
+    && "status" in error
+    && error.status === 409
+    && error.message === RECONCILIATION_REQUIRED_DETAIL;
+}
+
+export function markRefundReconciliationRequired(
+  identity: RefundIdentity,
+  paymentId: string,
+  storage: RefundStorage | null,
+) {
+  const key = storageKey(identity, paymentId);
+  let attempt = memoryAttempts.get(key);
+  try {
+    const parsed = parseStoredAttempt(storage?.getItem(key) ?? null);
+    if (parsed) attempt = parsed;
+  } catch {
+    // Keep the page-lifetime attempt when browser storage is unavailable.
+  }
+  if (!attempt) return false;
+  const blockedAttempt = { ...attempt, disposition: "reconciliation_required" } as const;
+  memoryAttempts.set(key, blockedAttempt);
+  try { storage?.setItem(key, JSON.stringify(blockedAttempt)); } catch {}
+  return true;
+}
+
+export function isRefundReconciliationBlocked(
+  identity: RefundIdentity,
+  paymentId: string,
+  storage: RefundStorage | null,
+) {
+  const key = storageKey(identity, paymentId);
+  const inMemory = memoryAttempts.get(key);
+  if (inMemory?.disposition === "reconciliation_required") return true;
+  try {
+    const persisted = parseStoredAttempt(storage?.getItem(key) ?? null);
+    if (!persisted) return false;
+    memoryAttempts.set(key, persisted);
+    return persisted.disposition === "reconciliation_required";
+  } catch {
+    return false;
+  }
 }
 
 export type RefundPost = <T>(

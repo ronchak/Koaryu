@@ -163,6 +163,7 @@ DECLARE
     v_failed_payment UUID := gen_random_uuid();
     v_enrichment_payment UUID := gen_random_uuid();
     v_enrichment_refund UUID := gen_random_uuid();
+    v_pending_refund UUID := gen_random_uuid();
     v_payment_row public.billing_payments%ROWTYPE;
     v_invoice_row public.billing_invoices%ROWTYPE;
     v_payer_row public.billing_payers%ROWTYPE;
@@ -299,6 +300,68 @@ BEGIN
         RAISE EXCEPTION 'Succeeded refund did not produce the expected separate payment totals.';
     END IF;
 
+    INSERT INTO public.billing_refunds (
+        id, studio_id, payment_id, stripe_refund_id, stripe_charge_id,
+        stripe_payment_intent_id, stripe_account_id, connect_account_generation,
+        amount_cents, status
+    ) VALUES (
+        v_pending_refund, v_studio, v_payment, 're_pending_adjustment_verification',
+        'ch_adjustment_verification', 'pi_adjustment_verification',
+        'acct_adjustment_verification', 1, 80, 'pending'
+    );
+
+    SELECT * INTO v_payment_row FROM public.billing_payments WHERE id = v_payment;
+    IF v_payment_row.refunded_amount_cents <> 75
+       OR v_payment_row.net_collected_amount_cents <> 125
+       OR v_payment_row.refundable_amount_cents <> 45 THEN
+        RAISE EXCEPTION 'Pending refund did not reserve refundable balance without changing confirmed totals.';
+    END IF;
+
+    UPDATE public.billing_refunds SET status = 'failed' WHERE id = v_pending_refund;
+    SELECT * INTO v_payment_row FROM public.billing_payments WHERE id = v_payment;
+    IF v_payment_row.refunded_amount_cents <> 75
+       OR v_payment_row.net_collected_amount_cents <> 125
+       OR v_payment_row.refundable_amount_cents <> 125 THEN
+        RAISE EXCEPTION 'Definitive refund failure did not release reserved balance.';
+    END IF;
+
+    BEGIN
+        UPDATE public.billing_payments
+        SET refundable_amount_cents = 124
+        WHERE id = v_payment;
+        RAISE EXCEPTION 'Expected Stripe refundability mismatch to fail.';
+    EXCEPTION
+        WHEN check_violation THEN
+            IF SQLERRM NOT LIKE '%billing_payment_refundable_amount_not_exact%' THEN
+                RAISE;
+            END IF;
+    END;
+
+    UPDATE public.billing_refunds SET status = 'pending', amount_cents = 180
+    WHERE id = v_pending_refund;
+    SELECT * INTO v_payment_row FROM public.billing_payments WHERE id = v_payment;
+    IF v_payment_row.refunded_amount_cents <> 75
+       OR v_payment_row.net_collected_amount_cents <> 125
+       OR v_payment_row.refundable_amount_cents <> 0 THEN
+        RAISE EXCEPTION 'Pending refund reservation was not capped at the remaining confirmed balance.';
+    END IF;
+
+    DELETE FROM public.billing_refunds WHERE id = v_pending_refund;
+    SELECT * INTO v_payment_row FROM public.billing_payments WHERE id = v_payment;
+    IF v_payment_row.refundable_amount_cents <> 125 THEN
+        RAISE EXCEPTION 'Deleting a pending refund did not release reserved balance.';
+    END IF;
+
+    INSERT INTO public.billing_refunds (
+        id, studio_id, payment_id, stripe_refund_id, stripe_charge_id,
+        stripe_payment_intent_id, stripe_account_id, connect_account_generation,
+        amount_cents, status
+    ) VALUES (
+        v_pending_refund, v_studio, v_payment, 're_pending_dispute_verification',
+        'ch_adjustment_verification', 'pi_adjustment_verification',
+        'acct_adjustment_verification', 1, 180, 'pending'
+    );
+
     INSERT INTO public.billing_payments (
         id,
         studio_id,
@@ -408,12 +471,14 @@ BEGIN
 
     BEGIN
         UPDATE public.billing_payments
-        SET refundable_amount_cents = 124
+        SET refundable_amount_cents = 1
         WHERE id = v_payment;
-        RAISE EXCEPTION 'Expected Stripe refundability mismatch to fail.';
+        RAISE EXCEPTION 'Expected direct reserved-balance mismatch to fail.';
     EXCEPTION
         WHEN check_violation THEN
-            NULL;
+            IF SQLERRM NOT LIKE '%billing_payment_refundable_amount_not_exact%' THEN
+                RAISE;
+            END IF;
     END;
 
     INSERT INTO public.billing_disputes (
@@ -452,6 +517,12 @@ BEGIN
         RAISE EXCEPTION 'Refund plus dispute did not cap the combined reversal at the gross payment.';
     END IF;
 
+    DELETE FROM public.billing_refunds WHERE id = v_pending_refund;
+    SELECT * INTO v_payment_row FROM public.billing_payments WHERE id = v_payment;
+    IF v_payment_row.refundable_amount_cents <> 0 THEN
+        RAISE EXCEPTION 'Deleting a pending refund changed a dispute-capped zero balance.';
+    END IF;
+
     UPDATE public.billing_disputes
     SET status = 'won', state_category = 'won'
     WHERE id = v_dispute;
@@ -463,6 +534,25 @@ BEGIN
        OR v_payment_row.net_collected_amount_cents <> 125
        OR v_payment_row.refundable_amount_cents <> 125 THEN
         RAISE EXCEPTION 'Won dispute did not restore net collected and refundable amounts exactly once.';
+    END IF;
+
+    INSERT INTO public.billing_refunds (
+        id, studio_id, payment_id, stripe_refund_id, stripe_charge_id,
+        stripe_payment_intent_id, stripe_account_id, connect_account_generation,
+        amount_cents, status
+    ) VALUES (
+        v_pending_refund, v_studio, v_payment, 're_pending_conversion_verification',
+        'ch_adjustment_verification', 'pi_adjustment_verification',
+        'acct_adjustment_verification', 1, 50, 'pending'
+    );
+    UPDATE public.billing_refunds SET status = 'succeeded'
+    WHERE id = v_pending_refund;
+
+    SELECT * INTO v_payment_row FROM public.billing_payments WHERE id = v_payment;
+    IF v_payment_row.refunded_amount_cents <> 125
+       OR v_payment_row.net_collected_amount_cents <> 75
+       OR v_payment_row.refundable_amount_cents <> 75 THEN
+        RAISE EXCEPTION 'Pending-to-succeeded conversion double-counted the refund reservation.';
     END IF;
 
     SELECT * INTO v_invoice_row FROM public.billing_invoices WHERE id = v_invoice;

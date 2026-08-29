@@ -7,7 +7,10 @@ import { fileURLToPath } from "node:url";
 import {
   canShowPaymentRefund,
   clearRefundRequestKey,
+  isRefundReconciliationBlocked,
+  isRefundReconciliationRequiredError,
   isPaymentRefundEligible,
+  markRefundReconciliationRequired,
   parseRefundAmount,
   postPaymentRefund,
   refreshAfterConfirmedRefund,
@@ -27,6 +30,7 @@ const payment = {
 function memoryStorage() {
   const values = new Map();
   return {
+    values,
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, value),
     removeItem: (key) => values.delete(key),
@@ -72,7 +76,7 @@ describe("billing payment refunds", () => {
     assert.notEqual(resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", createKey, storage), first);
   });
 
-  it("rejects malformed persisted attempts and survives a throwing storage getter", () => {
+  it("fails closed for malformed attempts, null storage, and throwing storage access", () => {
     const storage = memoryStorage();
     const identity = { userId: "malformed-admin", studioId: "studio-1" };
     const storageEntries = [];
@@ -88,15 +92,62 @@ describe("billing payment refunds", () => {
     const reloadedIdentity = { userId: "malformed-admin-2", studioId: "studio-1" };
     const malformedKey = storedKey.replace("malformed-admin", "malformed-admin-2");
     storage.setItem(malformedKey, JSON.stringify({ amountCents: 900, reason: "invented", requestKey: "bad" }));
-    assert.equal(
-      resolveRefundRequestKey(reloadedIdentity, payment.id, 900, "duplicate", () => "replacement-key", storage),
-      "replacement-key",
+    assert.throws(
+      () => resolveRefundRequestKey(reloadedIdentity, payment.id, 900, "duplicate", () => "replacement-key", storage),
+      /browser cannot safely save the request/,
     );
     const throwingWindow = Object.defineProperty({}, "localStorage", { get() { throw new Error("blocked"); } });
     assert.equal(safeBrowserRefundStorage(throwingWindow), null);
-    assert.equal(
-      resolveRefundRequestKey({ userId: "memory-admin", studioId: "studio-1" }, payment.id, 900, "duplicate", () => "memory-key", null),
-      "memory-key",
+    assert.throws(
+      () => resolveRefundRequestKey({ userId: "memory-admin", studioId: "studio-1" }, payment.id, 900, "duplicate", () => "memory-key", null),
+      /browser cannot safely save the request/,
+    );
+    const throwingGet = { getItem() { throw new Error("blocked"); }, setItem() {}, removeItem() {} };
+    assert.throws(
+      () => resolveRefundRequestKey({ userId: "get-admin", studioId: "studio-1" }, payment.id, 900, "duplicate", () => "get-key", throwingGet),
+      /browser cannot safely save the request/,
+    );
+    const throwingSet = { getItem() { return null; }, setItem() { throw new Error("full"); }, removeItem() {} };
+    assert.throws(
+      () => resolveRefundRequestKey({ userId: "set-admin", studioId: "studio-1" }, payment.id, 900, "duplicate", () => "set-key", throwingSet),
+      /browser cannot safely save the request/,
+    );
+  });
+
+  it("does not return a key when durable storage readback differs", () => {
+    let reads = 0;
+    const mismatchedStorage = {
+      getItem() {
+        reads += 1;
+        return reads === 1
+          ? null
+          : JSON.stringify({ amountCents: 901, reason: "duplicate", requestKey: "different-key" });
+      },
+      setItem() {},
+      removeItem() {},
+    };
+    assert.throws(
+      () => resolveRefundRequestKey(
+        { userId: "mismatch-admin", studioId: "studio-1" },
+        payment.id,
+        900,
+        "duplicate",
+        () => "expected-key",
+        mismatchedStorage,
+      ),
+      /browser cannot safely save the request/,
+    );
+  });
+
+  it("does not replace an attempt whose durable record disappears", () => {
+    const storage = memoryStorage();
+    const identity = { userId: "lost-storage-admin", studioId: "studio-1" };
+    resolveRefundRequestKey(identity, payment.id, 900, "duplicate", () => "original-key", storage);
+    const storageKey = [...storage.values.keys()][0];
+    storage.values.delete(storageKey);
+    assert.throws(
+      () => resolveRefundRequestKey(identity, payment.id, 900, "duplicate", () => "replacement-key", storage),
+      /browser cannot safely save the request/,
     );
   });
 
@@ -106,6 +157,56 @@ describe("billing payment refunds", () => {
     assert.equal(isTerminalBillingIdempotencyError(ambiguous), false);
     const terminal = Object.assign(new Error("Use a new Idempotency-Key after correcting the request."), { status: 409 });
     assert.equal(isTerminalBillingIdempotencyError(terminal), true);
+  });
+
+  it("classifies only the exact reconciliation-required 409 contract", () => {
+    const reconciliation = Object.assign(
+      new Error("This billing operation requires reconciliation and will not be retried automatically."),
+      { status: 409 },
+    );
+    assert.equal(isRefundReconciliationRequiredError(reconciliation), true);
+    assert.equal(isRefundReconciliationRequiredError(Object.assign(new Error(reconciliation.message), { status: 503 })), false);
+    assert.equal(isRefundReconciliationRequiredError(Object.assign(new Error("still processing"), { status: 409 })), false);
+    assert.equal(isTerminalBillingIdempotencyError(reconciliation), false);
+  });
+
+  it("persists a reconciliation block across reload without rotating the refund key", async () => {
+    const storage = memoryStorage();
+    const identity = { userId: "reconciliation-admin", studioId: "studio-1" };
+    const requestKey = resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "refund-key-stable", storage);
+    assert.equal(markRefundReconciliationRequired(identity, payment.id, storage), true);
+    assert.equal(isRefundReconciliationBlocked(identity, payment.id, storage), true);
+    const reloadedModel = await import(`../src/lib/billing-refund-model.ts?reload=${Date.now()}`);
+    assert.equal(reloadedModel.isRefundReconciliationBlocked(identity, payment.id, storage), true);
+    assert.equal(
+      resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "must-not-run", storage),
+      requestKey,
+    );
+  });
+
+  it("does not treat a persisted generic ambiguous attempt as reconciliation-required", () => {
+    const storage = memoryStorage();
+    const identity = { userId: "ambiguous-admin", studioId: "studio-1" };
+    resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "ambiguous-key", storage);
+    assert.equal(isRefundReconciliationBlocked(identity, payment.id, storage), false);
+    assert.equal(
+      resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "must-not-rotate", storage),
+      "ambiguous-key",
+    );
+  });
+
+  it("rotates only after a definitive terminal correction error", () => {
+    const storage = memoryStorage();
+    const identity = { userId: "terminal-admin", studioId: "studio-1" };
+    const first = resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "terminal-key-1", storage);
+    const terminal = Object.assign(
+      new Error("This billing operation was rejected. Use a new Idempotency-Key after correcting the request."),
+      { status: 409 },
+    );
+    assert.equal(isTerminalBillingIdempotencyError(terminal), true);
+    clearRefundRequestKey(identity, payment.id, storage);
+    const corrected = resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", () => "terminal-key-2", storage);
+    assert.notEqual(corrected, first);
   });
 
   it("posts the exact path, generated body shape, and idempotency header", async () => {
@@ -143,6 +244,24 @@ describe("billing payment refunds", () => {
     assert.match(source, /window\.confirm/);
     assert.match(source, /refundController\.canRefundPayments/);
     assert.match(source, /refundAmountCents !== null && window\.confirm/);
+    assert.match(source, /refundController\.isPaymentRefundBlocked\(payment\.id\)/);
+    assert.match(source, /!refundController\.refundActionReady && !refundController\.refundStorageReady/);
+    assert.match(source, /!refundController\.refundActionReady/);
+    assert.match(source, /Checking refund status\.\.\./);
+    assert.match(source, /Refunds are unavailable because this browser cannot safely save the request\. Enable browser storage and reload this page\./);
+    assert.match(source, /This refund needs reconciliation outside Koaryu\. Refund retry is disabled for this payment\./);
     assert.match(source, /sm:grid-cols-\[1fr_auto_auto\]/);
+  });
+
+  it("gates refund actions until the hydration-safe storage snapshot is ready", () => {
+    const source = fs.readFileSync(path.join(root, "src/lib/billing-refund-controller.ts"), "utf8");
+    assert.match(source, /useSyncExternalStore/);
+    assert.match(source, /\(\) => true,\s*\(\) => false/);
+    assert.match(source, /refundStorageAvailable = refundStorageReady && refundStorage !== null/);
+    assert.match(source, /refundActionReady = isPreviewMode \|\| refundStorageAvailable/);
+    assert.match(source, /if \(isPreviewMode \|\| !identity \|\| !refundStorageAvailable\) return false/);
+    assert.match(source, /if \(!refundStorageAvailable\) \{/);
+    assert.ok(source.indexOf('setMessage("Preview mode does not send refunds.")') < source.indexOf("if (!refundStorageAvailable) {"));
+    assert.doesNotMatch(source, /resolveRefundRequestKey\([\s\S]*?storage:\s*null/);
   });
 });

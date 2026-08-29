@@ -13,6 +13,203 @@ BEGIN
     END IF;
 END;
 $v30_guard$;
+
+-- Provider-accepted refunds reserve the remaining refundable balance while they
+-- settle. Confirmed accounting totals continue to include succeeded refunds only.
+CREATE OR REPLACE FUNCTION private.recompute_billing_payment_adjustment_totals(
+    p_payment_id UUID
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+DECLARE
+    v_payment public.billing_payments%ROWTYPE;
+    v_gross INTEGER := 0;
+    v_raw_refunded BIGINT := 0;
+    v_refunded INTEGER := 0;
+    v_raw_disputed BIGINT := 0;
+    v_disputed INTEGER := 0;
+    v_raw_pending_refunds BIGINT := 0;
+    v_pending_refunds INTEGER := 0;
+    v_net INTEGER := 0;
+    v_unknown_dispute BOOLEAN := false;
+    v_reason TEXT := NULL;
+    v_status TEXT;
+BEGIN
+    SELECT *
+    INTO v_payment
+    FROM public.billing_payments
+    WHERE id = p_payment_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+
+    v_gross := v_payment.gross_paid_amount_cents;
+
+    SELECT
+        COALESCE(SUM(GREATEST(refund.amount_cents, 0))
+            FILTER (WHERE refund.status = 'succeeded'), 0),
+        COALESCE(SUM(GREATEST(refund.amount_cents, 0))
+            FILTER (WHERE refund.status = 'pending'), 0)
+    INTO v_raw_refunded, v_raw_pending_refunds
+    FROM public.billing_refunds AS refund
+    WHERE refund.payment_id = v_payment.id
+      AND refund.studio_id = v_payment.studio_id
+      AND refund.stripe_account_id IS NOT DISTINCT FROM v_payment.stripe_account_id
+      AND refund.connect_account_generation IS NOT DISTINCT FROM v_payment.connect_account_generation;
+
+    v_refunded := LEAST(v_gross::BIGINT, v_raw_refunded)::INTEGER;
+
+    SELECT
+        COALESCE(SUM(
+            CASE
+                WHEN dispute.state_category IN ('active', 'lost', 'unknown')
+                    THEN GREATEST(dispute.amount_cents, 0)
+                ELSE 0
+            END
+        ), 0),
+        COALESCE(BOOL_OR(
+            dispute.state_category = 'unknown' OR dispute.reconciliation_required
+        ), false)
+    INTO v_raw_disputed, v_unknown_dispute
+    FROM public.billing_disputes AS dispute
+    WHERE dispute.payment_id = v_payment.id
+      AND dispute.studio_id = v_payment.studio_id
+      AND dispute.stripe_account_id IS NOT DISTINCT FROM v_payment.stripe_account_id
+      AND dispute.connect_account_generation IS NOT DISTINCT FROM v_payment.connect_account_generation;
+
+    v_disputed := LEAST(
+        GREATEST(v_gross - v_refunded, 0)::BIGINT,
+        v_raw_disputed
+    )::INTEGER;
+    v_net := GREATEST(v_gross - v_refunded - v_disputed, 0);
+    v_pending_refunds := LEAST(v_net::BIGINT, v_raw_pending_refunds)::INTEGER;
+
+    IF v_payment.adjustment_reconciliation_reason_code =
+       'historical_connect_generation_unknown' THEN
+        v_reason := 'historical_connect_generation_unknown';
+    ELSIF v_raw_refunded > v_gross THEN
+        v_reason := 'succeeded_refunds_exceed_payment';
+    ELSIF v_unknown_dispute THEN
+        v_reason := 'unknown_dispute_status';
+    END IF;
+
+    IF v_disputed > 0 THEN
+        v_status := 'disputed';
+    ELSIF v_gross > 0 AND v_refunded >= v_gross THEN
+        v_status := 'refunded';
+    ELSIF v_payment.status IN ('disputed', 'refunded', 'succeeded') THEN
+        v_status := 'succeeded';
+    ELSE
+        v_status := v_payment.status;
+    END IF;
+
+    UPDATE public.billing_payments
+    SET status = v_status,
+        refunded_amount_cents = v_refunded,
+        disputed_amount_cents = v_disputed,
+        net_collected_amount_cents = v_net,
+        refundable_amount_cents = CASE
+            WHEN v_payment.stripe_charge_id IS NOT NULL
+                THEN GREATEST(v_net - v_pending_refunds, 0)
+            ELSE 0
+        END,
+        adjustment_reconciliation_required = v_reason IS NOT NULL,
+        adjustment_reconciliation_reason_code = v_reason
+    WHERE id = v_payment.id;
+END;
+$$;
+
+ALTER FUNCTION private.recompute_billing_payment_adjustment_totals(UUID)
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.recompute_billing_payment_adjustment_totals(UUID)
+    FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.recompute_billing_payment_adjustment_totals(UUID)
+    TO service_role;
+
+CREATE OR REPLACE FUNCTION private.enforce_billing_payment_refundable_amount_v31()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+DECLARE
+    v_raw_pending_refunds BIGINT := 0;
+    v_expected_refundable INTEGER := 0;
+BEGIN
+    IF NEW.stripe_charge_id IS NOT NULL THEN
+        SELECT COALESCE(SUM(GREATEST(refund.amount_cents, 0)), 0)
+        INTO v_raw_pending_refunds
+        FROM public.billing_refunds AS refund
+        WHERE refund.payment_id = NEW.id
+          AND refund.studio_id = NEW.studio_id
+          AND refund.stripe_account_id IS NOT DISTINCT FROM NEW.stripe_account_id
+          AND refund.connect_account_generation IS NOT DISTINCT FROM NEW.connect_account_generation
+          AND refund.status = 'pending';
+
+        v_expected_refundable := GREATEST(
+            NEW.net_collected_amount_cents
+                - LEAST(NEW.net_collected_amount_cents::BIGINT, v_raw_pending_refunds)::INTEGER,
+            0
+        );
+    END IF;
+
+    IF NEW.refundable_amount_cents IS DISTINCT FROM v_expected_refundable THEN
+        RAISE EXCEPTION USING ERRCODE = '23514',
+            MESSAGE = 'billing_payment_refundable_amount_not_exact';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION private.enforce_billing_payment_refundable_amount_v31()
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.enforce_billing_payment_refundable_amount_v31()
+    FROM PUBLIC, anon, authenticated, service_role;
+
+DROP TRIGGER IF EXISTS validate_billing_payment_refundable_amount_v31
+    ON public.billing_payments;
+CREATE TRIGGER validate_billing_payment_refundable_amount_v31
+    BEFORE INSERT OR UPDATE ON public.billing_payments
+    FOR EACH ROW
+    EXECUTE FUNCTION private.enforce_billing_payment_refundable_amount_v31();
+
+ALTER TABLE public.billing_payments
+    DROP CONSTRAINT billing_payments_adjustment_totals_check,
+    ADD CONSTRAINT billing_payments_adjustment_totals_check CHECK (
+        refunded_amount_cents + disputed_amount_cents + net_collected_amount_cents
+            = gross_paid_amount_cents
+        AND refundable_amount_cents <= net_collected_amount_cents
+        AND (
+            stripe_charge_id IS NOT NULL
+            OR refundable_amount_cents = 0
+        )
+    ) NOT VALID;
+
+DO $pending_refund_backfill$
+DECLARE
+    v_payment_id UUID;
+BEGIN
+    FOR v_payment_id IN
+        SELECT DISTINCT refund.payment_id
+        FROM public.billing_refunds AS refund
+        WHERE refund.payment_id IS NOT NULL
+          AND refund.status = 'pending'
+        ORDER BY refund.payment_id
+    LOOP
+        PERFORM private.recompute_billing_payment_adjustment_totals(v_payment_id);
+    END LOOP;
+END;
+$pending_refund_backfill$;
+
+ALTER TABLE public.billing_payments
+    VALIDATE CONSTRAINT billing_payments_adjustment_totals_check;
+
 CREATE OR REPLACE FUNCTION private.validate_billing_payment_identity_change()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -5058,6 +5255,7 @@ BEGIN
             ('private.billing_plan_resource_version_v31(public.billing_plans,text,integer)', false, false, 'search_path=pg_catalog'),
             ('private.claim_billing_invoice_mutation_v31(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
             ('private.claim_payment_payer_operation_resource_v31(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
+            ('private.enforce_billing_payment_refundable_amount_v31()', false, false, 'search_path=""'),
             ('private.enforce_billing_payer_connect_identity_v1()', true, false, 'search_path=""'),
             ('private.enforce_billing_provider_step_parent_v1()', false, false, 'search_path=""'),
             ('private.maintain_billing_invoice_mutation_owner_v31()', false, false, 'search_path=""'),
@@ -5280,6 +5478,9 @@ BEGIN
         table_name,trigger_name,function_signature,expected_tgtype
     ) AS (
         VALUES
+            ('billing_payments',
+             'validate_billing_payment_refundable_amount_v31',
+             'private.enforce_billing_payment_refundable_amount_v31()',23),
             ('billing_invoice_mutation_owners',
              'preserve_billing_invoice_mutation_owner_v31',
              'private.preserve_billing_invoice_mutation_owner_v31()',19),
@@ -5454,7 +5655,7 @@ BEGIN
             FROM invoice_owner_policy_state
           ) THEN 0 ELSE 1 END
         + CASE WHEN (
-            SELECT count(*)=5
+            SELECT count(*)=6
                AND bool_and(tgenabled='O')
                AND bool_and(actual_tgtype=expected_tgtype)
                AND bool_and(function_matches)
@@ -5519,7 +5720,7 @@ INSERT INTO private.koaryu_release_v31_expectations(
     expectation_key, expected_sha256
 ) VALUES (
     'operational_contract_v31',
-    'f5500e1bc303ed77564dc5d77dddccfcc7f42cf8f2716afcb0d62d372e63f197'
+    'b0bf5a376dab5ece5a6d9e44b7ea3067ce7700200361c20f0b1f0166395f0c3b'
 );
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v12()
@@ -5592,7 +5793,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       <> '0:13d573e2bf03109923f5bb72b7a578c02908761732e3c906aba2c3c52011e700' THEN
+       <> '0:7003a83b5deea53d0c365ec3e2eca4dd5281f7658fe0a41d053c1e1618d709c1' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     IF private.koaryu_release_schedule_window_manifest_v1()
@@ -5769,23 +5970,23 @@ BEGIN
         v_failures := array_append(v_failures, 'schema_preflight_v11_body');
     END IF;
     IF private.koaryu_release_operational_contract_v26()
-       <> '0:c16c9c7c4dea83db72d774d29fbc785178b8c53b1df51549b27057849ff852ec' THEN
+       <> '0:c25c355e7eae78a4c3d4079236316c058ad3dc06b09602cb319dbc16531332cc' THEN
         v_failures := array_append(v_failures, 'operational_contract_v26');
     END IF;
     IF private.koaryu_release_operational_contract_v27()
-       <> '0:09560297818ee6b24bf69d29099912b22eb6517cd7d469a9266daa6fb93918df' THEN
+       <> '0:1cc1c6760ff8e57e532813211ff70ca7cdb55aa1209fa1f6d029aee34b0b1624' THEN
         v_failures := array_append(v_failures, 'operational_contract_v27');
     END IF;
     IF private.koaryu_release_operational_contract_v28()
-       <> '0:6767a6ca22f208d3dde5856875ff51a82e8f95a1b84e09939363c7a9f328291c' THEN
+       <> '0:025214fa14bc7319a806cb6eba177d77af214d9ee6457959ca17e3e08347ce0f' THEN
         v_failures := array_append(v_failures, 'operational_contract_v28');
     END IF;
     IF private.koaryu_release_operational_contract_v29()
-       <> '0:ff74240713fd9582f18c66f266935cee095320573c385c25693679d9f3cd782b' THEN
+       <> '0:8423e3fc0ba0d8e7ee9e5a9625f6078ca82f1998a766eb007c6d6433993e389a' THEN
         v_failures := array_append(v_failures, 'operational_contract_v29');
     END IF;
     IF private.koaryu_release_operational_contract_v30()
-       <> '0:c2f7954566cae11fcd0635a6561f785a3364362a931d3393a3e6118d278494e9' THEN
+       <> '0:48b8eff3f5470913614927bb0699970ea165a5ca5b5704cd73af08a9ec7dcdbb' THEN
         v_failures := array_append(v_failures, 'operational_contract_v30');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -5801,7 +6002,7 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_manifest_v11_function');
     END IF;
     IF private.koaryu_release_operational_manifest_v11()
-       <> '7a2e9ab68d2c99c81d04f767821ead1a7b6bf3ea1cfe6a819ff2b3e36ab2135b' THEN
+       <> 'eaead9e1d0d5696089de8a5c4e65dba15d6ba6b7e7fd47f8f911356bdc94420d' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v11');
     END IF;
     IF private.koaryu_release_provider_operation_steps_manifest_v28()
@@ -5812,7 +6013,7 @@ BEGIN
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_resource_ownership_manifest_v31()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> '76661107eafe92cedb39e5312cbdcde9e7a3d1f734917fc3c3389a93427c633d' THEN
+       <> '6ee84c579e50be2b514ac00c975c1f60cf5f116e36adc27fe4296312e5188090' THEN
         v_failures:=array_append(v_failures,'resource_ownership_manifest_v31_function');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -5900,7 +6101,7 @@ BEGIN
         );
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       <> '0954794f138ec5f9257f93183a7cc67d8116359a9ae6dd1222ddc24c763d2614' THEN
+       <> '26373f66ff1800369b7bad388a1b38452e48615b2635cc796d173a3fa92707fc' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(

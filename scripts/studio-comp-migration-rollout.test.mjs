@@ -723,11 +723,11 @@ describe("studio-comp migration rollout guard", () => {
     }
     assert.match(
       EXPECTED_V31_CATALOG_STATE,
-      /functions=109:3cbd5087fed1b1a6d3452c82ab9947486df8f40b82dd290d4c1f032e098358d5:0/,
+      /functions=109:1acb912f850aee6f707540280e1c16f9e153da3284a1d2415315f5c93f383d98:0/,
     );
     assert.match(
       EXPECTED_V31_RESTORED_CATALOG_STATE,
-      /functions=109:3cbd5087fed1b1a6d3452c82ab9947486df8f40b82dd290d4c1f032e098358d5:0/,
+      /functions=109:1acb912f850aee6f707540280e1c16f9e153da3284a1d2415315f5c93f383d98:0/,
     );
   });
 

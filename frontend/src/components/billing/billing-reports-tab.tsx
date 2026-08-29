@@ -130,6 +130,7 @@ export function BillingReportsTab({
         ) : billingPayments.map((payment) => {
           const adjustmentNotice = paymentAdjustmentNotice(payment);
           const refundEligible = isPaymentRefundEligible(payment);
+          const refundBlocked = refundController.isPaymentRefundBlocked(payment.id);
           const refundAmount = refundAmounts[payment.id] ?? (payment.refundable_amount_cents / 100).toFixed(2);
           const refundAmountCents = parseRefundAmount(refundAmount, payment.refundable_amount_cents);
           const refundReason = refundReasons[payment.id] ?? "requested_by_customer";
@@ -151,7 +152,17 @@ export function BillingReportsTab({
             <div><p className="mb-1 text-xs font-medium text-muted sm:hidden">Status</p><StatusPill status={payment.status} /></div>
             {refundController.canRefundPayments ? (
               <div className="flex min-w-[260px] flex-col gap-2">
-                {refundEligible ? (
+                {!refundController.refundActionReady && !refundController.refundStorageReady ? (
+                  <p className="text-xs text-muted">Checking refund status...</p>
+                ) : !refundController.refundActionReady ? (
+                  <p className="text-xs font-medium text-warning">
+                    Refunds are unavailable because this browser cannot safely save the request. Enable browser storage and reload this page.
+                  </p>
+                ) : refundBlocked ? (
+                  <p className="text-xs font-medium text-warning">
+                    This refund needs reconciliation outside Koaryu. Refund retry is disabled for this payment.
+                  </p>
+                ) : refundEligible ? (
                   <>
                     <Input
                       label="Refund amount"
