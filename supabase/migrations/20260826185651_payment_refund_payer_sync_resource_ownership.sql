@@ -329,6 +329,9 @@ REVOKE ALL ON FUNCTION private.validate_billing_payment_identity_change()
 -- Existing linked payers predate the generation column. A payer can inherit the
 -- current generation only when its stored account ID is the studio's exact current
 -- account; mismatched or partial identities stop the migration for reconciliation.
+-- Repository-owned demo fixtures deliberately retain synthetic provider-shaped
+-- identities while their studio is disconnected. Keep those identities generationless
+-- and unusable by live workflows instead of relabeling them as a real account generation.
 DO $generation_backfills$
 BEGIN
     EXECUTE 'LOCK TABLE public.studio_payment_accounts IN SHARE ROW EXCLUSIVE MODE';
@@ -368,6 +371,17 @@ BEGIN
                 AND payer.connect_account_generation =
                     private.current_connect_account_generation(account.metadata)
                 AND payer.connect_account_generation > 0
+            )
+            OR (
+                payer.metadata @> '{"demo":true}'::JSONB
+                AND payer.stripe_account_id = 'acct_demo_river_city'
+                AND payer.stripe_customer_id ~ '^cus_demo_[a-z0-9_]+$'
+                AND payer.connect_account_generation IS NULL
+                AND account.studio_id IS NOT NULL
+                AND account.status = 'not_connected'
+                AND account.stripe_connected_account_id IS NULL
+                AND account.charges_enabled IS FALSE
+                AND account.payouts_enabled IS FALSE
             )
         )
     ) THEN

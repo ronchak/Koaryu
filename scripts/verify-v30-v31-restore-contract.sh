@@ -75,9 +75,14 @@ fi
 "$psql_bin" "${restored_args[@]}" <<'SQL'
 INSERT INTO auth.users(
   id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at
-) VALUES(
+) VALUES
+(
   '31000000-0000-4000-8000-000000000001','authenticated','authenticated',
   'v31-restore@example.invalid','{}','{}',now(),now()
+),
+(
+  '32000000-0000-4000-8000-000000000001','authenticated','authenticated',
+  'v31-demo-restore@example.invalid','{}','{}',now(),now()
 );
 INSERT INTO public.studios(id,name,slug,owner_id) VALUES(
   '31000000-0000-4000-8000-000000000002','V31 restore normalization',
@@ -87,11 +92,25 @@ INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(
   '31000000-0000-4000-8000-000000000002',
   '31000000-0000-4000-8000-000000000001','admin'
 );
+INSERT INTO public.studios(id,name,slug,owner_id) VALUES(
+  '32000000-0000-4000-8000-000000000002','V31 restore demo fixture',
+  'v31-restore-demo-fixture','32000000-0000-4000-8000-000000000001'
+);
+INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(
+  '32000000-0000-4000-8000-000000000002',
+  '32000000-0000-4000-8000-000000000001','admin'
+);
 INSERT INTO public.studio_payment_accounts(
   studio_id,stripe_connected_account_id,status,charges_enabled,metadata
 ) VALUES(
   '31000000-0000-4000-8000-000000000002','acct_v31restore',
   'charges_enabled',true,'{"connect_account_generation":1}'
+);
+INSERT INTO public.studio_payment_accounts(
+  studio_id,stripe_connected_account_id,status,charges_enabled,payouts_enabled,metadata
+) VALUES(
+  '32000000-0000-4000-8000-000000000002',NULL,
+  'not_connected',false,false,'{"connect_account_generation":1}'
 );
 INSERT INTO public.billing_payers(
   id,studio_id,display_name,stripe_account_id,stripe_customer_id,
@@ -106,6 +125,49 @@ INSERT INTO public.billing_payers(
   ('31000000-0000-4000-8000-000000000005',
    '31000000-0000-4000-8000-000000000002','Underpaid legacy payer',
    'acct_v31restore','cus_v31restore_underpaid',1,'current',0);
+INSERT INTO public.billing_payers(
+  id,studio_id,display_name,stripe_account_id,stripe_customer_id,
+  connect_account_generation,billing_status,balance_cents,metadata
+) VALUES(
+  '32000000-0000-4000-8000-000000000003',
+  '32000000-0000-4000-8000-000000000002','Canonical demo payer',
+  'acct_demo_river_city','cus_demo_restore',NULL,'current',0,
+  '{"demo":true}'::JSONB
+);
+INSERT INTO public.billing_subscriptions(
+  id,studio_id,payer_id,stripe_account_id,stripe_customer_id,
+  stripe_subscription_id,collection_mode,billing_interval,currency,status,metadata
+) VALUES(
+  '32000000-0000-4000-8000-000000000004',
+  '32000000-0000-4000-8000-000000000002',
+  '32000000-0000-4000-8000-000000000003','acct_demo_river_city',
+  'cus_demo_restore','sub_demo_restore','autopay','monthly','usd','active',
+  '{"demo":true}'::JSONB
+);
+INSERT INTO public.billing_invoices(
+  id,studio_id,payer_id,status,amount_due_cents,amount_paid_cents,
+  amount_remaining_cents,currency,stripe_invoice_id,stripe_account_id,
+  stripe_customer_id,stripe_subscription_id,collection_method,external,metadata
+) VALUES(
+  '32000000-0000-4000-8000-000000000005',
+  '32000000-0000-4000-8000-000000000002',
+  '32000000-0000-4000-8000-000000000003','paid',1000,1000,0,'usd',
+  'in_demo_restore','acct_demo_river_city','cus_demo_restore','sub_demo_restore',
+  'charge_automatically',false,'{"demo":true}'::JSONB
+);
+INSERT INTO public.billing_payments(
+  id,studio_id,payer_id,invoice_id,stripe_customer_id,
+  stripe_payment_intent_id,stripe_charge_id,stripe_account_id,
+  connect_account_generation,status,amount_cents,currency,
+  net_collected_amount_cents,refundable_amount_cents,processed_at,metadata
+) VALUES(
+  '32000000-0000-4000-8000-000000000006',
+  '32000000-0000-4000-8000-000000000002',
+  '32000000-0000-4000-8000-000000000003',
+  '32000000-0000-4000-8000-000000000005','cus_demo_restore',
+  'pi_demo_restore','ch_demo_restore','acct_demo_river_city',NULL,
+  'succeeded',1000,'usd',1000,1000,now(),'{"demo":true}'::JSONB
+);
 INSERT INTO public.billing_plans(
   id,studio_id,name,amount_cents,currency,billing_interval,status,
   stripe_account_id,stripe_product_id,stripe_price_id,stripe_price_version
@@ -280,6 +342,34 @@ INSERT INTO public.billing_provider_operations(
 );
 SQL
 
+negative_log="$temp_dir/v31-demo-negative.log"
+"$psql_bin" "${restored_args[@]}" --command="
+  INSERT INTO public.billing_payers(
+    id,studio_id,display_name,stripe_account_id,stripe_customer_id,
+    connect_account_generation,billing_status,balance_cents,metadata
+  ) VALUES(
+    '32000000-0000-4000-8000-000000000007',
+    '32000000-0000-4000-8000-000000000002','Unmarked provider-shaped payer',
+    'acct_demo_river_city','cus_demo_unmarked',NULL,'current',0,'{}'::JSONB
+  );
+"
+if "$psql_bin" "${restored_args[@]}" --single-transaction \
+  --file="$repository_root/supabase/migrations/20260826185651_payment_refund_payer_sync_resource_ownership.sql" \
+  >"$negative_log" 2>&1; then
+  echo "V31 accepted an unmarked provider-shaped payer in a disconnected demo studio." >&2
+  exit 1
+fi
+negative_output="$(<"$negative_log")"
+if [[ "$negative_output" != *"billing_payer_connect_generation_backfill_incomplete"* ]]; then
+  echo "V31 negative demo-fixture probe failed for an unexpected reason." >&2
+  sed -n '1,80p' "$negative_log" >&2
+  exit 1
+fi
+"$psql_bin" "${restored_args[@]}" --command="
+  DELETE FROM public.billing_payers
+  WHERE id='32000000-0000-4000-8000-000000000007'::UUID;
+"
+
 table_fingerprint() {
   local table_name="$1"
   read_restored "SELECT count(*)::TEXT || ':' || encode(extensions.digest(convert_to(COALESCE(string_agg(to_jsonb(row_state)::TEXT, '|' ORDER BY row_state.id),''),'UTF8'),'sha256'),'hex') FROM public.${table_name} AS row_state;"
@@ -350,6 +440,7 @@ payer_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || CO
 invoice_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || CASE WHEN NOT (metadata ? 'connect_account_generation') THEN '<missing>' WHEN metadata->>'connect_account_generation' = '' THEN '<empty>' ELSE COALESCE(metadata->>'connect_account_generation','<json-null>') END, '|' ORDER BY id) FROM public.billing_invoices WHERE id BETWEEN '31000000-0000-4000-8000-000000000015'::uuid AND '31000000-0000-4000-8000-000000000019'::uuid;")"
 plan_price_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || COALESCE(metadata->>'connect_account_generation','<missing>') || ':' || COALESCE(metadata->>'legacy_marker','<none>'), '|' ORDER BY id) FROM public.billing_plan_prices WHERE id BETWEEN '31000000-0000-4000-8000-000000000022'::uuid AND '31000000-0000-4000-8000-000000000023'::uuid;")"
 subscription_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || COALESCE(metadata->>'connect_account_generation','<missing>') || ':' || COALESCE(metadata->>'legacy_marker','<none>'), '|' ORDER BY id) FROM public.billing_subscriptions WHERE id BETWEEN '31000000-0000-4000-8000-000000000024'::uuid AND '31000000-0000-4000-8000-000000000026'::uuid;")"
+demo_fixture_state="$(read_restored "SELECT payer.stripe_account_id || ':' || payer.stripe_customer_id || ':' || COALESCE(payer.connect_account_generation::TEXT,'<null>') || ':' || COALESCE((payer.metadata->>'demo')::BOOLEAN,false)::TEXT || ':' || account.status || ':' || COALESCE(account.stripe_connected_account_id,'<null>') || ':' || account.charges_enabled::TEXT || ':' || account.payouts_enabled::TEXT || ':' || subscription.stripe_subscription_id || ':' || invoice.stripe_invoice_id || ':' || payment.stripe_charge_id || ':' || COALESCE(payment.connect_account_generation::TEXT,'<null>') FROM public.billing_payers AS payer JOIN public.studio_payment_accounts AS account ON account.studio_id=payer.studio_id JOIN public.billing_subscriptions AS subscription ON subscription.payer_id=payer.id JOIN public.billing_invoices AS invoice ON invoice.payer_id=payer.id JOIN public.billing_payments AS payment ON payment.payer_id=payer.id WHERE payer.id='32000000-0000-4000-8000-000000000003'::UUID;")"
 payments_after="$(table_fingerprint billing_payments)"
 refunds_after="$(table_fingerprint billing_refunds)"
 disputes_after="$(table_fingerprint billing_disputes)"
@@ -369,6 +460,7 @@ echo "RESTORED_V31_PAYER_GENERATION_STATE=$payer_generation_state"
 echo "RESTORED_V31_INVOICE_GENERATION_STATE=$invoice_generation_state"
 echo "RESTORED_V31_PLAN_PRICE_GENERATION_STATE=$plan_price_generation_state"
 echo "RESTORED_V31_SUBSCRIPTION_GENERATION_STATE=$subscription_generation_state"
+echo "RESTORED_V31_DEMO_FIXTURE_STATE=$demo_fixture_state"
 echo "RESTORED_V31_UNTOUCHED_ROW_FINGERPRINTS=$payments_after|$refunds_after|$disputes_after|$operations_after"
 
 if [[ "$resource_manifest" != "0:7003a83b5deea53d0c365ec3e2eca4dd5281f7658fe0a41d053c1e1618d709c1" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
@@ -409,6 +501,10 @@ if [[ "$plan_price_generation_state" != "31000000-0000-4000-8000-000000000022:1:
 fi
 if [[ "$subscription_generation_state" != "31000000-0000-4000-8000-000000000024:1:keep|31000000-0000-4000-8000-000000000025:<missing>:keep|31000000-0000-4000-8000-000000000026:9:<none>" ]]; then
   echo "Restored V31 subscription generation adoption mismatch: $subscription_generation_state" >&2
+  exit 1
+fi
+if [[ "$demo_fixture_state" != "acct_demo_river_city:cus_demo_restore:<null>:true:not_connected:<null>:false:false:sub_demo_restore:in_demo_restore:ch_demo_restore:<null>" ]]; then
+  echo "Restored V31 canonical demo fixture drifted or became live-capable: $demo_fixture_state" >&2
   exit 1
 fi
 if [[ "$legacy_invoice_negative_before" != "$legacy_invoice_negative_after" ]]; then
