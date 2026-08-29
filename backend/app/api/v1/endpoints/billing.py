@@ -18,6 +18,7 @@ from app.schemas.billing import (
     BillingPayerAutopaySetupRequest,
     BillingPayerCreate,
     BillingPayerResponse,
+    BillingPayerSyncRequest,
     BillingPayerUpdate,
     BillingPlanCreate,
     BillingPlanResponse,
@@ -41,6 +42,9 @@ from app.schemas.billing import (
     StudioPaymentAccountResponse,
 )
 from app.services.billing_service import BillingService
+from app.services.staging_provider_enrollment_policy import (
+    allows_provider_enrollment_preparation,
+)
 from app.services.studio_scope import (
     resolve_billing_admin_staff_role_for_user,
     resolve_billing_manager_staff_role_for_user,
@@ -509,6 +513,7 @@ async def update_payer(
 @router.post("/payers/{payer_id}/sync", response_model=BillingPayerResponse)
 async def sync_payer(
     payer_id: str,
+    data: Optional[BillingPayerSyncRequest] = None,
     request_idempotency_key: str = Header(
         ...,
         alias="Idempotency-Key",
@@ -531,6 +536,7 @@ async def sync_payer(
             studio_id,
             user_id,
             request_idempotency_key,
+            data.test_clock_id if data is not None else None,
         )
     return await run_supabase_operation(
         supabase,
@@ -654,7 +660,10 @@ async def create_enrollment(
             requested_studio_id,
             require_platform_subscription=True,
         )
-        if data.collection_mode != "external":
+        if (
+            data.collection_mode != "external"
+            and not allows_provider_enrollment_preparation()
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=EXTERNAL_ENROLLMENT_ONLY_DETAIL,

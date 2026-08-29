@@ -144,7 +144,7 @@ A field the resolver cannot read is treated as a denial, and every denial must b
 | `POST /billing/payers` | Admin | Local insert; may create Stripe customer; audit | Hidden/unsupported |
 | `GET /billing/payers/{payer_id}` | Admin / Front Desk | Local read | Supported read |
 | `PATCH /billing/payers/{payer_id}` | Admin | Local update; may update Stripe customer; audit | Hidden/unsupported |
-| `POST /billing/payers/{payer_id}/sync` | Admin | Stripe customer read/create/update, local projection, audit | Hidden; live `FAIL-CLOSED` |
+| `POST /billing/payers/{payer_id}/sync` | Admin | Stripe customer read/create/update, local projection, audit; an optional test-clock binding is accepted only in exact staging test mode for a new customer | Hidden; live `FAIL-CLOSED` |
 | `POST /billing/payers/{payer_id}/autopay/setup-link` | Admin | Terms timestamp, Stripe setup flow, local status, audit | Hidden; live `FAIL-CLOSED` |
 | `POST /billing/payers/{payer_id}/autopay/disable` | Admin | May rewire provider subscriptions and local state; audit | Hidden; unresolved semantics |
 
@@ -155,14 +155,19 @@ A field the resolver cannot read is treated as a denial, and every denial must b
 | `GET /billing/subscriptions` | Admin / Front Desk | Local read | Supported read |
 | `GET /billing/enrollments` | Admin / Front Desk | Local read | Supported read |
 | `GET /students/{student_id}/billing` | Admin / Front Desk | Tenant-scoped local read | Supported read |
-| `POST /billing/enrollments` | Admin / Front Desk | External-only local enrollment, balance recomputation, audit | Supported routine |
-| `POST /students/{student_id}/billing/enrollments` | Admin / Front Desk | Same external-only transition, student-scoped | Supported routine |
+| `POST /billing/enrollments` | Admin / Front Desk | External-only local enrollment in production; exact staging test mode may prepare a pending provider-backed row for the approved rehearsal | Supported routine; staging rehearsal exception is local-only |
+| `POST /students/{student_id}/billing/enrollments` | Admin / Front Desk | Same transition, student-scoped | Supported routine; staging rehearsal exception is local-only |
 | `PATCH /billing/enrollments/{enrollment_id}` | Admin | May detach or activate provider lifecycle and update local state | Hidden/unsupported |
 | `POST /billing/enrollments/{enrollment_id}/pause` | Admin | Provider detachment plus local status and audit | Hidden/unsupported |
 | `POST /billing/enrollments/{enrollment_id}/resume` | Admin | May activate provider subscription plus local status | Hidden/unsupported |
 | `POST /billing/enrollments/{enrollment_id}/cancel` | Admin | Current implementation detaches provider state immediately | Hidden/unsupported; not an ordinary period-end cancellation |
 
-Both enrollment-create routes return `409` before service execution unless `collection_mode` is exactly `external`.
+Both enrollment-create routes return `409` before service execution unless
+`collection_mode` is exactly `external`. The only exception is exact
+`ENVIRONMENT=staging` with configured Stripe test mode, where the normal authenticated
+role, tenant, and Core-entitlement checks may create a local pending provider-backed row
+for the approved schema-v4 rehearsal. That preparation makes no Stripe call; the
+idempotent activation workflow remains the sole owner of subscription mutation.
 
 ### Invoices, payments, and exports
 

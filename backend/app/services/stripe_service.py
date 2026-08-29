@@ -249,6 +249,7 @@ class StripeService:
         metadata: dict[str, Any],
         expand: Optional[list[str]] = None,
         idempotency_key: str,
+        test_clock_id: Optional[str] = None,
     ):
         stripe = self._stripe()
         payload: dict[str, Any] = {"name": name, "metadata": metadata}
@@ -260,6 +261,8 @@ class StripeService:
             payload["address"] = {k: v for k, v in address.items() if v}
         if expand:
             payload["expand"] = expand
+        if test_clock_id:
+            payload["test_clock"] = test_clock_id
         return stripe.Customer.create(
             **payload,
             **self._request_options(account_id=account_id, idempotency_key=idempotency_key),

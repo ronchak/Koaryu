@@ -19,6 +19,24 @@ The core inventory is fixed at 15 proof steps and 24 mutation-attempt rows. Do n
 
 Use one UTC RFC3339 capture boundary after the last readback. Every supplemental provider or local readback and every terminal-count query must name that boundary. Create the rehearsal customer, subscription, invoice, and dispute fixture on the same sanitized Stripe test-clock ID, then advance that clock to exercise the period boundary. Replace both `period_advancement.advances_to` and `period_advancement.observed_provider_boundary` sentinel values with the same positive Unix timestamp returned by the Stripe test clock. The template's zeroes are non-live sentinels and fail private evidence validation. Never edit a database timestamp. The rehearsal must finish with zero failed, stuck, unmapped, wrong-mode, wrong-generation, pending-transition, and reconciliation-required rows. Each zero needs its canonical query or provider/local component source. Stop if any count is nonzero, unsourced, or captured at another boundary.
 
+Before payer sync, create the test clock through attended Stripe test tooling on the
+rehearsal connected account. Send its exact ID only on the first customer-creating sync:
+
+```http
+POST /api/v1/billing/payers/{payer_id}/sync
+Idempotency-Key: <caller-owned-key>
+Content-Type: application/json
+
+{"test_clock_id":"clock_..."}
+```
+
+The request body remains optional for ordinary sync. Test-clock binding is accepted only
+for a new customer in exact staging test mode and is part of the durable request hash.
+Prepare the two provider-backed enrollment rows next through either authenticated
+enrollment-create route. That exact staging/test exception creates local pending rows
+only; activate them through the existing idempotent activation workflow. Never bind a
+directly created Stripe customer or repair the fixture with service-role SQL.
+
 ### Evidence-source map
 
 The source labels below are exact contract values. Provider readbacks mean the named Stripe test-mode object retrieval. API/catalog readbacks mean the sanitized workflow or sink decision returned by the deployed candidate. Database readbacks mean the named local projection, operation, step, event, audit, transition, or count view at the shared boundary. The provider-operation inventory entries show no matching provider operation for local-only and denied cases.

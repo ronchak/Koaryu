@@ -177,6 +177,16 @@ wrong-generation, pending-transition, and reconciliation-required records.
 An externally recorded payment must remain a local accounting entry and must not call
 Stripe's connected-invoice pay endpoint or change a connected invoice out of band.
 
+Fixture preparation is deliberately staging-only. Create the connected-account test
+clock with attended Stripe test tooling, then pass its exact `clock_...` ID in the
+optional body of the first payer sync. The backend accepts that field only for a new
+customer under exact `ENVIRONMENT=staging` and configured Stripe test mode, and binds it
+into the durable request identity. Prepare the two provider-backed enrollment rows
+through the ordinary authenticated enrollment-create routes before activation; in this
+same exact staging/test state they create local pending rows only. Production,
+development, wrong-mode, existing-customer, malformed-clock, and changed same-key clock
+requests remain fail-closed. Do not replace these paths with service-role row insertion.
+
 ## Browser matrix
 
 Use the deployed staging frontend and the staging test accounts. Verify Admin, Front

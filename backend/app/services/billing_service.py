@@ -193,12 +193,14 @@ class BillingService(BillingPrivateFacadeMixin):
         studio_id: str,
         actor_id: str,
         idempotency_key: str | None = None,
+        test_clock_id: str | None = None,
     ) -> BillingPayerResponse:
         return await BillingPayerManager(self, stripe_service_cls=StripeService).sync_payer(
             payer_id,
             studio_id,
             actor_id,
             idempotency_key,
+            test_clock_id,
         )
 
     async def list_subscriptions(self, studio_id: str) -> list[BillingSubscriptionResponse]:

@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from typing import Any, Literal, Optional
 
@@ -20,6 +21,7 @@ PaymentStatus = Literal["pending", "processing", "succeeded", "failed", "refunde
 BillingRefundReason = Literal["duplicate", "fraudulent", "requested_by_customer"]
 BillingSystemCheckStatus = Literal["pass", "warn", "fail"]
 BillingReconcileObjectType = Literal["connect_account", "payer", "invoice", "subscription", "payment_intent"]
+STRIPE_TEST_CLOCK_ID_PATTERN = re.compile(r"^clock_[A-Za-z0-9]+$")
 CARD_BRAND_VALUES = {
     "amex",
     "cartes_bancaires",
@@ -303,6 +305,17 @@ class BillingPayerUpdate(BaseModel):
     address_city: Optional[str] = Field(default=None, max_length=120)
     address_state: Optional[str] = Field(default=None, max_length=80)
     address_zip: Optional[str] = Field(default=None, max_length=20)
+
+
+class BillingPayerSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    test_clock_id: Optional[str] = Field(
+        default=None,
+        min_length=7,
+        max_length=255,
+        pattern=STRIPE_TEST_CLOCK_ID_PATTERN.pattern,
+    )
 
 
 class BillingPayerResponse(BaseModel):

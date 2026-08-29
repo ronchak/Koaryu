@@ -5,7 +5,12 @@ from uuid import uuid4
 
 from fastapi import HTTPException, status
 
-from app.schemas.billing import BillingPayerCreate, BillingPayerResponse, BillingPayerUpdate
+from app.schemas.billing import (
+    STRIPE_TEST_CLOCK_ID_PATTERN,
+    BillingPayerCreate,
+    BillingPayerResponse,
+    BillingPayerUpdate,
+)
 from app.services.billing_invoice_projection import _object_get, _stripe_id
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
@@ -15,7 +20,7 @@ from app.services.billing_provider_operations import (
     provider_operation_disposition,
 )
 from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
-from app.services.stripe_mutation_policy import StripeMutationBlocked
+from app.services.stripe_mutation_policy import StripeMutationBlocked, configured_stripe_mode
 from app.services.stripe_service import StripeService
 
 
@@ -102,6 +107,7 @@ class BillingPayerManager:
         studio_id: str,
         actor_id: str,
         idempotency_key: str | None = None,
+        test_clock_id: str | None = None,
     ) -> BillingPayerResponse:
         normalized_key = normalize_idempotency_key(idempotency_key)
         if not normalized_key:
@@ -109,6 +115,7 @@ class BillingPayerManager:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Idempotency-Key is required for payer sync.",
             )
+        self._validate_test_clock_context(test_clock_id)
         payer = self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
         account = self._local_ready_connect_account(studio_id)
         account_id = str(account["stripe_connected_account_id"])
@@ -117,6 +124,7 @@ class BillingPayerManager:
             payer,
             account_id=account_id,
             generation=generation,
+            test_clock_id=test_clock_id,
         )
         lease_owner = str(uuid4())
         coordinator = BillingProviderOperationCoordinator(self.supabase)
@@ -218,6 +226,18 @@ class BillingPayerManager:
             coordinator.complete(context, operation, result_code="payer_sync_completed")
             return BillingPayerResponse(**payer)
 
+        if test_clock_id and not recovery and payer.get("stripe_customer_id"):
+            coordinator.transition(
+                context,
+                operation,
+                "definitive_rejected",
+                error_code="payer_sync_test_clock_requires_new_customer",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A Stripe test clock can only be attached when creating a new payer customer.",
+            )
+
         sync_mode = (
             self._payer_sync_mode(operation)
             if recovery
@@ -279,6 +299,7 @@ class BillingPayerManager:
                     sync_mode=sync_mode,
                     metadata=metadata,
                     address=address,
+                    test_clock_id=test_clock_id,
                 )
             except Exception as exc:
                 self._mark_payer_sync_reconciliation(
@@ -333,6 +354,7 @@ class BillingPayerManager:
                         metadata=metadata,
                         expand=["invoice_settings.default_payment_method"],
                         idempotency_key=stripe_key,
+                        test_clock_id=test_clock_id,
                     )
             except StripeMutationBlocked:
                 coordinator.transition(
@@ -414,9 +436,11 @@ class BillingPayerManager:
         sync_mode: str,
         metadata: dict[str, Any],
         address: dict[str, Any],
+        test_clock_id: str | None = None,
     ) -> None:
         provider_address = _object_get(customer, "address") or {}
         provider_metadata = _object_get(customer, "metadata") or {}
+        provider_test_clock = _stripe_id(_object_get(customer, "test_clock"))
         if (
             _stripe_id(customer) != customer_id
             or (
@@ -441,6 +465,7 @@ class BillingPayerManager:
                 != str(value)
                 for key, value in metadata.items()
             )
+            or provider_test_clock != test_clock_id
         ):
             raise RuntimeError("payer_sync_recovered_customer_mismatch")
 
@@ -508,8 +533,9 @@ class BillingPayerManager:
         *,
         account_id: str,
         generation: int,
+        test_clock_id: str | None = None,
     ) -> str:
-        return stable_hash({
+        payload = {
             "operation_type": PAYER_SYNC_OPERATION_TYPE,
             "studio_id": payer["studio_id"],
             "payer_id": payer["id"],
@@ -524,7 +550,30 @@ class BillingPayerManager:
                 "state": payer.get("address_state"),
                 "postal_code": payer.get("address_zip"),
             },
-        })
+        }
+        if test_clock_id is not None:
+            payload["stripe_test_clock_id"] = test_clock_id
+        return stable_hash(payload)
+
+    def _validate_test_clock_context(self, test_clock_id: str | None) -> None:
+        if test_clock_id is None:
+            return
+        if not STRIPE_TEST_CLOCK_ID_PATTERN.fullmatch(test_clock_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Stripe test clock ID is malformed.",
+            )
+        settings = self.billing_service.settings
+        if getattr(settings, "ENVIRONMENT", None) != "staging":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Stripe test clocks are restricted to the staging environment.",
+            )
+        if configured_stripe_mode(settings) != "test":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Stripe test clocks require Stripe test mode.",
+            )
 
     def _project_payer_sync_result(
         self,

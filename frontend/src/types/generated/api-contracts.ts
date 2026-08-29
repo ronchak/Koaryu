@@ -290,6 +290,10 @@ export interface ApiBillingPayerResponse {
   updated_at: string;
 }
 
+export interface ApiBillingPayerSyncRequest {
+  test_clock_id?: string | null;
+}
+
 export interface ApiBillingPayerUpdate {
   display_name?: string | null;
   guardian_id?: string | null;

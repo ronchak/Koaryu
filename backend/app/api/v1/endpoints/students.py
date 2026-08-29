@@ -43,6 +43,7 @@ from app.services.student_import_csv import CSV_IMPORT_MAX_BYTES, validate_csv_i
 from app.services.student_photo_store import StudentPhotoStore
 from app.services.student_service import StudentService
 from app.services.student_roster_query import StudentRosterCursorError
+from app.services.staging_provider_enrollment_policy import allows_provider_enrollment_preparation
 from app.services.dashboard_summary_service import dashboard_summary_fact_cache
 import json
 
@@ -385,7 +386,10 @@ async def add_student_billing_enrollment(
             requested_studio_id,
             require_platform_subscription=True,
         )["studio_id"]
-        if data.collection_mode != "external":
+        if (
+            data.collection_mode != "external"
+            and not allows_provider_enrollment_preparation()
+        ):
             raise HTTPException(
                 status_code=http_status.HTTP_409_CONFLICT,
                 detail="Billing attachments currently support external collection only.",

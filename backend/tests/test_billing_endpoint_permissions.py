@@ -16,6 +16,7 @@ from app.schemas.billing import (
     BillingInvoiceCreate,
     BillingPayerAutopaySetupRequest,
     BillingPayerCreate,
+    BillingPayerSyncRequest,
     BillingPayerUpdate,
     BillingPlanCreate,
     BillingPlanUpdate,
@@ -482,6 +483,46 @@ class BillingEndpointPermissionTest(unittest.TestCase):
         manager_role.assert_called_once()
         service.get_system_status.assert_awaited_once_with("studio_1", "front_desk")
 
+    def test_admin_payer_sync_forwards_optional_staging_test_clock(self):
+        service = AsyncMock()
+        service.sync_payer = AsyncMock(return_value={"id": "payer_1"})
+        request = BillingPayerSyncRequest(test_clock_id="clock_rehearsal123")
+        with (
+            patch(
+                "app.api.v1.endpoints.billing._admin_studio_id",
+                return_value="studio_1",
+            ) as admin_studio,
+            patch(
+                "app.api.v1.endpoints.billing.BillingService",
+                return_value=service,
+            ),
+        ):
+            result = asyncio.run(
+                billing_endpoints.sync_payer(
+                    "payer_1",
+                    data=request,
+                    request_idempotency_key="payer-sync-key",
+                    user_id="admin_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
+
+        self.assertEqual(result, {"id": "payer_1"})
+        admin_studio.assert_called_once_with(
+            unittest.mock.ANY,
+            "admin_1",
+            "studio_1",
+            require_platform_subscription=True,
+        )
+        service.sync_payer.assert_awaited_once_with(
+            "payer_1",
+            "studio_1",
+            "admin_1",
+            "payer-sync-key",
+            "clock_rehearsal123",
+        )
+
     def test_front_desk_can_use_only_the_named_routine_billing_writes(self):
         service = AsyncMock()
         service.add_student_billing_enrollment = AsyncMock(return_value={"id": "enrollment_1"})
@@ -565,6 +606,49 @@ class BillingEndpointPermissionTest(unittest.TestCase):
             "studio_1",
             "front_desk_1",
             "autopay-key",
+        )
+
+    def test_staging_test_can_prepare_provider_enrollment_from_billing_route(self):
+        service = AsyncMock()
+        service.add_student_billing_enrollment = AsyncMock(
+            return_value={"id": "enrollment_1", "status": "pending"}
+        )
+        enrollment = StudentBillingEnrollmentCreate(
+            student_id="student_1",
+            plan_id="plan_1",
+            payer_id="payer_1",
+            collection_mode="invoice_link",
+        )
+        with (
+            patch(
+                "app.api.v1.endpoints.billing._routine_studio_id",
+                return_value="studio_1",
+            ) as routine_studio,
+            patch(
+                "app.api.v1.endpoints.billing.allows_provider_enrollment_preparation",
+                return_value=True,
+            ) as allows_preparation,
+            patch(
+                "app.api.v1.endpoints.billing.BillingService",
+                return_value=service,
+            ),
+        ):
+            result = asyncio.run(
+                billing_endpoints.create_enrollment(
+                    enrollment,
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
+
+        self.assertEqual(result, {"id": "enrollment_1", "status": "pending"})
+        routine_studio.assert_called_once()
+        allows_preparation.assert_called_once_with()
+        service.add_student_billing_enrollment.assert_awaited_once_with(
+            enrollment,
+            "studio_1",
+            "front_desk_1",
         )
 
     def test_contract_only_rejects_provider_enrollment_and_invoice_targeted_external_payment(self):
