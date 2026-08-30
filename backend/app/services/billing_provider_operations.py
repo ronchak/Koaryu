@@ -300,6 +300,27 @@ class BillingProviderOperationCoordinator:
             expected_key="operation",
         )
 
+    def release_invoice_retry_preread_lease(
+        self,
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "release_billing_invoice_retry_preread_lease_v32",
+            {
+                "p_operation_id": context.operation_id,
+                "p_studio_id": context.studio_id,
+                "p_actor_id": context.actor_id,
+                "p_caller_request_key": context.caller_request_key,
+                "p_request_sha256": context.request_sha256,
+                "p_stripe_connected_account_id": context.stripe_connected_account_id,
+                "p_connect_account_generation": context.connect_account_generation,
+                "p_lease_owner": context.lease_owner,
+                "p_expected_revision": int(operation["revision"]),
+            },
+            expected_key="operation",
+        )
+
     def transition(
         self,
         context: BillingProviderOperationContext,

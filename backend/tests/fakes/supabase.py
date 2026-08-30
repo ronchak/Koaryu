@@ -171,12 +171,7 @@ class FakeTableQuery:
             raise failure
         self._assert_required_filters()
 
-        if self.name == "billing_provider_operations" and hasattr(
-            self.supabase, "billing_provider_operations"
-        ):
-            rows = list(self.supabase.billing_provider_operations.values())
-        else:
-            rows = self.supabase.tables.setdefault(self.name, [])
+        rows = self.supabase.tables.setdefault(self.name, [])
         if self.insert_payload is not None:
             inserted = self._insert_rows(rows)
             return FakeResult(inserted)

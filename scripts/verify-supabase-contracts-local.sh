@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 126 ]]; then
-  echo "ERROR: Expected the canonical 126-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 127 ]]; then
+  echo "ERROR: Expected the canonical 127-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 44 ]]; then
-  echo "ERROR: Expected the canonical 44-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 45 ]]; then
+  echo "ERROR: Expected the canonical 45-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then

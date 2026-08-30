@@ -42,14 +42,14 @@ The cache lives in `backend/app/services/release_schema_readiness.py`.
 
 The latest read-only staging inspection found 119/head `20260825043911` at the
 schedule-window V25 boundary. This combined candidate advances staging through
-exactly seven Payments migrations to 126/head `20260826185651`/V31. The guarded
+exactly eight Payments migrations to 127/head `20260830065627`/V32. The guarded
 rollout tool classifies the live starting point as `schedule-v25`, computes the
-seven-file remainder and its own manifest, and can resume from exact V25 through
-V30 if a transaction boundary leaves a partial forward apply.
+eight-file remainder and its own manifest, and can resume from exact V25 through
+V31 if a transaction boundary leaves a partial forward apply.
 
 Migration 119 keeps `koaryu_release_schema_preflight_v4` returning the historical
 V24 shape. The Payments chain preserves the schedule-shaped V5 response and owns
-V6 through V12. The candidate backend reads V12 and serves only at exact 126/V31;
+V6 through V13. The candidate backend reads V13 and serves only at exact 127/V32;
 older deployed backends retain their corresponding compatibility response during
 the database-first cutover.
 The temporary V22 and
@@ -78,15 +78,15 @@ post-110 rollback set. A database still at exact 110 must classify
 `20260823193155_revoke_public_function_execute.sql`, and
 `20260824190500_attest_verified_restore_manifest.sql`,
 `20260825042838_schedule_window_read_rpc.sql`,
-`20260825043911_attest_schedule_window_release.sql`, and the seven Payments
+`20260825043911_attest_schedule_window_release.sql`, and the eight Payments
 migrations from `20260826030234_live_billing_reconciliation_v3.sql` through
-`20260826185651_payment_refund_payer_sync_resource_ownership.sql`. If a future approved
+`20260830065627_release_invoice_retry_preread_lease_v32.sql`. If a future approved
 disaster recovery explicitly returns production to the proved restored V22
 snapshot, it must classify exact `state=restored-v22` and dry-run only
-migrations 116 through 126. These are hypothetical forward-recovery cases, not
+migrations 116 through 127. These are hypothetical forward-recovery cases, not
 the current live state. In either case, only the authorized operator runs the
-production apply gate, and promotion remains blocked until migration 126
-produces exact V31 readiness and the final raw catalog/provider fingerprint.
+production apply gate, and promotion remains blocked until migration 127
+produces exact V32 readiness and the final raw catalog/provider fingerprint.
 
 ## Gates that will refuse you
 
@@ -98,7 +98,7 @@ before starting, and record *why* on each thread if the finding is being deferre
 
 **Run the rollout tool from the exact candidate implementation.** For an unmerged
 release, invoke the tool from PR #134's worktree and pass its exact 40-character head.
-The tool creates a detached worktree at that SHA and verifies the 126-file sequence and
+The tool creates a detached worktree at that SHA and verifies the 127-file sequence and
 source hashes there. Do not run an older `main` copy of the tool and do not merge the PR
 to obtain the rollout script.
 

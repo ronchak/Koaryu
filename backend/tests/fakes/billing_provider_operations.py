@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -35,6 +36,15 @@ def _invoice_mutation_in_progress() -> PostgrestAPIError:
     })
 
 
+def _retry_preread_release_rejected(message: str) -> PostgrestAPIError:
+    return PostgrestAPIError({
+        "code": "55000",
+        "message": message,
+        "details": "",
+        "hint": "",
+    })
+
+
 def _transition_not_found() -> PostgrestAPIError:
     return PostgrestAPIError({
         "code": "P0002",
@@ -57,7 +67,13 @@ class BillingProviderOperationRpcMixin:
     billing_provider_operations: dict[tuple[str, str, str], dict[str, Any]]
 
     def initialize_billing_provider_operations(self) -> None:
+        self.billing_provider_now = datetime(
+            2026, 8, 27, tzinfo=timezone.utc
+        )
         self.billing_provider_operations = {}
+        self.release_billing_invoice_retry_preread_lease_calls: list[
+            dict[str, Any]
+        ] = []
         self.billing_provider_step_plans: dict[str, dict[str, Any]] = {}
         self.billing_provider_operation_resources: dict[
             tuple[str, str, str], dict[str, Any]
@@ -74,6 +90,13 @@ class BillingProviderOperationRpcMixin:
         self.billing_enrollment_transition_intents: dict[str, dict[str, Any]] = {}
         self.billing_enrollment_transition_aliases: dict[tuple[str, str, str], str] = {}
 
+    def advance_billing_provider_clock(self, *, seconds: int) -> None:
+        self.billing_provider_now += timedelta(seconds=seconds)
+
+    @staticmethod
+    def _billing_provider_timestamp(value: datetime) -> str:
+        return value.isoformat().replace("+00:00", "Z")
+
     def _rpc_claim_billing_provider_operation_v1(self, params: dict[str, Any]) -> dict[str, Any]:
         key = (
             params["p_studio_id"],
@@ -82,6 +105,10 @@ class BillingProviderOperationRpcMixin:
         )
         operation = self.billing_provider_operations.get(key)
         if operation is None:
+            lease_acquired_at = self.billing_provider_now
+            lease_expires_at = lease_acquired_at + timedelta(
+                seconds=int(params["p_lease_seconds"])
+            )
             operation = {
                 "id": f"00000000-0000-4000-8000-{len(self.billing_provider_operations) + 9001:012d}",
                 "studio_id": params["p_studio_id"],
@@ -94,7 +121,12 @@ class BillingProviderOperationRpcMixin:
                 "state": "started",
                 "provider_request_attempt_count": 0,
                 "lease_owner": params["p_lease_owner"],
-                "lease_expires_at": "2026-08-27T00:00:30Z",
+                "lease_acquired_at": self._billing_provider_timestamp(
+                    lease_acquired_at
+                ),
+                "lease_expires_at": self._billing_provider_timestamp(
+                    lease_expires_at
+                ),
                 "provider_object_id": None,
                 "provider_secondary_object_id": None,
                 "provider_request_id": None,
@@ -103,12 +135,20 @@ class BillingProviderOperationRpcMixin:
                 "error_code": None,
                 "error_summary": None,
                 "reconciliation_reason_code": None,
+                "reconciliation_required_at": None,
                 "recovery_proof_sha256": None,
                 "recovery_outcome": None,
                 "recovery_actor_id": None,
                 "recovery_authorized_at": None,
+                "provider_request_in_flight_at": None,
+                "provider_succeeded_at": None,
+                "projected_at": None,
+                "completed_at": None,
+                "definitive_failed_at": None,
+                "definitive_rejected_at": None,
                 "provider_step_plan_sha256": None,
                 "provider_step_expected_count": None,
+                "provider_step_plan_registered_at": None,
                 "revision": 1,
             }
             self.billing_provider_operations[key] = operation
@@ -127,7 +167,43 @@ class BillingProviderOperationRpcMixin:
         ):
             raise _operation_conflict()
         state = operation["state"]
-        if state == "provider_request_in_flight":
+        lease_transferable = (
+            operation.get("operation_type") == "invoice.retry"
+            and state in {
+                "started", "recovery_authorized", "provider_succeeded", "projected"
+            }
+        )
+        lease_owner = operation.get("lease_owner")
+        lease_expires_at = operation.get("lease_expires_at")
+        lease_expired = (
+            lease_expires_at is not None
+            and datetime.fromisoformat(
+                str(lease_expires_at).replace("Z", "+00:00")
+            ) <= self.billing_provider_now
+        )
+        if lease_transferable and (
+            lease_owner is None
+            or lease_owner == params["p_lease_owner"]
+            or lease_expired
+        ):
+            lease_acquired_at = self.billing_provider_now
+            lease_expires_at = lease_acquired_at + timedelta(
+                seconds=int(params["p_lease_seconds"])
+            )
+            operation.update({
+                "lease_owner": params["p_lease_owner"],
+                "lease_acquired_at": self._billing_provider_timestamp(
+                    lease_acquired_at
+                ),
+                "lease_expires_at": self._billing_provider_timestamp(
+                    lease_expires_at
+                ),
+                "revision": operation["revision"] + 1,
+            })
+            outcome = "continued"
+        elif lease_transferable:
+            outcome = "busy"
+        elif state == "provider_request_in_flight":
             outcome = "provider_request_in_flight"
         elif state == "reconciliation_required":
             outcome = "reconciliation_required"
@@ -136,6 +212,109 @@ class BillingProviderOperationRpcMixin:
         else:
             outcome = "continued"
         return {"outcome": outcome, "operation": dict(operation)}
+
+    def _rpc_release_billing_invoice_retry_preread_lease_v32(
+        self,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        self.release_billing_invoice_retry_preread_lease_calls.append(dict(params))
+        operation = self._operation_by_id(params["p_operation_id"])
+        expected = {
+            "studio_id": params["p_studio_id"],
+            "actor_id": params["p_actor_id"],
+            "operation_type": "invoice.retry",
+            "caller_request_key": params["p_caller_request_key"],
+            "request_sha256": params["p_request_sha256"],
+            "stripe_connected_account_id": params["p_stripe_connected_account_id"],
+            "connect_account_generation": params["p_connect_account_generation"],
+            "lease_owner": params["p_lease_owner"],
+            "revision": params["p_expected_revision"],
+        }
+        if any(operation.get(field) != value for field, value in expected.items()):
+            raise _operation_conflict()
+        lease_acquired_at = operation.get("lease_acquired_at")
+        lease_expires_at = operation.get("lease_expires_at")
+        if (
+            lease_acquired_at is None
+            or datetime.fromisoformat(
+                str(lease_acquired_at).replace("Z", "+00:00")
+            ) > self.billing_provider_now
+            or lease_expires_at is None
+            or datetime.fromisoformat(
+                str(lease_expires_at).replace("Z", "+00:00")
+            ) <= self.billing_provider_now
+        ):
+            raise _retry_preread_release_rejected(
+                "billing_invoice_retry_preread_release_lease_not_current"
+            )
+        parent_evidence_fields = (
+            "provider_object_id",
+            "provider_secondary_object_id",
+            "provider_request_id",
+            "result_code",
+            "result_summary",
+            "error_code",
+            "error_summary",
+            "reconciliation_reason_code",
+            "recovery_proof_sha256",
+            "recovery_outcome",
+            "recovery_actor_id",
+            "recovery_authorized_at",
+            "provider_request_in_flight_at",
+            "provider_succeeded_at",
+            "projected_at",
+            "completed_at",
+            "reconciliation_required_at",
+            "definitive_failed_at",
+            "definitive_rejected_at",
+            "provider_step_plan_sha256",
+            "provider_step_expected_count",
+            "provider_step_plan_registered_at",
+        )
+        parent_has_evidence = (
+            operation.get("state") != "started"
+            or int(operation.get("provider_request_attempt_count") or 0) != 0
+            or any(
+                operation.get(field) is not None for field in parent_evidence_fields
+            )
+        )
+        child_evidence_fields = (
+            "provider_object_id",
+            "provider_secondary_object_id",
+            "provider_request_id",
+            "result_code",
+            "error_code",
+            "reconciliation_reason_code",
+            "recovery_proof_sha256",
+            "recovery_outcome",
+            "recovery_actor_id",
+            "recovery_authorized_at",
+            "provider_request_in_flight_at",
+            "provider_succeeded_at",
+            "reconciliation_required_at",
+            "definitive_failed_at",
+            "definitive_rejected_at",
+        )
+        steps = self.billing_provider_step_plans.get(
+            operation["id"], {}
+        ).get("steps", [])
+        child_has_evidence = any(
+            step.get("state") != "pending"
+            or int(step.get("provider_request_attempt_count") or 0) != 0
+            or any(step.get(field) is not None for field in child_evidence_fields)
+            for step in steps
+        )
+        if parent_has_evidence or child_has_evidence:
+            raise _retry_preread_release_rejected(
+                "billing_invoice_retry_preread_release_mutation_evidence"
+            )
+        operation.update({
+            "lease_owner": None,
+            "lease_acquired_at": None,
+            "lease_expires_at": None,
+            "revision": operation["revision"] + 1,
+        })
+        return {"outcome": "released", "operation": dict(operation)}
 
     def _rpc_claim_billing_provider_operation_resource_v1(
         self,
@@ -310,7 +489,16 @@ class BillingProviderOperationRpcMixin:
                 != self._resource_version_sha256(params)
             ):
                 raise _operation_conflict()
-            outcome = "replay"
+            if (
+                operation.get("operation_type") == "invoice.retry"
+                and operation.get("caller_request_key")
+                == params["p_caller_request_key"]
+            ):
+                claimed = self._rpc_claim_billing_provider_operation_v1(params)
+                operation = claimed["operation"]
+                outcome = claimed["outcome"]
+            else:
+                outcome = "replay"
         elif resource is None:
             claimed = self._rpc_claim_billing_provider_operation_v1(params)
             operation = claimed["operation"]
@@ -649,12 +837,22 @@ class BillingProviderOperationRpcMixin:
             "reconciliation_required",
         }:
             raise AssertionError("operation is not recoverable")
+        lease_acquired_at = self.billing_provider_now
+        lease_expires_at = lease_acquired_at + timedelta(
+            seconds=int(params["p_lease_seconds"])
+        )
         operation.update({
             "state": "recovery_authorized",
             "recovery_actor_id": params["p_recovery_actor_id"],
             "recovery_proof_sha256": params["p_recovery_proof_sha256"],
             "recovery_outcome": params["p_recovery_outcome"],
             "lease_owner": params["p_lease_owner"],
+            "lease_acquired_at": self._billing_provider_timestamp(
+                lease_acquired_at
+            ),
+            "lease_expires_at": self._billing_provider_timestamp(
+                lease_expires_at
+            ),
             "revision": operation["revision"] + 1,
             "reconciliation_reason_code": None,
         })
@@ -755,15 +953,26 @@ class BillingProviderOperationRpcMixin:
                 raise AssertionError("invalid recovered object id")
         else:
             raise AssertionError("unknown recovery outcome")
+        lease_acquired_at = self.billing_provider_now
+        lease_expires_at = lease_acquired_at + timedelta(
+            seconds=int(params["p_lease_seconds"])
+        )
         operation.update({
             "state": "recovery_authorized",
             "provider_object_id": recovered_id,
             "recovery_actor_id": params["p_recovery_actor_id"],
             "recovery_proof_sha256": params["p_recovery_proof_sha256"],
             "recovery_outcome": outcome,
-            "recovery_authorized_at": "2026-08-27T00:00:01Z",
+            "recovery_authorized_at": self._billing_provider_timestamp(
+                self.billing_provider_now
+            ),
             "lease_owner": params["p_lease_owner"],
-            "lease_expires_at": "2026-08-27T00:00:31Z",
+            "lease_acquired_at": self._billing_provider_timestamp(
+                lease_acquired_at
+            ),
+            "lease_expires_at": self._billing_provider_timestamp(
+                lease_expires_at
+            ),
             "revision": operation["revision"] + 1,
             "reconciliation_reason_code": None,
         })
