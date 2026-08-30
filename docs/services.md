@@ -139,10 +139,10 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-`/health/ready` fails closed against a database at an unexpected migration. That
-is deliberate, and it is why a backend deployed ahead of its migration will sit
-unhealthy rather than serve. It is also the most likely reason a Render service
-appears to be "down" for no reason.
+The current candidate's `/health/ready` calls the V15 schema preflight and serves
+only at 129/head `20260830151714` with `release-db-attestation-v34`. It fails
+closed at every other migration state. That is deliberate, and it is why a
+backend deployed ahead of its migration will sit unhealthy rather than serve.
 
 ## Supabase — database, auth, storage
 

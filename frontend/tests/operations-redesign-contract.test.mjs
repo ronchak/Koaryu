@@ -821,6 +821,10 @@ describe("operations behavior proof", () => {
     assert.match(sections, /Reset Stripe connection\?/);
     assert.match(sections, /onConnectReset/);
     assert.match(controller, /!isPreviewMode[\s\S]*canManageKoaryuSubscription[\s\S]*hasStripeConnectedAccount[\s\S]*connectOnboardingEnabled/);
+    assert.match(sections, /disabled=\{!coreCheckoutEnabled[\s\S]*Start checkout/);
+    assert.match(sections, /disabled=\{!corePortalEnabled[\s\S]*Customer portal/);
+    assert.match(sections, /disabled=\{!connectOnboardingEnabled[\s\S]*connectActionLabel/);
+    assert.match(sections, /disabled=\{!connectDashboardEnabled[\s\S]*Stripe dashboard/);
     assert.match(negativeCopy, /Existing plans can sync through one replay-safe provider workflow/);
     assert.match(negativeCopy, /Staff cannot accept payment terms for a payer/);
     assert.match(negativeCopy, /Koaryu preserves the original request key after an uncertain provider outcome/);

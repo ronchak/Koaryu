@@ -29,6 +29,7 @@ import { useBillingRefundController } from "@/lib/billing-refund-controller";
 import {
   areProviderMutationsEnabled,
   canManageRoutineBilling,
+  resolveBillingProviderActionCapabilities,
   resolveBillingProviderCopy,
 } from "@/lib/billing-policy";
 import {
@@ -153,14 +154,16 @@ export function useBillingPageController({
     currentRole,
     isPreviewMode,
   );
-  const coreProviderMutationsEnabled = areProviderMutationsEnabled(
+  const {
+    connectDashboardEnabled,
+    connectOnboardingEnabled,
+    coreCheckoutEnabled,
+    corePortalEnabled,
+  } = resolveBillingProviderActionCapabilities({
+    enabledWorkflowIds,
     isPreviewMode,
-    billingWorkflowEnabled(enabledWorkflowIds, "core.subscription.checkout", isPreviewMode)
-  );
-  const connectOnboardingEnabled = areProviderMutationsEnabled(
-    isPreviewMode,
-    billingWorkflowEnabled(enabledWorkflowIds, "connect.onboarding", isPreviewMode)
-  );
+    role: currentRole,
+  });
   const connectPaymentsEnabled = areProviderMutationsEnabled(
     isPreviewMode,
     billingWorkflowEnabled(enabledWorkflowIds, "payer.setup", isPreviewMode)
@@ -168,7 +171,7 @@ export function useBillingPageController({
   const billingProviderCopy = resolveBillingProviderCopy({
     isPreviewMode,
     providerMode: billingSystemStatus?.configured_stripe_mode,
-    coreSubscription: coreProviderMutationsEnabled,
+    coreSubscription: coreCheckoutEnabled || corePortalEnabled,
     connectOnboarding: connectOnboardingEnabled,
     connectPayments: connectPaymentsEnabled,
   });
@@ -528,7 +531,9 @@ export function useBillingPageController({
         hasStripeConnectedAccount,
         isEnrollmentPayerSelectDisabled,
         isPreviewMode,
-        coreProviderMutationsEnabled,
+        coreCheckoutEnabled,
+        corePortalEnabled,
+        connectDashboardEnabled,
         connectOnboardingEnabled,
         invoiceController,
         refundController,

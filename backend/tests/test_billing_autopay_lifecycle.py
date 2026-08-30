@@ -2031,8 +2031,185 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(len(consent_audits), 1)
         self.assertEqual(
             set(consent_audits[0]["metadata"]),
-            {"operation_id", "setup_request_id", "terms_version"},
+            {
+                "operation_id",
+                "setup_request_id",
+                "terms_version",
+                "stripe_checkout_session_id",
+                "stripe_setup_intent_id",
+                "stripe_connected_account_id",
+                "connect_account_generation",
+            },
         )
+
+    def test_completed_replay_repairs_failed_consent_audit_without_provider_io(self):
+        service, database, session = self._prepared_consent_setup()
+
+        class SuccessfulStripeService:
+            retrieve_calls = []
+
+            def retrieve_connected_setup_intent(self, **payload):
+                self.__class__.retrieve_calls.append(payload)
+                return {
+                    "id": "seti_1",
+                    "status": "succeeded",
+                    "customer": "cus_1",
+                    "metadata": session["metadata"],
+                    "payment_method": {
+                        "id": "pm_123",
+                        "type": "card",
+                        "card": {"brand": "visa", "last4": "2167"},
+                    },
+                }
+
+        failed_once = False
+
+        def fail_first_audit(name, _payloads, _rows):
+            nonlocal failed_once
+            if name == "audit_logs" and not failed_once:
+                failed_once = True
+                raise RuntimeError("audit unavailable")
+
+        database.before_insert = fail_first_audit
+        with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+                service._project_checkout_session(session, "acct_1", event_created=200)
+
+        self.assertEqual(database.operation["state"], "completed")
+        self.assertEqual(
+            [
+                row for row in database.tables["audit_logs"]
+                if row["action"] == "billing.autopay_consent_recorded"
+            ],
+            [],
+        )
+        service._project_checkout_session(session, "acct_1", event_created=200)
+        service._project_checkout_session(session, "acct_1", event_created=200)
+
+        self.assertEqual(len(SuccessfulStripeService.retrieve_calls), 1)
+        audits = [
+            row for row in database.tables["audit_logs"]
+            if row["action"] == "billing.autopay_consent_recorded"
+        ]
+        self.assertEqual(len(audits), 1)
+        self.assertEqual(audits[0]["actor_id"], "user_1")
+        self.assertEqual(audits[0]["entity_id"], "payer_1")
+
+    def test_completed_replay_accepts_one_exact_legacy_consent_audit(self):
+        service, database, session = self._prepared_consent_setup()
+
+        class SuccessfulStripeService:
+            retrieve_calls = []
+
+            def retrieve_connected_setup_intent(self, **payload):
+                self.__class__.retrieve_calls.append(payload)
+                return {
+                    "id": "seti_1",
+                    "status": "succeeded",
+                    "customer": "cus_1",
+                    "metadata": session["metadata"],
+                    "payment_method": {
+                        "id": "pm_123",
+                        "type": "card",
+                        "card": {"brand": "visa", "last4": "2167"},
+                    },
+                }
+
+        with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            service._project_checkout_session(session, "acct_1", event_created=200)
+
+        audit = next(
+            row for row in database.tables["audit_logs"]
+            if row["action"] == "billing.autopay_consent_recorded"
+        )
+        audit["id"] = "legacy-random-id"
+        audit["metadata"] = {
+            "operation_id": database.operation["id"],
+            "setup_request_id": database.setup_request["id"],
+            "terms_version": "koaryu-autopay-v1",
+        }
+        service._project_checkout_session(session, "acct_1", event_created=200)
+
+        consent_audits = [
+            row for row in database.tables["audit_logs"]
+            if row["action"] == "billing.autopay_consent_recorded"
+        ]
+        self.assertEqual(consent_audits, [audit])
+        self.assertEqual(len(SuccessfulStripeService.retrieve_calls), 1)
+
+    def test_exact_legacy_setup_completion_marks_new_link_required_and_retries(self):
+        service = self.service()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        session = {
+            "id": "cs_legacy_1",
+            "status": "complete",
+            "customer": "cus_1",
+            "setup_intent": "seti_legacy_1",
+            "metadata": {
+                "product": "koaryu_payments_autopay",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+            },
+        }
+
+        service._project_checkout_session(session, "acct_1", event_created=200)
+        first_error = dict(
+            database.tables["billing_payers"][0]["metadata"][
+                "autopay_projection_error"
+            ]
+        )
+        service._project_checkout_session(session, "acct_1", event_created=200)
+
+        payer = database.tables["billing_payers"][0]
+        self.assertEqual(payer["autopay_status"], "pending")
+        self.assertIsNone(payer.get("autopay_authorized_at"))
+        self.assertEqual(
+            payer["metadata"]["autopay_projection_error"]["code"],
+            "legacy_setup_session_requires_new_link",
+        )
+        self.assertEqual(payer["metadata"]["autopay_projection_error"], first_error)
+        self.assertIsNone(database.operation)
+        self.assertIsNone(database.consent)
+
+    def test_mixed_or_wrong_legacy_setup_metadata_fails_without_local_projection(self):
+        for scenario in ("mixed", "payer", "studio", "account", "generation"):
+            with self.subTest(scenario=scenario):
+                service = self.service()
+                database = _AutopayOperationSupabase(_autopay_tables())
+                service.supabase = database
+                metadata = {
+                    "product": "koaryu_payments_autopay",
+                    "studio_id": "studio_1",
+                    "payer_id": "payer_1",
+                }
+                account_id = "acct_1"
+                if scenario == "mixed":
+                    metadata["operation_id"] = "not-a-uuid"
+                elif scenario == "payer":
+                    metadata["payer_id"] = "payer_other"
+                elif scenario == "studio":
+                    metadata["studio_id"] = "studio_other"
+                elif scenario == "account":
+                    account_id = "acct_other"
+                else:
+                    database.tables["billing_payers"][0][
+                        "connect_account_generation"
+                    ] = 2
+                before = dict(database.tables["billing_payers"][0])
+                session = {
+                    "id": "cs_legacy_1",
+                    "status": "complete",
+                    "customer": "cus_1",
+                    "metadata": metadata,
+                }
+
+                with self.assertRaises((RuntimeError, HTTPException)):
+                    service._project_checkout_session(session, account_id, event_created=200)
+
+                self.assertEqual(database.tables["billing_payers"][0], before)
+                self.assertIsNone(database.operation)
+                self.assertIsNone(database.consent)
 
     def test_completed_consent_missing_local_payment_method_marks_reconciliation(self):
         service, database, session = self._prepared_consent_setup()

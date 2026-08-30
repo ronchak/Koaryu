@@ -108,7 +108,9 @@ export function BillingOverviewTab({
   paymentCohortAvailable,
   stripePaymentTotal,
   studentsLoaded,
-  coreProviderMutationsEnabled,
+  coreCheckoutEnabled,
+  corePortalEnabled,
+  connectDashboardEnabled,
   connectOnboardingEnabled,
 }: {
   activeStudents: number;
@@ -138,7 +140,9 @@ export function BillingOverviewTab({
   paymentCohortAvailable: boolean;
   stripePaymentTotal: number;
   studentsLoaded: boolean;
-  coreProviderMutationsEnabled: boolean;
+  coreCheckoutEnabled: boolean;
+  corePortalEnabled: boolean;
+  connectDashboardEnabled: boolean;
   connectOnboardingEnabled: boolean;
 }) {
   const coreCheckoutAvailable = canStartCoreCheckout(billingPlatform);
@@ -201,14 +205,14 @@ export function BillingOverviewTab({
             <Button
               variant="primary"
               size="sm"
-              disabled={!coreProviderMutationsEnabled || !canManageKoaryuSubscription || !coreCheckoutAvailable || isActionLoading}
+              disabled={!coreCheckoutEnabled || !canManageKoaryuSubscription || !coreCheckoutAvailable || isActionLoading}
               title={!coreCheckoutAvailable
                 ? billingPlatform?.comped || billingPlatform?.status === "comped"
                   ? "Koaryu Core access is comped for this studio. No checkout is required."
                   : billingPlatform && ["active", "trialing", "past_due", "unpaid", "paused"].includes(billingPlatform.status)
                     ? "Koaryu Core billing already exists. Use the billing portal to manage it."
                     : "Koaryu Core checkout is currently unavailable."
-                : coreProviderMutationsEnabled
+                : coreCheckoutEnabled
                   ? undefined
                   : billingProviderCopy.coreSubscription}
               isLoading={isLoadingAction("checkout")}
@@ -223,9 +227,9 @@ export function BillingOverviewTab({
             <Button
               variant="secondary"
               size="sm"
-              disabled={!coreProviderMutationsEnabled || !canOpenCustomerPortal || isActionLoading}
+              disabled={!corePortalEnabled || !canOpenCustomerPortal || isActionLoading}
               isLoading={isLoadingAction("portal")}
-              title={!coreProviderMutationsEnabled
+              title={!corePortalEnabled
                 ? billingProviderCopy.coreSubscription
                 : canOpenCustomerPortal
                   ? undefined
@@ -312,9 +316,9 @@ export function BillingOverviewTab({
             <Button
               variant="secondary"
               size="sm"
-              disabled={!connectOnboardingEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
+              disabled={!connectDashboardEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
               isLoading={isLoadingAction("dashboard")}
-              title={!connectOnboardingEnabled
+              title={!connectDashboardEnabled
                 ? billingProviderCopy.connectOnboarding
                 : canOpenStripeDashboard
                   ? "Open Stripe to review account status, requirements, payments, and payouts."

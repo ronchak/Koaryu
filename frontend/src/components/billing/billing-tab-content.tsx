@@ -61,7 +61,9 @@ type BillingTabContentProps = {
   paymentCohortAvailable: boolean;
   payerNameById: Map<string, string>;
   planNameById: Map<string, string>;
-  coreProviderMutationsEnabled: boolean;
+  coreCheckoutEnabled: boolean;
+  corePortalEnabled: boolean;
+  connectDashboardEnabled: boolean;
   connectOnboardingEnabled: boolean;
   stripePaymentTotal: number;
   studentNameById: Map<string, string>;
@@ -108,7 +110,9 @@ export function BillingTabContent(props: BillingTabContentProps) {
     paymentCohortAvailable,
     payerNameById,
     planNameById,
-    coreProviderMutationsEnabled,
+    coreCheckoutEnabled,
+    corePortalEnabled,
+    connectDashboardEnabled,
     connectOnboardingEnabled,
     stripePaymentTotal,
     studentNameById,
@@ -175,7 +179,9 @@ export function BillingTabContent(props: BillingTabContentProps) {
         openInvoiceTotal={openInvoiceTotal}
         paidRevenue={paidRevenue}
         paymentCohortAvailable={paymentCohortAvailable}
-        coreProviderMutationsEnabled={coreProviderMutationsEnabled}
+        coreCheckoutEnabled={coreCheckoutEnabled}
+        corePortalEnabled={corePortalEnabled}
+        connectDashboardEnabled={connectDashboardEnabled}
         connectOnboardingEnabled={connectOnboardingEnabled}
         stripePaymentTotal={stripePaymentTotal}
         studentsLoaded={studentsLoaded}

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Optional
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
+
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
@@ -186,6 +188,7 @@ class BillingWebhookProjector:
             or not setup_request_id
             or terms_version != AUTOPAY_TERMS_VERSION
         ):
+            self._handle_legacy_checkout_session(session, account_id, metadata)
             return
         studio_id = self._resolve_stripe_event_studio_id(
             account_id,
@@ -261,6 +264,17 @@ class BillingWebhookProjector:
                 studio_id=studio_id,
                 payer_id=payer_id,
             )
+            self._ensure_consent_recorded_audit(
+                setup_request=setup_request,
+                operation=operation,
+                payer=payer,
+                consent=consent,
+                session_id=session_id,
+                setup_intent_id=setup_intent_id,
+                account_id=account_id,
+                account_generation=account_generation,
+                terms_version=terms_version,
+            )
             return
         if operation.get("state") == "reconciliation_required":
             try:
@@ -295,11 +309,22 @@ class BillingWebhookProjector:
             }).eq("id", payer_id).eq("studio_id", studio_id).execute()
             if not enabled.data:
                 raise RuntimeError("reconciled_consent_payer_enable_failed")
-            coordinator.finalize_payer_setup_projection(
+            finalized = coordinator.finalize_payer_setup_projection(
                 consent=consent,
                 setup_request=setup_request,
                 operation_id=operation_id,
                 stripe_setup_intent_id=setup_intent_id,
+            )
+            self._ensure_consent_recorded_audit(
+                setup_request=finalized["setup_request"],
+                operation=finalized["operation"],
+                payer=payer,
+                consent=consent,
+                session_id=session_id,
+                setup_intent_id=setup_intent_id,
+                account_id=account_id,
+                account_generation=account_generation,
+                terms_version=terms_version,
             )
             return
         if operation.get("state") == "projected":
@@ -333,11 +358,22 @@ class BillingWebhookProjector:
             }).eq("id", payer_id).eq("studio_id", studio_id).execute()
             if not enabled.data:
                 raise RuntimeError("projected_consent_payer_enable_failed")
-            coordinator.finalize_payer_setup_projection(
+            finalized = coordinator.finalize_payer_setup_projection(
                 consent=consent,
                 setup_request=setup_request,
                 operation_id=operation_id,
                 stripe_setup_intent_id=setup_intent_id,
+            )
+            self._ensure_consent_recorded_audit(
+                setup_request=finalized["setup_request"],
+                operation=finalized["operation"],
+                payer=payer,
+                consent=consent,
+                session_id=session_id,
+                setup_intent_id=setup_intent_id,
+                account_id=account_id,
+                account_generation=account_generation,
+                terms_version=terms_version,
             )
             return
 
@@ -433,6 +469,7 @@ class BillingWebhookProjector:
                 payer=payer,
             )
             return
+        payer = projected.data[0]
         completion = coordinator.complete_payer_consent(
             consent=consent,
             setup_request=setup_request,
@@ -456,17 +493,204 @@ class BillingWebhookProjector:
         )
         if (finalized.get("operation") or {}).get("state") != "completed":
             raise RuntimeError("payer_setup_projection_finalization_failed")
-        self.billing_service._audit(
-            studio_id,
-            setup_request["initiated_by"],
-            "billing.autopay_consent_recorded",
-            payer_id,
-            {
-                "operation_id": operation_id,
-                "setup_request_id": setup_request_id,
-                "terms_version": terms_version,
-            },
+        self._ensure_consent_recorded_audit(
+            setup_request=finalized["setup_request"],
+            operation=finalized["operation"],
+            payer=payer,
+            consent=consent,
+            session_id=session_id,
+            setup_intent_id=setup_intent_id,
+            account_id=account_id,
+            account_generation=account_generation,
+            terms_version=terms_version,
         )
+
+    def _handle_legacy_checkout_session(
+        self,
+        session: dict[str, Any],
+        account_id: Optional[str],
+        metadata: dict[str, Any],
+    ) -> None:
+        if set(metadata) != {"product", "studio_id", "payer_id"}:
+            raise RuntimeError("autopay_setup_metadata_unrecognized")
+        studio_id = self._bounded_metadata_value(metadata.get("studio_id"))
+        payer_id = self._bounded_metadata_value(metadata.get("payer_id"))
+        session_id = _stripe_id(session)
+        customer_id = _stripe_id(session.get("customer"))
+        resolved_studio_id = self._resolve_stripe_event_studio_id(
+            account_id,
+            metadata_studio_id=studio_id,
+        )
+        generation = self._connect_account_generation(account_id, resolved_studio_id)
+        if (
+            not studio_id
+            or not payer_id
+            or not session_id
+            or not customer_id
+            or not account_id
+            or resolved_studio_id != studio_id
+            or generation is None
+        ):
+            raise RuntimeError("legacy_autopay_setup_identity_unverified")
+        payer = self._get_row_or_404(
+            "billing_payers", payer_id, studio_id, "Payer not found."
+        )
+        if any((
+            payer.get("stripe_account_id") != account_id,
+            payer.get("stripe_customer_id") != customer_id,
+            payer.get("connect_account_generation") != generation,
+        )):
+            raise RuntimeError("legacy_autopay_setup_identity_unverified")
+        payer_metadata = dict(payer.get("metadata") or {})
+        existing_error = payer_metadata.get("autopay_projection_error") or {}
+        occurred_at = (
+            existing_error.get("occurred_at")
+            if existing_error.get("code") == "legacy_setup_session_requires_new_link"
+            and existing_error.get("stripe_checkout_session_id") == session_id
+            else datetime.now(timezone.utc).isoformat()
+        )
+        payer_metadata["autopay_projection_error"] = {
+            "code": "legacy_setup_session_requires_new_link",
+            "occurred_at": occurred_at,
+            "stripe_checkout_session_id": session_id,
+        }
+        updated = self.supabase.table("billing_payers").update({
+            "autopay_status": "pending",
+            "autopay_authorized_at": None,
+            "autopay_terms_accepted_at": None,
+            "metadata": payer_metadata,
+        }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+        if not updated.data:
+            raise RuntimeError("legacy_autopay_setup_repair_state_write_failed")
+
+    def _ensure_consent_recorded_audit(
+        self,
+        *,
+        setup_request: dict[str, Any],
+        operation: dict[str, Any],
+        payer: dict[str, Any],
+        consent: dict[str, Any],
+        session_id: str,
+        setup_intent_id: Optional[str],
+        account_id: str,
+        account_generation: int,
+        terms_version: str,
+    ) -> None:
+        action = "billing.autopay_consent_recorded"
+        operation_id = str(operation.get("id") or "")
+        setup_request_id = str(setup_request.get("id") or "")
+        payer_id = str(payer.get("id") or "")
+        studio_id = str(setup_request.get("studio_id") or "")
+        actor_id = str(setup_request.get("initiated_by") or "")
+        payment_method_id = str(payer.get("default_payment_method_id") or "")
+        expected = {
+            "operation_id": operation_id,
+            "setup_request_id": setup_request_id,
+            "terms_version": terms_version,
+            "stripe_checkout_session_id": session_id,
+            "stripe_setup_intent_id": setup_intent_id,
+            "stripe_connected_account_id": account_id,
+            "connect_account_generation": account_generation,
+        }
+        legacy_metadata = {
+            "operation_id": operation_id,
+            "setup_request_id": setup_request_id,
+            "terms_version": terms_version,
+        }
+        if any((
+            setup_request.get("payer_id") != payer_id,
+            setup_request.get("operation_id") != operation_id,
+            setup_request.get("stripe_checkout_session_id") != session_id,
+            setup_request.get("stripe_setup_intent_id") != setup_intent_id,
+            setup_request.get("stripe_connected_account_id") != account_id,
+            setup_request.get("connect_account_generation") != account_generation,
+            setup_request.get("terms_version") != terms_version,
+            operation.get("operation_type") != PAYER_SETUP_OPERATION_TYPE,
+            operation.get("provider_object_id") != session_id,
+            operation.get("provider_secondary_object_id") != setup_intent_id,
+            operation.get("state") != "completed",
+            operation.get("studio_id") not in {None, studio_id},
+            operation.get("actor_id") not in {None, actor_id},
+            payer.get("studio_id") != studio_id,
+            payer.get("stripe_account_id") != account_id,
+            payer.get("connect_account_generation") != account_generation,
+            not payment_method_id,
+            consent.get("setup_request_id") != setup_request_id,
+            consent.get("operation_id") not in {None, operation_id},
+            consent.get("stripe_checkout_session_id") != session_id,
+            consent.get("stripe_setup_intent_id") != setup_intent_id,
+            consent.get("stripe_connected_account_id") != account_id,
+            consent.get("connect_account_generation") != account_generation,
+            consent.get("terms_version") != terms_version,
+            not consent.get("completed_at"),
+        )):
+            raise RuntimeError("autopay_consent_audit_identity_mismatch")
+        audit_id = str(uuid5(NAMESPACE_URL, f"koaryu:{action}:{operation_id}"))
+        columns = "id, studio_id, actor_id, action, entity_type, entity_id, metadata"
+        deterministic = (
+            self.supabase.table("audit_logs").select(columns)
+            .eq("id", audit_id).limit(1).execute()
+        )
+        if deterministic.data:
+            self._validate_consent_audit(
+                deterministic.data, audit_id, studio_id, actor_id, payer_id, expected
+            )
+            return
+        legacy = (
+            self.supabase.table("audit_logs").select(columns)
+            .eq("studio_id", studio_id).eq("action", action)
+            .eq("entity_id", payer_id)
+            .eq("metadata->>operation_id", operation_id).limit(2).execute()
+        )
+        if legacy.data:
+            self._validate_consent_audit(
+                legacy.data, None, studio_id, actor_id, payer_id, legacy_metadata
+            )
+            return
+        payload = {
+            "id": audit_id,
+            "studio_id": studio_id,
+            "actor_id": actor_id,
+            "action": action,
+            "entity_type": "billing",
+            "entity_id": payer_id,
+            "metadata": expected,
+        }
+        try:
+            self.supabase.table("audit_logs").insert(payload).execute()
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) != "23505":
+                raise
+            winner = (
+                self.supabase.table("audit_logs").select(columns)
+                .eq("id", audit_id).limit(1).execute()
+            )
+            self._validate_consent_audit(
+                winner.data, audit_id, studio_id, actor_id, payer_id, expected
+            )
+
+    @staticmethod
+    def _validate_consent_audit(
+        rows: Any,
+        audit_id: Optional[str],
+        studio_id: str,
+        actor_id: str,
+        payer_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        if not isinstance(rows, list) or len(rows) != 1:
+            raise RuntimeError("autopay_consent_audit_conflict")
+        row = rows[0]
+        if not isinstance(row, dict) or any((
+            audit_id is not None and row.get("id") != audit_id,
+            row.get("studio_id") != studio_id,
+            row.get("actor_id") != actor_id,
+            row.get("action") != "billing.autopay_consent_recorded",
+            row.get("entity_type") != "billing",
+            row.get("entity_id") != payer_id,
+            row.get("metadata") != metadata,
+        )):
+            raise RuntimeError("autopay_consent_audit_conflict")
 
     @staticmethod
     def _bounded_metadata_value(value: Any) -> Optional[str]:
