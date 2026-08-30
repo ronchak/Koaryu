@@ -689,11 +689,14 @@ class StripeService:
         account_id: str,
         studio_id: str,
         invoice_id: str,
+        payment_method: Optional[str] = None,
         paid_out_of_band: bool = False,
         idempotency_key: Optional[str] = None,
     ):
         stripe = self._stripe()
         payload: dict[str, Any] = {}
+        if payment_method:
+            payload["payment_method"] = payment_method
         if paid_out_of_band:
             payload["paid_out_of_band"] = True
         return stripe.Invoice.pay(

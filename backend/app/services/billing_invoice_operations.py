@@ -752,7 +752,7 @@ class BillingInvoiceOperationWorkflow:
         if not invoice.get("stripe_invoice_id") or not invoice.get("stripe_account_id"):
             raise HTTPException(status_code=409, detail="Invoice is not linked to Stripe.")
         account, generation = self._invoice_generation(invoice, studio_id)
-        desired_hash = stable_hash({
+        legacy_hash = stable_hash({
             "operation_type": INVOICE_RETRY_OPERATION_TYPE,
             "studio_id": studio_id,
             "invoice_id": invoice_id,
@@ -761,6 +761,25 @@ class BillingInvoiceOperationWorkflow:
             "connect_account_generation": generation,
         })
         operations = BillingProviderOperationCoordinator(self.supabase)
+        existing_hash = self._existing_retry_request_hash(
+            studio_id=studio_id,
+            request_key=request_key,
+        )
+        retry_autopay_consent: dict[str, Any] | None = None
+        if existing_hash is not None:
+            desired_hash = existing_hash
+        elif invoice.get("collection_method") == "charge_automatically":
+            retry_autopay_consent = self._require_retry_autopay_consent(
+                invoice,
+                studio_id=studio_id,
+                generation=generation,
+            )
+            desired_hash = stable_hash({
+                "legacy_request_sha256": legacy_hash,
+                "autopay_retry_snapshot": retry_autopay_consent,
+            })
+        else:
+            desired_hash = legacy_hash
         context, claimed = self._claim_parent(
             operations,
             studio_id=studio_id,
@@ -835,8 +854,25 @@ class BillingInvoiceOperationWorkflow:
             )
             raise HTTPException(status_code=409, detail="Invoice is already paid.")
 
-        retry_autopay_consent: dict[str, Any] | None = None
-        if invoice.get("collection_method") == "charge_automatically":
+        if (
+            invoice.get("collection_method") == "charge_automatically"
+            and existing_hash == legacy_hash
+        ):
+            operations.transition(
+                context,
+                operation,
+                "definitive_rejected",
+                error_code="invoice_retry_autopay_consent_unbound",
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=self._autopay_consent_detail(),
+            )
+
+        if (
+            invoice.get("collection_method") == "charge_automatically"
+            and retry_autopay_consent is None
+        ):
             try:
                 retry_autopay_consent = self._require_retry_autopay_consent(
                     invoice,
@@ -869,6 +905,31 @@ class BillingInvoiceOperationWorkflow:
                 )
                 raise
 
+        if retry_autopay_consent is not None:
+            try:
+                current_retry_snapshot = self._require_retry_autopay_consent(
+                    invoice,
+                    studio_id=studio_id,
+                    generation=generation,
+                )
+                current_hash = stable_hash({
+                    "legacy_request_sha256": legacy_hash,
+                    "autopay_retry_snapshot": current_retry_snapshot,
+                })
+                if current_hash != context.request_sha256:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=self._autopay_consent_detail(),
+                    )
+            except HTTPException:
+                operations.transition(
+                    context,
+                    operation,
+                    "definitive_rejected",
+                    error_code="invoice_retry_autopay_consent_invalid",
+                )
+                raise
+
         operation = operations.transition(
             context,
             operation,
@@ -877,13 +938,22 @@ class BillingInvoiceOperationWorkflow:
             result_summary=INVOICE_RETRY_MODE,
         )
         try:
-            provider_invoice = self.stripe_service_cls().pay_connected_invoice(
-                account_id=context.stripe_connected_account_id,
-                studio_id=context.studio_id,
-                invoice_id=str(invoice["stripe_invoice_id"]),
-                idempotency_key=self.owner._idempotency_key(
+            pay_payload = {
+                "account_id": context.stripe_connected_account_id,
+                "studio_id": context.studio_id,
+                "invoice_id": str(invoice["stripe_invoice_id"]),
+                "idempotency_key": self.owner._idempotency_key(
                     "invoice-retry", context.operation_id
                 ),
+            }
+            if retry_autopay_consent is not None:
+                pay_payload["payment_method"] = str(
+                    retry_autopay_consent["local"]["payer"][
+                        "default_payment_method_id"
+                    ]
+                )
+            provider_invoice = self.stripe_service_cls().pay_connected_invoice(
+                **pay_payload,
             )
         except StripeMutationBlocked as exc:
             operations.transition(
@@ -977,6 +1047,7 @@ class BillingInvoiceOperationWorkflow:
             provider_status="open",
             studio_id=studio_id,
             generation=generation,
+            require_provider_default=False,
         )
 
     def _require_finalize_autopay_consent(
@@ -1003,6 +1074,7 @@ class BillingInvoiceOperationWorkflow:
         provider_status: str,
         studio_id: str,
         generation: int,
+        require_provider_default: bool = True,
     ) -> dict[str, Any]:
         payer, consent, payment_method_id = self._read_autopay_consent(
             invoice,
@@ -1029,8 +1101,11 @@ class BillingInvoiceOperationWorkflow:
             != provider_status
             or str(_object_get(provider_invoice, "collection_method") or "")
             != "charge_automatically"
-            or _stripe_id(_object_get(provider_invoice, "default_payment_method"))
-            != payment_method_id
+            or (
+                require_provider_default
+                and _stripe_id(_object_get(provider_invoice, "default_payment_method"))
+                != payment_method_id
+            )
             or str(invoice_metadata.get("studio_id") or "") != studio_id
             or str(invoice_metadata.get("payer_id") or "")
             != str(invoice.get("payer_id") or "")
@@ -1053,7 +1128,13 @@ class BillingInvoiceOperationWorkflow:
             or setup_metadata.get("connect_account_generation") != str(generation)
         ):
             raise HTTPException(status_code=409, detail=detail)
-        return self._autopay_consent_snapshot(payer, consent)
+        return {
+            "local": self._autopay_consent_snapshot(payer, consent),
+            "provider": self._autopay_provider_snapshot(
+                provider_invoice,
+                setup_intent,
+            ),
+        }
 
     def _require_autopay_consent_current(
         self,
@@ -1068,7 +1149,8 @@ class BillingInvoiceOperationWorkflow:
             studio_id=studio_id,
             generation=generation,
         )
-        if self._autopay_consent_snapshot(payer, consent) != expected:
+        expected_local = expected.get("local", expected)
+        if self._autopay_consent_snapshot(payer, consent) != expected_local:
             raise HTTPException(
                 status_code=409,
                 detail=self._autopay_consent_detail(),
@@ -1172,11 +1254,90 @@ class BillingInvoiceOperationWorkflow:
         }
 
     @staticmethod
+    def _autopay_provider_snapshot(
+        provider_invoice: Any,
+        setup_intent: Any,
+    ) -> dict[str, Any]:
+        invoice_metadata = _object_get(provider_invoice, "metadata") or {}
+        setup_metadata = _object_get(setup_intent, "metadata") or {}
+        return {
+            "invoice": {
+                "id": _stripe_id(provider_invoice),
+                "customer": _stripe_id(_object_get(provider_invoice, "customer")),
+                "status": str(_object_get(provider_invoice, "status") or ""),
+                "collection_method": str(
+                    _object_get(provider_invoice, "collection_method") or ""
+                ),
+                "default_payment_method": _stripe_id(
+                    _object_get(provider_invoice, "default_payment_method")
+                ),
+                "metadata": {
+                    key: str(invoice_metadata.get(key) or "")
+                    for key in ("studio_id", "payer_id", "invoice_id")
+                },
+            },
+            "setup_intent": {
+                "id": _stripe_id(setup_intent),
+                "status": str(_object_get(setup_intent, "status") or ""),
+                "customer": _stripe_id(_object_get(setup_intent, "customer")),
+                "payment_method": _stripe_id(
+                    _object_get(setup_intent, "payment_method")
+                ),
+                "metadata": {
+                    key: str(setup_metadata.get(key) or "")
+                    for key in (
+                        "product",
+                        "studio_id",
+                        "payer_id",
+                        "setup_request_id",
+                        "terms_version",
+                        "stripe_account_id",
+                        "connect_account_generation",
+                    )
+                },
+            },
+        }
+
+    @staticmethod
     def _autopay_consent_detail() -> str:
         return (
             "Autopay consent no longer matches this invoice. "
             "Restore verified payer consent and retry with a new Idempotency-Key."
         )
+
+    def _existing_retry_request_hash(
+        self,
+        *,
+        studio_id: str,
+        request_key: str,
+    ) -> str | None:
+        try:
+            response = (
+                self.supabase.table("billing_provider_operations")
+                .select("request_sha256")
+                .eq("studio_id", studio_id)
+                .eq("operation_type", INVOICE_RETRY_OPERATION_TYPE)
+                .eq("caller_request_key", request_key)
+                .limit(1)
+                .execute()
+            )
+            rows = response.data or []
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Billing operation state could not be verified.",
+            ) from exc
+        if not rows:
+            return None
+        request_hash = str(rows[0].get("request_sha256") or "")
+        if len(request_hash) != 64 or any(
+            character not in "0123456789abcdef" for character in request_hash
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="Billing operation state could not be verified.",
+            )
+        return request_hash
 
     def _normalized_items(self, data: BillingInvoiceCreate, studio_id: str) -> list[dict[str, Any]]:
         source = [item.model_dump() for item in data.items] if data.items else [{
