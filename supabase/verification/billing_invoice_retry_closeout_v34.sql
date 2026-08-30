@@ -15,6 +15,21 @@ BEGIN
      <>'0:d054ae0cf5ce43ce2c241ca628e0724b5239bd696c323ba9c817b8bd21ee0eec' THEN
     RAISE EXCEPTION 'V34 closeout manifest mismatch.';
   END IF;
+  IF private.koaryu_release_operational_contract_v29()
+     <>'0:5d022e3d25e3c09fd56cc80fd26ed8e6233b5ce881ddcc60b6b8593d8801190a'
+     OR private.koaryu_release_operational_manifest_v10()
+     <>'a1f100a662af004ba6683ae15f0f9834493013131142612721a5b6d410971a3f'
+     OR private.koaryu_release_payments_replay_repairs_manifest_v30()
+     <>'0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98' THEN
+    RAISE EXCEPTION 'V34 legacy compatibility manifests mismatch.';
+  END IF;
+  IF (SELECT count(*)::TEXT||':'||encode(extensions.digest(convert_to(
+        COALESCE(string_agg(expectation_key||':'||expected_sha256,'|'
+          ORDER BY expectation_key COLLATE "C"),''),'UTF8'),'sha256'),'hex')
+      FROM private.koaryu_release_v31_expectations)
+     <>'1:98b3c2abb6dbe454ea0b9d84d3bdd31769f47b4fe72af9a5dcd5df476a62e443' THEN
+    RAISE EXCEPTION 'V34 V31 compatibility expectation state mismatch.';
+  END IF;
   IF position('requires_action' IN pg_get_functiondef(
        'private.recompute_billing_payment_adjustment_totals(uuid)'::regprocedure))=0
      OR position('requires_action' IN pg_get_functiondef(
