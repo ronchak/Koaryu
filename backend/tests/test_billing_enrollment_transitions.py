@@ -17,6 +17,7 @@ from app.services.billing_enrollment_transitions import (
     BillingEnrollmentTransitionWorkflow,
     WHOLE_SUBSCRIPTION_PERIOD_END_GRACE,
 )
+from app.services.platform_billing_helpers import stable_hash
 from app.services.billing_provider_operations import BillingProviderStepCoordinator
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from tests.test_billing_enrollment_activation import (
@@ -517,6 +518,131 @@ def test_completed_schedule_replay_rejects_wrong_existing_audit_identity():
     assert len(_TransitionStripe.subscription_update_calls) == provider_writes
 
 
+@pytest.mark.parametrize(
+    ("mutation", "transition_kind", "operation_type", "state"),
+    [
+        ("schedule", "schedule_period_end", "enrollment.cancel.period_end.schedule", "scheduled"),
+        ("revoke", "revoke_scheduled", "enrollment.cancel.period_end.revoke", "completed"),
+        ("immediate", "immediate_cancel", "enrollment.cancel.immediate", "completed"),
+        ("execute_due", "execute_due", "enrollment.cancel.period_end.execute", "completed"),
+    ],
+)
+def test_exact_legacy_audit_satisfies_each_completed_action_without_provider_io(
+    mutation,
+    transition_kind,
+    operation_type,
+    state,
+):
+    facade = _TransitionFacade(_tables())
+    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
+    workflow = _workflow(facade)
+    completed = workflow.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "legacy-audit", "staff_requested"
+    )
+    intent = copy.deepcopy(completed["intent"])
+    operation = copy.deepcopy(completed["operation"])
+    intent.update({"transition_kind": transition_kind, "state": state})
+    operation["operation_type"] = operation_type
+    if mutation == "revoke":
+        intent["source_intent_id"] = "source_intent_1"
+        intent["request_sha256"] = stable_hash({
+            "version": 1,
+            "studio_id": "studio_1",
+            "source_intent_id": "source_intent_1",
+            "reason_code": "staff_requested",
+        })
+    elif mutation == "immediate":
+        intent["request_sha256"] = workflow._request_hash(
+            "studio_1", "enrollment_1", "immediate_cancel", "staff_requested"
+        )
+    operation["request_sha256"] = intent["provider_request_sha256"]
+    facade.supabase.tables["audit_logs"] = []
+
+    workflow._audit_completed_transition(
+        intent, operation, actor_id="actor_1", mutation=mutation
+    )
+    legacy = facade.supabase.tables["audit_logs"][0]
+    legacy["id"] = f"legacy-{mutation}"
+    provider_counts = (
+        len(_TransitionStripe.retrieve_calls),
+        len(_TransitionStripe.subscription_update_calls),
+        len(_TransitionStripe.subscription_cancel_calls),
+        len(_TransitionStripe.delete_item_calls),
+    )
+    workflow._audit_completed_transition(
+        intent, operation, actor_id="actor_1", mutation=mutation
+    )
+
+    assert len(facade.supabase.tables["audit_logs"]) == 1
+    assert provider_counts == (
+        len(_TransitionStripe.retrieve_calls),
+        len(_TransitionStripe.subscription_update_calls),
+        len(_TransitionStripe.subscription_cancel_calls),
+        len(_TransitionStripe.delete_item_calls),
+    )
+
+
+def test_duplicate_legacy_audits_fail_closed_without_deterministic_insert():
+    facade = _TransitionFacade(_tables())
+    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
+    manager = _manager(facade)
+    asyncio.run(manager.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "legacy-duplicate", "staff_requested"
+    ))
+    original = facade.supabase.tables["audit_logs"].pop()
+    facade.supabase.tables["audit_logs"].extend([
+        {**copy.deepcopy(original), "id": "legacy-1"},
+        {**copy.deepcopy(original), "id": "legacy-2"},
+    ])
+
+    with pytest.raises(RuntimeError, match="legacy_audit_ambiguous"):
+        asyncio.run(manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "legacy-duplicate", "staff_requested"
+        ))
+
+    assert {row["id"] for row in facade.supabase.tables["audit_logs"]} == {
+        "legacy-1", "legacy-2"
+    }
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda row: row.update(studio_id="studio_other"),
+        lambda row: row.update(actor_id="actor_other"),
+        lambda row: row["metadata"].update(operation_id="operation_other"),
+        lambda row: row["metadata"].update(transition_intent_id="intent_other"),
+        lambda row: row["metadata"].pop("provider_evidence_sha256"),
+        lambda row: row.update(action="billing.student_enrollment_canceled_immediately"),
+    ],
+)
+def test_malformed_legacy_audit_fails_closed_without_provider_io(mutate):
+    facade = _TransitionFacade(_tables())
+    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
+    manager = _manager(facade)
+    asyncio.run(manager.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "legacy-malformed", "staff_requested"
+    ))
+    legacy = facade.supabase.tables["audit_logs"][0]
+    legacy["id"] = "legacy-malformed-id"
+    mutate(legacy)
+    provider_counts = (
+        len(_TransitionStripe.retrieve_calls),
+        len(_TransitionStripe.subscription_update_calls),
+    )
+
+    with pytest.raises(RuntimeError, match="audit_identity_mismatch"):
+        asyncio.run(manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "legacy-malformed", "staff_requested"
+        ))
+
+    assert len(facade.supabase.tables["audit_logs"]) == 1
+    assert provider_counts == (
+        len(_TransitionStripe.retrieve_calls),
+        len(_TransitionStripe.subscription_update_calls),
+    )
+
+
 def test_audit_unique_race_rereads_and_validates_exact_winner_once():
     facade = _TransitionFacade(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
@@ -547,7 +673,7 @@ def test_audit_unique_race_rereads_and_validates_exact_winner_once():
         query for query in facade.supabase.query_log
         if query["table"] == "audit_logs"
     ]
-    assert sum(query["insert"] is None for query in audit_queries) == 2
+    assert sum(query["insert"] is None for query in audit_queries) == 4
 
 
 def test_whole_schedule_cannot_insert_intent_while_activation_lock_is_held():

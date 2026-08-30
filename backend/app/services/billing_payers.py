@@ -534,6 +534,31 @@ class BillingPayerManager:
                 metadata=expected_metadata,
             )
             return
+        legacy = (
+            self.supabase.table("audit_logs")
+            .select("*")
+            .eq("studio_id", context.studio_id)
+            .eq("action", "billing.payer_synced")
+            .eq("entity_id", payer_id)
+            .eq("metadata->>operation_id", context.operation_id)
+            .limit(2)
+            .execute()
+        )
+        if len(legacy.data or []) > 1:
+            raise RuntimeError("payer_sync_legacy_audit_ambiguous")
+        if legacy.data:
+            legacy_row = legacy.data[0]
+            if (
+                str(legacy_row.get("id") or "") == audit_id
+                or legacy_row.get("studio_id") != context.studio_id
+                or legacy_row.get("actor_id") != context.actor_id
+                or legacy_row.get("action") != "billing.payer_synced"
+                or legacy_row.get("entity_type") != "billing"
+                or str(legacy_row.get("entity_id") or "") != payer_id
+                or legacy_row.get("metadata") != expected_metadata
+            ):
+                raise RuntimeError("payer_sync_legacy_audit_identity_mismatch")
+            return
         try:
             self.supabase.table("audit_logs").insert({
                 "id": audit_id,

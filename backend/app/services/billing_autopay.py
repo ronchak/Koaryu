@@ -5,6 +5,7 @@ from typing import Any, Optional
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException, status
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import (
     BillingLinkResponse,
@@ -183,6 +184,7 @@ class BillingAutopayManager:
                 operation=operation,
                 payer_id=payer_id,
                 setup_request_id=setup_request_id,
+                return_urls={return_url, success_url, cancel_url},
             )
 
         if operation.get("state") in {"provider_succeeded", "completed"} or outcome == "replay":
@@ -192,6 +194,7 @@ class BillingAutopayManager:
                 operation=operation,
                 payer_id=payer_id,
                 setup_request_id=setup_request_id,
+                return_urls={return_url, success_url, cancel_url},
             )
 
         setup_request = coordinator.find_payer_setup_request(
@@ -355,16 +358,15 @@ class BillingAutopayManager:
                     detail=AUTOPAY_SETUP_AMBIGUOUS_DETAIL,
                 )
 
-        self._audit(
-            studio_id,
-            actor_id,
-            "billing.autopay_setup_started",
-            payer_id,
-            {
-                "operation_id": context.operation_id,
-                "setup_request_id": setup_request["id"],
-                "terms_version": AUTOPAY_TERMS_VERSION,
-            },
+        if hosted_url in {return_url, success_url, cancel_url}:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=AUTOPAY_SETUP_AMBIGUOUS_DETAIL,
+            )
+        self._audit_autopay_setup_started_once(
+            context=context,
+            payer_id=payer_id,
+            setup_request_id=str(setup_request["id"]),
         )
         return BillingLinkResponse(url=hosted_url)
 
@@ -422,6 +424,7 @@ class BillingAutopayManager:
         operation: dict[str, Any],
         payer_id: str,
         setup_request_id: str,
+        return_urls: set[str],
     ) -> BillingLinkResponse:
         operation_state = operation.get("state")
         if operation_state == "completed":
@@ -439,12 +442,20 @@ class BillingAutopayManager:
             )
         session_id = str(operation.get("provider_object_id") or "")
         if operation_state == "provider_succeeded":
+            self._validate_replay_operation(context, operation, session_id=session_id)
             setup_request = coordinator.read_payer_setup_request(
                 setup_request_id=setup_request_id,
                 studio_id=context.studio_id,
                 payer_id=payer_id,
                 stripe_connected_account_id=context.stripe_connected_account_id,
                 connect_account_generation=context.connect_account_generation,
+            )
+            self._validate_replay_setup_request(
+                context,
+                setup_request,
+                payer_id=payer_id,
+                setup_request_id=setup_request_id,
+                session_id=session_id,
             )
             if not setup_request.get("stripe_checkout_session_id") and session_id:
                 try:
@@ -473,6 +484,20 @@ class BillingAutopayManager:
                         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                         detail=AUTOPAY_SETUP_AMBIGUOUS_DETAIL,
                     ) from exc
+                setup_request = coordinator.read_payer_setup_request(
+                    setup_request_id=setup_request_id,
+                    studio_id=context.studio_id,
+                    payer_id=payer_id,
+                    stripe_connected_account_id=context.stripe_connected_account_id,
+                    connect_account_generation=context.connect_account_generation,
+                )
+                self._validate_replay_setup_request(
+                    context,
+                    setup_request,
+                    payer_id=payer_id,
+                    setup_request_id=setup_request_id,
+                    session_id=session_id,
+                )
         if session_id:
             try:
                 session = self.stripe_service_cls().retrieve_connected_checkout_session(
@@ -554,7 +579,16 @@ class BillingAutopayManager:
                             detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
                         )
                 hosted_url = _object_get(session, "url")
-                if isinstance(hosted_url, str) and hosted_url:
+                if (
+                    isinstance(hosted_url, str)
+                    and hosted_url
+                    and hosted_url not in return_urls
+                ):
+                    self._audit_autopay_setup_started_once(
+                        context=context,
+                        payer_id=payer_id,
+                        setup_request_id=setup_request_id,
+                    )
                     return BillingLinkResponse(url=hosted_url)
             except HTTPException:
                 raise
@@ -573,6 +607,164 @@ class BillingAutopayManager:
             status_code=status.HTTP_409_CONFLICT,
             detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
         )
+
+    @staticmethod
+    def _validate_replay_operation(
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        *,
+        session_id: str,
+    ) -> None:
+        if not session_id or any((
+            operation.get("id") != context.operation_id,
+            operation.get("studio_id") != context.studio_id,
+            operation.get("actor_id") != context.actor_id,
+            operation.get("operation_type") != context.operation_type,
+            operation.get("caller_request_key") != context.caller_request_key,
+            operation.get("request_sha256") != context.request_sha256,
+            operation.get("stripe_connected_account_id")
+            != context.stripe_connected_account_id,
+            operation.get("connect_account_generation")
+            != context.connect_account_generation,
+        )):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
+            )
+
+    @staticmethod
+    def _validate_replay_setup_request(
+        context: BillingProviderOperationContext,
+        setup_request: dict[str, Any],
+        *,
+        payer_id: str,
+        setup_request_id: str,
+        session_id: str,
+    ) -> None:
+        bound_session_id = setup_request.get("stripe_checkout_session_id")
+        if any((
+            setup_request.get("id") != setup_request_id,
+            setup_request.get("operation_id") != context.operation_id,
+            setup_request.get("studio_id") != context.studio_id,
+            setup_request.get("payer_id") != payer_id,
+            setup_request.get("initiated_by") != context.actor_id,
+            setup_request.get("terms_version") != AUTOPAY_TERMS_VERSION,
+            setup_request.get("stripe_connected_account_id")
+            != context.stripe_connected_account_id,
+            setup_request.get("connect_account_generation")
+            != context.connect_account_generation,
+            bound_session_id not in {None, session_id},
+            bool(setup_request.get("revoked_at")),
+            bool(setup_request.get("superseded_at")),
+            bool(setup_request.get("completed_at")),
+        )):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
+            )
+
+    def _audit_autopay_setup_started_once(
+        self,
+        *,
+        context: BillingProviderOperationContext,
+        payer_id: str,
+        setup_request_id: str,
+    ) -> None:
+        action = "billing.autopay_setup_started"
+        metadata = {
+            "operation_id": context.operation_id,
+            "setup_request_id": setup_request_id,
+            "terms_version": AUTOPAY_TERMS_VERSION,
+        }
+        audit_id = str(uuid5(NAMESPACE_URL, f"koaryu:{action}:{context.operation_id}"))
+        deterministic = (
+            self.supabase.table("audit_logs")
+            .select("id, studio_id, actor_id, action, entity_type, entity_id, metadata")
+            .eq("id", audit_id)
+            .limit(1)
+            .execute()
+        )
+        if deterministic.data:
+            self._validate_setup_started_audit(
+                deterministic.data,
+                audit_id=audit_id,
+                context=context,
+                payer_id=payer_id,
+                metadata=metadata,
+            )
+            return
+
+        legacy = (
+            self.supabase.table("audit_logs")
+            .select("id, studio_id, actor_id, action, entity_type, entity_id, metadata")
+            .eq("studio_id", context.studio_id)
+            .eq("action", action)
+            .eq("entity_id", payer_id)
+            .eq("metadata->>operation_id", context.operation_id)
+            .limit(2)
+            .execute()
+        )
+        if legacy.data:
+            self._validate_setup_started_audit(
+                legacy.data,
+                audit_id=None,
+                context=context,
+                payer_id=payer_id,
+                metadata=metadata,
+            )
+            return
+
+        payload = {
+            "id": audit_id,
+            "studio_id": context.studio_id,
+            "actor_id": context.actor_id,
+            "action": action,
+            "entity_type": "billing",
+            "entity_id": payer_id,
+            "metadata": metadata,
+        }
+        try:
+            self.supabase.table("audit_logs").insert(payload).execute()
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) != "23505":
+                raise
+            winner = (
+                self.supabase.table("audit_logs")
+                .select("id, studio_id, actor_id, action, entity_type, entity_id, metadata")
+                .eq("id", audit_id)
+                .limit(1)
+                .execute()
+            )
+            self._validate_setup_started_audit(
+                winner.data,
+                audit_id=audit_id,
+                context=context,
+                payer_id=payer_id,
+                metadata=metadata,
+            )
+
+    @staticmethod
+    def _validate_setup_started_audit(
+        rows: Any,
+        *,
+        audit_id: Optional[str],
+        context: BillingProviderOperationContext,
+        payer_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        if not isinstance(rows, list) or len(rows) != 1:
+            raise RuntimeError("autopay_setup_started_audit_conflict")
+        row = rows[0]
+        if not isinstance(row, dict) or any((
+            audit_id is not None and row.get("id") != audit_id,
+            row.get("studio_id") != context.studio_id,
+            row.get("actor_id") != context.actor_id,
+            row.get("action") != "billing.autopay_setup_started",
+            row.get("entity_type") != "billing",
+            row.get("entity_id") != payer_id,
+            row.get("metadata") != metadata,
+        )):
+            raise RuntimeError("autopay_setup_started_audit_conflict")
 
     def _mark_ambiguous_provider_request(
         self,

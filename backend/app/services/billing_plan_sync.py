@@ -1429,6 +1429,23 @@ class BillingPlanSyncWorkflow:
                 existing.data[0], audit_id, context, plan_id, metadata
             )
             return
+        legacy = (
+            self.supabase.table("audit_logs")
+            .select("*")
+            .eq("studio_id", context.studio_id)
+            .eq("action", "billing.plan_synced")
+            .eq("entity_id", plan_id)
+            .eq("metadata->>operation_id", context.operation_id)
+            .limit(2)
+            .execute()
+        )
+        if legacy.data:
+            if len(legacy.data) != 1:
+                raise RuntimeError("plan_sync_legacy_audit_ambiguous")
+            self._validate_legacy_audit_row(
+                legacy.data[0], context, plan_id, product_id, price_id
+            )
+            return
         payload = {
             "id": audit_id,
             "studio_id": context.studio_id,
@@ -1479,6 +1496,29 @@ class BillingPlanSyncWorkflow:
             or audit.get("metadata") != metadata
         ):
             raise RuntimeError("plan_sync_audit_row_mismatch")
+
+    @staticmethod
+    def _validate_legacy_audit_row(
+        audit: dict[str, Any],
+        context: BillingProviderOperationContext,
+        plan_id: str,
+        product_id: str,
+        price_id: str,
+    ) -> None:
+        if (
+            not audit.get("id")
+            or audit.get("studio_id") != context.studio_id
+            or audit.get("actor_id") != context.actor_id
+            or audit.get("action") != "billing.plan_synced"
+            or audit.get("entity_type") not in {None, "billing"}
+            or str(audit.get("entity_id") or "") != plan_id
+            or audit.get("metadata") != {
+                "operation_id": context.operation_id,
+                "stripe_product_id": product_id,
+                "stripe_price_id": price_id,
+            }
+        ):
+            raise RuntimeError("plan_sync_legacy_audit_row_mismatch")
 
     def _response(self, plan: dict[str, Any], account: dict[str, Any]) -> BillingPlanResponse:
         return self.owner._plan_response(plan, account)

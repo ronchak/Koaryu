@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.platform_billing_helpers import stable_hash
+from app.services.billing_autopay import BillingAutopayManager
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 
 from tests.billing_lifecycle_helpers import (
@@ -1093,6 +1094,309 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertNotIn("internal/staff-page", completed.exception.detail)
         self.assertEqual(len(_FakeStripeService.setup_calls), 1)
         self.assertEqual(database.operation["provider_request_attempt_count"], 1)
+
+    def test_audit_outage_after_binding_is_repaired_by_same_key_replay(self):
+        class CountingStripeService(_FakeStripeService):
+            checkout_retrieve_calls = []
+
+            def retrieve_connected_checkout_session(self, **payload):
+                self.__class__.checkout_retrieve_calls.append(payload)
+                return super().retrieve_connected_checkout_session(**payload)
+
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        CountingStripeService.reset()
+        CountingStripeService.checkout_retrieve_calls = []
+        CountingStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        failed_once = False
+
+        def fail_first_audit(name, _payloads, _rows):
+            nonlocal failed_once
+            if name == "audit_logs" and not failed_once:
+                failed_once = True
+                raise RuntimeError("audit unavailable")
+
+        database.before_insert = fail_first_audit
+        request = BillingPayerAutopaySetupRequest(
+            return_url="https://app.koaryu.test/internal/staff-page",
+        )
+        with (
+            patch("app.services.billing_service.StripeService", CountingStripeService),
+            self.assertRaisesRegex(RuntimeError, "audit unavailable"),
+        ):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1", request, "studio_1", "user_1", "audit-repair-key",
+            ))
+
+        self.assertEqual(database.operation["state"], "provider_succeeded")
+        self.assertEqual(
+            database.setup_request["stripe_checkout_session_id"], "cs_setup_1"
+        )
+        self.assertEqual(database.tables["audit_logs"], [])
+        CountingStripeService.checkout_retrieve_calls = []
+
+        with patch("app.services.billing_service.StripeService", CountingStripeService):
+            repaired = asyncio.run(service.create_autopay_setup_link(
+                "payer_1", request, "studio_1", "user_1", "audit-repair-key",
+            ))
+            repeated = asyncio.run(service.create_autopay_setup_link(
+                "payer_1", request, "studio_1", "user_1", "audit-repair-key",
+            ))
+
+        self.assertEqual(repaired.url, "https://checkout.stripe.test/setup")
+        self.assertEqual(repeated.url, repaired.url)
+        self.assertEqual(len(CountingStripeService.setup_calls), 1)
+        self.assertEqual(len(CountingStripeService.checkout_retrieve_calls), 2)
+        self.assertEqual(len(database.tables["audit_logs"]), 1)
+        audit = database.tables["audit_logs"][0]
+        self.assertEqual(audit["actor_id"], "user_1")
+        self.assertEqual(audit["entity_id"], "payer_1")
+        self.assertEqual(audit["metadata"]["operation_id"], database.operation["id"])
+
+    def test_setup_started_audit_accepts_one_exact_legacy_row_and_fails_closed_otherwise(self):
+        service = self.service()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        context = SimpleNamespace(
+            operation_id="operation_1",
+            studio_id="studio_1",
+            actor_id="user_1",
+        )
+        expected_metadata = {
+            "operation_id": "operation_1",
+            "setup_request_id": "setup_1",
+            "terms_version": "koaryu-autopay-v1",
+        }
+        exact = {
+            "id": "legacy-random-id",
+            "metadata->>operation_id": "operation_1",
+            "studio_id": "studio_1",
+            "actor_id": "user_1",
+            "action": "billing.autopay_setup_started",
+            "entity_type": "billing",
+            "entity_id": "payer_1",
+            "metadata": expected_metadata,
+        }
+
+        database.tables["audit_logs"] = [dict(exact)]
+        manager = BillingAutopayManager(service)
+        manager._audit_autopay_setup_started_once(
+            context=context,
+            payer_id="payer_1",
+            setup_request_id="setup_1",
+        )
+        self.assertEqual(database.tables["audit_logs"], [exact])
+
+        for mutation in (
+            {"actor_id": "other-user"},
+            {"entity_type": "staff"},
+            {"metadata": {**expected_metadata, "terms_version": "wrong"}},
+        ):
+            with self.subTest(mutation=mutation):
+                database.tables["audit_logs"] = [{**exact, **mutation}]
+                with self.assertRaisesRegex(
+                    RuntimeError, "autopay_setup_started_audit_conflict"
+                ):
+                    manager._audit_autopay_setup_started_once(
+                        context=context,
+                        payer_id="payer_1",
+                        setup_request_id="setup_1",
+                    )
+
+        database.tables["audit_logs"] = [dict(exact), {**exact, "id": "legacy-2"}]
+        with self.assertRaisesRegex(
+            RuntimeError, "autopay_setup_started_audit_conflict"
+        ):
+            manager._audit_autopay_setup_started_once(
+                context=context,
+                payer_id="payer_1",
+                setup_request_id="setup_1",
+            )
+
+    def test_legacy_audit_lookup_filters_current_operation_before_bounding_rows(self):
+        service = self.service()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        manager = BillingAutopayManager(service)
+        context = SimpleNamespace(
+            operation_id="operation-current",
+            studio_id="studio_1",
+            actor_id="user_1",
+        )
+        metadata = {
+            "operation_id": "operation-current",
+            "setup_request_id": "setup-current",
+            "terms_version": "koaryu-autopay-v1",
+        }
+        unrelated = []
+        for index in range(14):
+            row = {
+                "id": f"legacy-unrelated-{index}",
+                "studio_id": "studio_1",
+                "actor_id": "user_1",
+                "action": "billing.autopay_setup_started",
+                "entity_type": "billing",
+                "entity_id": "payer_1",
+                "metadata->>operation_id": f"operation-old-{index}",
+                "metadata": {
+                    "operation_id": f"operation-old-{index}",
+                    "setup_request_id": f"setup-old-{index}",
+                    "terms_version": "koaryu-autopay-v1",
+                },
+            }
+            if index % 4 == 0:
+                row["metadata"] = {"malformed": True}
+            unrelated.append(row)
+        exact = {
+            "id": "legacy-current",
+            "studio_id": "studio_1",
+            "actor_id": "user_1",
+            "action": "billing.autopay_setup_started",
+            "entity_type": "billing",
+            "entity_id": "payer_1",
+            "metadata->>operation_id": "operation-current",
+            "metadata": metadata,
+        }
+        database.tables["audit_logs"] = [*unrelated[:8], exact, *unrelated[8:]]
+
+        manager._audit_autopay_setup_started_once(
+            context=context,
+            payer_id="payer_1",
+            setup_request_id="setup-current",
+        )
+
+        self.assertEqual(len(database.tables["audit_logs"]), 15)
+        legacy_query = database.query_log[-1]
+        self.assertEqual(legacy_query["limit"], 2)
+        self.assertIn(
+            ("eq", "metadata->>operation_id", "operation-current"),
+            legacy_query["filters"],
+        )
+        self.assertIn(("eq", "studio_id", "studio_1"), legacy_query["filters"])
+        self.assertIn(
+            ("eq", "action", "billing.autopay_setup_started"),
+            legacy_query["filters"],
+        )
+        self.assertIn(("eq", "entity_id", "payer_1"), legacy_query["filters"])
+
+        database.tables["audit_logs"] = list(unrelated)
+        manager._audit_autopay_setup_started_once(
+            context=context,
+            payer_id="payer_1",
+            setup_request_id="setup-current",
+        )
+        deterministic = [
+            row
+            for row in database.tables["audit_logs"]
+            if (row.get("metadata") or {}).get("operation_id") == "operation-current"
+        ]
+        self.assertEqual(len(deterministic), 1)
+        self.assertNotEqual(deterministic[0]["id"], "legacy-current")
+
+    def test_setup_started_audit_race_rereads_one_exact_deterministic_winner(self):
+        service = self.service()
+        context = SimpleNamespace(
+            operation_id="operation_1",
+            studio_id="studio_1",
+            actor_id="user_1",
+        )
+
+        for winner_kind in ("exact", "malformed", "missing"):
+            with self.subTest(winner_kind=winner_kind):
+                database = _AutopayOperationSupabase(_autopay_tables())
+                service.supabase = database
+                manager = BillingAutopayManager(service)
+                insert_attempts = 0
+
+                def race(name, payloads, rows):
+                    nonlocal insert_attempts
+                    if name != "audit_logs":
+                        return
+                    insert_attempts += 1
+                    payload = dict(payloads[0])
+                    if winner_kind == "exact":
+                        rows.append(payload)
+                    elif winner_kind == "malformed":
+                        rows.append({**payload, "actor_id": "wrong-user"})
+                    raise PostgrestAPIError({
+                        "code": "23505",
+                        "message": "duplicate key",
+                        "details": "",
+                        "hint": "",
+                    })
+
+                database.before_insert = race
+                if winner_kind == "exact":
+                    manager._audit_autopay_setup_started_once(
+                        context=context,
+                        payer_id="payer_1",
+                        setup_request_id="setup_1",
+                    )
+                else:
+                    with self.assertRaisesRegex(
+                        RuntimeError, "autopay_setup_started_audit_conflict"
+                    ):
+                        manager._audit_autopay_setup_started_once(
+                            context=context,
+                            payer_id="payer_1",
+                            setup_request_id="setup_1",
+                        )
+                self.assertEqual(insert_attempts, 1)
+
+    def test_replay_never_returns_a_staff_return_url_as_checkout_url(self):
+        class StaffUrlStripeService(_FakeStripeService):
+            setup_response = {
+                "id": "cs_setup_1",
+                "url": "https://app.koaryu.test/internal/staff-page",
+                "status": "open",
+            }
+
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        StaffUrlStripeService.reset()
+        StaffUrlStripeService.setup_response = {
+            "id": "cs_setup_1",
+            "url": "https://app.koaryu.test/internal/staff-page",
+            "status": "open",
+        }
+        StaffUrlStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        request = BillingPayerAutopaySetupRequest(
+            return_url="https://app.koaryu.test/internal/staff-page",
+        )
+        with patch("app.services.billing_service.StripeService", StaffUrlStripeService):
+            with self.assertRaises(HTTPException) as first:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1", request, "studio_1", "user_1", "staff-url-key",
+                ))
+            with self.assertRaises(HTTPException) as replay:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1", request, "studio_1", "user_1", "staff-url-key",
+                ))
+
+        self.assertEqual(first.exception.status_code, 503)
+        self.assertEqual(replay.exception.status_code, 409)
 
     def test_same_key_pre_provider_replay_inside_final_five_minutes_keeps_exact_request(self):
         class AtTwelveOhOne(datetime):

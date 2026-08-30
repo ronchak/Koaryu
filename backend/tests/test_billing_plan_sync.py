@@ -339,10 +339,114 @@ class TestBillingPlanSync:
             if query["table"] == "audit_logs" and query["insert"] is None
         ]
         assert audit_reads
-        assert all(
-            query["filters"] == (("eq", "id", facade.supabase.tables["audit_logs"][0]["id"]),)
+        deterministic_id = facade.supabase.tables["audit_logs"][0]["id"]
+        assert any(
+            query["filters"] == (("eq", "id", deterministic_id),)
             for query in audit_reads
         )
+
+    def test_completed_replay_accepts_one_exact_legacy_audit_without_insert(self):
+        facade = _Facade(_tables())
+        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "legacy-audit-key"
+        ))
+        audit = facade.supabase.tables["audit_logs"][0]
+        audit["id"] = "legacy-random-id"
+        audit["metadata"] = {
+            "operation_id": audit["metadata"]["operation_id"],
+            "stripe_product_id": audit["metadata"]["stripe_product_id"],
+            "stripe_price_id": audit["metadata"]["stripe_price_id"],
+        }
+        facade.supabase.query_log.clear()
+        provider_calls = (
+            len(_Stripe.created_products)
+            + len(_Stripe.updated_products)
+            + len(_Stripe.created_prices)
+            + len(_Stripe.retrieved_products)
+        )
+
+        replay = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "legacy-audit-key"
+        ))
+
+        assert replay.id == "plan_1"
+        assert facade.supabase.tables["audit_logs"] == [audit]
+        assert not any(
+            query["insert"] is not None
+            for query in facade.supabase.query_log
+            if query["table"] == "audit_logs"
+        )
+        assert provider_calls == (
+            len(_Stripe.created_products)
+            + len(_Stripe.updated_products)
+            + len(_Stripe.created_prices)
+            + len(_Stripe.retrieved_products)
+        )
+        legacy_read = next(
+            query for query in facade.supabase.query_log
+            if query["table"] == "audit_logs"
+            and any(key == "metadata->>operation_id" for _op, key, _value in query["filters"])
+        )
+        assert legacy_read["limit"] == 2
+
+    @pytest.mark.parametrize(
+        "mutate",
+        (
+            lambda row: row.update(actor_id="actor_other"),
+            lambda row: row["metadata"].update(stripe_product_id="prod_other"),
+            lambda row: row["metadata"].pop("stripe_price_id"),
+            lambda row: row.update(entity_type="other"),
+        ),
+    )
+    def test_completed_replay_rejects_malformed_legacy_audit(self, mutate):
+        facade = _Facade(_tables())
+        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "legacy-malformed-key"
+        ))
+        audit = facade.supabase.tables["audit_logs"][0]
+        audit["id"] = "legacy-random-id"
+        audit["metadata"] = {
+            "operation_id": audit["metadata"]["operation_id"],
+            "stripe_product_id": audit["metadata"]["stripe_product_id"],
+            "stripe_price_id": audit["metadata"]["stripe_price_id"],
+        }
+        mutate(audit)
+        provider_calls = len(_Stripe.created_products) + len(_Stripe.created_prices)
+
+        with pytest.raises(RuntimeError, match="plan_sync_legacy_audit_row_mismatch"):
+            asyncio.run(manager.sync_plan(
+                "plan_1", "studio_1", "actor_1", "legacy-malformed-key"
+            ))
+
+        assert len(facade.supabase.tables["audit_logs"]) == 1
+        assert provider_calls == len(_Stripe.created_products) + len(_Stripe.created_prices)
+
+    def test_completed_replay_rejects_duplicate_legacy_audit_identity(self):
+        facade = _Facade(_tables())
+        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "legacy-duplicate-key"
+        ))
+        audit = facade.supabase.tables["audit_logs"][0]
+        audit["id"] = "legacy-random-id-1"
+        audit["metadata"] = {
+            "operation_id": audit["metadata"]["operation_id"],
+            "stripe_product_id": audit["metadata"]["stripe_product_id"],
+            "stripe_price_id": audit["metadata"]["stripe_price_id"],
+        }
+        facade.supabase.tables["audit_logs"].append({
+            **audit, "id": "legacy-random-id-2", "metadata": dict(audit["metadata"])
+        })
+        provider_calls = len(_Stripe.created_products) + len(_Stripe.created_prices)
+
+        with pytest.raises(RuntimeError, match="plan_sync_legacy_audit_ambiguous"):
+            asyncio.run(manager.sync_plan(
+                "plan_1", "studio_1", "actor_1", "legacy-duplicate-key"
+            ))
+
+        assert provider_calls == len(_Stripe.created_products) + len(_Stripe.created_prices)
 
     @pytest.mark.parametrize(
         "winner_change, expected_error",
@@ -398,7 +502,10 @@ class TestBillingPlanSync:
             query for query in facade.supabase.query_log
             if query["table"] == "audit_logs" and query["insert"] is None
         ]
-        assert len(audit_reads) == 2
+        assert len([
+            query for query in audit_reads
+            if len(query["filters"]) == 1 and query["filters"][0][1] == "id"
+        ]) == 2
 
     def test_lost_product_success_response_resumes_at_price_step(self):
         facade = _Facade(_tables())

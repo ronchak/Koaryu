@@ -400,10 +400,16 @@ class BillingPaymentManagerTests(unittest.TestCase):
                     f"koaryu:billing.payment_refunded:{operation['id']}",
                 ))
                 self.assertEqual(sum(entry["insert"] is not None for entry in audit_queries), 1)
-                self.assertEqual(sum(entry["columns"] == "*" for entry in audit_queries), 2)
+                reads = [entry for entry in audit_queries if entry["columns"] == "*"]
+                self.assertEqual(len(reads), 3)
+                id_reads = [
+                    entry for entry in reads
+                    if entry["filters"] == (("eq", "id", expected_id),)
+                ]
+                self.assertEqual(len(id_reads), 2)
                 self.assertTrue(all(
                     entry["filters"] == (("eq", "id", expected_id),)
-                    for entry in audit_queries if entry["columns"] == "*"
+                    for entry in id_reads
                 ))
                 self.assertEqual(_FakeStripeService.refunds, [])
                 self.assertEqual(_FakeStripeService.retrieved_refunds, [])
@@ -435,6 +441,92 @@ class BillingPaymentManagerTests(unittest.TestCase):
                     )
         self.assertEqual(_FakeStripeService.refunds, [])
         self.assertEqual(_FakeStripeService.retrieved_refunds, [])
+
+    def test_refund_legacy_audit_is_exact_bounded_and_prevents_duplicate(self):
+        facade, manager, payment, refund, data, operation, context, exact = (
+            self._completed_refund_audit_fixture()
+        )
+        legacy = {
+            **exact,
+            "id": "00000000-0000-4000-8000-000000007001",
+            "metadata->>operation_id": operation["id"],
+        }
+        facade.supabase.tables["audit_logs"] = [legacy]
+        facade.supabase.query_log = []
+        _FakeStripeService.reset()
+        manager._ensure_refund_audit(
+            payment=payment, refund=refund, data=data, amount=500,
+            operation=operation, context=context,
+        )
+        self.assertEqual(facade.supabase.tables["audit_logs"], [legacy])
+        self.assertFalse(any(
+            entry["insert"] is not None for entry in facade.supabase.query_log
+            if entry["table"] == "audit_logs"
+        ))
+        self.assertEqual(_FakeStripeService.refunds, [])
+        self.assertEqual(_FakeStripeService.retrieved_refunds, [])
+
+        for label, rows, expected_error in (
+            ("duplicate", [legacy, {**legacy, "id": "00000000-0000-4000-8000-000000007002"}], "ambiguous"),
+            ("actor", [{**legacy, "actor_id": "actor_other"}], "identity_mismatch"),
+            ("metadata", [{**legacy, "metadata": {"operation_id": operation["id"]}}], "identity_mismatch"),
+        ):
+            with self.subTest(label=label):
+                facade.supabase.tables["audit_logs"] = rows
+                with self.assertRaisesRegex(RuntimeError, expected_error):
+                    manager._ensure_refund_audit(
+                        payment=payment, refund=refund, data=data, amount=500,
+                        operation=operation, context=context,
+                    )
+
+        for label, unrelated in (
+            ("operation", {
+                **legacy,
+                "metadata": {**legacy["metadata"], "operation_id": "operation_other"},
+                "metadata->>operation_id": "operation_other",
+            }),
+            ("resource", {**legacy, "entity_id": "payment_other"}),
+            ("studio", {**legacy, "studio_id": "studio_other"}),
+        ):
+            with self.subTest(label=label):
+                facade.supabase.tables["audit_logs"] = [unrelated]
+                manager._ensure_refund_audit(
+                    payment=payment, refund=refund, data=data, amount=500,
+                    operation=operation, context=context,
+                )
+                self.assertEqual(len(facade.supabase.tables["audit_logs"]), 2)
+
+        unrelated = [{
+            **legacy,
+            "id": f"00000000-0000-4000-8000-{index:012d}",
+            "actor_id": None,
+            "metadata": {},
+            "metadata->>operation_id": f"operation_{index}",
+        } for index in range(80)]
+        facade.supabase.tables["audit_logs"] = [*unrelated, legacy]
+        facade.supabase.query_log = []
+        manager._ensure_refund_audit(
+            payment=payment, refund=refund, data=data, amount=500,
+            operation=operation, context=context,
+        )
+        self.assertEqual(len(facade.supabase.tables["audit_logs"]), 81)
+        legacy_query = next(
+            entry for entry in facade.supabase.query_log
+            if entry["table"] == "audit_logs"
+            and any(key == "metadata->>operation_id" for _op, key, _value in entry["filters"])
+        )
+        self.assertEqual(legacy_query["limit"], 2)
+        self.assertIn(
+            ("eq", "metadata->>operation_id", operation["id"]),
+            legacy_query["filters"],
+        )
+
+        facade.supabase.tables["audit_logs"] = unrelated
+        manager._ensure_refund_audit(
+            payment=payment, refund=refund, data=data, amount=500,
+            operation=operation, context=context,
+        )
+        self.assertEqual(len(facade.supabase.tables["audit_logs"]), 81)
 
     def test_current_month_cohort_summary_is_complete_beyond_list_limit(self):
         current_rows = [

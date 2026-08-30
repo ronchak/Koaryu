@@ -2648,6 +2648,32 @@ class BillingEnrollmentTransitionWorkflow:
                 enrollment_id=str(intent["enrollment_id"]), metadata=expected_metadata,
             )
             return
+        legacy_by_intent = (
+            self.supabase.table("audit_logs").select("*")
+            .eq("metadata->>transition_intent_id", str(intent["id"]))
+            .limit(2).execute()
+        )
+        legacy_by_operation = (
+            self.supabase.table("audit_logs").select("*")
+            .eq("metadata->>operation_id", str(expected_metadata.get("operation_id") or ""))
+            .limit(2).execute()
+        )
+        legacy_rows = {
+            str(row.get("id") or f"missing:{index}"): row
+            for index, row in enumerate([
+                *legacy_by_intent.data,
+                *legacy_by_operation.data,
+            ])
+        }
+        if legacy_rows:
+            if len(legacy_rows) != 1:
+                raise RuntimeError("enrollment_transition_legacy_audit_ambiguous")
+            self._validate_transition_audit_row(
+                next(iter(legacy_rows.values())), audit_id=None, studio_id=studio_id,
+                actor_id=actor_id, action=action,
+                enrollment_id=str(intent["enrollment_id"]), metadata=expected_metadata,
+            )
+            return
         try:
             self.supabase.table("audit_logs").insert({
                 "id": audit_id,
@@ -2677,7 +2703,7 @@ class BillingEnrollmentTransitionWorkflow:
     def _validate_transition_audit_row(
         audit: dict[str, Any],
         *,
-        audit_id: str,
+        audit_id: str | None,
         studio_id: str,
         actor_id: str,
         action: str,
@@ -2685,7 +2711,8 @@ class BillingEnrollmentTransitionWorkflow:
         metadata: dict[str, Any],
     ) -> None:
         if (
-            str(audit.get("id") or "") != audit_id
+            (audit_id is not None and str(audit.get("id") or "") != audit_id)
+            or (audit_id is None and not str(audit.get("id") or ""))
             or audit.get("studio_id") != studio_id
             or audit.get("actor_id") != actor_id
             or audit.get("action") != action
