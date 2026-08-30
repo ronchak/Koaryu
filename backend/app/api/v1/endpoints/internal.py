@@ -5,7 +5,7 @@ import threading
 import time
 from typing import Optional
 from urllib.parse import urlparse
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from starlette.concurrency import run_in_threadpool
@@ -20,6 +20,7 @@ from app.core.config import (
 )
 from app.core.deps import get_operational_alert_supabase, get_supabase
 from app.schemas.account import AccountDeletionProcessResponse
+from app.schemas.billing import BillingEnrollmentTransitionProcessResponse
 from app.schemas.operational_alerts import (
     OperationalAlertAcknowledgementResponse,
     OperationalAlertEvaluationResponse,
@@ -33,6 +34,7 @@ from app.schemas.support import (
     SupportTriageFilters,
 )
 from app.services.account_service import AccountService
+from app.services.billing_service import BillingService
 from app.services.operational_alerts import (
     EVALUATION_BATCH_TIMEOUT_SECONDS,
     HttpsAlertDestination,
@@ -160,6 +162,36 @@ async def process_due_account_deletions(
     if heartbeat_sequence is not None:
         response.headers["X-Koaryu-Heartbeat-Sequence"] = str(heartbeat_sequence)
     return result
+
+
+@router.post(
+    "/billing/enrollment-transitions/process-due",
+    response_model=BillingEnrollmentTransitionProcessResponse,
+)
+async def process_due_billing_enrollment_transitions(
+    limit: int = Query(25, ge=1, le=100),
+    internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    settings = get_settings()
+    _verify_secret(
+        internal_secret,
+        settings.BILLING_TRANSITION_WORKER_SECRET,
+        "Billing transition worker",
+    )
+    if not settings.BILLING_TRANSITION_SCHEDULER_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Billing transition scheduling is not enabled.",
+        )
+
+    async def _provider_operation(client):
+        return await BillingService(client).process_due_enrollment_transitions(
+            worker_id=str(uuid4()),
+            limit=limit,
+        )
+
+    return await run_supabase_operation(supabase, _provider_operation, lane="bulk")
 
 
 @router.post(

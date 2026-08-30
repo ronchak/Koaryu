@@ -821,9 +821,19 @@ describe("operations behavior proof", () => {
     assert.match(sections, /Reset Stripe connection\?/);
     assert.match(sections, /onConnectReset/);
     assert.match(controller, /!isPreviewMode[\s\S]*canManageKoaryuSubscription[\s\S]*hasStripeConnectedAccount[\s\S]*connectOnboardingEnabled/);
-    assert.match(negativeCopy, /Creating or syncing plans is currently unavailable/);
-    assert.match(negativeCopy, /Creating or syncing payers and changing autopay are currently unavailable/);
-    assert.match(negativeCopy, /Creating, finalizing, retrying, or voiding provider invoices is currently unavailable/);
+    assert.match(sections, /disabled=\{!coreCheckoutEnabled[\s\S]*Start checkout/);
+    assert.match(sections, /disabled=\{!corePortalEnabled[\s\S]*Customer portal/);
+    assert.match(sections, /disabled=\{!connectOnboardingEnabled[\s\S]*connectActionLabel/);
+    assert.match(sections, /disabled=\{!connectDashboardEnabled[\s\S]*Stripe dashboard/);
+    assert.match(negativeCopy, /Existing plans can sync through one replay-safe provider workflow/);
+    assert.match(negativeCopy, /Staff cannot accept payment terms for a payer/);
+    assert.match(negativeCopy, /Koaryu preserves the original request key after an uncertain provider outcome/);
+    assert.match(negativeCopy, /canUseWorkflow\("plan\.sync"\)[\s\S]*onPlanSync\(plan\.id\)/);
+    assert.match(negativeCopy, /canUseWorkflow\("payer\.sync"\)[\s\S]*onPayerSync\(payer\.id\)/);
+    assert.match(negativeCopy, /canUseWorkflow\("payer\.setup"\)[\s\S]*onAutopaySetup\(payer\)/);
+    assert.match(negativeCopy, /payerSetupActionLabel\(payer\)/);
+    assert.match(negativeCopy, /window\.confirm\(`Disable autopay for \$\{payer\.display_name\}\?/);
+    assert.match(negativeCopy, /canUseWorkflow\("invoice\.finalize"\)[\s\S]*onInvoiceAction\(invoice\.id, "finalize"\)/);
     assert.match(negativeCopy, /New CSV exports are currently unavailable/);
   });
 

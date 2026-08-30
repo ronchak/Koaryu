@@ -6,6 +6,33 @@ export type BillingLoadingState = {
   error: string;
 };
 
+export const BILLING_TABS = [
+  "overview",
+  "plans",
+  "families",
+  "enrollments",
+  "invoices",
+  "reports",
+] as const;
+
+export type BillingTab = (typeof BILLING_TABS)[number];
+
+export function getBillingTabFromSearch(search: string): BillingTab {
+  const requestedTab = new URLSearchParams(search).get("tab");
+  return BILLING_TABS.find((tab) => tab === requestedTab) ?? "overview";
+}
+
+export function getBillingUrlForTab(search: string, tab: BillingTab) {
+  const params = new URLSearchParams(search);
+  if (tab === "overview") {
+    params.delete("tab");
+  } else {
+    params.set("tab", tab);
+  }
+  const query = params.toString();
+  return query ? `/billing?${query}` : "/billing";
+}
+
 export function getBillingInitialLoadAction(search: string): "connect-return" | "billing" {
   return new URLSearchParams(search).get("connect") === "return"
     ? "connect-return"

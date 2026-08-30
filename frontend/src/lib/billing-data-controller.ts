@@ -103,9 +103,7 @@ export function useBillingDataController({
         canManageKoaryuSubscription
           ? api.get<PlatformBillingStatus>("/platform-billing/status", token)
           : Promise.resolve(null),
-        canManageKoaryuSubscription
-          ? api.get<BillingSystemStatus>("/billing/system/status", token)
-          : Promise.resolve(null),
+        api.get<BillingSystemStatus>("/billing/system/status", token),
         api.get<StudioPaymentAccount>("/billing/connect/status", token),
         api.get<BillingPlan[]>("/billing/plans", token),
         api.get<BillingPayer[]>("/billing/payers", token),

@@ -108,7 +108,9 @@ export function BillingOverviewTab({
   paymentCohortAvailable,
   stripePaymentTotal,
   studentsLoaded,
-  coreProviderMutationsEnabled,
+  coreCheckoutEnabled,
+  corePortalEnabled,
+  connectDashboardEnabled,
   connectOnboardingEnabled,
 }: {
   activeStudents: number;
@@ -138,7 +140,9 @@ export function BillingOverviewTab({
   paymentCohortAvailable: boolean;
   stripePaymentTotal: number;
   studentsLoaded: boolean;
-  coreProviderMutationsEnabled: boolean;
+  coreCheckoutEnabled: boolean;
+  corePortalEnabled: boolean;
+  connectDashboardEnabled: boolean;
   connectOnboardingEnabled: boolean;
 }) {
   const coreCheckoutAvailable = canStartCoreCheckout(billingPlatform);
@@ -150,7 +154,7 @@ export function BillingOverviewTab({
       label: "Collected this UTC month",
       value: paymentCohortAvailable ? formatMoney(paidRevenue) : "Unavailable",
       helper: paymentCohortAvailable
-        ? `${currentMonthPaymentCount} payments, net of cumulative refunds`
+        ? `${currentMonthPaymentCount} payments, net of confirmed adjustments`
         : "Complete cohort could not be loaded",
       tone: "collected",
     },
@@ -170,7 +174,7 @@ export function BillingOverviewTab({
           ))}
         </div>
         <p className="border-t border-border px-4 py-2 text-[11px] text-muted">
-          Scope: current studio · As of latest loaded billing refresh · Method: current UTC-month payment cohort net of cumulative refunds
+          Scope: current studio · As of latest loaded billing refresh · Method: current UTC-month net collected after confirmed adjustments
         </p>
       </section>
 
@@ -201,14 +205,14 @@ export function BillingOverviewTab({
             <Button
               variant="primary"
               size="sm"
-              disabled={!coreProviderMutationsEnabled || !canManageKoaryuSubscription || !coreCheckoutAvailable || isActionLoading}
+              disabled={!coreCheckoutEnabled || !canManageKoaryuSubscription || !coreCheckoutAvailable || isActionLoading}
               title={!coreCheckoutAvailable
                 ? billingPlatform?.comped || billingPlatform?.status === "comped"
                   ? "Koaryu Core access is comped for this studio. No checkout is required."
                   : billingPlatform && ["active", "trialing", "past_due", "unpaid", "paused"].includes(billingPlatform.status)
                     ? "Koaryu Core billing already exists. Use the billing portal to manage it."
                     : "Koaryu Core checkout is currently unavailable."
-                : coreProviderMutationsEnabled
+                : coreCheckoutEnabled
                   ? undefined
                   : billingProviderCopy.coreSubscription}
               isLoading={isLoadingAction("checkout")}
@@ -223,9 +227,9 @@ export function BillingOverviewTab({
             <Button
               variant="secondary"
               size="sm"
-              disabled={!coreProviderMutationsEnabled || !canOpenCustomerPortal || isActionLoading}
+              disabled={!corePortalEnabled || !canOpenCustomerPortal || isActionLoading}
               isLoading={isLoadingAction("portal")}
-              title={!coreProviderMutationsEnabled
+              title={!corePortalEnabled
                 ? billingProviderCopy.coreSubscription
                 : canOpenCustomerPortal
                   ? undefined
@@ -312,9 +316,9 @@ export function BillingOverviewTab({
             <Button
               variant="secondary"
               size="sm"
-              disabled={!connectOnboardingEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
+              disabled={!connectDashboardEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
               isLoading={isLoadingAction("dashboard")}
-              title={!connectOnboardingEnabled
+              title={!connectDashboardEnabled
                 ? billingProviderCopy.connectOnboarding
                 : canOpenStripeDashboard
                   ? "Open Stripe to review account status, requirements, payments, and payouts."

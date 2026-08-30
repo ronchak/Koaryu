@@ -21,6 +21,7 @@ Last verified against live systems: 2026-08-24.
 | Payments | Stripe live mode | Stripe test mode |
 | `LIVE_BILLING_ENABLED` | `true` (global interlock only) | `false` |
 | `CORE_SELF_CHECKOUT_ENABLED` | `true` (Koaryu Core only) | `false` |
+| Period-end billing worker | disabled; production cron awaits approval | Render Cron every 5 minutes |
 | `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
 Neither production surface auto-deploys. Both are promoted by hand, on purpose —
@@ -58,7 +59,8 @@ enforced by `scripts/check-env-examples.mjs`.
 
 ## Render — backend
 
-Both services are declared in `render.yaml`. Neither auto-deploys.
+Both web services and the staging billing-transition cron are declared in
+`render.yaml`. None auto-deploys.
 
 | | Production | Staging |
 | --- | --- | --- |
@@ -67,15 +69,59 @@ Both services are declared in `render.yaml`. Neither auto-deploys.
 | URL | `https://koaryu.onrender.com` | `https://koaryu-staging.onrender.com` |
 | Tracks branch | `main` | `staging` |
 | Runtime | Docker, Python 3.11.9 + jemalloc | Docker, Python 3.11.9 + jemalloc |
+| Region | Oregon | Oregon |
 | Plan | `starter` (paid) | `free` |
 | Auto-deploy | off | off |
 | Health check | `/health/ready` | `/health/ready` |
 | `ENVIRONMENT` | `production` | `staging` |
 | Stripe mode | `live` | `test` |
 
-The two services track **different branches**. Deploying a commit to staging means
-moving the `staging` branch to it first — `git push origin main:staging` — and
-then triggering a manual deploy, because auto-deploy is off on both.
+`koaryu-billing-transitions-staging` is a starter Render Cron Job that tracks the
+`staging` branch, runs every five minutes, and calls only the protected staging
+transition endpoint. It reuses the staging web service's worker secret through a
+Render service reference. Each run claims at most 25 transitions and waits up to 130
+seconds, beyond the backend bulk lane's 120-second deadline but below the five-minute
+cadence. A lost or failed response is safe to retry because the transition intent and
+provider mutation keep their durable idempotency identity. Render bills cron execution by runtime with a $1 monthly
+minimum for the service. The production web service keeps
+`BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
+release task.
+
+The two web services track **different branches**. Render auto-deploy is off for the
+staging web service and cron, so deploy each from the exact reviewed commit and read
+back that deployed SHA. Keep the cron suspended until the exact-candidate backend is
+deployed and `/health/ready` succeeds against the migrated staging database.
+
+Vercel staging is different: `frontend/vercel.json` enables automatic deployment from
+`refs/heads/staging`. Move that ref only after the database, backend readiness, and
+manual cron proof are complete, so the frontend is last. As observed on 2026-08-28,
+`refs/remotes/origin/staging` is
+`ee6137a709e4215efac1319dedd0e55ed2b60e1c`. That is context, not an execution
+assumption. The operator must fetch the current old SHA and candidate ref, bind the
+update to the observed old SHA with `--force-with-lease`, and read the remote ref back
+immediately:
+
+```bash
+PR_HEAD_SHA='<PR_HEAD_SHA>'
+git fetch origin \
+  refs/heads/staging:refs/remotes/origin/staging \
+  refs/heads/codex/koaryu-payments-live:refs/remotes/origin/codex/koaryu-payments-live
+OLD_STAGING_SHA="$(git rev-parse refs/remotes/origin/staging)"
+test "$(git rev-parse refs/remotes/origin/codex/koaryu-payments-live)" = "${PR_HEAD_SHA}"
+git push origin \
+  "${PR_HEAD_SHA}:refs/heads/staging" \
+  --force-with-lease=refs/heads/staging:"${OLD_STAGING_SHA}"
+test "$(git ls-remote --heads origin refs/heads/staging | awk '{print $1}')" = "${PR_HEAD_SHA}"
+```
+
+Abort if any command fails or the readback differs. Never use unchecked `--force`.
+If Render cannot deploy the exact candidate before this move, stop and prove another
+safe provider route. Do not move staging early to make Render see the candidate.
+
+The Render API reported both live services in Oregon on 2026-08-24. Render does
+not support changing an existing service's region. The Oregon declarations in
+`render.yaml` record the existing immutable placement; they do not move or
+replace either service.
 
 The staging service is on the free plan, which sleeps after roughly 15 minutes of
 inactivity. A slow or absent first response is usually spin-up, not a fault. If it
@@ -93,10 +139,10 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-`/health/ready` fails closed against a database at an unexpected migration. That
-is deliberate, and it is why a backend deployed ahead of its migration will sit
-unhealthy rather than serve. It is also the most likely reason a Render service
-appears to be "down" for no reason.
+The current candidate's `/health/ready` calls the V15 schema preflight and serves
+only at 129/head `20260830151714` with `release-db-attestation-v34`. It fails
+closed at every other migration state. That is deliberate, and it is why a
+backend deployed ahead of its migration will sit unhealthy rather than serve.
 
 ## Supabase — database, auth, storage
 

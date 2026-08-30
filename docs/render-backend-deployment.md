@@ -12,7 +12,7 @@ Expected service settings:
 - Type: Web Service
 - Runtime: Docker
 - Plan: `starter`
-- Region: Ohio
+- Region: Oregon
 - Root directory: `backend`
 - Dockerfile path: `./Dockerfile`
 - Docker context: `.`
@@ -76,6 +76,7 @@ STRIPE_PLATFORM_WEBHOOK_SECRET=
 STRIPE_CONNECT_WEBHOOK_SECRET=
 STRIPE_KOARYU_CORE_PRICE_ID=
 ACCOUNT_DELETION_WORKER_SECRET=
+BILLING_TRANSITION_WORKER_SECRET=
 SUPPORT_TRIAGE_SECRET=
 OPERATIONAL_ALERT_WORKER_SECRET=
 OPERATIONAL_ALERT_PRIMARY_URL=
@@ -134,6 +135,7 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, the service also refuses
 - `STRIPE_CONNECT_WEBHOOK_SECRET`
 - `STRIPE_KOARYU_CORE_PRICE_ID`
 - `ACCOUNT_DELETION_WORKER_SECRET`
+- `BILLING_TRANSITION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
 `SUPABASE_URL` must be a public HTTPS URL in production. Production requires the exact canonical `FRONTEND_URL=https://koaryu.app`; paths, query strings, fragments, userinfo, ports, whitespace, and control characters are rejected before CORS or staff-invite redirects use it. Both Stripe webhook-secret settings use the same exact comma-rotation format: nonempty candidates without surrounding whitespace or control characters. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode and mismatched keys. If `LIVE_BILLING_ENABLED=true` or `CORE_SELF_CHECKOUT_ENABLED=true`, startup additionally requires an exact validated `RENDER_GIT_COMMIT`. The general live-billing flag still requires the matching unexpired checkpoint and studio scope at runtime; the Core flag is limited to the three named self-service operations. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
@@ -152,12 +154,29 @@ Production access tokens should use the asymmetric key advertised by Supabase JW
 
 Account deletion is scheduled from the Vercel frontend project, not as a separate Render Cron service. Vercel Cron calls `/api/cron/account-deletions/process-due` once daily, and that route calls the protected Render backend endpoint with `ACCOUNT_DELETION_WORKER_SECRET`.
 
-If you configure or test the worker manually instead, call the protected endpoint at least daily:
+Enrollment period transitions expose a separate fail-closed backend worker at
+`/api/v1/internal/billing/enrollment-transitions/process-due`, protected by
+`BILLING_TRANSITION_WORKER_SECRET`. The repository declares
+`koaryu-billing-transitions-staging` as a five-minute Render Cron Job. It reuses the
+staging web service secret by Render service reference and posts only to the pinned
+staging origin. Each invocation claims at most 25 transitions and uses a 130-second
+HTTP timeout. That timeout is ten seconds longer than the backend bulk lane's
+120-second request deadline, so the cron receives the backend's retry-safe result,
+and it still expires before the next five-minute invocation. Timed-out or failed
+work is retried through the durable transition intent and provider idempotency key.
+`BILLING_TRANSITION_SCHEDULER_ENABLED` keeps the public scheduling
+route and capability closed unless that environment's worker is intentionally active.
+The production value remains `false`, and no production cron may be created in the
+staging release task. After separate production approval, mirror the staging cron with
+the production origin and production web-service secret, prove one manual run, then
+enable the production flag. Never share one environment's secret with another.
+
+For a manual staging verification, call the same protected endpoint directly:
 
 ```bash
 curl -X POST \
-  -H "X-Internal-Secret: $ACCOUNT_DELETION_WORKER_SECRET" \
-  https://koaryu.onrender.com/api/v1/internal/account-deletions/process-due
+  -H "X-Internal-Secret: $BILLING_TRANSITION_WORKER_SECRET" \
+  https://koaryu-staging.onrender.com/api/v1/internal/billing/enrollment-transitions/process-due
 ```
 
 Support tickets can be polled by an operator:
@@ -204,7 +223,7 @@ whole route map. To inspect the deployed route inventory, build the schema from 
 release commit instead with `python3 scripts/generate-api-types.py`, which loads the
 app in process and never touches the network.
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration on every probe. A successful service-role-only V4 database preflight is reused for 30 seconds, and concurrent probes share one in-flight check. Failures are never cached. Readiness requires exactly 117 migrations, head `20260824190500`, the exact thirty-three-version pending sequence, manifest version `release-db-attestation-v24`, and no required-object/security failure. Earlier, later, hybrid, malformed, or failing states return 503; no V22 or V23 application compatibility remains. The V4 contract admits only the canonical or proved restored PostgreSQL 17 operational manifest. Missing RPCs, timeouts, and provider errors fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration on every probe. A successful service-role-only V12 database preflight is reused for 30 seconds, and concurrent probes share one in-flight check. Failures are never cached. Readiness requires exactly 126 migrations, head `20260826185651`, the exact forty-two-version pending sequence, manifest version `release-db-attestation-v31`, and no required-object/security failure. Earlier, later, hybrid, malformed, or failing states return 503; no pre-V31 application compatibility remains. The V12 contract admits only the canonical or proved restored PostgreSQL 17 operational manifest. Missing RPCs, timeouts, and provider errors fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
 
 Each readiness probe also invokes the private RSS observer. It reads current RSS from `/proc/self/statm` at most once every five minutes and emits a `process_rss_observation` JSON log with the instance ID, commit, byte count, and threshold state. It adds no fields to the public health response. Search Render logs for `jemalloc preload verified` after startup and then for `process_rss_observation` while comparing memory across one instance ID.
 

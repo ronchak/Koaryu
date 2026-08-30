@@ -1,20 +1,29 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
 import type { BillingActionRuntime } from "@/lib/billing-action-runtime";
 import { buildBillingPlanCreatePayload } from "@/lib/billing-page-form-model";
+import {
+  buildPlanSyncRequest,
+  clearPlanSyncRequestKey,
+  resolvePlanSyncRequestKey,
+  type PlanSyncIdentity,
+} from "@/lib/billing-plan-sync-model";
 import type { BillingPlan, StudioPaymentAccount } from "@/types";
 
 type BillingPlanActionsOptions = {
   billingConnect: StudioPaymentAccount | null;
+  operationIdentity: PlanSyncIdentity | null;
   runtime: BillingActionRuntime;
 };
 
 export function useBillingPlanActions({
   billingConnect,
+  operationIdentity,
   runtime,
 }: BillingPlanActionsOptions) {
+  const planSyncKeysRef = useRef(new Map<string, string>());
   const [planName, setPlanName] = useState("");
   const [planAmount, setPlanAmount] = useState("");
   const [planSignupFee, setPlanSignupFee] = useState("");
@@ -40,12 +49,43 @@ export function useBillingPlanActions({
     );
   }
 
-  async function handlePlanSync(planId: string) {
-    await runtime.postBillingAction<BillingPlan>({
+  async function handlePlanSync(
+    planId: string,
+    options: { startNewRequest?: boolean } = {},
+  ) {
+    const requestKey = resolvePlanSyncRequestKey({
+      identity: operationIdentity,
+      keysByPlan: planSyncKeysRef.current,
+      planId,
+      startNewRequest: options.startNewRequest,
+    });
+    const request = buildPlanSyncRequest(requestKey);
+    const result = await runtime.postBillingAction<BillingPlan>({
       action: `plan-sync:${planId}`,
       path: `/billing/plans/${planId}/sync`,
+      onTerminalIdempotencyError: () => clearPlanSyncRequestKey({
+        identity: operationIdentity,
+        keysByPlan: planSyncKeysRef.current,
+        planId,
+      }),
+      refresh: false,
+      requestOptions: { headers: request.headers },
       successMessage: "Plan sync requested.",
+      workflowId: "plan.sync",
     });
+    if (result) {
+      clearPlanSyncRequestKey({
+        identity: operationIdentity,
+        keysByPlan: planSyncKeysRef.current,
+        planId,
+      });
+      try {
+        await runtime.refreshBilling();
+      } catch {
+        runtime.setError("Plan synced, but billing data could not be refreshed.");
+      }
+    }
+    return result;
   }
 
   async function handleCreatePlan(event: FormEvent<HTMLFormElement>) {
@@ -68,6 +108,10 @@ export function useBillingPlanActions({
     if (runtime.isPreviewMode) {
       runtime.setMessage("Demo plan drafted. Live studios save this to Supabase and Stripe when payments are enabled.");
       resetPlanForm();
+      return;
+    }
+    if (!runtime.canUseWorkflow("plan.create")) {
+      runtime.setError("Plan creation is not available for the current studio and role.");
       return;
     }
     if (!runtime.token || !runtime.claimAction("create-plan")) {

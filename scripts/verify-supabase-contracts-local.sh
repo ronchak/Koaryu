@@ -17,6 +17,9 @@ PG_BIN_DIR=""
 INITDB=""
 PG_CTL=""
 PSQL=""
+PG_DUMP=""
+PG_RESTORE=""
+CREATEDB=""
 PG_PORT=5432
 
 cleanup() {
@@ -182,6 +185,16 @@ fi
 INITDB="$PG_BIN_DIR/initdb"
 PG_CTL="$PG_BIN_DIR/pg_ctl"
 PSQL="$PG_BIN_DIR/psql"
+PG_DUMP="$PG_BIN_DIR/pg_dump"
+PG_RESTORE="$PG_BIN_DIR/pg_restore"
+CREATEDB="$PG_BIN_DIR/createdb"
+
+for restore_binary in "$PG_DUMP" "$PG_RESTORE" "$CREATEDB"; do
+  if ! is_postgres_17_binary "$restore_binary"; then
+    echo "ERROR: The PostgreSQL 17 dump/restore toolchain is incomplete: $restore_binary" >&2
+    exit 127
+  fi
+done
 
 node "$ROOT_DIR/scripts/check-supabase-contract-inventory.mjs"
 
@@ -198,6 +211,18 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
+if [[ ${#migration_files[@]} -ne 129 ]]; then
+  echo "ERROR: Expected the canonical 129-migration chain, found ${#migration_files[@]}." >&2
+  exit 1
+fi
+if [[ ${#verification_files[@]} -ne 47 ]]; then
+  echo "ERROR: Expected the canonical 47-contract inventory, found ${#verification_files[@]}." >&2
+  exit 1
+fi
+if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
+  echo "ERROR: The schedule-window contract is missing from the verified inventory." >&2
+  exit 1
+fi
 
 # PostgreSQL rejects long Unix socket paths, so this must not inherit a long
 # workspace-specific TMPDIR.
@@ -209,6 +234,8 @@ POSTMASTER_LOG="$TEMP_DIR/postmaster.log"
 mkdir -p "$SOCKET_DIR"
 
 echo "Initializing ephemeral PostgreSQL 17 cluster..."
+# Avoid consuming the host's finite SysV shared-memory identifier pool. Writing
+# this through initdb makes the setting durable for the subsequent pg_ctl start.
 if ! run_interruptible "$INITDB" \
   -D "$DATA_DIR" \
   --username=postgres \
@@ -216,6 +243,7 @@ if ! run_interruptible "$INITDB" \
   --no-locale \
   --auth-local=trust \
   --auth-host=reject \
+  -c shared_memory_type=mmap \
   --no-instructions; then
   echo "ERROR: initdb failed for the ephemeral cluster at $DATA_DIR" >&2
   exit 1
@@ -399,6 +427,270 @@ for migration_file in "${migration_files[@]}"; do
   migration_version="${BASH_REMATCH[1]}"
   migration_name="${BASH_REMATCH[2]}"
 
+  if [[ "$migration_filename" == "20260825042838_schedule_window_read_rpc.sql" ]]; then
+    echo "[restored Payments V25] RUN V24 dump/restore then schedule migrations 118-119 and Payments migration 120"
+    if run_interruptible bash \
+      "$ROOT_DIR/scripts/verify-v24-v25-restore-contract.sh" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
+      echo "[restored Payments V25] PASS exact V24, schedule V25, and Payments V25 compatibility chain"
+    else
+      status=$?
+      echo "[restored Payments V25] FAIL V24 through Payments V25 combined restore chain (exit $status)" >&2
+      exit "$status"
+    fi
+  fi
+
+  if [[ "$migration_filename" == "20260826030249_payments_adjustment_convergence.sql" ]]; then
+    echo "[historical generation backfill] RUN generation-2 predecessor fixture"
+    if run_interruptible "$PSQL" "${psql_args[@]}" <<'SQL'
+INSERT INTO auth.users (
+    id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+) VALUES (
+    '00000000-0000-4000-8000-000000009501'::UUID,
+    'authenticated',
+    'authenticated',
+    'historical-generation-owner@example.invalid',
+    '{}'::JSONB,
+    '{}'::JSONB,
+    now(),
+    now()
+);
+
+INSERT INTO public.studios (id, name, slug, owner_id)
+VALUES (
+    '00000000-0000-4000-8000-000000009502'::UUID,
+    'Historical Generation Backfill Contract',
+    'historical-generation-backfill-contract',
+    '00000000-0000-4000-8000-000000009501'::UUID
+);
+
+INSERT INTO public.studio_payment_accounts (
+    studio_id,
+    stripe_connected_account_id,
+    status,
+    charges_enabled,
+    payouts_enabled,
+    details_submitted,
+    metadata
+) VALUES (
+    '00000000-0000-4000-8000-000000009502'::UUID,
+    'acct_HistoricalGenerationBackfill2',
+    'charges_enabled',
+    true,
+    true,
+    true,
+    '{"connect_account_generation":2}'::JSONB
+);
+
+INSERT INTO public.billing_payers (id, studio_id, display_name)
+VALUES (
+    '00000000-0000-4000-8000-000000009503'::UUID,
+    '00000000-0000-4000-8000-000000009502'::UUID,
+    'Historical Generation Payer'
+);
+
+INSERT INTO public.billing_payments (
+    id,
+    studio_id,
+    payer_id,
+    stripe_payment_intent_id,
+    stripe_charge_id,
+    stripe_account_id,
+    status,
+    amount_cents,
+    currency,
+    processed_at
+) VALUES (
+    '00000000-0000-4000-8000-000000009504'::UUID,
+    '00000000-0000-4000-8000-000000009502'::UUID,
+    '00000000-0000-4000-8000-000000009503'::UUID,
+    'pi_HistoricalGenerationBackfill2',
+    'ch_HistoricalGenerationBackfill2',
+    'acct_HistoricalGenerationBackfill2',
+    'succeeded',
+    100,
+    'usd',
+    now()
+);
+
+INSERT INTO public.billing_payments (
+    id,
+    studio_id,
+    payer_id,
+    status,
+    amount_cents,
+    currency,
+    idempotency_key,
+    processed_at
+) VALUES (
+    '00000000-0000-4000-8000-000000009507'::UUID,
+    '00000000-0000-4000-8000-000000009502'::UUID,
+    '00000000-0000-4000-8000-000000009503'::UUID,
+    'externally_recorded',
+    100,
+    'usd',
+    'historical-ordinary-null-reason',
+    now()
+);
+
+INSERT INTO public.billing_refunds (
+    id,
+    studio_id,
+    payment_id,
+    stripe_refund_id,
+    stripe_charge_id,
+    stripe_payment_intent_id,
+    stripe_account_id,
+    amount_cents,
+    status
+) VALUES (
+    '00000000-0000-4000-8000-000000009505'::UUID,
+    '00000000-0000-4000-8000-000000009502'::UUID,
+    '00000000-0000-4000-8000-000000009504'::UUID,
+    're_HistoricalGenerationBackfill2',
+    'ch_HistoricalGenerationBackfill2',
+    'pi_HistoricalGenerationBackfill2',
+    'acct_HistoricalGenerationBackfill2',
+    25,
+    'succeeded'
+);
+
+INSERT INTO public.billing_disputes (
+    id,
+    studio_id,
+    payment_id,
+    stripe_dispute_id,
+    stripe_charge_id,
+    stripe_payment_intent_id,
+    stripe_account_id,
+    amount_cents,
+    status
+) VALUES (
+    '00000000-0000-4000-8000-000000009506'::UUID,
+    '00000000-0000-4000-8000-000000009502'::UUID,
+    '00000000-0000-4000-8000-000000009504'::UUID,
+    'dp_HistoricalGenerationBackfill2',
+    'ch_HistoricalGenerationBackfill2',
+    'pi_HistoricalGenerationBackfill2',
+    'acct_HistoricalGenerationBackfill2',
+    100,
+    'needs_response'
+);
+SQL
+    then
+      echo "[historical generation backfill] PASS generation-2 predecessor fixture"
+    else
+      status=$?
+      echo "[historical generation backfill] FAIL generation-2 predecessor fixture (psql exit $status)" >&2
+      exit "$status"
+    fi
+
+    echo "[restored V26] RUN V25 dump/restore then migration 121"
+    if run_interruptible bash \
+      "$ROOT_DIR/scripts/verify-v25-v26-restore-contract.sh" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
+      echo "[restored V26] PASS V25 dump/restore then migration 121"
+    else
+      status=$?
+      echo "[restored V26] FAIL V25 dump/restore then migration 121 (exit $status)" >&2
+      exit "$status"
+    fi
+  fi
+
+  if [[ "$migration_filename" == "20260826051527_billing_provider_operations_and_payer_consent.sql" ]]; then
+    echo "[restored V27] RUN V26 dump/restore then migration 122"
+    if run_interruptible bash \
+      "$ROOT_DIR/scripts/verify-v26-v27-restore-contract.sh" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
+      echo "[restored V27] PASS V26 dump/restore then migration 122"
+    else
+      status=$?
+      echo "[restored V27] FAIL V26 dump/restore then migration 122 (exit $status)" >&2
+      exit "$status"
+    fi
+  fi
+
+  if [[ "$migration_filename" == "20260826073728_billing_provider_operation_steps.sql" ]]; then
+    echo "[restored V28] RUN V27 dump/restore then migration 123"
+    if run_interruptible bash \
+      "$ROOT_DIR/scripts/verify-v27-v28-restore-contract.sh" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
+      echo "[restored V28] PASS V27 dump/restore then migration 123"
+    else
+      status=$?
+      echo "[restored V28] FAIL V27 dump/restore then migration 123 (exit $status)" >&2
+      exit "$status"
+    fi
+  fi
+
+  if [[ "$migration_filename" == "20260826102840_enrollment_period_safe_transitions.sql" ]]; then
+    echo "[restored V29] RUN V28 dump/restore then migration 124"
+    if run_interruptible bash \
+      "$ROOT_DIR/scripts/verify-v28-v29-restore-contract.sh" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
+      echo "[restored V29] PASS V28 dump/restore then migration 124"
+    else
+      status=$?
+      echo "[restored V29] FAIL V28 dump/restore then migration 124 (exit $status)" >&2
+      exit "$status"
+    fi
+  fi
+
+  if [[ "$migration_filename" == "20260826155911_payments_workflow_catalog_and_replay_repairs.sql" ]]; then
+    echo "[restored V30] RUN V29 dump/restore then migration 125"
+    if run_interruptible bash \
+      "$ROOT_DIR/scripts/verify-v29-v30-restore-contract.sh" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
+      echo "[restored V30] PASS V29 dump/restore then migration 125"
+    else
+      status=$?
+      echo "[restored V30] FAIL V29 dump/restore then migration 125 (exit $status)" >&2
+      exit "$status"
+    fi
+  fi
+
+  if [[ "$migration_filename" == "20260826185651_payment_refund_payer_sync_resource_ownership.sql" ]]; then
+    echo "[restored V31] RUN V30 dump/restore then migration 126"
+    if run_interruptible bash \
+      "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
+      echo "[restored V31] PASS V30 dump/restore then migration 126"
+      echo "[restored V34] RUN V30 dump/restore then migrations 126-129"
+      restored_v33_output="$(run_interruptible bash <(
+        awk '
+          /^echo "PASS: V30 dump\/restore predecessor plus migration 126/ {
+            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830065627_release_invoice_retry_preread_lease_v32.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830065627'\'','\''release_invoice_retry_preread_lease_v32'\'');\" >/dev/null"
+            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830082610_invoice_retry_release_compatibility_v33.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830082610'\'','\''invoice_retry_release_compatibility_v33'\'');\" >/dev/null"
+            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830151714_invoice_retry_closeout_contract_v34.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830151714'\'','\''invoice_retry_closeout_contract_v34'\'');\" >/dev/null"
+            print "catalog_sql=\"$(cd \"$repository_root\" && node --input-type=module --eval \"import { CATALOG_STATE_SQL } from '\''./scripts/studio-comp-migration-rollout.mjs'\''; process.stdout.write(CATALOG_STATE_SQL);\")\""
+            print "echo RESTORED_V34_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
+          }
+          { print }
+        ' "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh"
+      ) "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+        "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR")"
+      printf '%s\n' "$restored_v33_output"
+      restored_v34_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V34_CATALOG_STATE=//p' | tail -1)"
+      expected_restored_v34_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V34_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V34_RESTORED_CATALOG_STATE);")"
+      if [[ "$restored_v34_catalog" != "$expected_restored_v34_catalog" ]]; then
+        echo "[restored V34] FAIL exact restored catalog: $restored_v34_catalog" >&2
+        exit 1
+      fi
+      echo "[restored V34] PASS V30 dump/restore then migrations 126-129"
+    else
+      status=$?
+      echo "[restored V31] FAIL V30 dump/restore then migration 126 (exit $status)" >&2
+      exit "$status"
+    fi
+  fi
+
   echo "[migration $migration_index/$migration_total] RUN $migration_filename"
   if run_interruptible "$PSQL" "${psql_args[@]}" \
     --single-transaction \
@@ -409,6 +701,123 @@ for migration_file in "${migration_files[@]}"; do
     status=$?
     echo "[migration $migration_index/$migration_total] FAIL $migration_filename (psql exit $status)" >&2
     exit "$status"
+  fi
+
+  if [[ "$migration_filename" == "20260826155911_payments_workflow_catalog_and_replay_repairs.sql" ]]; then
+    echo "[V30 focused contract] RUN replay and invoice closeout behavior"
+    if run_interruptible "$PSQL" "${psql_args[@]}" \
+      --file="$ROOT_DIR/supabase/verification/payments_workflow_replay_repairs.sql"; then
+      echo "[V30 focused contract] PASS replay and invoice closeout behavior"
+    else
+      status=$?
+      echo "[V30 focused contract] FAIL replay and invoice closeout behavior (exit $status)" >&2
+      exit "$status"
+    fi
+    v30_readiness="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
+       cardinality(security_failures)::TEXT || '|' || manifest_version
+FROM public.koaryu_release_schema_preflight_v11();
+" | tr -d '\r\n')"
+    if [[ "$v30_readiness" != "true|125|20260826155911|0|release-db-attestation-v30" ]]; then
+      v30_failures="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT COALESCE(array_to_string(security_failures, ','), '')
+FROM public.koaryu_release_schema_preflight_v11();
+" | tr -d '\r\n')"
+      echo "[V30 readiness] FAIL exact release state: $v30_readiness failures=$v30_failures" >&2
+      exit 1
+    fi
+    v29_compat_readiness="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
+       cardinality(security_failures)::TEXT || '|' || manifest_version
+FROM public.koaryu_release_schema_preflight_v10();
+" | tr -d '\r\n')"
+    if [[ "$v29_compat_readiness" != "true|124|20260826102840|0|release-db-attestation-v29" ]]; then
+      echo "[V29 compatibility] FAIL exact predecessor state: $v29_compat_readiness" >&2
+      exit 1
+    fi
+    echo "[V30 readiness] PASS exact release and V29 compatibility states"
+  fi
+
+  if [[ "$migration_filename" == "20260826185651_payment_refund_payer_sync_resource_ownership.sql" ]]; then
+    v31_readiness="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
+       cardinality(security_failures)::TEXT || '|' || manifest_version
+FROM public.koaryu_release_schema_preflight_v12();
+" | tr -d '\r\n')"
+    if [[ "$v31_readiness" != "true|126|20260826185651|0|release-db-attestation-v31" ]]; then
+      v31_failures="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT COALESCE(array_to_string(security_failures, ','), '')
+FROM public.koaryu_release_schema_preflight_v12();
+" | tr -d '\r\n')"
+      echo "[V31 readiness] FAIL exact release state: $v31_readiness failures=$v31_failures" >&2
+      exit 1
+    fi
+    v30_compat_readiness="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
+       cardinality(security_failures)::TEXT || '|' || manifest_version
+FROM public.koaryu_release_schema_preflight_v11();
+" | tr -d '\r\n')"
+    if [[ "$v30_compat_readiness" != "true|125|20260826155911|0|release-db-attestation-v30" ]]; then
+      echo "[V30 compatibility] FAIL exact predecessor state: $v30_compat_readiness" >&2
+      exit 1
+    fi
+    echo "[V31 readiness] PASS exact release and V30 compatibility states"
+  fi
+
+  if [[ "$migration_filename" == "20260826030249_payments_adjustment_convergence.sql" ]]; then
+    echo "[historical generation backfill] RUN fail-closed result"
+    historical_generation_state="$(
+      "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT
+    COALESCE(payment.connect_account_generation::TEXT, '') || ':' ||
+    payment.adjustment_reconciliation_required::TEXT || ':' ||
+    payment.adjustment_reconciliation_reason_code || ':' ||
+    COALESCE(refund.connect_account_generation::TEXT, '') || ':' ||
+    refund.reconciliation_required::TEXT || ':' ||
+    refund.reconciliation_reason_code || ':' ||
+    COALESCE(dispute.connect_account_generation::TEXT, '') || ':' ||
+    dispute.reconciliation_required::TEXT || ':' ||
+    dispute.reconciliation_reason_code
+FROM public.billing_payments AS payment
+JOIN public.billing_refunds AS refund
+  ON refund.payment_id = payment.id
+JOIN public.billing_disputes AS dispute
+  ON dispute.payment_id = payment.id
+WHERE payment.id = '00000000-0000-4000-8000-000000009504'::UUID;
+"
+    )"
+    historical_generation_state="$(printf '%s' "$historical_generation_state" | tr -d '\r\n')"
+    expected_historical_generation_state=":true:historical_connect_generation_unknown::true:historical_connect_generation_unknown::true:historical_connect_generation_unknown"
+    if [[ "$historical_generation_state" != "$expected_historical_generation_state" ]]; then
+      echo "[historical generation backfill] FAIL fail-closed result: $historical_generation_state" >&2
+      exit 1
+    fi
+    ordinary_payment_state="$(
+      "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT
+    gross_paid_amount_cents::TEXT || ':' ||
+    refunded_amount_cents::TEXT || ':' ||
+    disputed_amount_cents::TEXT || ':' ||
+    net_collected_amount_cents::TEXT || ':' ||
+    refundable_amount_cents::TEXT || ':' ||
+    adjustment_reconciliation_required::TEXT || ':' ||
+    COALESCE(adjustment_reconciliation_reason_code, '')
+FROM public.billing_payments
+WHERE id = '00000000-0000-4000-8000-000000009507'::UUID;
+"
+    )"
+    ordinary_payment_state="$(printf '%s' "$ordinary_payment_state" | tr -d '\r\n')"
+    if [[ "$ordinary_payment_state" != "100:0:0:100:0:false:" ]]; then
+      echo "[historical generation backfill] FAIL ordinary null-reason result: $ordinary_payment_state" >&2
+      exit 1
+    fi
+    "$PSQL" "${psql_args[@]}" --quiet --command="
+DELETE FROM public.studios
+WHERE id = '00000000-0000-4000-8000-000000009502'::UUID;
+DELETE FROM auth.users
+WHERE id = '00000000-0000-4000-8000-000000009501'::UUID;
+"
+    echo "[historical generation backfill] PASS fail-closed result"
   fi
 
   if [[ "$migration_filename" == "20260823193155_revoke_public_function_execute.sql" ]]; then
@@ -457,6 +866,100 @@ SQL
     fi
   fi
 done
+
+echo "[V33 hash parity] RUN Python stable_hash versus SQL canonical bytes"
+v33_sql_hashes="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.billing_invoice_retry_base_hash_v33(
+ '00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002',
+ 'in_v33','acct_v33',1)
+UNION ALL
+SELECT private.billing_invoice_retry_base_hash_v33(
+ '10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000002',
+ E'in_escaped\\\\quote\"',E'acct_escaped\\\\quote\"',27);")"
+V33_SQL_HASHES="$v33_sql_hashes" python3 - <<'PY'
+import hashlib,json,os
+vectors=[
+ {"connect_account_generation":1,"invoice_id":"00000000-0000-4000-8000-000000000002","operation_type":"invoice.retry","stripe_connected_account_id":"acct_v33","stripe_invoice_id":"in_v33","studio_id":"00000000-0000-4000-8000-000000000001"},
+ {"connect_account_generation":27,"invoice_id":"10000000-0000-4000-8000-000000000002","operation_type":"invoice.retry","stripe_connected_account_id":"acct_escaped\\quote\"","stripe_invoice_id":"in_escaped\\quote\"","studio_id":"10000000-0000-4000-8000-000000000001"},
+]
+expected=[hashlib.sha256(json.dumps(v,sort_keys=True,separators=(",",":")).encode()).hexdigest() for v in vectors]
+raw_hashes=os.getenv("V33_SQL_HASHES")
+if not raw_hashes:
+    raise SystemExit("V33 SQL hash output is missing or empty")
+actual=raw_hashes.splitlines()
+if actual!=expected: raise SystemExit(f"V33 SQL/Python hash mismatch: {actual!r} != {expected!r}")
+PY
+echo "[V33 hash parity] PASS Python stable_hash versus SQL canonical bytes"
+
+echo "[V33 concurrency] RUN reclaim-first, consent-first, and consent rollback"
+v33_base_hash="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.billing_invoice_retry_base_hash_v33(
+ '33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000004',
+ 'in_v33_concurrency','acct_v33concurrency',1);")"
+$PSQL "${psql_args[@]}" --quiet --command="
+INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at) VALUES
+ ('33000000-0000-4000-8000-000000000001','authenticated','authenticated','v33-concurrency-a@example.invalid','{}','{}',now(),now()),
+ ('33000000-0000-4000-8000-000000000011','authenticated','authenticated','v33-concurrency-b@example.invalid','{}','{}',now(),now());
+INSERT INTO public.studios(id,name,slug,owner_id) VALUES
+ ('33000000-0000-4000-8000-000000000002','V33 concurrency','v33-concurrency','33000000-0000-4000-8000-000000000001');
+INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES
+ ('33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000001','admin'),
+ ('33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000011','admin');
+INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,metadata) VALUES
+ ('33000000-0000-4000-8000-000000000002','acct_v33concurrency','{\"connect_account_generation\":1}');
+INSERT INTO public.billing_payers(id,studio_id,display_name,stripe_account_id,stripe_customer_id,connect_account_generation)
+ VALUES('33000000-0000-4000-8000-000000000003','33000000-0000-4000-8000-000000000002','V33 payer','acct_v33concurrency','cus_v33_concurrency',1);
+INSERT INTO public.billing_invoices(id,studio_id,payer_id,invoice_type,status,amount_due_cents,amount_paid_cents,amount_remaining_cents,currency,stripe_invoice_id,stripe_account_id,stripe_customer_id,collection_method,external,metadata)
+ VALUES('33000000-0000-4000-8000-000000000004','33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000003','manual','open',1000,0,1000,'usd','in_v33_concurrency','acct_v33concurrency','cus_v33_concurrency','send_invoice',false,'{\"connect_account_generation\":1}');
+SELECT public.claim_billing_provider_operation_resource_v30(
+ '33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000001','invoice.retry','invoice',
+ '33000000-0000-4000-8000-000000000004','33000000-0000-4000-8000-000000000003','v33-concurrency',
+ '$v33_base_hash','acct_v33concurrency',1,'33000000-0000-4000-8000-000000000005',300);"
+v33_operation="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="SELECT operation_id FROM private.billing_invoice_retry_hash_ledger_v33 WHERE studio_id='33000000-0000-4000-8000-000000000002' AND caller_request_key='v33-concurrency';")"
+v33_revision="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="SELECT revision FROM public.billing_provider_operations WHERE id='$v33_operation';")"
+$PSQL "${psql_args[@]}" --quiet --command="SELECT public.release_billing_invoice_retry_preread_lease_v33(
+ '$v33_operation','33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000001','v33-concurrency','$v33_base_hash','acct_v33concurrency',1,
+ '33000000-0000-4000-8000-000000000005',$v33_revision,'provider_preread_failed');"
+reclaim_log="$TEMP_DIR/v33-reclaim-first.log"
+($PSQL "${psql_args[@]}" --quiet --command="BEGIN; SELECT public.claim_billing_provider_operation_resource_v1(
+ '33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000001','invoice.retry','invoice',
+ '33000000-0000-4000-8000-000000000004','33000000-0000-4000-8000-000000000003','v33-concurrency','$v33_base_hash','acct_v33concurrency',1,
+ '33000000-0000-4000-8000-000000000006',300); SELECT pg_sleep(2); COMMIT;" >"$reclaim_log" 2>&1) &
+reclaim_pid=$!
+sleep 0.3
+if $PSQL "${psql_args[@]}" --quiet --command="UPDATE public.billing_payers SET autopay_status='disabled' WHERE id='33000000-0000-4000-8000-000000000003';" >/dev/null 2>&1; then
+  echo "Reclaim-first V33 consent mutation unexpectedly committed." >&2; exit 1
+fi
+wait "$reclaim_pid"
+v33_revision="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="SELECT revision FROM public.billing_provider_operations WHERE id='$v33_operation';")"
+$PSQL "${psql_args[@]}" --quiet --command="SELECT public.release_billing_invoice_retry_preread_lease_v33(
+ '$v33_operation','33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000001','v33-concurrency','$v33_base_hash','acct_v33concurrency',1,
+ '33000000-0000-4000-8000-000000000006',$v33_revision,'provider_preread_failed');"
+if $PSQL "${psql_args[@]}" --quiet --command="BEGIN; UPDATE public.billing_payers SET autopay_status='pending' WHERE id='33000000-0000-4000-8000-000000000003'; SELECT 1/0; COMMIT;" >/dev/null 2>&1; then
+  echo "Forced V33 consent rollback unexpectedly committed." >&2; exit 1
+fi
+if [[ "$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="SELECT state||':'||(invoice_retry_preread_released_at IS NOT NULL)::TEXT FROM public.billing_provider_operations WHERE id='$v33_operation';")" != "started:true" ]]; then
+  echo "Failed V33 consent transaction did not restore the release marker." >&2; exit 1
+fi
+consent_log="$TEMP_DIR/v33-consent-first.log"
+($PSQL "${psql_args[@]}" --quiet --command="BEGIN; UPDATE public.billing_payers SET autopay_status='disabled' WHERE id='33000000-0000-4000-8000-000000000003'; SELECT pg_sleep(2); COMMIT;" >"$consent_log" 2>&1) &
+consent_pid=$!
+sleep 0.3
+$PSQL "${psql_args[@]}" --quiet --command="SELECT public.claim_billing_invoice_closeout_operation_v1(
+ '33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000011','invoice.void','invoice_void',
+ '33000000-0000-4000-8000-000000000004','33000000-0000-4000-8000-000000000003','v33-void-after-consent',repeat('f',64),
+ 'acct_v33concurrency',1,'33000000-0000-4000-8000-000000000007',30);"
+wait "$consent_pid"
+if [[ "$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="SELECT state||':'||error_code FROM public.billing_provider_operations WHERE id='$v33_operation';")" != "definitive_rejected:invoice_retry_consent_changed_before_provider" ]]; then
+  echo "Consent-first V33 terminalization was not durable." >&2; exit 1
+fi
+$PSQL "${psql_args[@]}" --quiet --command="
+ALTER TABLE public.staff_roles DISABLE TRIGGER prevent_staff_admin_orphan_delete_trigger;
+DELETE FROM public.studios WHERE id='33000000-0000-4000-8000-000000000002';
+DELETE FROM auth.users WHERE id IN(
+ '33000000-0000-4000-8000-000000000001','33000000-0000-4000-8000-000000000011');
+ALTER TABLE public.staff_roles ENABLE TRIGGER prevent_staff_admin_orphan_delete_trigger;"
+echo "[V33 concurrency] PASS reclaim-first, consent-first, and consent rollback"
 
 echo "[operational manifest] RUN database-observable semantic and ACL signal"
 operational_manifest="$(
@@ -507,11 +1010,43 @@ critical_surface_manifest="$(
 SELECT private.koaryu_release_critical_surface_manifest_v18();
 "
 )"
-if [[ "$critical_surface_manifest" != "0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a" ]]; then
+if [[ "$critical_surface_manifest" != "0:31bec59b620eaa151c33cae2da08f533087e888216017247329e7cc517d98a0d" ]]; then
   echo "[critical-surface manifest] FAIL archive, checkout, and promotion identity signal: $critical_surface_manifest" >&2
   exit 1
 fi
 echo "[critical-surface manifest] PASS archive, checkout, and promotion identity signal"
+
+echo "[schedule-window manifest] RUN read RPC definition and ACL signal"
+schedule_window_manifest="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.koaryu_release_schedule_window_manifest_v1();
+"
+)"
+if [[ "$schedule_window_manifest" != "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7" ]]; then
+  echo "[schedule-window manifest] FAIL read RPC definition and ACL signal: $schedule_window_manifest" >&2
+  exit 1
+fi
+echo "[schedule-window manifest] PASS read RPC definition and ACL signal"
+
+echo "[V25 readiness] RUN exact final migration and manifest signal"
+operational_readiness="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" \
+    "$operational_readiness"
+); then
+  echo "[V25 readiness] PASS exact final migration and manifest signal"
+else
+  status=$?
+  echo "[V25 readiness] actual=$operational_readiness" >&2
+  echo "[V25 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
+  exit "$status"
+fi
 
 echo "[catalog] RUN deterministic raw catalog security fingerprint"
 catalog_state="$({
@@ -528,17 +1063,113 @@ if (
   echo "[catalog] PASS deterministic raw catalog security fingerprint"
 else
   status=$?
+  echo "[catalog] actual=$catalog_state" >&2
   echo "[catalog] FAIL deterministic raw catalog security fingerprint (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[V30 compatibility] RUN re-pinned V26 singleton expectation"
+v26_expectation_state="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { V26_EXPECTATION_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V26_EXPECTATION_STATE_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateV30CompatV26ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30CompatV26ExpectationState(process.argv[1]);" \
+    "$v26_expectation_state"
+); then
+echo "[V30 compatibility] PASS re-pinned V26 singleton expectation"
+
+echo "[V27 expectation] RUN private singleton release expectation"
+v27_expectation_state="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { V27_EXPECTATION_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V27_EXPECTATION_STATE_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateV30CompatV27ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30CompatV27ExpectationState(process.argv[1]);" \
+    "$v27_expectation_state"
+); then
+  echo "[V27 expectation] PASS private singleton release expectation"
+else
+  status=$?
+  echo "[V27 expectation] FAIL private singleton release expectation (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[V28 expectation] RUN private singleton release expectation"
+v28_expectation_state="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { V28_EXPECTATION_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V28_EXPECTATION_STATE_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateV30CompatV28ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30CompatV28ExpectationState(process.argv[1]);" \
+    "$v28_expectation_state"
+); then
+  echo "[V28 expectation] PASS private singleton release expectation"
+else
+  status=$?
+  echo "[V28 expectation] FAIL private singleton release expectation (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[V29 expectation] RUN V30-compatible private singleton expectation"
+v29_expectation_state="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { V29_EXPECTATION_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V29_EXPECTATION_STATE_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateV30CompatV29ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30CompatV29ExpectationState(process.argv[1]);" \
+    "$v29_expectation_state"
+); then
+  echo "[V29 expectation] PASS V30-compatible private singleton expectation"
+else
+  status=$?
+  echo "[V29 expectation] FAIL V30-compatible private singleton expectation (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[V30 expectation] RUN exact private singleton expectation"
+v30_expectation_state="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { V30_EXPECTATION_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V30_EXPECTATION_STATE_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateV30ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30ExpectationState(process.argv[1]);" \
+    "$v30_expectation_state"
+); then
+  echo "[V30 expectation] PASS exact private singleton expectation"
+else
+  status=$?
+  echo "[V30 expectation] FAIL exact private singleton expectation (exit $status)" >&2
+  exit "$status"
+fi
+else
+  status=$?
+  echo "[V30 compatibility] FAIL re-pinned V26 singleton expectation (exit $status)" >&2
   exit "$status"
 fi
 
 assert_attestation_rejects() {
   local label="$1"
   local mutation_sql="$2"
-  local expected_v2_ready="$3"
+  local expected_v31_ready="$3"
   local result=""
   local drifted_catalog_state=""
-  local actual_v2_ready=""
+  local actual_v31_ready=""
 
   echo "[attestation negative] RUN $label"
   result="$({
@@ -548,10 +1179,10 @@ assert_attestation_rejects() {
       node --input-type=module --eval \
         "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
     )
-    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v4();\nROLLBACK;\n'
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v12();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   drifted_catalog_state="$(printf '%s\n' "$result" | sed -n '1p')"
-  actual_v2_ready="$(printf '%s\n' "$result" | sed -n '2p')"
+  actual_v31_ready="$(printf '%s\n' "$result" | sed -n '2p')"
 
   if (
     cd "$ROOT_DIR"
@@ -562,8 +1193,8 @@ assert_attestation_rejects() {
     echo "[attestation negative] FAIL raw catalog accepted $label" >&2
     exit 1
   fi
-  if [[ "$actual_v2_ready" != "$expected_v2_ready" ]]; then
-    echo "[attestation negative] FAIL V2 readiness result for $label" >&2
+  if [[ "$actual_v31_ready" != "$expected_v31_ready" ]]; then
+    echo "[attestation negative] FAIL V31 readiness result for $label: $actual_v31_ready" >&2
     exit 1
   fi
   echo "[attestation negative] PASS $label"
@@ -572,19 +1203,220 @@ assert_attestation_rejects() {
 assert_preflight_rejects() {
   local label="$1"
   local mutation_sql="$2"
-  local actual_v2_ready=""
+  local actual_v31_ready=""
 
   echo "[attestation negative] RUN $label"
-  actual_v2_ready="$({
+  actual_v31_ready="$({
     printf 'BEGIN;\n%s\n' "$mutation_sql"
-    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v4();\nROLLBACK;\n'
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v12();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
-  if [[ "$actual_v2_ready" != "f" ]]; then
-    echo "[attestation negative] FAIL V2 readiness result for $label: $actual_v2_ready" >&2
+  if [[ "$actual_v31_ready" != "f" ]]; then
+    echo "[attestation negative] FAIL V31 readiness result for $label: $actual_v31_ready" >&2
     exit 1
   fi
   echo "[attestation negative] PASS $label"
 }
+
+assert_v29_preflight_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local actual_v29_ready=""
+
+  echo "[V29 attestation negative] RUN $label"
+  actual_v29_ready="$({
+    printf 'BEGIN;\n%s\n' "$mutation_sql"
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v10();\nROLLBACK;\n'
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  if [[ "$actual_v29_ready" != "f" ]]; then
+    echo "[V29 attestation negative] FAIL $label: $actual_v29_ready" >&2
+    exit 1
+  fi
+  echo "[V29 attestation negative] PASS $label"
+}
+
+assert_v30_preflight_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local actual_v30_ready=""
+
+  echo "[V30 attestation negative] RUN $label"
+  actual_v30_ready="$({
+    printf 'BEGIN;\n%s\n' "$mutation_sql"
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v11();\nROLLBACK;\n'
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  if [[ "$actual_v30_ready" != "f" ]]; then
+    echo "[V30 attestation negative] FAIL $label: $actual_v30_ready" >&2
+    exit 1
+  fi
+  echo "[V30 attestation negative] PASS $label"
+}
+
+assert_v27_compat_v26_release_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local result=""
+  local drifted_catalog_state=""
+  local drifted_expectation_state=""
+  local actual_v26_ready=""
+  local catalog_accepted=false
+  local expectation_accepted=false
+
+  echo "[V26 negative] RUN $label"
+  result="$({
+    printf 'BEGIN;\n%s\n' "$mutation_sql"
+    (
+      cd "$ROOT_DIR"
+      node --input-type=module --eval \
+        "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
+    )
+    printf ';\n'
+    (
+      cd "$ROOT_DIR"
+      node --input-type=module --eval \
+        "import { V26_EXPECTATION_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V26_EXPECTATION_STATE_SQL);"
+    )
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v7();\nROLLBACK;\n'
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  drifted_catalog_state="$(printf '%s\n' "$result" | sed -n '1p')"
+  drifted_expectation_state="$(printf '%s\n' "$result" | sed -n '2p')"
+  actual_v26_ready="$(printf '%s\n' "$result" | sed -n '3p')"
+
+  if (
+    cd "$ROOT_DIR"
+    node --input-type=module --eval \
+      "import { validateCatalogState } from './scripts/studio-comp-migration-rollout.mjs'; validateCatalogState(process.argv[1]);" \
+      "$drifted_catalog_state" >/dev/null 2>&1
+  ); then
+    catalog_accepted=true
+  fi
+  if (
+    cd "$ROOT_DIR"
+    node --input-type=module --eval \
+      "import { validateV30CompatV26ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30CompatV26ExpectationState(process.argv[1]);" \
+      "$drifted_expectation_state" >/dev/null 2>&1
+  ); then
+    expectation_accepted=true
+  fi
+
+  if [[ "$catalog_accepted" == true && "$expectation_accepted" == true ]]; then
+    echo "[V26 negative] FAIL release fingerprints accepted $label" >&2
+    exit 1
+  fi
+  if [[ "$actual_v26_ready" != "f" ]]; then
+    echo "[V26 negative] FAIL V26 readiness result for $label: $actual_v26_ready" >&2
+    exit 1
+  fi
+  echo "[V26 negative] PASS $label"
+}
+
+assert_v27_compat_v26_release_rejects \
+  "missing V26 expectation row" \
+  "DELETE FROM private.koaryu_release_v26_expectations;"
+assert_v27_compat_v26_release_rejects \
+  "mutated V26 expectation row" \
+  "UPDATE private.koaryu_release_v26_expectations SET expected_sha256 = repeat('0', 64);"
+assert_v27_compat_v26_release_rejects \
+  "extra V26 expectation row" \
+  "ALTER TABLE private.koaryu_release_v26_expectations DROP CONSTRAINT koaryu_release_v26_expectation_key_exact; INSERT INTO private.koaryu_release_v26_expectations(expectation_key, expected_sha256) VALUES ('unexpected', repeat('0', 64));"
+assert_v27_compat_v26_release_rejects \
+  "V26 expectation ACL broadening" \
+  "GRANT SELECT ON private.koaryu_release_v26_expectations TO service_role;"
+assert_preflight_rejects \
+  "V7 preflight body tamper" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v7()'::regprocedure;"
+assert_preflight_rejects \
+  "V8 compatibility preflight body tamper" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v8()'::regprocedure;"
+assert_preflight_rejects \
+  "V9 compatibility preflight body tamper" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v9()'::regprocedure;"
+assert_preflight_rejects \
+  "V10 compatibility preflight body tamper" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v10()'::regprocedure;"
+assert_preflight_rejects \
+  "V11 compatibility preflight body tamper" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v11()'::regprocedure;"
+
+assert_preflight_rejects \
+  "V27 expectation service-role ACL broadening" \
+  "GRANT SELECT ON private.koaryu_release_v27_expectations TO service_role;"
+assert_preflight_rejects \
+  "V28 expectation browser-role ACL broadening" \
+  "GRANT UPDATE ON private.koaryu_release_v28_expectations TO authenticated;"
+assert_preflight_rejects \
+  "V29 expectation custom-role ACL broadening" \
+  "CREATE ROLE koaryu_v29_expectation_acl_probe NOLOGIN; GRANT SELECT ON private.koaryu_release_v29_expectations TO koaryu_v29_expectation_acl_probe;"
+assert_preflight_rejects \
+  "V30 expectation service-role GRANT OPTION drift" \
+  "GRANT UPDATE ON private.koaryu_release_v30_expectations TO service_role WITH GRANT OPTION;"
+
+assert_preflight_rejects \
+  "due-transition claim custom-role EXECUTE drift" \
+  "CREATE ROLE koaryu_due_claim_acl_probe NOLOGIN; GRANT EXECUTE ON FUNCTION public.claim_due_billing_enrollment_transitions_v1(uuid,integer,integer) TO koaryu_due_claim_acl_probe;"
+assert_preflight_rejects \
+  "due-transition claim service-role GRANT OPTION drift" \
+  "GRANT EXECUTE ON FUNCTION public.claim_due_billing_enrollment_transitions_v1(uuid,integer,integer) TO service_role WITH GRANT OPTION;"
+assert_preflight_rejects \
+  "payer-autopay disable custom-role EXECUTE drift" \
+  "CREATE ROLE koaryu_disable_autopay_acl_probe NOLOGIN; GRANT EXECUTE ON FUNCTION public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text) TO koaryu_disable_autopay_acl_probe;"
+assert_preflight_rejects \
+  "payer-autopay disable service-role GRANT OPTION drift" \
+  "GRANT EXECUTE ON FUNCTION public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text) TO service_role WITH GRANT OPTION;"
+assert_preflight_rejects \
+  "payer-setup projection custom-role EXECUTE drift" \
+  "CREATE ROLE koaryu_finalize_payer_acl_probe NOLOGIN; GRANT EXECUTE ON FUNCTION public.finalize_billing_payer_setup_projection_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer) TO koaryu_finalize_payer_acl_probe;"
+assert_preflight_rejects \
+  "payer-setup projection service-role GRANT OPTION drift" \
+  "GRANT EXECUTE ON FUNCTION public.finalize_billing_payer_setup_projection_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer) TO service_role WITH GRANT OPTION;"
+
+assert_attestation_rejects \
+  "V31 schedule-identity RPC exact-signature omission" \
+  "ALTER FUNCTION public.read_billing_enrollment_item_schedule_identity_v31(uuid,uuid) RENAME TO koaryu_schedule_identity_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 schedule-identity RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.read_billing_enrollment_item_schedule_identity_v31(uuid,uuid) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "V31 activation-rejection RPC exact-signature omission" \
+  "ALTER FUNCTION public.reject_billing_autopay_activation_without_provider_v31(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,text,text,bigint) RENAME TO koaryu_activation_rejection_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 activation-rejection RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.reject_billing_autopay_activation_without_provider_v31(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,text,text,bigint) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "V31 activation-reservation RPC exact-signature omission" \
+  "ALTER FUNCTION public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,text,numeric) RENAME TO koaryu_activation_reservation_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 activation-reservation RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,text,numeric) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery authorization RPC exact-signature omission" \
+  "ALTER FUNCTION public.authorize_billing_provider_operation_recovery_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,text,text,text,uuid,integer,bigint) RENAME TO koaryu_provider_recovery_authorization_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery authorization RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.authorize_billing_provider_operation_recovery_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,text,text,text,uuid,integer,bigint) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery reconciliation RPC exact-signature omission" \
+  "ALTER FUNCTION public.mark_billing_provider_recovery_reconciliation_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text) RENAME TO koaryu_provider_recovery_reconciliation_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery reconciliation RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.mark_billing_provider_recovery_reconciliation_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery source-drift RPC exact-signature omission" \
+  "ALTER FUNCTION public.reject_billing_provider_recovery_source_drift_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text) RENAME TO koaryu_provider_recovery_source_drift_omitted_probe;" \
+  "f"
+assert_attestation_rejects \
+  "V31 provider-recovery source-drift RPC service-role ACL loss" \
+  "REVOKE EXECUTE ON FUNCTION public.reject_billing_provider_recovery_source_drift_v2(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,text) FROM service_role;" \
+  "f"
 
 assert_attestation_rejects \
   "stored function-body drift" \
@@ -607,9 +1439,27 @@ assert_attestation_rejects \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v6()'::regprocedure;" \
   "f"
 assert_attestation_rejects \
-  "V7 helper self-body drift (external authority only)" \
+  "V7 helper self-body drift under V29 readiness" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v7()'::regprocedure;" \
-  "t"
+  "f"
+assert_v29_preflight_rejects \
+  "post-V29 operational manifest includes V7 body authority" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected V29 authority drift' WHERE oid = 'private.koaryu_release_operational_manifest_v7()'::regprocedure;"
+assert_v30_preflight_rejects \
+  "operation-aware authorization writer body drift" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected V30 writer drift' WHERE oid = 'public.set_studio_live_billing_authorization_operations_v1(uuid,text,boolean,timestamp with time zone,text,uuid,text[],text,text)'::regprocedure;"
+assert_v30_preflight_rejects \
+  "legacy authorization scope regained service execution" \
+  "GRANT EXECUTE ON FUNCTION public.set_studio_live_billing_authorization_scope_v3(uuid,text,boolean,timestamp with time zone,text,uuid,text,text) TO service_role;"
+assert_v30_preflight_rejects \
+  "operation allowlist constraint missing" \
+  "ALTER TABLE public.studio_live_billing_authorizations DROP CONSTRAINT studio_live_billing_authorizations_operation_set_exact;"
+assert_v30_preflight_rejects \
+  "operation allowlist column nullability drift" \
+  "ALTER TABLE public.studio_live_billing_authorizations ALTER COLUMN allowed_operations DROP NOT NULL;"
+assert_v30_preflight_rejects \
+  "operation allowlist default drift" \
+  "ALTER TABLE public.studio_live_billing_authorizations ALTER COLUMN allowed_operations DROP DEFAULT;"
 assert_preflight_rejects \
   "starting-belt function-body drift" \
   "UPDATE pg_proc SET prosrc = 'BEGIN RETURN NULL; END;' WHERE oid = 'public.backfill_starting_belt_after_rank_delete()'::regprocedure;"
@@ -656,6 +1506,18 @@ assert_attestation_rejects \
 assert_preflight_rejects \
   "dashboard RPC service-role grant drift" \
   "REVOKE EXECUTE ON FUNCTION public.dashboard_summary_facts(uuid, text, text, date, text) FROM service_role;"
+assert_attestation_rejects \
+  "schedule-window RPC body drift" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.schedule_window_read(uuid,date,date,text)'::regprocedure;" \
+  "f"
+assert_attestation_rejects \
+  "schedule-window RPC service-role grant drift" \
+  "REVOKE EXECUTE ON FUNCTION public.schedule_window_read(uuid,date,date,text) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "schedule-window manifest helper self-body drift" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_schedule_window_manifest_v1()'::regprocedure;" \
+  "f"
 assert_attestation_rejects \
   "promotion operation receipt column drift" \
   "ALTER TABLE public.promotions ALTER COLUMN operation_id TYPE text USING operation_id::text;" \
@@ -834,6 +1696,61 @@ if run_interruptible bash \
 else
   status=$?
   echo "[concurrency] FAIL student profile/rank-plan lock ordering (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[concurrency] RUN billing payment parent/child identity serialization"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-billing-payment-identity-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS billing payment parent/child identity serialization"
+else
+  status=$?
+  echo "[concurrency] FAIL billing payment parent/child identity serialization (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[concurrency] RUN payer setup single-owner serialization"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-billing-payer-setup-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS payer setup single-owner serialization"
+else
+  status=$?
+  echo "[concurrency] FAIL payer setup single-owner serialization (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[concurrency] RUN provider operation step single-attempt serialization"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-billing-provider-operation-step-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS provider operation step single-attempt serialization"
+else
+  status=$?
+  echo "[concurrency] FAIL provider operation step single-attempt serialization (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[concurrency] RUN enrollment period transition serialization"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-billing-enrollment-transition-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS enrollment period transition serialization"
+else
+  status=$?
+  echo "[concurrency] FAIL enrollment period transition serialization (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[concurrency] RUN autopay activation/disable serialization"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-billing-autopay-activation-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS autopay activation/disable serialization"
+else
+  status=$?
+  echo "[concurrency] FAIL autopay activation/disable serialization (exit $status)" >&2
   exit "$status"
 fi
 

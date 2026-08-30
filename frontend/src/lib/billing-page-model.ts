@@ -33,13 +33,19 @@ export interface BillingPageModelInput {
   students: Student[];
 }
 
-const COLLECTED_PAYMENT_STATUSES = new Set(["succeeded", "refunded", "externally_recorded"]);
+const COLLECTED_PAYMENT_STATUSES = new Set(["succeeded", "refunded", "disputed", "externally_recorded"]);
 const BALANCE_BEARING_INVOICE_STATUSES = new Set([
   "draft",
   "open",
   "partially_refunded",
   "uncollectible",
 ]);
+
+export function paymentAdjustmentNotice(payment: BillingPayment): string | null {
+  return payment.adjustment_reconciliation_required
+    ? "Provider adjustments need reconciliation before these totals are final."
+    : null;
+}
 
 export function currentMonthPaymentTotals(
   payments: BillingPayment[],
@@ -65,7 +71,10 @@ export function currentMonthPaymentTotals(
     }
     const netAmount = Math.max(
       0,
-      payment.amount_cents - (payment.refunded_amount_cents || 0)
+      payment.net_collected_amount_cents
+        ?? payment.amount_cents
+          - (payment.refunded_amount_cents || 0)
+          - (payment.disputed_amount_cents || 0)
     );
     paymentCount += 1;
     if (payment.status === "externally_recorded") {

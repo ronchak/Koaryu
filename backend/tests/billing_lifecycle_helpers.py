@@ -22,12 +22,61 @@ from app.schemas.billing import (
 from app.services.billing_service import BillingService
 from app.services.stripe_service import StripeService
 from app.services.stripe_service import _StripeV2RequestError
+from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
 
 
-class _FakeSupabase(RpcBackedSupabase):
+class _FakeSupabase(BillingProviderOperationRpcMixin, RpcBackedSupabase):
     def __init__(self, tables):
         super().__init__(tables)
+        self.initialize_billing_provider_operations()
+        self.lose_provider_in_flight_response_once = False
+        self.race_invoice_retry_resource_claim_once = False
+
+    def _rpc_transition_billing_provider_operation_v1(self, params: dict):
+        result = super()._rpc_transition_billing_provider_operation_v1(params)
+        if (
+            self.lose_provider_in_flight_response_once
+            and params["p_operation_type"] == "invoice.retry"
+            and params["p_to_state"] == "provider_request_in_flight"
+        ):
+            self.lose_provider_in_flight_response_once = False
+            raise RuntimeError("lost provider in-flight transition response")
+        return result
+
+    def _rpc_claim_billing_provider_operation_resource_v1(self, params: dict):
+        if self.race_invoice_retry_resource_claim_once:
+            self.race_invoice_retry_resource_claim_once = False
+            winner_params = {
+                **params,
+                "p_caller_request_key": "winning-key",
+            }
+            winner = super()._rpc_claim_billing_provider_operation_resource_v1(
+                winner_params
+            )
+            operation = winner["operation"]
+            super()._rpc_transition_billing_provider_operation_v1({
+                "p_operation_id": operation["id"],
+                "p_studio_id": operation["studio_id"],
+                "p_actor_id": operation["actor_id"],
+                "p_operation_type": operation["operation_type"],
+                "p_caller_request_key": operation["caller_request_key"],
+                "p_request_sha256": operation["request_sha256"],
+                "p_stripe_connected_account_id": operation["stripe_connected_account_id"],
+                "p_connect_account_generation": operation["connect_account_generation"],
+                "p_lease_owner": winner_params["p_lease_owner"],
+                "p_expected_revision": operation["revision"],
+                "p_to_state": "provider_request_in_flight",
+                "p_provider_object_id": None,
+                "p_provider_secondary_object_id": None,
+                "p_provider_request_id": None,
+                "p_result_code": "invoice_retry_started",
+                "p_result_summary": "invoice_retry_mode:pay",
+                "p_error_code": None,
+                "p_error_summary": None,
+                "p_reconciliation_reason_code": None,
+            })
+        return super()._rpc_claim_billing_provider_operation_resource_v1(params)
 
     def _rpc_claim_billing_subscription_quantity_sync(self, params: dict) -> list[dict]:
         subscription = next(
@@ -129,6 +178,7 @@ class _FakeStripeService:
     connect_account_calls = []
     onboarding_calls = []
     setup_calls = []
+    setup_response = None
     subscription_update_calls = []
     subscription_create_calls = []
     subscription_item_create_calls = []
@@ -162,6 +212,7 @@ class _FakeStripeService:
         cls.connect_account_calls = []
         cls.onboarding_calls = []
         cls.setup_calls = []
+        cls.setup_response = None
         cls.subscription_update_calls = []
         cls.subscription_create_calls = []
         cls.subscription_item_create_calls = []
@@ -345,7 +396,18 @@ class _FakeStripeService:
 
     def create_setup_checkout_session(self, **payload):
         self.__class__.setup_calls.append(payload)
-        return {"url": "https://checkout.stripe.test/setup"}
+        return self.__class__.setup_response or {
+            "id": "cs_setup_1",
+            "url": "https://checkout.stripe.test/setup",
+            "expires_at": payload.get("expires_at"),
+        }
+
+    def retrieve_connected_checkout_session(self, *, account_id: str, session_id: str, expand=None):
+        return self.__class__.setup_response or {
+            "id": session_id,
+            "url": "https://checkout.stripe.test/setup",
+            "status": "open",
+        }
 
     def update_connected_subscription_item(self, **payload):
         self.__class__.subscription_item_update_calls.append(payload)

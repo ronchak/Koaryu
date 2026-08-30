@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 from supabase import Client
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -9,6 +9,7 @@ from app.schemas.schedule import (
     ClassSessionCreate, ClassSessionResponse,
     ClassSessionDeleteScopeValue,
     AttendanceCheckIn, AttendanceResponse, AttendanceBulkCheckIn,
+    ScheduleWindowResponse,
 )
 from app.services.studio_scope import (
     ensure_optional_studio_record,
@@ -16,11 +17,12 @@ from app.services.studio_scope import (
 )
 from app.services.program_service import ProgramService
 from app.services.schedule_attendance_actions import ScheduleAttendanceActions
-from app.services.supabase_rpc import execute_required_rpc
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
 SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS = 93
 SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS = 93
+SCHEDULE_WINDOW_CONTRACT_VERSION = "schedule-window-v1"
 CLASS_SESSION_LIST_SELECT = (
     "id, studio_id, template_id, name, date, start_time, end_time, "
     "instructor_id, program_id, capacity, status, notes, created_at"
@@ -100,6 +102,139 @@ class ScheduleService:
                 "p_start_date": start.isoformat(),
                 "p_end_date": end.isoformat(),
             },
+        )
+
+    @staticmethod
+    def _validate_schedule_window_response(
+        result: Any,
+        *,
+        studio_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> ScheduleWindowResponse:
+        row = first_rpc_row(result)
+        if row is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned no result. Apply the latest schedule migrations.",
+            )
+        try:
+            window = ScheduleWindowResponse.model_validate(row)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window data is incompatible with the current backend schema. Apply the latest schedule migrations.",
+            ) from exc
+
+        expected_days = (
+            date.fromisoformat(end_date) - date.fromisoformat(start_date)
+        ).days + 1
+        if (
+            window.range.start_date != start_date
+            or window.range.end_date != end_date
+            or window.range.day_count != expected_days
+        ):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned mismatched range metadata.",
+            )
+        if any(item.studio_id != studio_id for item in window.templates):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned a template for another studio.",
+            )
+        if any(item.studio_id != studio_id for item in window.sessions):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned a session for another studio.",
+            )
+        if any(item.studio_id != studio_id for item in window.attendance):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned attendance for another studio.",
+            )
+
+        expected_start = date.fromisoformat(start_date)
+        expected_end = date.fromisoformat(end_date)
+        if any(
+            not expected_start <= ScheduleService._parse_date(item.date) <= expected_end
+            for item in window.sessions
+        ):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned a session outside the requested date range.",
+            )
+
+        session_ids = {item.id for item in window.sessions}
+        if any(item.session_id not in session_ids for item in window.attendance):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned attendance outside the requested session range.",
+            )
+        return window
+
+    async def read_schedule_window(
+        self,
+        studio_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> ScheduleWindowResponse:
+        start, end = self._validate_session_date_range(
+            start_date,
+            end_date,
+            max_days=SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS,
+            operation_name="Schedule window",
+        )
+        normalized_start = start.isoformat()
+        normalized_end = end.isoformat()
+        try:
+            result = execute_required_rpc(
+                self.supabase,
+                "schedule_window_read",
+                {
+                    "p_studio_id": studio_id,
+                    "p_start_date": normalized_start,
+                    "p_end_date": normalized_end,
+                    "p_contract_version": SCHEDULE_WINDOW_CONTRACT_VERSION,
+                },
+            )
+            return self._validate_schedule_window_response(
+                result,
+                studio_id=studio_id,
+                start_date=normalized_start,
+                end_date=normalized_end,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window load failed. Verify schedule schema migrations and backend connectivity.",
+            ) from exc
+
+    async def materialize_schedule_window(
+        self,
+        studio_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> ScheduleWindowResponse:
+        start, end = self._validate_session_date_range(
+            start_date,
+            end_date,
+            max_days=SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS,
+            operation_name="Recurring session materialization",
+        )
+        normalized_start = start.isoformat()
+        normalized_end = end.isoformat()
+        await self._materialize_sessions_for_range(
+            studio_id,
+            normalized_start,
+            normalized_end,
+        )
+        return await self.read_schedule_window(
+            studio_id,
+            normalized_start,
+            normalized_end,
         )
 
     # ---- Class Templates ----

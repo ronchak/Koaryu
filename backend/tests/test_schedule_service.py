@@ -12,6 +12,7 @@ from app.services.schedule_attendance_actions import (
 from app.services.schedule_service import (
     CLASS_SESSION_LIST_SELECT,
     SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS,
+    SCHEDULE_WINDOW_CONTRACT_VERSION,
     ScheduleService,
 )
 from tests.fakes.supabase import RpcBackedSupabase
@@ -171,7 +172,126 @@ def session_row(session_id: str, template_id: str, session_date: str) -> dict:
     }
 
 
+def schedule_window_payload(
+    *,
+    studio_id: str = "studio-1",
+    start_date: str = "2026-05-24",
+    end_date: str = "2026-05-24",
+) -> dict:
+    template = template_row("template-1", "Youth Basics")
+    template["studio_id"] = studio_id
+    session = session_row("session-1", "template-1", start_date)
+    session["studio_id"] = studio_id
+    session.pop("deleted_at", None)
+    return {
+        "contract_version": SCHEDULE_WINDOW_CONTRACT_VERSION,
+        "range": {
+            "start_date": start_date,
+            "end_date": end_date,
+            "day_count": (
+                date.fromisoformat(end_date) - date.fromisoformat(start_date)
+            ).days + 1,
+        },
+        "templates": [template],
+        "sessions": [{**session, "attendance_count": 1}],
+        "attendance": [
+            {
+                "id": "attendance-1",
+                "studio_id": studio_id,
+                "session_id": "session-1",
+                "student_id": "student-1",
+                "status": "present",
+                "checked_in_at": "2026-05-24T12:00:00Z",
+                "checked_in_by": None,
+                "is_cross_program": False,
+                "counts_toward_eligibility": True,
+                "override_reason": None,
+                "student_name": "Aiko Tanaka",
+            }
+        ],
+    }
+
+
 class ScheduleServiceTest(unittest.TestCase):
+    def test_schedule_window_is_one_rpc_with_no_table_hydration(self):
+        supabase = RpcBackedSupabase()
+        supabase._rpc_schedule_window_read = lambda _params: schedule_window_payload()
+        service = ScheduleService(supabase)
+
+        window = asyncio.run(
+            service.read_schedule_window("studio-1", "2026-05-24", "2026-05-24")
+        )
+
+        self.assertEqual(window.contract_version, SCHEDULE_WINDOW_CONTRACT_VERSION)
+        self.assertEqual([item.id for item in window.sessions], ["session-1"])
+        self.assertEqual(
+            [item.student_name for item in window.attendance],
+            ["Aiko Tanaka"],
+        )
+        self.assertEqual(supabase.query_log, [])
+        self.assertEqual(supabase.rpc_calls, [(
+            "schedule_window_read",
+            {
+                "p_studio_id": "studio-1",
+                "p_start_date": "2026-05-24",
+                "p_end_date": "2026-05-24",
+                "p_contract_version": SCHEDULE_WINDOW_CONTRACT_VERSION,
+            },
+        )])
+
+    def test_schedule_window_rejects_missing_malformed_and_cross_tenant_output(self):
+        attendance_outside_sessions = schedule_window_payload()
+        attendance_outside_sessions["attendance"][0]["session_id"] = "session-other"
+        session_outside_range = schedule_window_payload()
+        session_outside_range["sessions"][0]["date"] = "2026-05-25"
+        malformed_payloads = [
+            None,
+            {"contract_version": SCHEDULE_WINDOW_CONTRACT_VERSION},
+            schedule_window_payload(studio_id="studio-2"),
+            schedule_window_payload(start_date="2026-05-25", end_date="2026-05-25"),
+            attendance_outside_sessions,
+            session_outside_range,
+        ]
+        for payload in malformed_payloads:
+            with self.subTest(payload=payload):
+                supabase = RpcBackedSupabase()
+                supabase._rpc_schedule_window_read = lambda _params, value=payload: value
+                service = ScheduleService(supabase)
+
+                with self.assertRaises(HTTPException) as context:
+                    asyncio.run(
+                        service.read_schedule_window(
+                            "studio-1",
+                            "2026-05-24",
+                            "2026-05-24",
+                        )
+                    )
+
+                self.assertEqual(context.exception.status_code, 500)
+                self.assertEqual(supabase.query_log, [])
+                self.assertEqual(len(supabase.rpc_calls), 1)
+
+    def test_materialized_schedule_window_is_one_write_rpc_then_one_read_rpc(self):
+        supabase = RpcBackedSupabase()
+        supabase._rpc_materialize_recurring_class_sessions = lambda _params: 0
+        supabase._rpc_schedule_window_read = lambda _params: schedule_window_payload()
+        service = ScheduleService(supabase)
+
+        window = asyncio.run(
+            service.materialize_schedule_window(
+                "studio-1",
+                "2026-05-24",
+                "2026-05-24",
+            )
+        )
+
+        self.assertEqual([item.id for item in window.sessions], ["session-1"])
+        self.assertEqual(
+            [name for name, _params in supabase.rpc_calls],
+            ["materialize_recurring_class_sessions", "schedule_window_read"],
+        )
+        self.assertEqual(supabase.query_log, [])
+
     def test_materialize_sessions_uses_atomic_rpc_instead_of_direct_writes(self):
         supabase = FakeSupabase({
             "class_templates": [

@@ -9,9 +9,9 @@ from app.db.supabase import close_supabase_client, create_supabase_client
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
-EXPECTED_RELEASE_MIGRATION_COUNT = 117
-EXPECTED_RELEASE_MIGRATION_HEAD = "20260824190500"
-EXPECTED_RELEASE_MANIFEST_VERSION = "release-db-attestation-v24"
+EXPECTED_RELEASE_MIGRATION_COUNT = 129
+EXPECTED_RELEASE_MIGRATION_HEAD = "20260830151714"
+EXPECTED_RELEASE_MANIFEST_VERSION = "release-db-attestation-v34"
 EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260727100000",
     "20260727110000",
@@ -46,6 +46,18 @@ EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260822193000",
     "20260823193155",
     "20260824190500",
+    "20260825042838",
+    "20260825043911",
+    "20260826030234",
+    "20260826030249",
+    "20260826051527",
+    "20260826073728",
+    "20260826102840",
+    "20260826155911",
+    "20260826185651",
+    "20260830065627",
+    "20260830082610",
+    "20260830151714",
 ]
 HOSTED_READINESS_SUCCESS_TTL_SECONDS = 30.0
 
@@ -58,11 +70,11 @@ class ReleaseSchemaNotReadyError(RuntimeError):
     pass
 
 
-def _describe_pending_drift(actual: Any) -> str:
+def _describe_pending_drift(actual: Any, expected_versions: list[str]) -> str:
     """Summarise pending-version drift without dumping both full lists."""
     if not isinstance(actual, list):
-        return f"expected {len(EXPECTED_RELEASE_PENDING_VERSIONS)} versions, got {actual!r}"
-    expected = set(EXPECTED_RELEASE_PENDING_VERSIONS)
+        return f"expected {len(expected_versions)} versions, got {actual!r}"
+    expected = set(expected_versions)
     seen = set(actual)
     missing = sorted(expected - seen)
     unexpected = sorted(seen - expected)
@@ -76,24 +88,32 @@ def _describe_pending_drift(actual: Any) -> str:
     return ", ".join(parts)
 
 
-def validate_release_schema_preflight(row: Any) -> None:
+def _validate_preflight(
+    row: Any,
+    *,
+    migration_count: int,
+    migration_head: str,
+    pending_versions: list[str],
+    manifest_version: str,
+) -> None:
     if not isinstance(row, dict):
         raise ReleaseSchemaNotReadyError("Release schema preflight returned no result.")
     mismatches: list[str] = []
     if row.get("ready") is not True:
         mismatches.append(f"ready={row.get('ready')!r} (expected True)")
     for field, expected in (
-        ("migration_count", EXPECTED_RELEASE_MIGRATION_COUNT),
-        ("migration_head", EXPECTED_RELEASE_MIGRATION_HEAD),
-        ("manifest_version", EXPECTED_RELEASE_MANIFEST_VERSION),
+        ("migration_count", migration_count),
+        ("migration_head", migration_head),
+        ("manifest_version", manifest_version),
         ("security_failures", []),
     ):
         actual = row.get(field)
         if actual != expected:
             mismatches.append(f"{field}={actual!r} (expected {expected!r})")
-    if row.get("pending_versions") != EXPECTED_RELEASE_PENDING_VERSIONS:
+    if row.get("pending_versions") != pending_versions:
         mismatches.append(
-            f"pending_versions: {_describe_pending_drift(row.get('pending_versions'))}"
+            "pending_versions: "
+            + _describe_pending_drift(row.get("pending_versions"), pending_versions)
         )
     if mismatches:
         raise ReleaseSchemaNotReadyError(
@@ -102,12 +122,22 @@ def validate_release_schema_preflight(row: Any) -> None:
         )
 
 
+def validate_release_schema_preflight(row: Any) -> None:
+    _validate_preflight(
+        row,
+        migration_count=EXPECTED_RELEASE_MIGRATION_COUNT,
+        migration_head=EXPECTED_RELEASE_MIGRATION_HEAD,
+        pending_versions=EXPECTED_RELEASE_PENDING_VERSIONS,
+        manifest_version=EXPECTED_RELEASE_MANIFEST_VERSION,
+    )
+
+
 def assert_hosted_release_schema_ready() -> None:
     client = get_supabase_client()
     try:
         result = execute_required_rpc(
             client,
-            "koaryu_release_schema_preflight_v4",
+            "koaryu_release_schema_preflight_v15",
             {},
         )
         validate_release_schema_preflight(first_rpc_row(result))

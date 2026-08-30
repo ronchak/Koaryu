@@ -53,6 +53,24 @@ class _PreflightSupabase(RpcBackedSupabase):
         return []
 
 
+class _LiveGrantSupabase(_PreflightSupabase):
+    def _rpc_authorize_studio_live_billing_mutation_atomic(self, params):
+        rows = self.tables.get("studio_live_billing_authorizations", [])
+        for row in rows:
+            if (
+                row.get("studio_id") == params["p_studio_id"]
+                and row.get("scope") == params["p_scope"]
+                and row.get("enabled") is True
+                and params["p_operation"] in row.get("allowed_operations", [])
+            ):
+                return [{
+                    "authorized": True,
+                    "studio_id": params["p_studio_id"],
+                    "checkpoint_id": "checkpoint_1",
+                }]
+        return []
+
+
 def _settings(
     secret_key: str = TEST_STRIPE_LIVE_KEY,
     *,
@@ -107,6 +125,37 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             connect_accounts=_ConnectAccounts(),
             payment_account_loader=load_account,
         )
+
+    def live_grant_response(self, operations: list[str]):
+        now = datetime.now(timezone.utc)
+        supabase = _LiveGrantSupabase(
+            {
+                "studio_payment_accounts": [{"studio_id": "studio_1"}],
+                "studio_live_billing_authorizations": [{
+                    "studio_id": "studio_1",
+                    "scope": "connect_payments",
+                    "enabled": True,
+                    "allowed_operations": operations,
+                }],
+                "stripe_events": [
+                    _processed_event(account_id=None, observed_at=now),
+                    _processed_event(account_id="acct_1", observed_at=now),
+                ],
+            },
+            begin=False,
+        )
+
+        async def load_account(_studio_id: str) -> StudioPaymentAccountResponse:
+            return _ready_account()
+
+        reporter = BillingSystemStatusReporter(
+            supabase,
+            settings=_settings(live_billing_enabled=True),
+            connect_accounts=_ConnectAccounts(),
+            payment_account_loader=load_account,
+        )
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False):
+            return asyncio.run(reporter.get_system_status("studio_1")), supabase
 
     def test_stale_processing_age_uses_processing_started_at_not_event_creation(self):
         now = datetime.now(timezone.utc)
@@ -164,6 +213,7 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         now = datetime.now(timezone.utc)
         tables = {
             "studio_payment_accounts": [{"studio_id": "studio_1"}],
+            "studio_live_billing_authorizations": [],
             "stripe_events": [_processed_event(account_id=None, observed_at=now)],
         }
         supabase = _PreflightSupabase(tables, begin=True)
@@ -232,6 +282,62 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertTrue(response.mutation_capabilities.core_subscription)
         self.assertFalse(response.mutation_capabilities.connect_onboarding)
         self.assertFalse(response.mutation_capabilities.connect_payments)
+
+    def test_refund_only_live_grant_enables_only_refund_workflow(self):
+        response, supabase = self.live_grant_response([
+            "connected_capability.readiness",
+            "connected_refund.create",
+        ])
+
+        workflows = {
+            capability.workflow_id: capability.enabled
+            for capability in response.workflow_capabilities
+        }
+        self.assertTrue(response.live_payments_authorized)
+        self.assertTrue(response.ready_for_configured_mode)
+        self.assertTrue(response.mutation_capabilities.connect_payments)
+        self.assertTrue(workflows["payment.refund"])
+        self.assertFalse(workflows["plan.sync"])
+        self.assertFalse(workflows["invoice.create"])
+        connect_payment_probes = [
+            params["p_operation"]
+            for name, params in supabase.rpc_calls
+            if name == "authorize_studio_live_billing_mutation_atomic"
+            and params["p_scope"] == "connect_payments"
+        ]
+        self.assertEqual(
+            set(connect_payment_probes),
+            {"connected_capability.readiness"},
+        )
+
+    def test_plan_only_live_grant_enables_only_plan_sync_workflow(self):
+        response, supabase = self.live_grant_response([
+            "connected_capability.readiness",
+            "connected_price.create",
+            "connected_product.create",
+            "connected_product.update",
+        ])
+
+        workflows = {
+            capability.workflow_id: capability.enabled
+            for capability in response.workflow_capabilities
+        }
+        self.assertTrue(response.live_payments_authorized)
+        self.assertTrue(response.ready_for_configured_mode)
+        self.assertTrue(response.mutation_capabilities.connect_payments)
+        self.assertTrue(workflows["plan.sync"])
+        self.assertFalse(workflows["payment.refund"])
+        self.assertFalse(workflows["invoice.create"])
+        connect_payment_probes = [
+            params["p_operation"]
+            for name, params in supabase.rpc_calls
+            if name == "authorize_studio_live_billing_mutation_atomic"
+            and params["p_scope"] == "connect_payments"
+        ]
+        self.assertEqual(
+            set(connect_payment_probes),
+            {"connected_capability.readiness"},
+        )
 
     def test_live_mapped_account_does_not_fallback_when_bootstrap_requires_support(self):
         supabase = _PreflightSupabase(

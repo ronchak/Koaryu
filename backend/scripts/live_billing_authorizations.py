@@ -14,6 +14,8 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.core.config import get_settings
 from app.db.supabase import create_supabase_client
+from app.services.billing_workflow_catalog import validate_live_authorization_operations
+from app.services.studio_live_billing_authorizations import StudioLiveBillingAuthorizationStore
 from scripts.stripe_reconciliation_report import (
     PRODUCTION_READY_URL,
     ReconciliationReportError,
@@ -35,22 +37,34 @@ SCOPES = ("core_subscription", "connect_onboarding", "connect_payments")
 AUTH_COLUMNS = (
     "studio_id,scope,enabled,stripe_connected_account_id,connect_account_generation,"
     "expires_at,revision,granted_at,granted_by,granted_by_email,grant_reason,"
-    "revoked_at,revoked_by,revoked_by_email,revoke_reason,updated_at"
-    ",reconciliation_checkpoint_id,local_event_ingest_watermark"
+    "revoked_at,revoked_by,revoked_by_email,revoke_reason,updated_at,"
+    "reconciliation_checkpoint_id,local_event_ingest_watermark,allowed_operations"
 )
 ACCOUNT_COLUMNS = (
     "studio_id,stripe_connected_account_id,status,charges_enabled,payouts_enabled,"
     "details_submitted,requirements_due,metadata,updated_at"
 )
-CHECKPOINT_COLUMNS = (
+V3_CHECKPOINT_COLUMNS = (
+    "checkpoint_id,checkpoint_sequence,candidate_sha,verified_at,expires_at,"
+    "source_report_sha256,continuity_mode,previous_checkpoint_id,"
+    "previous_checkpoint_sequence,event_window_started_at,event_window_ended_at,"
+    "continuity_overlap_started_at,continuity_overlap_ended_at,"
+    "previous_local_event_ingest_watermark,local_event_ingest_watermark,"
+    "bootstrap_historical_provider_completeness_claimed,"
+    "bootstrap_local_history_checked,provider_retention_seconds,"
+    "safety_margin_seconds,minimum_overlap_seconds,platform_endpoint_url,"
+    "connect_endpoint_url,platform_endpoint_livemode,connect_endpoint_livemode,"
+    "connected_event_context_verified,created_at"
+)
+LEGACY_CHECKPOINT_COLUMNS = (
     "id,stripe_livemode,candidate_sha,provider_account_count,mapped_account_count,"
     "excluded_account_count,unresolved_account_count,event_count_since_cutoff,"
     "failed_event_count,latest_event_created_at,webhook_delivery_verified_at,"
     "enabled_platform_endpoint_count,enabled_connect_endpoint_count,"
     "platform_endpoint_contract_matched,connect_endpoint_contract_matched,"
-    "verified_at,checkpoint_sequence,expires_at,source_report_sha256,reason,verified_by,verified_by_email"
-    ",evidence_source,deployment_ready_url,deployment_ready_sha,deployment_ready_verified_at,"
-    "event_window_started_at,event_window_ended_at,local_event_ingest_watermark,"
+    "verified_at,checkpoint_sequence,expires_at,source_report_sha256,reason,"
+    "verified_by,verified_by_email,evidence_source,deployment_ready_url,"
+    "deployment_ready_sha,deployment_ready_verified_at,local_event_ingest_watermark,"
     "provider_only_event_count,local_only_event_count,platform_delivery_verified_at,"
     "unexpected_enabled_endpoint_count,account_evidence_count"
 )
@@ -81,6 +95,13 @@ def build_parser() -> argparse.ArgumentParser:
     grant.add_argument("--scope", choices=SCOPES, required=True)
     grant.add_argument("--expires-at", required=True, help="Future ISO-8601 timestamp, at most 30 days away.")
     grant.add_argument("--stripe-account-id")
+    grant.add_argument(
+        "--operation",
+        dest="allowed_operations",
+        action="append",
+        required=True,
+        help="Exact live Stripe operation. Repeat in byte-sorted order.",
+    )
 
     revoke = commands.add_parser("revoke")
     _add_selector(revoke)
@@ -109,10 +130,25 @@ def _parse_timestamp(value: str, label: str) -> str:
     return parsed.astimezone(timezone.utc).isoformat()
 
 
-def _latest_checkpoint(supabase: Any) -> Optional[dict[str, Any]]:
+def _latest_v3_checkpoint(supabase: Any) -> Optional[dict[str, Any]]:
+    rows = _paginate(lambda: (
+        supabase.table("stripe_live_billing_reconciliation_checkpoints_v3")
+        .select(V3_CHECKPOINT_COLUMNS)
+        .order("checkpoint_sequence", desc=True)
+        .limit(1)
+    ))
+    return rows[0] if rows else None
+
+
+# Backward-compatible internal alias for tests and any owner automation that imported
+# the old helper. The active checkpoint contract is v3.
+_latest_checkpoint = _latest_v3_checkpoint
+
+
+def _latest_legacy_checkpoint(supabase: Any) -> Optional[dict[str, Any]]:
     rows = _paginate(lambda: (
         supabase.table("stripe_live_billing_reconciliation_checkpoints")
-        .select(CHECKPOINT_COLUMNS)
+        .select(LEGACY_CHECKPOINT_COLUMNS)
         .order("verified_at", desc=True)
         .order("checkpoint_sequence", desc=True)
         .limit(1)
@@ -137,7 +173,9 @@ def _studio_state(supabase: Any, studio: dict[str, Any]) -> dict[str, Any]:
         "studio": studio,
         "authorizations": authorizations,
         "payment_account": accounts[0] if accounts else None,
-        "latest_reconciliation_checkpoint": _latest_checkpoint(supabase),
+        "latest_reconciliation_checkpoint": _latest_v3_checkpoint(supabase),
+        "latest_reconciliation_checkpoint_v3": _latest_v3_checkpoint(supabase),
+        "latest_legacy_reconciliation_checkpoint": _latest_legacy_checkpoint(supabase),
     }
 
 
@@ -170,7 +208,17 @@ def _drift(supabase: Any) -> list[dict[str, Any]]:
         account = accounts.get(authorization["studio_id"])
         reasons: list[str] = []
         try:
-            expires_at = datetime.fromisoformat(str(authorization.get("expires_at") or "").replace("Z", "+00:00"))
+            validate_live_authorization_operations(
+                authorization["scope"],
+                authorization.get("allowed_operations"),
+                enabled=True,
+            )
+        except ValueError:
+            reasons.append("allowed operation set is missing or invalid")
+        try:
+            expires_at = datetime.fromisoformat(
+                str(authorization.get("expires_at") or "").replace("Z", "+00:00")
+            )
         except ValueError:
             expires_at = None
         if expires_at is None or expires_at <= now:
@@ -193,21 +241,46 @@ def _drift(supabase: Any) -> list[dict[str, Any]]:
         ):
             reasons.append("Connect account is not currently payment-ready")
         if reasons:
-            drift.append({"authorization": authorization, "payment_account": account, "drift_reasons": reasons})
+            drift.append({
+                "authorization": authorization,
+                "payment_account": account,
+                "drift_reasons": reasons,
+            })
     return drift
 
 
-def _run_write_confirmation(args: argparse.Namespace, settings: Any, stdin: TextIO, stdout: TextIO) -> None:
+def _run_write_confirmation(
+    args: argparse.Namespace,
+    settings: Any,
+    stdin: TextIO,
+    stdout: TextIO,
+) -> None:
     if args.execute:
         _confirm_execute(args, settings, stdin, stdout)
 
 
-def _authorization_change(supabase: Any, settings: Any, args: argparse.Namespace, stdin: TextIO, stdout: TextIO) -> None:
+def _authorization_change(
+    supabase: Any,
+    settings: Any,
+    args: argparse.Namespace,
+    stdin: TextIO,
+    stdout: TextIO,
+) -> None:
     studio = _resolve_studio(supabase, slug=args.slug, studio_id=args.studio_id)
     actor_id, actor_email = _resolve_actor(supabase, args.actor)
     enabled = args.command == "grant"
     expires_at = _parse_timestamp(args.expires_at, "--expires-at") if enabled else None
     account_id = args.stripe_account_id if enabled else None
+    try:
+        allowed_operations = validate_live_authorization_operations(
+            args.scope,
+            args.allowed_operations if enabled else (),
+            enabled=enabled,
+        )
+    except ValueError as exc:
+        raise LiveBillingOperatorError(
+            "Allowed operations must be an exact sorted nonempty set for the selected scope."
+        ) from exc
     plan = {
         "operation": args.command,
         "studio": studio,
@@ -215,36 +288,56 @@ def _authorization_change(supabase: Any, settings: Any, args: argparse.Namespace
         "enabled": enabled,
         "expires_at": expires_at,
         "stripe_connected_account_id": account_id,
+        "allowed_operations": list(allowed_operations),
         "actor": {"id": actor_id, "email": actor_email},
         "reason": args.reason,
-        "write_boundary": "set_studio_live_billing_authorization_atomic",
+        "write_boundary": "set_studio_live_billing_authorization_operations_v1",
+        "required_checkpoint_contract": 3,
     }
     if not args.execute:
         _print_json({"dry_run": True, **plan}, stdout)
         return
     _run_write_confirmation(args, settings, stdin, stdout)
-    result = supabase.rpc("set_studio_live_billing_authorization_atomic", {
-        "p_studio_id": studio["id"], "p_scope": args.scope, "p_enabled": enabled,
-        "p_expires_at": expires_at, "p_reason": args.reason, "p_actor_id": actor_id,
-        "p_actor_email": actor_email, "p_stripe_connected_account_id": account_id,
-    }).execute()
-    _print_json({"dry_run": False, "result": result.data}, stdout)
+    result = StudioLiveBillingAuthorizationStore(supabase).set_authorization_operations(
+        studio_id=studio["id"],
+        scope=args.scope,
+        enabled=enabled,
+        expires_at=expires_at,
+        reason=args.reason,
+        actor_id=actor_id,
+        allowed_operations=allowed_operations,
+        actor_email=actor_email,
+        stripe_connected_account_id=account_id,
+    )
+    _print_json({"dry_run": False, "result": [result]}, stdout)
 
 
-def _account_disposition(supabase: Any, settings: Any, args: argparse.Namespace, stdin: TextIO, stdout: TextIO) -> None:
+def _account_disposition(
+    supabase: Any,
+    settings: Any,
+    args: argparse.Namespace,
+    stdin: TextIO,
+    stdout: TextIO,
+) -> None:
     actor_id, actor_email = _resolve_actor(supabase, args.actor)
     excluded = args.state == "excluded"
     plan = {
-        "operation": "account-disposition", "stripe_connected_account_id": args.stripe_account_id,
-        "excluded": excluded, "actor": {"id": actor_id, "email": actor_email}, "reason": args.reason,
+        "operation": "account-disposition",
+        "stripe_connected_account_id": args.stripe_account_id,
+        "excluded": excluded,
+        "actor": {"id": actor_id, "email": actor_email},
+        "reason": args.reason,
     }
     if not args.execute:
         _print_json({"dry_run": True, **plan}, stdout)
         return
     _run_write_confirmation(args, settings, stdin, stdout)
     result = supabase.rpc("set_stripe_connect_account_exclusion_atomic", {
-        "p_stripe_connected_account_id": args.stripe_account_id, "p_excluded": excluded,
-        "p_reason": args.reason, "p_actor_id": actor_id, "p_actor_email": actor_email,
+        "p_stripe_connected_account_id": args.stripe_account_id,
+        "p_excluded": excluded,
+        "p_reason": args.reason,
+        "p_actor_id": actor_id,
+        "p_actor_email": actor_email,
     }).execute()
     _print_json({"dry_run": False, "result": result.data}, stdout)
 
@@ -255,20 +348,34 @@ def _load_report(path: Path) -> tuple[dict[str, Any], str]:
         report = json.loads(raw)
     except (OSError, json.JSONDecodeError) as exc:
         raise LiveBillingOperatorError(f"Could not read reconciliation report {path}.") from exc
+    if not isinstance(report, dict):
+        raise LiveBillingOperatorError("Report is not an all-clear schema-v3 checkpoint candidate.")
+    continuity = report.get("continuity") or {}
+    window_policy = report.get("window_policy") or {}
     if (
-        not isinstance(report, dict)
-        or report.get("checkpoint_eligible") is not True
-        or report.get("schema_version") != 2
+        report.get("checkpoint_eligible") is not True
+        or report.get("schema_version") != 3
         or report.get("evidence_source") != "provider_read"
         or report.get("probe") != "production"
         or report.get("provider_mode") != "live"
-        or (report.get("deployment_readiness") or {}).get("production_exact_candidate_verified") is not True
+        or (report.get("deployment_readiness") or {}).get(
+            "production_exact_candidate_verified"
+        ) is not True
+        or continuity.get("eligible") is not True
+        or continuity.get("bootstrap_historical_provider_completeness_claimed") is not False
+        or window_policy.get("complete_supported_window") is not True
     ):
-        raise LiveBillingOperatorError("Report is not an all-clear checkpoint candidate.")
+        raise LiveBillingOperatorError("Report is not an all-clear schema-v3 checkpoint candidate.")
     return report, hashlib.sha256(raw).hexdigest()
 
 
-def _record_checkpoint(supabase: Any, settings: Any, args: argparse.Namespace, stdin: TextIO, stdout: TextIO) -> None:
+def _record_checkpoint(
+    supabase: Any,
+    settings: Any,
+    args: argparse.Namespace,
+    stdin: TextIO,
+    stdout: TextIO,
+) -> None:
     report, digest = _load_report(args.report)
     actor_id, actor_email = _resolve_actor(supabase, args.actor)
     candidate_sha = str(report.get("candidate_sha") or "")
@@ -279,8 +386,13 @@ def _record_checkpoint(supabase: Any, settings: Any, args: argparse.Namespace, s
             now=datetime.now(timezone.utc),
         )
     except ReconciliationReportError as exc:
-        raise LiveBillingOperatorError("Independent production readiness verification failed.") from exc
-    if readiness.get("url") != PRODUCTION_READY_URL or readiness.get("candidate_sha") != candidate_sha:
+        raise LiveBillingOperatorError(
+            "Independent production readiness verification failed."
+        ) from exc
+    if (
+        readiness.get("url") != PRODUCTION_READY_URL
+        or readiness.get("candidate_sha") != candidate_sha
+    ):
         raise LiveBillingOperatorError("Production readiness did not match the report candidate.")
     params = {
         "p_report": report,
@@ -293,7 +405,9 @@ def _record_checkpoint(supabase: Any, settings: Any, args: argparse.Namespace, s
     if not args.execute:
         _print_json({
             "dry_run": True,
-            "rpc": "record_stripe_live_billing_reconciliation_checkpoint_v2",
+            "rpc": "record_stripe_live_billing_reconciliation_checkpoint_v3",
+            "schema_version": 3,
+            "continuity_mode": (report.get("continuity") or {}).get("mode"),
             "candidate_sha": candidate_sha,
             "production_ready_url_verified": True,
             "report_sha256": digest,
@@ -301,11 +415,20 @@ def _record_checkpoint(supabase: Any, settings: Any, args: argparse.Namespace, s
         }, stdout)
         return
     _run_write_confirmation(args, settings, stdin, stdout)
-    result = supabase.rpc("record_stripe_live_billing_reconciliation_checkpoint_v2", params).execute()
+    result = supabase.rpc(
+        "record_stripe_live_billing_reconciliation_checkpoint_v3",
+        params,
+    ).execute()
     _print_json({"dry_run": False, "result": result.data}, stdout)
 
 
-def main(argv: Optional[list[str]] = None, *, stdin: TextIO = sys.stdin, stdout: TextIO = sys.stdout, stderr: TextIO = sys.stderr) -> int:
+def main(
+    argv: Optional[list[str]] = None,
+    *,
+    stdin: TextIO = sys.stdin,
+    stdout: TextIO = sys.stdout,
+    stderr: TextIO = sys.stderr,
+) -> int:
     args = build_parser().parse_args(argv)
     try:
         settings = get_settings()
@@ -314,7 +437,12 @@ def main(argv: Optional[list[str]] = None, *, stdin: TextIO = sys.stdin, stdout:
             studio = _resolve_studio(supabase, slug=args.slug, studio_id=args.studio_id)
             _print_json(_studio_state(supabase, studio), stdout)
         elif args.command == "drift":
-            _print_json({"drift": _drift(supabase), "latest_reconciliation_checkpoint": _latest_checkpoint(supabase)}, stdout)
+            _print_json({
+                "drift": _drift(supabase),
+                "latest_reconciliation_checkpoint": _latest_v3_checkpoint(supabase),
+                "latest_reconciliation_checkpoint_v3": _latest_v3_checkpoint(supabase),
+                "latest_legacy_reconciliation_checkpoint": _latest_legacy_checkpoint(supabase),
+            }, stdout)
         elif args.command in {"grant", "revoke"}:
             _authorization_change(supabase, settings, args, stdin, stdout)
         elif args.command == "account-disposition":

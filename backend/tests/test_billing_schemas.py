@@ -13,6 +13,7 @@ from app.schemas.billing import (
     BillingPayerCreate,
     BillingPayerResponse,
     BillingPayerUpdate,
+    BillingPaymentResponse,
     BillingReconcileRequest,
     BillingRefundCreate,
     ExportJobCreate,
@@ -67,6 +68,39 @@ class BillingPayerResponseTest(unittest.TestCase):
         ))
 
         self.assertEqual(payer.stripe_payment_method_type, "us_bank_account")
+
+
+class BillingPaymentResponseTest(unittest.TestCase):
+    def test_exposes_distinct_adjustment_accounting_for_collected_payment(self):
+        payment = BillingPaymentResponse(
+            id="payment_1",
+            studio_id="studio_1",
+            stripe_charge_id="ch_1",
+            status="disputed",
+            amount_cents=200,
+            refunded_amount_cents=75,
+            disputed_amount_cents=125,
+            created_at="2026-08-25T00:00:00Z",
+            updated_at="2026-08-25T00:00:00Z",
+        )
+
+        self.assertEqual(payment.gross_paid_amount_cents, 200)
+        self.assertEqual(payment.net_collected_amount_cents, 0)
+        self.assertEqual(payment.refundable_amount_cents, 0)
+
+    def test_failed_attempt_is_not_reported_as_gross_paid_or_refundable(self):
+        payment = BillingPaymentResponse(
+            id="payment_1",
+            studio_id="studio_1",
+            status="failed",
+            amount_cents=200,
+            created_at="2026-08-25T00:00:00Z",
+            updated_at="2026-08-25T00:00:00Z",
+        )
+
+        self.assertEqual(payment.gross_paid_amount_cents, 0)
+        self.assertEqual(payment.net_collected_amount_cents, 0)
+        self.assertEqual(payment.refundable_amount_cents, 0)
 
 
 class BillingRequestSchemaTest(unittest.TestCase):
@@ -159,6 +193,38 @@ class BillingRequestSchemaTest(unittest.TestCase):
 
         self.assertIsNone(payment.payer_id)
         self.assertIsNone(payment.invoice_id)
+
+    def test_invoice_due_date_enforces_format_and_stripe_collection_method(self):
+        invoice = BillingInvoiceCreate(
+            payer_id="payer_1",
+            due_date="2099-09-15",
+        )
+        self.assertEqual(invoice.due_date, "2099-09-15")
+        self.assertEqual(
+            BillingInvoiceCreate(
+                payer_id="payer_1",
+                due_date="2000-01-01",
+            ).due_date,
+            "2000-01-01",
+        )
+
+        invalid_cases = (
+            {"due_date": "2026-99-99"},
+            {"collection_mode": "autopay", "due_date": "2099-09-15"},
+        )
+        for payload in invalid_cases:
+            with self.subTest(payload=payload), self.assertRaises(ValidationError):
+                BillingInvoiceCreate(payer_id="payer_1", **payload)
+
+    def test_refund_reason_accepts_only_stripe_create_values(self):
+        for reason in ("duplicate", "fraudulent", "requested_by_customer"):
+            with self.subTest(reason=reason):
+                self.assertEqual(BillingRefundCreate(reason=reason).reason, reason)
+
+        with self.assertRaises(ValidationError) as context:
+            BillingRefundCreate(reason="expired_uncaptured_charge")
+
+        self.assertIn("Input should be", str(context.exception))
 
     def test_public_billing_mutation_schemas_reject_extra_fields(self):
         cases = [

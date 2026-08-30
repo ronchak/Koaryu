@@ -11,6 +11,14 @@ const scheduleControllerSource = source("../src/lib/schedule-page-controller.ts"
 const studentsControllerSource = source("../src/lib/students-page-controller.ts");
 const scheduleActionsSource = source("../src/lib/store-schedule-actions.ts");
 const storeSource = source("../src/lib/store.tsx");
+const initialReconciliationSource = storeSource.slice(
+  storeSource.indexOf("const reconcileScheduleAttempt"),
+  storeSource.indexOf("const reconcileSchedule =")
+);
+const rangeRefreshSource = scheduleActionsSource.slice(
+  scheduleActionsSource.indexOf("const refreshScheduleRange"),
+  scheduleActionsSource.indexOf("const refreshSessionAttendance")
+);
 
 describe("schedule range intent contracts", () => {
   it("keeps Reports and other analytics callers on the read-only path", () => {
@@ -34,5 +42,16 @@ describe("schedule range intent contracts", () => {
     );
     assert.match(scheduleActionsSource, /await reconcileSchedule\("materialize"\)/);
     assert.match(scheduleActionsSource, /reconcileSchedule\("materialize"\)\.catch/);
+  });
+
+  it("uses one schedule-window request instead of templates, sessions, and attendance fan-out", () => {
+    for (const readPath of [initialReconciliationSource, rangeRefreshSource]) {
+      assert.match(readPath, /fetchScheduleWindowRange\(/);
+      assert.match(readPath, /setTemplates\(scheduleWindow\.templates\)/);
+      assert.doesNotMatch(readPath, /Promise\.allSettled/);
+      assert.doesNotMatch(readPath, /\/schedule\/templates/);
+      assert.doesNotMatch(readPath, /\/schedule\/attendance/);
+      assert.doesNotMatch(readPath, /\/schedule\/sessions\?/);
+    }
   });
 });

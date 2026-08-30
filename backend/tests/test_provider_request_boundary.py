@@ -24,6 +24,7 @@ EXPECTED_BULK_FUNCTIONS = {
     "clear_studio_data",
     "export_report_csv",
     "materialize_session_range",
+    "materialize_schedule_window",
     "generate_week",
     "bulk_check_in",
     "bulk_update_tags",
@@ -33,6 +34,7 @@ EXPECTED_BULK_FUNCTIONS = {
     "validate_csv_import",
     "execute_csv_import",
     "process_due_account_deletions",
+    "process_due_billing_enrollment_transitions",
 }
 
 
@@ -253,7 +255,7 @@ def test_all_request_provider_dependencies_are_wrapped_and_lane_mapping_is_expli
                         and call.args[0].id == "supabase"
                     ), f"{path.name}:{node.name} constructs a service from the dependency"
 
-    assert dependency_count == 130
+    assert dependency_count == 137
     assert wrapped_count == dependency_count
     assert {name for name, lane in lane_by_function.items() if lane == "bulk"} == EXPECTED_BULK_FUNCTIONS
 

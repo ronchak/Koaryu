@@ -7,6 +7,8 @@ import {
   compareSessions,
   createScheduleCoordinatorState,
   createScheduleReconciliationQueue,
+  discardSupersededScheduleWindowFailure,
+  fetchScheduleWindowRange,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
   isAuthoritativeScheduleReady,
@@ -77,19 +79,118 @@ describe("schedule store model", () => {
       buildScheduleRangeRequest("2026-07-01", "2026-07-31", "read", true),
       {
         method: "GET",
-        path: "/schedule/sessions?start_date=2026-07-01&end_date=2026-07-31",
+        path: "/schedule/window?start_date=2026-07-01&end_date=2026-07-31",
       }
     );
     assert.deepEqual(
       buildScheduleRangeRequest("2026-07-01", "2026-07-31", "materialize", true),
       {
         method: "POST",
-        path: "/schedule/sessions/materialize?start_date=2026-07-01&end_date=2026-07-31",
+        path: "/schedule/window/materialize?start_date=2026-07-01&end_date=2026-07-31",
       }
     );
     assert.equal(
       buildScheduleRangeRequest("2026-07-01", "2026-07-31", "materialize", false).method,
       "GET"
+    );
+  });
+
+  it("fetches each schedule window through one coarse request", async () => {
+    const calls = [];
+    const payload = {
+      contract_version: "schedule-window-v1",
+      range: { start_date: "2026-07-01", end_date: "2026-07-31", day_count: 31 },
+      templates: [template()],
+      sessions: [session("session-1", "2026-07-01", "17:00")],
+      attendance: [attendance("attendance-1", "session-1", "student-1")],
+    };
+    const transport = {
+      async get(path, token) {
+        calls.push({ method: "GET", path, token });
+        return payload;
+      },
+      async post(path, body, token) {
+        calls.push({ method: "POST", path, body, token });
+        return payload;
+      },
+    };
+
+    const read = await fetchScheduleWindowRange(
+      transport,
+      "token-1",
+      "2026-07-01",
+      "2026-07-31",
+      "read",
+      true
+    );
+    const materialized = await fetchScheduleWindowRange(
+      transport,
+      "token-1",
+      "2026-07-01",
+      "2026-07-31",
+      "materialize",
+      true
+    );
+
+    assert.equal(read, payload);
+    assert.equal(materialized, payload);
+    assert.deepEqual(calls, [
+      {
+        method: "GET",
+        path: "/schedule/window?start_date=2026-07-01&end_date=2026-07-31",
+        token: "token-1",
+      },
+      {
+        method: "POST",
+        path: "/schedule/window/materialize?start_date=2026-07-01&end_date=2026-07-31",
+        body: {},
+        token: "token-1",
+      },
+    ]);
+  });
+
+  it("surfaces a consolidated schedule request failure", async () => {
+    let requests = 0;
+    const transport = {
+      async get() {
+        requests += 1;
+        throw new Error("schedule window unavailable");
+      },
+      async post() {
+        throw new Error("unexpected materialization");
+      },
+    };
+
+    await assert.rejects(
+      fetchScheduleWindowRange(
+        transport,
+        "token-1",
+        "2026-07-01",
+        "2026-07-31",
+        "read",
+        true
+      ),
+      /schedule window unavailable/
+    );
+    assert.equal(requests, 1);
+  });
+
+  it("discards only failures from schedule window reads that became superseded", async () => {
+    const failure = new Error("schedule window unavailable");
+
+    assert.equal(
+      await discardSupersededScheduleWindowFailure(
+        async () => { throw failure; },
+        () => false
+      ),
+      undefined
+    );
+    await assert.rejects(
+      discardSupersededScheduleWindowFailure(
+        async () => { throw failure; },
+        () => true
+      ),
+      /schedule window unavailable/
     );
   });
 

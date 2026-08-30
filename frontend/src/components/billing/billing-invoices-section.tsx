@@ -8,6 +8,7 @@ export function BillingInvoicesSection({
   billingInvoices,
   billingPayers,
   canReconcileInvoices,
+  canUseWorkflow,
   isActionLoading,
   isLoadingAction,
   isPreviewMode,
@@ -16,6 +17,7 @@ export function BillingInvoicesSection({
   billingInvoices: BillingInvoice[];
   billingPayers: BillingPayer[];
   canReconcileInvoices: boolean;
+  canUseWorkflow: (workflowId: string) => boolean;
   isActionLoading: boolean;
   isLoadingAction: (action: string) => boolean;
   isPreviewMode: boolean;
@@ -26,6 +28,7 @@ export function BillingInvoicesSection({
       billingInvoices={billingInvoices}
       billingPayers={billingPayers}
       canReconcileInvoices={canReconcileInvoices}
+      canUseWorkflow={canUseWorkflow}
       isActionLoading={isActionLoading}
       isLoadingAction={isLoadingAction}
       isPreviewMode={isPreviewMode}

@@ -16,6 +16,8 @@ import {
 import { buildBillingPageModel } from "@/lib/billing-page-model";
 import {
   getBillingInitialLoadAction,
+  getBillingTabFromSearch,
+  getBillingUrlForTab,
   getBillingUrlAfterConnectReturn,
   resolveBillingAuxiliaryReadiness,
   shouldSettleBillingLoadEarly,
@@ -23,11 +25,17 @@ import {
 } from "@/lib/billing-page-state";
 import { requirementGroupItems } from "@/lib/billing-page-utils";
 import { useBillingInvoiceController } from "@/lib/billing-invoice-controller";
+import { useBillingRefundController } from "@/lib/billing-refund-controller";
 import {
   areProviderMutationsEnabled,
   canManageRoutineBilling,
+  resolveBillingProviderActionCapabilities,
   resolveBillingProviderCopy,
 } from "@/lib/billing-policy";
+import {
+  billingWorkflowEnabled,
+  enabledBillingWorkflowIds,
+} from "@/lib/billing-workflow-capabilities";
 import { subscriptionPeriodCopy } from "@/lib/billing-period";
 import {
   PREVIEW_CONNECT,
@@ -61,7 +69,10 @@ type BillingPageControllerOptions = {
     | "studentsLoadError"
     | "studentsMayBePartial"
   >;
-  studioStore: Pick<StudioStoreContextValue, "currentRole">;
+  studioStore: Pick<
+    StudioStoreContextValue,
+    "currentRole" | "currentStudioId" | "currentUserId"
+  >;
 };
 
 export function useBillingPageController({
@@ -73,7 +84,7 @@ export function useBillingPageController({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isPreviewMode, token, markSubscriptionRequired } = config;
-  const { currentRole } = studioStore;
+  const { currentRole, currentStudioId, currentUserId } = studioStore;
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
   const {
     refreshStudents,
@@ -87,9 +98,16 @@ export function useBillingPageController({
     billingInitialLoadAction === "connect-return"
   );
   const skipNextNormalBillingRefreshRef = useRef(false);
-  const [activeTab, setActiveTab] = useState<BillingTab>("overview");
+  const activeTab = getBillingTabFromSearch(searchParams.toString());
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  const changeBillingTab = useCallback((tab: BillingTab) => {
+    const currentSearch = searchParams.toString();
+    if (getBillingTabFromSearch(currentSearch) !== tab) {
+      router.replace(getBillingUrlForTab(currentSearch, tab), { scroll: false });
+    }
+  }, [router, searchParams]);
 
   const canManageKoaryuSubscription = currentRole === "admin";
   const canViewStudioBilling = currentRole === "admin" || currentRole === "front_desk";
@@ -131,22 +149,29 @@ export function useBillingPageController({
     shouldSettleEarly,
     token,
   });
-  const coreProviderMutationsEnabled = areProviderMutationsEnabled(
+  const enabledWorkflowIds = enabledBillingWorkflowIds(
+    billingSystemStatus,
+    currentRole,
     isPreviewMode,
-    billingSystemStatus?.mutation_capabilities.core_subscription
   );
-  const connectOnboardingEnabled = areProviderMutationsEnabled(
+  const {
+    connectDashboardEnabled,
+    connectOnboardingEnabled,
+    coreCheckoutEnabled,
+    corePortalEnabled,
+  } = resolveBillingProviderActionCapabilities({
+    enabledWorkflowIds,
     isPreviewMode,
-    billingSystemStatus?.mutation_capabilities.connect_onboarding
-  );
+    role: currentRole,
+  });
   const connectPaymentsEnabled = areProviderMutationsEnabled(
     isPreviewMode,
-    billingSystemStatus?.mutation_capabilities.connect_payments
+    billingWorkflowEnabled(enabledWorkflowIds, "payer.setup", isPreviewMode)
   );
   const billingProviderCopy = resolveBillingProviderCopy({
     isPreviewMode,
     providerMode: billingSystemStatus?.configured_stripe_mode,
-    coreSubscription: coreProviderMutationsEnabled,
+    coreSubscription: coreCheckoutEnabled || corePortalEnabled,
     connectOnboarding: connectOnboardingEnabled,
     connectPayments: connectPaymentsEnabled,
   });
@@ -179,9 +204,26 @@ export function useBillingPageController({
     billingConnect,
     canManageRoutineBilling: canManageRoutineBillingActions,
     isPreviewMode,
+    payerOperationIdentity:
+      currentUserId && currentStudioId
+        ? { userId: currentUserId, studioId: currentStudioId }
+        : null,
     refreshBilling,
     setError,
     setExportJobs,
+    setMessage,
+    token,
+    enabledWorkflowIds,
+  });
+  const refundController = useBillingRefundController({
+    enabledWorkflowIds,
+    identity: currentUserId && currentStudioId
+      ? { userId: currentUserId, studioId: currentStudioId }
+      : null,
+    isPreviewMode,
+    refreshBilling,
+    role: currentRole,
+    setError,
     setMessage,
     token,
   });
@@ -280,7 +322,7 @@ export function useBillingPageController({
         ? "Review the studio's existing Stripe status without changing provider state."
         : billingProviderCopy.connectPayments,
       complete: paymentsReady,
-      onSelect: () => setActiveTab("overview"),
+      onSelect: () => changeBillingTab("overview"),
       actionLabel: paymentsReady ? "Review status" : "Review setup",
     },
     {
@@ -288,7 +330,7 @@ export function useBillingPageController({
       title: "Review tuition plans",
       description: "Review the studio's existing tuition plans. Plan changes are currently unavailable.",
       complete: hasBillingPlans,
-      onSelect: () => setActiveTab("plans"),
+      onSelect: () => changeBillingTab("plans"),
       actionLabel: "Review plans",
     },
     {
@@ -296,7 +338,7 @@ export function useBillingPageController({
       title: "Review families",
       description: "Review existing payer accounts for parents, guardians, or adult students.",
       complete: hasFamilyAccounts,
-      onSelect: () => setActiveTab("families"),
+      onSelect: () => changeBillingTab("families"),
       actionLabel: "Review families",
     },
     {
@@ -304,7 +346,7 @@ export function useBillingPageController({
       title: "Attach students",
       description: "Connect active students to the right family, tuition plan, collection mode, and billing dates.",
       complete: hasStudentBilling,
-      onSelect: () => setActiveTab("enrollments"),
+      onSelect: () => changeBillingTab("enrollments"),
       actionLabel: "Attach student",
     },
     {
@@ -312,7 +354,7 @@ export function useBillingPageController({
       title: "Review invoices and payments",
       description: "Record payer-level external payments and reconcile existing provider invoices.",
       complete: hasCollectionHistory,
-      onSelect: () => setActiveTab("invoices"),
+      onSelect: () => changeBillingTab("invoices"),
       actionLabel: "Review invoices",
     },
   ], [
@@ -322,7 +364,7 @@ export function useBillingPageController({
     hasStudentBilling,
     paymentsReady,
     billingProviderCopy.connectPayments,
-    setActiveTab,
+    changeBillingTab,
   ]);
   const billingSetupCompleteCount = billingSetupSteps.filter((step) => step.complete).length;
 
@@ -426,8 +468,12 @@ export function useBillingPageController({
 
   const invoiceController = useBillingInvoiceController({
     canReconcileInvoices: canManageRoutineBillingActions,
+    canUseWorkflow: billingActions.canUseWorkflow,
     claimAction: billingActions.claimAction,
     isPreviewMode,
+    operationIdentity: currentUserId && currentStudioId
+      ? { userId: currentUserId, studioId: currentStudioId }
+      : null,
     releaseAction: billingActions.releaseAction,
     refreshBilling,
     setError,
@@ -447,7 +493,7 @@ export function useBillingPageController({
       isLoading,
       isRefreshDisabled: isPreviewMode || isLoading || !canViewStudioBilling,
       message,
-      onChangeTab: setActiveTab,
+      onChangeTab: changeBillingTab,
       onDismissError: () => setError(""),
       onDismissMessage: () => setMessage(""),
       onRefresh: () => void refreshRequiredBillingDatasets(),
@@ -485,9 +531,12 @@ export function useBillingPageController({
         hasStripeConnectedAccount,
         isEnrollmentPayerSelectDisabled,
         isPreviewMode,
-        coreProviderMutationsEnabled,
+        coreCheckoutEnabled,
+        corePortalEnabled,
+        connectDashboardEnabled,
         connectOnboardingEnabled,
         invoiceController,
+        refundController,
         koaryuFeeBasis,
         onConnectClick: handleConnectClick,
         openInvoiceTotal,

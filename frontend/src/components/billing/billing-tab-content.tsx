@@ -10,6 +10,7 @@ import { BillingReportsTab } from "@/components/billing/billing-reports-tab";
 import type { BillingActionController } from "@/lib/billing-action-controller";
 import type { BillingInvoiceController } from "@/lib/billing-invoice-controller";
 import type { BillingProviderCopy } from "@/lib/billing-policy";
+import type { BillingRefundController } from "@/lib/billing-refund-controller";
 import type {
   BillingInvoice,
   BillingPayment,
@@ -50,6 +51,7 @@ type BillingTabContentProps = {
   failedInvoiceCount: number;
   hasStripeConnectedAccount: boolean;
   invoiceController: BillingInvoiceController;
+  refundController: BillingRefundController;
   isEnrollmentPayerSelectDisabled: boolean;
   isPreviewMode: boolean;
   koaryuFeeBasis: number;
@@ -59,7 +61,9 @@ type BillingTabContentProps = {
   paymentCohortAvailable: boolean;
   payerNameById: Map<string, string>;
   planNameById: Map<string, string>;
-  coreProviderMutationsEnabled: boolean;
+  coreCheckoutEnabled: boolean;
+  corePortalEnabled: boolean;
+  connectDashboardEnabled: boolean;
   connectOnboardingEnabled: boolean;
   stripePaymentTotal: number;
   studentNameById: Map<string, string>;
@@ -96,6 +100,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
     failedInvoiceCount,
     hasStripeConnectedAccount,
     invoiceController,
+    refundController,
     isEnrollmentPayerSelectDisabled,
     isPreviewMode,
     koaryuFeeBasis,
@@ -105,7 +110,9 @@ export function BillingTabContent(props: BillingTabContentProps) {
     paymentCohortAvailable,
     payerNameById,
     planNameById,
-    coreProviderMutationsEnabled,
+    coreCheckoutEnabled,
+    corePortalEnabled,
+    connectDashboardEnabled,
     connectOnboardingEnabled,
     stripePaymentTotal,
     studentNameById,
@@ -124,6 +131,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
     externalPayerId,
     isActionLoading,
     isLoadingAction,
+    canUseWorkflow,
     onCreateEnrollment,
     onEnrollmentEndDateChange,
     onEnrollmentNextBillDateChange,
@@ -131,6 +139,10 @@ export function BillingTabContent(props: BillingTabContentProps) {
     onEnrollmentPlanChange,
     onEnrollmentStartDateChange,
     onEnrollmentStudentChange,
+    onEnrollmentActivate,
+    onEnrollmentCancelImmediate,
+    onEnrollmentRevokeScheduled,
+    onEnrollmentSchedulePeriodEnd,
     onExternalAmountChange,
     onExternalMethodChange,
     onExternalNoteChange,
@@ -167,15 +179,39 @@ export function BillingTabContent(props: BillingTabContentProps) {
         openInvoiceTotal={openInvoiceTotal}
         paidRevenue={paidRevenue}
         paymentCohortAvailable={paymentCohortAvailable}
-        coreProviderMutationsEnabled={coreProviderMutationsEnabled}
+        coreCheckoutEnabled={coreCheckoutEnabled}
+        corePortalEnabled={corePortalEnabled}
+        connectDashboardEnabled={connectDashboardEnabled}
         connectOnboardingEnabled={connectOnboardingEnabled}
         stripePaymentTotal={stripePaymentTotal}
         studentsLoaded={studentsLoaded}
       />
     );
   }
-  if (activeTab === "plans") return <BillingPlansTab billingPlans={billingPlans} />;
-  if (activeTab === "families") return <BillingFamiliesTab billingPayers={billingPayers} />;
+  if (activeTab === "plans") {
+    return (
+      <BillingPlansTab
+        billingPlans={billingPlans}
+        canUseWorkflow={canUseWorkflow}
+        isActionLoading={isActionLoading}
+        isLoadingAction={isLoadingAction}
+        onPlanSync={actions.onPlanSync}
+      />
+    );
+  }
+  if (activeTab === "families") {
+    return (
+      <BillingFamiliesTab
+        billingPayers={billingPayers}
+        canUseWorkflow={canUseWorkflow}
+        isActionLoading={isActionLoading}
+        isLoadingAction={isLoadingAction}
+        onAutopayDisable={actions.onAutopayDisable}
+        onAutopaySetup={actions.onAutopaySetup}
+        onPayerSync={actions.onPayerSync}
+      />
+    );
+  }
   if (activeTab === "enrollments") {
     return (
       <BillingEnrollmentsTab
@@ -185,6 +221,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
         billingStudentOptions={billingStudentOptions}
         canManageRoutineBilling={canManageRoutineBilling}
         canSubmitEnrollmentForm={canSubmitEnrollmentForm}
+        canUseWorkflow={canUseWorkflow}
         enrollmentEndDate={enrollmentEndDate}
         enrollmentNextBillDate={enrollmentNextBillDate}
         enrollmentPayerId={enrollmentPayerId}
@@ -193,6 +230,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
         enrollmentStudentId={enrollmentStudentId}
         isEnrollmentPayerSelectDisabled={isEnrollmentPayerSelectDisabled}
         isLoadingAction={isLoadingAction}
+        isActionLoading={isActionLoading}
         onCreateEnrollment={onCreateEnrollment}
         onEnrollmentEndDateChange={onEnrollmentEndDateChange}
         onEnrollmentNextBillDateChange={onEnrollmentNextBillDateChange}
@@ -200,6 +238,10 @@ export function BillingTabContent(props: BillingTabContentProps) {
         onEnrollmentPlanChange={onEnrollmentPlanChange}
         onEnrollmentStartDateChange={onEnrollmentStartDateChange}
         onEnrollmentStudentChange={onEnrollmentStudentChange}
+        onEnrollmentActivate={onEnrollmentActivate}
+        onEnrollmentCancelImmediate={onEnrollmentCancelImmediate}
+        onEnrollmentRevokeScheduled={onEnrollmentRevokeScheduled}
+        onEnrollmentSchedulePeriodEnd={onEnrollmentSchedulePeriodEnd}
         payerNameById={payerNameById}
         planNameById={planNameById}
         studentNameById={studentNameById}
@@ -212,6 +254,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
         billingInvoices={billingInvoices}
         billingPayers={billingPayers}
         canReconcileInvoices={canManageRoutineBilling}
+        canUseWorkflow={canUseWorkflow}
         isActionLoading={isActionLoading}
         isLoadingAction={isLoadingAction}
         isPreviewMode={isPreviewMode}
@@ -224,6 +267,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
       <BillingReportsTab
         billingPayers={billingPayers}
         billingPayments={billingPayments}
+        refundController={refundController}
         canManageRoutineBilling={canManageRoutineBilling}
         externalAmount={externalAmount}
         externalMethod={externalMethod}

@@ -216,7 +216,16 @@ class _BootstrapLifecycleSupabase(_FakeSupabase):
         }]
 
     def _rpc_authorize_studio_live_billing_mutation_atomic(self, params):
-        if not self.ordinary_authorized:
+        bootstrap_operation = params["p_operation"] in {
+            "connect_account.create",
+            "connect_onboarding_link.create",
+        }
+        if not self.ordinary_authorized and not (
+            bootstrap_operation
+            and self.bootstrap is not None
+            and params["p_studio_id"] == self.bootstrap["p_studio_id"]
+            and params["p_candidate_sha"] == self.bootstrap["p_candidate_sha"]
+        ):
             return []
         return [{
             "authorized": True,
@@ -281,8 +290,10 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual([name for name, _params in supabase.rpc_calls], [
             "preflight_connect_onboarding_bootstrap_resume",
             "prepare_connect_onboarding_bootstrap_atomic",
+            "authorize_studio_live_billing_mutation_atomic",
             "authorize_connect_onboarding_bootstrap_account_create_v2",
             "bind_connect_onboarding_bootstrap_account_v2",
+            "authorize_studio_live_billing_mutation_atomic",
             "authorize_connect_onboarding_bootstrap_initial_link_v2",
             "record_connect_onboarding_bootstrap_initial_link_response",
             "acknowledge_connect_onboarding_bootstrap_initial_link_delivery",

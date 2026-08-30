@@ -40,8 +40,27 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-Staging and production are both at 117/head `20260824190500`/V24. Hosted
-application readiness accepts only that exact V24 row; the temporary V22 and
+The latest read-only staging diagnosis for candidate
+`5461a568f65aa4a1e9d6cb6af4c25bf3415ba7b0` found 126/head
+`20260826185651` at exact V31. The candidate finishes at 129/head
+`20260830151714`, readiness V15, and `release-db-attestation-v34`. The guarded
+rollout tool accepts this live V31 tuple only when its history, readiness, and
+catalog all match, then derives this exact three-file remainder:
+
+- `20260830065627_release_invoice_retry_preread_lease_v32.sql`
+- `20260830082610_invoice_retry_release_compatibility_v33.sql`
+- `20260830151714_invoice_retry_closeout_contract_v34.sql`
+
+Exact V32 and V33 are also state-bound forward-recovery points. They may resume
+only the two-file or one-file suffix respectively; hybrid histories, catalogs,
+or readiness results are refused.
+
+Migration 119 keeps `koaryu_release_schema_preflight_v4` returning the historical
+V24 shape. The Payments chain preserves the schedule-shaped V5 response and owns
+V6 through V15. The candidate backend reads V15 and serves only at exact 129/V34;
+older deployed backends retain their corresponding compatibility response during
+the database-first cutover.
+The temporary V22 and
 V23 application bridges were removed after production hosted readback. The
 rollout tool retains exact historical `restored-v22`, `canonical-v23`, and
 `restored-v23-pending-v24` classifications only for diagnosis of a proved
@@ -65,13 +84,31 @@ post-110 rollback set. A database still at exact 110 must classify
 `20260820060216_atomic_bulk_student_archive.sql`,
 `20260822193000_revoke_client_read_access.sql`,
 `20260823193155_revoke_public_function_execute.sql`, and
-`20260824190500_attest_verified_restore_manifest.sql`. If a future approved
+`20260824190500_attest_verified_restore_manifest.sql`,
+`20260825042838_schedule_window_read_rpc.sql`,
+`20260825043911_attest_schedule_window_release.sql`, and the ten Payments
+migrations from `20260826030234_live_billing_reconciliation_v3.sql` through
+`20260830151714_invoice_retry_closeout_contract_v34.sql`. If a future approved
 disaster recovery explicitly returns production to the proved restored V22
 snapshot, it must classify exact `state=restored-v22` and dry-run only
-migrations 116 and 117. These are hypothetical forward-recovery cases, not the
-current live state. In either case, only the authorized operator runs the
-production apply gate, and promotion remains blocked until migration 117
-produces exact V24 readiness and the final raw catalog/provider fingerprint.
+migrations 116 through 129. These are hypothetical forward-recovery cases, not
+the current live state. In either case, only the authorized operator runs the
+production apply gate, and promotion remains blocked until migration 129
+produces exact V34 readiness and the final raw catalog/provider fingerprint.
+
+The V33 retry-hash capture stays enabled throughout the database-first rolling
+deploy. Do not call `finalize_billing_invoice_retry_hash_capture_v33` during the
+database migration. A later operator may disable capture only after recording the
+exact new-backend served SHA and a drain proof, then passing the singleton's current
+revision, candidate SHA, and proof SHA-256 to that RPC. Existing ledger rows remain
+replayable by canonical base hash after finalization; persisted legacy-hash callers
+must fail closed.
+
+The compatibility ledger intentionally has no foreign keys to mutable operation and
+resource rows. Existing maintenance and test cleanup can replace or remove those
+rows. This does not activate stale ledger data: every claim revalidates the ledger's
+operation, alias, resource, invoice, payer, actor, account, generation, and hashes.
+Missing or changed live bindings make a dangling row inert.
 
 ## Gates that will refuse you
 
@@ -81,15 +118,21 @@ deliberately deferred as known issues — makes `mergeStateStatus` `BLOCKED`, an
 `scripts/merge-release-pr.sh` refuses because it requires `CLEAN`. Resolve or fix them
 before starting, and record *why* on each thread if the finding is being deferred.
 
-**Run the rollout tool from the merged working tree.** The tool pins
-`ROLLOUT.finalMigrationCount` to the release's exact migration count. Before the merge,
-`main` and the release branch pin *different* counts, so running `main`'s copy of the
-script against the new candidate reports `integration_complete=false` and inspection
-refuses. Merge first, then `git checkout main && git reset --hard origin/main`, then run.
+**Run the rollout tool from the exact candidate implementation.** For an unmerged
+release, invoke the tool from PR #134's worktree and pass its exact 40-character head.
+The tool creates a detached worktree at that SHA and verifies the 129-file sequence and
+source hashes there. Do not run an older `main` copy of the tool and do not merge the PR
+to obtain the rollout script.
 
 **Staging apply needs more than `--approve-staging-apply`.** It also requires
-`--confirm-project <ref>` and `--approval-record <durable-url>`. The usage text implies
-the staging flag alone is enough; it is not.
+`--confirm-project <ref>` and an exact PR #134 issue-comment URL. The tool reads that
+comment through GitHub and requires its complete body to bind the candidate SHA, target,
+project ref, inspected state, remaining migration count/set, and remaining manifest. It
+also requires the GitHub API record's exact `issue_url` to identify
+`ronchak/Koaryu` PR #134, preventing a matching body on another issue or pull request
+from serving as the approval. The API record must also identify `ronchak` with GitHub
+`author_association=OWNER`; comments from collaborators or outside users are refused.
+A stale approval record is rejected after any code, state, or remainder change.
 
 **Production apply requires a real terminal.** `confirmProductionApply()` throws unless
 both `process.stdin.isTTY` and `process.stdout.isTTY`, then prompts for an exact phrase

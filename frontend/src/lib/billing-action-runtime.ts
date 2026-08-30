@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { clearBillingIdempotencyKeyAfterTerminalError } from "@/lib/billing-idempotency-lifecycle";
 
 type BillingActionRequestOptions = {
   headers?: Record<string, string>;
@@ -13,6 +14,7 @@ type BillingActionRequestOptions = {
 };
 
 type BillingActionRuntimeOptions = {
+  enabledWorkflowIds: ReadonlySet<string>;
   isPreviewMode: boolean;
   refreshBilling: () => Promise<void>;
   setError: (message: string) => void;
@@ -25,12 +27,15 @@ type PostBillingActionOptions = {
   body?: Record<string, unknown>;
   errorMessage?: string;
   path: string;
+  onTerminalIdempotencyError?: () => void;
   refresh?: boolean;
   requestOptions?: BillingActionRequestOptions;
   successMessage: string;
+  workflowId: string;
 };
 
 export function useBillingActionRuntime({
+  enabledWorkflowIds,
   isPreviewMode,
   refreshBilling,
   setError,
@@ -67,12 +72,18 @@ export function useBillingActionRuntime({
     body = {},
     errorMessage = "Billing action could not be completed.",
     path,
+    onTerminalIdempotencyError,
     refresh = true,
     requestOptions,
     successMessage,
+    workflowId,
   }: PostBillingActionOptions) {
     if (isPreviewMode) {
       setMessage(successMessage);
+      return null;
+    }
+    if (!enabledWorkflowIds.has(workflowId)) {
+      setError("This billing workflow is not available for the current studio and role.");
       return null;
     }
     if (!token || !claimAction(action)) {
@@ -86,6 +97,12 @@ export function useBillingActionRuntime({
       }
       return result;
     } catch (err) {
+      if (onTerminalIdempotencyError) {
+        clearBillingIdempotencyKeyAfterTerminalError(
+          err,
+          onTerminalIdempotencyError,
+        );
+      }
       setError(err instanceof Error ? err.message : errorMessage);
       return null;
     } finally {
@@ -99,6 +116,7 @@ export function useBillingActionRuntime({
     isActionLoading: activeAction !== null,
     isLoadingAction: (action: string) => activeAction === action,
     isPreviewMode,
+    canUseWorkflow: (workflowId: string) => isPreviewMode || enabledWorkflowIds.has(workflowId),
     postBillingAction,
     refreshBilling,
     releaseAction,

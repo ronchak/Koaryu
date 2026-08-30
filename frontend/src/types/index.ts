@@ -83,6 +83,8 @@ export type BillingInvoice = ApiContracts.ApiBillingInvoiceResponse;
 export type BillingInvoiceCreate = ApiContracts.ApiBillingInvoiceCreate;
 export type BillingPayment = ApiContracts.ApiBillingPaymentResponse;
 export type BillingPaymentCohortSummary = ApiContracts.ApiBillingPaymentCohortSummaryResponse;
+export type BillingRefundCreate = ApiContracts.ApiBillingRefundCreate;
+export type BillingRefundResponse = ApiContracts.ApiBillingRefundResponse;
 export type ExternalPaymentCreate = ApiContracts.ApiExternalPaymentCreate;
 export type ExportJob = ApiContracts.ApiExportJobResponse;
 
@@ -137,6 +139,7 @@ export type ClassSessionCreate = ApiContracts.ApiClassSessionCreate;
 export type ClassSession = ApiContracts.ApiClassSessionResponse;
 export type AttendanceStatus = ApiContracts.ApiAttendanceResponse["status"];
 export type AttendanceRecord = ApiContracts.ApiAttendanceResponse;
+export type ScheduleWindow = ApiContracts.ApiScheduleWindowResponse;
 
 export type ClassSessionDeleteScope = ApiContracts.ApiClassSessionDeleteScope["scope"];
 

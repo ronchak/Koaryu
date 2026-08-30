@@ -6,6 +6,7 @@ from typing import Any, Literal, Optional
 from fastapi import HTTPException, status
 
 from app.db.supabase import close_supabase_client, create_supabase_client
+from app.services.billing_workflow_catalog import CONNECTED_STRIPE_SINKS, stripe_operation_scope
 from app.services.studio_live_billing_authorizations import (
     ConnectOnboardingBootstrapContext,
     LIVE_SCOPE_REQUIRED_DETAIL,
@@ -17,6 +18,7 @@ from app.services.studio_live_billing_authorizations import (
 StripeMode = Literal["test", "live"]
 
 LIVE_MUTATIONS_DISABLED_DETAIL = "Live Stripe mutations are disabled for this environment."
+STRIPE_OPERATION_UNSUPPORTED_DETAIL = "This Stripe mutation is not owned by a supported billing workflow."
 STRIPE_MODE_MISMATCH_DETAIL = "Stripe mode does not match the configured Stripe API key."
 CORE_SELF_CHECKOUT_OPERATIONS = frozenset({
     "customer.create",
@@ -116,6 +118,12 @@ class StripeMutationPolicy:
             raise StripeMutationBlocked(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=LIVE_SCOPE_REQUIRED_DETAIL,
+            )
+        sink = CONNECTED_STRIPE_SINKS.get(operation)
+        if sink is not None and sink.classification == "unsupported":
+            raise StripeMutationBlocked(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=STRIPE_OPERATION_UNSUPPORTED_DETAIL,
             )
         if live_scope == "connect_payments" and not account_id:
             raise StripeMutationBlocked(
@@ -220,10 +228,4 @@ class StripeMutationPolicy:
 
 
 def stripe_mutation_scope(operation: str) -> Optional[LiveBillingScope]:
-    if operation.startswith(("customer.", "core_", "customer_portal_")):
-        return "core_subscription"
-    if operation.startswith(("connect_account.", "connect_account", "connect_branding", "connect_onboarding", "connect_dashboard")):
-        return "connect_onboarding"
-    if operation.startswith("connected_"):
-        return "connect_payments"
-    return None
+    return stripe_operation_scope(operation)

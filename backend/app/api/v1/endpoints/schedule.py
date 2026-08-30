@@ -14,6 +14,7 @@ from app.schemas.schedule import (
     ClassSessionCreate, ClassSessionResponse,
     ClassSessionDeleteScopeValue,
     AttendanceCheckIn, AttendanceResponse, AttendanceBulkCheckIn,
+    ScheduleWindowResponse,
 )
 from app.services.schedule_service import (
     SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS,
@@ -22,6 +23,72 @@ from app.services.schedule_service import (
 )
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
+
+
+# ---- Page read model ----
+
+@router.get("/window", response_model=ScheduleWindowResponse)
+async def get_schedule_window(
+    start_date: str = Query(
+        ...,
+        description=(
+            "YYYY-MM-DD inclusive start date. Maximum range is "
+            f"{SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS} days."
+        ),
+    ),
+    end_date: str = Query(
+        ...,
+        description=(
+            "YYYY-MM-DD inclusive end date. Maximum range is "
+            f"{SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS} days."
+        ),
+    ),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        return await ScheduleService(client).read_schedule_window(
+            studio_id,
+            start_date,
+            end_date,
+        )
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
+
+
+@router.post("/window/materialize", response_model=ScheduleWindowResponse)
+async def materialize_schedule_window(
+    start_date: str = Query(
+        ...,
+        description=(
+            "YYYY-MM-DD inclusive start date. Maximum range is "
+            f"{SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS} days."
+        ),
+    ),
+    end_date: str = Query(
+        ...,
+        description=(
+            "YYYY-MM-DD inclusive end date. Maximum range is "
+            f"{SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS} days."
+        ),
+    ),
+    studio_id: str = Depends(get_current_write_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        return await ScheduleService(client).materialize_schedule_window(
+            studio_id,
+            start_date,
+            end_date,
+        )
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="bulk",
+    )
 
 
 # ---- Templates ----

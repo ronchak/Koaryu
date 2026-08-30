@@ -5,6 +5,7 @@ import {
   areProviderMutationsEnabled,
   canManageRoutineBilling,
   canStartCoreCheckout,
+  resolveBillingProviderActionCapabilities,
   resolveBillingProviderCopy,
 } from "../src/lib/billing-policy.ts";
 
@@ -27,6 +28,71 @@ describe("billing policy", () => {
     assert.equal(canStartCoreCheckout({ can_start_checkout: true }), true);
     assert.equal(canStartCoreCheckout({ can_start_checkout: false }), false);
     assert.equal(canStartCoreCheckout({}), false);
+  });
+
+  it("keeps checkout and portal grants independent", () => {
+    const portalOnly = resolveBillingProviderActionCapabilities({
+      enabledWorkflowIds: new Set(["core.subscription.portal"]),
+      isPreviewMode: false,
+      role: "admin",
+    });
+    assert.equal(portalOnly.corePortalEnabled, true);
+    assert.equal(portalOnly.coreCheckoutEnabled, false);
+
+    const checkoutOnly = resolveBillingProviderActionCapabilities({
+      enabledWorkflowIds: new Set(["core.subscription.checkout"]),
+      isPreviewMode: false,
+      role: "admin",
+    });
+    assert.equal(checkoutOnly.coreCheckoutEnabled, true);
+    assert.equal(checkoutOnly.corePortalEnabled, false);
+  });
+
+  it("keeps Connect onboarding and dashboard grants independent", () => {
+    const dashboardOnly = resolveBillingProviderActionCapabilities({
+      enabledWorkflowIds: new Set(["connect.dashboard"]),
+      isPreviewMode: false,
+      role: "admin",
+    });
+    assert.equal(dashboardOnly.connectDashboardEnabled, true);
+    assert.equal(dashboardOnly.connectOnboardingEnabled, false);
+
+    const onboardingOnly = resolveBillingProviderActionCapabilities({
+      enabledWorkflowIds: new Set(["connect.onboarding"]),
+      isPreviewMode: false,
+      role: "admin",
+    });
+    assert.equal(onboardingOnly.connectOnboardingEnabled, true);
+    assert.equal(onboardingOnly.connectDashboardEnabled, false);
+  });
+
+  it("fails closed for absent grants and every non-admin role", () => {
+    const absent = resolveBillingProviderActionCapabilities({
+      enabledWorkflowIds: new Set(),
+      isPreviewMode: false,
+      role: "admin",
+    });
+    assert.deepEqual(absent, {
+      connectDashboardEnabled: false,
+      connectOnboardingEnabled: false,
+      coreCheckoutEnabled: false,
+      corePortalEnabled: false,
+    });
+    for (const role of ["front_desk", "instructor", null]) {
+      assert.deepEqual(
+        resolveBillingProviderActionCapabilities({
+          enabledWorkflowIds: new Set([
+            "core.subscription.checkout",
+            "core.subscription.portal",
+            "connect.onboarding",
+            "connect.dashboard",
+          ]),
+          isPreviewMode: false,
+          role,
+        }),
+        absent,
+      );
+    }
   });
 
   it("derives live copy independently from each studio-scoped permit", () => {

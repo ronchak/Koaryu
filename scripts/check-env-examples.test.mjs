@@ -10,6 +10,7 @@ import {
   isSecretLikeKey,
   parseEnvText,
   validateEnvExample,
+  validateBillingTransitionCron,
   validateOperationalAlertCadence,
   validateProviderDeploymentControls,
   validateRenderDockerRuntime,
@@ -483,6 +484,7 @@ envVars:
 services:
   - type: web
     name: koaryu-staging
+    branch: staging
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -507,6 +509,79 @@ services:
       (failure) => failure.includes("staging LIVE_BILLING_ENABLED")
         && failure.includes('must equal "false"'),
     ));
+  });
+
+  it("pins the staging web service to the staging branch", () => {
+    const reviewed = `
+services:
+  - type: web
+    name: koaryu-staging
+    branch: staging
+    healthCheckPath: /health/ready
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: STRIPE_MODE
+        value: test
+      - key: LIVE_BILLING_ENABLED
+        value: "false"
+      - key: CORE_SELF_CHECKOUT_ENABLED
+        value: "false"
+      - key: BILLING_TRANSITION_SCHEDULER_ENABLED
+        value: "true"
+      - key: SUPABASE_URL
+        value: https://nxgsektqsgrtyfhawxbc.supabase.co
+      - key: FRONTEND_URL
+        value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
+      - key: DEMO_RESET_ENABLED
+        value: "false"
+`;
+    assert.deepEqual(validateStagingRenderService(reviewed, []), []);
+    assert.ok(validateStagingRenderService(
+      reviewed.replace("branch: staging", "branch: main"),
+      [],
+    ).some((failure) => failure.includes("branch")));
+    assert.ok(validateStagingRenderService(
+      reviewed.replace("    branch: staging\n", ""),
+      [],
+    ).some((failure) => failure.includes("branch")));
+  });
+
+  it("requires the exact repository-owned staging billing-transition cron", () => {
+    const reviewed = `
+services:
+  - type: cron
+    name: koaryu-billing-transitions-staging
+    runtime: docker
+    plan: starter
+    region: oregon
+    branch: staging
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: python -m app.services.billing_transition_cron
+    schedule: "*/5 * * * *"
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: KOARYU_BACKEND_API_URL
+        value: https://koaryu-staging.onrender.com/api/v1
+      - key: BILLING_TRANSITION_WORKER_SECRET
+        fromService:
+          type: web
+          name: koaryu-staging
+          envVarKey: BILLING_TRANSITION_WORKER_SECRET
+`;
+    assert.deepEqual(validateBillingTransitionCron(reviewed), []);
+    for (const drifted of [
+      reviewed.replace('schedule: "*/5 * * * *"', 'schedule: "0 * * * *"'),
+      reviewed.replace("name: koaryu-staging", "name: koaryu"),
+      reviewed.replace("autoDeployTrigger: 'off'", "autoDeployTrigger: commit"),
+    ]) {
+      assert.ok(validateBillingTransitionCron(drifted).length > 0);
+    }
   });
 
   it("requires manual production promotion while preserving staging and cron controls", () => {

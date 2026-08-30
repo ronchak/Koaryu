@@ -46,6 +46,7 @@ const backendPublicKeys = [
   "STRIPE_MODE",
   "LIVE_BILLING_ENABLED",
   "CORE_SELF_CHECKOUT_ENABLED",
+  "BILLING_TRANSITION_SCHEDULER_ENABLED",
   "OPERATIONAL_ALERTS_ENABLED",
   "BILLING_PLATFORM_FEE_BPS",
   "API_V1_PREFIX",
@@ -98,6 +99,7 @@ const renderCriticalValues = new Map([
   ["STRIPE_MODE", "live"],
   ["LIVE_BILLING_ENABLED", "true"],
   ["CORE_SELF_CHECKOUT_ENABLED", "true"],
+  ["BILLING_TRANSITION_SCHEDULER_ENABLED", "false"],
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
@@ -537,6 +539,7 @@ const stagingRenderCriticalValues = new Map([
   ["STRIPE_MODE", "test"],
   ["LIVE_BILLING_ENABLED", "false"],
   ["CORE_SELF_CHECKOUT_ENABLED", "false"],
+  ["BILLING_TRANSITION_SCHEDULER_ENABLED", "true"],
   ["SUPABASE_URL", "https://nxgsektqsgrtyfhawxbc.supabase.co"],
   ["FRONTEND_URL", "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"],
   ["DEMO_RESET_ENABLED", "false"],
@@ -554,6 +557,9 @@ export function validateStagingRenderService(renderSource, secretKeys) {
   }
   if (renderScalar(block, "healthCheckPath") !== "/health/ready") {
     failures.push("render.yaml: staging healthCheckPath must enforce /health/ready");
+  }
+  if (renderScalar(block, "branch") !== "staging") {
+    failures.push("render.yaml: staging web service branch must equal \"staging\"");
   }
 
   const entries = extractRenderEnvEntries(block);
@@ -582,6 +588,45 @@ export function validateStagingRenderService(renderSource, secretKeys) {
     }
   }
 
+  return failures;
+}
+
+export function validateBillingTransitionCron(renderSource) {
+  const failures = [];
+  const block = renderServiceBlock(renderSource, "koaryu-billing-transitions-staging");
+  if (!block) {
+    return ["render.yaml: staging billing-transition cron is missing"];
+  }
+  if (!/^  - type:\s*cron\s*$/m.test(block)) {
+    failures.push("render.yaml: staging billing-transition service must be a cron job");
+  }
+  for (const [key, expected] of [
+    ["runtime", "docker"],
+    ["plan", "starter"],
+    ["region", "oregon"],
+    ["branch", "staging"],
+    ["rootDir", "backend"],
+    ["dockerfilePath", "./Dockerfile"],
+    ["dockerContext", "."],
+    ["dockerCommand", "python -m app.services.billing_transition_cron"],
+    ["schedule", "*/5 * * * *"],
+    ["autoDeployTrigger", "off"],
+  ]) {
+    if (renderScalar(block, key) !== expected) {
+      failures.push(
+        `render.yaml: staging billing-transition cron ${key} must equal ${JSON.stringify(expected)}`,
+      );
+    }
+  }
+  for (const required of [
+    /- key:\s*ENVIRONMENT\s*\n\s*value:\s*staging/,
+    /- key:\s*KOARYU_BACKEND_API_URL\s*\n\s*value:\s*https:\/\/koaryu-staging\.onrender\.com\/api\/v1/,
+    /- key:\s*BILLING_TRANSITION_WORKER_SECRET\s*\n\s*fromService:\s*\n\s*type:\s*web\s*\n\s*name:\s*koaryu-staging\s*\n\s*envVarKey:\s*BILLING_TRANSITION_WORKER_SECRET/,
+  ]) {
+    if (!required.test(block)) {
+      failures.push("render.yaml: staging billing-transition cron identity or secret reference drifted");
+    }
+  }
   return failures;
 }
 
@@ -906,6 +951,7 @@ export function runEnvExampleCheck() {
     renderExampleValues,
   ));
   failures.push(...validateStagingRenderService(renderSource, backendPlaceholderKeys));
+  failures.push(...validateBillingTransitionCron(renderSource));
   try {
     failures.push(...validateRenderDockerRuntime(
       renderSource,

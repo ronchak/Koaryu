@@ -3,8 +3,9 @@ import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { api } from "@/lib/api";
 import {
   beginScheduleMutationState,
-  buildScheduleRangeRequest,
   compareSessions,
+  discardSupersededScheduleWindowFailure,
+  fetchScheduleWindowRange,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
   isScheduleRangeCommitCurrent,
@@ -35,8 +36,6 @@ import type {
   ClassTemplateCreate,
   StaffRoleName,
 } from "@/types";
-
-const SCHEDULE_ATTENDANCE_BULK_THRESHOLD = 3;
 
 interface UseStoreScheduleActionsOptions {
   attendanceRef: StoreRef<AttendanceRecord[]>;
@@ -188,43 +187,32 @@ export function useStoreScheduleActions({
         mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
         requestSequenceAtStart: attendanceRequestSequence,
       });
-      const rangeRequest = buildScheduleRangeRequest(
-        startDate,
-        endDate,
-        intent,
-        canMaterializeSchedule
+      const isCurrentScheduleWindowRead = () =>
+        isScheduleRangeCommitCurrent(isCurrentRequest(), attendanceIsCurrent());
+      const scheduleWindow = await discardSupersededScheduleWindowFailure(
+        () => fetchScheduleWindowRange(
+          api,
+          request.token,
+          startDate,
+          endDate,
+          intent,
+          canMaterializeSchedule
+        ),
+        isCurrentScheduleWindowRead
       );
-      const rangeSessions = rangeRequest.method === "POST"
-        ? await api.post<ClassSession[]>(
-            rangeRequest.path,
-            {},
-            request.token
-          )
-        : await api.get<ClassSession[]>(rangeRequest.path, request.token);
-      const attendanceQuery = rangeSessions.length >= SCHEDULE_ATTENDANCE_BULK_THRESHOLD
-        ? `/schedule/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`
-        : `/schedule/attendance?${rangeSessions
-            .map((sessionItem) => `session_ids=${encodeURIComponent(sessionItem.id)}`)
-            .join("&")}`;
-
-      let attendanceRecords: AttendanceRecord[] | null = [];
-      if (rangeSessions.length > 0) {
-        try {
-          attendanceRecords = normalizeAttendanceRecords(
-            await api.get<AttendanceRecord[]>(attendanceQuery, request.token)
-          );
-        } catch (error) {
-          attendanceRecords = null;
-          console.error("Failed to refresh schedule attendance", error);
-        }
+      if (!scheduleWindow) {
+        return {
+          committed: false,
+          value: sessionsRef.current.filter(
+            (session) => session.date >= startDate && session.date <= endDate
+          ),
+        };
       }
+      const rangeSessions = scheduleWindow.sessions;
+      const attendanceRecords = normalizeAttendanceRecords(scheduleWindow.attendance);
 
-      if (!isScheduleRangeCommitCurrent(isCurrentRequest(), attendanceIsCurrent())) {
+      if (!isCurrentScheduleWindowRead()) {
         return { committed: false, value: rangeSessions };
-      }
-
-      if (attendanceRecords === null) {
-        throw new Error("Schedule attendance could not be loaded.");
       }
 
       const replacedSessionIds = Array.from(
@@ -236,6 +224,7 @@ export function useStoreScheduleActions({
         ])
       );
 
+      setTemplates(scheduleWindow.templates);
       setSessions((current) => mergeSessionsForRange(current, rangeSessions, startDate, endDate));
       setAttendance((current) =>
         mergeAttendanceForSessions(current, attendanceRecords, replacedSessionIds)
@@ -258,6 +247,7 @@ export function useStoreScheduleActions({
     sessionsRef,
     setAttendance,
     setSessions,
+    setTemplates,
     waitForScheduleMutationSettlement,
   ]);
 

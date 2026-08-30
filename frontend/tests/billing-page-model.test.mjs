@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   buildBillingPageModel,
   currentMonthPaymentTotals,
+  paymentAdjustmentNotice,
 } from "../src/lib/billing-page-model.ts";
 import {
   PREVIEW_CONNECT,
@@ -155,6 +156,18 @@ const DEFAULT_INPUT = {
 };
 
 describe("billing page model", () => {
+  it("shows bounded reconciliation copy without exposing internal reason codes", () => {
+    const flaggedPayment = payment("flagged", "succeeded", 10000, {
+      adjustment_reconciliation_required: true,
+      adjustment_reconciliation_reason_code: "provider_internal_reason_123",
+    });
+
+    const notice = paymentAdjustmentNotice(flaggedPayment);
+    assert.equal(notice, "Provider adjustments need reconciliation before these totals are final.");
+    assert.doesNotMatch(notice, /provider_internal_reason_123/);
+    assert.equal(paymentAdjustmentNotice(payment("clean", "succeeded", 10000)), null);
+  });
+
   it("derives billing metrics, lookup maps, and setup flags", () => {
     const model = buildBillingPageModel({
       ...DEFAULT_INPUT,
@@ -164,10 +177,13 @@ describe("billing page model", () => {
         period_end: "2026-06-01T00:00:00Z",
         timezone: "UTC",
         payment_count: 2,
+        gross_paid_amount_cents: 15000,
+        refunded_amount_cents: 2500,
+        disputed_amount_cents: 0,
         stripe_net_amount_cents: 10000,
         external_net_amount_cents: 2500,
         net_amount_cents: 12500,
-        scope: "payment_cohort_net_of_cumulative_refunds",
+        scope: "payment_cohort_net_of_confirmed_adjustments",
         disclosure: "test cohort",
       },
       billingEnrollments: [enrollment("active-enrollment", "active"), enrollment("ended-enrollment", "ended")],
@@ -244,6 +260,12 @@ describe("billing page model", () => {
         processed_at: "2026-05-15T00:00:00.000Z",
         refunded_amount_cents: 3000,
       }),
+      payment("active-dispute", "disputed", 5000, {
+        processed_at: "2026-05-16T00:00:00.000Z",
+        refunded_amount_cents: 1000,
+        disputed_amount_cents: 2500,
+        net_collected_amount_cents: 1500,
+      }),
       payment("failed", "failed", 7000, {
         processed_at: "2026-05-15T00:00:00.000Z",
       }),
@@ -251,9 +273,9 @@ describe("billing page model", () => {
 
     assert.deepEqual(totals, {
       externalPaymentTotal: 4000,
-      paidRevenue: 11500,
-      paymentCount: 3,
-      stripePaymentTotal: 7500,
+      paidRevenue: 13000,
+      paymentCount: 4,
+      stripePaymentTotal: 9000,
     });
   });
 
@@ -303,10 +325,13 @@ describe("billing page model", () => {
         period_end: "2026-06-01T00:00:00Z",
         timezone: "UTC",
         payment_count: 250,
+        gross_paid_amount_cents: 50000,
+        refunded_amount_cents: 5000,
+        disputed_amount_cents: 0,
         stripe_net_amount_cents: 40000,
         external_net_amount_cents: 5000,
         net_amount_cents: 45000,
-        scope: "payment_cohort_net_of_cumulative_refunds",
+        scope: "payment_cohort_net_of_confirmed_adjustments",
         disclosure: "test cohort",
       },
       billingPayments: [payment("limited-row", "succeeded", 999999)],

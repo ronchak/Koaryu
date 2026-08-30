@@ -1,12 +1,26 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
 import type { BillingActionRuntime } from "@/lib/billing-action-runtime";
 import { buildBillingPayerCreatePayload } from "@/lib/billing-page-form-model";
-import type { BillingLinkResponse, BillingPayer } from "@/types";
+import {
+  buildPayerSyncRequest,
+  clearPersistedPayerOperationRequestKey,
+  resolvePersistedPayerOperationRequestKey,
+  type PayerOperationIdentity,
+  type PayerSetupAttempt,
+} from "@/lib/billing-payer-setup-model";
+import { executePayerAutopaySetup } from "@/lib/billing-payer-setup-action";
+import type { BillingPayer } from "@/types";
 
-export function useBillingPayerActions(runtime: BillingActionRuntime) {
+export function useBillingPayerActions(
+  runtime: BillingActionRuntime,
+  identity: PayerOperationIdentity | null,
+) {
+  const autopaySetupKeysRef = useRef(new Map<string, string>());
+  const autopaySetupAttemptsRef = useRef(new Map<string, PayerSetupAttempt>());
+  const payerSyncKeysRef = useRef(new Map<string, string>());
   const [payerName, setPayerName] = useState("");
   const [payerEmail, setPayerEmail] = useState("");
   const [payerPhone, setPayerPhone] = useState("");
@@ -17,26 +31,60 @@ export function useBillingPayerActions(runtime: BillingActionRuntime) {
     setPayerPhone("");
   }
 
-  async function handlePayerSync(payerId: string) {
-    await runtime.postBillingAction<BillingPayer>({
+  async function handlePayerSync(
+    payerId: string,
+    options: { startNewRequest?: boolean } = {},
+  ) {
+    const requestKey = resolvePersistedPayerOperationRequestKey({
+      identity,
+      keysByPayer: payerSyncKeysRef.current,
+      operation: "payer.sync",
+      payerId,
+      startNewRequest: options.startNewRequest,
+    });
+    const request = buildPayerSyncRequest(requestKey);
+    const result = await runtime.postBillingAction<BillingPayer>({
       action: `payer-sync:${payerId}`,
       path: `/billing/payers/${payerId}/sync`,
+      onTerminalIdempotencyError: () => clearPersistedPayerOperationRequestKey({
+        identity,
+        keysByPayer: payerSyncKeysRef.current,
+        operation: "payer.sync",
+        payerId,
+      }),
+      refresh: false,
+      requestOptions: { headers: request.headers },
       successMessage: "Payer sync requested.",
+      workflowId: "payer.sync",
     });
+    if (result) {
+      clearPersistedPayerOperationRequestKey({
+        identity,
+        keysByPayer: payerSyncKeysRef.current,
+        operation: "payer.sync",
+        payerId,
+      });
+      try {
+        await runtime.refreshBilling();
+      } catch {
+        runtime.setError("Payer synced, but billing data could not be refreshed.");
+      }
+    }
+    return result;
   }
 
-  async function handleAutopaySetup(payerId: string) {
-    const accepted = window.confirm("Confirm this payer has authorized Koaryu autopay terms for future charges.");
-    if (!accepted) return;
-    const link = await runtime.postBillingAction<BillingLinkResponse>({
-      action: `autopay-setup:${payerId}`,
-      body: { return_url: window.location.href, terms_accepted: true },
-      path: `/billing/payers/${payerId}/autopay/setup-link`,
-      successMessage: "Opening Stripe autopay setup.",
+  async function handleAutopaySetup(
+    payer: BillingPayer,
+  ) {
+    return executePayerAutopaySetup({
+      attemptsByPayer: autopaySetupAttemptsRef.current,
+      identity,
+      keysByPayer: autopaySetupKeysRef.current,
+      origin: window.location.origin,
+      payer,
+      post: api.post,
+      runtime,
     });
-    if (link?.url) {
-      window.location.assign(link.url);
-    }
   }
 
   async function handleAutopayDisable(payerId: string) {
@@ -44,6 +92,7 @@ export function useBillingPayerActions(runtime: BillingActionRuntime) {
       action: `autopay-disable:${payerId}`,
       path: `/billing/payers/${payerId}/autopay/disable`,
       successMessage: "Autopay disabled.",
+      workflowId: "payer.autopay.disable",
     });
   }
 
@@ -59,6 +108,10 @@ export function useBillingPayerActions(runtime: BillingActionRuntime) {
     if (runtime.isPreviewMode) {
       runtime.setMessage("Demo payer created locally.");
       resetPayerForm();
+      return;
+    }
+    if (!runtime.canUseWorkflow("payer.create")) {
+      runtime.setError("Payer creation is not available for the current studio and role.");
       return;
     }
     if (!runtime.token || !runtime.claimAction("create-payer")) {

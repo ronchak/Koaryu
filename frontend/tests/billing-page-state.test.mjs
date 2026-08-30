@@ -3,11 +3,43 @@ import { describe, it } from "node:test";
 
 import {
   getBillingInitialLoadAction,
+  getBillingTabFromSearch,
+  getBillingUrlForTab,
   getBillingUrlAfterConnectReturn,
   resolveBillingAuxiliaryReadiness,
   shouldSettleBillingLoadEarly,
   shouldShowBillingLoading,
 } from "../src/lib/billing-page-state.ts";
+
+describe("getBillingTabFromSearch", () => {
+  it("selects a directly linked billing tab", () => {
+    assert.equal(getBillingTabFromSearch("?tab=invoices"), "invoices");
+    assert.equal(getBillingTabFromSearch("?connect=return&tab=reports"), "reports");
+  });
+
+  it("uses the existing overview default for absent or invalid tabs", () => {
+    assert.equal(getBillingTabFromSearch(""), "overview");
+    assert.equal(getBillingTabFromSearch("?tab=unknown"), "overview");
+    assert.equal(getBillingTabFromSearch("?tab=Invoices"), "overview");
+  });
+});
+
+describe("getBillingUrlForTab", () => {
+  it("preserves unrelated query state while replacing the active tab", () => {
+    assert.equal(
+      getBillingUrlForTab("?notice=1&tab=plans", "invoices"),
+      "/billing?notice=1&tab=invoices",
+    );
+  });
+
+  it("uses the canonical URL for overview without damaging other parameters", () => {
+    assert.equal(getBillingUrlForTab("?tab=reports", "overview"), "/billing");
+    assert.equal(
+      getBillingUrlForTab("?tab=reports&notice=1", "overview"),
+      "/billing?notice=1",
+    );
+  });
+});
 
 describe("getBillingInitialLoadAction", () => {
   it("routes Stripe Connect returns directly to status synchronization", () => {

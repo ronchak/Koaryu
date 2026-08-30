@@ -22,6 +22,25 @@ export function areProviderMutationsEnabled(
   return isPreviewMode || serverCapability;
 }
 
+export function resolveBillingProviderActionCapabilities({
+  enabledWorkflowIds,
+  isPreviewMode,
+  role,
+}: {
+  enabledWorkflowIds: ReadonlySet<string>;
+  isPreviewMode: boolean;
+  role: StaffRoleName | null | undefined;
+}) {
+  const enabled = (workflowId: string) => role === "admin"
+    && areProviderMutationsEnabled(isPreviewMode, enabledWorkflowIds.has(workflowId));
+  return {
+    connectDashboardEnabled: enabled("connect.dashboard"),
+    connectOnboardingEnabled: enabled("connect.onboarding"),
+    coreCheckoutEnabled: enabled("core.subscription.checkout"),
+    corePortalEnabled: enabled("core.subscription.portal"),
+  };
+}
+
 export function canStartCoreCheckout(
   billingPlatform: Pick<PlatformBillingStatus, "can_start_checkout"> | null
 ): boolean {

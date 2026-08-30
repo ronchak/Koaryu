@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from app.services.stripe_mutation_policy import (
     LIVE_MUTATIONS_DISABLED_DETAIL,
     STRIPE_MODE_MISMATCH_DETAIL,
+    STRIPE_OPERATION_UNSUPPORTED_DETAIL,
     StripeMutationPolicy,
 )
 from app.services.studio_live_billing_authorizations import (
@@ -296,6 +297,17 @@ class _AuthorizedStore:
 
 
 class StripeMutationPolicyTest(unittest.TestCase):
+    def test_unowned_connected_customer_default_mutation_is_explicitly_unsupported(self):
+        with self.assertRaises(HTTPException) as raised:
+            StripeMutationPolicy(_settings(mode="test")).issue_permit(
+                "connected_customer.default_payment_method.update",
+                studio_id="studio_1",
+                account_id="acct_1",
+            )
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, STRIPE_OPERATION_UNSUPPORTED_DETAIL)
+
     def test_test_mode_mutations_require_explicit_scope_then_run_without_live_grant(self):
         service = StripeService()
         service.settings = _settings(mode="test")
@@ -503,10 +515,10 @@ class StripeMutationPolicyTest(unittest.TestCase):
                 self.assertEqual(permit.authorization_source, "core_self_checkout")
                 self.assertEqual(permit.studio_id, "studio_1")
 
-        for operation, account_id in (
-            ("customer.update", None),
-            ("connect_account.create", None),
-            ("connected_invoice.pay", "acct_1"),
+        for operation, account_id, expected_detail in (
+            ("customer.update", None, LIVE_SCOPE_REQUIRED_DETAIL),
+            ("connect_account.create", None, LIVE_MUTATIONS_DISABLED_DETAIL),
+            ("connected_invoice.pay", "acct_1", LIVE_MUTATIONS_DISABLED_DETAIL),
         ):
             with self.subTest(operation=operation), self.assertRaises(HTTPException) as raised:
                 policy.issue_permit(
@@ -514,7 +526,7 @@ class StripeMutationPolicyTest(unittest.TestCase):
                     studio_id="studio_1",
                     account_id=account_id,
                 )
-            self.assertEqual(raised.exception.detail, LIVE_MUTATIONS_DISABLED_DETAIL)
+            self.assertEqual(raised.exception.detail, expected_detail)
 
     def test_core_self_checkout_switch_still_requires_explicit_studio_scope(self):
         policy = StripeMutationPolicy(_settings(
@@ -615,6 +627,7 @@ class StripeMutationPolicyTest(unittest.TestCase):
             "create_connected_refund",
             "create_connected_subscription",
             "create_connected_subscription_item",
+            "create_connected_subscription_schedule",
             "create_core_checkout_session",
             "create_customer",
             "create_customer_portal_session",
@@ -623,6 +636,7 @@ class StripeMutationPolicyTest(unittest.TestCase):
             "expire_core_checkout_session",
             "finalize_connected_invoice",
             "pay_connected_invoice",
+            "release_connected_subscription_schedule",
             "send_connected_invoice",
             "set_connected_customer_default_payment_method",
             "update_connect_account_branding",
@@ -630,6 +644,7 @@ class StripeMutationPolicyTest(unittest.TestCase):
             "update_connected_product",
             "update_connected_subscription",
             "update_connected_subscription_item",
+            "update_connected_subscription_schedule",
             "upload_branding_file",
             "void_connected_invoice",
         }
@@ -690,10 +705,13 @@ class StripeMutationPolicyTest(unittest.TestCase):
             ("stripe_service.py", "create_connected_price", "stripe.Price.create"),
             ("stripe_service.py", "create_setup_checkout_session", "stripe.checkout.Session.create"),
             ("stripe_service.py", "create_connected_subscription", "stripe.Subscription.create"),
+            ("stripe_service.py", "create_connected_subscription_schedule", "stripe.SubscriptionSchedule.create"),
             ("stripe_service.py", "create_connected_subscription_item", "stripe.SubscriptionItem.create"),
             ("stripe_service.py", "update_connected_subscription_item", "stripe.SubscriptionItem.modify"),
             ("stripe_service.py", "delete_connected_subscription_item", "stripe.SubscriptionItem.delete"),
             ("stripe_service.py", "update_connected_subscription", "stripe.Subscription.modify"),
+            ("stripe_service.py", "update_connected_subscription_schedule", "stripe.SubscriptionSchedule.modify"),
+            ("stripe_service.py", "release_connected_subscription_schedule", "stripe.SubscriptionSchedule.release"),
             ("stripe_service.py", "cancel_connected_subscription", "stripe.Subscription.cancel"),
             ("stripe_service.py", "create_connected_invoice_item", "stripe.InvoiceItem.create"),
             ("stripe_service.py", "create_connected_invoice", "stripe.Invoice.create"),
@@ -706,6 +724,11 @@ class StripeMutationPolicyTest(unittest.TestCase):
             ("stripe_service.py", "expire_core_checkout_session", "stripe.checkout.Session.expire"),
             ("stripe_service.py", "cancel_core_subscription", "stripe.Subscription.cancel"),
             ("stripe_service.py", "create_customer_portal_session", "stripe.billing_portal.Session.create"),
+            ("billing_enrollment_transitions.py", "_mutate_provider", "stripe.update_connected_subscription"),
+            ("billing_enrollment_transitions.py", "_mutate_provider", "stripe.cancel_connected_subscription"),
+            ("billing_enrollment_transitions.py", "_mutate_provider", "stripe.delete_connected_subscription_item"),
+            ("billing_enrollment_transitions.py", "_mutate_provider", "stripe.update_connected_subscription_item"),
+            ("billing_enrollment_transitions.py", "_mutate_provider", "stripe.release_connected_subscription_schedule"),
         }}
         # The source-wide HTTP mutation guard intentionally inventories this
         # test-only webhook smoke request even though its destination is Koaryu,

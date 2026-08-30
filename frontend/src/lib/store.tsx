@@ -62,10 +62,11 @@ import {
   MOCK_STAFF_MEMBERS,
 } from "@/lib/preview-studio-data";
 import {
-  buildScheduleRangeRequest,
   createScheduleReconciliationQueue,
   createScheduleCoordinatorState,
   compareSessions,
+  discardSupersededScheduleWindowFailure,
+  fetchScheduleWindowRange,
   isAuthoritativeScheduleReady,
   isScheduleReadCurrent,
   mergeAttendanceForSessions,
@@ -305,79 +306,61 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       rangeRequestSequence,
     };
 
-    const rangeRequest = buildScheduleRangeRequest(
-      startDate,
-      endDate,
-      intent,
-      canMaterializeScheduleRange(currentRole)
-    );
-    const sessionsRequest = rangeRequest.method === "POST"
-      ? api.post<ClassSession[]>(rangeRequest.path, {}, request.token)
-      : api.get<ClassSession[]>(rangeRequest.path, request.token);
-    const [templatesResult, sessionsResult, attendanceResult] = await Promise.allSettled([
-      api.get<ClassTemplate[]>("/schedule/templates", request.token),
-      sessionsRequest,
-      api.get<AttendanceRecord[]>(
-        `/schedule/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`,
-        request.token
+    const isCurrentScheduleWindowRead = () => {
+      const current = scheduleCoordinatorRef.current;
+      const sessionsAreCurrent = isScheduleReadCurrent({
+        authCurrent: request.isCurrent(),
+        currentGeneration: current.generation,
+        currentDataRevision: current.dataRevision,
+        currentRequestSequence: current.rangeRequestSequence,
+        dataRevisionAtStart: dataRevision,
+        generationAtStart: generation,
+        mutationsInFlight: current.mutationsInFlight,
+        requestSequenceAtStart: rangeRequestSequence,
+      });
+      const attendanceIsCurrent = isScheduleReadCurrent({
+        authCurrent: request.isCurrent(),
+        currentGeneration: current.generation,
+        currentDataRevision: current.dataRevision,
+        currentRequestSequence: current.attendanceRequestSequence,
+        dataRevisionAtStart: dataRevision,
+        generationAtStart: generation,
+        mutationsInFlight: current.mutationsInFlight,
+        requestSequenceAtStart: attendanceRequestSequence,
+      });
+      return sessionsAreCurrent && attendanceIsCurrent;
+    };
+    const scheduleWindow = await discardSupersededScheduleWindowFailure(
+      () => fetchScheduleWindowRange(
+        api,
+        request.token,
+        startDate,
+        endDate,
+        intent,
+        canMaterializeScheduleRange(currentRole)
       ),
-    ]);
-
-    const current = scheduleCoordinatorRef.current;
-    const sessionsAreCurrent = isScheduleReadCurrent({
-      authCurrent: request.isCurrent(),
-      currentGeneration: current.generation,
-      currentDataRevision: current.dataRevision,
-      currentRequestSequence: current.rangeRequestSequence,
-      dataRevisionAtStart: dataRevision,
-      generationAtStart: generation,
-      mutationsInFlight: current.mutationsInFlight,
-      requestSequenceAtStart: rangeRequestSequence,
-    });
-    const attendanceIsCurrent = isScheduleReadCurrent({
-      authCurrent: request.isCurrent(),
-      currentGeneration: current.generation,
-      currentDataRevision: current.dataRevision,
-      currentRequestSequence: current.attendanceRequestSequence,
-      dataRevisionAtStart: dataRevision,
-      generationAtStart: generation,
-      mutationsInFlight: current.mutationsInFlight,
-      requestSequenceAtStart: attendanceRequestSequence,
-    });
-    if (!sessionsAreCurrent || !attendanceIsCurrent) {
-      return;
-    }
-
-    const rejected = [templatesResult, sessionsResult, attendanceResult].find(
-      (result) => result.status === "rejected"
+      isCurrentScheduleWindowRead
     );
-    if (rejected?.status === "rejected") {
-      throw rejected.reason;
-    }
 
-    if (
-      templatesResult.status !== "fulfilled"
-      || sessionsResult.status !== "fulfilled"
-      || attendanceResult.status !== "fulfilled"
-    ) {
+    if (!scheduleWindow || !isCurrentScheduleWindowRead()) {
       return;
     }
 
-    const rangeSessions = sessionsResult.value;
+    const rangeSessions = scheduleWindow.sessions;
     const replacedSessionIds = Array.from(new Set([
       ...sessionsRef.current
         .filter((session) => session.date >= startDate && session.date <= endDate)
         .map((session) => session.id),
       ...rangeSessions.map((session) => session.id),
     ]));
-    setTemplates(templatesResult.value);
+    setTemplates(scheduleWindow.templates);
     setSessions((existing) =>
       mergeSessionsForRange(existing, rangeSessions, startDate, endDate)
     );
     setAttendance((existing) =>
       mergeAttendanceForSessions(
         existing,
-        normalizeAttendanceRecords(attendanceResult.value),
+        normalizeAttendanceRecords(scheduleWindow.attendance),
         replacedSessionIds
       )
     );

@@ -233,7 +233,7 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(invoice["last_stripe_event_created"], 300)
         self.assertEqual(service.supabase.tables["billing_payments"], [])
 
-    def test_same_second_invoice_paid_event_does_not_regress_refund_state(self):
+    def test_same_second_invoice_paid_event_repairs_legacy_refund_derived_receivable_state(self):
         for status_value, paid, remaining in (
             ("partially_refunded", 10000, 2900),
             ("refunded", 0, 0),
@@ -270,9 +270,9 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
                 }, "acct_1", "invoice.paid", event_created=200)
 
                 invoice = service.supabase.tables["billing_invoices"][0]
-                self.assertEqual(invoice["status"], status_value)
-                self.assertEqual(invoice["amount_paid_cents"], paid)
-                self.assertEqual(invoice["amount_remaining_cents"], remaining)
+                self.assertEqual(invoice["status"], "paid")
+                self.assertEqual(invoice["amount_paid_cents"], 12900)
+                self.assertEqual(invoice["amount_remaining_cents"], 0)
                 self.assertEqual(invoice["last_stripe_event_created"], 200)
 
     def test_invoice_metadata_for_other_connected_account_is_ignored(self):
