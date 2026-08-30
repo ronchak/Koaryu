@@ -1642,6 +1642,9 @@ class BillingInvoiceOperationWorkflow:
                 claimed,
                 expected_studio_id=studio_id,
                 expected_operation_type=operation_type,
+                expected_resource_type=str(resource_type or ""),
+                expected_resource_id=str(resource_id or ""),
+                expected_payer_id=str(resource_payer_id or ""),
                 requested_caller_request_key=caller_request_key,
                 expected_account_id=account_id,
                 expected_generation=generation,
@@ -1665,13 +1668,17 @@ class BillingInvoiceOperationWorkflow:
         *,
         expected_studio_id: str,
         expected_operation_type: str,
+        expected_resource_type: str,
+        expected_resource_id: str,
+        expected_payer_id: str,
         requested_caller_request_key: str,
         expected_account_id: str,
         expected_generation: int,
         acquired_lease_owner: str,
     ) -> tuple[str, str, str]:
         operation = claimed.get("operation")
-        if not isinstance(operation, dict):
+        resource = claimed.get("resource")
+        if not isinstance(operation, dict) or not isinstance(resource, dict):
             raise HTTPException(
                 status_code=503,
                 detail="Billing operation resource state could not be verified.",
@@ -1711,7 +1718,25 @@ class BillingInvoiceOperationWorkflow:
             == requested_caller_request_key
             and claimed.get("canonical_caller_request_key")
             == operation.get("caller_request_key")
+            and resource.get("studio_id") == expected_studio_id
+            and resource.get("operation_type") == expected_operation_type
+            and resource.get("resource_type") == expected_resource_type
+            and resource.get("resource_id") == expected_resource_id
+            and resource.get("payer_id") == expected_payer_id
+            and (terminal or resource.get("operation_id") == operation.get("id"))
         )
+        if (
+            not terminal
+            and operation.get("lease_owner") not in {None, acquired_lease_owner}
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    INVOICE_VOID_AMBIGUOUS_DETAIL
+                    if expected_operation_type == INVOICE_VOID_OPERATION_TYPE
+                    else INVOICE_FINALIZE_AMBIGUOUS_DETAIL
+                ),
+            )
         lease_valid = terminal or (
             busy
             and operation.get("lease_owner") not in {None, acquired_lease_owner}

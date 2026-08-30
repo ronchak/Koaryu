@@ -16,9 +16,9 @@ import hmac
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from uuid import uuid4
@@ -43,10 +43,15 @@ BASE_STATE_KEYS = {
     "test_clock_id",
     "caller_key_sha256",
     "provider_mutation_count",
-    "provider_readback_count",
+    "provider_create_response_count",
+    "provider_retrieve_count",
     "automatic_retry_count",
 }
-PROVIDER_STATE_KEYS = BASE_STATE_KEYS | {"provider_customer_id"}
+PROVIDER_STATE_KEYS = BASE_STATE_KEYS | {
+    "provider_customer_id",
+    "recovery_proof_sha256",
+    "provider_evidence",
+}
 OPERATION_STATE_KEYS = PROVIDER_STATE_KEYS | {
     "operation_id",
     "resource_claim_id",
@@ -118,8 +123,8 @@ def validate_state_phase(state: Mapping[str, Any]) -> None:
     expected_keys = {
         "armed": BASE_STATE_KEYS,
         "provider_created": PROVIDER_STATE_KEYS,
+        "provider_response_verified": PROVIDER_STATE_KEYS,
         "reconciliation_required": OPERATION_STATE_KEYS,
-        "provider_readback_in_flight": OPERATION_STATE_KEYS,
         "provider_verified": VERIFIED_STATE_KEYS,
         "recovery_authorized": VERIFIED_STATE_KEYS,
     }.get(str(phase))
@@ -129,22 +134,23 @@ def validate_state_phase(state: Mapping[str, Any]) -> None:
         state.get("schema_version") != STATE_SCHEMA_VERSION
         or state.get("provider_mutation_count") not in {0, 1}
         or state.get("automatic_retry_count") != 0
-        or state.get("provider_readback_count") not in {0, 1}
+        or state.get("provider_create_response_count") not in {0, 1}
+        or state.get("provider_retrieve_count") != 0
     ):
         raise OperatorError("ambiguity state counters are invalid")
     if phase == "armed" and (
         state.get("provider_mutation_count") != 0
-        or state.get("provider_readback_count") != 0
+        or state.get("provider_create_response_count") != 0
     ):
         raise OperatorError("armed ambiguity state counters are invalid")
-    if phase in {"provider_created", "reconciliation_required", "provider_readback_in_flight"} and (
+    if phase in {"provider_created", "provider_response_verified", "reconciliation_required"} and (
         state.get("provider_mutation_count") != 1
-        or state.get("provider_readback_count") != 0
+        or state.get("provider_create_response_count") != 1
     ):
-        raise OperatorError("pre-readback ambiguity state counters are invalid")
+        raise OperatorError("pre-authorization ambiguity state counters are invalid")
     if phase in {"provider_verified", "recovery_authorized"} and (
         state.get("provider_mutation_count") != 1
-        or state.get("provider_readback_count") != 1
+        or state.get("provider_create_response_count") != 1
         or not re.fullmatch(r"[0-9a-f]{64}", str(state.get("recovery_proof_sha256") or ""))
         or not isinstance(state.get("provider_evidence"), dict)
     ):
@@ -156,31 +162,113 @@ def _state_hmac(state: Mapping[str, Any], integrity_key: str) -> str:
     return hmac.new(integrity_key.encode("utf-8"), encoded, hashlib.sha256).hexdigest()
 
 
+def validate_integrity_key(integrity_key: str, caller_key: str) -> None:
+    if len(integrity_key) != 64:
+        raise OperatorError("state integrity key must be exactly 64 hexadecimal characters")
+    try:
+        key_bytes = bytes.fromhex(integrity_key)
+    except ValueError as exc:
+        raise OperatorError("state integrity key must be exactly 64 hexadecimal characters") from exc
+    if len(key_bytes) != 32:
+        raise OperatorError("state integrity key must decode to exactly 32 bytes")
+    caller_digest = hashlib.sha256(caller_key.encode("utf-8")).digest()
+    if integrity_key == caller_key or hmac.compare_digest(key_bytes, caller_digest):
+        raise OperatorError("state integrity key must be independent of the caller key")
+
+
+def _absolute_lexical_path(path: Path) -> Path:
+    if ".." in path.parts:
+        raise OperatorError("private paths must not contain parent traversal")
+    return Path(os.path.abspath(path))
+
+
+def _open_directory_nofollow(path: Path) -> int:
+    absolute = _absolute_lexical_path(path)
+    descriptor = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for component in absolute.parts[1:]:
+            next_descriptor = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=descriptor,
+            )
+            os.close(descriptor)
+            descriptor = next_descriptor
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _safe_read_file(path: Path) -> bytes:
+    absolute = _absolute_lexical_path(path)
+    directory_descriptor = _open_directory_nofollow(absolute.parent)
+    try:
+        descriptor = os.open(absolute.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_descriptor)
+        try:
+            file_stat = os.fstat(descriptor)
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise OperatorError("expected a regular no-follow file")
+            chunks: list[bytes] = []
+            while chunk := os.read(descriptor, 1024 * 1024):
+                chunks.append(chunk)
+            return b"".join(chunks)
+        finally:
+            os.close(descriptor)
+    except OSError as exc:
+        raise OperatorError("refusing unsafe or missing file path") from exc
+    finally:
+        os.close(directory_descriptor)
+
+
+def _private_state_path(path: Path, state_directory: Path) -> tuple[Path, Path, int]:
+    directory = _absolute_lexical_path(state_directory)
+    candidate = _absolute_lexical_path(path)
+    if candidate.parent != directory or not candidate.name.startswith("koaryu-payer-ambiguity-"):
+        raise OperatorError("state file must stay inside the private state directory")
+    try:
+        directory_descriptor = _open_directory_nofollow(directory)
+    except OSError as exc:
+        raise OperatorError("private state directory must exist without symlink components") from exc
+    directory_stat = os.fstat(directory_descriptor)
+    if (directory_stat.st_mode & 0o777) != 0o700:
+        os.close(directory_descriptor)
+        raise OperatorError("private state directory must have mode 0700")
+    return candidate, directory, directory_descriptor
+
+
 def write_private_state(
     path: Path,
     state: dict[str, Any],
     *,
     integrity_key: str,
     require_absent: bool = False,
-    state_directory: Path = Path("/private/tmp"),
+    state_directory: Path,
 ) -> None:
-    path = path.resolve()
-    state_directory = state_directory.resolve()
-    if path.parent != state_directory or not path.name.startswith(
-        "koaryu-payer-ambiguity-"
-    ):
-        raise OperatorError(
-            f"state file must use {state_directory}/koaryu-payer-ambiguity-* path"
-        )
-    if require_absent and path.exists():
-        raise OperatorError("refusing to overwrite an existing ambiguity state file")
+    path, _state_directory, directory_descriptor = _private_state_path(path, state_directory)
     validate_state_phase(state)
     serialized_state = {
         **state,
         "state_hmac_sha256": _state_hmac(state, integrity_key),
     }
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        existing_stat = os.stat(path.name, dir_fd=directory_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        existing_stat = None
+    if existing_stat is not None and (
+        not stat.S_ISREG(existing_stat.st_mode) or (existing_stat.st_mode & 0o777) != 0o600
+    ):
+        os.close(directory_descriptor)
+        raise OperatorError(
+            "existing ambiguity state must be a regular mode-0600 file, never a symlink"
+        )
+    temporary_name = f".{path.name}.{uuid4().hex}.tmp"
+    descriptor = os.open(
+        temporary_name,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
+        dir_fd=directory_descriptor,
+    )
     try:
         os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
@@ -188,33 +276,56 @@ def write_private_state(
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary_name, path)
-        os.chmod(path, 0o600)
+        if require_absent:
+            try:
+                os.link(
+                    temporary_name,
+                    path.name,
+                    src_dir_fd=directory_descriptor,
+                    dst_dir_fd=directory_descriptor,
+                    follow_symlinks=False,
+                )
+            except FileExistsError as exc:
+                raise OperatorError(
+                    "refusing to overwrite an existing ambiguity state file"
+                ) from exc
+            os.unlink(temporary_name, dir_fd=directory_descriptor)
+        else:
+            os.replace(
+                temporary_name,
+                path.name,
+                src_dir_fd=directory_descriptor,
+                dst_dir_fd=directory_descriptor,
+            )
+        os.fsync(directory_descriptor)
     except BaseException:
         try:
-            os.unlink(temporary_name)
+            os.unlink(temporary_name, dir_fd=directory_descriptor)
         except FileNotFoundError:
             pass
         raise
+    finally:
+        os.close(directory_descriptor)
 
 
 def read_private_state(
     path: Path,
     *,
     integrity_key: str,
-    state_directory: Path = Path("/private/tmp"),
+    state_directory: Path,
 ) -> dict[str, Any]:
-    path = path.resolve()
-    state_directory = state_directory.resolve()
-    if path.parent != state_directory or not path.name.startswith(
-        "koaryu-payer-ambiguity-"
-    ):
-        raise OperatorError(
-            f"state file must use {state_directory}/koaryu-payer-ambiguity-* path"
-        )
-    if (path.stat().st_mode & 0o777) != 0o600:
-        raise OperatorError("ambiguity state file must have mode 0600")
-    value = json.loads(path.read_text(encoding="utf-8"))
+    path, _state_directory, directory_descriptor = _private_state_path(path, state_directory)
+    try:
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_descriptor)
+        with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+            file_stat = os.fstat(handle.fileno())
+            if not stat.S_ISREG(file_stat.st_mode) or (file_stat.st_mode & 0o777) != 0o600:
+                raise OperatorError("ambiguity state file must be a regular mode-0600 file")
+            value = json.load(handle)
+    except OSError as exc:
+        raise OperatorError("ambiguity state file must be a no-follow private file") from exc
+    finally:
+        os.close(directory_descriptor)
     if not isinstance(value, dict):
         raise OperatorError("ambiguity state file schema is invalid")
     state_hmac = str(value.pop("state_hmac_sha256", ""))
@@ -230,6 +341,9 @@ def build_faulting_stripe_service(
     *,
     state: dict[str, Any],
     persist: Callable[[dict[str, Any]], None],
+    capture_create_response: Callable[[Any], tuple[dict[str, Any], str]],
+    verify_create_response: Callable[[Any], None],
+    arm: Callable[[], None],
 ) -> type:
     class FaultingStripeService(base_class):
         create_attempt_count = 0
@@ -238,16 +352,24 @@ def build_faulting_stripe_service(
             type(self).create_attempt_count += 1
             if type(self).create_attempt_count != 1:
                 raise OperatorError("fault injector refused a second customer-create attempt")
+            arm()
             customer = super().create_connected_customer(**kwargs)
             customer_id = _stripe_id(customer)
             if not customer_id or not customer_id.startswith("cus_"):
                 raise OperatorError("Stripe customer create returned an invalid identity")
+            provider_evidence, proof = capture_create_response(customer)
             state.update(
                 phase="provider_created",
                 provider_customer_id=customer_id,
                 provider_mutation_count=1,
+                provider_create_response_count=1,
                 automatic_retry_count=0,
+                recovery_proof_sha256=proof,
+                provider_evidence=provider_evidence,
             )
+            persist(state)
+            verify_create_response(customer)
+            state["phase"] = "provider_response_verified"
             persist(state)
             raise DeliberateProviderResponseLoss("operator discarded successful provider response")
 
@@ -333,7 +455,8 @@ def classify_recovery_action(
         state_proof = str(state.get("recovery_proof_sha256") or "")
         if (
             state.get("phase") not in {"provider_verified", "recovery_authorized"}
-            or state.get("provider_readback_count") != 1
+            or state.get("provider_create_response_count") != 1
+            or state.get("provider_retrieve_count") != 0
             or operation.get("provider_object_id") != customer_id
             or operation.get("recovery_outcome")
             != "provider_succeeded_reconcile_only"
@@ -353,18 +476,23 @@ def classify_recovery_action(
         raise OperatorError("durable payer-sync ambiguity state is not recoverable")
 
     phase = state.get("phase")
-    if phase == "provider_verified":
+    if phase in {"provider_response_verified", "provider_verified"}:
         proof = str(state.get("recovery_proof_sha256") or "")
         if (
-            state.get("provider_readback_count") != 1
+            state.get("provider_create_response_count") != 1
+            or state.get("provider_retrieve_count") != 0
             or not re.fullmatch(r"[0-9a-f]{64}", proof)
         ):
             raise OperatorError("durable provider verification evidence is invalid")
-        return "authorize_without_readback"
-    if phase in {"provider_created", "reconciliation_required"}:
-        if state.get("provider_readback_count") != 0:
-            raise OperatorError("provider readback count is inconsistent with state phase")
-        return "retrieve_then_authorize"
+        return "authorize_from_create_response"
+    if phase == "provider_created":
+        raise OperatorError("provider create response was not fully verified; attended inspection is required")
+    if phase == "reconciliation_required":
+        if state.get("provider_retrieve_count") != 0:
+            raise OperatorError("provider retrieve count is inconsistent with state phase")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(state.get("recovery_proof_sha256") or "")):
+            raise OperatorError("provider create response proof is missing")
+        return "authorize_from_create_response"
     raise OperatorError("ambiguity state phase is not recoverable")
 
 
@@ -412,6 +540,29 @@ def validate_provider_evidence_binding(
         or stable_hash(evidence) != state.get("recovery_proof_sha256")
     ):
         raise OperatorError("normalized provider evidence binding is invalid")
+
+
+def validate_continuation_evidence(
+    *,
+    state: Mapping[str, Any],
+    operation: Mapping[str, Any],
+    payer_id: str,
+    test_clock_id: str,
+    stable_hash: Callable[[Any], str],
+) -> None:
+    if state.get("phase") in {
+        "provider_response_verified",
+        "reconciliation_required",
+        "provider_verified",
+        "recovery_authorized",
+    }:
+        validate_provider_evidence_binding(
+            state=state,
+            operation=operation,
+            payer_id=payer_id,
+            test_clock_id=test_clock_id,
+            stable_hash=stable_hash,
+        )
 
 
 def validate_state_binding(state: Mapping[str, Any], environment: Mapping[str, str], expected_sha: str) -> None:
@@ -492,31 +643,12 @@ def _recovery_proof(
     )
 
 
-def verify_provider_once_or_resume(
-    *,
-    action: str,
-    state: dict[str, Any],
-    persist: Callable[[dict[str, Any]], None],
-    retrieve: Callable[[], Any],
-    verify: Callable[[Any], None],
-    proof_builder: Callable[[Any], tuple[dict[str, Any], str]],
-) -> str:
-    if action == "authorize_without_readback":
-        return str(state["recovery_proof_sha256"])
-    if action != "retrieve_then_authorize":
-        raise OperatorError("provider verification action is invalid")
-    state["phase"] = "provider_readback_in_flight"
-    persist(state)
-    customer = retrieve()
-    verify(customer)
-    provider_evidence, proof = proof_builder(customer)
-    state.update(
-        phase="provider_verified",
-        provider_readback_count=1,
-        recovery_proof_sha256=proof,
-        provider_evidence=provider_evidence,
-    )
-    persist(state)
+def recovery_proof_from_create_response(state: Mapping[str, Any]) -> str:
+    if state.get("provider_create_response_count") != 1 or state.get("provider_retrieve_count") != 0:
+        raise OperatorError("provider create/retrieve counters are not exact")
+    proof = str(state.get("recovery_proof_sha256") or "")
+    if not re.fullmatch(r"[0-9a-f]{64}", proof):
+        raise OperatorError("provider create response proof is invalid")
     return proof
 
 
@@ -540,7 +672,8 @@ def persist_committed_authorization(
     return {
         "phase": "recovery_authorized",
         "provider_mutation_count": state["provider_mutation_count"],
-        "provider_readback_count": state["provider_readback_count"],
+        "provider_create_response_count": state["provider_create_response_count"],
+        "provider_retrieve_count": state["provider_retrieve_count"],
         "automatic_retry_count": state["automatic_retry_count"],
         "parent_operation_bound": True,
         "resource_claim_bound": True,
@@ -554,8 +687,18 @@ def _current_sha(repository: Path) -> str:
     ).strip()
 
 
-def validate_repository_state(repository: Path) -> None:
+def validate_repository_state(repository: Path, expected_sha: str, executing_script: Path) -> None:
     operator_path = Path("scripts/rehearse-payer-sync-ambiguity.py")
+    repository = _absolute_lexical_path(repository)
+    expected_path = _absolute_lexical_path(repository / operator_path)
+    executing_path = _absolute_lexical_path(executing_script)
+    if executing_path != expected_path:
+        raise OperatorError("executing ambiguity operator is not the candidate repository file")
+    try:
+        repository_descriptor = _open_directory_nofollow(repository)
+    except OSError as exc:
+        raise OperatorError("repository path contains an unsafe symlink component") from exc
+    os.close(repository_descriptor)
     status_output = subprocess.check_output(
         ["git", "status", "--porcelain", "--untracked-files=all"],
         cwd=repository,
@@ -574,21 +717,21 @@ def validate_repository_state(repository: Path) -> None:
     if tracked.returncode != 0:
         raise OperatorError("ambiguity operator is not tracked by the candidate commit")
     head_source = subprocess.check_output(
-        ["git", "show", f"HEAD:{operator_path}"],
+        ["git", "show", f"{expected_sha}:{operator_path}"],
         cwd=repository,
         stderr=subprocess.DEVNULL,
     )
     if not hmac.compare_digest(
         head_source,
-        (repository / operator_path).read_bytes(),
+        _safe_read_file(executing_path),
     ):
         raise OperatorError("ambiguity operator source does not match the candidate commit")
 
 
 def run(args: argparse.Namespace, environment: Mapping[str, str]) -> dict[str, Any]:
-    repository = Path(args.repository).resolve()
+    repository = _absolute_lexical_path(Path(args.repository))
     expected_sha = args.expected_sha
-    validate_repository_state(repository)
+    validate_repository_state(repository, expected_sha, Path(__file__))
     validate_execution_context(
         expected_sha=expected_sha,
         current_sha=_current_sha(repository),
@@ -602,6 +745,8 @@ def run(args: argparse.Namespace, environment: Mapping[str, str]) -> dict[str, A
     payer_id = _required(environment, "KOARYU_REHEARSAL_PAYER_ID")
     test_clock_id = _required(environment, "KOARYU_REHEARSAL_TEST_CLOCK_ID")
     caller_key = _required(environment, "KOARYU_REHEARSAL_PAYER_SYNC_KEY")
+    integrity_key = _required(environment, "KOARYU_REHEARSAL_STATE_INTEGRITY_KEY")
+    validate_integrity_key(integrity_key, caller_key)
     if not all(UUID_PATTERN.fullmatch(value) for value in (studio_id, actor_id, payer_id)):
         raise OperatorError("studio, actor, and payer identities must be lowercase UUIDs")
     if not CLOCK_PATTERN.fullmatch(test_clock_id):
@@ -609,49 +754,12 @@ def run(args: argparse.Namespace, environment: Mapping[str, str]) -> dict[str, A
     if not caller_key.startswith(KEY_PREFIX) or len(caller_key) > 255:
         raise OperatorError("caller key is not the dedicated schema-v4 payer-sync key")
 
+    state_directory = Path(args.state_directory)
     state_path = Path(args.state_file)
-    if args.mode == "inject":
-        state = {
-            "schema_version": STATE_SCHEMA_VERSION,
-            "phase": "armed",
-            "candidate_sha": expected_sha,
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "payer_id": payer_id,
-            "test_clock_id": test_clock_id,
-            "caller_key_sha256": _sha256(caller_key),
-            "provider_mutation_count": 0,
-            "provider_readback_count": 0,
-            "automatic_retry_count": 0,
-        }
-        write_private_state(
-            state_path,
-            state,
-            integrity_key=caller_key,
-            require_absent=True,
-        )
-    else:
-        state = read_private_state(state_path, integrity_key=caller_key)
-        validate_state_binding(state, environment, expected_sha)
-        if state.get("phase") == "armed":
-            raise OperatorError(
-                "provider success was not durably identified; stop for attended Stripe inspection and never run inject again"
-            )
-        if state.get("phase") == "provider_readback_in_flight":
-            raise OperatorError(
-                "provider readback outcome is ambiguous; stop for attended Stripe inspection and do not retrieve again"
-            )
-        if state.get("phase") not in {
-            "provider_created",
-            "reconciliation_required",
-            "provider_verified",
-            "recovery_authorized",
-        }:
-            raise OperatorError("resume mode requires a recorded provider customer")
+    _, _, state_directory_descriptor = _private_state_path(state_path, state_directory)
+    os.close(state_directory_descriptor)
 
-    def persist(value: dict[str, Any]) -> None:
-        write_private_state(state_path, value, integrity_key=caller_key)
-
+    # Imports are deliberately part of preflight. No armed artifact exists yet.
     sys.path.insert(0, str(repository / "backend"))
     from fastapi import HTTPException
     import app.services.billing_payers as payer_module
@@ -693,13 +801,92 @@ def run(args: argparse.Namespace, environment: Mapping[str, str]) -> dict[str, A
         ):
             raise OperatorError("connected account is not fully enabled")
 
+        if args.mode == "inject":
+            state = {
+                "schema_version": STATE_SCHEMA_VERSION,
+                "phase": "armed",
+                "candidate_sha": expected_sha,
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "payer_id": payer_id,
+                "test_clock_id": test_clock_id,
+                "caller_key_sha256": _sha256(caller_key),
+                "provider_mutation_count": 0,
+                "provider_create_response_count": 0,
+                "provider_retrieve_count": 0,
+                "automatic_retry_count": 0,
+            }
+        else:
+            state = read_private_state(
+                state_path, integrity_key=integrity_key, state_directory=state_directory
+            )
+            validate_state_binding(state, environment, expected_sha)
+            if state.get("phase") == "armed":
+                raise OperatorError(
+                    "provider success was not durably identified; stop for attended Stripe inspection and never run inject again"
+                )
+            if state.get("phase") not in {
+                "provider_created",
+                "provider_response_verified",
+                "reconciliation_required",
+                "provider_verified",
+                "recovery_authorized",
+            }:
+                raise OperatorError("resume mode requires a recorded provider customer")
+
+        def persist(value: dict[str, Any]) -> None:
+            write_private_state(
+                state_path, value, integrity_key=integrity_key, state_directory=state_directory
+            )
+
         capturing_class = build_capturing_coordinator(BillingProviderOperationCoordinator)
         if args.mode == "inject":
             original_coordinator = payer_module.BillingProviderOperationCoordinator
             payer_module.BillingProviderOperationCoordinator = capturing_class
             try:
+                def capture_create_response(customer):
+                    claimed_now = capturing_class.claimed or {}
+                    operation_now = claimed_now.get("operation")
+                    if not isinstance(operation_now, dict):
+                        raise OperatorError(
+                            "provider create response cannot bind to a durable operation"
+                        )
+                    evidence = _recovery_evidence_payload(
+                        operation=operation_now, payer=payer, customer=customer, test_clock_id=test_clock_id
+                    )
+                    return evidence, stable_hash(evidence)
+
+                def verify_create_response(customer):
+                    metadata = {
+                        "studio_id": payer["studio_id"],
+                        "payer_id": payer["id"],
+                        "product": "koaryu_payments",
+                    }
+                    address = {
+                        "line1": payer.get("address_line1"),
+                        "city": payer.get("address_city"),
+                        "state": payer.get("address_state"),
+                        "postal_code": payer.get("address_zip"),
+                    }
+                    BillingPayerManager._verify_recovered_customer(
+                        customer, payer=payer, customer_id=_stripe_id(customer), sync_mode="create",
+                        metadata=metadata, address=address, test_clock_id=test_clock_id,
+                    )
+
+                def arm():
+                    write_private_state(
+                        state_path,
+                        state,
+                        integrity_key=integrity_key,
+                        require_absent=True,
+                        state_directory=state_directory,
+                    )
+
                 stripe_class = build_faulting_stripe_service(
-                    StripeService, state=state, persist=persist
+                    StripeService, state=state, persist=persist,
+                    capture_create_response=capture_create_response,
+                    verify_create_response=verify_create_response,
+                    arm=arm,
                 )
                 manager = BillingPayerManager(
                     billing_service, stripe_service_cls=stripe_class
@@ -754,14 +941,13 @@ def run(args: argparse.Namespace, environment: Mapping[str, str]) -> dict[str, A
         resource = claimed.get("resource")
         if not isinstance(operation, dict) or not isinstance(resource, dict):
             raise OperatorError("payer sync claim lacks parent/resource evidence")
-        if state.get("phase") in {"provider_verified", "recovery_authorized"}:
-            validate_provider_evidence_binding(
-                state=state,
-                operation=operation,
-                payer_id=payer_id,
-                test_clock_id=test_clock_id,
-                stable_hash=stable_hash,
-            )
+        validate_continuation_evidence(
+            state=state,
+            operation=operation,
+            payer_id=payer_id,
+            test_clock_id=test_clock_id,
+            stable_hash=stable_hash,
+        )
         action = classify_recovery_action(
             state=state,
             operation=operation,
@@ -778,11 +964,7 @@ def run(args: argparse.Namespace, environment: Mapping[str, str]) -> dict[str, A
                 persist=persist,
             )
         state.update(
-            phase=(
-                "provider_verified"
-                if action == "authorize_without_readback"
-                else "reconciliation_required"
-            ),
+            phase="reconciliation_required",
             operation_id=str(operation["id"]),
             resource_claim_id=str(resource["id"]),
             operation_revision=int(operation["revision"]),
@@ -792,52 +974,9 @@ def run(args: argparse.Namespace, environment: Mapping[str, str]) -> dict[str, A
         )
         persist(state)
 
-        metadata = {
-            "studio_id": payer["studio_id"],
-            "payer_id": payer["id"],
-            "product": "koaryu_payments",
-        }
-        address = {
-            "line1": payer.get("address_line1"),
-            "city": payer.get("address_city"),
-            "state": payer.get("address_state"),
-            "postal_code": payer.get("address_zip"),
-        }
-        def retrieve_provider_customer():
-            return StripeService().retrieve_connected_customer(
-                account_id=context.stripe_connected_account_id,
-                customer_id=customer_id,
-                expand=["invoice_settings.default_payment_method"],
-            )
-
-        def verify_provider_customer(provider_customer):
-            BillingPayerManager._verify_recovered_customer(
-                provider_customer,
-                payer=payer,
-                customer_id=customer_id,
-                sync_mode="create",
-                metadata=metadata,
-                address=address,
-                test_clock_id=test_clock_id,
-            )
-
-        def build_provider_proof(provider_customer):
-            provider_evidence = _recovery_evidence_payload(
-                operation=operation,
-                payer=payer,
-                customer=provider_customer,
-                test_clock_id=test_clock_id,
-            )
-            return provider_evidence, stable_hash(provider_evidence)
-
-        proof = verify_provider_once_or_resume(
-            action=action,
-            state=state,
-            persist=persist,
-            retrieve=retrieve_provider_customer,
-            verify=verify_provider_customer,
-            proof_builder=build_provider_proof,
-        )
+        if action != "authorize_from_create_response":
+            raise OperatorError("recovery action is not safe for operator authorization")
+        proof = recovery_proof_from_create_response(state)
         authorized = BillingProviderOperationCoordinator(client).authorize_recovery_v2(
             context,
             operation,
@@ -865,7 +1004,8 @@ def run(args: argparse.Namespace, environment: Mapping[str, str]) -> dict[str, A
         return {
             "phase": "recovery_authorized",
             "provider_mutation_count": state["provider_mutation_count"],
-            "provider_readback_count": state["provider_readback_count"],
+            "provider_create_response_count": state["provider_create_response_count"],
+            "provider_retrieve_count": state["provider_retrieve_count"],
             "automatic_retry_count": state["automatic_retry_count"],
             "parent_operation_bound": True,
             "resource_claim_bound": True,
@@ -880,6 +1020,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--mode", choices=("inject", "resume"), required=True)
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--state-file", required=True)
+    parser.add_argument("--state-directory", required=True)
     parser.add_argument("--repository", default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument("--execute", action="store_true")
     return parser.parse_args(argv)

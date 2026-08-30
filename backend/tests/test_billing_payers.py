@@ -15,6 +15,7 @@ from app.services.billing_provider_operations import (
 )
 from app.services.platform_billing_helpers import stable_hash
 from app.services.stripe_mutation_policy import StripeMutationBlocked
+from app.services.stripe_service import StripeTestClockRejected
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
 
@@ -760,6 +761,56 @@ class BillingPayerManagerTests(unittest.TestCase):
                 operation = next(iter(facade.supabase.billing_provider_operations.values()))
                 self.assertEqual(operation["state"], expected_state)
                 self.assertNotIn("private customer payload", repr(operation))
+
+    def test_payer_sync_test_clock_rejection_is_definitive_and_exactly_replayed(self):
+        _FakeStripeService.reset()
+        _FakeStripeService.provider_error = StripeTestClockRejected()
+        facade, manager = self._clock_ready_manager()
+
+        for _attempt in range(2):
+            with self.assertRaises(HTTPException) as rejected:
+                asyncio.run(manager.sync_payer(
+                    "payer_1", "studio_1", "actor_1", "payer-clock-key", "clock_valid",
+                ))
+            self.assertEqual(rejected.exception.status_code, 409)
+
+        self.assertEqual(len(_FakeStripeService.created_customers), 1)
+        operation = next(iter(facade.supabase.billing_provider_operations.values()))
+        self.assertEqual(operation["state"], "definitive_rejected")
+        self.assertEqual(operation["error_code"], "payer_sync_test_clock_rejected")
+
+    def test_payer_sync_consent_read_failure_preserves_enabled_projection(self):
+        payer = {
+            "id": "payer_1", "studio_id": "studio_1", "display_name": "Pat",
+            "autopay_status": "enabled", "autopay_authorized_at": "2026-08-01T00:00:00Z",
+            "autopay_terms_accepted_at": "2026-08-01T00:00:00Z",
+            "default_payment_method_id": "pm_verified", "default_payment_method_brand": "visa",
+            "default_payment_method_last4": "4242", "default_payment_method_exp_month": 12,
+            "default_payment_method_exp_year": 2030,
+        }
+        facade = _BillingFacade({"billing_payers": [payer], "audit_logs": []}, account={
+            "charges_enabled": True, "stripe_connected_account_id": "acct_1",
+            "metadata": {"connect_account_generation": 1},
+        })
+        facade.supabase._rpc_read_active_billing_payer_payment_consent_v1 = (
+            lambda _params: (_ for _ in ()).throw(RuntimeError("consent read unavailable"))
+        )
+        context = BillingProviderOperationContext(
+            "op", "studio_1", "actor_1", "payer.sync", "key", "a" * 64,
+            "acct_1", 1, "lease",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "consent read unavailable"):
+            BillingPayerManager(facade)._project_payer_sync_result(
+                payer=payer,
+                provider_customer={"invoice_settings": {"default_payment_method": None}},
+                customer_id="cus_1",
+                context=context,
+            )
+
+        stored = facade.supabase.tables["billing_payers"][0]
+        self.assertEqual(stored["autopay_status"], "enabled")
+        self.assertEqual(stored["default_payment_method_id"], "pm_verified")
 
     def test_payer_sync_same_key_fails_closed_after_account_generation_changes(self):
         _FakeStripeService.reset()

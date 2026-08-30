@@ -381,10 +381,14 @@ class BillingProviderOperationRpcMixin:
             "p_resource_id": self._canonical_uuid_text(invoice["id"]),
             "p_payer_id": payer["id"],
         }
+        invoice_metadata = invoice.get("metadata") or {}
+        generation = int(
+            invoice_metadata.get("connect_account_generation")
+            if "connect_account_generation" in invoice_metadata
+            else payer["connect_account_generation"]
+        )
         base_hash = hashlib.sha256(json.dumps({
-            "connect_account_generation": int(
-                params["p_connect_account_generation"]
-            ),
+            "connect_account_generation": generation,
             "invoice_id": self._canonical_uuid_text(invoice["id"]),
             "operation_type": "invoice.retry",
             "stripe_connected_account_id": str(invoice["stripe_account_id"]),
@@ -397,8 +401,70 @@ class BillingProviderOperationRpcMixin:
             params["p_caller_request_key"],
         )
         ledger = self.billing_invoice_retry_hash_ledger_v33.get(ledger_key)
+        no_ledger_reclaim = False
         if ledger is None:
-            if submitted_hash == base_hash:
+            owner = self.billing_invoice_mutation_owners.get(
+                (canonical_params["p_studio_id"], canonical_params["p_resource_id"])
+            )
+            owner_operation = (
+                self._operation_by_id(owner["operation_id"])
+                if owner is not None and owner.get("operation_type") == "invoice.retry"
+                else None
+            )
+            if (
+                owner_operation is not None
+                and owner_operation.get("state") not in {
+                    "completed", "definitive_failed", "definitive_rejected"
+                }
+                and owner_operation.get("caller_request_key")
+                == params["p_caller_request_key"]
+                and owner_operation.get("invoice_retry_preread_released_at") is not None
+            ):
+                resource = next(
+                    (
+                        row
+                        for row in self.billing_provider_operation_resources.values()
+                        if row.get("id") == owner.get("resource_claim_id")
+                    ),
+                    None,
+                )
+                if (
+                    resource is None
+                    or resource.get("operation_id") != owner_operation.get("id")
+                    or resource.get("resource_type") != "invoice"
+                    or self._canonical_uuid_text(resource.get("resource_id"))
+                    != canonical_params["p_resource_id"]
+                    or resource.get("payer_id") != canonical_params["p_payer_id"]
+                    or owner_operation.get("actor_id") != params["p_actor_id"]
+                    or owner_operation.get("stripe_connected_account_id")
+                    != params["p_stripe_connected_account_id"]
+                    or owner_operation.get("connect_account_generation")
+                    != params["p_connect_account_generation"]
+                    or submitted_hash not in {base_hash, owner_operation["request_sha256"]}
+                ):
+                    raise _operation_conflict()
+                effective_hash = owner_operation["request_sha256"]
+                if submitted_hash == base_hash and effective_hash == base_hash:
+                    compatibility_outcome = "base_hash_exact"
+                elif submitted_hash == base_hash:
+                    compatibility_outcome = "ledger_legacy_hash_accepted"
+                else:
+                    compatibility_outcome = "ledger_legacy_hash_replay"
+                owner_operation.update({
+                    "invoice_retry_preread_released_at": None,
+                    "invoice_retry_preread_release_reason": None,
+                    "lease_owner": params["p_lease_owner"],
+                    "lease_acquired_at": self._billing_provider_timestamp(
+                        self.billing_provider_now
+                    ),
+                    "lease_expires_at": self._billing_provider_timestamp(
+                        self.billing_provider_now
+                        + timedelta(seconds=params["p_lease_seconds"])
+                    ),
+                    "revision": owner_operation["revision"] + 1,
+                })
+                no_ledger_reclaim = True
+            elif submitted_hash == base_hash:
                 effective_hash = base_hash
                 compatibility_outcome = "base_hash_exact"
             elif self.billing_invoice_retry_hash_capture_enabled_v33:
@@ -418,12 +484,15 @@ class BillingProviderOperationRpcMixin:
             ):
                 if ledger.get(field) != canonical_params[param]:
                     raise _operation_conflict()
-            effective_hash = ledger["effective_persisted_sha256"]
-            compatibility_outcome = (
-                "ledger_base_hash_exact"
-                if effective_hash == base_hash
-                else "ledger_legacy_hash_accepted"
-            )
+            effective_hash = ledger["persisted_request_sha256"]
+            if submitted_hash == base_hash and effective_hash == base_hash:
+                compatibility_outcome = "ledger_base_hash_exact"
+            elif submitted_hash == base_hash:
+                compatibility_outcome = "ledger_legacy_hash_accepted"
+            elif submitted_hash == effective_hash:
+                compatibility_outcome = "ledger_legacy_hash_replay"
+            else:
+                raise _operation_conflict()
             ledger_operation = self._operation_by_id(ledger["operation_id"])
             if ledger_operation.get("invoice_retry_preread_released_at") is not None:
                 ledger_operation.update({
@@ -435,8 +504,17 @@ class BillingProviderOperationRpcMixin:
             **canonical_params,
             "p_request_sha256": effective_hash,
         }
-        result = self._rpc_claim_billing_invoice_mutation_v31(effective_params)
-        if ledger is None:
+        if no_ledger_reclaim:
+            result = {
+                "outcome": "reclaimed",
+                "operation": dict(owner_operation),
+                "resource": dict(resource),
+                "canonical_caller_request_key": params["p_caller_request_key"],
+                "requested_caller_request_key": params["p_caller_request_key"],
+            }
+        else:
+            result = self._rpc_claim_billing_invoice_mutation_v31(effective_params)
+        if ledger is None and not no_ledger_reclaim:
             operation = result["operation"]
             self.billing_invoice_retry_hash_ledger_v33[ledger_key] = {
                 "operation_id": operation["id"],
@@ -450,7 +528,7 @@ class BillingProviderOperationRpcMixin:
                     "p_connect_account_generation"
                 ],
                 "base_request_sha256": base_hash,
-                "effective_persisted_sha256": effective_hash,
+                "persisted_request_sha256": effective_hash,
             }
         return {
             **result,
@@ -500,6 +578,7 @@ class BillingProviderOperationRpcMixin:
         candidate = result["operation"]
         candidate_owner = {
             "operation_id": str(candidate["id"]),
+            "resource_claim_id": result["resource"]["id"],
             "studio_id": params["p_studio_id"],
             "payer_id": params["p_payer_id"],
             "operation_type": params["p_operation_type"],
@@ -907,8 +986,6 @@ class BillingProviderOperationRpcMixin:
         state = operation.get("state")
         if state in {"completed", "definitive_failed", "definitive_rejected"}:
             return {**result, "operation": dict(operation)}
-        if state == "provider_request_in_flight":
-            return {**result, "outcome": "provider_request_in_flight", "operation": dict(operation)}
         lease_owner = operation.get("lease_owner")
         lease_expires_at = operation.get("lease_expires_at")
         lease_expired = (
@@ -918,9 +995,13 @@ class BillingProviderOperationRpcMixin:
             ) <= self.billing_provider_now
         )
         requested_owner = params["p_lease_owner"]
-        if lease_owner not in {None, requested_owner} and not lease_expired:
-            return {**result, "outcome": "busy", "operation": dict(operation)}
-        if lease_owner != requested_owner or lease_expired:
+        if (
+            state in {
+                "started", "recovery_authorized", "provider_succeeded",
+                "projected", "reconciliation_required",
+            }
+            and (lease_owner is None or lease_owner == requested_owner or lease_expired)
+        ):
             acquired_at = self.billing_provider_now
             operation.update({
                 "lease_owner": requested_owner,
@@ -1900,6 +1981,12 @@ class BillingProviderOperationRpcMixin:
         ):
             if param in params and operation[field] != params[param]:
                 raise AssertionError(f"operation identity mismatch: {field}")
+        if (
+            operation.get("operation_type") in {"invoice.finalize", "invoice.void"}
+            and "p_lease_owner" in params
+            and operation.get("lease_owner") != params["p_lease_owner"]
+        ):
+            raise AssertionError("operation identity mismatch: lease_owner")
         return operation
 
     def _operation_by_id(self, operation_id: str) -> dict[str, Any]:

@@ -6,6 +6,7 @@ import { isTerminalBillingIdempotencyError } from "@/lib/billing-idempotency-lif
 import {
   canShowPaymentRefund,
   clearRefundRequestKey,
+  isDefinitiveRefundRejection,
   isRefundReconciliationBlocked,
   isRefundReconciliationRequiredError,
   isPaymentRefundEligible,
@@ -93,20 +94,28 @@ export function useBillingRefundController({
         storage,
       );
       await postPaymentRefund({ amountCents, paymentId: payment.id, post: api.post, reason, requestKey, token });
-      clearRefundRequestKey(identity, payment.id, storage);
       setMessage("Refund submitted. Provider confirmation may take a moment to appear.");
-      await refreshAfterConfirmedRefund(refreshBilling, () => {
+      const refreshed = await refreshAfterConfirmedRefund(refreshBilling, () => {
         setError("The refund succeeded, but Billing could not refresh. Refresh the page before taking another action.");
       });
+      if (refreshed && !clearRefundRequestKey(identity, payment.id, storage)) {
+        setError("The refund succeeded, but its saved recovery state could not be cleared. Reload Billing before taking another action.");
+      }
     } catch (error) {
       if (isRefundReconciliationRequiredError(error)) {
-        markRefundReconciliationRequired(identity, payment.id, storage);
+        if (!markRefundReconciliationRequired(identity, payment.id, storage)) {
+          setError("This refund needs reconciliation, but the recovery marker could not be saved. Do not retry it from this browser.");
+          return;
+        }
         const attemptIdentity = `${identity.userId}\u0000${identity.studioId}\u0000${payment.id}`;
         setBlockedAttempts((current) => new Set(current).add(attemptIdentity));
         setError("This refund needs reconciliation outside Koaryu. Refund retry is disabled for this payment.");
         return;
-      } else if (isTerminalBillingIdempotencyError(error)) {
-        clearRefundRequestKey(identity, payment.id, storage);
+      } else if (isTerminalBillingIdempotencyError(error) || isDefinitiveRefundRejection(error)) {
+        if (!clearRefundRequestKey(identity, payment.id, storage)) {
+          setError("The refund was rejected, but its saved request state could not be cleared. Reload Billing before correcting and retrying.");
+          return;
+        }
       }
       setError(error instanceof Error ? error.message : "Refund could not be submitted.");
       return;

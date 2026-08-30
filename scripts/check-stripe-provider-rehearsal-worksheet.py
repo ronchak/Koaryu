@@ -81,10 +81,10 @@ def _exact_keys(errors: list[str], label: str, value: Any, expected: set[str]) -
     return True
 
 
-def _canonical_readback(errors: list[str], value: Any, *, label: str, source: str, status: str) -> None:
-    if not _exact_keys(errors, label, value, VALIDATOR.READBACK_KEYS):
+def _canonical_readback(errors: list[str], value: Any, *, label: str, source: str, status: str, keys: set[str] | None = None, status_field: str = "status") -> None:
+    if not _exact_keys(errors, label, value, keys or VALIDATOR.READBACK_KEYS):
         return
-    if value.get("source") != source or value.get("status") != status or value.get("capture_boundary") != BOUNDARY:
+    if value.get("source") != source or value.get(status_field) != status or value.get("capture_boundary") != BOUNDARY:
         errors.append(f"{label} does not use its canonical source, status, and boundary")
 
 
@@ -161,19 +161,19 @@ def validate_template(template: dict[str, Any]) -> list[str]:
         if period.get("advances_to") != 0 or period.get("observed_provider_boundary") != 0:
             errors.append("period advancement worksheet must use zero non-live timestamp sentinels")
         readbacks = (
-            (supplemental.get("invoice_void", {}).get("provider_readback"), "invoice void provider readback", "invoice_void.provider", "void"),
-            (supplemental.get("invoice_void", {}).get("local_readback"), "invoice void local readback", "invoice_void.local", "void"),
-            (immediate.get("provider_readback"), "immediate cancellation provider readback", "immediate_cancellation.provider", "canceled"),
-            (immediate.get("local_readback"), "immediate cancellation local readback", "immediate_cancellation.local", "canceled"),
-            (supplemental.get("external_payment", {}).get("provider_operation_inventory_readback"), "external payment inventory readback", "external_payment.inventory", "zero"),
-            (supplemental.get("external_payment", {}).get("local_readback"), "external payment local readback", "external_payment.local", "externally_recorded"),
-            (supplemental.get("period_advancement", {}).get("provider_readback"), "period provider readback", "period_advancement.provider", "advanced"),
-            (supplemental.get("period_advancement", {}).get("local_readback"), "period local readback", "period_advancement.local", "completed"),
-            (supplemental.get("ambiguity_recovery", {}).get("provider_readback"), "ambiguity provider readback", "ambiguity.provider", "found"),
-            (supplemental.get("ambiguity_recovery", {}).get("local_readback"), "ambiguity local readback", "ambiguity.local", "completed"),
+            (supplemental.get("invoice_void", {}).get("provider_readback"), "invoice void provider readback", "invoice_void.provider", "void", VALIDATOR.INVOICE_VOID_PROVIDER_KEYS, "status"),
+            (supplemental.get("invoice_void", {}).get("local_readback"), "invoice void local readback", "invoice_void.local", "void", VALIDATOR.INVOICE_VOID_LOCAL_KEYS, "status"),
+            (immediate.get("provider_readback"), "immediate cancellation provider readback", "immediate_cancellation.provider", "canceled", VALIDATOR.IMMEDIATE_PROVIDER_KEYS, "status"),
+            (immediate.get("local_readback"), "immediate cancellation local readback", "immediate_cancellation.local", "canceled", VALIDATOR.IMMEDIATE_LOCAL_KEYS, "enrollment_status"),
+            (supplemental.get("external_payment", {}).get("provider_operation_inventory_readback"), "external payment inventory readback", "external_payment.inventory", "zero", None, "status"),
+            (supplemental.get("external_payment", {}).get("local_readback"), "external payment local readback", "external_payment.local", "externally_recorded", None, "status"),
+            (supplemental.get("period_advancement", {}).get("provider_readback"), "period provider readback", "period_advancement.provider", "advanced", VALIDATOR.PERIOD_PROVIDER_KEYS, "status"),
+            (supplemental.get("period_advancement", {}).get("local_readback"), "period local readback", "period_advancement.local", "completed", VALIDATOR.PERIOD_LOCAL_KEYS, "due_transition_state"),
+            (supplemental.get("ambiguity_recovery", {}).get("provider_readback"), "ambiguity provider readback", "ambiguity.provider", "found", VALIDATOR.AMBIGUITY_PROVIDER_KEYS, "status"),
+            (supplemental.get("ambiguity_recovery", {}).get("local_readback"), "ambiguity local readback", "ambiguity.local", "completed", VALIDATOR.AMBIGUITY_LOCAL_KEYS, "status"),
         )
-        for value, label, source_key, status in readbacks:
-            _canonical_readback(errors, value, label=label, source=VALIDATOR.SUPPLEMENTAL_SOURCES[source_key], status=status)
+        for value, label, source_key, status, keys, status_field in readbacks:
+            _canonical_readback(errors, value, label=label, source=VALIDATOR.SUPPLEMENTAL_SOURCES[source_key], status=status, keys=keys, status_field=status_field)
         for row in unsupported if isinstance(unsupported, list) else []:
             _canonical_readback(errors, row.get("denial_readback"), label=f"{row.get('subject')} denial readback", source=VALIDATOR.SUPPLEMENTAL_SOURCES["unsupported.denial"], status="denied")
             _canonical_readback(errors, row.get("provider_operation_inventory_readback"), label=f"{row.get('subject')} inventory readback", source=VALIDATOR.SUPPLEMENTAL_SOURCES["unsupported.inventory"], status="zero")

@@ -1194,7 +1194,7 @@ class BillingProviderOperationCoordinator:
     @staticmethod
     def _raise_safe_rpc_error(exc: PostgrestAPIError) -> None:
         code = str(getattr(exc, "code", "") or "")
-        message = str(getattr(exc, "message", "") or exc)
+        message = str(getattr(exc, "message", "") or exc).strip()
         if code == "23505" and "billing_provider_operation_request_conflict" in message:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -1228,6 +1228,21 @@ class BillingProviderOperationCoordinator:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=OPERATION_CONCURRENT_DETAIL,
+            ) from exc
+        if code == "23505" and "billing_invoice_retry_v33_nonterminal_key_mismatch" in message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=OPERATION_CONCURRENT_DETAIL,
+            ) from exc
+        if code == "23505" and message == "billing_invoice_closeout_terminal_replay_mismatch":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=IDEMPOTENCY_CONFLICT_DETAIL,
+            ) from exc
+        if code == "23505":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Billing operation state could not be verified.",
             ) from exc
         if code == "0A000":
             raise HTTPException(

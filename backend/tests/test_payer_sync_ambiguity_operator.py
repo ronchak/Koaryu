@@ -5,6 +5,9 @@ import importlib.util
 import json
 import os
 import subprocess
+import builtins
+from argparse import Namespace
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -23,6 +26,7 @@ STUDIO_ID = "00000000-0000-4000-8000-000000000001"
 ACTOR_ID = "00000000-0000-4000-8000-000000000002"
 PAYER_ID = "00000000-0000-4000-8000-000000000003"
 CALLER_KEY = "schema-v4-payer-sync-test-key"
+INTEGRITY_KEY = "9f" * 32
 
 
 def _environment() -> dict[str, str]:
@@ -52,7 +56,8 @@ def _armed_state() -> dict:
         "test_clock_id": "clock_Test123",
         "caller_key_sha256": hashlib.sha256(CALLER_KEY.encode()).hexdigest(),
         "provider_mutation_count": 0,
-        "provider_readback_count": 0,
+        "provider_create_response_count": 0,
+        "provider_retrieve_count": 0,
         "automatic_retry_count": 0,
     }
 
@@ -94,6 +99,11 @@ def test_repository_gate_requires_clean_tracked_operator_at_head(tmp_path):
     operator.parent.mkdir(parents=True)
     original = b"print('tracked operator')\n"
     operator.write_bytes(original)
+    billing_payers = repository / "backend/app/services/billing_payers.py"
+    stripe_service = repository / "backend/app/services/stripe_service.py"
+    billing_payers.parent.mkdir(parents=True)
+    billing_payers.write_text("BILLING = True\n", encoding="utf-8")
+    stripe_service.write_text("STRIPE = True\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q", str(repository)], check=True)
     subprocess.run(
         ["git", "config", "user.email", "operator-test@example.com"],
@@ -105,19 +115,125 @@ def test_repository_gate_requires_clean_tracked_operator_at_head(tmp_path):
         cwd=repository,
         check=True,
     )
-    subprocess.run(["git", "add", "scripts/rehearse-payer-sync-ambiguity.py"], cwd=repository, check=True)
+    subprocess.run(["git", "add", "."], cwd=repository, check=True)
     subprocess.run(["git", "commit", "-qm", "track operator"], cwd=repository, check=True)
-    MODULE.validate_repository_state(repository)
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip()
+    MODULE.validate_repository_state(repository, sha, operator)
+
+    billing_payers.write_text("BILLING = False\n", encoding="utf-8")
+    with pytest.raises(MODULE.OperatorError, match="clean"):
+        MODULE.validate_repository_state(repository, sha, operator)
+    billing_payers.write_text("BILLING = True\n", encoding="utf-8")
+
+    stripe_service.write_text("STRIPE = False\n", encoding="utf-8")
+    with pytest.raises(MODULE.OperatorError, match="clean"):
+        MODULE.validate_repository_state(repository, sha, operator)
+    stripe_service.write_text("STRIPE = True\n", encoding="utf-8")
+
+    untracked = repository / "unrelated.tmp"
+    untracked.write_text("untracked\n", encoding="utf-8")
+    with pytest.raises(MODULE.OperatorError, match="clean"):
+        MODULE.validate_repository_state(repository, sha, operator)
+    untracked.unlink()
+    MODULE.validate_repository_state(repository, sha, operator)
 
     operator.write_text("print('modified')\n", encoding="utf-8")
     with pytest.raises(MODULE.OperatorError, match="clean"):
-        MODULE.validate_repository_state(repository)
-
+        MODULE.validate_repository_state(repository, sha, operator)
     operator.write_bytes(original)
     operator.unlink()
     with pytest.raises(MODULE.OperatorError, match="clean"):
-        MODULE.validate_repository_state(repository)
+        MODULE.validate_repository_state(repository, sha, operator)
 
+
+def test_repository_gate_rejects_a_byte_identical_separate_checkout_copy(tmp_path):
+    repository = tmp_path / "repo"
+    operator = repository / "scripts" / "rehearse-payer-sync-ambiguity.py"
+    operator.parent.mkdir(parents=True)
+    operator.write_text("print('operator')\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    subprocess.run(["git", "config", "user.email", "operator-test@example.com"], cwd=repository, check=True)
+    subprocess.run(["git", "config", "user.name", "Operator Test"], cwd=repository, check=True)
+    subprocess.run(["git", "add", str(operator.relative_to(repository))], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", "track operator"], cwd=repository, check=True)
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip()
+    copy = tmp_path / "copy.py"
+    copy.write_bytes(operator.read_bytes())
+    with pytest.raises(MODULE.OperatorError, match="executing"):
+        MODULE.validate_repository_state(repository, sha, copy)
+
+    linked_repository = tmp_path / "linked-repo"
+    linked_repository.symlink_to(repository, target_is_directory=True)
+    with pytest.raises(MODULE.OperatorError, match="symlink"):
+        MODULE.validate_repository_state(
+            linked_repository,
+            sha,
+            linked_repository / "scripts" / "rehearse-payer-sync-ambiguity.py",
+        )
+
+
+def test_run_refuses_repository_gate_before_backend_import_client_or_arming(tmp_path, monkeypatch):
+    state_directory = tmp_path / "private"
+    state_directory.mkdir(mode=0o700)
+    state_path = state_directory / "koaryu-payer-ambiguity-test.json"
+    imported_backend_modules: list[str] = []
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        if name == "app" or name.startswith("app.") or name == "fastapi":
+            imported_backend_modules.append(name)
+            raise AssertionError("backend import occurred after failed repository gate")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    monkeypatch.setattr(
+        MODULE,
+        "validate_repository_state",
+        lambda *_args: (_ for _ in ()).throw(MODULE.OperatorError("repository must be completely clean")),
+    )
+    args = Namespace(
+        repository=str(tmp_path),
+        expected_sha=SHA,
+        execute=True,
+        mode="inject",
+        state_directory=str(state_directory),
+        state_file=str(state_path),
+    )
+    with pytest.raises(MODULE.OperatorError, match="clean"):
+        MODULE.run(args, _environment())
+    assert imported_backend_modules == []
+    assert not state_path.exists()
+
+
+def test_integrity_key_is_canonical_independent_32_byte_hex():
+    MODULE.validate_integrity_key(INTEGRITY_KEY, CALLER_KEY)
+    digest = hashlib.sha256(CALLER_KEY.encode()).hexdigest()
+    invalid_values = (
+        digest,
+        digest.upper(),
+        digest + digest,
+        "00" + digest,
+        "ab" * 31,
+        "ab" * 33,
+        "a" * 63,
+        "a" * 65,
+        "g" * 64,
+        "not-hex",
+        CALLER_KEY,
+    )
+    for invalid in invalid_values:
+        with pytest.raises(MODULE.OperatorError):
+            MODULE.validate_integrity_key(invalid, CALLER_KEY)
+
+
+def test_unexpected_failure_redacts_secret_values(monkeypatch, capsys):
+    secret = "super-secret-integrity-key"
+    monkeypatch.setattr(MODULE, "parse_args", lambda _argv: object())
+    monkeypatch.setattr(MODULE, "run", lambda *_args: (_ for _ in ()).throw(RuntimeError(secret)))
+    assert MODULE.main(["ignored"]) == 1
+    captured = capsys.readouterr()
+    assert secret not in captured.err
+    assert "RuntimeError" in captured.err
 
 def test_private_state_is_mode_600_exact_and_never_blindly_overwritten(tmp_path):
     path = tmp_path / f"koaryu-payer-ambiguity-test-{uuid4()}.json"
@@ -126,19 +242,19 @@ def test_private_state_is_mode_600_exact_and_never_blindly_overwritten(tmp_path)
         MODULE.write_private_state(
             path,
             state,
-            integrity_key=CALLER_KEY,
+            integrity_key=INTEGRITY_KEY,
             require_absent=True,
             state_directory=tmp_path,
         )
         assert (path.stat().st_mode & 0o777) == 0o600
         assert MODULE.read_private_state(
-            path, integrity_key=CALLER_KEY, state_directory=tmp_path
+            path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path
         ) == state
         with pytest.raises(MODULE.OperatorError):
             MODULE.write_private_state(
                 path,
                 state,
-                integrity_key=CALLER_KEY,
+                integrity_key=INTEGRITY_KEY,
                 require_absent=True,
                 state_directory=tmp_path,
             )
@@ -147,15 +263,18 @@ def test_private_state_is_mode_600_exact_and_never_blindly_overwritten(tmp_path)
             "phase": "provider_created",
             "provider_customer_id": "cus_Test123",
             "provider_mutation_count": 1,
+            "provider_create_response_count": 1,
+            "recovery_proof_sha256": "a" * 64,
+            "provider_evidence": {"source": "create"},
         }
         MODULE.write_private_state(
             path,
             provider_created,
-            integrity_key=CALLER_KEY,
+            integrity_key=INTEGRITY_KEY,
             state_directory=tmp_path,
         )
         assert MODULE.read_private_state(
-            path, integrity_key=CALLER_KEY, state_directory=tmp_path
+            path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path
         )["phase"] == "provider_created"
         with pytest.raises(MODULE.OperatorError, match="integrity"):
             MODULE.read_private_state(
@@ -170,7 +289,7 @@ def test_private_state_rejects_wrong_path_and_permissions(tmp_path):
         MODULE.write_private_state(
             tmp_path / "wrong-prefix.json",
             _armed_state(),
-            integrity_key=CALLER_KEY,
+            integrity_key=INTEGRITY_KEY,
             state_directory=tmp_path,
         )
 
@@ -179,16 +298,87 @@ def test_private_state_rejects_wrong_path_and_permissions(tmp_path):
         MODULE.write_private_state(
             path,
             _armed_state(),
-            integrity_key=CALLER_KEY,
+            integrity_key=INTEGRITY_KEY,
             state_directory=tmp_path,
         )
         os.chmod(path, 0o644)
         with pytest.raises(MODULE.OperatorError):
             MODULE.read_private_state(
-                path, integrity_key=CALLER_KEY, state_directory=tmp_path
+                path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path
             )
     finally:
         path.unlink(missing_ok=True)
+
+
+def test_private_state_rejects_symlinks_non_private_directory_and_path_escape(tmp_path):
+    private = tmp_path / "linux-tmp-state"
+    private.mkdir(mode=0o700)
+    outside = tmp_path / "outside.json"
+    link = private / f"koaryu-payer-ambiguity-{uuid4()}.json"
+    outside.write_text("{}", encoding="utf-8")
+    link.symlink_to(outside)
+    with pytest.raises(MODULE.OperatorError, match="symlink"):
+        MODULE.write_private_state(
+            link, _armed_state(), integrity_key=INTEGRITY_KEY, state_directory=private
+        )
+    with pytest.raises(MODULE.OperatorError, match="inside"):
+        MODULE.write_private_state(
+            outside, _armed_state(), integrity_key=INTEGRITY_KEY, state_directory=private
+        )
+    link.unlink()
+    os.chmod(private, 0o755)
+    with pytest.raises(MODULE.OperatorError, match="0700"):
+        MODULE.write_private_state(
+            private / f"koaryu-payer-ambiguity-{uuid4()}.json",
+            _armed_state(), integrity_key=INTEGRITY_KEY, state_directory=private,
+        )
+
+
+def test_private_state_rejects_symlink_in_intermediate_directory(tmp_path):
+    real_parent = tmp_path / "real-parent"
+    real_parent.mkdir(mode=0o700)
+    private = real_parent / "private"
+    private.mkdir(mode=0o700)
+    linked_parent = tmp_path / "linked-parent"
+    linked_parent.symlink_to(real_parent, target_is_directory=True)
+    linked_private = linked_parent / "private"
+    with pytest.raises(MODULE.OperatorError, match="symlink"):
+        MODULE.write_private_state(
+            linked_private / f"koaryu-payer-ambiguity-{uuid4()}.json",
+            _armed_state(),
+            integrity_key=INTEGRITY_KEY,
+            require_absent=True,
+            state_directory=linked_private,
+        )
+
+
+def test_atomic_arming_allows_exactly_one_competing_writer(tmp_path):
+    path = tmp_path / f"koaryu-payer-ambiguity-{uuid4()}.json"
+    states = [
+        _armed_state(),
+        {**_armed_state(), "actor_id": "00000000-0000-4000-8000-000000000009"},
+    ]
+
+    def arm(state):
+        try:
+            MODULE.write_private_state(
+                path,
+                state,
+                integrity_key=INTEGRITY_KEY,
+                require_absent=True,
+                state_directory=tmp_path,
+            )
+            return "won"
+        except MODULE.OperatorError:
+            return "lost"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(arm, states))
+    assert sorted(outcomes) == ["lost", "won"]
+    persisted = MODULE.read_private_state(
+        path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path
+    )
+    assert persisted in states
 
 
 def test_private_state_rejects_tampering_and_phase_field_drift(tmp_path):
@@ -197,7 +387,7 @@ def test_private_state_rejects_tampering_and_phase_field_drift(tmp_path):
         MODULE.write_private_state(
             path,
             _armed_state(),
-            integrity_key=CALLER_KEY,
+            integrity_key=INTEGRITY_KEY,
             state_directory=tmp_path,
         )
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -206,7 +396,7 @@ def test_private_state_rejects_tampering_and_phase_field_drift(tmp_path):
         os.chmod(path, 0o600)
         with pytest.raises(MODULE.OperatorError, match="integrity"):
             MODULE.read_private_state(
-                path, integrity_key=CALLER_KEY, state_directory=tmp_path
+                path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path
             )
         with pytest.raises(MODULE.OperatorError, match="phase fields"):
             MODULE.validate_state_phase({**_armed_state(), "unexpected": True})
@@ -228,18 +418,26 @@ def test_faulting_stripe_service_records_one_success_then_refuses_second_attempt
         FakeStripe,
         state=state,
         persist=lambda value: persisted.append(dict(value)),
+        capture_create_response=lambda _customer: ({"source": "create"}, "a" * 64),
+        verify_create_response=lambda _customer: None,
+        arm=lambda: persisted.append({"phase": "armed"}),
     )
     service = faulting()
     with pytest.raises(MODULE.DeliberateProviderResponseLoss):
         service.create_connected_customer(account_id="acct_Test123")
     assert len(calls) == 1
     assert state == {
-        "phase": "provider_created",
+        "phase": "provider_response_verified",
         "provider_customer_id": "cus_Test123",
         "provider_mutation_count": 1,
+        "provider_create_response_count": 1,
         "automatic_retry_count": 0,
+        "recovery_proof_sha256": "a" * 64,
+        "provider_evidence": {"source": "create"},
     }
-    assert persisted == [state]
+    assert persisted[0] == {"phase": "armed"}
+    assert persisted[1]["phase"] == "provider_created"
+    assert persisted[2] == state
 
     with pytest.raises(MODULE.OperatorError, match="second customer-create"):
         service.create_connected_customer(account_id="acct_Test123")
@@ -255,6 +453,9 @@ def test_faulting_stripe_service_stops_on_invalid_returned_identity():
         FakeStripe,
         state={"phase": "armed"},
         persist=lambda _value: None,
+        capture_create_response=lambda _customer: ({}, "a" * 64),
+        verify_create_response=lambda _customer: None,
+        arm=lambda: None,
     )
     with pytest.raises(MODULE.OperatorError, match="invalid identity"):
         faulting().create_connected_customer()
@@ -341,30 +542,29 @@ def _provider_created_state(*, phase="provider_created") -> dict:
         "phase": phase,
         "provider_customer_id": "cus_Test123",
         "provider_mutation_count": 1,
-        "provider_readback_count": 0,
+        "provider_create_response_count": 1,
+        "provider_retrieve_count": 0,
         "automatic_retry_count": 0,
+        "recovery_proof_sha256": "a" * 64,
+        "provider_evidence": {"source": "create"},
     }
 
 
 def test_recovery_action_models_each_crash_boundary_without_extra_read_or_replay():
     assert MODULE.classify_recovery_action(
-        state=_provider_created_state(),
+        state=_provider_created_state(phase="provider_response_verified"),
         operation=_recoverable_operation(),
         resource=_resource(),
         payer_id=PAYER_ID,
-    ) == "retrieve_then_authorize"
+    ) == "authorize_from_create_response"
 
-    verified = {
-        **_provider_created_state(phase="provider_verified"),
-        "provider_readback_count": 1,
-        "recovery_proof_sha256": "a" * 64,
-    }
+    verified = _provider_created_state(phase="provider_response_verified")
     assert MODULE.classify_recovery_action(
-        state=verified,
+        state={**verified, "phase": "provider_verified"},
         operation=_recoverable_operation(),
         resource=_resource(),
         payer_id=PAYER_ID,
-    ) == "authorize_without_readback"
+    ) == "authorize_from_create_response"
 
     committed = {
         **_recoverable_operation(state="recovery_authorized"),
@@ -373,7 +573,7 @@ def test_recovery_action_models_each_crash_boundary_without_extra_read_or_replay
         "recovery_proof_sha256": "a" * 64,
     }
     assert MODULE.classify_recovery_action(
-        state=verified,
+        state={**verified, "phase": "provider_verified"},
         operation=committed,
         resource=_resource(),
         payer_id=PAYER_ID,
@@ -407,8 +607,7 @@ def test_recovery_action_rejects_wrong_resource_attempts_counts_and_phase():
 def test_recovery_authorized_requires_exact_customer_outcome_and_proof():
     state = {
         **_provider_created_state(phase="provider_verified"),
-        "provider_readback_count": 1,
-        "recovery_proof_sha256": "a" * 64,
+        "provider_retrieve_count": 0,
     }
     operation = {
         **_recoverable_operation(state="recovery_authorized"),
@@ -438,87 +637,47 @@ def test_recovery_authorized_requires_exact_customer_outcome_and_proof():
         )
 
 
-def test_provider_verified_phase_is_durable_before_authorization_and_resume_does_not_read():
+def test_create_response_proof_authorizes_without_any_provider_retrieve():
     state = _provider_created_state()
-    calls = {"retrieve": 0, "verify": 0, "proof": 0}
+    assert MODULE.recovery_proof_from_create_response(state) == "a" * 64
+    for invalid in (
+        {**state, "provider_create_response_count": 0},
+        {**state, "provider_retrieve_count": 1},
+        {**state, "recovery_proof_sha256": "bad"},
+    ):
+        with pytest.raises(MODULE.OperatorError):
+            MODULE.recovery_proof_from_create_response(invalid)
+
+
+def test_interruption_after_create_capture_fails_closed_before_authorization():
     persisted: list[dict] = []
 
-    def retrieve():
-        calls["retrieve"] += 1
-        return {"id": "cus_Test123"}
+    class FakeStripe:
+        def create_connected_customer(self, **_kwargs):
+            return {"id": "cus_Test123"}
 
-    def verify(_customer):
-        calls["verify"] += 1
-
-    def proof(_customer):
-        calls["proof"] += 1
-        return {"normalized": True}, "a" * 64
-
-    assert MODULE.verify_provider_once_or_resume(
-        action="retrieve_then_authorize",
-        state=state,
+    faulting = MODULE.build_faulting_stripe_service(
+        FakeStripe,
+        state={"phase": "armed"},
         persist=lambda value: persisted.append(dict(value)),
-        retrieve=retrieve,
-        verify=verify,
-        proof_builder=proof,
-    ) == "a" * 64
-    assert calls == {"retrieve": 1, "verify": 1, "proof": 1}
-    assert persisted[0]["phase"] == "provider_readback_in_flight"
-    assert persisted[0]["provider_readback_count"] == 0
-    assert persisted[-1]["phase"] == "provider_verified"
-    assert persisted[-1]["provider_readback_count"] == 1
-    assert persisted[-1]["provider_evidence"] == {"normalized": True}
-
-    assert MODULE.verify_provider_once_or_resume(
-        action="authorize_without_readback",
-        state=state,
-        persist=lambda _value: pytest.fail("resume must not persist before RPC"),
-        retrieve=lambda: pytest.fail("resume must not retrieve Stripe again"),
-        verify=lambda _customer: pytest.fail("resume must not reverify a new response"),
-        proof_builder=lambda _customer: pytest.fail("resume must not rebuild proof"),
-    ) == "a" * 64
-    assert calls == {"retrieve": 1, "verify": 1, "proof": 1}
-
-
-def test_crash_after_read_request_stays_in_flight_and_cannot_issue_another_read():
-    state = {
-        **_provider_created_state(phase="reconciliation_required"),
-        "operation_id": "operation_1",
-        "resource_claim_id": "resource_1",
-        "operation_revision": 3,
-        "request_sha256": "b" * 64,
-        "stripe_connected_account_id": "acct_Test123",
-        "connect_account_generation": 1,
-    }
-    persisted: list[dict] = []
-
-    def crash_after_request():
-        raise RuntimeError("process died after GET dispatch")
-
-    with pytest.raises(RuntimeError, match="GET dispatch"):
-        MODULE.verify_provider_once_or_resume(
-            action="retrieve_then_authorize",
-            state=state,
-            persist=lambda value: persisted.append(dict(value)),
-            retrieve=crash_after_request,
-            verify=lambda _customer: None,
-            proof_builder=lambda _customer: ({}, "a" * 64),
-        )
-    assert persisted == [{**state, "phase": "provider_readback_in_flight"}]
-    with pytest.raises(MODULE.OperatorError):
+        capture_create_response=lambda _customer: ({"source": "create"}, "a" * 64),
+        verify_create_response=lambda _customer: (_ for _ in ()).throw(RuntimeError("interrupted")),
+        arm=lambda: persisted.append({"phase": "armed"}),
+    )
+    with pytest.raises(RuntimeError, match="interrupted"):
+        faulting().create_connected_customer()
+    assert [item["phase"] for item in persisted] == ["armed", "provider_created"]
+    with pytest.raises(MODULE.OperatorError, match="attended inspection"):
         MODULE.classify_recovery_action(
-            state=persisted[-1],
-            operation=_recoverable_operation(),
-            resource=_resource(),
-            payer_id=PAYER_ID,
+            state={**_provider_created_state(), "phase": "provider_created"},
+            operation=_recoverable_operation(), resource=_resource(), payer_id=PAYER_ID,
         )
 
 
 def test_rpc_committed_crash_resume_persists_without_provider_or_projection_callback():
     state = {
         **_provider_created_state(phase="provider_verified"),
-        "provider_readback_count": 1,
-        "recovery_proof_sha256": "a" * 64,
+        "provider_retrieve_count": 0,
     }
     operation = {
         **_recoverable_operation(state="recovery_authorized"),
@@ -540,7 +699,8 @@ def test_rpc_committed_crash_resume_persists_without_provider_or_projection_call
     assert result == {
         "phase": "recovery_authorized",
         "provider_mutation_count": 1,
-        "provider_readback_count": 1,
+        "provider_create_response_count": 1,
+        "provider_retrieve_count": 0,
         "automatic_retry_count": 0,
         "parent_operation_bound": True,
         "resource_claim_bound": True,
@@ -703,3 +863,47 @@ def test_normalized_provider_evidence_recomputes_and_binds_exact_operation_resou
                 test_clock_id="clock_Test123",
                 stable_hash=stable_hash,
             )
+
+
+def test_reconciliation_required_resume_revalidates_evidence_before_continuation():
+    stable_hash = lambda value: hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    operation = {"id": "operation_1", "studio_id": STUDIO_ID}
+    evidence = {
+        "evidence_type": "payer_sync_provider_succeeded_reconcile_only",
+        "operation_id": "operation_1",
+        "payer_id": PAYER_ID,
+        "customer_id": "cus_Test123",
+        "test_clock_id": "clock_Test123",
+        "name": "Schema v4 rehearsal payer",
+        "email": "payer@example.com",
+        "phone": None,
+        "address": {"line1": None, "city": None, "state": None, "postal_code": None},
+        "metadata": {"studio_id": STUDIO_ID, "payer_id": PAYER_ID, "product": "koaryu_payments"},
+    }
+    state = {
+        "phase": "reconciliation_required",
+        "provider_customer_id": "cus_Test123",
+        "provider_evidence": evidence,
+        "recovery_proof_sha256": stable_hash(evidence),
+    }
+    MODULE.validate_continuation_evidence(
+        state=state,
+        operation=operation,
+        payer_id=PAYER_ID,
+        test_clock_id="clock_Test123",
+        stable_hash=stable_hash,
+    )
+    mismatched = {
+        **state,
+        "provider_evidence": {**evidence, "customer_id": "cus_Other"},
+    }
+    with pytest.raises(MODULE.OperatorError, match="binding"):
+        MODULE.validate_continuation_evidence(
+            state=mismatched,
+            operation=operation,
+            payer_id=PAYER_ID,
+            test_clock_id="clock_Test123",
+            stable_hash=stable_hash,
+        )

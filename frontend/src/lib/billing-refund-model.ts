@@ -16,6 +16,12 @@ type RefundAttempt = {
 const REFUND_REASONS = new Set<RefundReason>(["duplicate", "fraudulent", "requested_by_customer"]);
 const RECONCILIATION_REQUIRED_DETAIL = "This billing operation requires reconciliation and will not be retried automatically.";
 const REFUND_STORAGE_UNAVAILABLE_DETAIL = "Refunds are unavailable because this browser cannot safely save the request. Enable browser storage and reload this page.";
+const DEFINITIVE_REFUND_REJECTION_DETAILS = new Set([
+  "Only Stripe payments can be refunded through Koaryu.",
+  "Payment payer identity is incomplete and requires reconciliation.",
+  "This payment has no refundable balance.",
+  "Refund amount exceeds the remaining refundable payment balance.",
+]);
 
 function validRequestKey(value: unknown): value is string {
   return typeof value === "string"
@@ -161,8 +167,15 @@ export async function refreshAfterConfirmedRefund(
 
 export function clearRefundRequestKey(identity: RefundIdentity, paymentId: string, storage: RefundStorage | null) {
   const key = storageKey(identity, paymentId);
-  memoryAttempts.delete(key);
-  try { storage?.removeItem(key); } catch {}
+  if (!storage) return false;
+  try {
+    storage.removeItem(key);
+    if (storage.getItem(key) !== null) return false;
+    memoryAttempts.delete(key);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function isRefundReconciliationRequiredError(error: unknown) {
@@ -170,6 +183,18 @@ export function isRefundReconciliationRequiredError(error: unknown) {
     && "status" in error
     && error.status === 409
     && error.message === RECONCILIATION_REQUIRED_DETAIL;
+}
+
+export function isDefinitiveRefundRejection(error: unknown) {
+  if (!(error instanceof Error) || !("status" in error) || typeof error.status !== "number") {
+    return false;
+  }
+  if (error.status === 409) {
+    return DEFINITIVE_REFUND_REJECTION_DETAILS.has(error.message);
+  }
+  return error.status >= 400
+    && error.status < 500
+    && ![408, 425, 429].includes(error.status);
 }
 
 export function markRefundReconciliationRequired(
@@ -187,9 +212,24 @@ export function markRefundReconciliationRequired(
   }
   if (!attempt) return false;
   const blockedAttempt = { ...attempt, disposition: "reconciliation_required" } as const;
-  memoryAttempts.set(key, blockedAttempt);
-  try { storage?.setItem(key, JSON.stringify(blockedAttempt)); } catch {}
-  return true;
+  if (!storage) return false;
+  try {
+    storage.setItem(key, JSON.stringify(blockedAttempt));
+    const persisted = parseStoredAttempt(storage.getItem(key));
+    if (
+      !persisted
+      || persisted.amountCents !== blockedAttempt.amountCents
+      || persisted.reason !== blockedAttempt.reason
+      || persisted.requestKey !== blockedAttempt.requestKey
+      || persisted.disposition !== blockedAttempt.disposition
+    ) {
+      return false;
+    }
+    memoryAttempts.set(key, blockedAttempt);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function isRefundReconciliationBlocked(

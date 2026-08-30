@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass
 from typing import Mapping
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 _TARGETS = {
@@ -19,6 +19,14 @@ _ZERO_WORK_OUTPUT = (
     '{"claimed":0,"completed":0,"reconciliation_required":0,"failed":0}'
 )
 _NONZERO_WORK_OUTPUT = "Billing transition cron completed nonzero work."
+
+
+class _RejectRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_NO_REDIRECT_OPENER = build_opener(_RejectRedirectHandler())
 
 
 @dataclass(frozen=True)
@@ -76,7 +84,10 @@ def process_due_billing_transitions(
         # retry-safe error instead of abandoning a request that is still
         # running. The 130-second bound also finishes before the next
         # five-minute Render Cron invocation.
-        with urlopen(request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:  # nosec B310
+        with _NO_REDIRECT_OPENER.open(  # nosec B310
+            request,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        ) as response:
             payload_bytes = response.read(_MAX_RESPONSE_BYTES + 1)
             status_code = response.status
     except (HTTPError, URLError, TimeoutError) as exc:

@@ -155,12 +155,16 @@ SUPPLEMENTAL_KEYS = {
     "ambiguity_recovery", "platform_fixture",
 }
 READBACK_KEYS = {"source", "status", "capture_boundary"}
+INVOICE_VOID_PROVIDER_KEYS = {"source", "invoice_id", "durable_operation_id", "stripe_account_id", "connect_account_generation", "status", "capture_boundary"}
+INVOICE_VOID_LOCAL_KEYS = INVOICE_VOID_PROVIDER_KEYS
 INVOICE_VOID_KEYS = {
     "workflow_id", "operation", "actor_role", "provider_attempt_count", "provider_mutation_count",
     "automatic_retry_count", "caller_request_key_sha256", "durable_operation_id",
     "provider_readback", "local_readback",
 }
 IMMEDIATE_CANCELLATION_KEYS = INVOICE_VOID_KEYS | {"strategy"}
+IMMEDIATE_PROVIDER_KEYS = {"source", "subscription_id", "durable_operation_id", "transition_intent_id", "stripe_account_id", "connect_account_generation", "status", "capture_boundary"}
+IMMEDIATE_LOCAL_KEYS = {"source", "subscription_id", "enrollment_id", "durable_operation_id", "transition_intent_id", "stripe_account_id", "connect_account_generation", "transition_state", "enrollment_status", "capture_boundary"}
 EXTERNAL_PAYMENT_KEYS = {
     "workflow_id", "local_payment_id", "local_status", "replay_payment_id",
     "caller_request_key_sha256", "replay_outcome", "audit_count", "invoice_id",
@@ -183,6 +187,8 @@ PERIOD_ADVANCEMENT_KEYS = {
     "method", "test_clock_id", "advances_to", "observed_provider_boundary",
     "direct_database_timestamp_edit", "provider_readback", "local_readback",
 }
+PERIOD_PROVIDER_KEYS = {"source", "studio_id", "stripe_account_id", "connect_account_generation", "test_clock_id", "old_frozen_time", "new_frozen_time", "status", "capture_boundary"}
+PERIOD_LOCAL_KEYS = {"source", "studio_id", "stripe_account_id", "connect_account_generation", "test_clock_id", "schedule_intent_id", "revoke_intent_id", "due_intent_id", "old_period_boundary", "new_period_boundary", "due_transition_state", "capture_boundary"}
 DISPUTE_LIFECYCLE_KEYS = {"dispute_id", "charge_id", "payment_id", "created_event", "closed_event", "provider_readback", "local_readback"}
 DISPUTE_EVENT_KEYS = {"event_id", "event_type", "local_event_id", "local_processing_status"}
 DISPUTE_LOCAL_READBACK_KEYS = {"source", "status", "state_category", "capture_boundary"}
@@ -196,6 +202,8 @@ AMBIGUITY_KEYS = {
     "automatic_retry_count", "caller_request_key_sha256", "mutation_step_name",
     "provider_readback", "local_readback",
 }
+AMBIGUITY_PROVIDER_KEYS = {"source", "customer_id", "payer_id", "studio_id", "stripe_account_id", "connect_account_generation", "retrieve_count", "status", "capture_boundary"}
+AMBIGUITY_LOCAL_KEYS = {"source", "durable_operation_id", "resource_claim_id", "resource_revision", "payer_id", "customer_id", "studio_id", "stripe_account_id", "connect_account_generation", "status", "capture_boundary"}
 PLATFORM_FIXTURE_KEYS = {
     "method", "event_id", "event_type", "studio_id", "stripe_account_id",
     "customer_id", "customer_preexisted", "subscription_id", "provider_mutation_count", "cleanup_required", "cleanup_timing",
@@ -347,7 +355,7 @@ def _utc_timestamp_value(value: Any) -> datetime | None:
     return parsed
 
 
-def _validate_supplemental(value: Any, *, boundary: str, errors: list[str]) -> None:
+def _validate_supplemental(value: Any, *, boundary: str, studio_id: str, account_id: str, account_generation: int, workflow_facts: dict[str, Any], errors: list[str]) -> None:
     supplemental = _exact_object(value, SUPPLEMENTAL_KEYS, "supplemental evidence", errors)
     if not supplemental:
         return
@@ -378,15 +386,21 @@ def _validate_supplemental(value: Any, *, boundary: str, errors: list[str]) -> N
     void = _exact_object(supplemental.get("invoice_void"), INVOICE_VOID_KEYS, "invoice void evidence", errors)
     if void and ((void.get("workflow_id"), void.get("operation"), void.get("actor_role"), void.get("provider_attempt_count"), void.get("provider_mutation_count"), void.get("automatic_retry_count")) != ("invoice.void", "connected_invoice.void", "admin", 1, 1, 0) or not re.fullmatch(r"[0-9a-f]{64}", str(void.get("caller_request_key_sha256") or "")) or not re.fullmatch(r"[A-Za-z0-9_-]{3,128}", str(void.get("durable_operation_id") or ""))):
         errors.append("invoice void evidence must prove one exact Admin connected_invoice.void mutation")
-    _validate_readback(void.get("provider_readback"), label="invoice void provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["invoice_void.provider"], expected_status="void", errors=errors)
-    _validate_readback(void.get("local_readback"), label="invoice void local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["invoice_void.local"], expected_status="void", errors=errors)
+    void_provider = _exact_object(void.get("provider_readback"), INVOICE_VOID_PROVIDER_KEYS, "invoice void provider readback", errors)
+    void_local = _exact_object(void.get("local_readback"), INVOICE_VOID_LOCAL_KEYS, "invoice void local readback", errors)
+    void_binding = tuple(void_provider.get(key) for key in ("invoice_id", "durable_operation_id", "stripe_account_id", "connect_account_generation"))
+    if void_provider and (void_provider.get("source") != SUPPLEMENTAL_SOURCES["invoice_void.provider"] or void_provider.get("status") != "void" or void_provider.get("durable_operation_id") != void.get("durable_operation_id") or void_provider.get("capture_boundary") != boundary): errors.append("invoice void provider readback must use its canonical source and bind the exact voided invoice and durable operation")
+    if void_local and (void_local.get("source") != SUPPLEMENTAL_SOURCES["invoice_void.local"] or void_local.get("status") != "void" or tuple(void_local.get(key) for key in ("invoice_id", "durable_operation_id", "stripe_account_id", "connect_account_generation")) != void_binding or void_local.get("capture_boundary") != boundary): errors.append("invoice void local readback must bind the exact terminal invoice and durable operation")
 
     immediate = _exact_object(supplemental.get("immediate_cancellation"), IMMEDIATE_CANCELLATION_KEYS, "immediate cancellation evidence", errors)
     strategy = immediate.get("strategy")
     if immediate and (strategy not in IMMEDIATE_STRATEGIES or immediate.get("operation") != IMMEDIATE_STRATEGIES.get(strategy) or immediate.get("workflow_id") != "enrollment.cancel.immediate" or immediate.get("actor_role") != "admin" or immediate.get("provider_attempt_count") != 1 or immediate.get("provider_mutation_count") != 1 or immediate.get("automatic_retry_count") != 0 or not re.fullmatch(r"[0-9a-f]{64}", str(immediate.get("caller_request_key_sha256") or "")) or not re.fullmatch(r"[A-Za-z0-9_-]{3,128}", str(immediate.get("durable_operation_id") or ""))):
         errors.append("immediate cancellation evidence has the wrong strategy or operation")
-    _validate_readback(immediate.get("provider_readback"), label="immediate cancellation provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["immediate_cancellation.provider"], expected_status="canceled", errors=errors)
-    _validate_readback(immediate.get("local_readback"), label="immediate cancellation local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["immediate_cancellation.local"], expected_status="canceled", errors=errors)
+    immediate_provider = _exact_object(immediate.get("provider_readback"), IMMEDIATE_PROVIDER_KEYS, "immediate cancellation provider readback", errors)
+    immediate_local = _exact_object(immediate.get("local_readback"), IMMEDIATE_LOCAL_KEYS, "immediate cancellation local readback", errors)
+    immediate_binding = tuple(immediate_provider.get(key) for key in ("subscription_id", "durable_operation_id", "transition_intent_id", "stripe_account_id", "connect_account_generation"))
+    if immediate_provider and (immediate_provider.get("source") != SUPPLEMENTAL_SOURCES["immediate_cancellation.provider"] or immediate_provider.get("status") != "canceled" or immediate_provider.get("durable_operation_id") != immediate.get("durable_operation_id") or immediate_provider.get("capture_boundary") != boundary): errors.append("immediate cancellation provider readback must bind the exact canceled subscription, intent, and operation")
+    if immediate_local and (immediate_local.get("source") != SUPPLEMENTAL_SOURCES["immediate_cancellation.local"] or immediate_local.get("transition_state") != "completed" or immediate_local.get("enrollment_status") != "canceled" or tuple(immediate_local.get(key) for key in ("subscription_id", "durable_operation_id", "transition_intent_id", "stripe_account_id", "connect_account_generation")) != immediate_binding or not immediate_local.get("enrollment_id") or immediate_local.get("capture_boundary") != boundary): errors.append("immediate cancellation local readback must bind the exact canceled enrollment, intent, and operation")
 
     external = _exact_object(supplemental.get("external_payment"), EXTERNAL_PAYMENT_KEYS, "external payment evidence", errors)
     if external and (external.get("workflow_id") != "payment.external.record" or external.get("local_status") != "externally_recorded" or not external.get("local_payment_id") or external.get("replay_payment_id") != external.get("local_payment_id") or not re.fullmatch(r"[0-9a-f]{64}", str(external.get("caller_request_key_sha256") or "")) or external.get("replay_outcome") != "same_row" or external.get("audit_count") != 1 or external.get("invoice_id") is not None or external.get("provider_mutation_count") != 0):
@@ -470,8 +484,11 @@ def _validate_supplemental(value: Any, *, boundary: str, errors: list[str]) -> N
     period = _exact_object(supplemental.get("period_advancement"), PERIOD_ADVANCEMENT_KEYS, "period advancement evidence", errors)
     if period and (period.get("method") != "stripe_test_clock.advance" or not str(period.get("test_clock_id", "")).startswith("clock_") or type(period.get("advances_to")) is not int or period.get("advances_to") <= 0 or period.get("observed_provider_boundary") != period.get("advances_to") or period.get("direct_database_timestamp_edit") is not False):
         errors.append("period advancement must use Stripe test-clock advancement without direct database timestamp editing")
-    _validate_readback(period.get("provider_readback"), label="period advancement provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["period_advancement.provider"], expected_status="advanced", errors=errors)
-    _validate_readback(period.get("local_readback"), label="period advancement local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["period_advancement.local"], expected_status="completed", errors=errors)
+    period_provider = _exact_object(period.get("provider_readback"), PERIOD_PROVIDER_KEYS, "period advancement provider readback", errors)
+    period_local = _exact_object(period.get("local_readback"), PERIOD_LOCAL_KEYS, "period advancement local readback", errors)
+    period_context = tuple(period_provider.get(key) for key in ("studio_id", "stripe_account_id", "connect_account_generation", "test_clock_id"))
+    if period_provider and (period_provider.get("source") != SUPPLEMENTAL_SOURCES["period_advancement.provider"] or period_context != (studio_id, account_id, account_generation, period.get("test_clock_id")) or period_provider.get("status") != "advanced" or period_provider.get("new_frozen_time") != period.get("advances_to") or type(period_provider.get("old_frozen_time")) is not int or period_provider.get("old_frozen_time") >= period_provider.get("new_frozen_time") or period_provider.get("capture_boundary") != boundary): errors.append("period provider readback must bind the exact Test Clock advancement boundary")
+    if period_local and (period_local.get("source") != SUPPLEMENTAL_SOURCES["period_advancement.local"] or tuple(period_local.get(key) for key in ("studio_id", "stripe_account_id", "connect_account_generation", "test_clock_id")) != period_context or tuple(period_local.get(key) for key in ("schedule_intent_id", "revoke_intent_id", "due_intent_id")) != tuple(workflow_facts.get(key) for key in ("period_schedule_intent_id", "period_revoke_intent_id", "period_due_intent_id")) or period_local.get("old_period_boundary") != period_provider.get("old_frozen_time") or period_local.get("new_period_boundary") != period_provider.get("new_frozen_time") or period_local.get("due_transition_state") != "completed" or period_local.get("capture_boundary") != boundary): errors.append("period local readback must bind the exact intents and completed due transition")
 
     dispute = _exact_object(supplemental.get("dispute_lifecycle"), DISPUTE_LIFECYCLE_KEYS, "dispute lifecycle evidence", errors)
     created = _exact_object(dispute.get("created_event"), DISPUTE_EVENT_KEYS, "dispute created event", errors)
@@ -500,8 +517,11 @@ def _validate_supplemental(value: Any, *, boundary: str, errors: list[str]) -> N
     ambiguity = _exact_object(supplemental.get("ambiguity_recovery"), AMBIGUITY_KEYS, "ambiguity recovery evidence", errors)
     if ambiguity and (ambiguity.get("workflow_id") != "payer.sync" or not ambiguity.get("durable_operation_id") or ambiguity.get("provider_mutation_count") != 1 or ambiguity.get("automatic_retry_count") != 0):
         errors.append("ambiguity recovery must bind one durable parent operation with one mutation and zero retries")
-    _validate_readback(ambiguity.get("provider_readback"), label="ambiguity provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["ambiguity.provider"], expected_status="found", errors=errors)
-    _validate_readback(ambiguity.get("local_readback"), label="ambiguity local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["ambiguity.local"], expected_status="completed", errors=errors)
+    ambiguity_provider = _exact_object(ambiguity.get("provider_readback"), AMBIGUITY_PROVIDER_KEYS, "ambiguity provider readback", errors)
+    ambiguity_local = _exact_object(ambiguity.get("local_readback"), AMBIGUITY_LOCAL_KEYS, "ambiguity local readback", errors)
+    ambiguity_binding = tuple(ambiguity_provider.get(key) for key in ("payer_id", "customer_id", "studio_id", "stripe_account_id", "connect_account_generation"))
+    if ambiguity_provider and (ambiguity_provider.get("source") != SUPPLEMENTAL_SOURCES["ambiguity.provider"] or ambiguity_binding != (workflow_facts.get("payer_id"), workflow_facts.get("customer_id"), studio_id, account_id, account_generation) or ambiguity_provider.get("status") != "found" or ambiguity_provider.get("retrieve_count") != 1 or ambiguity_provider.get("capture_boundary") != boundary): errors.append("ambiguity provider readback must bind one exact hosted customer retrieve")
+    if ambiguity_local and (ambiguity_local.get("source") != SUPPLEMENTAL_SOURCES["ambiguity.local"] or ambiguity_local.get("durable_operation_id") != ambiguity.get("durable_operation_id") or ambiguity_local.get("resource_revision") != 1 or not ambiguity_local.get("resource_claim_id") or tuple(ambiguity_local.get(key) for key in ("payer_id", "customer_id", "studio_id", "stripe_account_id", "connect_account_generation")) != ambiguity_binding or ambiguity_local.get("status") != "completed" or ambiguity_local.get("capture_boundary") != boundary): errors.append("ambiguity local readback must bind the parent operation, resource claim, payer, and customer")
 
     platform = _exact_object(supplemental.get("platform_fixture"), PLATFORM_FIXTURE_KEYS, "platform fixture evidence", errors)
     if platform and (
@@ -708,7 +728,7 @@ def validate_evidence(
             if row and (row.get("count") != 0 or row.get("source") != WRONG_MODE_SOURCES[surface] or row.get("readback_boundary") != boundary):
                 errors.append(f"wrong-mode {surface} component must be a sourced zero at the shared capture boundary")
 
-    _validate_supplemental(evidence.get("supplemental_evidence"), boundary=boundary, errors=errors)
+    _validate_supplemental(evidence.get("supplemental_evidence"), boundary=boundary, studio_id=evidence.get("studio_id"), account_id=evidence.get("stripe_account_id"), account_generation=evidence.get("connect_account_generation"), workflow_facts=facts, errors=errors)
     supplemental = evidence.get("supplemental_evidence") or {}
     setup = supplemental.get("payer_setup_lifecycle") or {}
     for phase in ("initial", "replacement"):

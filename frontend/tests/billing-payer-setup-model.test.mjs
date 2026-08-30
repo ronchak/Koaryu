@@ -10,6 +10,7 @@ import {
   buildPayerSyncRequest,
   clearPersistedPayerOperationRequestKey,
   copyPayerAutopaySetupLink,
+  getPayerAutopaySetupReturnUrl,
   resolvePersistedPayerOperationRequestKey,
   resolvePayerAutopaySetupRequestKey,
   resolvePayerSyncRequestKey,
@@ -29,6 +30,21 @@ describe("hidden payer autopay setup adapter", () => {
       headers: { "Idempotency-Key": "payer-setup-key-1" },
     });
     assert.doesNotMatch(JSON.stringify(request), /terms_accepted/i);
+  });
+
+  it("returns payers to a public completion route instead of staff billing", () => {
+    assert.equal(
+      getPayerAutopaySetupReturnUrl("https://app.koaryu.test/billing?tab=families"),
+      "https://app.koaryu.test/payer-setup-complete",
+    );
+    const actions = fs.readFileSync(path.join(root, "src/lib/billing-payer-actions.ts"), "utf8");
+    const proxy = fs.readFileSync(path.join(root, "src/proxy.ts"), "utf8");
+    assert.match(actions, /getPayerAutopaySetupReturnUrl\(window\.location\.origin\)/);
+    assert.doesNotMatch(proxy, /payer-setup-complete/);
+    assert.equal(
+      fs.existsSync(path.join(root, "src/app/payer-setup-complete/page.tsx")),
+      true,
+    );
   });
 
   it("reuses one payer key for retries and rotates only for a deliberate new setup", () => {

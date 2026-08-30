@@ -26,6 +26,10 @@ from app.services.studio_live_billing_authorizations import (
 )
 
 
+class StripeTestClockRejected(Exception):
+    """Stripe definitively rejected a connected-customer test clock."""
+
+
 def _exact_keys(value: Any, required: set[str], optional: set[str] | None = None) -> bool:
     return isinstance(value, dict) and set(value) == required | (set(value) & (optional or set()))
 
@@ -263,10 +267,15 @@ class StripeService:
             payload["expand"] = expand
         if test_clock_id:
             payload["test_clock"] = test_clock_id
-        return stripe.Customer.create(
-            **payload,
-            **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
-        )
+        try:
+            return stripe.Customer.create(
+                **payload,
+                **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+            )
+        except stripe.InvalidRequestError as exc:
+            if test_clock_id and getattr(exc, "param", None) == "test_clock":
+                raise StripeTestClockRejected() from exc
+            raise
 
     @stripe_mutation("connected_customer.update")
     def update_connected_customer(

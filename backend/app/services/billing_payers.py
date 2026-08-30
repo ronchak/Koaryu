@@ -4,6 +4,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from fastapi import HTTPException, status
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import (
     STRIPE_TEST_CLOCK_ID_PATTERN,
@@ -21,7 +22,7 @@ from app.services.billing_provider_operations import (
 )
 from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
 from app.services.stripe_mutation_policy import StripeMutationBlocked, configured_stripe_mode
-from app.services.stripe_service import StripeService
+from app.services.stripe_service import StripeService, StripeTestClockRejected
 
 
 PAYER_SYNC_AMBIGUOUS_DETAIL = (
@@ -356,13 +357,22 @@ class BillingPayerManager:
                         idempotency_key=stripe_key,
                         test_clock_id=test_clock_id,
                     )
-            except StripeMutationBlocked:
+            except (StripeMutationBlocked, StripeTestClockRejected) as exc:
                 coordinator.transition(
                     context,
                     operation,
                     "definitive_rejected",
-                    error_code="provider_mutation_blocked",
+                    error_code=(
+                        "payer_sync_test_clock_rejected"
+                        if isinstance(exc, StripeTestClockRejected)
+                        else "provider_mutation_blocked"
+                    ),
                 )
+                if isinstance(exc, StripeTestClockRejected):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Stripe rejected the test clock for this connected customer.",
+                    ) from exc
                 raise
             except Exception as exc:
                 self._mark_payer_sync_reconciliation(
@@ -596,8 +606,13 @@ class BillingPayerManager:
                     stripe_connected_account_id=context.stripe_connected_account_id,
                     connect_account_generation=context.connect_account_generation,
                 )
-            except Exception:
-                active_consent = None
+            except PostgrestAPIError as exc:
+                if (
+                    getattr(exc, "code", None) != "P0002"
+                    or getattr(exc, "message", None)
+                    != "billing_payer_active_consent_not_found"
+                ):
+                    raise
         if (
             not payment_fields.get("default_payment_method_id")
             and active_consent is not None

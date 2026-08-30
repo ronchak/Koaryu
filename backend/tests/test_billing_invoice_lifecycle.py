@@ -907,7 +907,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             "stripe_subscription_id": None,
             "stripe_subscription_item_id": None,
             "billing_status": "no_payment_method",
-            "status": "pending",
+            # The service must override a database default that would otherwise
+            # activate provider enrollment before the explicit activation flow.
+            "status": "active",
             "start_date": "2026-05-01",
             "end_date": None,
             "next_bill_on": None,
@@ -1256,6 +1258,30 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(invoice["status"], "paid")
         self.assertEqual(invoice["amount_remaining_cents"], 0)
 
+    def test_requires_action_refund_replay_reserves_once_and_never_goes_negative(self):
+        service = self.service()
+        service.supabase = _FakeSupabase(_settled_payment_tables())
+        refund = {
+            "id": "re_action", "charge": "ch_1", "payment_intent": "pi_1",
+            "amount": 250, "status": "requires_action",
+            "metadata": {"studio_id": "studio_1"},
+        }
+
+        for created in (100, 100):
+            service.project_connect_event({
+                "id": f"evt_action_{created}",
+                "type": "refund.updated",
+                "account": "acct_1",
+                "created": created,
+                "data": {"object": refund},
+            })
+
+        payment = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(len(service.supabase.tables["billing_refunds"]), 1)
+        self.assertEqual(payment["refunded_amount_cents"], 0)
+        self.assertEqual(payment["net_collected_amount_cents"], 200)
+        self.assertEqual(payment["refundable_amount_cents"], 0)
+
     def test_late_payment_intent_backlinks_existing_refund(self):
         service = self.service()
         tables = _settled_payment_tables()
@@ -1291,6 +1317,13 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "status": "pending",
             },
             {
+                "id": "refund_requires_action", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_1",
+                "connect_account_generation": 1, "stripe_charge_id": "ch_1",
+                "stripe_payment_intent_id": "pi_1", "amount_cents": 200,
+                "status": "requires_action",
+            },
+            {
                 "id": "refund_wrong_studio", "studio_id": "studio_other",
                 "payment_id": "payment_1", "stripe_account_id": "acct_1",
                 "connect_account_generation": 1, "stripe_charge_id": "ch_1",
@@ -1322,7 +1355,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         payment = service.supabase.tables["billing_payments"][0]
         self.assertEqual(payment["refunded_amount_cents"], 0)
         self.assertEqual(payment["net_collected_amount_cents"], 200)
-        self.assertEqual(payment["refundable_amount_cents"], 170)
+        self.assertEqual(payment["refundable_amount_cents"], 0)
 
     def test_reconcile_payment_adjustments_reserves_only_matching_pending_refunds(self):
         service = self.service()
@@ -1339,6 +1372,12 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "payment_id": "payment_1", "stripe_account_id": "acct_1",
                 "connect_account_generation": 1, "amount_cents": 40,
                 "status": "pending",
+            },
+            {
+                "id": "refund_requires_action", "studio_id": "studio_1",
+                "payment_id": "payment_1", "stripe_account_id": "acct_1",
+                "connect_account_generation": 1, "amount_cents": 60,
+                "status": "requires_action",
             },
             {
                 "id": "refund_failed", "studio_id": "studio_1",
@@ -1374,7 +1413,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         self.assertEqual(payment["refunded_amount_cents"], 50)
         self.assertEqual(payment["net_collected_amount_cents"], 150)
-        self.assertEqual(payment["refundable_amount_cents"], 110)
+        self.assertEqual(payment["refundable_amount_cents"], 50)
 
     def test_terminal_won_dispute_does_not_regress_or_reverse_balance(self):
         service = self.service()

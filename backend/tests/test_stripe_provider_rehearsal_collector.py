@@ -270,7 +270,7 @@ def chain():
         by_role["platform_subscription_event"]["type"] = "customer.subscription.created"
         by_role["platform_customer"].update(metadata={"studio_id":"studio_1"}, created=100)
         by_role["platform_subscription"].update(metadata={"studio_id":"studio_1"}, customer="cus_platform", status="active", created=200)
-        by_role["test_clock"]["created"] = 300
+        by_role["test_clock"].update(created=50, frozen_time=100 if index == 0 else 300)
         if phase == "failed_before_retry":
             by_role["automatic_invoice"]["status"] = "open"
             by_role["automatic_payment_intent"].update(status="requires_payment_method", last_payment_error_present=True)
@@ -440,7 +440,7 @@ class CollectorArtifactTest(unittest.TestCase):
         validator, _ = C._load_contract()
         rows = C._project_group_four_local(m, final, phases[4]["local_rows"], phases[5]["observed_at"], validator)
         self.assertEqual(rows["invoice_void"]["provider_readback"]["status"], "void")
-        self.assertEqual(rows["immediate_cancellation"]["local_readback"]["status"], "canceled")
+        self.assertEqual(rows["immediate_cancellation"]["local_readback"]["enrollment_status"], "canceled")
         self.assertEqual(rows["external_payment"]["audit_count"], 1)
         self.assertEqual(len(rows["unsupported_operations"]), 4)
 

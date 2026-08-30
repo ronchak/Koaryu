@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 128 ]]; then
-  echo "ERROR: Expected the canonical 128-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 129 ]]; then
+  echo "ERROR: Expected the canonical 129-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 46 ]]; then
-  echo "ERROR: Expected the canonical 46-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 47 ]]; then
+  echo "ERROR: Expected the canonical 47-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
@@ -662,21 +662,28 @@ SQL
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
       echo "[restored V31] PASS V30 dump/restore then migration 126"
-      echo "[restored V33] RUN V30 dump/restore then migrations 126-128"
+      echo "[restored V34] RUN V30 dump/restore then migrations 126-129"
       restored_v33_output="$(run_interruptible bash <(
         awk '
           /^echo "PASS: V30 dump\/restore predecessor plus migration 126/ {
             print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830065627_release_invoice_retry_preread_lease_v32.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830065627'\'','\''release_invoice_retry_preread_lease_v32'\'');\" >/dev/null"
             print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830082610_invoice_retry_release_compatibility_v33.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830082610'\'','\''invoice_retry_release_compatibility_v33'\'');\" >/dev/null"
+            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830151714_invoice_retry_closeout_contract_v34.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830151714'\'','\''invoice_retry_closeout_contract_v34'\'');\" >/dev/null"
             print "catalog_sql=\"$(cd \"$repository_root\" && node --input-type=module --eval \"import { CATALOG_STATE_SQL } from '\''./scripts/studio-comp-migration-rollout.mjs'\''; process.stdout.write(CATALOG_STATE_SQL);\")\""
-            print "echo RESTORED_V33_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
+            print "echo RESTORED_V34_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
           }
           { print }
         ' "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh"
       ) "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
         "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR")"
       printf '%s\n' "$restored_v33_output"
-      echo "[restored V33] PASS V30 dump/restore then migrations 126-128"
+      restored_v34_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V34_CATALOG_STATE=//p' | tail -1)"
+      expected_restored_v34_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V34_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V34_RESTORED_CATALOG_STATE);")"
+      if [[ "$restored_v34_catalog" != "$expected_restored_v34_catalog" ]]; then
+        echo "[restored V34] FAIL exact restored catalog: $restored_v34_catalog" >&2
+        exit 1
+      fi
+      echo "[restored V34] PASS V30 dump/restore then migrations 126-129"
     else
       status=$?
       echo "[restored V31] FAIL V30 dump/restore then migration 126 (exit $status)" >&2

@@ -321,6 +321,14 @@ anchors. It:
   and expectation state
   `1:96ef86c6e18e5920e61d4d5d9a1f32e7a35bf5e4328320b650d1a7328c77ad9d`.
 
+The additive V34 closeout contract advances the canonical chain from 128/V33
+(`20260830082610`) to 129/V34 (`20260830151714`). It reserves refundable
+balance for both `pending` and `requires_action` refunds, certifies terminal
+invoice closeout replay before applying fresh draft/open preconditions, and
+binds closeout adoption to the full operation and resource tuple. Its V15
+readiness function reports `release-db-attestation-v34`; V31 and V33 remain
+historical compatibility anchors rather than the final release state.
+
 Latest local candidate evidence before publication:
 
 - backend: all 1,417 tests passed;

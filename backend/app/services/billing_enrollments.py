@@ -195,6 +195,8 @@ class BillingEnrollmentManager:
             raise HTTPException(status_code=400, detail="Fixed-term billing requires an end date.")
         row = data.model_dump(exclude_none=True)
         row["studio_id"] = studio_id
+        if data.collection_mode != "external":
+            row["status"] = "pending"
         row.setdefault("billing_status", "externally_paid" if data.collection_mode == "external" else "no_payment_method")
         try:
             result = self.supabase.table("student_billing_enrollments").insert(row).execute()

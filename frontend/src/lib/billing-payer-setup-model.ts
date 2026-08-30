@@ -188,6 +188,10 @@ export function buildPayerAutopaySetupRequest(
   };
 }
 
+export function getPayerAutopaySetupReturnUrl(origin: string) {
+  return new URL("/payer-setup-complete", origin).toString();
+}
+
 export async function copyPayerAutopaySetupLink(
   url: string,
   writeText: ((value: string) => Promise<void>) | undefined =

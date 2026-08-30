@@ -26,13 +26,20 @@ second_log="$(mktemp /tmp/koaryu-provider-resource-second.XXXXXX)"
 first_pid=""
 second_pid=""
 
+process_is_live() {
+  local process_state=""
+  [[ -n "${1:-}" ]] || return 1
+  process_state="$(ps -o stat= -p "$1" 2>/dev/null | tr -d '[:space:]')"
+  [[ -n "$process_state" && "$process_state" != Z* ]]
+}
+
 cleanup() {
   local exit_code=$?
-  if [[ -n "$first_pid" ]] && kill -0 "$first_pid" 2>/dev/null; then
+  if process_is_live "$first_pid"; then
     kill "$first_pid" 2>/dev/null || true
     wait "$first_pid" 2>/dev/null || true
   fi
-  if [[ -n "$second_pid" ]] && kill -0 "$second_pid" 2>/dev/null; then
+  if process_is_live "$second_pid"; then
     kill "$second_pid" 2>/dev/null || true
     wait "$second_pid" 2>/dev/null || true
   fi
@@ -252,10 +259,10 @@ SELECT public.claim_billing_provider_operation_resource_v1(
 SQL
 second_pid=$!
 for _attempt in {1..10}; do
-  kill -0 "$second_pid" 2>/dev/null
+  process_is_live "$second_pid"
   sleep 0.05
 done
-kill -0 "$second_pid" 2>/dev/null
+process_is_live "$second_pid"
 
 wait "$first_pid"
 first_pid=""

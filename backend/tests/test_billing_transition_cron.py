@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from urllib.error import HTTPError
+
 import pytest
 
 from app.services.billing_transition_cron import (
@@ -62,7 +64,7 @@ def test_cron_posts_to_exact_internal_route_without_logging_secret():
         b'{"claimed":2,"completed":2,"reconciliation_required":0,"failed":0}'
     )
     with patch(
-        "app.services.billing_transition_cron.urlopen",
+        "app.services.billing_transition_cron._NO_REDIRECT_OPENER.open",
         return_value=response,
     ) as request:
         result = process_due_billing_transitions(_config())
@@ -96,11 +98,47 @@ def test_cron_posts_to_exact_internal_route_without_logging_secret():
 )
 def test_cron_fails_closed_on_unsafe_or_attention_required_results(payload: bytes):
     with patch(
-        "app.services.billing_transition_cron.urlopen",
+        "app.services.billing_transition_cron._NO_REDIRECT_OPENER.open",
         return_value=_Response(payload),
     ):
         with pytest.raises(RuntimeError):
             process_due_billing_transitions(_config())
+
+
+@pytest.mark.parametrize("status_code", (301, 302, 303, 307, 308))
+def test_cron_rejects_redirects_without_forwarding_worker_secret(status_code: int):
+    error = HTTPError(
+        "https://koaryu-staging.onrender.com/api/v1/internal/billing/redirect",
+        status_code,
+        "redirect rejected",
+        {"Location": "https://attacker.invalid/capture"},
+        None,
+    )
+    with patch(
+        "app.services.billing_transition_cron._NO_REDIRECT_OPENER.open",
+        side_effect=error,
+    ) as request:
+        with pytest.raises(RuntimeError, match="request failed"):
+            process_due_billing_transitions(_config())
+
+    assert request.call_count == 1
+    outgoing = request.call_args.args[0]
+    assert outgoing.headers["X-internal-secret"] == "s" * 40
+
+
+@pytest.mark.parametrize("status_code", (301, 302, 303, 307, 308))
+def test_redirect_handler_never_constructs_a_forwarded_request(status_code: int):
+    from app.services.billing_transition_cron import _RejectRedirectHandler
+
+    request = object()
+    assert _RejectRedirectHandler().redirect_request(
+        request,
+        None,
+        status_code,
+        "redirect",
+        {"Location": "https://attacker.invalid/capture"},
+        "https://attacker.invalid/capture",
+    ) is None
 
 
 @pytest.mark.parametrize(

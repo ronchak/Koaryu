@@ -9,6 +9,7 @@ import {
   clearRefundRequestKey,
   isRefundReconciliationBlocked,
   isRefundReconciliationRequiredError,
+  isDefinitiveRefundRejection,
   isPaymentRefundEligible,
   markRefundReconciliationRequired,
   parseRefundAmount,
@@ -72,7 +73,7 @@ describe("billing payment refunds", () => {
       () => resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", createKey, storage),
       /unresolved earlier attempt/,
     );
-    clearRefundRequestKey(identity, payment.id, storage);
+    assert.equal(clearRefundRequestKey(identity, payment.id, storage), true);
     assert.notEqual(resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", createKey, storage), first);
   });
 
@@ -159,6 +160,79 @@ describe("billing payment refunds", () => {
     assert.equal(isTerminalBillingIdempotencyError(terminal), true);
   });
 
+  it("maps the backend's exact definitive refund 409 details without clearing true conflicts", () => {
+    for (const detail of [
+      "Only Stripe payments can be refunded through Koaryu.",
+      "Payment payer identity is incomplete and requires reconciliation.",
+      "This payment has no refundable balance.",
+      "Refund amount exceeds the remaining refundable payment balance.",
+    ]) {
+      assert.equal(
+        isDefinitiveRefundRejection(Object.assign(new Error(detail), { status: 409 })),
+        true,
+        detail,
+      );
+    }
+    for (const detail of [
+      "This billing operation requires reconciliation and will not be retried automatically.",
+      "A prior refund for this payment is still settling. Wait for its final provider status before starting another refund.",
+      "This idempotency key is already in use for a different refund request.",
+      "This operation is still in progress.",
+    ]) {
+      assert.equal(
+        isDefinitiveRefundRejection(Object.assign(new Error(detail), { status: 409 })),
+        false,
+        detail,
+      );
+    }
+    assert.equal(isDefinitiveRefundRejection(Object.assign(new Error("invalid amount"), { status: 422 })), true);
+    assert.equal(isDefinitiveRefundRejection(Object.assign(new Error("not allowed"), { status: 403 })), true);
+    for (const status of [408, 425, 429, 500, 503]) {
+      assert.equal(
+        isDefinitiveRefundRejection(Object.assign(new Error("retry or inspect"), { status })),
+        false,
+      );
+    }
+    assert.equal(isDefinitiveRefundRejection(new Error("network failure")), false);
+  });
+
+  it("keeps memory and durable state when removal fails, then allows a corrected retry after verified removal", () => {
+    const identity = { userId: "removal-admin", studioId: "studio-1" };
+    const storage = memoryStorage();
+    const first = resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "removal-key-1", storage);
+    const refusingStorage = {
+      getItem: storage.getItem,
+      setItem: storage.setItem,
+      removeItem() { throw new Error("blocked"); },
+    };
+    assert.equal(clearRefundRequestKey(identity, payment.id, refusingStorage), false);
+    assert.equal(
+      resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "must-not-run", storage),
+      first,
+    );
+    assert.throws(
+      () => resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", () => "must-not-run", storage),
+      /unresolved earlier attempt/,
+    );
+    assert.equal(clearRefundRequestKey(identity, payment.id, storage), true);
+    assert.equal(
+      resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", () => "removal-key-2", storage),
+      "removal-key-2",
+    );
+  });
+
+  it("rejects a no-op durable removal and preserves the existing request", () => {
+    const identity = { userId: "noop-removal-admin", studioId: "studio-1" };
+    const storage = memoryStorage();
+    resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "noop-key", storage);
+    const noOpStorage = { ...storage, removeItem() {} };
+    assert.equal(clearRefundRequestKey(identity, payment.id, noOpStorage), false);
+    assert.equal(
+      resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "must-not-run", storage),
+      "noop-key",
+    );
+  });
+
   it("classifies only the exact reconciliation-required 409 contract", () => {
     const reconciliation = Object.assign(
       new Error("This billing operation requires reconciliation and will not be retried automatically."),
@@ -184,6 +258,24 @@ describe("billing payment refunds", () => {
     );
   });
 
+  it("does not report a reconciliation marker until exact durable readback succeeds", () => {
+    const identity = { userId: "marker-admin", studioId: "studio-1" };
+    let stored = null;
+    const storage = {
+      getItem: () => stored,
+      setItem: (_key, value) => { stored = value; },
+      removeItem: () => { stored = null; },
+    };
+    resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "marker-key", storage);
+    const original = stored;
+    const mismatchedStorage = {
+      ...storage,
+      getItem: () => original,
+    };
+    assert.equal(markRefundReconciliationRequired(identity, payment.id, mismatchedStorage), false);
+    assert.equal(isRefundReconciliationBlocked(identity, payment.id, mismatchedStorage), false);
+  });
+
   it("does not treat a persisted generic ambiguous attempt as reconciliation-required", () => {
     const storage = memoryStorage();
     const identity = { userId: "ambiguous-admin", studioId: "studio-1" };
@@ -204,7 +296,7 @@ describe("billing payment refunds", () => {
       { status: 409 },
     );
     assert.equal(isTerminalBillingIdempotencyError(terminal), true);
-    clearRefundRequestKey(identity, payment.id, storage);
+    assert.equal(clearRefundRequestKey(identity, payment.id, storage), true);
     const corrected = resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", () => "terminal-key-2", storage);
     assert.notEqual(corrected, first);
   });
@@ -236,6 +328,22 @@ describe("billing payment refunds", () => {
     );
     assert.equal(refreshed, false);
     assert.equal(refreshError, true);
+  });
+
+  it("clears a confirmed refund key only after authoritative refresh succeeds", () => {
+    const source = fs.readFileSync(path.join(root, "src/lib/billing-refund-controller.ts"), "utf8");
+    const postIndex = source.indexOf("await postPaymentRefund");
+    const refreshIndex = source.indexOf("const refreshed = await refreshAfterConfirmedRefund", postIndex);
+    const clearIndex = source.indexOf("clearRefundRequestKey(identity, payment.id, storage)", refreshIndex);
+    assert.ok(postIndex >= 0 && refreshIndex > postIndex && clearIndex > refreshIndex);
+    assert.match(source.slice(refreshIndex, clearIndex + 180), /if \(refreshed && !clearRefundRequestKey[\s\S]*saved recovery state could not be cleared/);
+  });
+
+  it("makes controller removal failures explicit after success and definitive rejection", () => {
+    const source = fs.readFileSync(path.join(root, "src/lib/billing-refund-controller.ts"), "utf8");
+    assert.match(source, /refund succeeded, but its saved recovery state could not be cleared/i);
+    assert.match(source, /refund was rejected, but its saved request state could not be cleared/i);
+    assert.match(source, /if \(!clearRefundRequestKey\(identity, payment\.id, storage\)\)/);
   });
 
   it("keeps provider IDs out of the rendered payment UI", () => {

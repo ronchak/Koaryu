@@ -17,6 +17,7 @@ from app.services.stripe_service import StripeService
 
 PAYMENT_PROJECTION_PRESERVED_INVOICE_STATUSES = {"void"}
 REFUND_EFFECTIVE_STATUSES = {"succeeded"}
+REFUND_RESERVED_STATUSES = {"pending", "requires_action"}
 REFUND_STATUS_ORDER = {
     "unknown": -1,
     "pending": 0,
@@ -900,7 +901,7 @@ class BillingPaymentEventProjector:
         pending_reserved = sum(
             max(0, int(row.get("amount_cents") or 0))
             for row in refund_rows
-            if row.get("status") == "pending"
+            if row.get("status") in REFUND_RESERVED_STATUSES
         )
         return max(0, confirmed_net - min(confirmed_net, pending_reserved))
 

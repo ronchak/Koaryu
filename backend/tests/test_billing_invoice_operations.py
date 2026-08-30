@@ -17,17 +17,20 @@ from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceItemCreate
 from app.services.billing_invoice_operations import (
     BillingInvoiceOperationWorkflow,
     INVOICE_CREATE_AMBIGUOUS_DETAIL,
+    INVOICE_FINALIZE_AMBIGUOUS_DETAIL,
     INVOICE_FINALIZE_PREREAD_UNAVAILABLE_DETAIL,
     INVOICE_RETRY_AMBIGUOUS_DETAIL,
     INVOICE_RETRY_PREREAD_UNAVAILABLE_DETAIL,
     INVOICE_RETRY_PREREAD_RELEASE_FAILED_DETAIL,
     INVOICE_VOID_PREREAD_UNAVAILABLE_DETAIL,
+    INVOICE_VOID_AMBIGUOUS_DETAIL,
 )
 from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
+    IDEMPOTENCY_CONFLICT_DETAIL,
     OPERATION_TERMINAL_DETAIL,
 )
 from app.services.platform_billing_helpers import build_idempotency_key, stable_hash
@@ -918,6 +921,92 @@ def test_finalize_completed_replay_does_not_require_fresh_provider_read():
     assert len(_Stripe.send_calls) == 1
 
 
+@pytest.mark.parametrize("workflow", ("finalize", "void"))
+def test_closeout_terminal_replay_mismatch_is_safe_before_provider_access(workflow):
+    invoice = _draft_invoice()
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+
+    def reject_terminal_replay(_params):
+        raise PostgrestAPIError({
+            "code": "23505",
+            "message": "billing_invoice_closeout_terminal_replay_mismatch",
+            "details": "tampered key/resource/account tuple",
+            "hint": "raw database identity detail",
+        })
+
+    facade.supabase._rpc_claim_billing_invoice_closeout_operation_v1 = (
+        reject_terminal_replay
+    )
+    manager = _manager(facade)
+
+    with pytest.raises(HTTPException) as rejected:
+        if workflow == "finalize":
+            asyncio.run(manager.finalize_invoice(
+                invoice["id"], "studio_1", "actor_1", "terminal-tamper"
+            ))
+        else:
+            asyncio.run(manager.void_invoice(
+                invoice["id"], "studio_1", "actor_1", "terminal-tamper"
+            ))
+
+    assert rejected.value.status_code == 409
+    assert rejected.value.detail == IDEMPOTENCY_CONFLICT_DETAIL
+    assert "tampered" not in rejected.value.detail
+    assert _Stripe.retrieve_calls == []
+    assert _Stripe.finalize_calls == []
+    assert _Stripe.send_calls == []
+    assert _Stripe.void_calls == []
+
+
+@pytest.mark.parametrize("workflow", ("finalize", "void"))
+@pytest.mark.parametrize(
+    "near_miss",
+    (
+        "prefix_billing_invoice_closeout_terminal_replay_mismatch",
+        "billing_invoice_closeout_terminal_replay_mismatch_suffix",
+    ),
+)
+def test_closeout_terminal_replay_near_miss_uses_generic_safe_path(
+    workflow,
+    near_miss,
+):
+    invoice = _draft_invoice()
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+
+    def reject_near_miss(_params):
+        raise PostgrestAPIError({
+            "code": "23505",
+            "message": near_miss,
+            "details": "raw tampered tuple",
+            "hint": "raw database identity detail",
+        })
+
+    facade.supabase._rpc_claim_billing_invoice_closeout_operation_v1 = reject_near_miss
+    manager = _manager(facade)
+
+    with pytest.raises(HTTPException) as rejected:
+        if workflow == "finalize":
+            asyncio.run(manager.finalize_invoice(
+                invoice["id"], "studio_1", "actor_1", "terminal-near-miss"
+            ))
+        else:
+            asyncio.run(manager.void_invoice(
+                invoice["id"], "studio_1", "actor_1", "terminal-near-miss"
+            ))
+
+    assert rejected.value.status_code == 503
+    assert rejected.value.detail == "Billing operation state could not be verified."
+    assert rejected.value.detail != IDEMPOTENCY_CONFLICT_DETAIL
+    assert "raw" not in rejected.value.detail
+    assert near_miss not in rejected.value.detail
+    assert _Stripe.retrieve_calls == []
+    assert _Stripe.finalize_calls == []
+    assert _Stripe.send_calls == []
+    assert _Stripe.void_calls == []
+
+
 def test_finalize_new_claim_fails_definitively_when_provider_preread_fails():
     invoice = _draft_invoice()
     facade = _Facade(invoice=invoice)
@@ -1256,6 +1345,7 @@ def test_void_projected_replay_completes_from_exact_local_evidence_offline():
     ))
     operation = _operation(facade, "invoice.void")
     operation["state"] = "projected"
+    facade.supabase.advance_billing_provider_clock(seconds=31)
     reads_before = len(_Stripe.retrieve_calls)
     _Stripe.retrieve_exception = TimeoutError("provider unavailable after projection")
 
@@ -1444,7 +1534,13 @@ def test_closeout_expired_adoption_acquires_canonical_lease_and_mutates_once(wor
 
 
 @pytest.mark.parametrize("workflow", ["finalize", "void"])
-def test_closeout_active_adoption_is_busy_without_provider_mutation(workflow):
+@pytest.mark.parametrize(
+    "active_state",
+    ["started", "provider_succeeded", "projected", "reconciliation_required"],
+)
+def test_closeout_active_adoption_is_busy_without_provider_mutation(
+    workflow, active_state
+):
     invoice = (
         _draft_invoice(collection_method="send_invoice")
         if workflow == "finalize"
@@ -1472,8 +1568,10 @@ def test_closeout_active_adoption_is_busy_without_provider_mutation(workflow):
         stripe_connected_account_id="acct_1", connect_account_generation=2,
         lease_owner="active-owner",
     )
+    _operation(facade, operation_type)["state"] = active_state
 
     manager = _manager(facade)
+    reads_before = len(_Stripe.retrieve_calls)
     with pytest.raises(HTTPException) as busy:
         asyncio.run(
             manager.finalize_invoice(invoice["id"], "studio_1", "actor_1", "new-key")
@@ -1481,6 +1579,12 @@ def test_closeout_active_adoption_is_busy_without_provider_mutation(workflow):
             else manager.void_invoice(invoice["id"], "studio_1", "actor_1", "new-key")
         )
     assert busy.value.status_code == 409
+    assert busy.value.detail == (
+        INVOICE_FINALIZE_AMBIGUOUS_DETAIL
+        if workflow == "finalize"
+        else INVOICE_VOID_AMBIGUOUS_DETAIL
+    )
+    assert len(_Stripe.retrieve_calls) == reads_before
     assert (_Stripe.finalize_calls if workflow == "finalize" else _Stripe.void_calls) == []
 
 
@@ -2922,7 +3026,7 @@ def test_retry_autopay_legacy_started_resume_validates_then_pays_once():
     ledger = facade.supabase.billing_invoice_retry_hash_ledger_v33[
         ("studio_1", "retry-legacy-started")
     ]
-    ledger["effective_persisted_sha256"] = legacy_persisted_hash
+    ledger["persisted_request_sha256"] = legacy_persisted_hash
     context = BillingProviderOperationContext(
         operation_id=operation["id"],
         studio_id="studio_1",
@@ -2996,6 +3100,64 @@ def test_retry_autopay_completed_replay_after_revoke_has_no_provider_reads():
     )
 
 
+def test_retry_reclaims_released_same_key_without_recreating_missing_ledger():
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    operations = BillingProviderOperationCoordinator(facade.supabase)
+    request_hash = stable_hash({
+        "operation_type": "invoice.retry",
+        "studio_id": "studio_1",
+        "invoice_id": invoice["id"],
+        "stripe_invoice_id": invoice["stripe_invoice_id"],
+        "stripe_connected_account_id": invoice["stripe_account_id"],
+        "connect_account_generation": 2,
+    })
+    claimed = operations.claim_resource(
+        studio_id="studio_1", actor_id="actor_1",
+        operation_type="invoice.retry", resource_type="invoice",
+        resource_id=invoice["id"], payer_id=invoice["payer_id"],
+        caller_request_key="retry-no-ledger-reclaim",
+        request_sha256=request_hash, stripe_connected_account_id="acct_1",
+        connect_account_generation=2, lease_owner="released-owner",
+    )
+    operation = _operation(facade, "invoice.retry")
+    operations.release_invoice_retry_preread_lease(
+        BillingProviderOperationContext(
+            operation_id=operation["id"], studio_id="studio_1",
+            actor_id="actor_1", operation_type="invoice.retry",
+            caller_request_key="retry-no-ledger-reclaim",
+            request_sha256=request_hash, stripe_connected_account_id="acct_1",
+            connect_account_generation=2, lease_owner="released-owner",
+        ),
+        claimed["operation"], release_reason="provider_preread_unavailable",
+    )
+    facade.supabase.billing_invoice_retry_hash_ledger_v33.pop(
+        ("studio_1", "retry-no-ledger-reclaim")
+    )
+    prior_revision = operation["revision"]
+
+    result = operations.claim_resource(
+        studio_id="studio_1", actor_id="actor_1",
+        operation_type="invoice.retry", resource_type="invoice",
+        resource_id=invoice["id"], payer_id=invoice["payer_id"],
+        caller_request_key="retry-no-ledger-reclaim",
+        request_sha256=request_hash, stripe_connected_account_id="acct_1",
+        connect_account_generation=2, lease_owner="new-owner",
+    )
+
+    assert result["operation"]["id"] == operation["id"]
+    assert operation["invoice_retry_preread_released_at"] is None
+    assert operation["invoice_retry_preread_release_reason"] is None
+    assert operation["lease_owner"] == "new-owner"
+    assert operation["revision"] == prior_revision + 1
+    assert facade.supabase.billing_invoice_retry_hash_ledger_v33 == {}
+
+
 def test_retry_terminal_historical_replay_allows_repointed_resource_pointer():
     invoice = _open_invoice()
     facade = _Facade(invoice=invoice)
@@ -3034,7 +3196,7 @@ def test_retry_autopay_historical_legacy_hash_completed_replay_after_revoke():
     completed["request_sha256"] = "c" * 64
     facade.supabase.billing_invoice_retry_hash_ledger_v33[
         ("studio_1", "retry-historical-completed")
-    ]["effective_persisted_sha256"] = "c" * 64
+    ]["persisted_request_sha256"] = "c" * 64
     facade.supabase.tables["billing_payer_payment_consents"][0]["revoked_at"] = (
         "2026-08-27T00:05:00Z"
     )
@@ -3564,6 +3726,37 @@ def test_terminal_invoice_mutation_replaces_same_resource_and_keeps_old_key(
     assert facade.supabase.billing_invoice_mutation_owners[
         ("studio_1", invoice["id"])
     ]["operation_id"] == second["operation"]["id"]
+    if operation_type in {"invoice.finalize", "invoice.void"}:
+        certified = BillingInvoiceOperationWorkflow._certified_invoice_closeout_identity(
+            historical,
+            expected_studio_id="studio_1",
+            expected_operation_type=operation_type,
+            expected_resource_type=resource_type,
+            expected_resource_id=invoice["id"],
+            expected_payer_id=invoice["payer_id"],
+            requested_caller_request_key="terminal-k1",
+            expected_account_id="acct_1",
+            expected_generation=2,
+            acquired_lease_owner="00000000-0000-4000-8000-000000000333",
+        )
+        assert certified[1] == "terminal-k1"
+        tampered = {**historical, "resource": {
+            **historical["resource"], "payer_id": "payer_tampered",
+        }}
+        with pytest.raises(HTTPException) as invalid:
+            BillingInvoiceOperationWorkflow._certified_invoice_closeout_identity(
+                tampered,
+                expected_studio_id="studio_1",
+                expected_operation_type=operation_type,
+                expected_resource_type=resource_type,
+                expected_resource_id=invoice["id"],
+                expected_payer_id=invoice["payer_id"],
+                requested_caller_request_key="terminal-k1",
+                expected_account_id="acct_1",
+                expected_generation=2,
+                acquired_lease_owner="00000000-0000-4000-8000-000000000333",
+            )
+        assert invalid.value.status_code == 503
 
 
 def test_retry_definitive_decline_is_terminal_and_sanitized():

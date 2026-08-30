@@ -9,6 +9,7 @@ import {
   buildPayerAutopaySetupRequest,
   clearPersistedPayerOperationRequestKey,
   copyPayerAutopaySetupLink,
+  getPayerAutopaySetupReturnUrl,
   resolvePersistedPayerOperationRequestKey,
   type PayerOperationIdentity,
 } from "@/lib/billing-payer-setup-model";
@@ -83,7 +84,10 @@ export function useBillingPayerActions(
       payerId,
       startNewRequest: options.startNewRequest,
     });
-    const request = buildPayerAutopaySetupRequest(window.location.href, requestKey);
+    const request = buildPayerAutopaySetupRequest(
+      getPayerAutopaySetupReturnUrl(window.location.origin),
+      requestKey,
+    );
     const link = await runtime.postBillingAction<BillingLinkResponse>({
       action: `autopay-setup:${payerId}`,
       body: request.body,

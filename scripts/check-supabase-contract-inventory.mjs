@@ -17,6 +17,7 @@ export const EXPECTED_SUPABASE_CONTRACTS = Object.freeze([
   "billing_invoice_mutation_serialization_v31.sql",
   "billing_invoice_retry_preread_lease_v32.sql",
   "billing_invoice_retry_compatibility_v33.sql",
+  "billing_invoice_retry_closeout_v34.sql",
   "billing_invoice_retry_operations.sql",
   "billing_payment_adjustment_convergence.sql",
   "billing_provider_operation_steps.sql",
