@@ -17,6 +17,8 @@ import {
   EXPECTED_V30_RESTORED_CATALOG_STATE,
   EXPECTED_V31_CATALOG_STATE,
   EXPECTED_V31_RESTORED_CATALOG_STATE,
+  EXPECTED_V32_CATALOG_STATE,
+  EXPECTED_V32_RESTORED_CATALOG_STATE,
   EXPECTED_V33_CATALOG_STATE,
   EXPECTED_V34_CATALOG_STATE,
   EXPECTED_V34_RESTORED_CATALOG_STATE,
@@ -81,6 +83,7 @@ import {
   EXPECTED_V30_OPERATIONAL_READINESS,
   EXPECTED_V31_OPERATIONAL_READINESS,
   EXPECTED_V32_OPERATIONAL_READINESS,
+  EXPECTED_V33_OPERATIONAL_READINESS,
   EXPECTED_V29_OPERATIONAL_READINESS,
   EXPECTED_V26_OPERATIONAL_READINESS,
   EXPECTED_V27_OPERATIONAL_READINESS,
@@ -1596,13 +1599,32 @@ describe("studio-comp migration rollout guard", () => {
     assert.deepEqual(classifyStateSnapshot({
       historyColumns:minimalHistoryColumns,history:packet.v31History,
       targetHistory:packet.v31TargetHistory,objectCounts:"3:1",
+      catalogState:EXPECTED_V31_CATALOG_STATE,
       operationalReadiness:EXPECTED_V31_OPERATIONAL_READINESS,
     },packet),{state:"v31",providerFingerprint:null});
     assert.deepEqual(classifyStateSnapshot({
       historyColumns:minimalHistoryColumns,history:packet.v32History,
       targetHistory:packet.v32TargetHistory,objectCounts:"3:1",
+      catalogState:EXPECTED_V32_CATALOG_STATE,
       operationalReadiness:EXPECTED_V32_OPERATIONAL_READINESS,
     },packet),{state:"v32",providerFingerprint:null});
+    const restoredV32 = classifyStateSnapshot({
+      historyColumns:minimalHistoryColumns,history:packet.v32History,
+      targetHistory:packet.v32TargetHistory,objectCounts:"3:1",
+      catalogState:EXPECTED_V32_RESTORED_CATALOG_STATE,
+      operationalReadiness:EXPECTED_V32_OPERATIONAL_READINESS,
+    },packet);
+    assert.deepEqual(restoredV32,{state:"v32",providerFingerprint:null});
+    assert.equal(
+      buildInspectionTokenForAcceptedState(packet,"staging",restoredV32),
+      buildInspectionToken(packet,"staging","v32"),
+    );
+    assert.deepEqual(classifyStateSnapshot({
+      historyColumns:minimalHistoryColumns,history:packet.v33History,
+      targetHistory:packet.v33TargetHistory,objectCounts:"3:1",
+      catalogState:EXPECTED_V33_CATALOG_STATE,
+      operationalReadiness:EXPECTED_V33_OPERATIONAL_READINESS,
+    },packet),{state:"v33",providerFingerprint:null});
     assert.deepEqual(packetForAcceptedState(packet,"v31").pendingMigrations,[
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
       "20260830082610_invoice_retry_release_compatibility_v33.sql",
@@ -1610,6 +1632,9 @@ describe("studio-comp migration rollout guard", () => {
     ]);
     assert.deepEqual(packetForAcceptedState(packet,"v32").pendingMigrations,[
       "20260830082610_invoice_retry_release_compatibility_v33.sql",
+      "20260830151714_invoice_retry_closeout_contract_v34.sql",
+    ]);
+    assert.deepEqual(packetForAcceptedState(packet,"v33").pendingMigrations,[
       "20260830151714_invoice_retry_closeout_contract_v34.sql",
     ]);
     assert.deepEqual(classifyStateSnapshot(v29Snapshot(packet), packet), {
@@ -1822,6 +1847,70 @@ describe("studio-comp migration rollout guard", () => {
     assert.equal(preHeaders.at(-1), "operational_readiness");
   });
 
+  it("rejects every V31, V32, and V33 partial-state hybrid", () => {
+    const packet = candidatePacket();
+    const exact = {
+      v31: {
+        history: packet.v31History, targetHistory: packet.v31TargetHistory,
+        readiness: EXPECTED_V31_OPERATIONAL_READINESS,
+        catalog: EXPECTED_V31_CATALOG_STATE,
+      },
+      v32: {
+        history: packet.v32History, targetHistory: packet.v32TargetHistory,
+        readiness: EXPECTED_V32_OPERATIONAL_READINESS,
+        catalog: EXPECTED_V32_CATALOG_STATE,
+      },
+      v33: {
+        history: packet.v33History, targetHistory: packet.v33TargetHistory,
+        readiness: EXPECTED_V33_OPERATIONAL_READINESS,
+        catalog: EXPECTED_V33_CATALOG_STATE,
+      },
+    };
+    for (const [state, value] of Object.entries(exact)) {
+      const snapshot = {
+        historyColumns: minimalHistoryColumns,
+        history: value.history,
+        targetHistory: value.targetHistory,
+        objectCounts: "3:1",
+        operationalReadiness: value.readiness,
+        catalogState: value.catalog,
+      };
+      for (const mutation of [
+        { history: value.history.replace(/^[0-9]+/, "999") },
+        { targetHistory: `${value.targetHistory}|20990101000000:hybrid` },
+        { objectCounts: "4:1" },
+        { operationalReadiness: value.readiness.replace("true|", "false|") },
+        { operationalReadiness: value.readiness.replace(/true\|[0-9]+\|/, "true|999|") },
+        { operationalReadiness: value.readiness.replace(/2026[0-9]{10}/, "20990101000000") },
+        { operationalReadiness: value.readiness.replace(`release-db-attestation-${state}`, "release-db-attestation-hybrid") },
+        { catalogState: value.catalog === EXPECTED_V33_CATALOG_STATE ? EXPECTED_V32_CATALOG_STATE : EXPECTED_V33_CATALOG_STATE },
+      ]) {
+        assert.throws(() => classifyStateSnapshot({ ...snapshot, ...mutation }, packet));
+      }
+    }
+    const v32Base = {
+      historyColumns:minimalHistoryColumns,history:packet.v32History,
+      targetHistory:packet.v32TargetHistory,objectCounts:"3:1",
+      operationalReadiness:EXPECTED_V32_OPERATIONAL_READINESS,
+    };
+    for (const catalogState of [
+      EXPECTED_V31_CATALOG_STATE,
+      EXPECTED_V31_RESTORED_CATALOG_STATE,
+      EXPECTED_V33_CATALOG_STATE,
+      EXPECTED_V33_RESTORED_CATALOG_STATE,
+      EXPECTED_V32_CATALOG_STATE.replace(
+        "functions=112:a1884a152c3ea103fbc07961b857dae737b65da23884ebbc2f3e31d940a50228:0",
+        "functions=109:1acb912f850aee6f707540280e1c16f9e153da3284a1d2415315f5c93f383d98:0",
+      ).replace(
+        "scoped_constraints=176:f71ef6881d9692d2f8d59c7a55753aa7c637f72473fca97c8293ee6c640f7fdf:0",
+        "scoped_constraints=176:66315b7b7d9fc49b9b0ab73171fcf0dbfa0c1c279c8668269cf637e5d2aa53b5:0",
+      ),
+      EXPECTED_V32_RESTORED_CATALOG_STATE.replace("66315b7b", "66315b7c"),
+    ]) {
+      assert.throws(() => classifyStateSnapshot({...v32Base,catalogState},packet));
+    }
+  });
+
   it("returns only UNKNOWN(timeout) for a typed timeout during remote query acquisition", () => {
     const packet = candidatePacket();
     let timeoutError;
@@ -1893,7 +1982,7 @@ describe("studio-comp migration rollout guard", () => {
 
     assert.deepEqual(result, {
       state: "diverged",
-      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, restored-v22-, canonical-v23-, restored-v23-pending-v24-, v24-, schedule-v25, v25, v26, v27, v28, v29, v30, or post-state.`,
+      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, restored-v22-, canonical-v23-, restored-v23-pending-v24-, v24-, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, v33, or post-state.`,
     });
   });
 
@@ -2366,7 +2455,7 @@ describe("studio-comp migration rollout guard", () => {
 
   it("makes an inspection token available only for accepted probe states", () => {
     const packet = candidatePacket();
-    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "restored-v22", "canonical-v23", "restored-v23-pending-v24", "v24", "schedule-v25", "v25", "v26", "v27", "v28", "v29", "post"]) {
+    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "restored-v22", "canonical-v23", "restored-v23-pending-v24", "v24", "schedule-v25", "v25", "v26", "v27", "v28", "v29", "v30", "v31", "v32", "v33", "post"]) {
       assert.equal(
         buildInspectionTokenForAcceptedState(packet, "staging", { state }),
         buildInspectionToken(packet, "staging", state),
@@ -2392,7 +2481,7 @@ describe("studio-comp migration rollout guard", () => {
     ]) {
       assert.throws(
         () => buildInspectionTokenForAcceptedState(packet, "staging", result),
-        /accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, or post probe state/,
+        /accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, v33, or post probe state/,
       );
     }
   });
@@ -2647,7 +2736,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.equal(packetForAcceptedState(packet, "pre"), packet);
     assert.throws(
       () => packetForAcceptedState(packet, "post"),
-        /pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, v31, or v32 state/,
+        /pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, or v33 state/,
     );
   });
 

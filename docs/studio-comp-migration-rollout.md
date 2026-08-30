@@ -1,6 +1,6 @@
 # Studio-Comp Migration Rollout
 
-Status: **staging is at schedule V25; the combined release candidate targets migration 126/head 20260826185651 and V31**
+Status: **read-only diagnosis observed staging at exact 126/V31; the candidate targets 129/head 20260830151714 and V34**
 
 ## Combined schedule-window and Payments extension
 
@@ -10,20 +10,21 @@ combined candidate adds the two schedule-window migrations:
 - `20260825042838_schedule_window_read_rpc.sql`
 - `20260825043911_attest_schedule_window_release.sql`
 
-followed by the seven Payments migrations from
+followed by the Payments migrations from
 `20260826030234_live_billing_reconciliation_v3.sql` through
-`20260826185651_payment_refund_payer_sync_resource_ownership.sql`.
+`20260830151714_invoice_retry_closeout_contract_v34.sql`.
 
-The guarded tool classifies exact migration 117/head `20260824190500` as `v24`
-and exact migration 119/head `20260825043911` as `schedule-v25`. From the
-observed staging state, dry-run and apply may select only those seven Payments
-files. The sole candidate post-state is migration 126/head `20260826185651`
-with `release-db-attestation-v31` and the exact V31 catalog fingerprint.
+The guarded tool classifies the observed staging tuple only as exact `v31` and
+selects the ordered V32, V33, and V34 migrations. Exact `v32` resumes V33 and
+V34; exact `v33` resumes V34. Each state requires its own history, head, count,
+readiness, and raw catalog and mints a state-bound inspection token. The sole
+candidate post-state is migration 129/head `20260830151714` with readiness V15,
+`release-db-attestation-v34`, and the exact V34 catalog fingerprint.
 
 Migration 119 retains the historical V24-shaped `preflight_v4` compatibility
-response, while the Payments chain owns V6 through V12 and preserves the
-schedule-shaped V5 response. The candidate backend uses `preflight_v12` and
-requires the exact 126/V31 state.
+response, while the Payments chain owns V6 through V15 and preserves the
+schedule-shaped V5 response. The candidate backend uses `preflight_v15` and
+requires the exact 129/V34 state.
 
 ## Historical V24 rollout record
 
@@ -349,7 +350,8 @@ The command is unavailable until the packet reports
 `nxgsektqsgrtyfhawxbc`, one exact accepted history (`pre`, `intermediate`,
 `recovery`, `convergence`, `attested`, `return-attested`, `retained`, `critical`,
 `column-attested`, `trial-locked`, `staff-identity`, `restored-v22`,
-`canonical-v23`, `restored-v23-pending-v24`, or `post`), its corresponding
+`canonical-v23`, `restored-v23-pending-v24`, `v24`, `schedule-v25`, `v25`,
+`v26`, `v27`, `v28`, `v29`, `v30`, `v31`, `v32`, `v33`, or `post`), its corresponding
 readiness result, the complete
 historical target sequence, the expected studio-comp objects, and an
 `inspection_token`. Any other partial, ahead, or manually altered state stops.
@@ -376,8 +378,8 @@ migrations 116 and 117. Do not relabel a hybrid or failing V23 row as either
 accepted state. The sole supported partial state after 116 is
 `restored-v23-pending-v24`, which may resume only 117. These historical recovery
 states are not sufficient for the combined candidate. The latest read-only
-staging inspection classified `schedule-v25`; this runbook does not assert a
-current production state.
+staging diagnosis classified exact `v31` at 126/head `20260826185651`; this
+runbook does not assert a current production state.
 
 The current candidate's staging apply requires a fresh inspection token, exact
 project ref, and exact-body PR #134 approval comment bound to the candidate and
@@ -393,7 +395,7 @@ refused. It additionally requires
 > `--approve-staging-apply`.
 > Passing only the staging flag is refused. See `docs/cutover-gates.md`.
 
-1. require count 126, head `20260826185651`, the exact forty-two-version sequence, and the
+1. require count 129, head `20260830151714`, the exact candidate sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, table-ACL, sequence-ACL, and column-ACL identity in the final semantic
@@ -403,10 +405,10 @@ refused. It additionally requires
    exact: extra policies halt, constant-false deny predicates and the guarded
    membership predicate are classified canonically, and arbitrary non-null
    expressions do not pass;
-3. invoke the service-role-only V12 readiness RPC during every apparent-post
+3. invoke the service-role-only V15 readiness RPC during every apparent-post
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
-   `release-db-attestation-v31`; a missing, malformed, stale, or failing result
+   `release-db-attestation-v34`; a missing, malformed, stale, or failing result
    halts before `state=post` or a fingerprint can be emitted. Linked scalar
    results are decoded as strict single-column CSV, including standard quoting
    for the comma-delimited pending-version tuple; extra rows, extra columns, or
@@ -487,15 +489,15 @@ add a new forward corrective migration. Never mark history reverted, drop the
 trigger/functions, or use a production restore as ordinary rollback.
 
 If a migration transaction leaves any accepted state from `staff-identity` through
-V30, stop and inspect again. Mint the new state-bound token, derive the exact immutable
-remainder through migration 126, obtain a new exact-body approval comment for that
+V33, stop and inspect again. Mint the new state-bound token, derive the exact immutable
+remainder through migration 129, obtain a new exact-body approval comment for that
 remainder, and rerun dry-run before apply. Historical restored production may begin at
-`restored-v22`, while the observed staging path begins at `schedule-v25`; neither changes
-the forward-only rule. Promotion requires exact V31 readiness and the final raw
+`restored-v22`, while the observed staging path is now exact V31; neither changes
+the forward-only rule. Promotion requires exact V34 readiness and the final raw
 catalog/provider fingerprint. No approved application serves at an intermediate head.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 126 head and
+database-first: Render `/health/ready` remains 503 until the exact 129 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.
