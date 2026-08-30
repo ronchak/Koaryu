@@ -177,6 +177,32 @@ wrong-generation, pending-transition, and reconciliation-required records.
 An externally recorded payment must remain a local accounting entry and must not call
 Stripe's connected-invoice pay endpoint or change a connected invoice out of band.
 
+Use this order for the payment and dispute slice. Complete the initial Setup Checkout
+with the failure method and consent. Finalize the automatic invoice once, then wait for
+Stripe's automatic attempt to leave the Invoice open, its PaymentIntent in
+`requires_payment_method`, and `last_payment_error` present. The
+local invoice must remain open and its payment must be failed. Complete a replacement
+Setup Checkout with the dispute-trigger method, supersede the initial consent, and replay
+that replacement completion without creating a third Checkout Session. Run the one
+`invoice.retry` pay mutation with the replacement method. Stop unless the same automatic
+invoice becomes paid and the bound PaymentIntent, charge, 10,000-cent payment, and
+50-cent fee all succeed. Create the dispute on that charge only. The actual provider
+result is the gate: stop if Stripe rejects the fixture or does not reach terminal `won`.
+After `won`, refund 1,000 cents unless the provider blocks it, then require final
+gross/refund/dispute/net/refundable accounting of `10000/1000/0/9000/9000`.
+
+Create one genuine TEST platform subscription owned by the rehearsal studio to produce
+the platform `customer.subscription.created` proof. Do not use a Stripe CLI or Dashboard
+synthetic event. Bind the event ID to the platform delivery, require null Connect context,
+and read back provider ownership plus the local processed projection. Record one provider
+mutation and `cleanup_required: true`. This write can create or corrupt a platform Core
+subscription row if the studio or customer binding is wrong. Stop before creation unless
+the target studio and TEST platform customer are exact. Preserve the owned identifiers,
+keep the fixture present through the shared-boundary capture and both offline validation
+commands. Only then clean up the provider fixture. Record that cleanup in a separate
+post-validation readback outside schema v4 and verify the local terminal state. Do not
+treat cleanup as permission to delete the event or projection evidence.
+
 Fixture preparation is deliberately staging-only. Create the connected-account test
 clock with attended Stripe test tooling, then pass its exact `clock_...` ID in the
 optional body of the first payer sync. The backend accepts that field only for a new

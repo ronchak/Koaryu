@@ -38,7 +38,7 @@ class StripeProviderRehearsalWorksheetTest(unittest.TestCase):
     def test_role_workflow_and_terminal_drift_fail(self):
         template = copy.deepcopy(MODULE.load_template(WORKSHEET))
         template["role_capabilities"]["instructor"] = ["payment.refund"]
-        del template["workflow_facts"]["consent_id"]
+        del template["workflow_facts"]["replacement_consent_id"]
         template["terminal_counts"]["counts"]["reconciliation_required"]["count"] = 1
 
         errors = MODULE.validate_template(template)
@@ -88,6 +88,14 @@ class StripeProviderRehearsalWorksheetTest(unittest.TestCase):
         self.assertTrue(MODULE.validate_instructions(
             worksheet_text.replace(MODULE.PERIOD_SENTINEL_INSTRUCTION, "")
         ))
+
+    def test_core_order_drift_fails(self):
+        template = copy.deepcopy(MODULE.load_template(WORKSHEET))
+        template["steps"][0], template["steps"][1] = template["steps"][1], template["steps"][0]
+        template["mutation_attempts"][0], template["mutation_attempts"][1] = template["mutation_attempts"][1], template["mutation_attempts"][0]
+        errors = MODULE.validate_template(template)
+        self.assertTrue(any("steps do not match the canonical" in error for error in errors))
+        self.assertTrue(any("mutation rows do not match the canonical" in error for error in errors))
 
 
 if __name__ == "__main__":

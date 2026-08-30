@@ -33,11 +33,29 @@ def _delivery(*, surface: str, event_id: str, event_type: str) -> dict:
     }
 
 
+def _setup_lifecycle(phase: str, boundary: str) -> dict:
+    initial = phase == "initial"
+    suffix = "Initial1" if initial else "Replacement1"
+    consent = "consent_initial_1" if initial else "consent_replacement_1"
+    setup_request = "setup_request_initial_1" if initial else "setup_request_replacement_1"
+    payment_method = "pm_Failure1" if initial else "pm_Dispute1"
+    accepted_at = "2026-08-28T16:00:00Z" if initial else "2026-08-28T16:10:00Z"
+    completed_at = "2026-08-28T16:01:00Z" if initial else "2026-08-28T16:11:00Z"
+    superseded_at = "2026-08-28T16:10:00Z" if initial else None
+    common = {"payer_id": "payer_1", "stripe_account_id": "acct_Test1", "connect_account_generation": 1, "setup_request_id": setup_request, "checkout_session_id": f"cs_{suffix}", "consent_id": consent, "setup_intent_id": f"seti_{suffix}", "payment_method_id": payment_method, "terms_version": "v1", "accepted_at": accepted_at, "completed_at": completed_at, "superseded_at": superseded_at, "revoked_at": None, "active": not initial}
+    return {
+        **common,
+        "provider_checkout_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["payer_setup.checkout"], "checkout_session_id": f"cs_{suffix}", "setup_intent_id": f"seti_{suffix}", "status": "complete", "stripe_account_id": "acct_Test1", "capture_boundary": boundary},
+        "provider_setup_intent_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["payer_setup.setup_intent"], "setup_intent_id": f"seti_{suffix}", "payment_method_id": payment_method, "status": "succeeded", "stripe_account_id": "acct_Test1", "capture_boundary": boundary},
+        "local_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["payer_setup.local"], **{key: value for key, value in common.items() if key != "payment_method_id"}, "capture_boundary": boundary},
+    }
+
+
 def _valid_evidence() -> dict:
     studio_id = "studio_1"
     account_id = "acct_Test1"
     steps = []
-    for name in MODULE.REQUIRED_STEPS:
+    for name in MODULE.REQUIRED_STEP_ORDER:
         step = {"name": name, "status": "pass"}
         if name != "health_exact_candidate":
             step["studio_id"] = studio_id
@@ -81,16 +99,18 @@ def _valid_evidence() -> dict:
         "role_capabilities": {"admin": MODULE.ADMIN_WORKFLOWS, "front_desk": MODULE.FRONT_DESK_WORKFLOWS, "instructor": []},
         "workflow_facts": {
             "product_id": "prod_Test1", "price_id": "price_Test1", "payer_id": "payer_1", "customer_id": "cus_Test1",
-            "consent_payer_id": "payer_1", "setup_request_id": "setup_request_1", "consent_id": "consent_1",
-            "setup_intent_id": "seti_Test1", "payment_method_id": "pm_Test1", "terms_version": "v1",
-            "consent_accepted": True, "consent_completed": True, "duplicate_consent_completion_outcome": "replay",
+            "initial_consent_payer_id": "payer_1", "initial_setup_request_id": "setup_request_initial_1", "initial_consent_id": "consent_initial_1",
+            "initial_checkout_session_id": "cs_Initial1", "initial_setup_intent_id": "seti_Initial1", "initial_payment_method_id": "pm_Failure1", "initial_terms_version": "v1",
+            "replacement_consent_payer_id": "payer_1", "replacement_setup_request_id": "setup_request_replacement_1", "replacement_consent_id": "consent_replacement_1",
+            "replacement_checkout_session_id": "cs_Replacement1", "replacement_setup_intent_id": "seti_Replacement1", "replacement_payment_method_id": "pm_Dispute1", "replacement_terms_version": "v1",
+            "duplicate_consent_completion_target_id": "consent_replacement_1",
             "student_ids": ["student_1", "student_2"], "subscription_id": "sub_Test1", "subscription_item_id": "si_Test1",
             "shared_provider_quantity": 2, "shared_local_active_count": 2,
             "invoice_link_id": "invoice_link_1", "invoice_link_stripe_id": "in_Link1",
             "invoice_link_finalized": True, "invoice_link_sent": True,
-            "automatic_invoice_id": "invoice_auto_1", "automatic_payment_intent_id": "pi_Test1", "automatic_charge_id": "ch_Test1",
+            "automatic_invoice_id": "invoice_auto_1", "automatic_invoice_stripe_id": "in_Auto1", "automatic_payment_intent_id": "pi_Test1", "automatic_charge_id": "ch_Test1",
             "automatic_amount_cents": 10000, "application_fee_bps": 50, "provider_application_fee_cents": 50,
-            "failed_payment_invoice_id": "invoice_failed_1",
+            "failed_payment_invoice_id": "invoice_auto_1",
             "failed_payment_retry_workflow": "invoice.retry", "failed_payment_retry_outcome": "succeeded", "failed_payment_retry_mutation_count": 1,
             "period_schedule_state": "scheduled", "period_revoke_state": "revoked", "period_due_state": "completed",
             "period_schedule_intent_id": "intent_schedule_1", "period_revoke_intent_id": "intent_revoke_1", "period_due_intent_id": "intent_due_1",
@@ -105,6 +125,11 @@ def _valid_evidence() -> dict:
             "ambiguous_provider_readback_count": 1, "ambiguous_recovery_outcome": "reconciled", "ambiguous_final_state": "completed",
         },
         "supplemental_evidence": {
+            "payer_setup_lifecycle": {
+                "initial": _setup_lifecycle("initial", boundary),
+                "replacement": _setup_lifecycle("replacement", boundary),
+                "duplicate_completion": {"provider_replay": {"source": MODULE.SUPPLEMENTAL_SOURCES["payer_setup.replay_provider"], "event_id": "evt_connect1", "checkout_session_id": "cs_Replacement1", "attempts": [{"attempt_id": "opaque_z", "role": "original", "delivered_at": "2026-08-28T16:12:00Z", "endpoint_url": f"{ORIGIN}/api/v1/webhooks/stripe/connect", "delivery_status": "delivered", "http_status": 200}, {"attempt_id": "opaque_a", "role": "manual_resend", "delivered_at": "2026-08-28T16:13:00Z", "endpoint_url": f"{ORIGIN}/api/v1/webhooks/stripe/connect", "delivery_status": "delivered", "http_status": 200}], "capture_boundary": boundary}, "local_replay": {"source": MODULE.SUPPLEMENTAL_SOURCES["payer_setup.replay_local"], "event_id": "evt_connect1", "checkout_session_id": "cs_Replacement1", "processing_status": "processed", "setup_request_id": "setup_request_replacement_1", "setup_request_row_count": 1, "consent_id": "consent_replacement_1", "consent_row_count": 1, "setup_intent_id": "seti_Replacement1", "provider_operation_id": "operation_replacement_setup_1", "provider_operation": "connected_setup_checkout_session.create", "provider_operation_row_count": 1, "capture_boundary": boundary}},
+            },
             "invoice_void": {"workflow_id": "invoice.void", "operation": "connected_invoice.void", "actor_role": "admin", "provider_attempt_count": 1, "provider_mutation_count": 1, "automatic_retry_count": 0, "caller_request_key_sha256": "f" * 64, "durable_operation_id": "operation_void_1", "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["invoice_void.provider"], "void"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["invoice_void.local"], "void")},
             "immediate_cancellation": {"workflow_id": "enrollment.cancel.immediate", "strategy": "whole_subscription_cancel", "operation": "connected_subscription.cancel", "actor_role": "admin", "provider_attempt_count": 1, "provider_mutation_count": 1, "automatic_retry_count": 0, "caller_request_key_sha256": "1" * 64, "durable_operation_id": "operation_cancel_1", "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["immediate_cancellation.provider"], "canceled"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["immediate_cancellation.local"], "canceled")},
             "external_payment": {"workflow_id": "payment.external.record", "local_payment_id": "payment_external_1", "local_status": "externally_recorded", "replay_payment_id": "payment_external_1", "caller_request_key_sha256": "e" * 64, "replay_outcome": "same_row", "audit_count": 1, "invoice_id": None, "provider_mutation_count": 0, "provider_operation_inventory_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["external_payment.inventory"], "zero"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["external_payment.local"], "externally_recorded")},
@@ -112,10 +137,12 @@ def _valid_evidence() -> dict:
                 {"subject": subject, "classification": "unsupported", "denial_reason_code": reason, "provider_mutation_count": 0, "denial_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["unsupported.denial"], "denied"), "provider_operation_inventory_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["unsupported.inventory"], "zero")}
                 for subject, reason in MODULE.UNSUPPORTED_CONTRACT.items()
             ],
-            "failed_payment_retry": {"workflow_id": "invoice.retry", "operation": "connected_invoice.pay", "failed_provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.failed_provider"], "failed"), "failed_local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.failed_local"], "failed"), "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.provider"], "paid"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.local"], "succeeded")},
+            "failed_payment_retry": {"workflow_id": "invoice.retry", "operation": "connected_invoice.pay", "invoice_id": "invoice_auto_1", "payment_method_id": "pm_Dispute1", "payment_intent_id": "pi_Test1", "charge_id": "ch_Test1", "amount_cents": 10000, "application_fee_cents": 50, "provider_mutation_count": 1, "failed_provider_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.failed_provider"], "invoice_id": "in_Auto1", "invoice_status": "open", "payment_intent_id": "pi_Test1", "payment_intent_status": "requires_payment_method", "last_payment_error_present": True, "capture_boundary": boundary}, "failed_local_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.failed_local"], "invoice_id": "invoice_auto_1", "invoice_status": "open", "payment_id": "payment_1", "payment_status": "failed", "stripe_invoice_id": "in_Auto1", "payment_intent_id": "pi_Test1", "capture_boundary": boundary}, "provider_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.provider"], "invoice_id": "in_Auto1", "invoice_status": "paid", "payment_intent_id": "pi_Test1", "payment_intent_status": "succeeded", "charge_id": "ch_Test1", "charge_status": "succeeded", "payment_method_id": "pm_Dispute1", "amount_cents": 10000, "application_fee_cents": 50, "capture_boundary": boundary}, "local_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.local"], "invoice_id": "invoice_auto_1", "invoice_status": "paid", "payment_id": "payment_1", "payment_status": "succeeded", "stripe_invoice_id": "in_Auto1", "payment_intent_id": "pi_Test1", "charge_id": "ch_Test1", "payment_method_id": "pm_Dispute1", "amount_cents": 10000, "application_fee_cents": 50, "capture_boundary": boundary}},
             "period_advancement": {"method": "stripe_test_clock.advance", "test_clock_id": "clock_Test1", "advances_to": 1787936400, "observed_provider_boundary": 1787936400, "direct_database_timestamp_edit": False, "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["period_advancement.provider"], "advanced"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["period_advancement.local"], "completed")},
-            "dispute_lifecycle": {"dispute_id": "dp_Test1", "created_event": {"event_id": "evt_disputeCreated1", "event_type": "charge.dispute.created", "local_event_id": "evt_disputeCreated1", "local_processing_status": "processed"}, "closed_event": {"event_id": "evt_disputeClosed1", "event_type": "charge.dispute.closed", "local_event_id": "evt_disputeClosed1", "local_processing_status": "processed"}, "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["dispute.provider"], "won"), "local_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["dispute.local"], "status": "won", "state_category": "won", "capture_boundary": boundary}},
+            "dispute_lifecycle": {"dispute_id": "dp_Test1", "charge_id": "ch_Test1", "payment_id": "payment_1", "created_event": {"event_id": "evt_disputeCreated1", "event_type": "charge.dispute.created", "local_event_id": "evt_disputeCreated1", "local_processing_status": "processed"}, "closed_event": {"event_id": "evt_disputeClosed1", "event_type": "charge.dispute.closed", "local_event_id": "evt_disputeClosed1", "local_processing_status": "processed"}, "provider_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["dispute.provider"], "dispute_id": "dp_Test1", "charge_id": "ch_Test1", "amount_cents": 10000, "status": "won", "capture_boundary": boundary}, "local_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["dispute.local"], "dispute_id": "dp_Test1", "charge_id": "ch_Test1", "payment_id": "payment_1", "created_event_id": "evt_disputeCreated1", "closed_event_id": "evt_disputeClosed1", "status": "won", "state_category": "won", "disputed_cents": 0, "reconciliation_required": False, "capture_boundary": boundary}},
+            "refund_convergence": {"refund_id": "re_Test1", "charge_id": "ch_Test1", "payment_intent_id": "pi_Test1", "payment_id": "payment_1", "stripe_account_id": account_id, "connect_account_generation": 1, "amount_cents": 1000, "provider_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["refund.provider"], "refund_id": "re_Test1", "charge_id": "ch_Test1", "payment_intent_id": "pi_Test1", "status": "succeeded", "amount_cents": 1000, "capture_boundary": boundary}, "local_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["refund.local"], "refund_id": "re_Test1", "charge_id": "ch_Test1", "payment_intent_id": "pi_Test1", "payment_id": "payment_1", "stripe_account_id": account_id, "connect_account_generation": 1, "status": "succeeded", "amount_cents": 1000, "gross_paid_cents": 10000, "refunded_cents": 1000, "disputed_cents": 0, "net_collected_cents": 9000, "refundable_remaining_cents": 9000, "reconciliation_required": False, "capture_boundary": boundary}},
             "ambiguity_recovery": {"workflow_id": "payer.sync", "durable_operation_id": "operation_1", "provider_mutation_count": 1, "automatic_retry_count": 0, "caller_request_key_sha256": key_digest, "mutation_step_name": "payer.customer_create", "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["ambiguity.provider"], "found"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["ambiguity.local"], "completed")},
+            "platform_fixture": {"method": "stripe.platform.subscription.create", "event_id": "evt_platform1", "event_type": "customer.subscription.created", "studio_id": studio_id, "stripe_account_id": None, "customer_id": "cus_Platform1", "customer_preexisted": True, "subscription_id": "sub_Platform1", "provider_mutation_count": 1, "cleanup_required": True, "cleanup_timing": "after_evidence_validation", "customer_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["platform_fixture.customer"], "customer_id": "cus_Platform1", "metadata_studio_id": studio_id, "livemode": False, "created_at": 1787930000, "capture_boundary": boundary}, "provider_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["platform_fixture.provider"], "customer_id": "cus_Platform1", "subscription_id": "sub_Platform1", "metadata_studio_id": studio_id, "status": "active", "livemode": False, "created_at": 1787931000, "capture_boundary": boundary}, "local_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["platform_fixture.local"], "event_id": "evt_platform1", "event_type": "customer.subscription.created", "stripe_account_id": None, "livemode": False, "processing_status": "processed", "studio_id": studio_id, "customer_id": "cus_Platform1", "subscription_id": "sub_Platform1", "projected_status": "active", "capture_boundary": boundary}},
         },
         "terminal_counts": {"capture_boundary": boundary, "counts": {key: {"count": 0, "source": MODULE.TERMINAL_SOURCES[key], "readback_boundary": boundary} for key in MODULE.TERMINAL_COUNT_KEYS}, "wrong_mode_components": [{"surface": surface, "count": 0, "source": MODULE.WRONG_MODE_SOURCES[surface], "readback_boundary": boundary} for surface in ("provider", "local")]},
         "steps": steps,
@@ -124,12 +151,12 @@ def _valid_evidence() -> dict:
             "platform": _delivery(
                 surface="platform",
                 event_id="evt_platform1",
-                event_type="customer.subscription.updated",
+                event_type="customer.subscription.created",
             ),
             "connect": _delivery(
                 surface="connect",
                 event_id="evt_connect1",
-                event_type="account.updated",
+                event_type="checkout.session.completed",
             ),
         },
     }
@@ -309,7 +336,7 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
         evidence = _valid_evidence()
         evidence["role_capabilities"]["instructor"] = ["payment.refund"]
         facts = evidence["workflow_facts"]
-        facts["duplicate_consent_completion_outcome"] = "completed"
+        evidence["supplemental_evidence"]["payer_setup_lifecycle"]["replacement"]["completed_at"] = None
         facts["shared_provider_quantity"] = 1
         facts["provider_application_fee_cents"] = 49
         facts["period_due_state"] = "reconciliation_required"
@@ -317,7 +344,7 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
         errors = self.errors(evidence)
 
         self.assertTrue(any("Instructor capabilities" in error for error in errors))
-        self.assertTrue(any("duplicate completion replay" in error for error in errors))
+        self.assertTrue(any("exact local setup" in error for error in errors))
         self.assertTrue(any("quantity two" in error for error in errors))
         self.assertTrue(any("50 bps" in error for error in errors))
         self.assertTrue(any("period-end schedule" in error for error in errors))
@@ -393,8 +420,8 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
         dispute["local_readback"]["state_category"] = "active"
         errors = self.errors(evidence)
         self.assertTrue(any("created-to-closed" in error for error in errors))
-        self.assertTrue(any("provider readback has the wrong status" in error for error in errors))
-        self.assertTrue(any("canonical won status" in error for error in errors))
+        self.assertTrue(any("exact won dispute" in error for error in errors))
+        self.assertTrue(any("zero disputed cents" in error for error in errors))
 
     def test_rejects_unbound_mutation_inventory_retry_and_period_evidence(self):
         evidence = _valid_evidence()
@@ -403,13 +430,14 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
         supplemental["immediate_cancellation"]["durable_operation_id"] = ""
         supplemental["external_payment"]["provider_operation_inventory_readback"]["status"] = "one"
         supplemental["unsupported_operations"][0]["provider_operation_inventory_readback"]["status"] = "one"
-        supplemental["failed_payment_retry"]["failed_provider_readback"]["status"] = "paid"
+        supplemental["failed_payment_retry"]["failed_provider_readback"]["payment_intent_status"] = "succeeded"
         supplemental["period_advancement"]["observed_provider_boundary"] += 1
         supplemental["ambiguity_recovery"]["caller_request_key_sha256"] = "2" * 64
         errors = self.errors(evidence)
         self.assertTrue(any("invoice void evidence" in error for error in errors))
         self.assertTrue(any("wrong strategy or operation" in error for error in errors))
-        self.assertGreaterEqual(sum("wrong status" in error for error in errors), 3)
+        self.assertGreaterEqual(sum("wrong status" in error for error in errors), 2)
+        self.assertTrue(any("pre-retry provider state" in error for error in errors))
         self.assertTrue(any("test-clock advancement" in error for error in errors))
         self.assertTrue(any("does not bind workflow facts" in error for error in errors))
 
@@ -444,7 +472,7 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
         evidence["supplemental_evidence"]["failed_payment_retry"]["provider_readback"]["capture_boundary"] = "stale-boundary"
         evidence["supplemental_evidence"]["ambiguity_recovery"]["durable_operation_id"] = ""
         errors = self.errors(evidence)
-        self.assertTrue(any("shared capture boundary" in error for error in errors))
+        self.assertTrue(any("post-retry provider state" in error for error in errors))
         self.assertTrue(any("durable parent operation" in error for error in errors))
 
     def test_rejects_legacy_payer_ambiguity_step_field(self):
@@ -452,6 +480,147 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
         evidence["supplemental_evidence"]["ambiguity_recovery"]["durable_step_id"] = "step_1"
         errors = self.errors(evidence)
         self.assertTrue(any("ambiguity recovery evidence must contain only its exact schema-v4 fields" in error for error in errors))
+
+    def test_rejects_untruthful_replacement_retry_and_dispute_bindings(self):
+        evidence = _valid_evidence()
+        facts = evidence["workflow_facts"]
+        evidence["supplemental_evidence"]["payer_setup_lifecycle"]["initial"]["superseded_at"] = None
+        facts["replacement_setup_intent_id"] = facts["initial_setup_intent_id"]
+        facts["replacement_payment_method_id"] = facts["initial_payment_method_id"]
+        facts["failed_payment_invoice_id"] = "invoice_other"
+        retry = evidence["supplemental_evidence"]["failed_payment_retry"]
+        retry["payment_method_id"] = "pm_Other"
+        retry["failed_provider_readback"]["payment_intent_status"] = "succeeded"
+        evidence["supplemental_evidence"]["dispute_lifecycle"]["charge_id"] = "ch_Other"
+        errors = self.errors(evidence)
+        self.assertTrue(any("superseded and inactive" in error for error in errors))
+        self.assertTrue(any("distinct provider objects" in error for error in errors))
+        self.assertTrue(any("exact automatic invoice" in error for error in errors))
+        self.assertTrue(any("successful retry must own" in error for error in errors))
+        self.assertTrue(any("pre-retry provider state" in error for error in errors))
+        self.assertTrue(any("exact automatic charge" in error for error in errors))
+
+    def test_rejects_redundant_pay_and_invalid_platform_fixture(self):
+        evidence = _valid_evidence()
+        replacement = next(row for row in evidence["mutation_attempts"] if row["step_name"] == "payer.replacement_setup_checkout")
+        replacement["step_name"] = "automatic.pay"
+        replacement["workflow_id"] = "invoice.retry"
+        replacement["operation"] = "connected_invoice.pay"
+        platform = evidence["supplemental_evidence"]["platform_fixture"]
+        platform["method"] = "stripe.cli.trigger"
+        platform["studio_id"] = "studio_other"
+        platform["stripe_account_id"] = "acct_Test1"
+        platform["provider_mutation_count"] = 0
+        platform["cleanup_required"] = False
+        platform["event_id"] = "evt_otherPlatform"
+        errors = self.errors(evidence)
+        self.assertTrue(any("schema-v4 workflow plan" in error for error in errors))
+        self.assertTrue(any("owned TEST platform subscription" in error for error in errors))
+        self.assertTrue(any("bind its owned subscription event" in error for error in errors))
+
+    def test_rejects_shuffled_core_orders(self):
+        evidence = _valid_evidence()
+        evidence["steps"][0], evidence["steps"][1] = evidence["steps"][1], evidence["steps"][0]
+        evidence["mutation_attempts"][0], evidence["mutation_attempts"][1] = evidence["mutation_attempts"][1], evidence["mutation_attempts"][0]
+        errors = self.errors(evidence)
+        self.assertTrue(any("steps do not match the canonical" in error for error in errors))
+        self.assertTrue(any("mutation attempts do not match the canonical" in error for error in errors))
+
+    def test_rejects_detailed_setup_refund_and_platform_readback_drift(self):
+        evidence = _valid_evidence()
+        setup = evidence["supplemental_evidence"]["payer_setup_lifecycle"]
+        setup["initial"]["local_readback"]["consent_id"] = "consent_other"
+        setup["replacement"]["provider_setup_intent_readback"]["payment_method_id"] = "pm_other"
+        setup["duplicate_completion"]["local_replay"]["setup_request_row_count"] = 2
+        refund = evidence["supplemental_evidence"]["refund_convergence"]
+        refund["local_readback"]["refundable_remaining_cents"] = 8999
+        platform = evidence["supplemental_evidence"]["platform_fixture"]
+        platform["customer_preexisted"] = False
+        platform["cleanup_timing"] = "before_capture"
+        platform["provider_readback"]["metadata_studio_id"] = "studio_other"
+        platform["local_readback"]["source"] = "stripe_webhook_events_and_billing_subscriptions"
+        errors = self.errors(evidence)
+        self.assertTrue(any("exact local setup" in error for error in errors))
+        self.assertTrue(any("SetupIntent readback" in error for error in errors))
+        self.assertTrue(any("one processed event" in error for error in errors))
+        self.assertTrue(any("exact succeeded accounting" in error for error in errors))
+        self.assertTrue(any("owned TEST platform" in error for error in errors))
+        self.assertTrue(any("public.stripe_events" in error for error in errors))
+
+    def test_rejects_legacy_consent_payment_method_and_replay_claims(self):
+        evidence = _valid_evidence()
+        facts = evidence["workflow_facts"]
+        facts["consent_accepted"] = True
+        facts["initial_consent_completed"] = True
+        setup = evidence["supplemental_evidence"]["payer_setup_lifecycle"]
+        setup["initial"]["local_readback"]["payment_method_id"] = "pm_Failure1"
+        replay = setup["duplicate_completion"]
+        replay["local_replay"]["processing_status"] = "already_processed"
+        replay["local_replay"]["consent_row_count"] = 2
+        replay["provider_replay"]["event_id"] = "evt_other"
+        replay["provider_replay"]["attempts"][0]["delivery_status"] = "failed"
+        replay["provider_replay"]["attempts"][1]["http_status"] = 500
+        errors = self.errors(evidence)
+        self.assertTrue(any("workflow facts must contain only" in error for error in errors))
+        self.assertTrue(any("local readback must contain only" in error for error in errors))
+        self.assertTrue(any("distinct delivered 2xx" in error for error in errors))
+        self.assertTrue(any("one processed event" in error for error in errors))
+        self.assertTrue(any("pinned Connect endpoint" in error for error in errors))
+
+    def test_rejects_legacy_failed_payment_intent_status(self):
+        evidence = _valid_evidence()
+        evidence["supplemental_evidence"]["failed_payment_retry"]["failed_provider_readback"]["payment_intent_status"] = "failed"
+        errors = self.errors(evidence)
+        self.assertTrue(any("requires_payment_method" in error for error in errors))
+
+    def test_rejects_replay_endpoint_role_attempt_and_session_drift(self):
+        evidence = _valid_evidence()
+        duplicate = evidence["supplemental_evidence"]["payer_setup_lifecycle"]["duplicate_completion"]
+        attempts = duplicate["provider_replay"]["attempts"]
+        attempts[0]["endpoint_url"] = f"{ORIGIN}/api/v1/webhooks/stripe/platform"
+        attempts[1]["endpoint_url"] = "https://different.example.invalid/api/v1/webhooks/stripe/connect"
+        attempts[0]["role"], attempts[1]["role"] = "manual_resend", "original"
+        attempts[1]["attempt_id"] = attempts[0]["attempt_id"]
+        duplicate["provider_replay"]["checkout_session_id"] = "cs_OtherProvider"
+        duplicate["local_replay"]["checkout_session_id"] = "cs_OtherLocal"
+        errors = self.errors(evidence)
+        self.assertTrue(any("ordered original/manual_resend" in error for error in errors))
+        self.assertTrue(any("attempt IDs must be distinct" in error for error in errors))
+        self.assertTrue(any("pinned Connect endpoint" in error for error in errors))
+
+    def test_rejects_legacy_replay_missing_endpoint_role_and_session_fields(self):
+        evidence = _valid_evidence()
+        duplicate = evidence["supplemental_evidence"]["payer_setup_lifecycle"]["duplicate_completion"]
+        del duplicate["provider_replay"]["checkout_session_id"]
+        del duplicate["provider_replay"]["attempts"][0]["endpoint_url"]
+        del duplicate["provider_replay"]["attempts"][1]["role"]
+        del duplicate["provider_replay"]["attempts"][1]["delivered_at"]
+        del duplicate["local_replay"]["checkout_session_id"]
+        errors = self.errors(evidence)
+        self.assertTrue(any("duplicate provider replay must contain only" in error for error in errors))
+        self.assertTrue(any("duplicate local replay" in error and "exact schema-v4 fields" in error for error in errors))
+
+    def test_opaque_attempt_ids_do_not_define_replay_chronology(self):
+        evidence = _valid_evidence()
+        attempts = evidence["supplemental_evidence"]["payer_setup_lifecycle"]["duplicate_completion"]["provider_replay"]["attempts"]
+        self.assertGreater(attempts[0]["attempt_id"], attempts[1]["attempt_id"])
+        self.assertEqual(self.errors(evidence), [])
+
+    def test_rejects_equal_reversed_and_malformed_replay_timestamps(self):
+        cases = (
+            ("2026-08-28T16:12:00Z", "2026-08-28T16:12:00Z", "precede"),
+            ("2026-08-28T16:14:00Z", "2026-08-28T16:13:00Z", "precede"),
+            ("not-a-timestamp", "2026-08-28T16:13:00Z", "UTC delivery timestamps"),
+            ("2026-08-28T16:12:00", "2026-08-28T16:13:00Z", "UTC delivery timestamps"),
+            ("2026-08-28T16:12:00+00:00", "2026-08-28T16:13:00Z", "UTC delivery timestamps"),
+        )
+        for original_at, resend_at, expected in cases:
+            with self.subTest(original_at=original_at, resend_at=resend_at):
+                evidence = _valid_evidence()
+                attempts = evidence["supplemental_evidence"]["payer_setup_lifecycle"]["duplicate_completion"]["provider_replay"]["attempts"]
+                attempts[0]["delivered_at"] = original_at
+                attempts[1]["delivered_at"] = resend_at
+                self.assertTrue(any(expected in error for error in self.errors(evidence)))
 
 
 if __name__ == "__main__":
