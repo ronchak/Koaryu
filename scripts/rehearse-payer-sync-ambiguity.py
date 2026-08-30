@@ -162,10 +162,16 @@ def write_private_state(
     *,
     integrity_key: str,
     require_absent: bool = False,
+    state_directory: Path = Path("/private/tmp"),
 ) -> None:
     path = path.resolve()
-    if not str(path).startswith("/private/tmp/koaryu-payer-ambiguity-"):
-        raise OperatorError("state file must use /private/tmp/koaryu-payer-ambiguity-* path")
+    state_directory = state_directory.resolve()
+    if path.parent != state_directory or not path.name.startswith(
+        "koaryu-payer-ambiguity-"
+    ):
+        raise OperatorError(
+            f"state file must use {state_directory}/koaryu-payer-ambiguity-* path"
+        )
     if require_absent and path.exists():
         raise OperatorError("refusing to overwrite an existing ambiguity state file")
     validate_state_phase(state)
@@ -192,10 +198,20 @@ def write_private_state(
         raise
 
 
-def read_private_state(path: Path, *, integrity_key: str) -> dict[str, Any]:
+def read_private_state(
+    path: Path,
+    *,
+    integrity_key: str,
+    state_directory: Path = Path("/private/tmp"),
+) -> dict[str, Any]:
     path = path.resolve()
-    if not str(path).startswith("/private/tmp/koaryu-payer-ambiguity-"):
-        raise OperatorError("state file must use /private/tmp/koaryu-payer-ambiguity-* path")
+    state_directory = state_directory.resolve()
+    if path.parent != state_directory or not path.name.startswith(
+        "koaryu-payer-ambiguity-"
+    ):
+        raise OperatorError(
+            f"state file must use {state_directory}/koaryu-payer-ambiguity-* path"
+        )
     if (path.stat().st_mode & 0o777) != 0o600:
         raise OperatorError("ambiguity state file must have mode 0600")
     value = json.loads(path.read_text(encoding="utf-8"))

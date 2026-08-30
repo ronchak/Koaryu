@@ -119,18 +119,28 @@ def test_repository_gate_requires_clean_tracked_operator_at_head(tmp_path):
         MODULE.validate_repository_state(repository)
 
 
-def test_private_state_is_mode_600_exact_and_never_blindly_overwritten():
-    path = Path(f"/private/tmp/koaryu-payer-ambiguity-test-{uuid4()}.json")
+def test_private_state_is_mode_600_exact_and_never_blindly_overwritten(tmp_path):
+    path = tmp_path / f"koaryu-payer-ambiguity-test-{uuid4()}.json"
     try:
         state = _armed_state()
         MODULE.write_private_state(
-            path, state, integrity_key=CALLER_KEY, require_absent=True
+            path,
+            state,
+            integrity_key=CALLER_KEY,
+            require_absent=True,
+            state_directory=tmp_path,
         )
         assert (path.stat().st_mode & 0o777) == 0o600
-        assert MODULE.read_private_state(path, integrity_key=CALLER_KEY) == state
+        assert MODULE.read_private_state(
+            path, integrity_key=CALLER_KEY, state_directory=tmp_path
+        ) == state
         with pytest.raises(MODULE.OperatorError):
             MODULE.write_private_state(
-                path, state, integrity_key=CALLER_KEY, require_absent=True
+                path,
+                state,
+                integrity_key=CALLER_KEY,
+                require_absent=True,
+                state_directory=tmp_path,
             )
         provider_created = {
             **state,
@@ -139,49 +149,65 @@ def test_private_state_is_mode_600_exact_and_never_blindly_overwritten():
             "provider_mutation_count": 1,
         }
         MODULE.write_private_state(
-            path, provider_created, integrity_key=CALLER_KEY
+            path,
+            provider_created,
+            integrity_key=CALLER_KEY,
+            state_directory=tmp_path,
         )
         assert MODULE.read_private_state(
-            path, integrity_key=CALLER_KEY
+            path, integrity_key=CALLER_KEY, state_directory=tmp_path
         )["phase"] == "provider_created"
         with pytest.raises(MODULE.OperatorError, match="integrity"):
-            MODULE.read_private_state(path, integrity_key="wrong-key")
+            MODULE.read_private_state(
+                path, integrity_key="wrong-key", state_directory=tmp_path
+            )
     finally:
         path.unlink(missing_ok=True)
 
 
-def test_private_state_rejects_wrong_path_and_permissions():
+def test_private_state_rejects_wrong_path_and_permissions(tmp_path):
     with pytest.raises(MODULE.OperatorError):
         MODULE.write_private_state(
-            Path("/private/tmp/wrong-prefix.json"),
+            tmp_path / "wrong-prefix.json",
             _armed_state(),
             integrity_key=CALLER_KEY,
+            state_directory=tmp_path,
         )
 
-    path = Path(f"/private/tmp/koaryu-payer-ambiguity-test-{uuid4()}.json")
+    path = tmp_path / f"koaryu-payer-ambiguity-test-{uuid4()}.json"
     try:
         MODULE.write_private_state(
-            path, _armed_state(), integrity_key=CALLER_KEY
+            path,
+            _armed_state(),
+            integrity_key=CALLER_KEY,
+            state_directory=tmp_path,
         )
         os.chmod(path, 0o644)
         with pytest.raises(MODULE.OperatorError):
-            MODULE.read_private_state(path, integrity_key=CALLER_KEY)
+            MODULE.read_private_state(
+                path, integrity_key=CALLER_KEY, state_directory=tmp_path
+            )
     finally:
         path.unlink(missing_ok=True)
 
 
-def test_private_state_rejects_tampering_and_phase_field_drift():
-    path = Path(f"/private/tmp/koaryu-payer-ambiguity-test-{uuid4()}.json")
+def test_private_state_rejects_tampering_and_phase_field_drift(tmp_path):
+    path = tmp_path / f"koaryu-payer-ambiguity-test-{uuid4()}.json"
     try:
         MODULE.write_private_state(
-            path, _armed_state(), integrity_key=CALLER_KEY
+            path,
+            _armed_state(),
+            integrity_key=CALLER_KEY,
+            state_directory=tmp_path,
         )
         payload = json.loads(path.read_text(encoding="utf-8"))
         payload["provider_mutation_count"] = 1
         path.write_text(json.dumps(payload), encoding="utf-8")
         os.chmod(path, 0o600)
         with pytest.raises(MODULE.OperatorError, match="integrity"):
-            MODULE.read_private_state(path, integrity_key=CALLER_KEY)
+            MODULE.read_private_state(
+                path, integrity_key=CALLER_KEY, state_directory=tmp_path
+            )
         with pytest.raises(MODULE.OperatorError, match="phase fields"):
             MODULE.validate_state_phase({**_armed_state(), "unexpected": True})
     finally:
