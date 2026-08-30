@@ -21,6 +21,9 @@ DECLARE
     v_setup_operation UUID:=gen_random_uuid();
     v_setup_request UUID:=gen_random_uuid();
     v_consent UUID:=gen_random_uuid();
+    v_finalize_consent_operation UUID:=gen_random_uuid();
+    v_finalize_consent_request UUID:=gen_random_uuid();
+    v_finalize_consent UUID:=gen_random_uuid();
     v_now TIMESTAMPTZ:=clock_timestamp();
 BEGIN
     IF has_table_privilege(
@@ -70,7 +73,7 @@ BEGIN
         amount_paid_cents,amount_remaining_cents,currency,stripe_invoice_id,
         stripe_account_id,stripe_customer_id,collection_method,external,metadata
     ) VALUES(v_invoice,v_studio,v_payer,'manual','draft',5000,0,5000,'usd',
-             'in_v31invoice','acct_v31invoice','cus_v31invoice','send_invoice',false,
+             'in_v31invoice','acct_v31invoice','cus_v31invoice','charge_automatically',false,
              jsonb_build_object('connect_account_generation',1));
 
     v_result:=public.claim_billing_invoice_closeout_operation_v1(
@@ -81,6 +84,28 @@ BEGIN
     IF v_result->>'outcome'<>'claimed' THEN
         RAISE EXCEPTION 'V31 finalize owner was not claimed.';
     END IF;
+    BEGIN
+        UPDATE public.billing_payers SET
+            default_payment_method_id='pm_finalize_blocked',
+            autopay_status='disabled',updated_at=clock_timestamp()
+        WHERE id=v_payer;
+        RAISE EXCEPTION 'Charge-automatic finalize allowed payer autopay mutation.';
+    EXCEPTION WHEN lock_not_available THEN
+        IF SQLERRM<>'billing_invoice_mutation_in_progress' THEN RAISE; END IF;
+    END;
+    BEGIN
+        INSERT INTO public.billing_payer_payment_consents(
+            setup_request_id,studio_id,payer_id,terms_version,
+            stripe_checkout_session_id,stripe_connected_account_id,
+            connect_account_generation,acceptance_proof_sha256,accepted_at,
+            setup_request_expires_at
+        ) VALUES(gen_random_uuid(),v_studio,v_payer,'terms-v1','cs_finalize_blocked',
+            'acct_v31invoice',1,repeat('f',64),clock_timestamp(),
+            clock_timestamp()+interval '1 hour');
+        RAISE EXCEPTION 'Charge-automatic finalize allowed consent insert.';
+    EXCEPTION WHEN lock_not_available THEN
+        IF SQLERRM<>'billing_invoice_mutation_in_progress' THEN RAISE; END IF;
+    END;
     v_result:=public.claim_billing_invoice_closeout_operation_v1(
         v_studio,v_admin,'invoice.finalize','invoice_finalize',v_invoice,v_payer,
         'v31-finalize-alias',repeat('a',64),'acct_v31invoice',1,gen_random_uuid(),30
@@ -122,6 +147,11 @@ BEGIN
         WHERE studio_id=v_studio AND resource_id=v_invoice)<>1 THEN
         RAISE EXCEPTION 'Blocked V31 invoice mutations created resources.';
     END IF;
+    IF (SELECT default_payment_method_id FROM public.billing_payers WHERE id=v_payer)
+       IS NOT NULL OR EXISTS(SELECT 1 FROM public.billing_payer_payment_consents
+         WHERE stripe_checkout_session_id='cs_finalize_blocked') THEN
+        RAISE EXCEPTION 'Blocked finalize consent/autopay mutation persisted.';
+    END IF;
 
     UPDATE public.billing_provider_operations SET
         state='definitive_rejected',error_code='provider_mutation_blocked',
@@ -129,6 +159,47 @@ BEGIN
         lease_acquired_at=NULL,lease_expires_at=NULL,
         revision=revision+1,updated_at=clock_timestamp()
     WHERE id=v_finalize;
+    UPDATE public.billing_payers SET
+        default_payment_method_id='pm_finalize_terminal',
+        autopay_status='disabled',updated_at=clock_timestamp()
+    WHERE id=v_payer;
+    INSERT INTO public.billing_provider_operations(
+        id,studio_id,actor_id,operation_type,caller_request_key,request_sha256,
+        stripe_connected_account_id,connect_account_generation,state,
+        provider_request_attempt_count,provider_object_id,provider_succeeded_at,
+        projected_at,completed_at,started_at,created_at,updated_at
+    ) VALUES(
+        v_finalize_consent_operation,v_studio,v_admin,'payer.setup',
+        'finalize-terminal-consent',repeat('7',64),'acct_v31invoice',1,
+        'completed',1,'cs_finalize_terminal',clock_timestamp(),clock_timestamp(),
+        clock_timestamp(),clock_timestamp(),clock_timestamp(),clock_timestamp()
+    );
+    INSERT INTO public.billing_payer_setup_requests(
+        id,operation_id,studio_id,payer_id,initiated_by,terms_version,
+        stripe_connected_account_id,connect_account_generation,
+        setup_request_expires_at,created_at,updated_at
+    ) VALUES(
+        v_finalize_consent_request,v_finalize_consent_operation,v_studio,v_payer,
+        v_admin,'terms-v1','acct_v31invoice',1,clock_timestamp()+interval '1 hour',
+        clock_timestamp(),clock_timestamp()
+    );
+    INSERT INTO public.billing_payer_payment_consents(
+        id,setup_request_id,studio_id,payer_id,terms_version,
+        stripe_checkout_session_id,stripe_connected_account_id,
+        connect_account_generation,acceptance_proof_sha256,accepted_at,
+        setup_request_expires_at
+    ) VALUES(
+        v_finalize_consent,v_finalize_consent_request,v_studio,v_payer,'terms-v1',
+        'cs_finalize_terminal','acct_v31invoice',1,repeat('8',64),
+        clock_timestamp(),clock_timestamp()+interval '1 hour'
+    );
+    IF NOT EXISTS(SELECT 1 FROM public.billing_payer_payment_consents
+       WHERE id=v_finalize_consent) THEN
+        RAISE EXCEPTION 'Consent insert did not recover after finalize terminalization.';
+    END IF;
+    DELETE FROM public.billing_payer_payment_consents WHERE id=v_finalize_consent;
+    DELETE FROM public.billing_payer_setup_requests WHERE id=v_finalize_consent_request;
+    DELETE FROM public.billing_provider_operations WHERE id=v_finalize_consent_operation;
     v_result:=public.claim_billing_invoice_closeout_operation_v1(
         v_studio,v_admin,'invoice.void','invoice_void',v_invoice,v_payer,
         'v31-void-owner',repeat('b',64),'acct_v31invoice',1,gen_random_uuid(),30

@@ -578,6 +578,7 @@ DECLARE
     v_capture_enabled BOOLEAN;
     v_identity JSONB;
     v_has_ledger BOOLEAN;
+    v_reclaim_released BOOLEAN:=false;
     v_now TIMESTAMPTZ:=clock_timestamp();
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM public.staff_roles
@@ -703,6 +704,14 @@ BEGIN
             RAISE EXCEPTION USING ERRCODE='55P03',
                 MESSAGE='billing_invoice_retry_v33_current_owner_mismatch';
         END IF;
+        v_reclaim_released:=v_ledger_operation.state NOT IN(
+            'completed','definitive_failed','definitive_rejected'
+          )
+          AND v_owner.operation_id IS NOT DISTINCT FROM v_ledger.operation_id
+          AND v_owner.resource_claim_id IS NOT DISTINCT FROM v_ledger.resource_claim_id
+          AND v_ledger_resource.operation_id IS NOT DISTINCT FROM v_ledger.operation_id
+          AND v_operation.id IS NOT DISTINCT FROM v_ledger.operation_id
+          AND v_operation.invoice_retry_preread_released_at IS NOT NULL;
         IF v_ledger_operation.state IN(
             'completed','definitive_failed','definitive_rejected'
         ) AND v_ledger_resource.operation_id IS DISTINCT FROM v_ledger.operation_id
@@ -724,6 +733,14 @@ BEGIN
                 MESSAGE='billing_invoice_retry_v33_terminal_replacement_invalid';
         END IF;
     ELSE
+        IF v_owner.operation_type='invoice.retry'
+           AND v_operation.id IS NOT NULL
+           AND v_operation.state NOT IN(
+             'completed','definitive_failed','definitive_rejected')
+           AND p_caller_request_key IS DISTINCT FROM v_operation.caller_request_key THEN
+            RAISE EXCEPTION USING ERRCODE='23505',
+                MESSAGE='billing_invoice_retry_v33_nonterminal_key_mismatch';
+        END IF;
         IF NOT v_capture_enabled
            AND p_requested_base_sha256 IS DISTINCT FROM v_base THEN
             RAISE EXCEPTION USING ERRCODE='23505',
@@ -733,7 +750,7 @@ BEGIN
         v_outcome:=CASE WHEN v_persisted=v_base THEN 'base_hash_exact'
             ELSE 'capture_legacy_hash_created' END;
     END IF;
-    IF v_operation.invoice_retry_preread_released_at IS NOT NULL THEN
+    IF v_reclaim_released THEN
         UPDATE public.billing_provider_operations SET
             invoice_retry_preread_released_at=NULL,
             invoice_retry_preread_release_reason=NULL,
@@ -745,7 +762,7 @@ BEGIN
         p_caller_request_key,v_persisted,p_stripe_connected_account_id,
         p_connect_account_generation,p_lease_owner,p_lease_seconds
     );
-    IF v_operation.invoice_retry_preread_released_at IS NOT NULL THEN
+    IF v_reclaim_released THEN
         SELECT private.billing_provider_operation_resource_json_v1(
             resource,operation,p_caller_request_key,'reclaimed'
         ) INTO v_result
@@ -812,6 +829,10 @@ DECLARE v_owner public.billing_invoice_mutation_owners%ROWTYPE;
 BEGIN
     PERFORM 1 FROM public.billing_payers
     WHERE id=p_payer_id AND studio_id=p_studio_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_payer_consent_identity_mismatch';
+    END IF;
     FOR v_owner IN
         SELECT * FROM public.billing_invoice_mutation_owners
         WHERE studio_id=p_studio_id AND payer_id=p_payer_id
@@ -819,6 +840,16 @@ BEGIN
     LOOP
         SELECT * INTO v_operation FROM public.billing_provider_operations
         WHERE id=v_owner.operation_id FOR UPDATE;
+        IF v_owner.operation_type='invoice.finalize'
+           AND v_operation.state IN(
+             'started','provider_request_in_flight','recovery_authorized')
+           AND EXISTS(SELECT 1 FROM public.billing_invoices AS invoice
+             WHERE invoice.id=v_owner.invoice_id
+               AND invoice.studio_id=v_owner.studio_id
+               AND invoice.collection_method='charge_automatically') THEN
+            RAISE EXCEPTION USING ERRCODE='55P03',
+                MESSAGE='billing_invoice_mutation_in_progress';
+        END IF;
         IF v_owner.operation_type<>'invoice.retry'
            OR v_operation.state IN ('completed','definitive_failed','definitive_rejected') THEN
             CONTINUE;
@@ -872,7 +903,8 @@ BEGIN
         IF EXISTS(SELECT 1 FROM public.billing_invoice_mutation_owners AS owner
           JOIN public.billing_provider_operations AS operation ON operation.id=owner.operation_id
           WHERE owner.studio_id=NEW.studio_id AND owner.payer_id=NEW.id
-            AND operation.state NOT IN ('completed','definitive_failed','definitive_rejected')) THEN
+            AND operation.state NOT IN(
+              'completed','definitive_failed','definitive_rejected')) THEN
             RAISE EXCEPTION USING ERRCODE='55P03',
                 MESSAGE='billing_invoice_mutation_in_progress';
         END IF;
@@ -1013,7 +1045,7 @@ REVOKE ALL ON FUNCTION private.koaryu_release_invoice_retry_compatibility_manife
  FROM PUBLIC,anon,authenticated,service_role;
 
 UPDATE private.koaryu_release_v31_expectations
-SET expected_sha256='3fa8acfa06f919f1702a7dc9ff3616ce539fb0117a727a4e609c9c3aa50c29c2'
+SET expected_sha256='85b57219a48b78e04a60f1e6d8ff39fc47d7fc3f586ad1aa5bde852f8b463917'
 WHERE expectation_key='operational_contract_v31';
 
 DO $build_v14$
@@ -1031,19 +1063,19 @@ BEGIN
     '''20260826185651'',''20260830065627''',
     '''20260826185651'',''20260830065627'',''20260830082610''');
   v_definition:=replace(v_definition,'''migration_history_v32''','''migration_history_v33''');
-  v_definition:=replace(v_definition,'0:7003a83b5deea53d0c365ec3e2eca4dd5281f7658fe0a41d053c1e1618d709c1','0:f87c5626c11c3b93c55e94438551a0f500553e092b5790cef873adf0f90605af');
-  v_definition:=replace(v_definition,'0:b0bf5a376dab5ece5a6d9e44b7ea3067ce7700200361c20f0b1f0166395f0c3b','0:3fa8acfa06f919f1702a7dc9ff3616ce539fb0117a727a4e609c9c3aa50c29c2');
+  v_definition:=replace(v_definition,'0:7003a83b5deea53d0c365ec3e2eca4dd5281f7658fe0a41d053c1e1618d709c1','0:021617e4a8372faed9d9bed47324511892c1e051fb03dcafb3eeb31ecd9e6a35');
+  v_definition:=replace(v_definition,'0:b0bf5a376dab5ece5a6d9e44b7ea3067ce7700200361c20f0b1f0166395f0c3b','0:85b57219a48b78e04a60f1e6d8ff39fc47d7fc3f586ad1aa5bde852f8b463917');
   v_definition:=replace(v_definition,'0:1cc1c6760ff8e57e532813211ff70ca7cdb55aa1209fa1f6d029aee34b0b1624','0:00790561b8e54e31aea1f134bde617bec9b2b6f96d1372e9546ce91d10464331');
   v_definition:=replace(v_definition,'0:025214fa14bc7319a806cb6eba177d77af214d9ee6457959ca17e3e08347ce0f','0:4bc49993793e36641ed793161aeeb064ce3101b3a98e52365da15fc957ed4c5e');
   v_definition:=replace(v_definition,'0:8423e3fc0ba0d8e7ee9e5a9625f6078ca82f1998a766eb007c6d6433993e389a','0:33a270e015c8a73824d38785b1bb7b8fde7ea67ee2783832042f335627d64864');
   v_definition:=replace(v_definition,'0:48b8eff3f5470913614927bb0699970ea165a5ca5b5704cd73af08a9ec7dcdbb','0:93a90cb23af0a5ba2e4e97b938419f41cb770418f433c32ca4534dbfe65538c6');
   v_definition:=replace(v_definition,'eaead9e1d0d5696089de8a5c4e65dba15d6ba6b7e7fd47f8f911356bdc94420d','d9c4103b9109512eef453dd788989045a19d39ad0e8d59969ff5a48aaa78b2fb');
   v_definition:=replace(v_definition,'0:61d0fbbd8ab29d9ea43dc0137f467daa86bb6da97b1be19222710c81aeadc318','0:6389e87cdb8a5db79c540f38da4fdc71aa56ed10fa5d5533518f470bf52f7dfc');
-  v_definition:=replace(v_definition,'26373f66ff1800369b7bad388a1b38452e48615b2635cc796d173a3fa92707fc','e74062ef628b63c87992d17e3980518baffaa18abe0e4a519179e49418449a88');
+  v_definition:=replace(v_definition,'26373f66ff1800369b7bad388a1b38452e48615b2635cc796d173a3fa92707fc','953cd8f92a9e907cc70ca7ec599ee58b7f55772b7b4fd1af06fad76b58bc2bf8');
   v_definition:=replace(v_definition,
     'RETURN QUERY SELECT cardinality(v_failures) = 0,',
     $inject$IF private.koaryu_release_invoice_retry_compatibility_manifest_v33()
-       <> '0:0fad0f4db714c0180e0107ec3e91d889a8aced2d506a8ef8ec8e151a23248154' THEN
+       <> '0:378f6477266a8bd8d0babfff37c2747606bd9d8c5b98024b77d786715c05dbcb' THEN
       v_failures:=array_append(v_failures,'invoice_retry_compatibility_manifest_v33');
     END IF;
     RETURN QUERY SELECT cardinality(v_failures) = 0,$inject$);

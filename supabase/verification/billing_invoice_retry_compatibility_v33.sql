@@ -3,7 +3,8 @@ BEGIN;
 DO $contract$
 DECLARE
  v_admin UUID:=gen_random_uuid(); v_other UUID:=gen_random_uuid();
- v_studio UUID:=gen_random_uuid(); v_payer UUID:=gen_random_uuid();
+ v_studio UUID:=gen_random_uuid(); v_other_studio UUID:=gen_random_uuid();
+ v_payer UUID:=gen_random_uuid();
  v_invoice UUID:=gen_random_uuid(); v_invoice_two UUID:=gen_random_uuid();
  v_owner_a UUID:=gen_random_uuid();
  v_owner_b UUID:=gen_random_uuid(); v_operation UUID; v_revision BIGINT;
@@ -35,14 +36,32 @@ BEGIN
  INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
  VALUES(v_admin,'authenticated','authenticated','v33-admin@example.invalid','{}','{}',now(),now()),
        (v_other,'authenticated','authenticated','v33-other@example.invalid','{}','{}',now(),now());
- INSERT INTO public.studios(id,name,slug,owner_id)
- VALUES(v_studio,'V33 compatibility','v33-'||replace(v_studio::text,'-',''),v_admin);
+ INSERT INTO public.studios(id,name,slug,owner_id) VALUES
+ (v_studio,'V33 compatibility','v33-'||replace(v_studio::text,'-',''),v_admin),
+ (v_other_studio,'V33 other','v33-other-'||replace(v_other_studio::text,'-',''),v_other);
  INSERT INTO public.staff_roles(studio_id,user_id,role)
  VALUES(v_studio,v_admin,'admin'),(v_studio,v_other,'admin');
  INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,metadata)
  VALUES(v_studio,'acct_v33contract',jsonb_build_object('connect_account_generation',1));
  INSERT INTO public.billing_payers(id,studio_id,display_name,stripe_account_id,stripe_customer_id,connect_account_generation)
  VALUES(v_payer,v_studio,'V33 payer','acct_v33contract','cus_v33contract',1);
+ BEGIN
+   INSERT INTO public.billing_payer_payment_consents(
+    setup_request_id,studio_id,payer_id,terms_version,
+    stripe_checkout_session_id,stripe_connected_account_id,
+    connect_account_generation,acceptance_proof_sha256,accepted_at,
+    setup_request_expires_at
+   ) VALUES(gen_random_uuid(),v_other_studio,v_payer,'terms-v1','cs_cross_studio',
+    'acct_v33other',1,repeat('9',64),clock_timestamp(),
+    clock_timestamp()+interval '1 hour');
+   RAISE EXCEPTION 'V33 cross-studio consent insert was accepted.';
+ EXCEPTION WHEN check_violation THEN
+   IF SQLERRM<>'billing_payer_consent_identity_mismatch' THEN RAISE; END IF;
+ END;
+ IF EXISTS(SELECT 1 FROM public.billing_payer_payment_consents
+   WHERE stripe_checkout_session_id='cs_cross_studio') THEN
+   RAISE EXCEPTION 'V33 cross-studio consent insert persisted.';
+ END IF;
  INSERT INTO public.billing_invoices(id,studio_id,payer_id,invoice_type,status,
    amount_due_cents,amount_paid_cents,amount_remaining_cents,currency,
    stripe_invoice_id,stripe_account_id,stripe_customer_id,collection_method,external,metadata)
@@ -60,6 +79,43 @@ BEGIN
  WHERE operation_id=v_operation AND caller_request_key='v33-legacy-key'
    AND persisted_request_sha256=repeat('a',64) AND base_request_sha256=v_base;
  IF v_ledger_count<>1 THEN RAISE EXCEPTION 'V33 old-writer capture failed.'; END IF;
+ BEGIN
+   PERFORM public.claim_billing_provider_operation_resource_v1(
+    v_studio,v_admin,'invoice.retry','invoice',v_invoice,v_payer,
+    'v33-legacy-key',repeat('b',64),'acct_v33contract',1,gen_random_uuid(),30);
+   RAISE EXCEPTION 'V33 same-key hash mismatch was accepted.';
+ EXCEPTION WHEN unique_violation THEN
+   IF SQLERRM<>'billing_invoice_retry_v33_base_hash_mismatch' THEN RAISE; END IF;
+ END;
+ BEGIN
+   PERFORM public.claim_billing_provider_operation_resource_v1(
+    v_studio,v_admin,'invoice.retry','invoice',v_invoice,v_payer,
+    'v33-legacy-key',v_base,'acct_wrong',1,gen_random_uuid(),30);
+   RAISE EXCEPTION 'V33 same-key account mismatch was accepted.';
+ EXCEPTION WHEN unique_violation THEN
+   IF SQLERRM<>'billing_provider_operation_resource_request_conflict' THEN RAISE; END IF;
+ END;
+ BEGIN
+   PERFORM public.claim_billing_provider_operation_resource_v1(
+    v_studio,v_admin,'invoice.retry','invoice',v_invoice,v_payer,
+    'v33-legacy-key',v_base,'acct_v33contract',2,gen_random_uuid(),30);
+   RAISE EXCEPTION 'V33 same-key generation mismatch was accepted.';
+ EXCEPTION WHEN unique_violation THEN
+   IF SQLERRM<>'billing_provider_operation_resource_request_conflict' THEN RAISE; END IF;
+ END;
+ BEGIN
+   PERFORM public.claim_billing_provider_operation_resource_v1(
+    v_studio,v_admin,'invoice.retry','invoice',v_invoice,v_payer,
+    'v33-nonterminal-changed-key',v_base,'acct_v33contract',1,gen_random_uuid(),30);
+   RAISE EXCEPTION 'V33 nonterminal changed key was accepted.';
+ EXCEPTION WHEN unique_violation THEN
+   IF SQLERRM<>'billing_invoice_retry_v33_nonterminal_key_mismatch' THEN RAISE; END IF;
+ END;
+ IF (SELECT revision FROM public.billing_provider_operations WHERE id=v_operation)<>v_revision
+    OR (SELECT count(*) FROM public.billing_provider_operation_resource_aliases
+        WHERE operation_id=v_operation)<>1 THEN
+   RAISE EXCEPTION 'V33 changed-key refusal mutated operation or aliases.';
+ END IF;
  UPDATE public.billing_invoices SET metadata=COALESCE(metadata,'{}'::JSONB)
    -'connect_account_generation' WHERE id=v_invoice;
  PERFORM private.resolve_billing_invoice_retry_identity_v33(

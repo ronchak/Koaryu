@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 from typing import Any
 
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -351,13 +352,63 @@ class BillingProviderOperationRpcMixin:
         self,
         params: dict[str, Any],
     ) -> dict[str, Any]:
-        base_hash = params["p_request_sha256"]
-        ledger_key = (params["p_studio_id"], params["p_caller_request_key"])
+        invoice = next(
+            (
+                row
+                for row in self.tables.get("billing_invoices", [])
+                if self._canonical_uuid_text(row.get("id"))
+                == self._canonical_uuid_text(params["p_resource_id"])
+                and self._canonical_uuid_text(row.get("studio_id"))
+                == self._canonical_uuid_text(params["p_studio_id"])
+            ),
+            None,
+        )
+        payer = next(
+            (
+                row
+                for row in self.tables.get("billing_payers", [])
+                if row.get("id") == params["p_payer_id"]
+                and self._canonical_uuid_text(row.get("studio_id"))
+                == self._canonical_uuid_text(params["p_studio_id"])
+            ),
+            None,
+        )
+        if invoice is None or payer is None:
+            raise _operation_conflict()
+        canonical_params = {
+            **params,
+            "p_studio_id": self._canonical_uuid_text(invoice["studio_id"]),
+            "p_resource_id": self._canonical_uuid_text(invoice["id"]),
+            "p_payer_id": payer["id"],
+        }
+        base_hash = hashlib.sha256(json.dumps({
+            "connect_account_generation": int(
+                params["p_connect_account_generation"]
+            ),
+            "invoice_id": self._canonical_uuid_text(invoice["id"]),
+            "operation_type": "invoice.retry",
+            "stripe_connected_account_id": str(invoice["stripe_account_id"]),
+            "stripe_invoice_id": str(invoice["stripe_invoice_id"]),
+            "studio_id": self._canonical_uuid_text(invoice["studio_id"]),
+        }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        submitted_hash = params["p_request_sha256"]
+        ledger_key = (
+            canonical_params["p_studio_id"],
+            params["p_caller_request_key"],
+        )
         ledger = self.billing_invoice_retry_hash_ledger_v33.get(ledger_key)
         if ledger is None:
-            effective_hash = base_hash
-            compatibility_outcome = "base_hash_exact"
+            if submitted_hash == base_hash:
+                effective_hash = base_hash
+                compatibility_outcome = "base_hash_exact"
+            elif self.billing_invoice_retry_hash_capture_enabled_v33:
+                effective_hash = submitted_hash
+                compatibility_outcome = "capture_legacy_hash_created"
+            else:
+                raise _operation_conflict()
         else:
+            if ledger.get("base_request_sha256") != base_hash:
+                raise _operation_conflict()
             for field, param in (
                 ("resource_id", "p_resource_id"),
                 ("payer_id", "p_payer_id"),
@@ -365,7 +416,7 @@ class BillingProviderOperationRpcMixin:
                 ("stripe_connected_account_id", "p_stripe_connected_account_id"),
                 ("connect_account_generation", "p_connect_account_generation"),
             ):
-                if ledger.get(field) != params[param]:
+                if ledger.get(field) != canonical_params[param]:
                     raise _operation_conflict()
             effective_hash = ledger["effective_persisted_sha256"]
             compatibility_outcome = (
@@ -380,14 +431,17 @@ class BillingProviderOperationRpcMixin:
                     "invoice_retry_preread_release_reason": None,
                     "revision": ledger_operation["revision"] + 1,
                 })
-        effective_params = {**params, "p_request_sha256": effective_hash}
+        effective_params = {
+            **canonical_params,
+            "p_request_sha256": effective_hash,
+        }
         result = self._rpc_claim_billing_invoice_mutation_v31(effective_params)
         if ledger is None:
             operation = result["operation"]
             self.billing_invoice_retry_hash_ledger_v33[ledger_key] = {
                 "operation_id": operation["id"],
-                "resource_id": params["p_resource_id"],
-                "payer_id": params["p_payer_id"],
+                "resource_id": canonical_params["p_resource_id"],
+                "payer_id": canonical_params["p_payer_id"],
                 "actor_id": params["p_actor_id"],
                 "stripe_connected_account_id": params[
                     "p_stripe_connected_account_id"
@@ -404,6 +458,13 @@ class BillingProviderOperationRpcMixin:
             "effective_persisted_sha256": effective_hash,
             "compatibility_outcome": compatibility_outcome,
         }
+
+    @staticmethod
+    def _canonical_uuid_text(value: Any) -> str:
+        try:
+            return str(UUID(str(value).strip("{}")))
+        except (TypeError, ValueError):
+            return str(value)
 
     def _rpc_claim_billing_invoice_mutation_v31(
         self,
@@ -841,7 +902,35 @@ class BillingProviderOperationRpcMixin:
         self,
         params: dict[str, Any],
     ) -> dict[str, Any]:
-        return self._rpc_claim_billing_invoice_mutation_v31(params)
+        result = self._rpc_claim_billing_invoice_mutation_v31(params)
+        operation = self._operation_by_id(result["operation"]["id"])
+        state = operation.get("state")
+        if state in {"completed", "definitive_failed", "definitive_rejected"}:
+            return {**result, "operation": dict(operation)}
+        if state == "provider_request_in_flight":
+            return {**result, "outcome": "provider_request_in_flight", "operation": dict(operation)}
+        lease_owner = operation.get("lease_owner")
+        lease_expires_at = operation.get("lease_expires_at")
+        lease_expired = (
+            lease_expires_at is not None
+            and datetime.fromisoformat(
+                str(lease_expires_at).replace("Z", "+00:00")
+            ) <= self.billing_provider_now
+        )
+        requested_owner = params["p_lease_owner"]
+        if lease_owner not in {None, requested_owner} and not lease_expired:
+            return {**result, "outcome": "busy", "operation": dict(operation)}
+        if lease_owner != requested_owner or lease_expired:
+            acquired_at = self.billing_provider_now
+            operation.update({
+                "lease_owner": requested_owner,
+                "lease_acquired_at": self._billing_provider_timestamp(acquired_at),
+                "lease_expires_at": self._billing_provider_timestamp(
+                    acquired_at + timedelta(seconds=int(params["p_lease_seconds"]))
+                ),
+                "revision": operation["revision"] + 1,
+            })
+        return {**result, "operation": dict(operation)}
 
     def _rpc_transition_billing_provider_operation_v1(self, params: dict[str, Any]) -> dict[str, Any]:
         operation = self._operation_for_params(params)

@@ -321,6 +321,7 @@ DECLARE
     v_terminal_operation UUID;
     v_replacement_operation UUID;
     v_revision BIGINT;
+    v_released_at TIMESTAMPTZ;
     v_enrollment_revision BIGINT;
     v_result JSONB;
     v_now TIMESTAMPTZ := clock_timestamp();
@@ -455,18 +456,24 @@ BEGIN
     EXCEPTION WHEN insufficient_privilege THEN
         IF SQLERRM <> 'billing_invoice_mutation_actor_forbidden' THEN RAISE; END IF;
     END;
+    BEGIN
+        PERFORM public.claim_billing_provider_operation_resource_v1(
+            v_studio, v_owner, 'invoice.retry', 'invoice', v_invoice,
+            v_payer,'resource-key-b',repeat('a',64),'acct_resourcecontract',1,
+            v_lease,30
+        );
+        RAISE EXCEPTION 'A nonterminal retry adopted a changed caller key.';
+    EXCEPTION WHEN unique_violation THEN
+        IF SQLERRM<>'billing_invoice_retry_v33_nonterminal_key_mismatch' THEN RAISE; END IF;
+    END;
     v_result := public.claim_billing_provider_operation_resource_v1(
-        v_studio, v_owner, 'invoice.retry', 'invoice', v_invoice,
-        v_payer,
-        'resource-key-b', repeat('a', 64), 'acct_resourcecontract', 1,
-        v_lease, 30
+        v_studio,v_owner,'invoice.retry','invoice',v_invoice,v_payer,
+        'resource-key-a',repeat('a',64),'acct_resourcecontract',1,v_lease,30
     );
-    IF v_result->>'outcome' <> 'adopted'
-       OR (v_result->'operation'->>'id')::UUID <> v_operation
-       OR v_result->>'canonical_caller_request_key' <> 'resource-key-a'
+    IF v_result->>'outcome'<>'replay'
        OR (SELECT count(*) FROM public.billing_provider_operation_resource_aliases
-           WHERE operation_id = v_operation) <> 2 THEN
-        RAISE EXCEPTION 'Different caller key did not adopt one parent: %', v_result;
+           WHERE operation_id=v_operation)<>1 THEN
+        RAISE EXCEPTION 'Changed-key refusal mutated the canonical retry: %',v_result;
     END IF;
 
     BEGIN
@@ -478,7 +485,7 @@ BEGIN
         );
         RAISE EXCEPTION 'Resource adoption accepted a changed request hash.';
     EXCEPTION WHEN unique_violation THEN
-        IF SQLERRM <> 'billing_provider_operation_resource_request_conflict' THEN RAISE; END IF;
+        IF SQLERRM <> 'billing_invoice_retry_v33_nonterminal_key_mismatch' THEN RAISE; END IF;
     END;
     BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
@@ -488,8 +495,8 @@ BEGIN
             gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Resource adoption accepted a changed account.';
-    EXCEPTION WHEN check_violation THEN
-        IF SQLERRM <> 'billing_provider_operation_resource_payer_identity_mismatch' THEN RAISE; END IF;
+    EXCEPTION WHEN unique_violation THEN
+        IF SQLERRM <> 'billing_invoice_retry_v33_nonterminal_key_mismatch' THEN RAISE; END IF;
     END;
     BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
@@ -499,8 +506,8 @@ BEGIN
             gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Resource adoption accepted a changed generation.';
-    EXCEPTION WHEN check_violation THEN
-        IF SQLERRM <> 'billing_provider_operation_resource_payer_identity_mismatch' THEN RAISE; END IF;
+    EXCEPTION WHEN unique_violation THEN
+        IF SQLERRM <> 'billing_invoice_retry_v33_nonterminal_key_mismatch' THEN RAISE; END IF;
     END;
     BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
@@ -606,11 +613,12 @@ BEGIN
         p_to_state => 'definitive_rejected',
         p_error_code => 'invoice_retry_definitive_rejection'
     );
+    v_lease:=gen_random_uuid();
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice', v_terminal_invoice,
         v_payer,
         'resource-terminal-b', repeat('c', 64), 'acct_resourcecontract', 1,
-        gen_random_uuid(), 30
+        v_lease, 30
     );
     v_replacement_operation := (v_result->'operation'->>'id')::UUID;
     IF v_result->>'outcome' <> 'replaced'
@@ -618,6 +626,15 @@ BEGIN
        OR (v_result->'resource'->>'operation_id')::UUID <> v_replacement_operation THEN
         RAISE EXCEPTION 'Definitive terminal resource owner was not replaced: %', v_result;
     END IF;
+    v_revision:=(v_result->'operation'->>'revision')::BIGINT;
+    PERFORM public.release_billing_invoice_retry_preread_lease_v33(
+        v_replacement_operation,v_studio,v_owner,'resource-terminal-b',
+        repeat('c',64),'acct_resourcecontract',1,v_lease,v_revision,
+        'provider_preread_failed'
+    );
+    SELECT revision,invoice_retry_preread_released_at
+    INTO v_revision,v_released_at FROM public.billing_provider_operations
+    WHERE id=v_replacement_operation;
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice', v_terminal_invoice,
         v_payer,
@@ -628,6 +645,13 @@ BEGIN
        OR (v_result->'operation'->>'id')::UUID <> v_terminal_operation
        OR (v_result->'resource'->>'operation_id')::UUID <> v_terminal_operation THEN
         RAISE EXCEPTION 'Historical terminal alias did not remain immutable: %', v_result;
+    END IF;
+    IF NOT EXISTS(SELECT 1 FROM public.billing_provider_operations
+      WHERE id=v_replacement_operation AND revision=v_revision
+        AND invoice_retry_preread_release_reason='provider_preread_failed'
+        AND invoice_retry_preread_released_at IS NOT DISTINCT FROM v_released_at
+        AND lease_owner IS NULL AND lease_acquired_at IS NULL AND lease_expires_at IS NULL) THEN
+        RAISE EXCEPTION 'Historical replay mutated the newer released retry owner.';
     END IF;
     BEGIN
         UPDATE public.billing_provider_operation_resource_aliases

@@ -997,6 +997,7 @@ def test_finalize_partial_send_failure_never_repeats_finalize_or_send():
         ))
     assert first.value.status_code == 503
     assert _operation(facade, "invoice.finalize")["state"] == "reconciliation_required"
+    facade.supabase.advance_billing_provider_clock(seconds=31)
 
     _Stripe.send_exception = None
     with pytest.raises(HTTPException) as replay:
@@ -1084,6 +1085,7 @@ def test_finalize_autopay_projection_failure_recovers_by_readback_only():
         ))
     assert first.value.status_code == 503
     assert _operation(facade, "invoice.finalize")["state"] == "reconciliation_required"
+    facade.supabase.advance_billing_provider_clock(seconds=31)
 
     recovered = asyncio.run(manager.finalize_invoice(
         invoice["id"], "studio_1", "actor_1", "finalize-projection"
@@ -1384,6 +1386,7 @@ def test_void_provider_success_projection_failure_recovers_by_readback_only():
         ))
     assert first.value.status_code == 503
     assert _operation(facade, "invoice.void")["state"] == "reconciliation_required"
+    facade.supabase.advance_billing_provider_clock(seconds=31)
 
     recovered = asyncio.run(manager.void_invoice(
         invoice["id"], "studio_1", "actor_1", "void-projection"
@@ -1391,6 +1394,118 @@ def test_void_provider_success_projection_failure_recovers_by_readback_only():
     assert recovered.status == "void"
     assert len(_Stripe.void_calls) == 1
     assert _operation(facade, "invoice.void")["state"] == "completed"
+
+
+@pytest.mark.parametrize("workflow", ["finalize", "void"])
+def test_closeout_expired_adoption_acquires_canonical_lease_and_mutates_once(workflow):
+    invoice = (
+        _draft_invoice(collection_method="send_invoice")
+        if workflow == "finalize"
+        else _open_invoice()
+    )
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    operations = BillingProviderOperationCoordinator(facade.supabase)
+    operation_type = f"invoice.{workflow}"
+    resource_type = "invoice_finalize" if workflow == "finalize" else "invoice_void"
+    request_hash = stable_hash({
+        "operation_type": operation_type,
+        "studio_id": "studio_1",
+        "invoice_id": invoice["id"],
+        "payer_id": invoice["payer_id"],
+        "stripe_invoice_id": invoice["stripe_invoice_id"],
+        **({"stripe_customer_id": invoice["stripe_customer_id"],
+            "collection_method": invoice["collection_method"]} if workflow == "finalize" else {}),
+        "stripe_connected_account_id": invoice["stripe_account_id"],
+        "connect_account_generation": 2,
+    })
+    operations.claim_resource(
+        studio_id="studio_1", actor_id="actor_1",
+        operation_type=operation_type, resource_type=resource_type,
+        resource_id=invoice["id"], payer_id=invoice["payer_id"],
+        caller_request_key=f"{workflow}-canonical", request_sha256=request_hash,
+        stripe_connected_account_id="acct_1", connect_account_generation=2,
+        lease_owner="owner-before-expiry",
+    )
+    facade.supabase.advance_billing_provider_clock(seconds=31)
+
+    manager = _manager(facade)
+    result = asyncio.run(
+        manager.finalize_invoice(invoice["id"], "studio_1", "actor_1", "new-key")
+        if workflow == "finalize"
+        else manager.void_invoice(invoice["id"], "studio_1", "actor_1", "new-key")
+    )
+
+    assert result.status == ("open" if workflow == "finalize" else "void")
+    assert len(_Stripe.finalize_calls if workflow == "finalize" else _Stripe.void_calls) == 1
+    operation = _operation(facade, operation_type)
+    assert operation["caller_request_key"] == f"{workflow}-canonical"
+    assert operation["state"] == "completed"
+
+
+@pytest.mark.parametrize("workflow", ["finalize", "void"])
+def test_closeout_active_adoption_is_busy_without_provider_mutation(workflow):
+    invoice = (
+        _draft_invoice(collection_method="send_invoice")
+        if workflow == "finalize"
+        else _open_invoice()
+    )
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    operations = BillingProviderOperationCoordinator(facade.supabase)
+    operation_type = f"invoice.{workflow}"
+    resource_type = "invoice_finalize" if workflow == "finalize" else "invoice_void"
+    request_hash = stable_hash({
+        "operation_type": operation_type, "studio_id": "studio_1",
+        "invoice_id": invoice["id"], "payer_id": invoice["payer_id"],
+        "stripe_invoice_id": invoice["stripe_invoice_id"],
+        **({"stripe_customer_id": invoice["stripe_customer_id"],
+            "collection_method": invoice["collection_method"]} if workflow == "finalize" else {}),
+        "stripe_connected_account_id": invoice["stripe_account_id"],
+        "connect_account_generation": 2,
+    })
+    operations.claim_resource(
+        studio_id="studio_1", actor_id="actor_1",
+        operation_type=operation_type, resource_type=resource_type,
+        resource_id=invoice["id"], payer_id=invoice["payer_id"],
+        caller_request_key=f"{workflow}-active", request_sha256=request_hash,
+        stripe_connected_account_id="acct_1", connect_account_generation=2,
+        lease_owner="active-owner",
+    )
+
+    manager = _manager(facade)
+    with pytest.raises(HTTPException) as busy:
+        asyncio.run(
+            manager.finalize_invoice(invoice["id"], "studio_1", "actor_1", "new-key")
+            if workflow == "finalize"
+            else manager.void_invoice(invoice["id"], "studio_1", "actor_1", "new-key")
+        )
+    assert busy.value.status_code == 409
+    assert (_Stripe.finalize_calls if workflow == "finalize" else _Stripe.void_calls) == []
+
+
+@pytest.mark.parametrize("workflow", ["finalize", "void"])
+def test_closeout_completed_adoption_replays_without_duplicate_mutation(workflow):
+    invoice = (
+        _draft_invoice(collection_method="send_invoice")
+        if workflow == "finalize"
+        else _open_invoice()
+    )
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    manager = _manager(facade)
+    first = asyncio.run(
+        manager.finalize_invoice(invoice["id"], "studio_1", "actor_1", "first-key")
+        if workflow == "finalize"
+        else manager.void_invoice(invoice["id"], "studio_1", "actor_1", "first-key")
+    )
+    replay = asyncio.run(
+        manager.finalize_invoice(invoice["id"], "studio_1", "actor_1", "second-key")
+        if workflow == "finalize"
+        else manager.void_invoice(invoice["id"], "studio_1", "actor_1", "second-key")
+    )
+    assert first.status == replay.status
+    assert len(_Stripe.finalize_calls if workflow == "finalize" else _Stripe.void_calls) == 1
 
 
 def test_retry_success_and_old_key_replay_pay_and_audit_once():
@@ -1424,6 +1539,86 @@ def test_retry_success_and_old_key_replay_pay_and_audit_once():
         "stripe_connected_account_id": invoice["stripe_account_id"],
         "connect_account_generation": 2,
     })
+
+
+def test_retry_base_hash_matches_v33_sql_vectors_and_canonical_uuid_spellings():
+    first = {
+        "studio_id": "00000000-0000-4000-8000-000000000001",
+        "id": "00000000-0000-4000-8000-000000000002",
+        "stripe_invoice_id": "in_v33",
+        "stripe_account_id": "acct_v33",
+    }
+    escaped = {
+        "studio_id": "10000000-0000-4000-8000-000000000001",
+        "id": "10000000-0000-4000-8000-000000000002",
+        "stripe_invoice_id": 'in_escaped\\quote"',
+        "stripe_account_id": 'acct_escaped\\quote"',
+    }
+    assert BillingInvoiceOperationWorkflow._retry_base_request_sha256(first, 1) == (
+        "dcd80bb09de6446f4200bb177677a626986134020c6aa296a87b6fac4d4e7dd9"
+    )
+    assert BillingInvoiceOperationWorkflow._retry_base_request_sha256(escaped, 27) == (
+        "daefff3c53d776e2cd7197905f80cf860ffb37329bdceef3f642406217e0893c"
+    )
+    alternate = {
+        **first,
+        "studio_id": "{00000000-0000-4000-8000-000000000001}",
+        "id": "{00000000-0000-4000-8000-000000000002}".upper(),
+    }
+    assert BillingInvoiceOperationWorkflow._retry_base_request_sha256(
+        alternate, 1
+    ) == BillingInvoiceOperationWorkflow._retry_base_request_sha256(first, 1)
+
+
+def test_fake_v33_recomputes_canonical_base_and_never_echoes_wrong_digest():
+    studio_id = "00000000-0000-4000-8000-000000000001"
+    invoice_id = "00000000-0000-4000-8000-000000000002"
+    payer_id = "00000000-0000-4000-8000-000000000003"
+    invoice = _open_invoice(
+        id=invoice_id,
+        studio_id=studio_id,
+        payer_id=payer_id,
+        stripe_invoice_id="in_v33",
+        stripe_account_id="acct_v33",
+        metadata={"connect_account_generation": 1},
+    )
+    payer = _payer(
+        id=payer_id,
+        studio_id=studio_id,
+        stripe_account_id="acct_v33",
+        connect_account_generation=1,
+    )
+    facade = _Facade(payer=payer, invoice=invoice)
+    operations = BillingProviderOperationCoordinator(facade.supabase)
+    canonical_hash = BillingInvoiceOperationWorkflow._retry_base_request_sha256(
+        invoice, 1
+    )
+    claimed = operations.claim_resource(
+        studio_id="{00000000-0000-4000-8000-000000000001}",
+        actor_id="actor_1", operation_type="invoice.retry",
+        resource_type="invoice",
+        resource_id="{00000000-0000-4000-8000-000000000002}".upper(),
+        payer_id=payer_id, caller_request_key="canonical-v33",
+        request_sha256=canonical_hash,
+        stripe_connected_account_id="acct_v33",
+        connect_account_generation=1, lease_owner="canonical-owner",
+    )
+    assert claimed["requested_base_sha256"] == canonical_hash
+    assert claimed["effective_persisted_sha256"] == canonical_hash
+    assert claimed["operation"]["studio_id"] == studio_id
+    assert claimed["operation"]["request_sha256"] == canonical_hash
+
+    wrong_facade = _Facade(payer=payer, invoice=invoice)
+    wrong = BillingProviderOperationCoordinator(wrong_facade.supabase).claim_resource(
+        studio_id=studio_id, actor_id="actor_1", operation_type="invoice.retry",
+        resource_type="invoice", resource_id=invoice_id, payer_id=payer_id,
+        caller_request_key="wrong-v33", request_sha256="f" * 64,
+        stripe_connected_account_id="acct_v33",
+        connect_account_generation=1, lease_owner="wrong-owner",
+    )
+    assert wrong["requested_base_sha256"] == canonical_hash
+    assert wrong["effective_persisted_sha256"] == "f" * 64
+    assert wrong["compatibility_outcome"] == "capture_legacy_hash_created"
 
 
 @pytest.mark.parametrize(
@@ -2169,8 +2364,7 @@ def test_retry_autopay_missing_payer_is_invalid_not_local_outage():
         ))
 
     assert invalid.value.status_code == 409
-    operation = _operation(facade, "invoice.retry")
-    assert operation["state"] == "definitive_rejected"
+    assert facade.supabase.billing_provider_operations == {}
     assert facade.supabase.release_billing_invoice_retry_preread_lease_calls == []
     assert _Stripe.pay_calls == []
 

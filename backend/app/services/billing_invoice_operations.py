@@ -780,14 +780,7 @@ class BillingInvoiceOperationWorkflow:
         if not invoice.get("stripe_invoice_id") or not invoice.get("stripe_account_id"):
             raise HTTPException(status_code=409, detail="Invoice is not linked to Stripe.")
         account, generation = self._invoice_generation(invoice, studio_id)
-        desired_hash = stable_hash({
-            "operation_type": INVOICE_RETRY_OPERATION_TYPE,
-            "studio_id": studio_id,
-            "invoice_id": invoice_id,
-            "stripe_invoice_id": invoice["stripe_invoice_id"],
-            "stripe_connected_account_id": invoice["stripe_account_id"],
-            "connect_account_generation": generation,
-        })
+        desired_hash = self._retry_base_request_sha256(invoice, generation)
         operations = BillingProviderOperationCoordinator(self.supabase)
         context, claimed = self._claim_parent(
             operations,
@@ -799,7 +792,7 @@ class BillingInvoiceOperationWorkflow:
             account_id=str(invoice["stripe_account_id"]),
             generation=generation,
             resource_type="invoice",
-            resource_id=invoice_id,
+            resource_id=str(invoice["id"]),
             resource_payer_id=str(invoice["payer_id"]),
         )
         operation = claimed["operation"]
@@ -815,6 +808,7 @@ class BillingInvoiceOperationWorkflow:
                 ) from exc
             self._audit_retry_once(context, paid)
             return BillingInvoiceResponse(**paid)
+
         if state == "projected":
             try:
                 paid = self._load_paid_invoice(invoice_id, context, operation)
@@ -1060,6 +1054,26 @@ class BillingInvoiceOperationWorkflow:
             operations,
             already_projected=True,
         ))
+
+    @staticmethod
+    def _retry_base_request_sha256(
+        invoice: dict[str, Any],
+        generation: int,
+    ) -> str:
+        def canonical_uuid(value: Any) -> str:
+            try:
+                return str(UUID(str(value).strip("{}")))
+            except (TypeError, ValueError):
+                return str(value)
+
+        return stable_hash({
+            "operation_type": INVOICE_RETRY_OPERATION_TYPE,
+            "studio_id": canonical_uuid(invoice["studio_id"]),
+            "invoice_id": canonical_uuid(invoice["id"]),
+            "stripe_invoice_id": invoice["stripe_invoice_id"],
+            "stripe_connected_account_id": invoice["stripe_account_id"],
+            "connect_account_generation": generation,
+        })
 
     def _require_retry_autopay_consent(
         self,
@@ -1601,6 +1615,8 @@ class BillingInvoiceOperationWorkflow:
             )
         operation = claimed["operation"]
         effective_request_sha256 = request_sha256
+        context_actor_id = actor_id
+        context_caller_request_key = caller_request_key
         if operation_type == INVOICE_RETRY_OPERATION_TYPE:
             effective_request_sha256 = self._certified_retry_request_sha256(
                 claimed,
@@ -1614,17 +1630,104 @@ class BillingInvoiceOperationWorkflow:
                 expected_account_id=account_id,
                 expected_generation=generation,
             )
+        elif operation_type in {
+            INVOICE_FINALIZE_OPERATION_TYPE,
+            INVOICE_VOID_OPERATION_TYPE,
+        }:
+            (
+                context_actor_id,
+                context_caller_request_key,
+                effective_request_sha256,
+            ) = self._certified_invoice_closeout_identity(
+                claimed,
+                expected_studio_id=studio_id,
+                expected_operation_type=operation_type,
+                requested_caller_request_key=caller_request_key,
+                expected_account_id=account_id,
+                expected_generation=generation,
+                acquired_lease_owner=lease_owner,
+            )
         return BillingProviderOperationContext(
             operation_id=str(operation["id"]),
             studio_id=studio_id,
-            actor_id=actor_id,
+            actor_id=context_actor_id,
             operation_type=operation_type,
-            caller_request_key=caller_request_key,
+            caller_request_key=context_caller_request_key,
             request_sha256=effective_request_sha256,
             stripe_connected_account_id=account_id,
             connect_account_generation=generation,
             lease_owner=lease_owner,
         ), claimed
+
+    @staticmethod
+    def _certified_invoice_closeout_identity(
+        claimed: dict[str, Any],
+        *,
+        expected_studio_id: str,
+        expected_operation_type: str,
+        requested_caller_request_key: str,
+        expected_account_id: str,
+        expected_generation: int,
+        acquired_lease_owner: str,
+    ) -> tuple[str, str, str]:
+        operation = claimed.get("operation")
+        if not isinstance(operation, dict):
+            raise HTTPException(
+                status_code=503,
+                detail="Billing operation resource state could not be verified.",
+            )
+        operation_hash = operation.get("request_sha256")
+        state = str(operation.get("state") or "")
+        outcome = str(claimed.get("outcome") or "")
+        terminal = state in {"completed", "definitive_failed", "definitive_rejected"}
+        busy = outcome in {"busy", "provider_request_in_flight"}
+        try:
+            UUID(str(operation.get("id")))
+            if not terminal and not busy:
+                datetime.fromisoformat(
+                    str(operation["lease_acquired_at"]).replace("Z", "+00:00")
+                )
+                datetime.fromisoformat(
+                    str(operation["lease_expires_at"]).replace("Z", "+00:00")
+                )
+            structure_valid = True
+        except (KeyError, TypeError, ValueError):
+            structure_valid = False
+        valid_hash = (
+            isinstance(operation_hash, str)
+            and len(operation_hash) == 64
+            and all(character in "0123456789abcdef" for character in operation_hash)
+        )
+        identity_valid = (
+            operation.get("studio_id") == expected_studio_id
+            and operation.get("operation_type") == expected_operation_type
+            and isinstance(operation.get("actor_id"), str)
+            and bool(operation["actor_id"])
+            and isinstance(operation.get("caller_request_key"), str)
+            and bool(operation["caller_request_key"])
+            and operation.get("stripe_connected_account_id") == expected_account_id
+            and operation.get("connect_account_generation") == expected_generation
+            and claimed.get("requested_caller_request_key")
+            == requested_caller_request_key
+            and claimed.get("canonical_caller_request_key")
+            == operation.get("caller_request_key")
+        )
+        lease_valid = terminal or (
+            busy
+            and operation.get("lease_owner") not in {None, acquired_lease_owner}
+        ) or (
+            not busy and operation.get("lease_owner") == acquired_lease_owner
+        )
+        if not (structure_valid and valid_hash and identity_valid and lease_valid):
+            raise HTTPException(
+                status_code=503,
+                detail="Billing operation resource state could not be verified.",
+            )
+        return (
+            str(operation["actor_id"]),
+            str(operation["caller_request_key"]),
+            operation_hash,
+        )
 
     @staticmethod
     def _certified_retry_request_sha256(

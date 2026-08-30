@@ -355,6 +355,11 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "created_at": "2026-05-01T00:00:00Z",
                 "updated_at": "2026-05-01T00:00:00Z",
             }],
+            "billing_payers": [{
+                "id": "payer_1", "studio_id": "studio_1",
+                "stripe_account_id": "acct_1", "stripe_customer_id": "cus_1",
+                "connect_account_generation": 1,
+            }],
             "audit_logs": [],
         }
 
@@ -521,6 +526,11 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "application_fee_amount_cents": 0, "external": False,
                 "metadata": {"connect_account_generation": 1},
                 "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "billing_payers": [{
+                "id": "payer_1", "studio_id": "studio_1",
+                "stripe_account_id": "acct_1", "stripe_customer_id": "cus_1",
+                "connect_account_generation": 1,
             }],
             "billing_invoice_retry_operations": [{
                 "id": "operation_1", "studio_id": "studio_1", "invoice_id": "invoice_1",

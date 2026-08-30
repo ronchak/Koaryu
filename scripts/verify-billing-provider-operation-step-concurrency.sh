@@ -22,13 +22,19 @@ connect_account_id="acct_PayerIdentityConcurrency"
 first_log="$(mktemp /tmp/koaryu-provider-step-first.XXXXXX)"
 stale_log="$(mktemp /tmp/koaryu-payer-identity-stale.XXXXXX)"
 resource_log="$(mktemp /tmp/koaryu-provider-resource-first.XXXXXX)"
+second_log="$(mktemp /tmp/koaryu-provider-resource-second.XXXXXX)"
 first_pid=""
+second_pid=""
 
 cleanup() {
   local exit_code=$?
   if [[ -n "$first_pid" ]] && kill -0 "$first_pid" 2>/dev/null; then
     kill "$first_pid" 2>/dev/null || true
     wait "$first_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$second_pid" ]] && kill -0 "$second_pid" 2>/dev/null; then
+    kill "$second_pid" 2>/dev/null || true
+    wait "$second_pid" 2>/dev/null || true
   fi
   if ! "$psql_bin" "${psql_args[@]}" >/dev/null <<SQL
 BEGIN;
@@ -56,7 +62,7 @@ SQL
     echo "Failed to clean up the provider-step concurrency fixture." >&2
     exit_code=1
   fi
-  rm -f "$first_log" "$stale_log" "$resource_log"
+  rm -f "$first_log" "$stale_log" "$resource_log" "$second_log"
   trap - EXIT HUP INT TERM
   exit "$exit_code"
 }
@@ -237,23 +243,30 @@ for _attempt in {1..80}; do
 done
 [[ "$held" == "t" ]]
 
-second_resource_result="$("$psql_bin" "${psql_args[@]}" --tuples-only --no-align --command="
-WITH claimed AS (
-  SELECT public.claim_billing_provider_operation_resource_v1(
-    '$studio_id','$owner_id','invoice.retry','invoice','$resource_invoice_id',
-    '$payer_id',
-    'resource-concurrency-b',repeat('c',64),'$connect_account_id',2,
-    gen_random_uuid(),30
-  ) AS result
-)
-SELECT (result->'operation'->>'id') || '|' || (result->>'outcome') FROM claimed;
-")"
-second_resource_result="$(printf '%s' "$second_resource_result" | tr -d '\r\n')"
+"$psql_bin" "${psql_args[@]}" --tuples-only --no-align >"$second_log" 2>&1 <<SQL &
+SELECT public.claim_billing_provider_operation_resource_v1(
+  '$studio_id','$owner_id','invoice.retry','invoice','$resource_invoice_id',
+  '$payer_id','resource-concurrency-b',repeat('c',64),'$connect_account_id',2,
+  gen_random_uuid(),30
+);
+SQL
+second_pid=$!
+for _attempt in {1..10}; do
+  kill -0 "$second_pid" 2>/dev/null
+  sleep 0.05
+done
+kill -0 "$second_pid" 2>/dev/null
 
 wait "$first_pid"
 first_pid=""
+set +e
+wait "$second_pid"
+second_status=$?
+set -e
+second_pid=""
+[[ "$second_status" -ne 0 ]]
+grep -q 'billing_invoice_retry_v33_nonterminal_key_mismatch' "$second_log"
 first_resource_operation="$(grep -E '^[0-9a-f]{8}-[0-9a-f-]{27}$' "$resource_log" | head -1 | tr -d '\r\n')"
-[[ "$second_resource_result" == "$first_resource_operation|adopted" ]]
 
 resource_state="$("$psql_bin" "${psql_args[@]}" --tuples-only --no-align --command="
 SELECT
@@ -261,15 +274,12 @@ SELECT
    WHERE studio_id='$studio_id' AND operation_type='invoice.retry')::TEXT || ':' ||
   (SELECT count(*) FROM public.billing_provider_operation_resource_aliases
    WHERE studio_id='$studio_id')::TEXT || ':' ||
-  (public.claim_billing_provider_operation_resource_v1(
-    '$studio_id','$owner_id','invoice.retry','invoice','$resource_invoice_id',
-    '$payer_id',
-    'resource-concurrency-b',repeat('c',64),'$connect_account_id',2,
-    gen_random_uuid(),30
-  )->>'outcome');
+  (SELECT revision::TEXT||':'||lease_owner::TEXT||':'||
+    COALESCE(invoice_retry_preread_release_reason,'<null>')
+   FROM public.billing_provider_operations WHERE id='$first_resource_operation'::UUID);
 ")"
 resource_state="$(printf '%s' "$resource_state" | tr -d '\r\n')"
-[[ "$resource_state" == "1:2:replay" ]]
+[[ "$resource_state" == "1:1:1:"*":<null>" ]]
 
 "$psql_bin" "${psql_args[@]}" >/dev/null <<SQL
 INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name)
