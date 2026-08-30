@@ -37,6 +37,22 @@ enrollment-create route. That exact staging/test exception creates local pending
 only; activate them through the existing idempotent activation workflow. Never bind a
 directly created Stripe customer or repair the fixture with service-role SQL.
 
+The `payer.customer_create` proof is the one required ambiguous-response recovery. Run
+the attended `scripts/rehearse-payer-sync-ambiguity.py` operator described in
+`docs/operator-tooling.md`. It uses the normal payer-sync service and one normal Stripe
+customer create, records the provider result before deliberately discarding it, performs
+one exact customer retrieval, and authorizes the existing parent-operation recovery RPC.
+After the tool reports `recovery_authorized`, replay the same hosted request with the
+same caller key and exact clock body. The replay must retrieve, verify, project, and
+complete without a second customer mutation. Bind evidence to the durable parent
+operation and its `billing_provider_operation_resources` owner; `payer.sync` intentionally
+has no provider-operation step. If inject stops after a customer was recorded, use the
+tool's resume mode. If the state file remains `armed` after suspected provider success,
+stop for attended provider inspection; that pre-fsync interval is not automatically
+recoverable. If it remains `provider_readback_in_flight`, stop without another Stripe
+retrieval because the first read's completion is unknown. Never run inject twice for the
+same payer or state file.
+
 ### Evidence-source map
 
 The source labels below are exact contract values. Provider readbacks mean the named Stripe test-mode object retrieval. API/catalog readbacks mean the sanitized workflow or sink decision returned by the deployed candidate. Database readbacks mean the named local projection, operation, step, event, audit, transition, or count view at the shared boundary. The provider-operation inventory entries show no matching provider operation for local-only and denied cases.
@@ -50,7 +66,7 @@ The source labels below are exact contract values. Provider readbacks mean the n
 | Failed-payment retry | The `failed_before_retry` provider/local pair, then the `after_retry` provider/local pair |
 | Period advancement | `stripe.test_clock.retrieve` and `billing_enrollment_transition_intents` |
 | Dispute lifecycle | Distinct processed created and closed event IDs, `stripe.dispute.retrieve`, and `billing_disputes.status_and_state_category` |
-| Ambiguity recovery | `stripe.customer.retrieve` and `billing_provider_operations_and_steps` |
+| Ambiguity recovery | `stripe.customer.retrieve` and `billing_provider_operations_and_resources` |
 | Terminal counts | The seven exact `terminal_counts.counts` sources and the provider/local wrong-mode component sources in the template |
 
 The offline checker and validator verify this sanitized evidence contract and its cross-field bindings. They do not independently query Stripe or the deployed database and do not establish provider truth by themselves. Do not add secrets, hosted URLs, raw provider payloads, card data, KYC data, or direct hosted-system SQL to the evidence file.
@@ -163,7 +179,7 @@ Copy this block to a private evidence file and replace every angle-bracket place
     "failed_payment_retry": {"workflow_id":"invoice.retry","operation":"connected_invoice.pay","failed_provider_readback":{"source":"stripe.invoice.retrieve.failed_before_retry","status":"failed","capture_boundary":"<CAPTURE_BOUNDARY>"},"failed_local_readback":{"source":"billing_invoices_and_payments.failed_before_retry","status":"failed","capture_boundary":"<CAPTURE_BOUNDARY>"},"provider_readback":{"source":"stripe.invoice.retrieve.after_retry","status":"paid","capture_boundary":"<CAPTURE_BOUNDARY>"},"local_readback":{"source":"billing_invoices_and_payments.after_retry","status":"succeeded","capture_boundary":"<CAPTURE_BOUNDARY>"}},
     "period_advancement": {"method":"stripe_test_clock.advance","test_clock_id":"<TEST_CLOCK_ID>","advances_to":0,"observed_provider_boundary":0,"direct_database_timestamp_edit":false,"provider_readback":{"source":"stripe.test_clock.retrieve","status":"advanced","capture_boundary":"<CAPTURE_BOUNDARY>"},"local_readback":{"source":"billing_enrollment_transition_intents","status":"completed","capture_boundary":"<CAPTURE_BOUNDARY>"}},
     "dispute_lifecycle": {"dispute_id":"<DISPUTE_ID>","created_event":{"event_id":"<DISPUTE_CREATED_EVT_ID>","event_type":"charge.dispute.created","local_event_id":"<DISPUTE_CREATED_EVT_ID>","local_processing_status":"processed"},"closed_event":{"event_id":"<DISPUTE_CLOSED_EVT_ID>","event_type":"charge.dispute.closed","local_event_id":"<DISPUTE_CLOSED_EVT_ID>","local_processing_status":"processed"},"provider_readback":{"source":"stripe.dispute.retrieve","status":"won","capture_boundary":"<CAPTURE_BOUNDARY>"},"local_readback":{"source":"billing_disputes.status_and_state_category","status":"won","state_category":"won","capture_boundary":"<CAPTURE_BOUNDARY>"}},
-    "ambiguity_recovery": {"workflow_id":"payer.sync","durable_operation_id":"<BILLING_PROVIDER_OPERATION_ID>","durable_step_id":"<BILLING_PROVIDER_OPERATION_STEP_ID>","provider_mutation_count":1,"automatic_retry_count":0,"caller_request_key_sha256":"<CALLER_KEY_SHA256:payer.customer_create>","mutation_step_name":"payer.customer_create","provider_readback":{"source":"stripe.customer.retrieve","status":"found","capture_boundary":"<CAPTURE_BOUNDARY>"},"local_readback":{"source":"billing_provider_operations_and_steps","status":"completed","capture_boundary":"<CAPTURE_BOUNDARY>"}}
+    "ambiguity_recovery": {"workflow_id":"payer.sync","durable_operation_id":"<BILLING_PROVIDER_OPERATION_ID>","provider_mutation_count":1,"automatic_retry_count":0,"caller_request_key_sha256":"<CALLER_KEY_SHA256:payer.customer_create>","mutation_step_name":"payer.customer_create","provider_readback":{"source":"stripe.customer.retrieve","status":"found","capture_boundary":"<CAPTURE_BOUNDARY>"},"local_readback":{"source":"billing_provider_operations_and_resources","status":"completed","capture_boundary":"<CAPTURE_BOUNDARY>"}}
   },
   "terminal_counts": {
     "capture_boundary": "<CAPTURE_BOUNDARY>",

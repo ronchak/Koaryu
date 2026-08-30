@@ -753,7 +753,7 @@ core mutation-attempt rows. Its supplemental evidence separately proves invoice 
 one declared Admin immediate-cancellation strategy, same-key local external-payment
 replay, four unsupported operations with zero provider activity, failed-payment retry,
 test-clock period advancement, dispute created-to-closed convergence at `won`, and
-same-key ambiguity recovery bound to one durable operation and step. Platform and Connect
+same-key ambiguity recovery bound to one durable parent operation and its resource owner. Platform and Connect
 webhook delivery remain distinct core proofs with matching local processed readbacks.
 
 At one shared UTC capture boundary, record exact zero counts for failed, stuck, unmapped,

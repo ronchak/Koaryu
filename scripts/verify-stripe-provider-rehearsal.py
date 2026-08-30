@@ -181,7 +181,7 @@ DISPUTE_LIFECYCLE_KEYS = {
 DISPUTE_EVENT_KEYS = {"event_id", "event_type", "local_event_id", "local_processing_status"}
 DISPUTE_LOCAL_READBACK_KEYS = {"source", "status", "state_category", "capture_boundary"}
 AMBIGUITY_KEYS = {
-    "workflow_id", "durable_operation_id", "durable_step_id", "provider_mutation_count",
+    "workflow_id", "durable_operation_id", "provider_mutation_count",
     "automatic_retry_count", "caller_request_key_sha256", "mutation_step_name",
     "provider_readback", "local_readback",
 }
@@ -214,7 +214,7 @@ SUPPLEMENTAL_SOURCES = {
     "dispute.provider": "stripe.dispute.retrieve",
     "dispute.local": "billing_disputes.status_and_state_category",
     "ambiguity.provider": "stripe.customer.retrieve",
-    "ambiguity.local": "billing_provider_operations_and_steps",
+    "ambiguity.local": "billing_provider_operations_and_resources",
 }
 TERMINAL_SOURCES = {
     "failed": "billing_provider_operations.failed_terminal_count",
@@ -379,8 +379,8 @@ def _validate_supplemental(value: Any, *, boundary: str, errors: list[str]) -> N
         errors.append("dispute local readback must prove canonical won status and state category at the shared boundary")
 
     ambiguity = _exact_object(supplemental.get("ambiguity_recovery"), AMBIGUITY_KEYS, "ambiguity recovery evidence", errors)
-    if ambiguity and (ambiguity.get("workflow_id") != "payer.sync" or not ambiguity.get("durable_operation_id") or not ambiguity.get("durable_step_id") or ambiguity.get("provider_mutation_count") != 1 or ambiguity.get("automatic_retry_count") != 0):
-        errors.append("ambiguity recovery must bind one durable operation and step with one mutation and zero retries")
+    if ambiguity and (ambiguity.get("workflow_id") != "payer.sync" or not ambiguity.get("durable_operation_id") or ambiguity.get("provider_mutation_count") != 1 or ambiguity.get("automatic_retry_count") != 0):
+        errors.append("ambiguity recovery must bind one durable parent operation with one mutation and zero retries")
     _validate_readback(ambiguity.get("provider_readback"), label="ambiguity provider readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["ambiguity.provider"], expected_status="found", errors=errors)
     _validate_readback(ambiguity.get("local_readback"), label="ambiguity local readback", boundary=boundary, expected_source=SUPPLEMENTAL_SOURCES["ambiguity.local"], expected_status="completed", errors=errors)
 

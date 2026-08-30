@@ -6,6 +6,91 @@
 
 This inventory records owner-run tools that can inspect or change Koaryu outside the product UI. Add each future tool as a separate entry with its working directory, interpreter, write boundary, and audit destination.
 
+## Staging payer-sync ambiguity rehearsal
+
+`scripts/rehearse-payer-sync-ambiguity.py` is the attended, staging-only response-loss
+tool for the schema-v4 Stripe rehearsal. It calls the exact candidate's
+`BillingPayerManager`, delegates one connected customer create to the normal guarded
+`StripeService`, durably records the returned customer, then deliberately raises before
+the manager can record provider success. The ordinary payer-sync ambiguity handler owns
+the resulting `reconciliation_required` parent operation. The tool retrieves that exact
+customer once, verifies its account, payer metadata, address, identity, and test clock,
+then authorizes `provider_succeeded_reconcile_only` through the V31 parent recovery RPC.
+It stops before caller replay; the operator must replay the original hosted request with
+the exact same caller key and body.
+
+The tool refuses production, live Stripe mode, live billing, the production Supabase
+project, a local or runtime SHA mismatch, an already-linked payer, a disabled Connect
+account, a malformed resource identity, a caller key outside the dedicated schema-v4
+prefix, a missing execution latch, or an existing state file in inject mode. Before
+constructing the fault injector it runs the same active-Admin and Koaryu Core access
+resolver as the hosted payer-sync route. The repository must be clean, and the operator
+source must be tracked and byte-identical to `HEAD`; a matching SHA with dirty source is
+not accepted. It writes
+only one mode-`0600` recovery record under `/private/tmp/koaryu-payer-ambiguity-*`.
+That record contains private provider and operation identifiers but never the raw caller
+key. Every state is authenticated with an HMAC derived from that separately held caller
+key, uses an exact phase-specific field set, and carries normalized provider evidence so
+resume can recompute the recovery proof. Preserve it privately until the final evidence
+capture.
+
+Supply the full staging backend environment through the established secret mechanism,
+plus these attended values:
+
+```bash
+export KOARYU_REHEARSAL_EXECUTE=I_UNDERSTAND_THIS_CREATES_ONE_STRIPE_TEST_CUSTOMER
+export KOARYU_REHEARSAL_STUDIO_ID=<staging-studio-uuid>
+export KOARYU_REHEARSAL_ACTOR_ID=<staging-admin-user-uuid>
+export KOARYU_REHEARSAL_PAYER_ID=<new-local-payer-uuid>
+export KOARYU_REHEARSAL_TEST_CLOCK_ID=<connected-test-clock-id>
+export KOARYU_REHEARSAL_PAYER_SYNC_KEY=<caller-owned-schema-v4-payer-sync-key>
+```
+
+From the repository root, run inject once:
+
+```bash
+backend/venv/bin/python scripts/rehearse-payer-sync-ambiguity.py \
+  --mode inject \
+  --expected-sha <full-candidate-sha> \
+  --state-file /private/tmp/koaryu-payer-ambiguity-<full-candidate-sha>.json \
+  --execute
+```
+
+If the local process stops after the state file reaches `provider_created` or
+`reconciliation_required`, do not run inject again. Use resume with the same environment,
+key, clock, payer, candidate, and file:
+
+```bash
+backend/venv/bin/python scripts/rehearse-payer-sync-ambiguity.py \
+  --mode resume \
+  --expected-sha <full-candidate-sha> \
+  --state-file /private/tmp/koaryu-payer-ambiguity-<full-candidate-sha>.json \
+  --execute
+```
+
+Resume never calls `BillingPayerManager.sync_payer`. It claims and reads the exact parent
+and resource only. After the single customer retrieval and verification, the tool persists
+`provider_verified` and its proof before calling the recovery RPC. A crash from that point
+resumes authorization without another Stripe read. If the RPC committed but the final
+state-file write did not, resume verifies the committed recovery fields and persists them
+without retrieving, projecting, or completing the payer.
+
+Two process-death intervals cannot be made automatically recoverable. Stripe can return a
+customer immediately before the tool fsyncs `provider_created`; an `armed` state after
+suspected success has no trustworthy customer identity. Stripe can also receive or return
+the single verification GET after `provider_readback_in_flight` is fsynced but before
+`provider_verified` is durable; repeating the GET would make the evidence count unknowable.
+Resume refuses both phases. Stop for attended Stripe inspection and never run inject or
+retrieve again; do not guess an object, create another customer, or repair the payer.
+
+Success reports `recovery_authorized`, one provider mutation, one provider readback,
+zero automatic retries, and `hosted_replay_required:true`. Replay the original
+`POST /api/v1/billing/payers/{payer_id}/sync` with the exact same
+`Idempotency-Key` and exact `{"test_clock_id":"clock_..."}` body. Stop if the tool or
+hosted replay reports any other state. The normal completed provider operation, resource
+claim, payer projection, and audit row are the durable audit trail; the private operator
+record supplies the attended response-loss and readback facts.
+
 ## Database contract verification
 
 Use the repository-local PostgreSQL 17 harness by default when developing or reviewing migration and contract SQL:

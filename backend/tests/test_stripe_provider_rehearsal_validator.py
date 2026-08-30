@@ -115,7 +115,7 @@ def _valid_evidence() -> dict:
             "failed_payment_retry": {"workflow_id": "invoice.retry", "operation": "connected_invoice.pay", "failed_provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.failed_provider"], "failed"), "failed_local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.failed_local"], "failed"), "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.provider"], "paid"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["failed_payment_retry.local"], "succeeded")},
             "period_advancement": {"method": "stripe_test_clock.advance", "test_clock_id": "clock_Test1", "advances_to": 1787936400, "observed_provider_boundary": 1787936400, "direct_database_timestamp_edit": False, "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["period_advancement.provider"], "advanced"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["period_advancement.local"], "completed")},
             "dispute_lifecycle": {"dispute_id": "dp_Test1", "created_event": {"event_id": "evt_disputeCreated1", "event_type": "charge.dispute.created", "local_event_id": "evt_disputeCreated1", "local_processing_status": "processed"}, "closed_event": {"event_id": "evt_disputeClosed1", "event_type": "charge.dispute.closed", "local_event_id": "evt_disputeClosed1", "local_processing_status": "processed"}, "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["dispute.provider"], "won"), "local_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["dispute.local"], "status": "won", "state_category": "won", "capture_boundary": boundary}},
-            "ambiguity_recovery": {"workflow_id": "payer.sync", "durable_operation_id": "operation_1", "durable_step_id": "step_1", "provider_mutation_count": 1, "automatic_retry_count": 0, "caller_request_key_sha256": key_digest, "mutation_step_name": "payer.customer_create", "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["ambiguity.provider"], "found"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["ambiguity.local"], "completed")},
+            "ambiguity_recovery": {"workflow_id": "payer.sync", "durable_operation_id": "operation_1", "provider_mutation_count": 1, "automatic_retry_count": 0, "caller_request_key_sha256": key_digest, "mutation_step_name": "payer.customer_create", "provider_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["ambiguity.provider"], "found"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["ambiguity.local"], "completed")},
         },
         "terminal_counts": {"capture_boundary": boundary, "counts": {key: {"count": 0, "source": MODULE.TERMINAL_SOURCES[key], "readback_boundary": boundary} for key in MODULE.TERMINAL_COUNT_KEYS}, "wrong_mode_components": [{"surface": surface, "count": 0, "source": MODULE.WRONG_MODE_SOURCES[surface], "readback_boundary": boundary} for surface in ("provider", "local")]},
         "steps": steps,
@@ -442,10 +442,16 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
     def test_rejects_stale_supplemental_readback_boundary_and_missing_ambiguity_owner(self):
         evidence = _valid_evidence()
         evidence["supplemental_evidence"]["failed_payment_retry"]["provider_readback"]["capture_boundary"] = "stale-boundary"
-        evidence["supplemental_evidence"]["ambiguity_recovery"]["durable_step_id"] = ""
+        evidence["supplemental_evidence"]["ambiguity_recovery"]["durable_operation_id"] = ""
         errors = self.errors(evidence)
         self.assertTrue(any("shared capture boundary" in error for error in errors))
-        self.assertTrue(any("durable operation and step" in error for error in errors))
+        self.assertTrue(any("durable parent operation" in error for error in errors))
+
+    def test_rejects_legacy_payer_ambiguity_step_field(self):
+        evidence = _valid_evidence()
+        evidence["supplemental_evidence"]["ambiguity_recovery"]["durable_step_id"] = "step_1"
+        errors = self.errors(evidence)
+        self.assertTrue(any("ambiguity recovery evidence must contain only its exact schema-v4 fields" in error for error in errors))
 
 
 if __name__ == "__main__":
