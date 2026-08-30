@@ -12,7 +12,7 @@ BEGIN
     RAISE EXCEPTION 'V34 readiness contract mismatch: %',row_to_json(v_ready);
   END IF;
   IF private.koaryu_release_invoice_retry_closeout_manifest_v34()
-     <>'0:50b9665371c5b3c9e71a5acef2711bb94d280fed760d4f785522cd6bdf9e8402' THEN
+     <>'0:d054ae0cf5ce43ce2c241ca628e0724b5239bd696c323ba9c817b8bd21ee0eec' THEN
     RAISE EXCEPTION 'V34 closeout manifest mismatch.';
   END IF;
   IF position('requires_action' IN pg_get_functiondef(
@@ -29,6 +29,100 @@ BEGIN
        'public.claim_billing_invoice_closeout_operation_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)','EXECUTE') THEN
     RAISE EXCEPTION 'V34 closeout ACL mismatch.';
   END IF;
+END;
+$$;
+
+DO $$
+DECLARE
+  v_admin UUID:=gen_random_uuid(); v_front UUID:=gen_random_uuid();
+  v_studio UUID:=gen_random_uuid(); v_payer UUID:=gen_random_uuid();
+  v_invoice UUID; v_operation UUID; v_result JSONB;
+  v_type TEXT; v_resource_type TEXT; v_status TEXT;
+BEGIN
+  INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,
+    email_confirmed_at,created_at,updated_at) VALUES
+    (v_admin,'authenticated','authenticated','v34-alias-admin@example.invalid','{}','{}',now(),now(),now()),
+    (v_front,'authenticated','authenticated','v34-alias-front@example.invalid','{}','{}',now(),now(),now());
+  INSERT INTO public.studios(id,name,slug,owner_id)
+  VALUES(v_studio,'V34 adopted alias replay',
+    'v34-alias-'||replace(v_studio::TEXT,'-',''),v_admin);
+  INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES
+    (v_studio,v_admin,'admin'),(v_studio,v_front,'front_desk');
+  INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,metadata)
+  VALUES(v_studio,'acct_v34aliasreplay',jsonb_build_object('connect_account_generation',1));
+  INSERT INTO public.billing_payers(id,studio_id,display_name,stripe_account_id,
+    stripe_customer_id,connect_account_generation)
+  VALUES(v_payer,v_studio,'V34 alias payer','acct_v34aliasreplay','cus_v34aliasreplay',1);
+  FOREACH v_type IN ARRAY ARRAY['invoice.finalize','invoice.void'] LOOP
+    v_invoice:=gen_random_uuid();
+    v_resource_type:=CASE WHEN v_type='invoice.finalize'
+      THEN 'invoice_finalize' ELSE 'invoice_void' END;
+    INSERT INTO public.billing_invoices(id,studio_id,payer_id,invoice_type,status,
+      amount_due_cents,amount_paid_cents,amount_remaining_cents,currency,
+      stripe_invoice_id,stripe_account_id,stripe_customer_id,collection_method,metadata)
+    VALUES(v_invoice,v_studio,v_payer,'manual','draft',500,0,500,'usd',
+      'in_'||replace(v_invoice::TEXT,'-',''),'acct_v34aliasreplay','cus_v34aliasreplay',
+      'send_invoice',jsonb_build_object('connect_account_generation',1));
+    v_result:=public.claim_billing_invoice_closeout_operation_v1(
+      v_studio,v_admin,v_type,v_resource_type,v_invoice,v_payer,
+      v_type||'-canonical-a',repeat('e',64),'acct_v34aliasreplay',1,gen_random_uuid(),30);
+    v_operation:=(v_result->'operation'->>'id')::UUID;
+    v_result:=public.claim_billing_invoice_closeout_operation_v1(
+      v_studio,v_admin,v_type,v_resource_type,v_invoice,v_payer,
+      v_type||'-adopted-b',repeat('e',64),'acct_v34aliasreplay',1,gen_random_uuid(),30);
+    IF (v_result->'operation'->>'id')::UUID<>v_operation
+       OR NOT EXISTS(SELECT 1 FROM public.billing_provider_operation_resource_aliases
+          WHERE operation_id=v_operation AND caller_request_key=v_type||'-adopted-b') THEN
+      RAISE EXCEPTION 'V34 adopted alias B was not persisted for %.',v_type;
+    END IF;
+    UPDATE public.billing_provider_operations SET state='completed',
+      provider_request_attempt_count=1,provider_object_id='in_'||replace(v_invoice::TEXT,'-',''),
+      provider_succeeded_at=clock_timestamp(),projected_at=clock_timestamp(),
+      completed_at=clock_timestamp(),result_code='invoice_closeout_completed',
+      lease_owner=NULL,lease_acquired_at=NULL,lease_expires_at=NULL,revision=revision+1
+    WHERE id=v_operation;
+    v_status:=CASE WHEN v_type='invoice.finalize' THEN 'open' ELSE 'void' END;
+    UPDATE public.billing_invoices SET status=v_status WHERE id=v_invoice;
+    v_result:=public.claim_billing_invoice_closeout_operation_v1(
+      v_studio,v_admin,v_type,v_resource_type,v_invoice,v_payer,
+      v_type||'-adopted-b',repeat('e',64),'acct_v34aliasreplay',1,gen_random_uuid(),30);
+    IF v_result->>'outcome'<>'replay'
+       OR (v_result->'operation'->>'id')::UUID<>v_operation
+       OR v_result->'operation'->>'caller_request_key'<>v_type||'-canonical-a'
+       OR v_result->'operation'->>'result_code'<>'invoice_closeout_completed' THEN
+      RAISE EXCEPTION 'V34 adopted alias B terminal replay failed for %.',v_type;
+    END IF;
+    v_result:=public.claim_billing_invoice_closeout_operation_v1(
+      v_studio,v_admin,v_type,v_resource_type,v_invoice,v_payer,
+      v_type||'-canonical-a',repeat('e',64),'acct_v34aliasreplay',1,gen_random_uuid(),30);
+    IF v_result->>'outcome'<>'replay' OR (v_result->'operation'->>'id')::UUID<>v_operation THEN
+      RAISE EXCEPTION 'V34 canonical alias A terminal replay changed for %.',v_type;
+    END IF;
+    BEGIN
+      PERFORM public.claim_billing_invoice_closeout_operation_v1(
+        v_studio,v_admin,v_type,v_resource_type,v_invoice,v_payer,
+        v_type||'-missing-c',repeat('e',64),'acct_v34aliasreplay',1,gen_random_uuid(),30);
+      RAISE EXCEPTION 'V34 non-alias C was accepted for %.',v_type;
+    EXCEPTION WHEN check_violation OR unique_violation THEN NULL; END;
+    BEGIN
+      PERFORM public.claim_billing_invoice_closeout_operation_v1(
+        v_studio,v_admin,v_type,v_resource_type,gen_random_uuid(),v_payer,
+        v_type||'-adopted-b',repeat('e',64),'acct_v34aliasreplay',1,gen_random_uuid(),30);
+      RAISE EXCEPTION 'V34 wrong resource replay was accepted.';
+    EXCEPTION WHEN unique_violation THEN NULL; END;
+    BEGIN
+      PERFORM public.claim_billing_invoice_closeout_operation_v1(
+        v_studio,v_admin,v_type,v_resource_type,v_invoice,v_payer,
+        v_type||'-adopted-b',repeat('e',64),'acct_wrong',1,gen_random_uuid(),30);
+      RAISE EXCEPTION 'V34 wrong account replay was accepted.';
+    EXCEPTION WHEN unique_violation THEN NULL; END;
+    BEGIN
+      PERFORM public.claim_billing_invoice_closeout_operation_v1(
+        v_studio,v_front,v_type,v_resource_type,v_invoice,v_payer,
+        v_type||'-adopted-b',repeat('e',64),'acct_v34aliasreplay',1,gen_random_uuid(),30);
+      RAISE EXCEPTION 'V34 non-admin adopted replay was accepted.';
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  END LOOP;
 END;
 $$;
 

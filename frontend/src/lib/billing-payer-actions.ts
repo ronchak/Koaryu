@@ -6,20 +6,20 @@ import type { BillingActionRuntime } from "@/lib/billing-action-runtime";
 import { buildBillingPayerCreatePayload } from "@/lib/billing-page-form-model";
 import {
   buildPayerSyncRequest,
-  buildPayerAutopaySetupRequest,
   clearPersistedPayerOperationRequestKey,
-  copyPayerAutopaySetupLink,
-  getPayerAutopaySetupReturnUrl,
   resolvePersistedPayerOperationRequestKey,
   type PayerOperationIdentity,
+  type PayerSetupAttempt,
 } from "@/lib/billing-payer-setup-model";
-import type { BillingLinkResponse, BillingPayer } from "@/types";
+import { executePayerAutopaySetup } from "@/lib/billing-payer-setup-action";
+import type { BillingPayer } from "@/types";
 
 export function useBillingPayerActions(
   runtime: BillingActionRuntime,
   identity: PayerOperationIdentity | null,
 ) {
   const autopaySetupKeysRef = useRef(new Map<string, string>());
+  const autopaySetupAttemptsRef = useRef(new Map<string, PayerSetupAttempt>());
   const payerSyncKeysRef = useRef(new Map<string, string>());
   const [payerName, setPayerName] = useState("");
   const [payerEmail, setPayerEmail] = useState("");
@@ -74,44 +74,17 @@ export function useBillingPayerActions(
   }
 
   async function handleAutopaySetup(
-    payerId: string,
-    options: { startNewRequest?: boolean } = {},
+    payer: BillingPayer,
   ) {
-    const requestKey = resolvePersistedPayerOperationRequestKey({
+    return executePayerAutopaySetup({
+      attemptsByPayer: autopaySetupAttemptsRef.current,
       identity,
       keysByPayer: autopaySetupKeysRef.current,
-      operation: "payer.setup",
-      payerId,
-      startNewRequest: options.startNewRequest,
+      origin: window.location.origin,
+      payer,
+      post: api.post,
+      runtime,
     });
-    const request = buildPayerAutopaySetupRequest(
-      getPayerAutopaySetupReturnUrl(window.location.origin),
-      requestKey,
-    );
-    const link = await runtime.postBillingAction<BillingLinkResponse>({
-      action: `autopay-setup:${payerId}`,
-      body: request.body,
-      path: `/billing/payers/${payerId}/autopay/setup-link`,
-      onTerminalIdempotencyError: () => clearPersistedPayerOperationRequestKey({
-        identity,
-        keysByPayer: autopaySetupKeysRef.current,
-        operation: "payer.setup",
-        payerId,
-      }),
-      refresh: false,
-      requestOptions: { headers: request.headers },
-      successMessage: "Stripe autopay setup link created.",
-      workflowId: "payer.setup",
-    });
-    if (link?.url) {
-      const copied = await copyPayerAutopaySetupLink(link.url);
-      runtime.setMessage(
-        copied
-          ? "Stripe autopay setup link copied."
-          : `Stripe autopay setup link: ${link.url}`,
-      );
-    }
-    return link?.url ?? null;
   }
 
   async function handleAutopayDisable(payerId: string) {

@@ -132,7 +132,7 @@ def _valid_evidence() -> dict:
             },
             "invoice_void": {"workflow_id": "invoice.void", "operation": "connected_invoice.void", "actor_role": "admin", "provider_attempt_count": 1, "provider_mutation_count": 1, "automatic_retry_count": 0, "caller_request_key_sha256": "f" * 64, "durable_operation_id": "operation_void_1", "provider_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["invoice_void.provider"], "invoice_id":"in_Link1", "durable_operation_id":"operation_void_1", "stripe_account_id":account_id, "connect_account_generation":1, "status":"void", "capture_boundary":boundary}, "local_readback": {"source": MODULE.SUPPLEMENTAL_SOURCES["invoice_void.local"], "invoice_id":"in_Link1", "durable_operation_id":"operation_void_1", "stripe_account_id":account_id, "connect_account_generation":1, "status":"void", "capture_boundary":boundary}},
             "immediate_cancellation": {"workflow_id": "enrollment.cancel.immediate", "strategy": "whole_subscription_cancel", "operation": "connected_subscription.cancel", "actor_role": "admin", "provider_attempt_count": 1, "provider_mutation_count": 1, "automatic_retry_count": 0, "caller_request_key_sha256": "1" * 64, "durable_operation_id": "operation_cancel_1", "provider_readback": {"source":MODULE.SUPPLEMENTAL_SOURCES["immediate_cancellation.provider"],"subscription_id":"sub_Test1","durable_operation_id":"operation_cancel_1","transition_intent_id":"intent_cancel_1","stripe_account_id":account_id,"connect_account_generation":1,"status":"canceled","capture_boundary":boundary}, "local_readback": {"source":MODULE.SUPPLEMENTAL_SOURCES["immediate_cancellation.local"],"subscription_id":"sub_Test1","enrollment_id":"enrollment_2","durable_operation_id":"operation_cancel_1","transition_intent_id":"intent_cancel_1","stripe_account_id":account_id,"connect_account_generation":1,"transition_state":"completed","enrollment_status":"canceled","capture_boundary":boundary}},
-            "external_payment": {"workflow_id": "payment.external.record", "local_payment_id": "payment_external_1", "local_status": "externally_recorded", "replay_payment_id": "payment_external_1", "caller_request_key_sha256": "e" * 64, "replay_outcome": "same_row", "audit_count": 1, "invoice_id": None, "provider_mutation_count": 0, "provider_operation_inventory_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["external_payment.inventory"], "zero"), "local_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["external_payment.local"], "externally_recorded")},
+            "external_payment": {"workflow_id": "payment.external.record", "local_payment_id": "payment_external_1", "local_status": "externally_recorded", "replay_payment_id": "payment_external_1", "caller_request_key_sha256": "e" * 64, "replay_outcome": "same_row", "audit_count": 1, "invoice_id": None, "provider_mutation_count": 0, "studio_id":studio_id, "stripe_account_id":account_id, "connect_account_generation":1, "actor_id":"actor_1", "actor_role":"admin", "audit_id":"audit_1", "audit_action":"billing.external_payment_recorded", "amount_cents":2500, "currency":"usd", "external_method":"cash", "provider_operation_inventory_readback": {"source":MODULE.SUPPLEMENTAL_SOURCES["external_payment.inventory"],"local_payment_id":"payment_external_1","studio_id":studio_id,"stripe_account_id":account_id,"connect_account_generation":1,"caller_request_key_sha256":"e"*64,"matching_provider_operation_count":0,"status":"zero","capture_boundary":boundary}, "local_readback": {"source":MODULE.SUPPLEMENTAL_SOURCES["external_payment.local"],"local_payment_id":"payment_external_1","replay_payment_id":"payment_external_1","audit_id":"audit_1","audit_action":"billing.external_payment_recorded","audit_entity_id":"payment_external_1","studio_id":studio_id,"stripe_account_id":account_id,"connect_account_generation":1,"actor_id":"actor_1","actor_role":"admin","caller_request_key_sha256":"e"*64,"payment_status":"externally_recorded","audit_count":1,"amount_cents":2500,"currency":"usd","external_method":"cash","invoice_id":None,"capture_boundary":boundary}},
             "unsupported_operations": [
                 {"subject": subject, "classification": "unsupported", "denial_reason_code": reason, "provider_mutation_count": 0, "denial_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["unsupported.denial"], "denied"), "provider_operation_inventory_readback": readback(MODULE.SUPPLEMENTAL_SOURCES["unsupported.inventory"], "zero")}
                 for subject, reason in MODULE.UNSUPPORTED_CONTRACT.items()
@@ -436,7 +436,8 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
         errors = self.errors(evidence)
         self.assertTrue(any("invoice void evidence" in error for error in errors))
         self.assertTrue(any("wrong strategy or operation" in error for error in errors))
-        self.assertGreaterEqual(sum("wrong status" in error for error in errors), 2)
+        self.assertTrue(any("external payment inventory" in error for error in errors))
+        self.assertGreaterEqual(sum("wrong status" in error for error in errors), 1)
         self.assertTrue(any("pre-retry provider state" in error for error in errors))
         self.assertTrue(any("test-clock advancement" in error for error in errors))
         self.assertTrue(any("does not bind workflow facts" in error for error in errors))
@@ -487,6 +488,8 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
             ("invoice_void", "local_readback", MODULE.INVOICE_VOID_LOCAL_KEYS, "invoice_id", "durable_operation_id"),
             ("immediate_cancellation", "provider_readback", MODULE.IMMEDIATE_PROVIDER_KEYS, "subscription_id", "transition_intent_id"),
             ("immediate_cancellation", "local_readback", MODULE.IMMEDIATE_LOCAL_KEYS, "enrollment_id", "transition_intent_id"),
+            ("external_payment", "provider_operation_inventory_readback", MODULE.EXTERNAL_INVENTORY_KEYS, "local_payment_id", "caller_request_key_sha256"),
+            ("external_payment", "local_readback", MODULE.EXTERNAL_LOCAL_KEYS, "audit_id", "actor_id"),
             ("period_advancement", "provider_readback", MODULE.PERIOD_PROVIDER_KEYS, "test_clock_id", "stripe_account_id"),
             ("period_advancement", "local_readback", MODULE.PERIOD_LOCAL_KEYS, "schedule_intent_id", "due_intent_id"),
             ("ambiguity_recovery", "provider_readback", MODULE.AMBIGUITY_PROVIDER_KEYS, "customer_id", "payer_id"),
@@ -507,6 +510,23 @@ class StripeProviderRehearsalValidatorTest(unittest.TestCase):
                 row = evidence["supplemental_evidence"][section][readback_name]
                 row[first], row[second] = row[second], row[first]
                 self.assertNotEqual(self.errors(evidence), [])
+
+    def test_external_payment_rejects_mixed_row_scope_account_generation_and_audit(self):
+        mutations = {
+            "mixed-row": ("local_payment_id", "payment_other"),
+            "mixed-studio": ("studio_id", "studio_other"),
+            "mixed-account": ("stripe_account_id", "acct_Other1"),
+            "mixed-generation": ("connect_account_generation", 2),
+            "mixed-audit": ("audit_id", "audit_other"),
+        }
+        for label, (field, value) in mutations.items():
+            with self.subTest(label=label):
+                evidence = _valid_evidence()
+                evidence["supplemental_evidence"]["external_payment"]["local_readback"][field] = value
+                self.assertTrue(any("external payment local readback" in error for error in self.errors(evidence)))
+        evidence = _valid_evidence()
+        evidence["supplemental_evidence"]["external_payment"]["provider_operation_inventory_readback"]["local_payment_id"] = "payment_other"
+        self.assertTrue(any("zero provider operations for the exact payment scope" in error for error in self.errors(evidence)))
 
     def test_rejects_untruthful_replacement_retry_and_dispute_bindings(self):
         evidence = _valid_evidence()

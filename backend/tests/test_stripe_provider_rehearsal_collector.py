@@ -238,7 +238,7 @@ def chain():
     immediate_transition = next(row for row in rows if row["owner"] == "transitions" and row["id"] == m["local_ids"]["transitions"]["immediate"])
     immediate_transition.update(state="completed", transition_kind="immediate_cancel", provider_operation_id=immediate_op["id"], enrollment_id=m["local_ids"]["subscriptions"]["student_two"])
     external = next(row for row in rows if row["owner"] == "payments" and row["id"] == m["local_ids"]["payments"]["payments.external"])
-    external.update(status="externally_recorded", amount_cents=2500, currency="usd", external_method="cash", idempotency_key="external-key", request_hash="3" * 64, caller_request_key_sha256="2" * 64, invoice_id=None)
+    external.update(status="externally_recorded", amount_cents=2500, currency="usd", external_method="cash", stripe_account_id="acct_Test1", connect_account_generation=1, idempotency_key="external-key", request_hash="3" * 64, caller_request_key_sha256="2" * 64, invoice_id=None)
     rows.append({"owner":"audit_logs","id":"audit_1","studio_id":"studio_1","actor_id":"actor_1","action":"billing.external_payment_recorded","entity_type":"billing","entity_id":external["id"],"metadata":{"amount_cents":2500,"external_method":"cash"},"created_at":"2026-08-29T10:01:00Z"})
     for role, event_id, event_type, sequence in (("dispute_created", "evt_disputecreated", "charge.dispute.created", 3), ("dispute_closed", "evt_disputeclosed", "charge.dispute.closed", 4)):
         event = next(row for row in rows if row["owner"] == "webhook_events" and row["stripe_event_id"] == m["local_ids"]["webhook_events"][role])
@@ -442,7 +442,30 @@ class CollectorArtifactTest(unittest.TestCase):
         self.assertEqual(rows["invoice_void"]["provider_readback"]["status"], "void")
         self.assertEqual(rows["immediate_cancellation"]["local_readback"]["enrollment_status"], "canceled")
         self.assertEqual(rows["external_payment"]["audit_count"], 1)
+        self.assertEqual(rows["external_payment"]["provider_operation_inventory_readback"]["matching_provider_operation_count"], 0)
+        self.assertEqual(rows["external_payment"]["local_readback"]["audit_entity_id"], rows["external_payment"]["local_payment_id"])
         self.assertEqual(len(rows["unsupported_operations"]), 4)
+
+    def test_external_payment_projection_rejects_mixed_captured_sources(self):
+        cases = {
+            "mixed-studio": lambda payment, audit, rows: payment.update(studio_id="studio_other"),
+            "mixed-account": lambda payment, audit, rows: payment.update(stripe_account_id="acct_Other1"),
+            "mixed-generation": lambda payment, audit, rows: payment.update(connect_account_generation=2),
+            "mixed-audit": lambda payment, audit, rows: audit.update(entity_id="payment_other"),
+            "provider-operation": lambda payment, audit, rows: next(row for row in rows if row.get("owner") == "operations").update(provider_object_id=payment["id"]),
+        }
+        for label, mutate in cases.items():
+            with self.subTest(label=label):
+                m, artifacts = chain()
+                phases = C.validate_phase_chain(m, artifacts)
+                rows = phases[4]["local_rows"]
+                final = C._source_index(m, rows, phases[5]["provider_objects"])
+                payment = final["local:payments:payments.external"]
+                audit = next(row for row in rows if row.get("owner") == "audit_logs")
+                mutate(payment, audit, rows)
+                validator, _ = C._load_contract()
+                with self.assertRaisesRegex(C.CollectorError, "external payment"):
+                    C._project_group_four_local(m, final, rows, phases[5]["observed_at"], validator)
 
     def test_assembles_validator_clean_packet_without_template(self):
         m, artifacts = chain()

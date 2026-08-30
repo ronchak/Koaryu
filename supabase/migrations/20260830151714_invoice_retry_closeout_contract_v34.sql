@@ -267,7 +267,18 @@ BEGIN
                OR v_operation.studio_id IS DISTINCT FROM p_studio_id
                OR v_operation.operation_type IS DISTINCT FROM p_operation_type
                OR v_operation.actor_id IS DISTINCT FROM p_actor_id
-               OR v_operation.caller_request_key IS DISTINCT FROM p_caller_request_key
+               OR NOT EXISTS (
+                    SELECT 1
+                      FROM public.billing_provider_operation_resource_aliases AS canonical_alias
+                     WHERE canonical_alias.operation_id=v_operation.id
+                       AND canonical_alias.resource_claim_id=v_resource.id
+                       AND canonical_alias.studio_id=p_studio_id
+                       AND canonical_alias.operation_type=p_operation_type
+                       AND canonical_alias.resource_type=p_resource_type
+                       AND canonical_alias.resource_id=p_resource_id
+                       AND canonical_alias.payer_id=p_payer_id
+                       AND canonical_alias.caller_request_key=v_operation.caller_request_key
+               )
                OR v_operation.request_sha256 IS DISTINCT FROM p_request_sha256
                OR v_operation.stripe_connected_account_id IS DISTINCT FROM p_stripe_connected_account_id
                OR v_operation.connect_account_generation IS DISTINCT FROM p_connect_account_generation THEN
@@ -368,11 +379,9 @@ $$;
 ALTER FUNCTION private.koaryu_release_invoice_retry_closeout_manifest_v34() OWNER TO postgres;
 REVOKE ALL ON FUNCTION private.koaryu_release_invoice_retry_closeout_manifest_v34()
  FROM PUBLIC,anon,authenticated,service_role;
-
 UPDATE private.koaryu_release_v31_expectations
-SET expected_sha256='fc7ed200dc9e0c3eca44c4876be9f46178ef683840bf0ab603abd936746011ec'
+SET expected_sha256='fc3b9de6660335ddaeda6100978f7bb313f01fe2a564efa3167394a54a27c476'
 WHERE expectation_key='operational_contract_v31';
-
 DO $build_v15$
 DECLARE v_definition TEXT;
 BEGIN
@@ -389,22 +398,22 @@ BEGIN
     '''20260830065627'',''20260830082610''',
     '''20260830065627'',''20260830082610'',''20260830151714''');
   v_definition:=replace(v_definition,'''migration_history_v33''','''migration_history_v34''');
-  v_definition:=replace(v_definition,'0:021617e4a8372faed9d9bed47324511892c1e051fb03dcafb3eeb31ecd9e6a35','0:654743df6f669bf284ddd8d8b6bd9aef872bf8aa49ce6e545bd22cd376e537fc');
+  v_definition:=replace(v_definition,'0:021617e4a8372faed9d9bed47324511892c1e051fb03dcafb3eeb31ecd9e6a35','0:9a3686c65b3709c76adddbef693fe67d9e33d9f38295f73b1e4faaa5534ab67a');
   v_definition:=replace(v_definition,'0:c25c355e7eae78a4c3d4079236316c058ad3dc06b09602cb319dbc16531332cc','0:8461239841e35fe5dfd5be685b43c8551a40301f7ac24f1ea5b61a8ab522ce54');
   v_definition:=replace(v_definition,'0:00790561b8e54e31aea1f134bde617bec9b2b6f96d1372e9546ce91d10464331','0:71bd6c57dd16c61d0cab4ec45f1902a1b1cdf14f85a5961880f262e5c9730738');
   v_definition:=replace(v_definition,'0:4bc49993793e36641ed793161aeeb064ce3101b3a98e52365da15fc957ed4c5e','0:f11329ea7fe8c06da904f598fdb89af7c5083449f4feb30486176cc1904c37b3');
   v_definition:=replace(v_definition,'0:33a270e015c8a73824d38785b1bb7b8fde7ea67ee2783832042f335627d64864','0:5d022e3d25e3c09fd56cc80fd26ed8e6233b5ce881ddcc60b6b8593d8801190a');
-  v_definition:=replace(v_definition,'0:93a90cb23af0a5ba2e4e97b938419f41cb770418f433c32ca4534dbfe65538c6','0:a8407f8ec918be79e8296e19dc9bcc027aae5c1a33656e4efa946c441bb549b3');
-  v_definition:=replace(v_definition,'0:85b57219a48b78e04a60f1e6d8ff39fc47d7fc3f586ad1aa5bde852f8b463917','0:fc7ed200dc9e0c3eca44c4876be9f46178ef683840bf0ab603abd936746011ec');
-  v_definition:=replace(v_definition,'d9c4103b9109512eef453dd788989045a19d39ad0e8d59969ff5a48aaa78b2fb','4efd4aa009ac5aa761c26b290fdd9e3732f7a2acb2b0ded6607fac8e15258c53');
-  v_definition:=replace(v_definition,'953cd8f92a9e907cc70ca7ec599ee58b7f55772b7b4fd1af06fad76b58bc2bf8','40d61f86ef8f35dbaf17da4dbcc62dcc9e084347fe4d03f2f25044e288ab226c');
+  v_definition:=replace(v_definition,'0:93a90cb23af0a5ba2e4e97b938419f41cb770418f433c32ca4534dbfe65538c6','0:12a3aea5cdfd8360926300447e0643c20b771c2ed7fa212676dbea3fbba5e905');
+  v_definition:=replace(v_definition,'0:85b57219a48b78e04a60f1e6d8ff39fc47d7fc3f586ad1aa5bde852f8b463917','0:fc3b9de6660335ddaeda6100978f7bb313f01fe2a564efa3167394a54a27c476');
+  v_definition:=replace(v_definition,'d9c4103b9109512eef453dd788989045a19d39ad0e8d59969ff5a48aaa78b2fb','076e54d2ff5bf99ea77518a94ba88dec06bcf1f5bd472439234e8e849652f5e1');
+  v_definition:=replace(v_definition,'953cd8f92a9e907cc70ca7ec599ee58b7f55772b7b4fd1af06fad76b58bc2bf8','7982677386a8df84dee019036a51b3f71952a03de147ceefc2d05f6503220a5a');
   v_definition:=replace(v_definition,
     '0:378f6477266a8bd8d0babfff37c2747606bd9d8c5b98024b77d786715c05dbcb',
     '0:8497daa806dcd7e33992fe8ca76f3207eb36b41e5a976be781e3bf33b22d4fdb');
   v_definition:=replace(v_definition,
     'RETURN QUERY SELECT cardinality(v_failures) = 0,',
     $inject$IF private.koaryu_release_invoice_retry_closeout_manifest_v34()
-       <> '0:50b9665371c5b3c9e71a5acef2711bb94d280fed760d4f785522cd6bdf9e8402' THEN
+       <> '0:d054ae0cf5ce43ce2c241ca628e0724b5239bd696c323ba9c817b8bd21ee0eec' THEN
       v_failures:=array_append(v_failures,'invoice_retry_closeout_manifest_v34');
     END IF;
     RETURN QUERY SELECT cardinality(v_failures) = 0,$inject$);

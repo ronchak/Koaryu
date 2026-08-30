@@ -3,6 +3,7 @@
 import { Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMoney } from "@/lib/billing-page-utils";
+import { payerSetupActionLabel } from "@/lib/billing-payer-setup-model";
 import type { BillingPayer } from "@/types";
 import { SectionHeader, StatusPill } from "./billing-page-sections";
 
@@ -20,7 +21,7 @@ export function BillingFamiliesTab({
   isActionLoading: boolean;
   isLoadingAction: (action: string) => boolean;
   onAutopayDisable: (payerId: string) => void;
-  onAutopaySetup: (payerId: string) => void;
+  onAutopaySetup: (payer: BillingPayer) => void;
   onPayerSync: (payerId: string) => void;
 }) {
   return (
@@ -78,8 +79,8 @@ export function BillingFamiliesTab({
                 </Button>
               ) : null}
               {canUseWorkflow("payer.setup") ? (
-                <Button variant="secondary" size="sm" disabled={isActionLoading} isLoading={isLoadingAction(`autopay-setup:${payer.id}`)} onClick={() => onAutopaySetup(payer.id)}>
-                  {isLoadingAction(`autopay-setup:${payer.id}`) ? "Preparing..." : "Payer setup link"}
+                <Button variant="secondary" size="sm" disabled={isActionLoading} isLoading={isLoadingAction(`autopay-setup:${payer.id}`)} onClick={() => onAutopaySetup(payer)}>
+                  {isLoadingAction(`autopay-setup:${payer.id}`) ? "Preparing..." : payerSetupActionLabel(payer)}
                 </Button>
               ) : null}
               {payer.autopay_status === "enabled" && canUseWorkflow("payer.autopay.disable") ? (

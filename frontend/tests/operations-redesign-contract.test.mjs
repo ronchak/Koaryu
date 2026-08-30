@@ -826,7 +826,8 @@ describe("operations behavior proof", () => {
     assert.match(negativeCopy, /Koaryu preserves the original request key after an uncertain provider outcome/);
     assert.match(negativeCopy, /canUseWorkflow\("plan\.sync"\)[\s\S]*onPlanSync\(plan\.id\)/);
     assert.match(negativeCopy, /canUseWorkflow\("payer\.sync"\)[\s\S]*onPayerSync\(payer\.id\)/);
-    assert.match(negativeCopy, /canUseWorkflow\("payer\.setup"\)[\s\S]*onAutopaySetup\(payer\.id\)/);
+    assert.match(negativeCopy, /canUseWorkflow\("payer\.setup"\)[\s\S]*onAutopaySetup\(payer\)/);
+    assert.match(negativeCopy, /payerSetupActionLabel\(payer\)/);
     assert.match(negativeCopy, /window\.confirm\(`Disable autopay for \$\{payer\.display_name\}\?/);
     assert.match(negativeCopy, /canUseWorkflow\("invoice\.finalize"\)[\s\S]*onInvoiceAction\(invoice\.id, "finalize"\)/);
     assert.match(negativeCopy, /New CSV exports are currently unavailable/);

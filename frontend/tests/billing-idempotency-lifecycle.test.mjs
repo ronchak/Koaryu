@@ -208,6 +208,10 @@ describe("billing idempotency-key lifecycle", () => {
       path.join(root, "src/lib/billing-payer-actions.ts"),
       "utf8",
     );
+    const payerSetupAction = fs.readFileSync(
+      path.join(root, "src/lib/billing-payer-setup-action.ts"),
+      "utf8",
+    );
     const planActions = fs.readFileSync(
       path.join(root, "src/lib/billing-plan-actions.ts"),
       "utf8",
@@ -222,7 +226,8 @@ describe("billing idempotency-key lifecycle", () => {
     );
 
     assert.match(actionRuntime, /onTerminalIdempotencyError/);
-    assert.equal((payerActions.match(/onTerminalIdempotencyError/g) || []).length, 2);
+    assert.equal((payerActions.match(/onTerminalIdempotencyError/g) || []).length, 1);
+    assert.match(payerSetupAction, /clearBillingIdempotencyKeyAfterTerminalError/);
     assert.equal((planActions.match(/onTerminalIdempotencyError/g) || []).length, 1);
     assert.equal((enrollmentActions.match(/onTerminalIdempotencyError/g) || []).length, 2);
     assert.match(invoiceController, /clearBillingIdempotencyKeyAfterTerminalError/);

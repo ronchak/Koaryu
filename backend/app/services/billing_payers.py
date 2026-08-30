@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -172,11 +172,18 @@ class BillingPayerManager:
         )
         if disposition == "replay":
             try:
-                self._payer_sync_mode(operation)
+                sync_mode = self._payer_sync_mode(operation)
                 payer = self._load_payer_sync_result(
                     payer_id=payer_id,
                     context=context,
                     operation=operation,
+                )
+                self._ensure_payer_sync_audit(
+                    payer=payer,
+                    context=context,
+                    operation=operation,
+                    sync_mode=sync_mode,
+                    test_clock_id=test_clock_id,
                 )
             except Exception as exc:
                 raise HTTPException(
@@ -186,7 +193,7 @@ class BillingPayerManager:
             return BillingPayerResponse(**payer)
         if operation.get("state") == "projected":
             try:
-                self._payer_sync_mode(operation)
+                sync_mode = self._payer_sync_mode(operation)
                 payer = self._load_payer_sync_result(
                     payer_id=payer_id,
                     context=context,
@@ -200,11 +207,22 @@ class BillingPayerManager:
                     "payer_sync_projection_unverified",
                     exc,
                 )
-            coordinator.complete(context, operation, result_code="payer_sync_completed")
+            operation = coordinator.complete(
+                context,
+                operation,
+                result_code="payer_sync_completed",
+            )
+            self._ensure_payer_sync_audit(
+                payer=payer,
+                context=context,
+                operation=operation,
+                sync_mode=sync_mode,
+                test_clock_id=test_clock_id,
+            )
             return BillingPayerResponse(**payer)
         if operation.get("state") == "provider_succeeded":
             try:
-                self._payer_sync_mode(operation)
+                sync_mode = self._payer_sync_mode(operation)
                 payer = self._load_payer_sync_result(
                     payer_id=payer_id,
                     context=context,
@@ -224,7 +242,18 @@ class BillingPayerManager:
                 "projected",
                 result_code="payer_sync_projected",
             )
-            coordinator.complete(context, operation, result_code="payer_sync_completed")
+            operation = coordinator.complete(
+                context,
+                operation,
+                result_code="payer_sync_completed",
+            )
+            self._ensure_payer_sync_audit(
+                payer=payer,
+                context=context,
+                operation=operation,
+                sync_mode=sync_mode,
+                test_clock_id=test_clock_id,
+            )
             return BillingPayerResponse(**payer)
 
         if test_clock_id and not recovery and payer.get("stripe_customer_id"):
@@ -430,12 +459,137 @@ class BillingPayerManager:
             "projected",
             result_code="payer_sync_projected",
         )
-        coordinator.complete(context, operation, result_code="payer_sync_completed")
-        self._audit(studio_id, actor_id, "billing.payer_synced", payer_id, {
+        operation = coordinator.complete(
+            context,
+            operation,
+            result_code="payer_sync_completed",
+        )
+        self._ensure_payer_sync_audit(
+            payer=payer,
+            context=context,
+            operation=operation,
+            sync_mode=sync_mode,
+            test_clock_id=test_clock_id,
+        )
+        return BillingPayerResponse(**payer)
+
+    def _ensure_payer_sync_audit(
+        self,
+        *,
+        payer: dict[str, Any],
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        sync_mode: str,
+        test_clock_id: str | None,
+    ) -> None:
+        payer_id = str(payer.get("id") or "")
+        expected_metadata = {
             "operation_id": context.operation_id,
             "sync_mode": sync_mode,
-        })
-        return BillingPayerResponse(**payer)
+        }
+        if (
+            not payer_id
+            or payer.get("studio_id") != context.studio_id
+            or operation.get("id") != context.operation_id
+            or operation.get("studio_id") != context.studio_id
+            or operation.get("actor_id") != context.actor_id
+            or operation.get("operation_type") != PAYER_SYNC_OPERATION_TYPE
+            or operation.get("request_sha256") != context.request_sha256
+            or self._payer_sync_request_hash(
+                payer,
+                account_id=context.stripe_connected_account_id,
+                generation=context.connect_account_generation,
+                test_clock_id=test_clock_id,
+            )
+            != context.request_sha256
+            or operation.get("stripe_connected_account_id")
+            != context.stripe_connected_account_id
+            or operation.get("connect_account_generation")
+            != context.connect_account_generation
+            or operation.get("provider_object_id") != payer.get("stripe_customer_id")
+            or operation.get("state") != "completed"
+            or operation.get("result_code") != "payer_sync_completed"
+            or self._payer_sync_mode(operation) != sync_mode
+        ):
+            raise RuntimeError("payer_sync_audit_identity_mismatch")
+
+        audit_id = str(uuid5(
+            NAMESPACE_URL,
+            f"koaryu:billing.payer_synced:{context.operation_id}",
+        ))
+        existing = (
+            self.supabase.table("audit_logs")
+            .select("*")
+            .eq("id", audit_id)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            self._validate_payer_sync_audit_row(
+                existing.data[0],
+                audit_id=audit_id,
+                studio_id=context.studio_id,
+                actor_id=context.actor_id,
+                payer_id=payer_id,
+                metadata=expected_metadata,
+            )
+            return
+        try:
+            self.supabase.table("audit_logs").insert({
+                "id": audit_id,
+                "studio_id": context.studio_id,
+                "actor_id": context.actor_id,
+                "action": "billing.payer_synced",
+                "entity_type": "billing",
+                "entity_id": payer_id,
+                "metadata": expected_metadata,
+            }).execute()
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) != "23505":
+                raise
+            winner = (
+                self.supabase.table("audit_logs")
+                .select("*")
+                .eq("id", audit_id)
+                .limit(1)
+                .execute()
+            )
+            if not winner.data:
+                raise RuntimeError("payer_sync_audit_conflict_unverified") from exc
+            try:
+                self._validate_payer_sync_audit_row(
+                    winner.data[0],
+                    audit_id=audit_id,
+                    studio_id=context.studio_id,
+                    actor_id=context.actor_id,
+                    payer_id=payer_id,
+                    metadata=expected_metadata,
+                )
+            except RuntimeError as invariant_exc:
+                raise RuntimeError(
+                    "payer_sync_audit_conflict_unverified"
+                ) from invariant_exc
+
+    @staticmethod
+    def _validate_payer_sync_audit_row(
+        audit: dict[str, Any],
+        *,
+        audit_id: str,
+        studio_id: str,
+        actor_id: str,
+        payer_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        if (
+            str(audit.get("id") or "") != audit_id
+            or audit.get("studio_id") != studio_id
+            or audit.get("actor_id") != actor_id
+            or audit.get("action") != "billing.payer_synced"
+            or audit.get("entity_type") != "billing"
+            or str(audit.get("entity_id") or "") != payer_id
+            or audit.get("metadata") != metadata
+        ):
+            raise RuntimeError("payer_sync_audit_identity_mismatch")
 
     @staticmethod
     def _verify_recovered_customer(

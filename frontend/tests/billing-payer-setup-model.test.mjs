@@ -11,6 +11,8 @@ import {
   clearPersistedPayerOperationRequestKey,
   copyPayerAutopaySetupLink,
   getPayerAutopaySetupReturnUrl,
+  isPayerSetupReplacementEligible,
+  payerSetupActionLabel,
   resolvePersistedPayerOperationRequestKey,
   resolvePayerAutopaySetupRequestKey,
   resolvePayerSyncRequestKey,
@@ -39,7 +41,7 @@ describe("hidden payer autopay setup adapter", () => {
     );
     const actions = fs.readFileSync(path.join(root, "src/lib/billing-payer-actions.ts"), "utf8");
     const proxy = fs.readFileSync(path.join(root, "src/proxy.ts"), "utf8");
-    assert.match(actions, /getPayerAutopaySetupReturnUrl\(window\.location\.origin\)/);
+    assert.match(actions, /origin: window\.location\.origin/);
     assert.doesNotMatch(proxy, /payer-setup-complete/);
     assert.equal(
       fs.existsSync(path.join(root, "src/app/payer-setup-complete/page.tsx")),
@@ -55,6 +57,81 @@ describe("hidden payer autopay setup adapter", () => {
     assert.equal(resolvePayerAutopaySetupRequestKey(keys, "payer-1", false, createKey), "key-1");
     assert.equal(resolvePayerAutopaySetupRequestKey(keys, "payer-1", false, createKey), "key-1");
     assert.equal(resolvePayerAutopaySetupRequestKey(keys, "payer-1", true, createKey), "key-2");
+  });
+
+  it("sends a new key on the first click for completed payer setup", () => {
+    const values = new Map();
+    const storage = {
+      getItem: (key) => values.get(key) ?? null,
+      removeItem: (key) => values.delete(key),
+      setItem: (key, value) => values.set(key, value),
+    };
+    const options = {
+      identity: { userId: "user-1", studioId: "studio-1" },
+      keysByPayer: new Map(),
+      operation: "payer.setup",
+      payerId: "payer-1",
+      storage,
+    };
+    assert.equal(resolvePersistedPayerOperationRequestKey({
+      ...options,
+      createKey: () => "completed-key",
+    }), "completed-key");
+    const payer = {
+      autopay_status: "enabled",
+      stripe_payment_method_id: "saved-method",
+    };
+    assert.equal(isPayerSetupReplacementEligible(payer), true);
+    assert.equal(payerSetupActionLabel(payer), "Replace payment method");
+    assert.equal(
+      resolvePersistedPayerOperationRequestKey({
+        ...options,
+        createKey: () => "replacement-key",
+        startNewRequest: isPayerSetupReplacementEligible(payer),
+      }),
+      "replacement-key",
+    );
+    assert.equal([...values.values()][0], "replacement-key");
+  });
+
+  it("reuses pending and initial setup keys without starting a double setup", () => {
+    for (const payer of [
+      { autopay_status: "pending", stripe_payment_method_id: null },
+      { autopay_status: "not_configured", stripe_payment_method_id: null },
+      { autopay_status: "disabled", stripe_payment_method_id: null },
+    ]) {
+      const keys = new Map([["payer-1", "current-key"]]);
+      assert.equal(isPayerSetupReplacementEligible(payer), false);
+      assert.equal(payerSetupActionLabel(payer), "Payer setup link");
+      assert.equal(
+        resolvePayerAutopaySetupRequestKey(
+          keys,
+          "payer-1",
+          isPayerSetupReplacementEligible(payer),
+          () => assert.fail("pending setup minted a second key"),
+        ),
+        "current-key",
+      );
+    }
+  });
+
+  it("treats a disabled payer with a retained method as replacement eligible", () => {
+    const payer = { autopay_status: "disabled", stripe_payment_method_id: "saved-method" };
+    assert.equal(isPayerSetupReplacementEligible(payer), true);
+    assert.equal(payerSetupActionLabel(payer), "Replace payment method");
+  });
+
+  it("wires replacement intent into the first setup request and retains terminal recovery", () => {
+    const families = fs.readFileSync(path.join(root, "src/components/billing/billing-families-tab.tsx"), "utf8");
+    const setupAction = fs.readFileSync(path.join(root, "src/lib/billing-payer-setup-action.ts"), "utf8");
+    assert.match(setupAction, /if \(!runtime\.token \|\| !runtime\.claimAction\(action\)\) return null/);
+    assert.ok(
+      setupAction.indexOf("runtime.claimAction(action)")
+        < setupAction.indexOf("resolvePersistedPayerSetupRequestKey({"),
+    );
+    assert.match(setupAction, /clearBillingIdempotencyKeyAfterTerminalError/);
+    assert.match(families, /onAutopaySetup\(payer\)/);
+    assert.match(families, /payerSetupActionLabel\(payer\)/);
   });
 
   it("copies the payer link and never navigates the staff browser", async () => {
