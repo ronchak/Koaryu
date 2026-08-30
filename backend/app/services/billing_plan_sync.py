@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from typing import Any, Optional
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException, status
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import BillingPlanResponse
 from app.services.billing_invoice_projection import _stripe_id
@@ -98,6 +99,7 @@ class BillingPlanSyncWorkflow:
                     status_code=503,
                     detail="Completed plan sync result could not be verified.",
                 ) from exc
+            self._ensure_audit(context, projected, operation)
             return self._response(projected, account)
         if operation.get("state") == "projected":
             try:
@@ -110,8 +112,10 @@ class BillingPlanSyncWorkflow:
                     "plan_sync_projection_unverified",
                     exc,
                 )
-            operations.complete(context, operation, result_code="plan_sync_completed")
-            self._audit(context, projected)
+            operation = operations.complete(
+                context, operation, result_code="plan_sync_completed"
+            )
+            self._ensure_audit(context, projected, operation)
             return self._response(projected, account)
         if operation.get("state") == "provider_succeeded":
             try:
@@ -170,9 +174,16 @@ class BillingPlanSyncWorkflow:
                 operation,
                 "projected",
                 result_code="plan_sync_projected",
+                result_summary=(
+                    "plan_sync_mode:product_price_steps"
+                    if operation.get("result_code") == "provider_step_phase_completed"
+                    else operation.get("result_summary")
+                ),
             )
-            operations.complete(context, operation, result_code="plan_sync_completed")
-            self._audit(context, projected)
+            operation = operations.complete(
+                context, operation, result_code="plan_sync_completed"
+            )
+            self._ensure_audit(context, projected, operation)
             return self._response(projected, account)
 
         if recovery:
@@ -227,7 +238,7 @@ class BillingPlanSyncWorkflow:
                 operations,
                 generation,
             )
-        self._audit(context, projected)
+        self._ensure_audit(context, projected, operations.read(context)["operation"])
         return self._response(projected, account)
 
     def _run_product_update_only(
@@ -1344,18 +1355,130 @@ class BillingPlanSyncWorkflow:
             pass
         raise HTTPException(status_code=503, detail=PLAN_SYNC_AMBIGUOUS_DETAIL) from exc
 
-    def _audit(self, context: BillingProviderOperationContext, plan: dict[str, Any]) -> None:
-        self.owner._audit(
-            context.studio_id,
-            context.actor_id,
-            "billing.plan_synced",
-            plan["id"],
-            {
-                "operation_id": context.operation_id,
-                "stripe_product_id": plan.get("stripe_product_id"),
-                "stripe_price_id": plan.get("stripe_price_id"),
-            },
+    def _ensure_audit(
+        self,
+        context: BillingProviderOperationContext,
+        plan: dict[str, Any],
+        operation: dict[str, Any],
+    ) -> None:
+        plan_id = str(plan.get("id") or "")
+        product_id = str(plan.get("stripe_product_id") or "")
+        price_id = str(plan.get("stripe_price_id") or "")
+        summary = str(operation.get("result_summary") or "")
+        product_result = (
+            product_id
+            if summary.startswith("plan_sync_mode:product_update_only:")
+            else price_id
         )
+        metadata = {
+            "operation_id": context.operation_id,
+            "plan_id": plan_id,
+            "studio_id": context.studio_id,
+            "actor_id": context.actor_id,
+            "caller_request_key": context.caller_request_key,
+            "request_sha256": context.request_sha256,
+            "stripe_connected_account_id": context.stripe_connected_account_id,
+            "connect_account_generation": context.connect_account_generation,
+            "stripe_product_id": product_id,
+            "stripe_price_id": price_id,
+            "provider_result_id": product_result,
+        }
+        if (
+            not plan_id
+            or plan.get("studio_id") != context.studio_id
+            or plan.get("status") != "active"
+            or plan.get("stripe_account_id") != context.stripe_connected_account_id
+            or not product_id
+            or not price_id
+            or operation.get("id") != context.operation_id
+            or operation.get("studio_id") != context.studio_id
+            or operation.get("actor_id") != context.actor_id
+            or operation.get("operation_type") != PLAN_SYNC_OPERATION_TYPE
+            or operation.get("caller_request_key") != context.caller_request_key
+            or operation.get("request_sha256") != context.request_sha256
+            or operation.get("stripe_connected_account_id")
+            != context.stripe_connected_account_id
+            or operation.get("connect_account_generation")
+            != context.connect_account_generation
+            or operation.get("state") != "completed"
+            or operation.get("result_code") != "plan_sync_completed"
+            or operation.get("provider_object_id") != product_result
+            or not (
+                summary == "plan_sync_mode:product_price_steps"
+                or (
+                    summary.startswith("plan_sync_mode:product_update_only:")
+                    and self._product_update_target(operation) == product_id
+                )
+            )
+        ):
+            raise RuntimeError("plan_sync_audit_identity_mismatch")
+
+        audit_id = str(uuid5(
+            NAMESPACE_URL,
+            f"koaryu:billing.plan_synced:{context.operation_id}",
+        ))
+        existing = (
+            self.supabase.table("audit_logs")
+            .select("*")
+            .eq("id", audit_id)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            self._validate_audit_row(
+                existing.data[0], audit_id, context, plan_id, metadata
+            )
+            return
+        payload = {
+            "id": audit_id,
+            "studio_id": context.studio_id,
+            "actor_id": context.actor_id,
+            "action": "billing.plan_synced",
+            "entity_type": "billing",
+            "entity_id": plan_id,
+            "metadata": metadata,
+        }
+        try:
+            self.supabase.table("audit_logs").insert(payload).execute()
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) != "23505":
+                raise
+            winner = (
+                self.supabase.table("audit_logs")
+                .select("*")
+                .eq("id", audit_id)
+                .limit(1)
+                .execute()
+            )
+            if not winner.data:
+                raise RuntimeError("plan_sync_audit_conflict_unverified") from exc
+            try:
+                self._validate_audit_row(
+                    winner.data[0], audit_id, context, plan_id, metadata
+                )
+            except RuntimeError as invariant_exc:
+                raise RuntimeError(
+                    "plan_sync_audit_conflict_unverified"
+                ) from invariant_exc
+
+    @staticmethod
+    def _validate_audit_row(
+        audit: dict[str, Any],
+        audit_id: str,
+        context: BillingProviderOperationContext,
+        plan_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        if (
+            str(audit.get("id") or "") != audit_id
+            or audit.get("studio_id") != context.studio_id
+            or audit.get("actor_id") != context.actor_id
+            or audit.get("action") != "billing.plan_synced"
+            or audit.get("entity_type") != "billing"
+            or str(audit.get("entity_id") or "") != plan_id
+            or audit.get("metadata") != metadata
+        ):
+            raise RuntimeError("plan_sync_audit_row_mismatch")
 
     def _response(self, plan: dict[str, Any], account: dict[str, Any]) -> BillingPlanResponse:
         return self.owner._plan_response(plan, account)

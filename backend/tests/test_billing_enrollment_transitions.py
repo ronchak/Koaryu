@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pytest
 import stripe
 from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.billing_subscription_webhook_projection import (
     BillingSubscriptionWebhookProjector,
@@ -448,6 +449,105 @@ def test_whole_schedule_replays_without_second_provider_mutation():
     assert "stripe_quantity_sync_lock" not in facade.supabase.tables[
         "billing_subscriptions"
     ][0]["metadata"]
+
+
+def test_completed_schedule_replay_repairs_failed_audit_without_provider_io():
+    facade = _TransitionFacade(_tables())
+    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
+    manager = _manager(facade)
+    failed_once = False
+
+    def fail_first_audit(table_name, _payloads, _rows):
+        nonlocal failed_once
+        if table_name == "audit_logs" and not failed_once:
+            failed_once = True
+            raise RuntimeError("audit unavailable")
+
+    facade.supabase.before_insert = fail_first_audit
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        asyncio.run(manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "audit-repair", "staff_requested"
+        ))
+
+    provider_counts = (
+        len(_TransitionStripe.retrieve_calls),
+        len(_TransitionStripe.subscription_update_calls),
+        len(_TransitionStripe.subscription_cancel_calls),
+        len(_TransitionStripe.delete_item_calls),
+    )
+    replay = asyncio.run(manager.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "audit-repair", "staff_requested"
+    ))
+    second_replay = asyncio.run(manager.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "audit-repair", "staff_requested"
+    ))
+
+    assert replay["intent"]["state"] == second_replay["intent"]["state"] == "scheduled"
+    assert len(facade.supabase.tables["audit_logs"]) == 1
+    assert provider_counts == (
+        len(_TransitionStripe.retrieve_calls),
+        len(_TransitionStripe.subscription_update_calls),
+        len(_TransitionStripe.subscription_cancel_calls),
+        len(_TransitionStripe.delete_item_calls),
+    )
+    audit = facade.supabase.tables["audit_logs"][0]
+    operation = next(iter(facade.supabase.billing_provider_operations.values()))
+    assert audit["metadata"]["operation_id"] == operation["id"]
+    assert audit["metadata"]["request_sha256"] == operation["request_sha256"]
+    assert audit["metadata"]["result_code"] == "enrollment_transition_completed"
+
+
+def test_completed_schedule_replay_rejects_wrong_existing_audit_identity():
+    facade = _TransitionFacade(_tables())
+    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
+    manager = _manager(facade)
+    asyncio.run(manager.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "audit-mismatch", "staff_requested"
+    ))
+    facade.supabase.tables["audit_logs"][0]["studio_id"] = "studio_other"
+    provider_reads = len(_TransitionStripe.retrieve_calls)
+    provider_writes = len(_TransitionStripe.subscription_update_calls)
+
+    with pytest.raises(RuntimeError, match="audit_identity_mismatch"):
+        asyncio.run(manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "audit-mismatch", "staff_requested"
+        ))
+
+    assert len(_TransitionStripe.retrieve_calls) == provider_reads
+    assert len(_TransitionStripe.subscription_update_calls) == provider_writes
+
+
+def test_audit_unique_race_rereads_and_validates_exact_winner_once():
+    facade = _TransitionFacade(_tables())
+    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
+    manager = _manager(facade)
+    raced = False
+
+    def insert_race_winner(table_name, payloads, rows):
+        nonlocal raced
+        if table_name != "audit_logs" or raced:
+            return
+        raced = True
+        rows.append(copy.deepcopy(payloads[0]))
+        raise PostgrestAPIError({
+            "code": "23505",
+            "message": "duplicate key",
+            "details": "",
+            "hint": "",
+        })
+
+    facade.supabase.before_insert = insert_race_winner
+    result = asyncio.run(manager.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "audit-race", "staff_requested"
+    ))
+
+    assert result["intent"]["state"] == "scheduled"
+    assert len(facade.supabase.tables["audit_logs"]) == 1
+    audit_queries = [
+        query for query in facade.supabase.query_log
+        if query["table"] == "audit_logs"
+    ]
+    assert sum(query["insert"] is None for query in audit_queries) == 2
 
 
 def test_whole_schedule_cannot_insert_intent_while_activation_lock_is_held():

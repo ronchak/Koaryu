@@ -5,6 +5,7 @@ import hashlib
 
 import pytest
 from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import BillingPlanCreate, BillingPlanUpdate
 from app.services.billing_plan_sync import BillingPlanSyncWorkflow
@@ -24,6 +25,13 @@ class _PlanSupabase(BillingProviderOperationRpcMixin, RpcBackedSupabase):
         super().__init__(tables)
         self.initialize_billing_provider_operations()
         self.lose_product_success_response_once = False
+        self.unique_constraints["audit_logs"] = [("id",)]
+        self.unique_conflict_error_factory = lambda _table, _columns: PostgrestAPIError({
+            "code": "23505",
+            "message": "duplicate key value violates unique constraint",
+            "details": "",
+            "hint": "",
+        })
 
     def _rpc_transition_billing_provider_operation_step_v1(self, params):
         result = super()._rpc_transition_billing_provider_operation_step_v1(params)
@@ -285,6 +293,112 @@ class TestBillingPlanSync:
         )
         assert complete_phase["p_expected_parent_revision"] == 2
         assert complete_phase["p_lease_owner"] == register_call["p_lease_owner"]
+
+    def test_completed_replay_repairs_failed_audit_once_without_provider_access(self):
+        facade = _Facade(_tables())
+        fail = {"pending": True}
+
+        def fail_first_audit(table, _payloads, _rows):
+            if table == "audit_logs" and fail["pending"]:
+                fail["pending"] = False
+                raise RuntimeError("audit unavailable")
+
+        facade.supabase.before_insert = fail_first_audit
+        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+
+        with pytest.raises(RuntimeError, match="audit unavailable"):
+            asyncio.run(manager.sync_plan(
+                "plan_1", "studio_1", "actor_1", "audit-repair-key"
+            ))
+        parent = next(iter(facade.supabase.billing_provider_operations.values()))
+        assert parent["state"] == "completed"
+        provider_calls = (
+            len(_Stripe.created_products)
+            + len(_Stripe.updated_products)
+            + len(_Stripe.created_prices)
+            + len(_Stripe.retrieved_products)
+        )
+
+        repaired = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "audit-repair-key"
+        ))
+        repeated = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "audit-repair-key"
+        ))
+
+        assert repaired.id == repeated.id == "plan_1"
+        assert len(facade.supabase.tables["audit_logs"]) == 1
+        assert provider_calls == (
+            len(_Stripe.created_products)
+            + len(_Stripe.updated_products)
+            + len(_Stripe.created_prices)
+            + len(_Stripe.retrieved_products)
+        )
+        audit_reads = [
+            query for query in facade.supabase.query_log
+            if query["table"] == "audit_logs" and query["insert"] is None
+        ]
+        assert audit_reads
+        assert all(
+            query["filters"] == (("eq", "id", facade.supabase.tables["audit_logs"][0]["id"]),)
+            for query in audit_reads
+        )
+
+    @pytest.mark.parametrize(
+        "winner_change, expected_error",
+        (
+            (None, None),
+            ("missing", "plan_sync_audit_conflict_unverified"),
+            ("action", "plan_sync_audit_conflict_unverified"),
+            ("studio_id", "plan_sync_audit_conflict_unverified"),
+            ("metadata", "plan_sync_audit_conflict_unverified"),
+        ),
+    )
+    def test_audit_insert_race_requires_exact_winner(
+        self, winner_change, expected_error
+    ):
+        facade = _Facade(_tables())
+        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        first = {"pending": True}
+
+        def race_audit(table, payloads, rows):
+            if table != "audit_logs" or not first["pending"]:
+                return
+            first["pending"] = False
+            if winner_change != "missing":
+                winner = dict(payloads[0])
+                winner["metadata"] = dict(winner["metadata"])
+                if winner_change == "action":
+                    winner["action"] = "billing.plan_changed"
+                elif winner_change == "studio_id":
+                    winner["studio_id"] = "studio_other"
+                elif winner_change == "metadata":
+                    winner["metadata"]["connect_account_generation"] = 2
+                rows.append(winner)
+            raise PostgrestAPIError({
+                "code": "23505",
+                "message": "duplicate key value violates unique constraint",
+                "details": "",
+                "hint": "",
+            })
+
+        facade.supabase.before_insert = race_audit
+        if expected_error:
+            with pytest.raises(RuntimeError, match=expected_error):
+                asyncio.run(manager.sync_plan(
+                    "plan_1", "studio_1", "actor_1", "audit-race-key"
+                ))
+        else:
+            result = asyncio.run(manager.sync_plan(
+                "plan_1", "studio_1", "actor_1", "audit-race-key"
+            ))
+            assert result.id == "plan_1"
+            assert len(facade.supabase.tables["audit_logs"]) == 1
+        audit_reads = [
+            query for query in facade.supabase.query_log
+            if query["table"] == "audit_logs" and query["insert"] is None
+        ]
+        assert len(audit_reads) == 2
 
     def test_lost_product_success_response_resumes_at_price_step(self):
         facade = _Facade(_tables())

@@ -225,6 +225,19 @@ class BillingEnrollmentTransitionWorkflow:
             lease_owner=lease_owner,
         )
         intent = envelope["intent"]
+        if intent["state"] in {"completed", "revoked"} and intent.get(
+            "provider_operation_id"
+        ):
+            operation = envelope.get("operation")
+            if not isinstance(operation, dict):
+                operation = self._read_operation(intent, lease_owner=lease_owner)
+            self._audit_completed_transition(
+                intent,
+                operation,
+                actor_id=actor_id,
+                mutation="revoke",
+            )
+            return {**envelope, "operation": operation}
         enrollment_id = str(intent["enrollment_id"])
         snapshot = self._snapshot(enrollment_id, studio_id, immediate=False)
         self._verify_intent_snapshot(intent, snapshot)
@@ -406,7 +419,15 @@ class BillingEnrollmentTransitionWorkflow:
         mutation: str,
     ) -> dict[str, Any]:
         intent = envelope["intent"]
-        if intent["state"] in {"completed", "revoked"} or not intent.get("provider_operation_id"):
+        if intent["state"] in {"completed", "revoked", "scheduled"} and intent.get(
+            "provider_operation_id"
+        ):
+            operation = envelope.get("operation")
+            if not isinstance(operation, dict):
+                operation = self._read_operation(intent, lease_owner=str(uuid4()))
+            self._audit_completed_transition(intent, operation, actor_id=actor_id, mutation=mutation)
+            return {**envelope, "operation": operation}
+        if not intent.get("provider_operation_id"):
             return envelope
         if intent["state"] == "definitive_rejected":
             raise HTTPException(status_code=409, detail=TRANSITION_REJECTED_DETAIL)
@@ -535,6 +556,7 @@ class BillingEnrollmentTransitionWorkflow:
                     actor_id=context.actor_id,
                     provider_evidence_sha256=str(intent["provider_evidence_sha256"]),
                 )["intent"]
+            self._audit_completed_transition(intent, operation, actor_id=actor_id, mutation=mutation)
             return {**envelope, "intent": intent, "operation": operation}
         recovery_outcome = operation.get("recovery_outcome")
         if state == "recovery_authorized" and (
@@ -688,13 +710,7 @@ class BillingEnrollmentTransitionWorkflow:
                 actor_id=context.actor_id,
                 provider_evidence_sha256=proof,
             )["intent"]
-        action = {
-            "schedule": "billing.student_enrollment_cancel_scheduled",
-            "revoke": "billing.student_enrollment_cancel_schedule_revoked",
-            "immediate": "billing.student_enrollment_canceled_immediately",
-            "execute_due": "billing.student_enrollment_cancel_executed",
-        }[mutation]
-        self._audit_once(intent, studio_id=context.studio_id, actor_id=context.actor_id, action=action)
+        self._audit_completed_transition(intent, operation, actor_id=context.actor_id, mutation=mutation)
         return {**envelope, "intent": intent, "operation": operation}
 
     def _drive_item_schedule_provider_plan(
@@ -2531,10 +2547,106 @@ class BillingEnrollmentTransitionWorkflow:
             return False
         return left_value == right_value
 
-    def _audit_once(self, intent: dict[str, Any], *, studio_id: str, actor_id: str, action: str) -> None:
+    def _audit_completed_transition(
+        self,
+        intent: dict[str, Any],
+        operation: dict[str, Any],
+        *,
+        actor_id: str,
+        mutation: str,
+    ) -> None:
+        action = {
+            "schedule": "billing.student_enrollment_cancel_scheduled",
+            "revoke": "billing.student_enrollment_cancel_schedule_revoked",
+            "immediate": "billing.student_enrollment_canceled_immediately",
+            "execute_due": "billing.student_enrollment_cancel_executed",
+        }[mutation]
+        expected_kind = {
+            "schedule": "schedule_period_end",
+            "revoke": "revoke_scheduled",
+            "immediate": "immediate_cancel",
+            "execute_due": "execute_due",
+        }[mutation]
+        studio_id = str(intent.get("studio_id") or "")
+        operation_id = str(intent.get("provider_operation_id") or "")
+        enrollment_id = str(intent.get("enrollment_id") or "")
+        request_sha256 = str(intent.get("provider_request_sha256") or "")
+        provider_evidence_sha256 = str(intent.get("provider_evidence_sha256") or "")
+        expected_state = "scheduled" if mutation == "schedule" else "completed"
+        expected_provider_object_id = self._expected_provider_object_id(intent)
+        expected_intent_request_sha256 = (
+            stable_hash({
+                "version": 1,
+                "studio_id": studio_id,
+                "source_intent_id": str(intent.get("source_intent_id") or ""),
+                "reason_code": str(intent.get("reason_code") or ""),
+            })
+            if mutation == "revoke"
+            else self._request_hash(
+                studio_id,
+                enrollment_id,
+                "immediate_cancel" if mutation == "immediate" else "schedule_period_end",
+                str(intent.get("reason_code") or ""),
+            )
+        )
+        if (
+            not studio_id
+            or not enrollment_id
+            or intent.get("initiated_by") != actor_id
+            or intent.get("transition_kind") != expected_kind
+            or intent.get("state") != expected_state
+            or intent.get("request_sha256") != expected_intent_request_sha256
+            or not request_sha256
+            or not provider_evidence_sha256
+            or str(operation.get("id") or "") != operation_id
+            or operation.get("studio_id") != studio_id
+            or operation.get("actor_id") != actor_id
+            or operation.get("operation_type") != self._operation_type(expected_kind)
+            or operation.get("request_sha256") != request_sha256
+            or operation.get("stripe_connected_account_id") != intent.get("stripe_connected_account_id")
+            or operation.get("connect_account_generation") != intent.get("connect_account_generation")
+            or operation.get("state") != "completed"
+            or operation.get("result_code") != "enrollment_transition_completed"
+            or operation.get("provider_object_id") != expected_provider_object_id
+        ):
+            raise RuntimeError("enrollment_transition_audit_identity_mismatch")
+        metadata = {
+            "transition_intent_id": str(intent["id"]),
+            "operation_id": operation_id,
+            "transition_kind": expected_kind,
+            "request_sha256": request_sha256,
+            "stripe_connected_account_id": str(intent["stripe_connected_account_id"]),
+            "connect_account_generation": int(intent["connect_account_generation"]),
+            "provider_object_id": expected_provider_object_id,
+            "provider_evidence_sha256": provider_evidence_sha256,
+            "result_code": "enrollment_transition_completed",
+        }
+        self._audit_once(
+            intent,
+            studio_id=studio_id,
+            actor_id=actor_id,
+            action=action,
+            metadata=metadata,
+        )
+
+    def _audit_once(
+        self,
+        intent: dict[str, Any],
+        *,
+        studio_id: str,
+        actor_id: str,
+        action: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         audit_id = str(uuid5(NAMESPACE_URL, f"koaryu:{action}:{intent['id']}"))
-        existing = self.supabase.table("audit_logs").select("id").eq("id", audit_id).limit(1).execute()
+        expected_metadata = metadata or {"transition_intent_id": intent["id"]}
+        existing = self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
         if existing.data:
+            self._validate_transition_audit_row(
+                existing.data[0], audit_id=audit_id, studio_id=studio_id,
+                actor_id=actor_id, action=action,
+                enrollment_id=str(intent["enrollment_id"]), metadata=expected_metadata,
+            )
             return
         try:
             self.supabase.table("audit_logs").insert({
@@ -2544,8 +2656,41 @@ class BillingEnrollmentTransitionWorkflow:
                 "action": action,
                 "entity_type": "billing",
                 "entity_id": intent["enrollment_id"],
-                "metadata": {"transition_intent_id": intent["id"]},
+                "metadata": expected_metadata,
             }).execute()
         except PostgrestAPIError as exc:
             if getattr(exc, "code", None) != "23505":
                 raise
+            winner = self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
+            if not winner.data:
+                raise RuntimeError("enrollment_transition_audit_conflict_unverified") from exc
+            try:
+                self._validate_transition_audit_row(
+                    winner.data[0], audit_id=audit_id, studio_id=studio_id,
+                    actor_id=actor_id, action=action,
+                    enrollment_id=str(intent["enrollment_id"]), metadata=expected_metadata,
+                )
+            except RuntimeError as invariant_exc:
+                raise RuntimeError("enrollment_transition_audit_conflict_unverified") from invariant_exc
+
+    @staticmethod
+    def _validate_transition_audit_row(
+        audit: dict[str, Any],
+        *,
+        audit_id: str,
+        studio_id: str,
+        actor_id: str,
+        action: str,
+        enrollment_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        if (
+            str(audit.get("id") or "") != audit_id
+            or audit.get("studio_id") != studio_id
+            or audit.get("actor_id") != actor_id
+            or audit.get("action") != action
+            or audit.get("entity_type") != "billing"
+            or str(audit.get("entity_id") or "") != enrollment_id
+            or audit.get("metadata") != metadata
+        ):
+            raise RuntimeError("enrollment_transition_audit_identity_mismatch")
