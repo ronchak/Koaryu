@@ -206,10 +206,12 @@ payer_generation="$(printf '%s' "$payer_generation" | tr -d '\r\n')"
 
 "$psql_bin" "${psql_args[@]}" >/dev/null <<SQL
 INSERT INTO public.billing_invoices(
-  id,studio_id,payer_id,stripe_invoice_id,stripe_account_id,status
+  id,studio_id,payer_id,stripe_invoice_id,stripe_account_id,
+  stripe_customer_id,status,metadata
 ) VALUES (
   '$resource_invoice_id','$studio_id','$payer_id','in_resource_concurrency',
-  '$connect_account_id','open'
+  '$connect_account_id','cus_payer_identity_concurrency','open',
+  '{"connect_account_generation":2}'::JSONB
 );
 SQL
 

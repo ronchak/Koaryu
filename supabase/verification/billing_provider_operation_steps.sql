@@ -50,7 +50,7 @@ BEGIN
     -- The V28 restore harness retains the original V28 pin. This final-chain
     -- value is the V31-compatible repin after the resource-preservation owner changed.
     IF private.koaryu_release_provider_operation_steps_manifest_v28()
-       <> '0:61d0fbbd8ab29d9ea43dc0137f467daa86bb6da97b1be19222710c81aeadc318' THEN
+       <> '0:6389e87cdb8a5db79c540f38da4fdc71aa56ed10fa5d5533518f470bf52f7dfc' THEN
         RAISE EXCEPTION 'V28 step manifest drifted: %',
             private.koaryu_release_provider_operation_steps_manifest_v28();
     END IF;
@@ -376,21 +376,30 @@ BEGIN
         (v_studio, v_owner, 'admin'),
         (v_studio, v_reader, 'front_desk'),
         (v_other_studio, v_other_owner, 'admin');
+    INSERT INTO public.studio_payment_accounts(
+        studio_id,stripe_connected_account_id,metadata
+    ) VALUES(
+        v_studio,'acct_resourcecontract',
+        jsonb_build_object('connect_account_generation',1)
+    );
     INSERT INTO public.billing_payers(
         id, studio_id, display_name, stripe_account_id, stripe_customer_id,
         connect_account_generation
     ) VALUES
         (v_payer, v_studio, 'Provider resource payer',
-         'acct_resource_contract', 'cus_resource_contract', 1),
+         'acct_resourcecontract', 'cus_resource_contract', 1),
         (v_other_payer, v_studio, 'Other provider resource payer',
-         'acct_resource_contract', 'cus_resource_other_contract', 1);
+         'acct_resourcecontract', 'cus_resource_other_contract', 1);
     INSERT INTO public.billing_invoices(
-        id, studio_id, payer_id, stripe_invoice_id, stripe_account_id, status
+        id, studio_id, payer_id, stripe_invoice_id, stripe_account_id,
+        stripe_customer_id, status, metadata
     ) VALUES
         (v_invoice, v_studio, v_payer, 'in_resource_contract',
-         'acct_resource_contract', 'open'),
+         'acct_resourcecontract', 'cus_resource_contract', 'open',
+         jsonb_build_object('connect_account_generation',1)),
         (v_terminal_invoice, v_studio, v_payer, 'in_resource_terminal',
-         'acct_resource_contract', 'open');
+         'acct_resourcecontract', 'cus_resource_contract', 'open',
+         jsonb_build_object('connect_account_generation',1));
     INSERT INTO public.students(id, studio_id, legal_first_name, legal_last_name)
     VALUES
         (v_student, v_studio, 'Resource', 'Enrollment'),
@@ -406,7 +415,7 @@ BEGIN
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice', v_invoice,
         v_payer,
-        'resource-key-a', repeat('a', 64), 'acct_resource_contract', 1,
+        'resource-key-a', repeat('a', 64), 'acct_resourcecontract', 1,
         v_lease, 30
     );
     v_operation := (v_result->'operation'->>'id')::UUID;
@@ -419,7 +428,7 @@ BEGIN
     IF public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice', v_invoice,
         v_payer,
-        'resource-key-a', repeat('a', 64), 'acct_resource_contract', 1,
+        'resource-key-a', repeat('a', 64), 'acct_resourcecontract', 1,
         v_lease, 30
     )->>'outcome' <> 'replay' THEN
         RAISE EXCEPTION 'Exact provider resource alias did not replay.';
@@ -428,7 +437,7 @@ BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
             v_studio, v_reader, 'invoice.retry', 'invoice', v_invoice,
             v_payer,
-            'resource-key-a', repeat('a', 64), 'acct_resource_contract', 1,
+            'resource-key-a', repeat('a', 64), 'acct_resourcecontract', 1,
             gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'A different actor replayed the canonical resource key.';
@@ -440,7 +449,7 @@ BEGIN
             v_studio, v_reader, 'invoice.retry', 'invoice', v_invoice,
             v_payer,
             'resource-cross-actor-alias', repeat('a', 64),
-            'acct_resource_contract', 1, gen_random_uuid(), 30
+            'acct_resourcecontract', 1, gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'A different actor adopted the resource under a new key.';
     EXCEPTION WHEN insufficient_privilege THEN
@@ -449,7 +458,7 @@ BEGIN
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice', v_invoice,
         v_payer,
-        'resource-key-b', repeat('a', 64), 'acct_resource_contract', 1,
+        'resource-key-b', repeat('a', 64), 'acct_resourcecontract', 1,
         v_lease, 30
     );
     IF v_result->>'outcome' <> 'adopted'
@@ -464,7 +473,7 @@ BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
             v_studio, v_owner, 'invoice.retry', 'invoice', v_invoice,
             v_payer,
-            'resource-hash-conflict', repeat('b', 64), 'acct_resource_contract', 1,
+            'resource-hash-conflict', repeat('b', 64), 'acct_resourcecontract', 1,
             gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Resource adoption accepted a changed request hash.';
@@ -486,7 +495,7 @@ BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
             v_studio, v_owner, 'invoice.retry', 'invoice', v_invoice,
             v_payer,
-            'resource-generation-conflict', repeat('a', 64), 'acct_resource_contract', 2,
+            'resource-generation-conflict', repeat('a', 64), 'acct_resourcecontract', 2,
             gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Resource adoption accepted a changed generation.';
@@ -497,7 +506,7 @@ BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
             v_studio, v_owner, 'invoice.retry', 'invoice', v_invoice,
             v_other_payer,
-            'resource-payer-conflict', repeat('a', 64), 'acct_resource_contract', 1,
+            'resource-payer-conflict', repeat('a', 64), 'acct_resourcecontract', 1,
             gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Resource adoption accepted a changed payer.';
@@ -508,7 +517,7 @@ BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
             v_other_studio, v_other_owner, 'invoice.retry', 'invoice', v_invoice,
             v_payer,
-            'resource-studio-conflict', repeat('a', 64), 'acct_resource_contract', 1,
+            'resource-studio-conflict', repeat('a', 64), 'acct_resourcecontract', 1,
             gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Resource claim crossed studio identity.';
@@ -519,7 +528,7 @@ BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
             v_studio, v_owner, 'invoice.retry', 'invoice.%', v_invoice,
             v_payer,
-            'resource-wildcard', repeat('a', 64), 'acct_resource_contract', 1,
+            'resource-wildcard', repeat('a', 64), 'acct_resourcecontract', 1,
             gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Wildcard provider resource type was accepted.';
@@ -533,7 +542,7 @@ BEGIN
         p_actor_id => v_owner, p_operation_type => 'invoice.retry',
         p_caller_request_key => 'resource-key-a',
         p_request_sha256 => repeat('a', 64),
-        p_stripe_connected_account_id => 'acct_resource_contract',
+        p_stripe_connected_account_id => 'acct_resourcecontract',
         p_connect_account_generation => 1, p_lease_owner => v_lease,
         p_expected_revision => v_revision,
         p_to_state => 'provider_request_in_flight'
@@ -543,7 +552,7 @@ BEGIN
         p_actor_id => v_owner, p_operation_type => 'invoice.retry',
         p_caller_request_key => 'resource-key-a',
         p_request_sha256 => repeat('a', 64),
-        p_stripe_connected_account_id => 'acct_resource_contract',
+        p_stripe_connected_account_id => 'acct_resourcecontract',
         p_connect_account_generation => 1, p_lease_owner => v_lease,
         p_expected_revision => (v_result->'operation'->>'revision')::BIGINT,
         p_to_state => 'provider_succeeded',
@@ -554,7 +563,7 @@ BEGIN
         p_actor_id => v_owner, p_operation_type => 'invoice.retry',
         p_caller_request_key => 'resource-key-a',
         p_request_sha256 => repeat('a', 64),
-        p_stripe_connected_account_id => 'acct_resource_contract',
+        p_stripe_connected_account_id => 'acct_resourcecontract',
         p_connect_account_generation => 1, p_lease_owner => v_lease,
         p_expected_revision => (v_result->'operation'->>'revision')::BIGINT,
         p_to_state => 'projected',
@@ -562,14 +571,14 @@ BEGIN
     );
     v_result := public.complete_billing_provider_operation_v1(
         v_operation, v_studio, v_owner, 'invoice.retry', 'resource-key-a',
-        repeat('a', 64), 'acct_resource_contract', 1, v_lease,
+        repeat('a', 64), 'acct_resourcecontract', 1, v_lease,
         (v_result->'operation'->>'revision')::BIGINT,
         'invoice_retry_completed', NULL
     );
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice', v_invoice,
         v_payer,
-        'resource-completed-alias', repeat('a', 64), 'acct_resource_contract', 1,
+        'resource-completed-alias', repeat('a', 64), 'acct_resourcecontract', 1,
         gen_random_uuid(), 30
     );
     IF v_result->>'outcome' <> 'adopted'
@@ -582,7 +591,7 @@ BEGIN
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice', v_terminal_invoice,
         v_payer,
-        'resource-terminal-a', repeat('c', 64), 'acct_resource_contract', 1,
+        'resource-terminal-a', repeat('c', 64), 'acct_resourcecontract', 1,
         v_lease, 30
     );
     v_terminal_operation := (v_result->'operation'->>'id')::UUID;
@@ -591,7 +600,7 @@ BEGIN
         p_actor_id => v_owner, p_operation_type => 'invoice.retry',
         p_caller_request_key => 'resource-terminal-a',
         p_request_sha256 => repeat('c', 64),
-        p_stripe_connected_account_id => 'acct_resource_contract',
+        p_stripe_connected_account_id => 'acct_resourcecontract',
         p_connect_account_generation => 1, p_lease_owner => v_lease,
         p_expected_revision => (v_result->'operation'->>'revision')::BIGINT,
         p_to_state => 'definitive_rejected',
@@ -600,7 +609,7 @@ BEGIN
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice', v_terminal_invoice,
         v_payer,
-        'resource-terminal-b', repeat('c', 64), 'acct_resource_contract', 1,
+        'resource-terminal-b', repeat('c', 64), 'acct_resourcecontract', 1,
         gen_random_uuid(), 30
     );
     v_replacement_operation := (v_result->'operation'->>'id')::UUID;
@@ -612,7 +621,7 @@ BEGIN
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice', v_terminal_invoice,
         v_payer,
-        'resource-terminal-a', repeat('c', 64), 'acct_resource_contract', 1,
+        'resource-terminal-a', repeat('c', 64), 'acct_resourcecontract', 1,
         gen_random_uuid(), 30
     );
     IF v_result->>'outcome' <> 'replay'
@@ -633,7 +642,7 @@ BEGIN
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'enrollment.activate.autopay', 'enrollment',
         v_enrollment, v_payer,
-        'enrollment-resource-a', repeat('d', 64), 'acct_resource_contract', 1,
+        'enrollment-resource-a', repeat('d', 64), 'acct_resourcecontract', 1,
         v_lease, 30
     );
     v_enrollment_operation := (v_result->'operation'->>'id')::UUID;
@@ -644,7 +653,7 @@ BEGIN
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'enrollment.activate.autopay', 'enrollment',
         v_enrollment, v_payer,
-        'enrollment-resource-b', repeat('d', 64), 'acct_resource_contract', 1,
+        'enrollment-resource-b', repeat('d', 64), 'acct_resourcecontract', 1,
         v_lease, 30
     );
     v_enrollment_revision := (v_result->'operation'->>'revision')::BIGINT;
@@ -658,7 +667,7 @@ BEGIN
             v_studio, v_owner, 'enrollment.activate.invoice', 'enrollment',
             v_enrollment, v_payer,
             'enrollment-mode-conflict', repeat('d', 64),
-            'acct_resource_contract', 1, gen_random_uuid(), 30
+            'acct_resourcecontract', 1, gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'One enrollment admitted concurrent activation modes.';
     EXCEPTION WHEN unique_violation THEN
@@ -669,7 +678,7 @@ BEGIN
             v_studio, v_owner, 'enrollment.activate.autopay', 'enrollment',
             v_enrollment, v_payer,
             'enrollment-hash-conflict', repeat('e', 64),
-            'acct_resource_contract', 1, gen_random_uuid(), 30
+            'acct_resourcecontract', 1, gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Enrollment adoption accepted a changed request hash.';
     EXCEPTION WHEN unique_violation THEN
@@ -680,7 +689,7 @@ BEGIN
             v_studio, v_owner, 'enrollment.activate.autopay', 'enrollment',
             v_enrollment, v_other_payer,
             'enrollment-payer-conflict', repeat('d', 64),
-            'acct_resource_contract', 1, gen_random_uuid(), 30
+            'acct_resourcecontract', 1, gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Enrollment adoption accepted a changed payer.';
     EXCEPTION WHEN check_violation THEN
@@ -702,7 +711,7 @@ BEGIN
             v_studio, v_owner, 'enrollment.activate.autopay', 'enrollment',
             v_enrollment, v_payer,
             'enrollment-generation-conflict', repeat('d', 64),
-            'acct_resource_contract', 2, gen_random_uuid(), 30
+            'acct_resourcecontract', 2, gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Enrollment adoption accepted a changed generation.';
     EXCEPTION WHEN check_violation THEN
@@ -713,7 +722,7 @@ BEGIN
         v_studio, v_owner, 'enrollment.activate.invoice', 'enrollment',
         v_other_enrollment, v_payer,
         'other-enrollment-resource', repeat('f', 64),
-        'acct_resource_contract', 1, gen_random_uuid(), 30
+        'acct_resourcecontract', 1, gen_random_uuid(), 30
     );
     v_other_enrollment_operation := (v_result->'operation'->>'id')::UUID;
     IF v_result->>'outcome' <> 'claimed'
@@ -727,7 +736,7 @@ BEGIN
         p_operation_type => 'enrollment.activate.autopay',
         p_caller_request_key => 'enrollment-resource-a',
         p_request_sha256 => repeat('d', 64),
-        p_stripe_connected_account_id => 'acct_resource_contract',
+        p_stripe_connected_account_id => 'acct_resourcecontract',
         p_connect_account_generation => 1, p_lease_owner => v_lease,
         p_expected_revision => v_enrollment_revision,
         p_to_state => 'definitive_rejected',
@@ -737,7 +746,7 @@ BEGIN
         v_studio, v_owner, 'enrollment.activate.autopay', 'enrollment',
         v_enrollment, v_payer,
         'enrollment-resource-replacement', repeat('d', 64),
-        'acct_resource_contract', 1, gen_random_uuid(), 30
+        'acct_resourcecontract', 1, gen_random_uuid(), 30
     );
     IF v_result->>'outcome' <> 'replaced'
        OR (v_result->'operation'->>'id')::UUID = v_enrollment_operation

@@ -71,6 +71,10 @@ class BillingProviderOperationRpcMixin:
             2026, 8, 27, tzinfo=timezone.utc
         )
         self.billing_provider_operations = {}
+        self.billing_invoice_retry_hash_ledger_v33: dict[
+            tuple[str, str], dict[str, Any]
+        ] = {}
+        self.billing_invoice_retry_hash_capture_enabled_v33 = True
         self.release_billing_invoice_retry_preread_lease_calls: list[
             dict[str, Any]
         ] = []
@@ -127,6 +131,8 @@ class BillingProviderOperationRpcMixin:
                 "lease_expires_at": self._billing_provider_timestamp(
                     lease_expires_at
                 ),
+                "invoice_retry_preread_released_at": None,
+                "invoice_retry_preread_release_reason": None,
                 "provider_object_id": None,
                 "provider_secondary_object_id": None,
                 "provider_request_id": None,
@@ -213,7 +219,7 @@ class BillingProviderOperationRpcMixin:
             outcome = "continued"
         return {"outcome": outcome, "operation": dict(operation)}
 
-    def _rpc_release_billing_invoice_retry_preread_lease_v32(
+    def _rpc_release_billing_invoice_retry_preread_lease_v33(
         self,
         params: dict[str, Any],
     ) -> dict[str, Any]:
@@ -230,6 +236,14 @@ class BillingProviderOperationRpcMixin:
             "lease_owner": params["p_lease_owner"],
             "revision": params["p_expected_revision"],
         }
+        if params.get("p_release_reason") not in {
+            "provider_preread_failed",
+            "provider_preread_unavailable",
+            "local_consent_preread_unavailable",
+        }:
+            raise _retry_preread_release_rejected(
+                "billing_invoice_retry_preread_release_v33_reason_invalid"
+            )
         if any(operation.get(field) != value for field, value in expected.items()):
             raise _operation_conflict()
         lease_acquired_at = operation.get("lease_acquired_at")
@@ -312,6 +326,10 @@ class BillingProviderOperationRpcMixin:
             "lease_owner": None,
             "lease_acquired_at": None,
             "lease_expires_at": None,
+            "invoice_retry_preread_released_at": self._billing_provider_timestamp(
+                self.billing_provider_now
+            ),
+            "invoice_retry_preread_release_reason": params["p_release_reason"],
             "revision": operation["revision"] + 1,
         })
         return {"outcome": "released", "operation": dict(operation)}
@@ -320,13 +338,72 @@ class BillingProviderOperationRpcMixin:
         self,
         params: dict[str, Any],
     ) -> dict[str, Any]:
+        if params["p_operation_type"] == "invoice.retry":
+            return self._rpc_claim_billing_invoice_retry_v33(params)
         if params["p_operation_type"] in {
             "invoice.finalize",
-            "invoice.retry",
             "invoice.void",
         }:
             return self._rpc_claim_billing_invoice_mutation_v31(params)
         return self._rpc_claim_billing_provider_operation_resource_unserialized(params)
+
+    def _rpc_claim_billing_invoice_retry_v33(
+        self,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        base_hash = params["p_request_sha256"]
+        ledger_key = (params["p_studio_id"], params["p_caller_request_key"])
+        ledger = self.billing_invoice_retry_hash_ledger_v33.get(ledger_key)
+        if ledger is None:
+            effective_hash = base_hash
+            compatibility_outcome = "base_hash_exact"
+        else:
+            for field, param in (
+                ("resource_id", "p_resource_id"),
+                ("payer_id", "p_payer_id"),
+                ("actor_id", "p_actor_id"),
+                ("stripe_connected_account_id", "p_stripe_connected_account_id"),
+                ("connect_account_generation", "p_connect_account_generation"),
+            ):
+                if ledger.get(field) != params[param]:
+                    raise _operation_conflict()
+            effective_hash = ledger["effective_persisted_sha256"]
+            compatibility_outcome = (
+                "ledger_base_hash_exact"
+                if effective_hash == base_hash
+                else "ledger_legacy_hash_accepted"
+            )
+            ledger_operation = self._operation_by_id(ledger["operation_id"])
+            if ledger_operation.get("invoice_retry_preread_released_at") is not None:
+                ledger_operation.update({
+                    "invoice_retry_preread_released_at": None,
+                    "invoice_retry_preread_release_reason": None,
+                    "revision": ledger_operation["revision"] + 1,
+                })
+        effective_params = {**params, "p_request_sha256": effective_hash}
+        result = self._rpc_claim_billing_invoice_mutation_v31(effective_params)
+        if ledger is None:
+            operation = result["operation"]
+            self.billing_invoice_retry_hash_ledger_v33[ledger_key] = {
+                "operation_id": operation["id"],
+                "resource_id": params["p_resource_id"],
+                "payer_id": params["p_payer_id"],
+                "actor_id": params["p_actor_id"],
+                "stripe_connected_account_id": params[
+                    "p_stripe_connected_account_id"
+                ],
+                "connect_account_generation": params[
+                    "p_connect_account_generation"
+                ],
+                "base_request_sha256": base_hash,
+                "effective_persisted_sha256": effective_hash,
+            }
+        return {
+            **result,
+            "requested_base_sha256": base_hash,
+            "effective_persisted_sha256": effective_hash,
+            "compatibility_outcome": compatibility_outcome,
+        }
 
     def _rpc_claim_billing_invoice_mutation_v31(
         self,
@@ -437,7 +514,35 @@ class BillingProviderOperationRpcMixin:
                     continue
             elif operation_type != "invoice.retry":
                 continue
-            if self._operation_by_id(owner["operation_id"]).get("state") in {
+            operation = self._operation_by_id(owner["operation_id"])
+            if (
+                operation.get("invoice_retry_preread_released_at") is not None
+                and operation.get("state") in {
+                    "started", "provider_request_in_flight", "recovery_authorized"
+                }
+                and int(operation.get("provider_request_attempt_count") or 0) == 0
+                and all(
+                    operation.get(field) is None
+                    for field in (
+                        "provider_object_id", "provider_secondary_object_id",
+                        "provider_request_id", "result_code", "result_summary",
+                        "error_code", "error_summary", "reconciliation_reason_code",
+                        "recovery_proof_sha256", "recovery_outcome",
+                    )
+                )
+            ):
+                operation.update({
+                    "state": "definitive_rejected",
+                    "error_code": "invoice_retry_consent_changed_before_provider",
+                    "definitive_rejected_at": self._billing_provider_timestamp(
+                        self.billing_provider_now
+                    ),
+                    "invoice_retry_preread_released_at": None,
+                    "invoice_retry_preread_release_reason": None,
+                    "revision": operation["revision"] + 1,
+                })
+                continue
+            if operation.get("state") in {
                 "started",
                 "provider_request_in_flight",
                 "recovery_authorized",
@@ -815,7 +920,12 @@ class BillingProviderOperationRpcMixin:
             and row.get("connect_account_generation") == params["p_connect_account_generation"]
             and row.get("completed_at") and not row.get("revoked_at") and not row.get("superseded_at")), None)
         if consent is None:
-            raise AssertionError("active payer consent not found")
+            raise PostgrestAPIError({
+                "code": "P0002",
+                "message": "billing_payer_active_consent_not_found",
+                "details": "",
+                "hint": "",
+            })
         return {"outcome": "read", "consent": dict(consent)}
 
     def _rpc_authorize_billing_provider_operation_recovery_v1(

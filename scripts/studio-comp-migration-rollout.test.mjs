@@ -17,6 +17,18 @@ import {
   EXPECTED_V30_RESTORED_CATALOG_STATE,
   EXPECTED_V31_CATALOG_STATE,
   EXPECTED_V31_RESTORED_CATALOG_STATE,
+  EXPECTED_V33_CATALOG_STATE,
+  EXPECTED_V33_RESTORED_CATALOG_STATE,
+  EXPECTED_V33_COMPAT_V29_TRANSITION_MANIFEST,
+  EXPECTED_V33_COMPAT_V29_OPERATIONAL_CONTRACT,
+  EXPECTED_V33_COMPAT_V29_OPERATIONAL_MANIFEST,
+  EXPECTED_V33_COMPAT_V30_REPLAY_REPAIRS_MANIFEST,
+  EXPECTED_V33_COMPAT_V30_OPERATIONAL_CONTRACT,
+  EXPECTED_V33_PREDECESSOR_OPERATIONAL_MANIFEST,
+  EXPECTED_V33_EXPECTATION_STATE,
+  EXPECTED_V33_RESOURCE_OWNERSHIP_MANIFEST,
+  EXPECTED_V33_OPERATIONAL_CONTRACT_V31,
+  EXPECTED_V33_OPERATIONAL_MANIFEST_V12,
   EXPECTED_SCHEDULE_V25_CATALOG_STATE,
   EXPECTED_SCHEDULE_V25_OPERATIONAL_READINESS,
   EXPECTED_SCHEDULE_WINDOW_MANIFEST,
@@ -65,6 +77,8 @@ import {
   EXPECTED_COLUMN_ATTESTED_OPERATIONAL_READINESS,
   EXPECTED_OPERATIONAL_READINESS,
   EXPECTED_V30_OPERATIONAL_READINESS,
+  EXPECTED_V31_OPERATIONAL_READINESS,
+  EXPECTED_V32_OPERATIONAL_READINESS,
   EXPECTED_V29_OPERATIONAL_READINESS,
   EXPECTED_V26_OPERATIONAL_READINESS,
   EXPECTED_V27_OPERATIONAL_READINESS,
@@ -145,7 +159,7 @@ const candidateSha = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).trim();
-const validCatalogState = EXPECTED_V31_CATALOG_STATE;
+const validCatalogState = EXPECTED_V33_CATALOG_STATE;
 const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
   "trigger=1:fedcba9876543210fedcba9876543210:0;" +
@@ -153,22 +167,22 @@ const validFingerprint =
   `v27_expectation=${EXPECTED_V30_COMPAT_V27_EXPECTATION_STATE};` +
   `v28_expectation=${EXPECTED_V30_COMPAT_V28_EXPECTATION_STATE};` +
   `v29_expectation=${EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE};` +
-  `v29_transition=${EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST};` +
-  `v29_contract=${EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT};` +
-  `v29_manifest=${EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST};` +
+  `v29_transition=${EXPECTED_V33_COMPAT_V29_TRANSITION_MANIFEST};` +
+  `v29_contract=${EXPECTED_V33_COMPAT_V29_OPERATIONAL_CONTRACT};` +
+  `v29_manifest=${EXPECTED_V33_COMPAT_V29_OPERATIONAL_MANIFEST};` +
   `v30_expectation=${EXPECTED_V30_EXPECTATION_STATE};` +
-  `v30_replay=${EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST};` +
-  `v30_contract=${EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT};` +
+  `v30_replay=${EXPECTED_V33_COMPAT_V30_REPLAY_REPAIRS_MANIFEST};` +
+  `v30_contract=${EXPECTED_V33_COMPAT_V30_OPERATIONAL_CONTRACT};` +
   `v30_manifest=${EXPECTED_V30_OPERATIONAL_MANIFEST};` +
-  `v31_compat_v30_manifest=${EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST};` +
-  `v31_expectation=${EXPECTED_V31_EXPECTATION_STATE};` +
-  `v31_resource=${EXPECTED_V31_RESOURCE_OWNERSHIP_MANIFEST};` +
-  `v31_contract=${EXPECTED_V31_OPERATIONAL_CONTRACT};` +
-  `v31_manifest=${EXPECTED_V31_OPERATIONAL_MANIFEST};` +
+  `v31_compat_v30_manifest=${EXPECTED_V33_PREDECESSOR_OPERATIONAL_MANIFEST};` +
+  `v31_expectation=${EXPECTED_V33_EXPECTATION_STATE};` +
+  `v31_resource=${EXPECTED_V33_RESOURCE_OWNERSHIP_MANIFEST};` +
+  `v31_contract=${EXPECTED_V33_OPERATIONAL_CONTRACT_V31};` +
+  `v31_manifest=${EXPECTED_V33_OPERATIONAL_MANIFEST_V12};` +
   `critical_surface=${EXPECTED_CRITICAL_SURFACE_MANIFEST}`;
 const validRestoredFingerprint = validFingerprint.replace(
-  `catalog=${EXPECTED_V31_CATALOG_STATE}`,
-  `catalog=${EXPECTED_V31_RESTORED_CATALOG_STATE}`,
+  `catalog=${EXPECTED_V33_CATALOG_STATE}`,
+  `catalog=${EXPECTED_V33_RESTORED_CATALOG_STATE}`,
 );
 
 function historyColumn(column_name, data_type, udt_name, overrides = {}) {
@@ -246,17 +260,17 @@ function postSnapshot(packet, overrides = {}) {
     v27ExpectationState: EXPECTED_V30_COMPAT_V27_EXPECTATION_STATE,
     v28ExpectationState: EXPECTED_V30_COMPAT_V28_EXPECTATION_STATE,
     v29ExpectationState: EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE,
-    v29TransitionManifest: EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST,
-    v29OperationalContract: EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT,
-    v29OperationalManifest: EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST,
+    v29TransitionManifest: EXPECTED_V33_COMPAT_V29_TRANSITION_MANIFEST,
+    v29OperationalContract: EXPECTED_V33_COMPAT_V29_OPERATIONAL_CONTRACT,
+    v29OperationalManifest: EXPECTED_V33_COMPAT_V29_OPERATIONAL_MANIFEST,
     v30ExpectationState: EXPECTED_V30_EXPECTATION_STATE,
-    v30ReplayRepairsManifest: EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST,
-    v30OperationalContract: EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT,
-    v30OperationalManifest: EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST,
-    v31ExpectationState: EXPECTED_V31_EXPECTATION_STATE,
-    v31ResourceOwnershipManifest: EXPECTED_V31_RESOURCE_OWNERSHIP_MANIFEST,
-    v31OperationalContract: EXPECTED_V31_OPERATIONAL_CONTRACT,
-    v31OperationalManifest: EXPECTED_V31_OPERATIONAL_MANIFEST,
+    v30ReplayRepairsManifest: EXPECTED_V33_COMPAT_V30_REPLAY_REPAIRS_MANIFEST,
+    v30OperationalContract: EXPECTED_V33_COMPAT_V30_OPERATIONAL_CONTRACT,
+    v30OperationalManifest: EXPECTED_V33_PREDECESSOR_OPERATIONAL_MANIFEST,
+    v31ExpectationState: EXPECTED_V33_EXPECTATION_STATE,
+    v31ResourceOwnershipManifest: EXPECTED_V33_RESOURCE_OWNERSHIP_MANIFEST,
+    v31OperationalContract: EXPECTED_V33_OPERATIONAL_CONTRACT_V31,
+    v31OperationalManifest: EXPECTED_V33_OPERATIONAL_MANIFEST_V12,
     operationalReadiness: EXPECTED_OPERATIONAL_READINESS,
     ...overrides,
   };
@@ -736,7 +750,7 @@ describe("studio-comp migration rollout guard", () => {
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|127\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|128\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -773,7 +787,7 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-127 packet through schedule V25 and the Payments predecessors", () => {
+  it("derives an exact 100-to-128 packet through schedule V25 and the Payments predecessors", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
     assert.equal(ROLLOUT.scheduleV25MigrationCount, 119);
@@ -791,7 +805,7 @@ describe("studio-comp migration rollout guard", () => {
       ],
     );
     assert.equal(ROLLOUT.v26MigrationCount, 121);
-    assert.equal(packet.migrationCount, 127);
+    assert.equal(packet.migrationCount, 128);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
@@ -830,7 +844,7 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.match(packet.sourceManifestSha256, /^[0-9a-f]{64}$/);
     assert.equal(packet.integrationComplete, true);
-    assert.equal(packet.pendingMigrations.length, 27);
+    assert.equal(packet.pendingMigrations.length, 28);
     assert.deepEqual(
       packet.pendingMigrations.map((filename) => filename.slice(0, 14)),
       ROLLOUT.releasePendingVersions,
@@ -1160,7 +1174,7 @@ describe("studio-comp migration rollout guard", () => {
     });
     assert.deepEqual(
       classifyStateSnapshot(
-        postSnapshot(packet, { catalogState: EXPECTED_V31_RESTORED_CATALOG_STATE }),
+        postSnapshot(packet, { catalogState: EXPECTED_V33_RESTORED_CATALOG_STATE }),
         packet,
         validFingerprint,
       ),
@@ -1553,6 +1567,23 @@ describe("studio-comp migration rollout guard", () => {
 
   it("validates the exact V29 and V30 predecessors and V31 post-state independently", () => {
     const packet = candidatePacket();
+    assert.deepEqual(classifyStateSnapshot({
+      historyColumns:minimalHistoryColumns,history:packet.v31History,
+      targetHistory:packet.v31TargetHistory,objectCounts:"3:1",
+      operationalReadiness:EXPECTED_V31_OPERATIONAL_READINESS,
+    },packet),{state:"v31",providerFingerprint:null});
+    assert.deepEqual(classifyStateSnapshot({
+      historyColumns:minimalHistoryColumns,history:packet.v32History,
+      targetHistory:packet.v32TargetHistory,objectCounts:"3:1",
+      operationalReadiness:EXPECTED_V32_OPERATIONAL_READINESS,
+    },packet),{state:"v32",providerFingerprint:null});
+    assert.deepEqual(packetForAcceptedState(packet,"v31").pendingMigrations,[
+      "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+      "20260830082610_invoice_retry_release_compatibility_v33.sql",
+    ]);
+    assert.deepEqual(packetForAcceptedState(packet,"v32").pendingMigrations,[
+      "20260830082610_invoice_retry_release_compatibility_v33.sql",
+    ]);
     assert.deepEqual(classifyStateSnapshot(v29Snapshot(packet), packet), {
       state: "v29",
       providerFingerprint: null,
@@ -1571,17 +1602,17 @@ describe("studio-comp migration rollout guard", () => {
       ["v27_expectation_state", EXPECTED_V30_COMPAT_V27_EXPECTATION_STATE],
       ["v28_expectation_state", EXPECTED_V30_COMPAT_V28_EXPECTATION_STATE],
       ["v29_expectation_state", EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE],
-      ["v29_transition_manifest", EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST],
-      ["v29_operational_contract", EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT],
-      ["v29_operational_manifest", EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST],
+      ["v29_transition_manifest", EXPECTED_V33_COMPAT_V29_TRANSITION_MANIFEST],
+      ["v29_operational_contract", EXPECTED_V33_COMPAT_V29_OPERATIONAL_CONTRACT],
+      ["v29_operational_manifest", EXPECTED_V33_COMPAT_V29_OPERATIONAL_MANIFEST],
       ["v30_expectation_state", EXPECTED_V30_EXPECTATION_STATE],
-      ["v30_replay_repairs_manifest", EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST],
-      ["v30_operational_contract", EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT],
-      ["v30_operational_manifest", EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST],
-      ["v31_expectation_state", EXPECTED_V31_EXPECTATION_STATE],
-      ["v31_resource_ownership_manifest", EXPECTED_V31_RESOURCE_OWNERSHIP_MANIFEST],
-      ["v31_operational_contract", EXPECTED_V31_OPERATIONAL_CONTRACT],
-      ["v31_operational_manifest", EXPECTED_V31_OPERATIONAL_MANIFEST],
+      ["v30_replay_repairs_manifest", EXPECTED_V33_COMPAT_V30_REPLAY_REPAIRS_MANIFEST],
+      ["v30_operational_contract", EXPECTED_V33_COMPAT_V30_OPERATIONAL_CONTRACT],
+      ["v30_operational_manifest", EXPECTED_V33_PREDECESSOR_OPERATIONAL_MANIFEST],
+      ["v31_expectation_state", EXPECTED_V33_EXPECTATION_STATE],
+      ["v31_resource_ownership_manifest", EXPECTED_V33_RESOURCE_OWNERSHIP_MANIFEST],
+      ["v31_operational_contract", EXPECTED_V33_OPERATIONAL_CONTRACT_V31],
+      ["v31_operational_manifest", EXPECTED_V33_OPERATIONAL_MANIFEST_V12],
       ["operational_readiness", EXPECTED_OPERATIONAL_READINESS],
     ]);
     const postHeaders = [];
@@ -1599,7 +1630,7 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.deepEqual(post, { state: "post", providerFingerprint: validFingerprint });
     assert.equal(postHeaders.at(-1), "operational_readiness");
-    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v13/);
+    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v14/);
 
     const v30Values = new Map([
       ["history_columns", extendedHistoryColumns],
@@ -2357,12 +2388,12 @@ describe("studio-comp migration rollout guard", () => {
     assert.match(packet.v26TargetHistory, /20260826030249:payments_adjustment_convergence$/);
   });
 
-  it("refuses to certify post-state before the exact 127-migration integration", () => {
+  it("refuses to certify post-state before the exact 128-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 127-migration sequence/,
+      /exact final 128-migration sequence/,
     );
   });
 
@@ -2412,6 +2443,7 @@ describe("studio-comp migration rollout guard", () => {
         "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
         "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
         "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+      "20260830082610_invoice_retry_release_compatibility_v33.sql",
       ],
     );
     assert.deepEqual(
@@ -2439,6 +2471,7 @@ describe("studio-comp migration rollout guard", () => {
         "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
         "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
         "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+      "20260830082610_invoice_retry_release_compatibility_v33.sql",
       ],
     );
     assert.deepEqual(
@@ -2461,6 +2494,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ]);
     const canonicalV23Remaining = packetForAcceptedState(packet, "canonical-v23");
     assert.deepEqual(canonicalV23Remaining.pendingMigrations, [
@@ -2475,6 +2509,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ]);
     assert.notEqual(
       restoredV22Remaining.sourceManifestSha256,
@@ -2504,6 +2539,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ]);
     const scheduleV25Remaining = packetForAcceptedState(packet, "schedule-v25");
     assert.deepEqual(scheduleV25Remaining.pendingMigrations, [
@@ -2515,6 +2551,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ]);
     const v25Remaining = packetForAcceptedState(packet, "v25");
     assert.deepEqual(v25Remaining.pendingMigrations, [
@@ -2525,6 +2562,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ]);
     const v26Remaining = packetForAcceptedState(packet, "v26");
     assert.deepEqual(v26Remaining.pendingMigrations, [
@@ -2534,6 +2572,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ]);
     const v27Remaining = packetForAcceptedState(packet, "v27");
     assert.deepEqual(v27Remaining.pendingMigrations, [
@@ -2542,6 +2581,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ]);
     const v28Remaining = packetForAcceptedState(packet, "v28");
     assert.deepEqual(v28Remaining.pendingMigrations, [
@@ -2549,22 +2589,25 @@ describe("studio-comp migration rollout guard", () => {
       "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ]);
     const v29Remaining = packetForAcceptedState(packet, "v29");
     assert.deepEqual(v29Remaining.pendingMigrations, [
       "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ]);
     const v30Remaining = packetForAcceptedState(packet, "v30");
     assert.deepEqual(v30Remaining.pendingMigrations, [
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ]);
     assert.equal(packetForAcceptedState(packet, "pre"), packet);
     assert.throws(
       () => packetForAcceptedState(packet, "post"),
-        /pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, or v30 state/,
+        /pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, v31, or v32 state/,
     );
   });
 
@@ -2669,6 +2712,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
       "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+    "20260830082610_invoice_retry_release_compatibility_v33.sql",
     ].join("\n");
     assert.deepEqual(
       assertExactPendingMigrations(exactStaffIdentity, staffIdentityPacket),
@@ -2898,13 +2942,14 @@ describe("studio-comp migration rollout guard", () => {
         "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
         "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
         "20260830065627_release_invoice_retry_preread_lease_v32.sql",
+      "20260830082610_invoice_retry_release_compatibility_v33.sql",
       ],
     );
     assert.notEqual(staffIdentityPacket.sourceManifestSha256, packet.sourceManifestSha256);
     assert.equal(
       buildProductionConfirmationPhrase(staffIdentityPacket),
       [
-        "APPLY 17 MIGRATIONS FROM",
+        "APPLY 18 MIGRATIONS FROM",
         candidateSha,
         "MANIFEST",
         staffIdentityPacket.sourceManifestSha256,

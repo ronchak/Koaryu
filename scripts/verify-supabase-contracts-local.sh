@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 127 ]]; then
-  echo "ERROR: Expected the canonical 127-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 128 ]]; then
+  echo "ERROR: Expected the canonical 128-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 45 ]]; then
-  echo "ERROR: Expected the canonical 45-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 46 ]]; then
+  echo "ERROR: Expected the canonical 46-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
@@ -662,6 +662,21 @@ SQL
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
       echo "[restored V31] PASS V30 dump/restore then migration 126"
+      echo "[restored V33] RUN V30 dump/restore then migrations 126-128"
+      restored_v33_output="$(run_interruptible bash <(
+        awk '
+          /^echo "PASS: V30 dump\/restore predecessor plus migration 126/ {
+            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830065627_release_invoice_retry_preread_lease_v32.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830065627'\'','\''release_invoice_retry_preread_lease_v32'\'');\" >/dev/null"
+            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830082610_invoice_retry_release_compatibility_v33.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830082610'\'','\''invoice_retry_release_compatibility_v33'\'');\" >/dev/null"
+            print "catalog_sql=\"$(cd \"$repository_root\" && node --input-type=module --eval \"import { CATALOG_STATE_SQL } from '\''./scripts/studio-comp-migration-rollout.mjs'\''; process.stdout.write(CATALOG_STATE_SQL);\")\""
+            print "echo RESTORED_V33_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
+          }
+          { print }
+        ' "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh"
+      ) "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+        "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR")"
+      printf '%s\n' "$restored_v33_output"
+      echo "[restored V33] PASS V30 dump/restore then migrations 126-128"
     else
       status=$?
       echo "[restored V31] FAIL V30 dump/restore then migration 126 (exit $status)" >&2
@@ -845,6 +860,100 @@ SQL
   fi
 done
 
+echo "[V33 hash parity] RUN Python stable_hash versus SQL canonical bytes"
+v33_sql_hashes="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.billing_invoice_retry_base_hash_v33(
+ '00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002',
+ 'in_v33','acct_v33',1)
+UNION ALL
+SELECT private.billing_invoice_retry_base_hash_v33(
+ '10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000002',
+ E'in_escaped\\\\quote\"',E'acct_escaped\\\\quote\"',27);")"
+V33_SQL_HASHES="$v33_sql_hashes" python3 - <<'PY'
+import hashlib,json,os
+vectors=[
+ {"connect_account_generation":1,"invoice_id":"00000000-0000-4000-8000-000000000002","operation_type":"invoice.retry","stripe_connected_account_id":"acct_v33","stripe_invoice_id":"in_v33","studio_id":"00000000-0000-4000-8000-000000000001"},
+ {"connect_account_generation":27,"invoice_id":"10000000-0000-4000-8000-000000000002","operation_type":"invoice.retry","stripe_connected_account_id":"acct_escaped\\quote\"","stripe_invoice_id":"in_escaped\\quote\"","studio_id":"10000000-0000-4000-8000-000000000001"},
+]
+expected=[hashlib.sha256(json.dumps(v,sort_keys=True,separators=(",",":")).encode()).hexdigest() for v in vectors]
+raw_hashes=os.getenv("V33_SQL_HASHES")
+if not raw_hashes:
+    raise SystemExit("V33 SQL hash output is missing or empty")
+actual=raw_hashes.splitlines()
+if actual!=expected: raise SystemExit(f"V33 SQL/Python hash mismatch: {actual!r} != {expected!r}")
+PY
+echo "[V33 hash parity] PASS Python stable_hash versus SQL canonical bytes"
+
+echo "[V33 concurrency] RUN reclaim-first, consent-first, and consent rollback"
+v33_base_hash="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.billing_invoice_retry_base_hash_v33(
+ '33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000004',
+ 'in_v33_concurrency','acct_v33concurrency',1);")"
+$PSQL "${psql_args[@]}" --quiet --command="
+INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at) VALUES
+ ('33000000-0000-4000-8000-000000000001','authenticated','authenticated','v33-concurrency-a@example.invalid','{}','{}',now(),now()),
+ ('33000000-0000-4000-8000-000000000011','authenticated','authenticated','v33-concurrency-b@example.invalid','{}','{}',now(),now());
+INSERT INTO public.studios(id,name,slug,owner_id) VALUES
+ ('33000000-0000-4000-8000-000000000002','V33 concurrency','v33-concurrency','33000000-0000-4000-8000-000000000001');
+INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES
+ ('33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000001','admin'),
+ ('33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000011','admin');
+INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,metadata) VALUES
+ ('33000000-0000-4000-8000-000000000002','acct_v33concurrency','{\"connect_account_generation\":1}');
+INSERT INTO public.billing_payers(id,studio_id,display_name,stripe_account_id,stripe_customer_id,connect_account_generation)
+ VALUES('33000000-0000-4000-8000-000000000003','33000000-0000-4000-8000-000000000002','V33 payer','acct_v33concurrency','cus_v33_concurrency',1);
+INSERT INTO public.billing_invoices(id,studio_id,payer_id,invoice_type,status,amount_due_cents,amount_paid_cents,amount_remaining_cents,currency,stripe_invoice_id,stripe_account_id,stripe_customer_id,collection_method,external,metadata)
+ VALUES('33000000-0000-4000-8000-000000000004','33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000003','manual','open',1000,0,1000,'usd','in_v33_concurrency','acct_v33concurrency','cus_v33_concurrency','send_invoice',false,'{\"connect_account_generation\":1}');
+SELECT public.claim_billing_provider_operation_resource_v30(
+ '33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000001','invoice.retry','invoice',
+ '33000000-0000-4000-8000-000000000004','33000000-0000-4000-8000-000000000003','v33-concurrency',
+ '$v33_base_hash','acct_v33concurrency',1,'33000000-0000-4000-8000-000000000005',300);"
+v33_operation="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="SELECT operation_id FROM private.billing_invoice_retry_hash_ledger_v33 WHERE studio_id='33000000-0000-4000-8000-000000000002' AND caller_request_key='v33-concurrency';")"
+v33_revision="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="SELECT revision FROM public.billing_provider_operations WHERE id='$v33_operation';")"
+$PSQL "${psql_args[@]}" --quiet --command="SELECT public.release_billing_invoice_retry_preread_lease_v33(
+ '$v33_operation','33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000001','v33-concurrency','$v33_base_hash','acct_v33concurrency',1,
+ '33000000-0000-4000-8000-000000000005',$v33_revision,'provider_preread_failed');"
+reclaim_log="$TEMP_DIR/v33-reclaim-first.log"
+($PSQL "${psql_args[@]}" --quiet --command="BEGIN; SELECT public.claim_billing_provider_operation_resource_v1(
+ '33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000001','invoice.retry','invoice',
+ '33000000-0000-4000-8000-000000000004','33000000-0000-4000-8000-000000000003','v33-concurrency','$v33_base_hash','acct_v33concurrency',1,
+ '33000000-0000-4000-8000-000000000006',300); SELECT pg_sleep(2); COMMIT;" >"$reclaim_log" 2>&1) &
+reclaim_pid=$!
+sleep 0.3
+if $PSQL "${psql_args[@]}" --quiet --command="UPDATE public.billing_payers SET autopay_status='disabled' WHERE id='33000000-0000-4000-8000-000000000003';" >/dev/null 2>&1; then
+  echo "Reclaim-first V33 consent mutation unexpectedly committed." >&2; exit 1
+fi
+wait "$reclaim_pid"
+v33_revision="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="SELECT revision FROM public.billing_provider_operations WHERE id='$v33_operation';")"
+$PSQL "${psql_args[@]}" --quiet --command="SELECT public.release_billing_invoice_retry_preread_lease_v33(
+ '$v33_operation','33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000001','v33-concurrency','$v33_base_hash','acct_v33concurrency',1,
+ '33000000-0000-4000-8000-000000000006',$v33_revision,'provider_preread_failed');"
+if $PSQL "${psql_args[@]}" --quiet --command="BEGIN; UPDATE public.billing_payers SET autopay_status='pending' WHERE id='33000000-0000-4000-8000-000000000003'; SELECT 1/0; COMMIT;" >/dev/null 2>&1; then
+  echo "Forced V33 consent rollback unexpectedly committed." >&2; exit 1
+fi
+if [[ "$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="SELECT state||':'||(invoice_retry_preread_released_at IS NOT NULL)::TEXT FROM public.billing_provider_operations WHERE id='$v33_operation';")" != "started:true" ]]; then
+  echo "Failed V33 consent transaction did not restore the release marker." >&2; exit 1
+fi
+consent_log="$TEMP_DIR/v33-consent-first.log"
+($PSQL "${psql_args[@]}" --quiet --command="BEGIN; UPDATE public.billing_payers SET autopay_status='disabled' WHERE id='33000000-0000-4000-8000-000000000003'; SELECT pg_sleep(2); COMMIT;" >"$consent_log" 2>&1) &
+consent_pid=$!
+sleep 0.3
+$PSQL "${psql_args[@]}" --quiet --command="SELECT public.claim_billing_invoice_closeout_operation_v1(
+ '33000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000011','invoice.void','invoice_void',
+ '33000000-0000-4000-8000-000000000004','33000000-0000-4000-8000-000000000003','v33-void-after-consent',repeat('f',64),
+ 'acct_v33concurrency',1,'33000000-0000-4000-8000-000000000007',30);"
+wait "$consent_pid"
+if [[ "$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="SELECT state||':'||error_code FROM public.billing_provider_operations WHERE id='$v33_operation';")" != "definitive_rejected:invoice_retry_consent_changed_before_provider" ]]; then
+  echo "Consent-first V33 terminalization was not durable." >&2; exit 1
+fi
+$PSQL "${psql_args[@]}" --quiet --command="
+ALTER TABLE public.staff_roles DISABLE TRIGGER prevent_staff_admin_orphan_delete_trigger;
+DELETE FROM public.studios WHERE id='33000000-0000-4000-8000-000000000002';
+DELETE FROM auth.users WHERE id IN(
+ '33000000-0000-4000-8000-000000000001','33000000-0000-4000-8000-000000000011');
+ALTER TABLE public.staff_roles ENABLE TRIGGER prevent_staff_admin_orphan_delete_trigger;"
+echo "[V33 concurrency] PASS reclaim-first, consent-first, and consent rollback"
+
 echo "[operational manifest] RUN database-observable semantic and ACL signal"
 operational_manifest="$(
   "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
@@ -927,6 +1036,7 @@ if (
   echo "[V25 readiness] PASS exact final migration and manifest signal"
 else
   status=$?
+  echo "[V25 readiness] actual=$operational_readiness" >&2
   echo "[V25 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
   exit "$status"
 fi

@@ -304,9 +304,11 @@ class BillingProviderOperationCoordinator:
         self,
         context: BillingProviderOperationContext,
         operation: dict[str, Any],
+        *,
+        release_reason: str,
     ) -> dict[str, Any]:
         return self._rpc(
-            "release_billing_invoice_retry_preread_lease_v32",
+            "release_billing_invoice_retry_preread_lease_v33",
             {
                 "p_operation_id": context.operation_id,
                 "p_studio_id": context.studio_id,
@@ -317,6 +319,7 @@ class BillingProviderOperationCoordinator:
                 "p_connect_account_generation": context.connect_account_generation,
                 "p_lease_owner": context.lease_owner,
                 "p_expected_revision": int(operation["revision"]),
+                "p_release_reason": release_reason,
             },
             expected_key="operation",
         )

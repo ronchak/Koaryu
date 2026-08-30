@@ -395,7 +395,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(parent["state"], "completed")
         self.assertEqual(parent["provider_request_attempt_count"], 1)
         self.assertEqual(parent["provider_object_id"], "in_1")
-    def test_retry_invoice_payment_adopts_completed_parent_for_a_new_client_key(self):
+    def test_retry_invoice_payment_rejects_new_key_for_completed_parent(self):
         service = self.service()
         service.supabase = _FakeSupabase(self._retry_operation_tables())
 
@@ -403,20 +403,19 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             asyncio.run(service.retry_invoice_payment(
                 "invoice_1", "studio_1", "actor_1", "client-operation-1"
             ))
+            with self.assertRaises(HTTPException) as changed_key:
+                asyncio.run(service.retry_invoice_payment(
+                    "invoice_1", "studio_1", "actor_1", "client-operation-2"
+                ))
             replay = asyncio.run(service.retry_invoice_payment(
-                "invoice_1", "studio_1", "actor_1", "client-operation-2"
+                "invoice_1", "studio_1", "actor_1", "client-operation-1"
             ))
 
+        self.assertEqual(changed_key.exception.status_code, 503)
         self.assertEqual(replay.status, "paid")
         self.assertEqual(len(_FakeStripeService.pay_invoice_calls), 1)
         canonical = self._retry_parent(service, "client-operation-1")
         self.assertEqual(canonical["state"], "completed")
-        self.assertEqual(
-            service.supabase.billing_provider_operation_aliases[
-                ("studio_1", "invoice.retry", "client-operation-2")
-            ],
-            canonical["id"],
-        )
     def test_retry_invoice_payment_replay_does_not_duplicate_audit(self):
         service = self.service()
         service.supabase = _FakeSupabase(self._retry_operation_tables())
@@ -483,21 +482,22 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                     "invoice_1", "studio_1", "actor_1", "blocked-storage-key-1"
                 ))
             _FakeStripeService.pay_invoice_error_after_call = None
+            with self.assertRaises(HTTPException) as changed_key:
+                asyncio.run(service.retry_invoice_payment(
+                    "invoice_1", "studio_1", "actor_1", "blocked-storage-key-2"
+                ))
             paid = asyncio.run(service.retry_invoice_payment(
-                "invoice_1", "studio_1", "actor_1", "blocked-storage-key-2"
+                "invoice_1", "studio_1", "actor_1", "blocked-storage-key-1"
             ))
             replay = asyncio.run(service.retry_invoice_payment(
-                "invoice_1", "studio_1", "actor_1", "blocked-storage-key-2"
+                "invoice_1", "studio_1", "actor_1", "blocked-storage-key-1"
             ))
 
         self.assertEqual(ambiguous.exception.status_code, 503)
+        self.assertEqual(changed_key.exception.status_code, 503)
         self.assertEqual(paid.status, replay.status, "paid")
         self.assertEqual(len(_FakeStripeService.pay_invoice_calls), 1)
         canonical = self._retry_parent(service, "blocked-storage-key-1")
-        alias_operation_id = service.supabase.billing_provider_operation_aliases[
-            ("studio_1", "invoice.retry", "blocked-storage-key-2")
-        ]
-        self.assertEqual(alias_operation_id, canonical["id"])
         self.assertEqual(canonical["state"], "completed")
         self.assertEqual(len(service.supabase.billing_provider_operation_resources), 1)
     def test_aged_ambiguous_operation_never_auto_expires_or_pays_again(self):
@@ -577,8 +577,8 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                     "invoice_1", "studio_1", "actor_1", "new-key-after-reconcile"
                 ))
 
-        self.assertEqual(expired.exception.status_code, 409)
-        self.assertEqual(still_blocked.exception.status_code, 409)
+        self.assertEqual(expired.exception.status_code, 503)
+        self.assertEqual(still_blocked.exception.status_code, 503)
         self.assertEqual(_FakeStripeService.pay_invoice_calls, [])
         canonical = self._retry_parent(service, "expired-key")
         self.assertEqual(canonical["state"], "reconciliation_required")
@@ -641,7 +641,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                     asyncio.run(service.retry_invoice_payment(
                         "invoice_1", "studio_1", "actor_1", contender
                     ))
-                self.assertEqual(in_flight.exception.status_code, 409)
+                self.assertEqual(in_flight.exception.status_code, 503)
 
         self.assertEqual(_FakeStripeService.pay_invoice_calls, [])
         self.assertEqual(canonical["state"], "provider_request_in_flight")
@@ -754,7 +754,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ))
 
         self.assertEqual(first.exception.status_code, 503)
-        self.assertEqual(adopted.exception.status_code, 409)
+        self.assertEqual(adopted.exception.status_code, 503)
         self.assertEqual(len(_FakeStripeService.pay_invoice_calls), 1)
         canonical = self._retry_parent(service, "processing-key")
         self.assertEqual(canonical["state"], "reconciliation_required")

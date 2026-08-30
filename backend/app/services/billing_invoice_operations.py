@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 from typing import Any
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import HTTPException, status
+from httpx import TransportError as HttpxTransportError
 from postgrest.exceptions import APIError as PostgrestAPIError
 from stripe import (
     AuthenticationError as StripeAuthenticationError,
@@ -83,6 +84,21 @@ INVOICE_VOID_MODE = "invoice_void_mode:void"
 
 class _RetryProviderEvidenceUnavailable(Exception):
     pass
+
+
+class _RetryLocalConsentEvidenceUnavailable(Exception):
+    pass
+
+
+# PostgREST v12 connection/startup/pool availability failures emitted by the
+# installed supabase-py/postgrest stack. SQLSTATE and permission codes are
+# intentionally excluded because they are deterministic semantic failures.
+_RETRYABLE_POSTGREST_AVAILABILITY_CODES = {
+    "PGRST000",
+    "PGRST001",
+    "PGRST002",
+    "PGRST003",
+}
 
 
 class BillingInvoiceOperationWorkflow:
@@ -855,11 +871,19 @@ class BillingInvoiceOperationWorkflow:
                     studio_id=studio_id,
                     generation=generation,
                 )
+            except _RetryLocalConsentEvidenceUnavailable as exc:
+                self._release_retry_preread_lease(
+                    operations, context, operation,
+                    release_reason="local_consent_preread_unavailable",
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail=INVOICE_RETRY_PREREAD_UNAVAILABLE_DETAIL,
+                ) from exc
             except _RetryProviderEvidenceUnavailable as exc:
                 self._release_retry_preread_lease(
-                    operations,
-                    context,
-                    operation,
+                    operations, context, operation,
+                    release_reason="provider_preread_unavailable",
                 )
                 raise HTTPException(
                     status_code=503,
@@ -881,7 +905,17 @@ class BillingInvoiceOperationWorkflow:
                     studio_id=studio_id,
                     generation=generation,
                     expected=retry_autopay_consent,
+                    local_unavailable_is_retryable=True,
                 )
+            except _RetryLocalConsentEvidenceUnavailable as exc:
+                self._release_retry_preread_lease(
+                    operations, context, operation,
+                    release_reason="local_consent_preread_unavailable",
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail=INVOICE_RETRY_PREREAD_UNAVAILABLE_DETAIL,
+                ) from exc
             except HTTPException:
                 operations.transition(
                     context,
@@ -903,11 +937,19 @@ class BillingInvoiceOperationWorkflow:
                         status_code=409,
                         detail=self._autopay_consent_detail(),
                     )
+            except _RetryLocalConsentEvidenceUnavailable as exc:
+                self._release_retry_preread_lease(
+                    operations, context, operation,
+                    release_reason="local_consent_preread_unavailable",
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail=INVOICE_RETRY_PREREAD_UNAVAILABLE_DETAIL,
+                ) from exc
             except _RetryProviderEvidenceUnavailable as exc:
                 self._release_retry_preread_lease(
-                    operations,
-                    context,
-                    operation,
+                    operations, context, operation,
+                    release_reason="provider_preread_unavailable",
                 )
                 raise HTTPException(
                     status_code=503,
@@ -1030,6 +1072,7 @@ class BillingInvoiceOperationWorkflow:
             invoice,
             studio_id=studio_id,
             generation=generation,
+            local_unavailable_is_retryable=True,
         )
         try:
             provider_invoice = self._read_invoice(invoice)
@@ -1051,11 +1094,14 @@ class BillingInvoiceOperationWorkflow:
         operations: BillingProviderOperationCoordinator,
         context: BillingProviderOperationContext,
         operation: dict[str, Any],
+        *,
+        release_reason: str,
     ) -> None:
         try:
             released = operations.release_invoice_retry_preread_lease(
                 context,
                 operation,
+                release_reason=release_reason,
             )
             released_operation = released["operation"]
             valid = (
@@ -1081,6 +1127,18 @@ class BillingInvoiceOperationWorkflow:
                 and released_operation.get("lease_owner") is None
                 and released_operation.get("lease_acquired_at") is None
                 and released_operation.get("lease_expires_at") is None
+                and released_operation.get("invoice_retry_preread_release_reason")
+                == release_reason
+                and isinstance(
+                    released_operation.get("invoice_retry_preread_released_at"), str
+                )
+                and bool(
+                    datetime.fromisoformat(
+                        released_operation["invoice_retry_preread_released_at"].replace(
+                            "Z", "+00:00"
+                        )
+                    )
+                )
                 and int(released_operation.get("revision") or 0)
                 == int(operation["revision"]) + 1
             )
@@ -1190,11 +1248,13 @@ class BillingInvoiceOperationWorkflow:
         studio_id: str,
         generation: int,
         expected: dict[str, Any],
+        local_unavailable_is_retryable: bool = False,
     ) -> None:
         payer, consent, _ = self._read_autopay_consent(
             invoice,
             studio_id=studio_id,
             generation=generation,
+            local_unavailable_is_retryable=local_unavailable_is_retryable,
         )
         expected_local = expected.get("local", expected)
         if self._autopay_consent_snapshot(payer, consent) != expected_local:
@@ -1209,14 +1269,34 @@ class BillingInvoiceOperationWorkflow:
         *,
         studio_id: str,
         generation: int,
+        local_unavailable_is_retryable: bool = False,
     ) -> tuple[dict[str, Any], dict[str, Any], str]:
         detail = self._autopay_consent_detail()
-        payer = self.owner._get_row_or_404(
-            "billing_payers",
-            invoice["payer_id"],
-            studio_id,
-            "Payer not found.",
-        )
+        try:
+            payer = self.owner._get_row_or_404(
+                "billing_payers",
+                invoice["payer_id"],
+                studio_id,
+                "Payer not found.",
+            )
+        except PostgrestAPIError as exc:
+            if (
+                local_unavailable_is_retryable
+                and str(getattr(exc, "code", "") or "")
+                in _RETRYABLE_POSTGREST_AVAILABILITY_CODES
+            ):
+                raise _RetryLocalConsentEvidenceUnavailable() from exc
+            raise
+        except HTTPException as exc:
+            if local_unavailable_is_retryable and exc.status_code == 503:
+                raise _RetryLocalConsentEvidenceUnavailable() from exc
+            if local_unavailable_is_retryable and exc.status_code == 404:
+                raise HTTPException(status_code=409, detail=detail) from None
+            raise
+        except (TimeoutError, ConnectionError, HttpxTransportError) as exc:
+            if local_unavailable_is_retryable:
+                raise _RetryLocalConsentEvidenceUnavailable() from exc
+            raise
         try:
             self._require_exact_payer(
                 payer,
@@ -1236,30 +1316,74 @@ class BillingInvoiceOperationWorkflow:
         ):
             raise HTTPException(status_code=409, detail=detail)
 
-        try:
-            consent = BillingProviderOperationCoordinator(
-                self.supabase
-            ).read_active_payer_consent(
-                studio_id=studio_id,
-                payer_id=str(invoice["payer_id"]),
-                terms_version=AUTOPAY_TERMS_VERSION,
-                stripe_connected_account_id=str(invoice["stripe_account_id"]),
-                connect_account_generation=generation,
+        consent_reader = BillingProviderOperationCoordinator(self.supabase)
+        consent_args = {
+            "studio_id": studio_id,
+            "payer_id": str(invoice["payer_id"]),
+            "terms_version": AUTOPAY_TERMS_VERSION,
+            "stripe_connected_account_id": str(invoice["stripe_account_id"]),
+            "connect_account_generation": generation,
+        }
+        if local_unavailable_is_retryable:
+            consent = self._read_retry_active_payer_consent(
+                consent_reader,
+                detail=detail,
+                **consent_args,
             )
-            setup_intent_id = str(consent.get("stripe_setup_intent_id") or "")
-            if (
-                not setup_intent_id
-                or not consent.get("completed_at")
-                or consent.get("revoked_at")
-                or consent.get("superseded_at")
-                or consent.get("completed_at") != payer.get("autopay_authorized_at")
-                or consent.get("accepted_at")
-                != payer.get("autopay_terms_accepted_at")
-            ):
-                raise RuntimeError("invoice_autopay_consent_not_active")
-        except Exception:
+        else:
+            try:
+                consent = consent_reader.read_active_payer_consent(**consent_args)
+            except Exception:
+                raise HTTPException(status_code=409, detail=detail) from None
+        setup_intent_id = str(consent.get("stripe_setup_intent_id") or "")
+        if (
+            not setup_intent_id
+            or not consent.get("completed_at")
+            or consent.get("revoked_at")
+            or consent.get("superseded_at")
+            or consent.get("completed_at") != payer.get("autopay_authorized_at")
+            or consent.get("accepted_at")
+            != payer.get("autopay_terms_accepted_at")
+        ):
             raise HTTPException(status_code=409, detail=detail) from None
         return payer, consent, payment_method_id
+
+    def _read_retry_active_payer_consent(
+        self,
+        consent_reader: BillingProviderOperationCoordinator,
+        *,
+        detail: str,
+        studio_id: str,
+        payer_id: str,
+        terms_version: str,
+        stripe_connected_account_id: str,
+        connect_account_generation: int,
+    ) -> dict[str, Any]:
+        try:
+            return consent_reader.read_active_payer_consent(
+                studio_id=studio_id,
+                payer_id=payer_id,
+                terms_version=terms_version,
+                stripe_connected_account_id=stripe_connected_account_id,
+                connect_account_generation=connect_account_generation,
+            )
+        except PostgrestAPIError as exc:
+            error_code = str(getattr(exc, "code", "") or "")
+            if (
+                error_code == "P0002"
+                and str(getattr(exc, "message", "") or "")
+                == "billing_payer_active_consent_not_found"
+            ):
+                raise HTTPException(status_code=409, detail=detail) from None
+            if error_code in _RETRYABLE_POSTGREST_AVAILABILITY_CODES:
+                raise _RetryLocalConsentEvidenceUnavailable() from exc
+            raise
+        except HTTPException as exc:
+            if exc.status_code == 503:
+                raise _RetryLocalConsentEvidenceUnavailable() from exc
+            raise
+        except (TimeoutError, ConnectionError, HttpxTransportError) as exc:
+            raise _RetryLocalConsentEvidenceUnavailable() from exc
 
     @staticmethod
     def _autopay_consent_snapshot(
@@ -1476,17 +1600,134 @@ class BillingInvoiceOperationWorkflow:
                 lease_owner=lease_owner,
             )
         operation = claimed["operation"]
+        effective_request_sha256 = request_sha256
+        if operation_type == INVOICE_RETRY_OPERATION_TYPE:
+            effective_request_sha256 = self._certified_retry_request_sha256(
+                claimed,
+                requested_base_sha256=request_sha256,
+                expected_studio_id=studio_id,
+                expected_actor_id=actor_id,
+                expected_caller_request_key=caller_request_key,
+                expected_resource_type=str(resource_type or ""),
+                expected_resource_id=str(resource_id or ""),
+                expected_payer_id=str(resource_payer_id or ""),
+                expected_account_id=account_id,
+                expected_generation=generation,
+            )
         return BillingProviderOperationContext(
             operation_id=str(operation["id"]),
             studio_id=studio_id,
-            actor_id=str(operation["actor_id"]),
+            actor_id=actor_id,
             operation_type=operation_type,
-            caller_request_key=str(operation["caller_request_key"]),
-            request_sha256=request_sha256,
+            caller_request_key=caller_request_key,
+            request_sha256=effective_request_sha256,
             stripe_connected_account_id=account_id,
             connect_account_generation=generation,
             lease_owner=lease_owner,
         ), claimed
+
+    @staticmethod
+    def _certified_retry_request_sha256(
+        claimed: dict[str, Any],
+        *,
+        requested_base_sha256: str,
+        expected_studio_id: str,
+        expected_actor_id: str,
+        expected_caller_request_key: str,
+        expected_resource_type: str,
+        expected_resource_id: str,
+        expected_payer_id: str,
+        expected_account_id: str,
+        expected_generation: int,
+    ) -> str:
+        operation = claimed.get("operation")
+        resource = claimed.get("resource")
+        if not isinstance(operation, dict) or not isinstance(resource, dict):
+            raise HTTPException(
+                status_code=503,
+                detail="Billing operation resource state could not be verified.",
+            )
+        effective = claimed.get("effective_persisted_sha256")
+        compatibility = claimed.get("compatibility_outcome")
+        state = str(operation.get("state") or "") if isinstance(operation, dict) else ""
+        claim_outcome = str(claimed.get("outcome") or "")
+        valid_hash = (
+            isinstance(effective, str)
+            and len(effective) == 64
+            and all(character in "0123456789abcdef" for character in effective)
+        )
+        compatibility_valid = (
+            compatibility in {"base_hash_exact", "ledger_base_hash_exact"}
+            and effective == requested_base_sha256
+        ) or (
+            compatibility == "ledger_legacy_hash_accepted"
+            and effective != requested_base_sha256
+        )
+        allowed_claim_outcomes = {
+            "started": {"claimed", "replaced", "continued", "busy", "reclaimed", "adopted", "replay"},
+            "provider_request_in_flight": {"provider_request_in_flight", "adopted", "replay"},
+            "reconciliation_required": {"reconciliation_required", "adopted", "replay"},
+            "provider_succeeded": {"continued", "busy", "reclaimed", "adopted", "replay"},
+            "projected": {"continued", "busy", "reclaimed", "adopted", "replay"},
+            "recovery_authorized": {"continued", "busy", "recovery_authorized", "adopted", "replay"},
+            "completed": {"replay", "adopted"},
+            "definitive_failed": {"replay", "adopted"},
+            "definitive_rejected": {"replay", "adopted"},
+        }
+        state_outcome_valid = claim_outcome in allowed_claim_outcomes.get(state, set())
+        terminal_state = state in {
+            "completed", "definitive_failed", "definitive_rejected"
+        }
+        try:
+            UUID(str(operation.get("id")))
+            UUID(str(resource.get("id")))
+            operation_ids_valid = True
+        except (AttributeError, TypeError, ValueError):
+            operation_ids_valid = False
+        operation_identity_valid = (
+            isinstance(operation, dict)
+            and operation.get("studio_id") == expected_studio_id
+            and operation.get("actor_id") == expected_actor_id
+            and operation.get("operation_type") == INVOICE_RETRY_OPERATION_TYPE
+            and operation.get("caller_request_key") == expected_caller_request_key
+            and operation.get("stripe_connected_account_id") == expected_account_id
+            and operation.get("connect_account_generation") == expected_generation
+        )
+        resource_identity_valid = (
+            isinstance(resource, dict)
+            and resource.get("studio_id") == expected_studio_id
+            and resource.get("operation_type") == INVOICE_RETRY_OPERATION_TYPE
+            and resource.get("resource_type") == expected_resource_type == "invoice"
+            and resource.get("resource_id") == expected_resource_id
+            and resource.get("payer_id") == expected_payer_id
+            and (
+                terminal_state
+                or resource.get("operation_id") == operation.get("id")
+            )
+        )
+        envelope_keys_valid = (
+            claimed.get("requested_caller_request_key")
+            == expected_caller_request_key
+            and claimed.get("canonical_caller_request_key")
+            == operation.get("caller_request_key")
+            == expected_caller_request_key
+        )
+        if (
+            not operation_ids_valid
+            or not operation_identity_valid
+            or not resource_identity_valid
+            or not envelope_keys_valid
+            or claimed.get("requested_base_sha256") != requested_base_sha256
+            or not valid_hash
+            or operation.get("request_sha256") != effective
+            or not compatibility_valid
+            or not state_outcome_valid
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="Billing operation resource state could not be verified.",
+            )
+        return effective
 
     def _verify_local_invoice_intent(
         self,

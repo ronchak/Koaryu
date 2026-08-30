@@ -41,8 +41,10 @@ export const ROLLOUT = Object.freeze({
   v28MigrationCount: 123,
   v29MigrationCount: 124,
   v30MigrationCount: 125,
-  finalMigrationCount: 127,
-  finalMigrationVersion: "20260830065627",
+  v31MigrationCount: 126,
+  v32MigrationCount: 127,
+  finalMigrationCount: 128,
+  finalMigrationVersion: "20260830082610",
   releasePendingVersions: Object.freeze([
     "20260814043325",
     "20260814103046",
@@ -71,6 +73,7 @@ export const ROLLOUT = Object.freeze({
     "20260826155911",
     "20260826185651",
     "20260830065627",
+    "20260830082610",
   ]),
   finalPendingVersions: Object.freeze([
     "20260727100000",
@@ -116,6 +119,7 @@ export const ROLLOUT = Object.freeze({
     "20260826155911",
     "20260826185651",
     "20260830065627",
+    "20260830082610",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -198,10 +202,20 @@ export const EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST =
   "0:2eeb4d321d949b1d0bc76b5c94d6e51bd516511d9ff63baaee09081625ef4635";
 export const EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT =
   "0:48b8eff3f5470913614927bb0699970ea165a5ca5b5704cd73af08a9ec7dcdbb";
+export const EXPECTED_V33_RESOURCE_OWNERSHIP_MANIFEST="0:f87c5626c11c3b93c55e94438551a0f500553e092b5790cef873adf0f90605af";
+export const EXPECTED_V33_OPERATIONAL_CONTRACT_V31="0:3fa8acfa06f919f1702a7dc9ff3616ce539fb0117a727a4e609c9c3aa50c29c2";
+export const EXPECTED_V33_OPERATIONAL_MANIFEST_V12="e74062ef628b63c87992d17e3980518baffaa18abe0e4a519179e49418449a88";
+export const EXPECTED_V33_EXPECTATION_STATE="1:0c3b9a79ab66e31bdc1a12836a995dac1948d193b43a8433b57d7522ed43843a";
+export const EXPECTED_V33_COMPAT_V29_TRANSITION_MANIFEST=EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST;
+export const EXPECTED_V33_COMPAT_V29_OPERATIONAL_CONTRACT="0:33a270e015c8a73824d38785b1bb7b8fde7ea67ee2783832042f335627d64864";
+export const EXPECTED_V33_COMPAT_V29_OPERATIONAL_MANIFEST=EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST;
+export const EXPECTED_V33_COMPAT_V30_REPLAY_REPAIRS_MANIFEST=EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST;
+export const EXPECTED_V33_COMPAT_V30_OPERATIONAL_CONTRACT="0:93a90cb23af0a5ba2e4e97b938419f41cb770418f433c32ca4534dbfe65538c6";
+export const EXPECTED_V33_PREDECESSOR_OPERATIONAL_MANIFEST="d9c4103b9109512eef453dd788989045a19d39ad0e8d59969ff5a48aaa78b2fb";
 
 export const EXPECTED_SCHEDULE_V25_OPERATIONAL_READINESS =
   "true|119|20260825043911|" +
-  ROLLOUT.finalPendingVersions.slice(0, -8).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -9).join(",") +
   "|0||release-db-attestation-v25";
 export const EXPECTED_SCHEDULE_WINDOW_MANIFEST =
   "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7";
@@ -220,58 +234,66 @@ export const EXPECTED_SCHEDULE_V25_CATALOG_STATE =
   "triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|127|20260830065627|" +
+  "true|128|20260830082610|" +
   ROLLOUT.finalPendingVersions.join(",") +
+  "|0||release-db-attestation-v33";
+export const EXPECTED_V32_OPERATIONAL_READINESS =
+  "true|127|20260830065627|" +
+  ROLLOUT.finalPendingVersions.slice(0,-1).join(",") +
   "|0||release-db-attestation-v32";
+export const EXPECTED_V31_OPERATIONAL_READINESS =
+  "true|126|20260826185651|" +
+  ROLLOUT.finalPendingVersions.slice(0,-2).join(",") +
+  "|0||release-db-attestation-v31";
 
 export const EXPECTED_V30_OPERATIONAL_READINESS =
   "true|125|20260826155911|" +
-  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
   "|0||release-db-attestation-v30";
 
 export const EXPECTED_V29_OPERATIONAL_READINESS =
   "true|124|20260826102840|" +
-  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
   "|0||release-db-attestation-v29";
 
 export const EXPECTED_V28_OPERATIONAL_READINESS =
   "true|123|20260826073728|" +
-  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
   "|0||release-db-attestation-v28";
 
 export const EXPECTED_V27_OPERATIONAL_READINESS =
   "true|122|20260826051527|" +
-  ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
   "|0||release-db-attestation-v27";
 
 export const EXPECTED_V26_OPERATIONAL_READINESS =
   "true|121|20260826030249|" +
-  ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -7).join(",") +
   "|0||release-db-attestation-v26";
 
 export const EXPECTED_V25_OPERATIONAL_READINESS =
   "true|120|20260826030234|" +
-  ROLLOUT.finalPendingVersions.slice(0, -7).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -8).join(",") +
   "|0||release-db-attestation-v25";
 
 export const EXPECTED_V24_OPERATIONAL_READINESS =
   "true|117|20260824190500|" +
-  ROLLOUT.finalPendingVersions.slice(0, -10).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -11).join(",") +
   "|0||release-db-attestation-v24";
 
 export const EXPECTED_RESTORED_V22_OPERATIONAL_READINESS =
   "true|115|20260822193000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -12).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -13).join(",") +
   "|0||release-db-attestation-v22";
 
 export const EXPECTED_CANONICAL_V23_OPERATIONAL_READINESS =
   "true|116|20260823193155|" +
-  ROLLOUT.finalPendingVersions.slice(0, -11).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -12).join(",") +
   "|0||release-db-attestation-v23";
 
 export const EXPECTED_RESTORED_V23_PENDING_V24_OPERATIONAL_READINESS =
   "false|116|20260823193155|" +
-  ROLLOUT.finalPendingVersions.slice(0, -11).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -12).join(",") +
   "|1|operational_semantic_acl_manifest_v7|release-db-attestation-v23";
 
 // Generated by the final migration against the actual PostgreSQL catalog and
@@ -302,48 +324,48 @@ export const EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS =
 
 export const EXPECTED_RETURN_ATTESTED_OPERATIONAL_READINESS =
   "true|105|20260814152000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -12).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -13).join(",") +
   "|0||release-db-attestation-v12";
 
 export const EXPECTED_RETAINED_OPERATIONAL_READINESS =
   "true|106|20260814170000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -11).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -12).join(",") +
   "|0||release-db-attestation-v13";
 
 export const EXPECTED_CRITICAL_OPERATIONAL_READINESS =
   "true|107|20260814183000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -10).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -11).join(",") +
   "|0||release-db-attestation-v14";
 
 export const EXPECTED_COLUMN_ATTESTED_OPERATIONAL_READINESS =
   "true|108|20260814200000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -9).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -10).join(",") +
   "|0||release-db-attestation-v15";
 
 export const EXPECTED_ATTESTED_OPERATIONAL_READINESS =
   "true|104|20260814114500|" +
-  ROLLOUT.finalPendingVersions.slice(0, -13).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -14).join(",") +
   "|0||release-db-attestation-v11";
 
 export const EXPECTED_RECOVERY_OPERATIONAL_READINESS = Object.freeze([
   "true|102|20260814103046|" +
-  ROLLOUT.finalPendingVersions.slice(0, -15).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -16).join(",") +
   "|0||release-db-attestation-v9",
 ]);
 
 export const EXPECTED_CONVERGENCE_OPERATIONAL_READINESS =
   "true|103|20260814105424|" +
-  ROLLOUT.finalPendingVersions.slice(0, -14).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -15).join(",") +
   "|0||release-db-attestation-v10";
 
 export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS =
   "true|101|20260814043325|" +
-  ROLLOUT.finalPendingVersions.slice(0, -16).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -17).join(",") +
   "|0||release-db-attestation-v8";
 
 export const EXPECTED_PRE_OPERATIONAL_READINESS =
   "true|100|20260801131844|" +
-  ROLLOUT.finalPendingVersions.slice(0, -17).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -18).join(",") +
   "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
@@ -444,6 +466,23 @@ export const EXPECTED_V32_CATALOG_STATE = EXPECTED_V31_CATALOG_STATE.replace(
   "functions=109:1acb912f850aee6f707540280e1c16f9e153da3284a1d2415315f5c93f383d98:0",
   "functions=112:a1884a152c3ea103fbc07961b857dae737b65da23884ebbc2f3e31d940a50228:0",
 );
+export const EXPECTED_V33_CATALOG_STATE =
+  "column_acls=248:6346e2caf6a983b58a2b22555157a65e8a951e4ec0746b622581229637e7aafc:0;" +
+  "columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;" +
+  "constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;" +
+  "functions=123:442cb31be3f704894fb6969a4fd784a9bef01edb34b086b7e513592e56f80e42:0;" +
+  "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
+  "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
+  "scoped_constraints=185:5c3c8f502fb9d108f0bcc571e1962dd70fe6a824f4c8fb68b755e5400b96e5ed:0;" +
+  "scoped_indexes=43:860bc2db0eb34a7d7eb1e1f992c5a666f1fd91a3b01eee6ece091fd332df198f:0;" +
+  "sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;" +
+  "table_acls=23:e6550095ad8418751243b9f47f2e1eb2c813a2128adf059d11237539a7b76c99:0;" +
+  "tables=20:3bc9c3ac932f863270a2b0a5c100d6943e562943ffd5ab51e06420f25963bf4e:0;" +
+  "triggers=14:03a92971a8b66629aac9892448a2448e6844bfb7edd27c0c5448f17235e270e7:0";
+export const EXPECTED_V33_RESTORED_CATALOG_STATE=EXPECTED_V33_CATALOG_STATE.replace(
+    "scoped_constraints=185:5c3c8f502fb9d108f0bcc571e1962dd70fe6a824f4c8fb68b755e5400b96e5ed:0",
+    "scoped_constraints=185:e21f005cf7e9e856418d258efe7ebb5912a69e3182d1dd791d33bd5329567365:0",
+  );
 
 export const EXPECTED_V26_EXPECTATION_STATE =
   "1:fb5e52ebe1cf068e8ac0e195852f12d7af2c2226883b37d49e1ddac670e9f66b";
@@ -762,7 +801,7 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
        array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
   as operational_readiness
-from public.koaryu_release_schema_preflight_v13()
+from public.koaryu_release_schema_preflight_v14()
 `;
 
 export const V30_OPERATIONAL_READINESS_SQL = `
@@ -773,7 +812,18 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
 from public.koaryu_release_schema_preflight_v11()
 `;
 
-export const V31_OPERATIONAL_READINESS_SQL = FINAL_OPERATIONAL_READINESS_SQL;
+export const V31_OPERATIONAL_READINESS_SQL = `
+select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
+ array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
+ coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
+ as operational_readiness from public.koaryu_release_schema_preflight_v12()
+`;
+export const V32_OPERATIONAL_READINESS_SQL = `
+select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
+ array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
+ coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
+ as operational_readiness from public.koaryu_release_schema_preflight_v13()
+`;
 
 export const V29_OPERATIONAL_READINESS_SQL = `
 select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
@@ -1429,6 +1479,12 @@ required_tables(schema_name, table_name, rls_enabled, service_privileges) as (
     ('private', 'koaryu_release_v31_expectations', true, '')
   ) as final_expectations(schema_name, table_name, rls_enabled, service_privileges)
    where to_regprocedure('public.koaryu_release_schema_preflight_v12()') is not null
+  union all
+  select * from (values
+    ('private','billing_invoice_retry_hash_capture_control_v33',true,''),
+    ('private','billing_invoice_retry_hash_ledger_v33',true,'')
+  ) as v33_tables(schema_name,table_name,rls_enabled,service_privileges)
+   where to_regprocedure('public.koaryu_release_schema_preflight_v14()') is not null
 ),
 acl_scope_tables(schema_name, table_name) as (
   select schema_name, table_name from required_tables
@@ -1734,6 +1790,21 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.koaryu_release_schema_preflight_v13()', 'search_path=pg_catalog', true, true)
   ) as v32(signature, search_path_config, security_definer, service_execute)
    where to_regprocedure('public.koaryu_release_schema_preflight_v13()') is not null
+  union all
+  select * from (values
+    ('private.billing_invoice_retry_base_hash_v33(uuid, uuid, text, text, integer)','search_path=pg_catalog',false,false),
+    ('private.billing_invoice_retry_preread_zero_evidence_v33(billing_provider_operations, text)','search_path=""',false,false),
+    ('private.capture_billing_invoice_retry_hash_v33(uuid, uuid, uuid, uuid, uuid, text)','search_path=""',true,false),
+    ('private.capture_billing_invoice_retry_resource_v33()','search_path=""',true,false),
+    ('private.capture_billing_invoice_retry_alias_v33()','search_path=""',true,false),
+    ('private.preserve_billing_invoice_retry_hash_ledger_v33()','search_path=""',false,false),
+    ('private.handle_invoice_retry_consent_change_v33(uuid, uuid)','search_path=""',true,false),
+    ('private.koaryu_release_invoice_retry_compatibility_manifest_v33()','search_path=pg_catalog',false,false),
+    ('public.release_billing_invoice_retry_preread_lease_v33(uuid, uuid, uuid, text, text, text, integer, uuid, bigint, text)','search_path=""',true,true),
+    ('public.finalize_billing_invoice_retry_hash_capture_v33(bigint, text, text)','search_path=""',true,true),
+    ('public.koaryu_release_schema_preflight_v14()','search_path=pg_catalog',true,true)
+  ) as v33(signature,search_path_config,security_definer,service_execute)
+   where to_regprocedure('public.koaryu_release_schema_preflight_v14()') is not null
 ),
 required_writer_results(signature, expected_result_contract) as (
   values
@@ -3094,6 +3165,8 @@ export function formatNonSuccessProbeState(result) {
     result?.state === "v28" ||
     result?.state === "v29" ||
     result?.state === "v30" ||
+    result?.state === "v31" ||
+    result?.state === "v32" ||
     result?.state === "post"
   ) return null;
   if (
@@ -3376,6 +3449,13 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       })
       .join("|"),
   )}`;
+  const historyAt = (count) => `${count}:${digest("md5", filenames.slice(0,count)
+    .map((filename) => {
+      const separator=filename.indexOf("_");
+      return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;
+    }).join("|"))}`;
+  const v31History=historyAt(ROLLOUT.v31MigrationCount);
+  const v32History=historyAt(ROLLOUT.v32MigrationCount);
   if (preHistory !== ROLLOUT.preHistory) {
     throw new RolloutError(
       `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
@@ -3435,6 +3515,8 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     v28History,
     v29History,
     v30History,
+    v31History,
+    v32History,
     preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
@@ -3567,6 +3649,12 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
+    v31TargetHistory: filenames.slice(84,ROLLOUT.v31MigrationCount)
+      .map((filename)=>{const separator=filename.indexOf("_");
+        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
+    v32TargetHistory: filenames.slice(84,ROLLOUT.v32MigrationCount)
+      .map((filename)=>{const separator=filename.indexOf("_");
+        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&
@@ -3624,9 +3712,13 @@ export function packetForAcceptedState(packet, state) {
                           ? ROLLOUT.v29MigrationCount - ROLLOUT.baselineMigrationCount
                         : state === "v30"
                           ? ROLLOUT.v30MigrationCount - ROLLOUT.baselineMigrationCount
+                        : state === "v31"
+                          ? ROLLOUT.v31MigrationCount - ROLLOUT.baselineMigrationCount
+                        : state === "v32"
+                          ? ROLLOUT.v32MigrationCount - ROLLOUT.baselineMigrationCount
                           : null;
   if (consumedMigrations === null) {
-    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, or v30 state.");
+    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, v31, or v32 state.");
   }
   const pendingMigrations = packet.pendingMigrations.slice(consumedMigrations);
   const pendingManifest = packet.pendingManifest.slice(consumedMigrations);
@@ -3920,6 +4012,20 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     validateV30OperationalReadiness(operationalReadiness);
     return { state: "v30", providerFingerprint: null };
   }
+  if (history===packet.v31History) {
+    if(targetHistory!==packet.v31TargetHistory||objectCounts!=="3:1")
+      throw new RolloutError("Migration history is V31 but its exact target history is missing.");
+    if(operationalReadiness!==EXPECTED_V31_OPERATIONAL_READINESS)
+      throw new RolloutError("V31 operational readiness did not match the exact predecessor state.");
+    return {state:"v31",providerFingerprint:null};
+  }
+  if (history===packet.v32History) {
+    if(targetHistory!==packet.v32TargetHistory||objectCounts!=="3:1")
+      throw new RolloutError("Migration history is V32 but its exact target history is missing.");
+    if(operationalReadiness!==EXPECTED_V32_OPERATIONAL_READINESS)
+      throw new RolloutError("V32 operational readiness did not match the exact predecessor state.");
+    return {state:"v32",providerFingerprint:null};
+  }
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
@@ -3940,17 +4046,19 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     validateV30CompatV27ExpectationState(v27ExpectationState);
     validateV30CompatV28ExpectationState(v28ExpectationState);
     validateV30CompatV29ExpectationState(v29ExpectationState);
-    validateV31CompatV29TransitionManifest(v29TransitionManifest);
-    validateV31CompatV29OperationalContract(v29OperationalContract);
-    validateV31CompatV29OperationalManifest(v29OperationalManifest);
+    if(v29TransitionManifest!==EXPECTED_V33_COMPAT_V29_TRANSITION_MANIFEST||
+       v29OperationalContract!==EXPECTED_V33_COMPAT_V29_OPERATIONAL_CONTRACT||
+       v29OperationalManifest!==EXPECTED_V33_COMPAT_V29_OPERATIONAL_MANIFEST)
+      throw new RolloutError("V33 compatibility V29 manifests mismatch.");
     validateV30ExpectationState(v30ExpectationState);
-    validateV31CompatV30ReplayRepairsManifest(v30ReplayRepairsManifest);
-    validateV31CompatV30OperationalContract(v30OperationalContract);
-    validateV31PredecessorOperationalManifest(v30OperationalManifest);
-    validateV31ExpectationState(v31ExpectationState);
-    validateV31ResourceOwnershipManifest(v31ResourceOwnershipManifest);
-    validateV31OperationalContract(v31OperationalContract);
-    validateV31OperationalManifest(v31OperationalManifest);
+    if(v30ReplayRepairsManifest!==EXPECTED_V33_COMPAT_V30_REPLAY_REPAIRS_MANIFEST||
+       v30OperationalContract!==EXPECTED_V33_COMPAT_V30_OPERATIONAL_CONTRACT||
+       v30OperationalManifest!==EXPECTED_V33_PREDECESSOR_OPERATIONAL_MANIFEST||
+       v31ExpectationState!==EXPECTED_V33_EXPECTATION_STATE||
+       v31ResourceOwnershipManifest!==EXPECTED_V33_RESOURCE_OWNERSHIP_MANIFEST||
+       v31OperationalContract!==EXPECTED_V33_OPERATIONAL_CONTRACT_V31||
+       v31OperationalManifest!==EXPECTED_V33_OPERATIONAL_MANIFEST_V12)
+      throw new RolloutError("V33 final operational manifests mismatch.");
     validateCriticalSurfaceManifest(criticalSurfaceManifest);
     validateOperationalReadiness(operationalReadiness);
     const providerFingerprint =
@@ -3980,7 +4088,9 @@ export function validateCatalogState(catalogState) {
     catalogState !== EXPECTED_V30_RESTORED_CATALOG_STATE &&
     catalogState !== EXPECTED_V31_CATALOG_STATE &&
     catalogState !== EXPECTED_V31_RESTORED_CATALOG_STATE &&
-    catalogState !== EXPECTED_V32_CATALOG_STATE
+    catalogState !== EXPECTED_V32_CATALOG_STATE &&
+    catalogState !== EXPECTED_V33_CATALOG_STATE &&
+    catalogState !== EXPECTED_V33_RESTORED_CATALOG_STATE
   ) {
     throw new RolloutError(
       `Repository-pinned raw catalog manifest mismatch: ${catalogState}.`,
@@ -4005,17 +4115,17 @@ export function approvedProviderFingerprintVariants(stagingFingerprint) {
     throw new RolloutError("Approved staging provider fingerprint is missing or malformed.");
   }
   const prefixPattern = /^functions=3:[0-9a-f]{32}:0;trigger=1:[0-9a-f]{32}:0;catalog=/;
-  const canonicalCatalog = `catalog=${EXPECTED_V31_CATALOG_STATE}`;
+  const canonicalCatalog = `catalog=${EXPECTED_V33_CATALOG_STATE}`;
   const expectedSuffix =
     `;expectation=${EXPECTED_V30_COMPAT_V26_EXPECTATION_STATE};v27_expectation=${EXPECTED_V30_COMPAT_V27_EXPECTATION_STATE};` +
     `v28_expectation=${EXPECTED_V30_COMPAT_V28_EXPECTATION_STATE};v29_expectation=${EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE};` +
-    `v29_transition=${EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST};v29_contract=${EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT};` +
-    `v29_manifest=${EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST};` +
-    `v30_expectation=${EXPECTED_V30_EXPECTATION_STATE};v30_replay=${EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST};` +
-    `v30_contract=${EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT};v30_manifest=${EXPECTED_V30_OPERATIONAL_MANIFEST};` +
-    `v31_compat_v30_manifest=${EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST};` +
-    `v31_expectation=${EXPECTED_V31_EXPECTATION_STATE};v31_resource=${EXPECTED_V31_RESOURCE_OWNERSHIP_MANIFEST};` +
-    `v31_contract=${EXPECTED_V31_OPERATIONAL_CONTRACT};v31_manifest=${EXPECTED_V31_OPERATIONAL_MANIFEST};` +
+    `v29_transition=${EXPECTED_V33_COMPAT_V29_TRANSITION_MANIFEST};v29_contract=${EXPECTED_V33_COMPAT_V29_OPERATIONAL_CONTRACT};` +
+    `v29_manifest=${EXPECTED_V33_COMPAT_V29_OPERATIONAL_MANIFEST};` +
+    `v30_expectation=${EXPECTED_V30_EXPECTATION_STATE};v30_replay=${EXPECTED_V33_COMPAT_V30_REPLAY_REPAIRS_MANIFEST};` +
+    `v30_contract=${EXPECTED_V33_COMPAT_V30_OPERATIONAL_CONTRACT};v30_manifest=${EXPECTED_V30_OPERATIONAL_MANIFEST};` +
+    `v31_compat_v30_manifest=${EXPECTED_V33_PREDECESSOR_OPERATIONAL_MANIFEST};` +
+    `v31_expectation=${EXPECTED_V33_EXPECTATION_STATE};v31_resource=${EXPECTED_V33_RESOURCE_OWNERSHIP_MANIFEST};` +
+    `v31_contract=${EXPECTED_V33_OPERATIONAL_CONTRACT_V31};v31_manifest=${EXPECTED_V33_OPERATIONAL_MANIFEST_V12};` +
     `critical_surface=${EXPECTED_CRITICAL_SURFACE_MANIFEST}`;
   if (
     !prefixPattern.test(stagingFingerprint) ||
@@ -4030,7 +4140,7 @@ export function approvedProviderFingerprintVariants(stagingFingerprint) {
     stagingFingerprint,
     stagingFingerprint.replace(
       canonicalCatalog,
-      `catalog=${EXPECTED_V31_RESTORED_CATALOG_STATE}`,
+      `catalog=${EXPECTED_V33_RESTORED_CATALOG_STATE}`,
     ),
   ];
 }
@@ -4401,6 +4511,8 @@ export function readRemoteState(
         snapshot.history === packet.v28History ||
         snapshot.history === packet.v29History ||
         snapshot.history === packet.v30History ||
+        snapshot.history === packet.v31History ||
+        snapshot.history === packet.v32History ||
         snapshot.history === packet.postHistory
       )
     ) {
@@ -4408,6 +4520,10 @@ export function readRemoteState(
         sourceRoot,
         snapshot.history === packet.postHistory
           ? FINAL_OPERATIONAL_READINESS_SQL
+          : snapshot.history === packet.v32History
+            ? V32_OPERATIONAL_READINESS_SQL
+          : snapshot.history === packet.v31History
+            ? V31_OPERATIONAL_READINESS_SQL
           : snapshot.history === packet.v30History
             ? V30_OPERATIONAL_READINESS_SQL
           : snapshot.history === packet.v29History

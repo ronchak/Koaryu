@@ -3,16 +3,19 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import inspect
 import json
 from datetime import date, datetime, time, timezone
 
 import pytest
+import httpx
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 from stripe import CardError as StripeCardError
 
 from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceItemCreate
 from app.services.billing_invoice_operations import (
+    BillingInvoiceOperationWorkflow,
     INVOICE_CREATE_AMBIGUOUS_DETAIL,
     INVOICE_FINALIZE_PREREAD_UNAVAILABLE_DETAIL,
     INVOICE_RETRY_AMBIGUOUS_DETAIL,
@@ -1424,6 +1427,108 @@ def test_retry_success_and_old_key_replay_pay_and_audit_once():
 
 
 @pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda result: result.pop("requested_base_sha256"),
+        lambda result: result.update(effective_persisted_sha256="A" * 64),
+        lambda result: result.update(effective_persisted_sha256="f" * 64),
+        lambda result: result.update(compatibility_outcome="capture_legacy_hash_created"),
+        lambda result: result["operation"].update(request_sha256="e" * 64),
+        lambda result: result["operation"].update(state="completed"),
+    ],
+)
+def test_retry_rejects_uncertified_v33_claim_before_evidence_reads(mutation):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    original_claim = facade.supabase._rpc_claim_billing_provider_operation_resource_v1
+
+    def mutate_claim(params):
+        result = original_claim(params)
+        mutation(result)
+        return result
+
+    facade.supabase._rpc_claim_billing_provider_operation_resource_v1 = mutate_claim
+
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(_manager(facade).retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-uncertified-v33"
+        ))
+
+    assert rejected.value.status_code == 503
+    assert _Stripe.retrieve_calls == []
+    assert _Stripe.setup_intent_retrieve_calls == []
+    assert _Stripe.pay_calls == []
+
+
+@pytest.mark.parametrize(
+    ("target", "field", "value"),
+    [
+        ("operation", "id", "not-a-uuid"),
+        ("operation", "studio_id", "studio_other"),
+        ("operation", "actor_id", "actor_other"),
+        ("operation", "operation_type", "invoice.void"),
+        ("operation", "caller_request_key", "key_other"),
+        ("operation", "request_sha256", "a" * 64),
+        ("operation", "stripe_connected_account_id", "acct_other"),
+        ("operation", "connect_account_generation", 3),
+        ("resource", "id", "not-a-uuid"),
+        ("resource", "studio_id", "studio_other"),
+        ("resource", "operation_type", "invoice.void"),
+        ("resource", "resource_type", "invoice_void"),
+        ("resource", "resource_id", "invoice_other"),
+        ("resource", "payer_id", "payer_other"),
+        ("resource", "operation_id", "00000000-0000-4000-8000-000000009999"),
+        ("envelope", "requested_caller_request_key", "key_other"),
+        ("envelope", "canonical_caller_request_key", "key_other"),
+    ],
+)
+def test_retry_rejects_v33_claim_identity_drift_without_side_effects(
+    target,
+    field,
+    value,
+):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    original_claim = facade.supabase._rpc_claim_billing_provider_operation_resource_v1
+
+    def mutate_claim(params):
+        result = original_claim(params)
+        if target == "envelope":
+            result[field] = value
+        else:
+            result[target][field] = value
+        return result
+
+    facade.supabase._rpc_claim_billing_provider_operation_resource_v1 = mutate_claim
+
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(_manager(facade).retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-v33-identity-drift"
+        ))
+
+    assert rejected.value.status_code == 503
+    assert _Stripe.retrieve_calls == []
+    assert _Stripe.setup_intent_retrieve_calls == []
+    assert _Stripe.pay_calls == []
+    assert facade.supabase.release_billing_invoice_retry_preread_lease_calls == []
+    assert facade.supabase.tables["audit_logs"] == []
+    assert not any(
+        name.startswith("transition_billing_provider_operation")
+        for name, _params in facade.supabase.rpc_calls
+    )
+
+
+@pytest.mark.parametrize(
     ("payer_overrides", "consent_overrides"),
     [
         ({"autopay_status": "disabled"}, {}),
@@ -1646,8 +1751,13 @@ def test_retry_autopay_initial_provider_snapshot_unavailable_resumes_same_key():
         "p_connect_account_generation": 2,
         "p_lease_owner": release_call["p_lease_owner"],
         "p_expected_revision": 1,
+        "p_release_reason": "provider_preread_unavailable",
     }
     assert release_call["p_lease_owner"]
+    assert operation["invoice_retry_preread_released_at"]
+    assert operation["invoice_retry_preread_release_reason"] == (
+        "provider_preread_unavailable"
+    )
     assert _Stripe.pay_calls == []
 
     _Stripe.setup_intent_retrieve_exception = None
@@ -1662,6 +1772,93 @@ def test_retry_autopay_initial_provider_snapshot_unavailable_resumes_same_key():
     assert operation["provider_request_attempt_count"] == 1
     assert operation["reconciliation_reason_code"] is None
     assert operation["lease_owner"] != release_call["p_lease_owner"]
+    assert operation["invoice_retry_preread_released_at"] is None
+
+
+@pytest.mark.parametrize("fail_on_read", [1, 2, 3])
+@pytest.mark.parametrize(
+    "error_kind", ["not_found", "permission", "semantic", "type", "key", "assertion"]
+)
+def test_retry_active_consent_nonavailability_errors_never_release(
+    fail_on_read,
+    error_kind,
+):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    original_read = facade.supabase._rpc_read_active_billing_payer_payment_consent_v1
+    reads = 0
+    programming_errors = {
+        "type": TypeError("consent type bug"),
+        "key": KeyError("consent_key"),
+        "assertion": AssertionError("consent invariant"),
+    }
+
+    def fail_consent_read(params):
+        nonlocal reads
+        reads += 1
+        if reads != fail_on_read:
+            return original_read(params)
+        if error_kind == "not_found":
+            raise PostgrestAPIError({
+                "code": "P0002",
+                "message": "billing_payer_active_consent_not_found",
+                "details": "",
+                "hint": "",
+            })
+        if error_kind == "permission":
+            raise PostgrestAPIError({
+                "code": "42501",
+                "message": "consent permission denied",
+                "details": "",
+                "hint": "",
+            })
+        if error_kind == "semantic":
+            raise PostgrestAPIError({
+                "code": "23514",
+                "message": "consent semantic constraint",
+                "details": "",
+                "hint": "",
+            })
+        raise programming_errors[error_kind]
+
+    facade.supabase._rpc_read_active_billing_payer_payment_consent_v1 = (
+        fail_consent_read
+    )
+
+    if error_kind == "not_found":
+        with pytest.raises(HTTPException) as rejected:
+            asyncio.run(_manager(facade).retry_invoice_payment(
+                invoice["id"], "studio_1", "actor_1",
+                f"retry-consent-error-{fail_on_read}-{error_kind}",
+            ))
+        assert rejected.value.status_code == 409
+        operation = _operation(facade, "invoice.retry")
+        assert operation["state"] == "definitive_rejected"
+    else:
+        expected_type = (
+            PostgrestAPIError
+            if error_kind in {"permission", "semantic"}
+            else type(programming_errors[error_kind])
+        )
+        with pytest.raises(expected_type):
+            asyncio.run(_manager(facade).retry_invoice_payment(
+                invoice["id"], "studio_1", "actor_1",
+                f"retry-consent-error-{fail_on_read}-{error_kind}",
+            ))
+        operation = _operation(facade, "invoice.retry")
+        assert operation["state"] == "started"
+        assert operation["provider_request_attempt_count"] == 0
+
+    assert facade.supabase.release_billing_invoice_retry_preread_lease_calls == []
+    assert operation["invoice_retry_preread_released_at"] is None
+    assert _Stripe.pay_calls == []
+    assert facade.supabase.tables["audit_logs"] == []
+    assert operation["invoice_retry_preread_release_reason"] is None
 
 
 def test_retry_autopay_final_provider_reread_unavailable_resumes_same_key():
@@ -1706,6 +1903,8 @@ def test_retry_autopay_final_provider_reread_unavailable_resumes_same_key():
     assert release_call["p_operation_id"] == operation["id"]
     assert release_call["p_expected_revision"] == 1
     assert release_call["p_lease_owner"]
+    assert release_call["p_release_reason"] == "provider_preread_unavailable"
+    assert operation["invoice_retry_preread_released_at"]
     assert _Stripe.pay_calls == []
 
     _Stripe.retrieve_exception = None
@@ -1720,6 +1919,492 @@ def test_retry_autopay_final_provider_reread_unavailable_resumes_same_key():
     assert operation["provider_request_attempt_count"] == 1
     assert operation["reconciliation_reason_code"] is None
     assert operation["lease_owner"] != release_call["p_lease_owner"]
+    assert operation["invoice_retry_preread_released_at"] is None
+
+
+@pytest.mark.parametrize("fail_on_read", [1, 2, 3])
+@pytest.mark.parametrize(
+    "failure_mode", ["pgrst", "timeout", "connection", "httpx", "http_503"]
+)
+def test_retry_autopay_transient_local_consent_read_releases_and_recovers(
+    fail_on_read,
+    failure_mode,
+):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    manager = _manager(facade)
+    original_read = facade.supabase._rpc_read_active_billing_payer_payment_consent_v1
+    reads = 0
+
+    def transient_read(params):
+        nonlocal reads
+        reads += 1
+        if reads == fail_on_read:
+            if failure_mode == "pgrst":
+                raise PostgrestAPIError({
+                    "code": "PGRST003",
+                    "message": "sensitive database pool timeout",
+                    "details": "",
+                    "hint": "",
+                })
+            if failure_mode == "timeout":
+                raise TimeoutError("sensitive consent timeout")
+            if failure_mode == "connection":
+                raise ConnectionError("sensitive consent connection failure")
+            if failure_mode == "httpx":
+                raise httpx.ReadError(
+                    "sensitive consent network failure",
+                    request=httpx.Request("GET", "https://example.invalid"),
+                )
+            raise HTTPException(status_code=503, detail="sensitive consent read")
+        return original_read(params)
+
+    facade.supabase._rpc_read_active_billing_payer_payment_consent_v1 = transient_read
+    request_key = f"retry-local-read-{fail_on_read}-{failure_mode}"
+
+    with pytest.raises(HTTPException) as unavailable:
+        asyncio.run(manager.retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", request_key
+        ))
+
+    assert unavailable.value.status_code == 503
+    assert "sensitive" not in unavailable.value.detail
+    operation = _operation(facade, "invoice.retry")
+    assert operation["state"] == "started"
+    assert operation["provider_request_attempt_count"] == 0
+    assert operation["invoice_retry_preread_release_reason"] == (
+        "local_consent_preread_unavailable"
+    )
+    assert operation["invoice_retry_preread_released_at"]
+    assert _Stripe.pay_calls == []
+
+    paid = asyncio.run(manager.retry_invoice_payment(
+        invoice["id"], "studio_1", "actor_1", request_key
+    ))
+
+    assert paid.status == "paid"
+    assert len(_Stripe.pay_calls) == 1
+    operation = _operation(facade, "invoice.retry")
+    assert operation["state"] == "completed"
+    assert operation["invoice_retry_preread_released_at"] is None
+
+
+@pytest.mark.parametrize(
+    "failure_mode",
+    ["postgrest", "timeout", "connection", "httpx_timeout", "httpx_connect", "http_503"],
+)
+def test_retry_autopay_payer_read_unavailable_releases_and_recovers_same_key(
+    failure_mode,
+):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    manager = _manager(facade)
+    original_get = facade._get_row_or_404
+    failed_once = False
+
+    def fail_payer_read_once(table, record_id, studio_id, detail):
+        nonlocal failed_once
+        if table == "billing_payers" and not failed_once:
+            failed_once = True
+            if failure_mode == "postgrest":
+                raise PostgrestAPIError({
+                    "code": "PGRST000",
+                    "message": "sensitive payer transport failure",
+                    "details": "",
+                    "hint": "",
+                })
+            if failure_mode == "http_503":
+                raise HTTPException(status_code=503, detail="sensitive payer read")
+            if failure_mode == "connection":
+                raise ConnectionError("sensitive payer connection failure")
+            if failure_mode == "httpx_timeout":
+                raise httpx.ReadTimeout(
+                    "sensitive payer timeout",
+                    request=httpx.Request("GET", "https://example.invalid"),
+                )
+            if failure_mode == "httpx_connect":
+                raise httpx.ConnectError(
+                    "sensitive payer connect failure",
+                    request=httpx.Request("GET", "https://example.invalid"),
+                )
+            raise TimeoutError("sensitive payer timeout")
+        return original_get(table, record_id, studio_id, detail)
+
+    facade._get_row_or_404 = fail_payer_read_once
+    request_key = f"retry-payer-read-{failure_mode}"
+
+    with pytest.raises(HTTPException) as unavailable:
+        asyncio.run(manager.retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", request_key
+        ))
+
+    assert unavailable.value.status_code == 503
+    assert "sensitive" not in unavailable.value.detail
+    operation = _operation(facade, "invoice.retry")
+    assert operation["state"] == "started"
+    assert operation["revision"] == 2
+    assert operation["lease_owner"] is None
+    assert operation["invoice_retry_preread_released_at"]
+    assert operation["invoice_retry_preread_release_reason"] == (
+        "local_consent_preread_unavailable"
+    )
+    release_calls = facade.supabase.release_billing_invoice_retry_preread_lease_calls
+    assert len(release_calls) == 1
+    assert release_calls[0]["p_release_reason"] == (
+        "local_consent_preread_unavailable"
+    )
+    assert not any(
+        name == "read_active_billing_payer_payment_consent_v1"
+        for name, _params in facade.supabase.rpc_calls
+    )
+    assert _Stripe.retrieve_calls == []
+    assert _Stripe.setup_intent_retrieve_calls == []
+    assert _Stripe.pay_calls == []
+    assert facade.supabase.tables["audit_logs"] == []
+    assert not any(
+        name.startswith("transition_billing_provider_operation")
+        for name, _params in facade.supabase.rpc_calls
+    )
+
+    paid = asyncio.run(manager.retry_invoice_payment(
+        invoice["id"], "studio_1", "actor_1", request_key
+    ))
+    assert paid.status == "paid"
+    assert len(_Stripe.pay_calls) == 1
+    operation = _operation(facade, "invoice.retry")
+    assert operation["state"] == "completed"
+    assert operation["invoice_retry_preread_released_at"] is None
+
+
+def test_retry_payer_and_consent_reads_share_one_postgrest_availability_allowlist():
+    payer_source = inspect.getsource(
+        BillingInvoiceOperationWorkflow._read_autopay_consent
+    )
+    consent_source = inspect.getsource(
+        BillingInvoiceOperationWorkflow._read_retry_active_payer_consent
+    )
+    assert "_RETRYABLE_POSTGREST_AVAILABILITY_CODES" in payer_source
+    assert "_RETRYABLE_POSTGREST_AVAILABILITY_CODES" in consent_source
+
+
+@pytest.mark.parametrize("fail_on_read", [1, 2, 3])
+@pytest.mark.parametrize("error_code", ["PGRST000", "PGRST001", "PGRST002", "PGRST003"])
+def test_retry_payer_postgrest_availability_releases_at_every_phase_and_recovers(
+    fail_on_read,
+    error_code,
+):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    manager = _manager(facade)
+    original_get = facade._get_row_or_404
+    payer_reads = 0
+
+    def fail_payer_phase(table, record_id, studio_id, detail):
+        nonlocal payer_reads
+        if table == "billing_payers":
+            payer_reads += 1
+            if payer_reads == fail_on_read:
+                raise PostgrestAPIError({
+                    "code": error_code,
+                    "message": "sensitive payer availability failure",
+                    "details": "",
+                    "hint": "",
+                })
+        return original_get(table, record_id, studio_id, detail)
+
+    facade._get_row_or_404 = fail_payer_phase
+    request_key = f"retry-payer-{error_code}-{fail_on_read}"
+
+    with pytest.raises(HTTPException) as unavailable:
+        asyncio.run(manager.retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", request_key
+        ))
+
+    assert unavailable.value.status_code == 503
+    assert "sensitive" not in unavailable.value.detail
+    operation = _operation(facade, "invoice.retry")
+    assert operation["state"] == "started"
+    assert operation["provider_request_attempt_count"] == 0
+    assert operation["invoice_retry_preread_release_reason"] == (
+        "local_consent_preread_unavailable"
+    )
+    assert operation["invoice_retry_preread_released_at"]
+    assert _Stripe.pay_calls == []
+
+    paid = asyncio.run(manager.retry_invoice_payment(
+        invoice["id"], "studio_1", "actor_1", request_key
+    ))
+    assert paid.status == "paid"
+    assert len(_Stripe.pay_calls) == 1
+    assert _operation(facade, "invoice.retry")["state"] == "completed"
+
+
+def test_retry_autopay_missing_payer_is_invalid_not_local_outage():
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade.supabase.tables["billing_payers"] = []
+    _seed_retry_provider(invoice)
+
+    with pytest.raises(HTTPException) as invalid:
+        asyncio.run(_manager(facade).retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-missing-payer"
+        ))
+
+    assert invalid.value.status_code == 409
+    operation = _operation(facade, "invoice.retry")
+    assert operation["state"] == "definitive_rejected"
+    assert facade.supabase.release_billing_invoice_retry_preread_lease_calls == []
+    assert _Stripe.pay_calls == []
+
+
+def test_retry_autopay_payer_authorization_status_is_not_local_outage():
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+
+    def deny_payer_read(table, record_id, studio_id, detail):
+        if table == "billing_payers":
+            raise HTTPException(status_code=403, detail="Payer read is forbidden.")
+        return _Facade._get_row_or_404(facade, table, record_id, studio_id, detail)
+
+    facade._get_row_or_404 = deny_payer_read
+
+    with pytest.raises(HTTPException) as forbidden:
+        asyncio.run(_manager(facade).retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-payer-forbidden"
+        ))
+
+    assert forbidden.value.status_code == 403
+    assert forbidden.value.detail == "Payer read is forbidden."
+    operation = _operation(facade, "invoice.retry")
+    assert operation["state"] == "definitive_rejected"
+    assert facade.supabase.release_billing_invoice_retry_preread_lease_calls == []
+    assert _Stripe.pay_calls == []
+
+
+@pytest.mark.parametrize(
+    "programming_error",
+    [TypeError("payer type bug"), KeyError("payer_key"), AssertionError("payer invariant")],
+)
+def test_retry_autopay_payer_programming_error_propagates_without_release(
+    programming_error,
+):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+
+    def fail_payer_programming_read(table, record_id, studio_id, detail):
+        if table == "billing_payers":
+            raise programming_error
+        return _Facade._get_row_or_404(facade, table, record_id, studio_id, detail)
+
+    facade._get_row_or_404 = fail_payer_programming_read
+
+    with pytest.raises(type(programming_error)) as raised:
+        asyncio.run(_manager(facade).retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-payer-programming-error"
+        ))
+
+    assert raised.value is programming_error
+    operation = _operation(facade, "invoice.retry")
+    assert operation["state"] == "started"
+    assert operation["provider_request_attempt_count"] == 0
+    assert operation["invoice_retry_preread_released_at"] is None
+    assert facade.supabase.release_billing_invoice_retry_preread_lease_calls == []
+    assert not any(
+        name == "read_active_billing_payer_payment_consent_v1"
+        for name, _params in facade.supabase.rpc_calls
+    )
+    assert _Stripe.retrieve_calls == []
+    assert _Stripe.setup_intent_retrieve_calls == []
+    assert _Stripe.pay_calls == []
+    assert facade.supabase.tables["audit_logs"] == []
+    assert not any(
+        name.startswith("transition_billing_provider_operation")
+        for name, _params in facade.supabase.rpc_calls
+    )
+
+
+@pytest.mark.parametrize("fail_on_read", [1, 2, 3])
+@pytest.mark.parametrize(
+    "error_kind", ["missing", "permission", "semantic", "type", "key", "assertion"]
+)
+def test_retry_payer_nonavailability_errors_never_release_at_any_phase(
+    fail_on_read,
+    error_kind,
+):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    original_get = facade._get_row_or_404
+    payer_reads = 0
+    programming_errors = {
+        "type": TypeError("payer type bug"),
+        "key": KeyError("payer_key"),
+        "assertion": AssertionError("payer invariant"),
+    }
+
+    def fail_payer_phase(table, record_id, studio_id, detail):
+        nonlocal payer_reads
+        if table == "billing_payers":
+            payer_reads += 1
+            if payer_reads == fail_on_read:
+                if error_kind == "missing":
+                    raise HTTPException(status_code=404, detail="Payer not found.")
+                if error_kind == "permission":
+                    raise PostgrestAPIError({
+                        "code": "42501",
+                        "message": "payer permission denied",
+                        "details": "",
+                        "hint": "",
+                    })
+                if error_kind == "semantic":
+                    raise PostgrestAPIError({
+                        "code": "23514",
+                        "message": "payer semantic constraint",
+                        "details": "",
+                        "hint": "",
+                    })
+                raise programming_errors[error_kind]
+        return original_get(table, record_id, studio_id, detail)
+
+    facade._get_row_or_404 = fail_payer_phase
+
+    if error_kind == "missing":
+        with pytest.raises(HTTPException) as rejected:
+            asyncio.run(_manager(facade).retry_invoice_payment(
+                invoice["id"], "studio_1", "actor_1",
+                f"retry-payer-error-{error_kind}-{fail_on_read}",
+            ))
+        assert rejected.value.status_code == 409
+        operation = _operation(facade, "invoice.retry")
+        assert operation["state"] == "definitive_rejected"
+    else:
+        expected_type = (
+            PostgrestAPIError
+            if error_kind in {"permission", "semantic"}
+            else type(programming_errors[error_kind])
+        )
+        with pytest.raises(expected_type):
+            asyncio.run(_manager(facade).retry_invoice_payment(
+                invoice["id"], "studio_1", "actor_1",
+                f"retry-payer-error-{error_kind}-{fail_on_read}",
+            ))
+        operation = _operation(facade, "invoice.retry")
+        assert operation["state"] == "started"
+        assert operation["provider_request_attempt_count"] == 0
+
+    assert facade.supabase.release_billing_invoice_retry_preread_lease_calls == []
+    assert operation["invoice_retry_preread_released_at"] is None
+    assert _Stripe.pay_calls == []
+    assert facade.supabase.tables["audit_logs"] == []
+
+
+def test_retry_released_consent_first_terminalizes_and_allows_void_owner():
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    _Stripe.setup_intent_retrieve_exception = TimeoutError("provider unavailable")
+
+    with pytest.raises(HTTPException):
+        asyncio.run(_manager(facade).retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-consent-first"
+        ))
+    retry_operation = _operation(facade, "invoice.retry")
+    assert retry_operation["invoice_retry_preread_released_at"]
+
+    with pytest.raises(HTTPException) as blocked_void:
+        asyncio.run(_manager(facade).void_invoice(
+            invoice["id"], "studio_1", "actor_1", "void-before-consent"
+        ))
+    assert blocked_void.value.status_code == 409
+
+    consent = facade.supabase.mutate_billing_payer_payment_consent(
+        "consent_1",
+        revoked_at="2026-08-27T00:05:00Z",
+    )
+    assert consent["revoked_at"] == "2026-08-27T00:05:00Z"
+    assert retry_operation["state"] == "definitive_rejected"
+    assert retry_operation["error_code"] == (
+        "invoice_retry_consent_changed_before_provider"
+    )
+    assert retry_operation["invoice_retry_preread_released_at"] is None
+
+    voided = asyncio.run(_manager(facade).void_invoice(
+        invoice["id"], "studio_1", "actor_1", "void-after-consent"
+    ))
+    assert voided.status == "void"
+
+
+def test_retry_reclaim_first_clears_marker_and_blocks_consent_change():
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_failed",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    manager = _manager(facade)
+    _Stripe.setup_intent_retrieve_exception = TimeoutError("provider unavailable")
+
+    with pytest.raises(HTTPException):
+        asyncio.run(manager.retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-reclaim-first"
+        ))
+    _Stripe.setup_intent_retrieve_exception = None
+    blocked = []
+
+    def attempt_consent_change_after_reclaim():
+        try:
+            facade.supabase.mutate_billing_payer_payment_consent(
+                "consent_1",
+                revoked_at="2026-08-27T00:05:00Z",
+            )
+        except PostgrestAPIError as exc:
+            blocked.append((exc.code, exc.message))
+
+    _Stripe.pay_before_mutation_hook = attempt_consent_change_after_reclaim
+    paid = asyncio.run(manager.retry_invoice_payment(
+        invoice["id"], "studio_1", "actor_1", "retry-reclaim-first"
+    ))
+
+    assert paid.status == "paid"
+    assert blocked == [("55P03", "billing_invoice_mutation_in_progress")]
+    operation = _operation(facade, "invoice.retry")
+    assert operation["invoice_retry_preread_released_at"] is None
+    assert len(_Stripe.pay_calls) == 1
 
 
 @pytest.mark.parametrize("failure_mode", ["rpc_error", "malformed_response"])
@@ -1735,7 +2420,7 @@ def test_retry_autopay_preread_release_failure_is_sanitized_and_fail_closed(
     _seed_autopay_consent(facade, invoice)
     _Stripe.setup_intent_retrieve_exception = TimeoutError("provider unavailable")
     original_release = (
-        facade.supabase._rpc_release_billing_invoice_retry_preread_lease_v32
+        facade.supabase._rpc_release_billing_invoice_retry_preread_lease_v33
     )
 
     def fail_release(params):
@@ -1748,7 +2433,7 @@ def test_retry_autopay_preread_release_failure_is_sanitized_and_fail_closed(
         result["operation"].pop("actor_id")
         return result
 
-    facade.supabase._rpc_release_billing_invoice_retry_preread_lease_v32 = (
+    facade.supabase._rpc_release_billing_invoice_retry_preread_lease_v33 = (
         fail_release
     )
 
@@ -1827,6 +2512,7 @@ def test_retry_preread_release_allows_immediate_different_owner_reclaim():
     released = operations.release_invoice_retry_preread_lease(
         context,
         busy["operation"],
+        release_reason="provider_preread_unavailable",
     )
     assert released["outcome"] == "released"
     assert released["operation"]["lease_owner"] is None
@@ -1846,7 +2532,7 @@ def test_retry_preread_release_allows_immediate_different_owner_reclaim():
     )
     assert reclaimed["outcome"] == "continued"
     assert reclaimed["operation"]["lease_owner"] == "owner-b"
-    assert reclaimed["operation"]["revision"] == released["operation"]["revision"] + 1
+    assert reclaimed["operation"]["revision"] == released["operation"]["revision"] + 2
 
 
 @pytest.mark.parametrize(
@@ -1947,6 +2633,7 @@ def test_retry_preread_release_rejects_all_mutation_evidence_without_mutation(
         operations.release_invoice_retry_preread_lease(
             context,
             claimed["operation"],
+            release_reason="provider_preread_unavailable",
         )
 
     assert operation["revision"] == prior_revision
@@ -2021,7 +2708,8 @@ def test_retry_autopay_legacy_started_resume_validates_then_pays_once():
         "stripe_connected_account_id": invoice["stripe_account_id"],
         "connect_account_generation": 2,
     })
-    BillingProviderOperationCoordinator(facade.supabase).claim_resource(
+    operations = BillingProviderOperationCoordinator(facade.supabase)
+    claimed = operations.claim_resource(
         studio_id="studio_1",
         actor_id="actor_1",
         operation_type="invoice.retry",
@@ -2034,7 +2722,30 @@ def test_retry_autopay_legacy_started_resume_validates_then_pays_once():
         connect_account_generation=2,
         lease_owner="legacy-lease-before-crash",
     )
-    facade.supabase.advance_billing_provider_clock(seconds=31)
+    operation = _operation(facade, "invoice.retry")
+    legacy_persisted_hash = "d" * 64
+    operation["request_sha256"] = legacy_persisted_hash
+    ledger = facade.supabase.billing_invoice_retry_hash_ledger_v33[
+        ("studio_1", "retry-legacy-started")
+    ]
+    ledger["effective_persisted_sha256"] = legacy_persisted_hash
+    context = BillingProviderOperationContext(
+        operation_id=operation["id"],
+        studio_id="studio_1",
+        actor_id="actor_1",
+        operation_type="invoice.retry",
+        caller_request_key="retry-legacy-started",
+        request_sha256=legacy_persisted_hash,
+        stripe_connected_account_id="acct_1",
+        connect_account_generation=2,
+        lease_owner="legacy-lease-before-crash",
+    )
+    released = operations.release_invoice_retry_preread_lease(
+        context,
+        claimed["operation"],
+        release_reason="provider_preread_unavailable",
+    )
+    assert released["operation"]["invoice_retry_preread_released_at"]
 
     paid = asyncio.run(_manager(facade).retry_invoice_payment(
         invoice["id"], "studio_1", "actor_1", "retry-legacy-started"
@@ -2047,7 +2758,7 @@ def test_retry_autopay_legacy_started_resume_validates_then_pays_once():
     assert _Stripe.pay_calls[0]["payment_method"] == "pm_1"
     operation = _operation(facade, "invoice.retry")
     assert operation["state"] == "completed"
-    assert operation["request_sha256"] == legacy_hash
+    assert operation["request_sha256"] == legacy_persisted_hash
 
 
 def test_retry_autopay_completed_replay_after_revoke_has_no_provider_reads():
@@ -2091,6 +2802,27 @@ def test_retry_autopay_completed_replay_after_revoke_has_no_provider_reads():
     )
 
 
+def test_retry_terminal_historical_replay_allows_repointed_resource_pointer():
+    invoice = _open_invoice()
+    facade = _Facade(invoice=invoice)
+    _seed_retry_provider(invoice)
+    manager = _manager(facade)
+    first = asyncio.run(manager.retry_invoice_payment(
+        invoice["id"], "studio_1", "actor_1", "retry-terminal-repointed"
+    ))
+    resource = next(iter(facade.supabase.billing_provider_operation_resources.values()))
+    resource["operation_id"] = "00000000-0000-4000-8000-000000009999"
+    provider_reads = len(_Stripe.retrieve_calls)
+
+    replay = asyncio.run(manager.retry_invoice_payment(
+        invoice["id"], "studio_1", "actor_1", "retry-terminal-repointed"
+    ))
+
+    assert first.status == replay.status == "paid"
+    assert len(_Stripe.pay_calls) == 1
+    assert len(_Stripe.retrieve_calls) == provider_reads
+
+
 def test_retry_autopay_historical_legacy_hash_completed_replay_after_revoke():
     invoice = _open_invoice(
         collection_method="charge_automatically",
@@ -2105,14 +2837,10 @@ def test_retry_autopay_historical_legacy_hash_completed_replay_after_revoke():
         invoice["id"], "studio_1", "actor_1", "retry-historical-completed"
     ))
     completed = _operation(facade, "invoice.retry")
-    completed["request_sha256"] = stable_hash({
-        "operation_type": "invoice.retry",
-        "studio_id": "studio_1",
-        "invoice_id": invoice["id"],
-        "stripe_invoice_id": invoice["stripe_invoice_id"],
-        "stripe_connected_account_id": invoice["stripe_account_id"],
-        "connect_account_generation": 2,
-    })
+    completed["request_sha256"] = "c" * 64
+    facade.supabase.billing_invoice_retry_hash_ledger_v33[
+        ("studio_1", "retry-historical-completed")
+    ]["effective_persisted_sha256"] = "c" * 64
     facade.supabase.tables["billing_payer_payment_consents"][0]["revoked_at"] = (
         "2026-08-27T00:05:00Z"
     )
@@ -2228,7 +2956,7 @@ def test_retry_lost_provider_response_uses_readback_without_second_pay():
     assert len(facade.supabase.tables["audit_logs"]) == 1
 
 
-def test_retry_different_key_adopts_canonical_reconciliation_parent():
+def test_retry_different_key_is_rejected_before_canonical_reconciliation_resume():
     invoice = _open_invoice()
     facade = _Facade(invoice=invoice)
     _seed_retry_provider(invoice)
@@ -2245,20 +2973,22 @@ def test_retry_different_key_adopts_canonical_reconciliation_parent():
             invoice["id"], "studio_1", "actor_2", "retry-cross-actor"
         ))
     _Stripe.pay_exception = None
+    with pytest.raises(HTTPException) as changed_key:
+        asyncio.run(manager.retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-adopter"
+        ))
     paid = asyncio.run(manager.retry_invoice_payment(
-        invoice["id"], "studio_1", "actor_1", "retry-adopter"
+        invoice["id"], "studio_1", "actor_1", "retry-owner"
     ))
 
     assert denied.value.status_code == 409
+    assert changed_key.value.status_code == 503
     assert paid.status == "paid"
     assert len(_Stripe.pay_calls) == 1
     canonical = _operation(facade, "invoice.retry")
     assert canonical["actor_id"] == "actor_1"
     assert canonical["caller_request_key"] == "retry-owner"
     assert canonical["state"] == "completed"
-    assert facade.supabase.billing_provider_operation_aliases[
-        ("studio_1", "invoice.retry", "retry-adopter")
-    ] == canonical["id"]
     resource_claims = [
         params
         for name, params in facade.supabase.rpc_calls
@@ -2368,10 +3098,16 @@ def test_retry_requires_proof_bound_admin_recovery_before_second_provider_attemp
         )
     assert recovered["state"] == "recovery_authorized"
     assert recovered["lease_owner"] == "00000000-0000-4000-8000-000000000222"
+    facade.supabase.advance_billing_provider_clock(seconds=31)
 
     _Stripe.pay_exception = None
+    with pytest.raises(HTTPException) as changed_key:
+        asyncio.run(manager.retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "recovery-alias"
+        ))
+    assert changed_key.value.status_code == 503
     paid = asyncio.run(manager.retry_invoice_payment(
-        invoice["id"], "studio_1", "actor_1", "recovery-alias"
+        invoice["id"], "studio_1", "actor_1", "recovery-key"
     ))
     assert paid.status == "paid"
     assert len(_Stripe.pay_calls) == 2
