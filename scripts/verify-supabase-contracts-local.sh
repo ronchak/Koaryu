@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 129 ]]; then
-  echo "ERROR: Expected the canonical 129-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 130 ]]; then
+  echo "ERROR: Expected the canonical 130-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 47 ]]; then
-  echo "ERROR: Expected the canonical 47-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 48 ]]; then
+  echo "ERROR: Expected the canonical 48-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
@@ -671,6 +671,9 @@ SQL
             print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830151714_invoice_retry_closeout_contract_v34.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830151714'\'','\''invoice_retry_closeout_contract_v34'\'');\" >/dev/null"
             print "catalog_sql=\"$(cd \"$repository_root\" && node --input-type=module --eval \"import { CATALOG_STATE_SQL } from '\''./scripts/studio-comp-migration-rollout.mjs'\''; process.stdout.write(CATALOG_STATE_SQL);\")\""
             print "echo RESTORED_V34_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
+            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260831022021_stripe_rehearsal_evidence_rpc_v35.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260831022021'\'','\''stripe_rehearsal_evidence_rpc_v35'\'');\" >/dev/null"
+            print "echo RESTORED_V35_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
+            print "echo RESTORED_V35_READINESS=\"$(read_restored \"SELECT ready::TEXT||'\''|'\''||migration_count::TEXT||'\''|'\''||migration_head||'\''|'\''||cardinality(security_failures)::TEXT||'\''|'\''||COALESCE(array_to_string(security_failures,'\'','\''),'\'''\'')||'\''|'\''||manifest_version FROM public.koaryu_release_schema_preflight_v16();\")\""
           }
           { print }
         ' "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh"
@@ -678,12 +681,24 @@ SQL
         "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR")"
       printf '%s\n' "$restored_v33_output"
       restored_v34_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V34_CATALOG_STATE=//p' | tail -1)"
+      restored_v35_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V35_CATALOG_STATE=//p' | tail -1)"
+      restored_v35_readiness="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V35_READINESS=//p' | tail -1)"
       expected_restored_v34_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V34_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V34_RESTORED_CATALOG_STATE);")"
       if [[ "$restored_v34_catalog" != "$expected_restored_v34_catalog" ]]; then
         echo "[restored V34] FAIL exact restored catalog: $restored_v34_catalog" >&2
         exit 1
       fi
       echo "[restored V34] PASS V30 dump/restore then migrations 126-129"
+      expected_restored_v35_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V35_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V35_RESTORED_CATALOG_STATE);")"
+      if [[ "$restored_v35_catalog" != "$expected_restored_v35_catalog" ]]; then
+        echo "[restored V35] FAIL exact restored catalog: $restored_v35_catalog" >&2
+        exit 1
+      fi
+      if [[ "$restored_v35_readiness" != "true|130|20260831022021|0||release-db-attestation-v35" ]]; then
+        echo "[restored V35] FAIL exact readiness: $restored_v35_readiness" >&2
+        exit 1
+      fi
+      echo "[restored V35] PASS V30 dump/restore then migrations 126-130"
     else
       status=$?
       echo "[restored V31] FAIL V30 dump/restore then migration 126 (exit $status)" >&2

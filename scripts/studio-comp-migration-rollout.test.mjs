@@ -22,6 +22,9 @@ import {
   EXPECTED_V33_CATALOG_STATE,
   EXPECTED_V34_CATALOG_STATE,
   EXPECTED_V34_RESTORED_CATALOG_STATE,
+  EXPECTED_V35_CATALOG_STATE,
+  EXPECTED_V35_RESTORED_CATALOG_STATE,
+  EXPECTED_V35_EVIDENCE_MANIFEST,
   EXPECTED_V33_RESTORED_CATALOG_STATE,
   EXPECTED_V34_COMPAT_V29_TRANSITION_MANIFEST,
   EXPECTED_V34_COMPAT_V29_OPERATIONAL_CONTRACT,
@@ -84,6 +87,7 @@ import {
   EXPECTED_V31_OPERATIONAL_READINESS,
   EXPECTED_V32_OPERATIONAL_READINESS,
   EXPECTED_V33_OPERATIONAL_READINESS,
+  EXPECTED_V34_OPERATIONAL_READINESS,
   EXPECTED_V29_OPERATIONAL_READINESS,
   EXPECTED_V26_OPERATIONAL_READINESS,
   EXPECTED_V27_OPERATIONAL_READINESS,
@@ -164,7 +168,7 @@ const candidateSha = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).trim();
-const validCatalogState = EXPECTED_V34_CATALOG_STATE;
+const validCatalogState = EXPECTED_V35_CATALOG_STATE;
 const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
   "trigger=1:fedcba9876543210fedcba9876543210:0;" +
@@ -184,10 +188,11 @@ const validFingerprint =
   `v31_resource=${EXPECTED_V34_RESOURCE_OWNERSHIP_MANIFEST};` +
   `v31_contract=${EXPECTED_V34_OPERATIONAL_CONTRACT_V31};` +
   `v31_manifest=${EXPECTED_V34_OPERATIONAL_MANIFEST_V12};` +
+  `v35_evidence=${EXPECTED_V35_EVIDENCE_MANIFEST};` +
   `critical_surface=${EXPECTED_CRITICAL_SURFACE_MANIFEST}`;
 const validRestoredFingerprint = validFingerprint.replace(
-  `catalog=${EXPECTED_V34_CATALOG_STATE}`,
-  `catalog=${EXPECTED_V34_RESTORED_CATALOG_STATE}`,
+  `catalog=${EXPECTED_V35_CATALOG_STATE}`,
+  `catalog=${EXPECTED_V35_RESTORED_CATALOG_STATE}`,
 );
 
 function historyColumn(column_name, data_type, udt_name, overrides = {}) {
@@ -276,6 +281,7 @@ function postSnapshot(packet, overrides = {}) {
     v31ResourceOwnershipManifest: EXPECTED_V34_RESOURCE_OWNERSHIP_MANIFEST,
     v31OperationalContract: EXPECTED_V34_OPERATIONAL_CONTRACT_V31,
     v31OperationalManifest: EXPECTED_V34_OPERATIONAL_MANIFEST_V12,
+    v35EvidenceManifest: EXPECTED_V35_EVIDENCE_MANIFEST,
     operationalReadiness: EXPECTED_OPERATIONAL_READINESS,
     ...overrides,
   };
@@ -779,7 +785,7 @@ describe("studio-comp migration rollout guard", () => {
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|129\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|130\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -816,7 +822,7 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-129 packet through schedule V25 and the Payments predecessors", () => {
+  it("derives an exact 100-to-130 packet through V35 and the Payments predecessors", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
     assert.equal(ROLLOUT.scheduleV25MigrationCount, 119);
@@ -834,7 +840,7 @@ describe("studio-comp migration rollout guard", () => {
       ],
     );
     assert.equal(ROLLOUT.v26MigrationCount, 121);
-    assert.equal(packet.migrationCount, 129);
+    assert.equal(packet.migrationCount, 130);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
@@ -873,7 +879,7 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.match(packet.sourceManifestSha256, /^[0-9a-f]{64}$/);
     assert.equal(packet.integrationComplete, true);
-    assert.equal(packet.pendingMigrations.length, 29);
+    assert.equal(packet.pendingMigrations.length, 30);
     assert.deepEqual(
       packet.pendingMigrations.map((filename) => filename.slice(0, 14)),
       ROLLOUT.releasePendingVersions,
@@ -1203,7 +1209,7 @@ describe("studio-comp migration rollout guard", () => {
     });
     assert.deepEqual(
       classifyStateSnapshot(
-        postSnapshot(packet, { catalogState: EXPECTED_V34_RESTORED_CATALOG_STATE }),
+        postSnapshot(packet, { catalogState: EXPECTED_V35_RESTORED_CATALOG_STATE }),
         packet,
         validFingerprint,
       ),
@@ -1629,13 +1635,19 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
       "20260830082610_invoice_retry_release_compatibility_v33.sql",
       "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     assert.deepEqual(packetForAcceptedState(packet,"v32").pendingMigrations,[
       "20260830082610_invoice_retry_release_compatibility_v33.sql",
       "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     assert.deepEqual(packetForAcceptedState(packet,"v33").pendingMigrations,[
       "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
+    ]);
+    assert.deepEqual(packetForAcceptedState(packet,"v34").pendingMigrations,[
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     assert.deepEqual(classifyStateSnapshot(v29Snapshot(packet), packet), {
       state: "v29",
@@ -1666,6 +1678,7 @@ describe("studio-comp migration rollout guard", () => {
       ["v31_resource_ownership_manifest", EXPECTED_V34_RESOURCE_OWNERSHIP_MANIFEST],
       ["v31_operational_contract", EXPECTED_V34_OPERATIONAL_CONTRACT_V31],
       ["v31_operational_manifest", EXPECTED_V34_OPERATIONAL_MANIFEST_V12],
+      ["v35_evidence_manifest", EXPECTED_V35_EVIDENCE_MANIFEST],
       ["operational_readiness", EXPECTED_OPERATIONAL_READINESS],
     ]);
     const postHeaders = [];
@@ -1683,7 +1696,7 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.deepEqual(post, { state: "post", providerFingerprint: validFingerprint });
     assert.equal(postHeaders.at(-1), "operational_readiness");
-    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v15/);
+    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v16/);
 
     const v30Values = new Map([
       ["history_columns", extendedHistoryColumns],
@@ -1982,7 +1995,7 @@ describe("studio-comp migration rollout guard", () => {
 
     assert.deepEqual(result, {
       state: "diverged",
-      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, restored-v22-, canonical-v23-, restored-v23-pending-v24-, v24-, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, v33, or post-state.`,
+      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, restored-v22-, canonical-v23-, restored-v23-pending-v24-, v24-, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, v33, v34, or post-state.`,
     });
   });
 
@@ -2175,6 +2188,7 @@ describe("studio-comp migration rollout guard", () => {
         ["v31_resource_ownership_manifest", snapshot.v31ResourceOwnershipManifest],
         ["v31_operational_contract", snapshot.v31OperationalContract],
         ["v31_operational_manifest", snapshot.v31OperationalManifest],
+        ["v35_evidence_manifest", snapshot.v35EvidenceManifest],
         ["operational_readiness", snapshot.operationalReadiness],
         ["writer_return_contract_state", snapshot.writerReturnContractState],
         ["migration_row_count", expected.state === "pre" ? "84" : expected.state === "intermediate" ? "101" : expected.state === "recovery" ? "102" : expected.state === "convergence" ? "103" : expected.state === "attested" ? "104" : expected.state === "column-attested" ? "108" : expected.state === "trial-locked" ? String(ROLLOUT.trialLockedMigrationCount) : expected.state === "staff-identity" ? String(ROLLOUT.staffIdentityMigrationCount) : String(ROLLOUT.finalMigrationCount)],
@@ -2455,7 +2469,7 @@ describe("studio-comp migration rollout guard", () => {
 
   it("makes an inspection token available only for accepted probe states", () => {
     const packet = candidatePacket();
-    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "restored-v22", "canonical-v23", "restored-v23-pending-v24", "v24", "schedule-v25", "v25", "v26", "v27", "v28", "v29", "v30", "v31", "v32", "v33", "post"]) {
+    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "restored-v22", "canonical-v23", "restored-v23-pending-v24", "v24", "schedule-v25", "v25", "v26", "v27", "v28", "v29", "v30", "v31", "v32", "v33", "v34", "post"]) {
       assert.equal(
         buildInspectionTokenForAcceptedState(packet, "staging", { state }),
         buildInspectionToken(packet, "staging", state),
@@ -2481,7 +2495,7 @@ describe("studio-comp migration rollout guard", () => {
     ]) {
       assert.throws(
         () => buildInspectionTokenForAcceptedState(packet, "staging", result),
-        /accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, v33, or post probe state/,
+        /accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, v33, v34, or post probe state/,
       );
     }
   });
@@ -2505,12 +2519,12 @@ describe("studio-comp migration rollout guard", () => {
     assert.match(packet.v26TargetHistory, /20260826030249:payments_adjustment_convergence$/);
   });
 
-  it("refuses to certify post-state before the exact 129-migration integration", () => {
+  it("refuses to certify post-state before the exact 130-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 129-migration sequence/,
+      /exact final 130-migration sequence/,
     );
   });
 
@@ -2562,6 +2576,7 @@ describe("studio-comp migration rollout guard", () => {
         "20260830065627_release_invoice_retry_preread_lease_v32.sql",
       "20260830082610_invoice_retry_release_compatibility_v33.sql",
       "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
       ],
     );
     assert.deepEqual(
@@ -2591,6 +2606,7 @@ describe("studio-comp migration rollout guard", () => {
         "20260830065627_release_invoice_retry_preread_lease_v32.sql",
       "20260830082610_invoice_retry_release_compatibility_v33.sql",
       "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
       ],
     );
     assert.deepEqual(
@@ -2615,6 +2631,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     const canonicalV23Remaining = packetForAcceptedState(packet, "canonical-v23");
     assert.deepEqual(canonicalV23Remaining.pendingMigrations, [
@@ -2631,6 +2648,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     assert.notEqual(
       restoredV22Remaining.sourceManifestSha256,
@@ -2662,6 +2680,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     const scheduleV25Remaining = packetForAcceptedState(packet, "schedule-v25");
     assert.deepEqual(scheduleV25Remaining.pendingMigrations, [
@@ -2675,6 +2694,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     const v25Remaining = packetForAcceptedState(packet, "v25");
     assert.deepEqual(v25Remaining.pendingMigrations, [
@@ -2687,6 +2707,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     const v26Remaining = packetForAcceptedState(packet, "v26");
     assert.deepEqual(v26Remaining.pendingMigrations, [
@@ -2698,6 +2719,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     const v27Remaining = packetForAcceptedState(packet, "v27");
     assert.deepEqual(v27Remaining.pendingMigrations, [
@@ -2708,6 +2730,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     const v28Remaining = packetForAcceptedState(packet, "v28");
     assert.deepEqual(v28Remaining.pendingMigrations, [
@@ -2717,6 +2740,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     const v29Remaining = packetForAcceptedState(packet, "v29");
     assert.deepEqual(v29Remaining.pendingMigrations, [
@@ -2725,6 +2749,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     const v30Remaining = packetForAcceptedState(packet, "v30");
     assert.deepEqual(v30Remaining.pendingMigrations, [
@@ -2732,11 +2757,12 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ]);
     assert.equal(packetForAcceptedState(packet, "pre"), packet);
     assert.throws(
       () => packetForAcceptedState(packet, "post"),
-        /pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, or v33 state/,
+        /pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, v33, or v34 state/,
     );
   });
 
@@ -2843,6 +2869,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260830065627_release_invoice_retry_preread_lease_v32.sql",
     "20260830082610_invoice_retry_release_compatibility_v33.sql",
     "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
     ].join("\n");
     assert.deepEqual(
       assertExactPendingMigrations(exactStaffIdentity, staffIdentityPacket),
@@ -3074,13 +3101,14 @@ describe("studio-comp migration rollout guard", () => {
         "20260830065627_release_invoice_retry_preread_lease_v32.sql",
       "20260830082610_invoice_retry_release_compatibility_v33.sql",
       "20260830151714_invoice_retry_closeout_contract_v34.sql",
+      "20260831022021_stripe_rehearsal_evidence_rpc_v35.sql",
       ],
     );
     assert.notEqual(staffIdentityPacket.sourceManifestSha256, packet.sourceManifestSha256);
     assert.equal(
       buildProductionConfirmationPhrase(staffIdentityPacket),
       [
-        "APPLY 19 MIGRATIONS FROM",
+        "APPLY 20 MIGRATIONS FROM",
         candidateSha,
         "MANIFEST",
         staffIdentityPacket.sourceManifestSha256,

@@ -3,8 +3,8 @@
 
 The script has two data products. Capture-phase artifacts preserve transient raw
 readbacks that Stripe later overwrites. Final assembly verifies those artifacts and
-paired current-state rereads before producing evidence. No code path performs an RPC,
-SQL statement, or Stripe mutation.
+paired current-state rereads before producing evidence. Local capture uses one
+read-only evidence RPC per phase. No code path performs a Stripe mutation.
 """
 from __future__ import annotations
 
@@ -45,26 +45,10 @@ TABLES = {
     "webhook_events": ("stripe_events", "stripe_event_id"),
     "platform_core_rows": ("studio_subscriptions", "studio_id"),
 }
-LOCAL_PROJECTION = {
-    "operations": "id,studio_id,actor_id,operation_type,caller_request_key,request_sha256,stripe_connected_account_id,connect_account_generation,state,provider_request_attempt_count,lease_expires_at,provider_object_id,provider_secondary_object_id,recovery_outcome,reconciliation_required_at,definitive_failed_at,definitive_rejected_at,error_code,completed_at,created_at,updated_at",
-    "steps": "id,operation_id,studio_id,stripe_connected_account_id,connect_account_generation,step_order,step_name,provider_operation,request_sha256,stripe_idempotency_key,state,provider_request_attempt_count,lease_expires_at,provider_object_id,provider_secondary_object_id,reconciliation_required_at,definitive_failed_at,definitive_rejected_at,error_code,created_at,updated_at",
-    "resources": "id,operation_id,studio_id,operation_type,resource_type,resource_id,payer_id,revision,created_at,updated_at",
-    "setup_requests": "id,operation_id,studio_id,payer_id,initiated_by,terms_version,stripe_checkout_session_id,stripe_setup_intent_id,stripe_connected_account_id,connect_account_generation,accepted_at,completed_at,revoked_at,superseded_at,revision,created_at,updated_at",
-    "consents": "id,setup_request_id,studio_id,payer_id,terms_version,stripe_checkout_session_id,stripe_setup_intent_id,stripe_connected_account_id,connect_account_generation,accepted_at,completed_at,revoked_at,superseded_at,revision,created_at,updated_at",
-    "payers": "id,studio_id,stripe_customer_id,billing_status,balance_cents,created_at,updated_at",
-    "plans": "id,studio_id,amount_cents,currency,billing_interval,status,stripe_product_id,stripe_price_id,archived_at,created_at,updated_at",
-    "subscriptions": "id,studio_id,student_id,payer_id,billing_plan_id,billing_subscription_id,status,billing_status,stripe_subscription_id,stripe_subscription_item_id,created_at,updated_at",
-    "invoices": "id,studio_id,payer_id,student_id,enrollment_id,stripe_invoice_id,stripe_account_id,stripe_customer_id,stripe_subscription_id,stripe_payment_intent_id,status,amount_due_cents,amount_paid_cents,amount_remaining_cents,currency,application_fee_amount_cents,paid_at,finalized_at,voided_at,external,created_at,updated_at",
-    "payments": "id,studio_id,payer_id,invoice_id,stripe_customer_id,stripe_invoice_id,stripe_payment_intent_id,stripe_charge_id,stripe_account_id,connect_account_generation,stripe_payment_method_id,status,amount_cents,currency,external_method,application_fee_cents:application_fee_amount_cents,gross_paid_cents:gross_paid_amount_cents,refunded_cents:refunded_amount_cents,disputed_cents:disputed_amount_cents,net_collected_cents:net_collected_amount_cents,refundable_remaining_cents:refundable_amount_cents,reconciliation_required:adjustment_reconciliation_required,adjustment_reconciliation_reason_code,processed_at,idempotency_key,request_hash,created_at,updated_at",
-    "refunds": "id,studio_id,payment_id,stripe_refund_id,stripe_charge_id,stripe_payment_intent_id,stripe_account_id,connect_account_generation,amount_cents,status,reconciliation_required,reconciliation_reason_code,created_at,updated_at",
-    "disputes": "id,studio_id,payment_id,stripe_dispute_id,stripe_charge_id,stripe_payment_intent_id,stripe_account_id,connect_account_generation,amount_cents,status,state_category,reconciliation_required,reconciliation_reason_code,created_at,updated_at",
-    "transitions": "id,studio_id,enrollment_id,payer_id,billing_subscription_id,source_intent_id,provider_operation_id,transition_kind,mutation_strategy,request_sha256,provider_caller_request_key,provider_request_sha256,stripe_connected_account_id,connect_account_generation,stripe_subscription_id,stripe_subscription_item_id,period_boundary,expected_quantity,expected_subscription_item_count,same_item_active_count,provider_quantity,initiated_by,state,lease_expires_at,reconciliation_required_at,definitive_rejected_at,scheduled_at,due_claimed_at,provider_succeeded_at,projected_at,completed_at,revoked_at,created_at,updated_at",
-    "platform_core_rows": "studio_id,stripe_customer_id,stripe_subscription_id,status,created_at,updated_at",
-}
-AUDIT_PROJECTION = "id,studio_id,actor_id,action,entity_type,entity_id,audit_amount_cents:metadata->amount_cents,audit_external_method:metadata->>external_method,created_at"
-WINDOW_OWNERS = ("operations", "steps", "resources", "setup_requests", "consents", "subscriptions", "invoices", "payments", "refunds", "disputes", "transitions")
-EVENT_PAGE_SIZE = 2
-EVENT_SAFE_PROJECTION = "stripe_event_id,stripe_account_id,type,processing_status,livemode,processed_at,created_at,live_billing_ingest_sequence"
+LOCAL_EVIDENCE_RPC = "read_stripe_rehearsal_local_evidence_v1"
+LOCAL_EVIDENCE_RPC_VERSION = 1
+LOCAL_EVIDENCE_RESPONSE_KEYS = {"schema_version", "studio_id", "stripe_account_id", "connect_account_generation", "rehearsal_started_at", "event_window_ended_at", "local_id_bindings", "local_rows"}
+LOCAL_EVIDENCE_RPC_PARAM_KEYS = {"p_studio_id", "p_stripe_account_id", "p_connect_account_generation", "p_rehearsal_started_at", "p_event_window_ended_at", "p_local_ids", "p_actor_ids", "p_external_audit_id", "p_connect_event_ids", "p_platform_event_ids"}
 MUTATION_ROLES = {
     "payer_customer_create", "payer_initial_setup_checkout", "payer_replacement_setup_checkout",
     "plan_product_create", "plan_price_create", "enrollment_subscription_create",
@@ -191,6 +175,27 @@ def canonical(value: Any) -> bytes:
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _parse_instant(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+    return parsed.astimezone(timezone.utc) if parsed.tzinfo is not None else None
+
+
+def _same_instant(left: str, right: str) -> bool:
+    """Compare RFC 3339 instants across JSON timestamp renderings."""
+    left_value = _parse_instant(left)
+    right_value = _parse_instant(right)
+    return left_value is not None and right_value is not None and left_value == right_value
+
+
+def _at_or_after(left: str, right: str) -> bool:
+    left_value = _parse_instant(left)
+    right_value = _parse_instant(right)
+    return left_value is not None and right_value is not None and left_value >= right_value
 
 
 def exact(value: Any, keys: set[str], label: str) -> dict[str, Any]:
@@ -417,88 +422,58 @@ def verify_readiness(manifest: dict[str, Any]) -> dict[str, Any]:
     return readiness
 
 
-def _rows_once(query: Any, *, label: str) -> list[dict[str, Any]]:
-    rows = query.execute().data or []
-    if not isinstance(rows, list):
-        raise CollectorError(f"{label} read did not return rows")
-    return [_plain(row) for row in rows]
-
-
-def _rows_paginated(make_query: Callable[[tuple[str, int] | None], Any], *, label: str) -> list[dict[str, Any]]:
-    output: list[dict[str, Any]] = []
-    cursor: tuple[str, int] | None = None
-    while True:
-        page = _rows_once(make_query(cursor).limit(EVENT_PAGE_SIZE), label=label)
-        keys = [(str(row.get("created_at") or ""), row.get("live_billing_ingest_sequence")) for row in page]
-        if any(not created_at or type(sequence) is not int or sequence < 1 for created_at, sequence in keys) or len(keys) != len(set(keys)) or keys != sorted(keys) or (cursor is not None and keys and keys[0] <= cursor):
-            raise CollectorError(f"{label} keyset order is invalid")
-        output.extend(page)
-        if len(page) < EVENT_PAGE_SIZE:
-            return output
-        next_cursor = keys[-1]
-        if next_cursor == cursor:
-            raise CollectorError(f"{label} keyset cursor did not advance")
-        cursor = next_cursor
-
-
-def _connect_event_enumeration(supabase: Any, manifest: dict[str, Any], event_window_ended_at: str, *, label: str) -> list[dict[str, Any]]:
-    def connect_page(cursor: tuple[str, int] | None) -> Any:
-        query = supabase.table("stripe_events").select(EVENT_SAFE_PROJECTION).eq("stripe_account_id", manifest["stripe_account_id"]).gte("created_at", manifest["rehearsal_started_at"]).lte("created_at", event_window_ended_at).order("created_at").order("live_billing_ingest_sequence")
-        if cursor is not None:
-            created_at, sequence = cursor
-            query = query.or_(f"created_at.gt.{created_at},and(created_at.eq.{created_at},live_billing_ingest_sequence.gt.{sequence})")
-        return query
-    rows = _rows_paginated(connect_page, label=label)
-    ids = [str(row.get("stripe_event_id") or "") for row in rows]
-    error_ids = {str(row.get("stripe_event_id")) for row in _rows_once(supabase.table("stripe_events").select("stripe_event_id").in_("stripe_event_id", ids).not_.is_("error", "null"), label=f"{label} error presence")}
-    error_reference_ids = {str(row.get("stripe_event_id")) for row in _rows_once(supabase.table("stripe_events").select("stripe_event_id").in_("stripe_event_id", ids).not_.is_("error_reference", "null"), label=f"{label} error-reference presence")}
-    normalized = []
-    for row in rows:
-        normalized.append({key: row.get(key) for key in EVENT_SAFE_PROJECTION.split(",")} | {"error_present": row.get("stripe_event_id") in error_ids, "error_reference_present": row.get("stripe_event_id") in error_reference_ids})
-    return normalized
-
-
 def collect_local(supabase: Any, manifest: dict[str, Any], *, event_window_ended_at: str) -> list[dict[str, Any]]:
-    if not RFC3339_RE.fullmatch(str(event_window_ended_at)) or event_window_ended_at < manifest["rehearsal_started_at"]:
+    manifest = validate_manifest(manifest)
+    if not RFC3339_RE.fullmatch(str(event_window_ended_at)) or not _at_or_after(event_window_ended_at, manifest["rehearsal_started_at"]):
         raise CollectorError("event window upper boundary is invalid")
-    output: list[dict[str, Any]] = []
-    for owner, (table, id_column) in TABLES.items():
-        if owner == "webhook_events":
-            continue
-        expected = list(dict.fromkeys(manifest["local_ids"][owner].values()))
-        rows = _rows_once(supabase.table(table).select(LOCAL_PROJECTION[owner]).in_(id_column, expected), label=owner)
-        ids = [str(row.get(id_column) or "") for row in rows]
-        if len(ids) != len(set(ids)) or set(ids) != set(expected):
-            raise CollectorError(f"{owner} exact-ID read is missing, extra, or duplicated")
-        output.extend({"owner": owner, **normalize_local(row)} for row in rows)
-    event_ids = list(manifest["local_ids"]["webhook_events"].values())
-    event_rows = _rows_once(supabase.table("stripe_events").select(EVENT_SAFE_PROJECTION).in_("stripe_event_id", event_ids), label="webhook_events")
-    observed_event_ids = [str(row.get("stripe_event_id") or "") for row in event_rows]
-    if len(observed_event_ids) != len(set(observed_event_ids)) or set(observed_event_ids) != set(event_ids):
-        raise CollectorError("webhook_events exact-ID read is missing, extra, or duplicated")
-    error_ids = {str(row.get("stripe_event_id")) for row in _rows_once(supabase.table("stripe_events").select("stripe_event_id").in_("stripe_event_id", event_ids).not_.is_("error", "null"), label="webhook event error presence")}
-    error_reference_ids = {str(row.get("stripe_event_id")) for row in _rows_once(supabase.table("stripe_events").select("stripe_event_id").in_("stripe_event_id", event_ids).not_.is_("error_reference", "null"), label="webhook event error-reference presence")}
-    for row in event_rows:
-        row["error_present"] = row["stripe_event_id"] in error_ids
-        row["error_reference_present"] = row["stripe_event_id"] in error_reference_ids
-        output.append({"owner": "webhook_events", **normalize_local(row)})
-    for owner in WINDOW_OWNERS:
-        table, id_column = TABLES[owner]
-        query = supabase.table(table).select(id_column).eq("studio_id", manifest["studio_id"]).gte("created_at", manifest["rehearsal_started_at"])
-        rows = _rows_once(query, label=f"{owner} window")
-        observed = [str(row.get(id_column) or "") for row in rows]
-        expected = list(dict.fromkeys(manifest["local_ids"][owner].values()))
-        if len(observed) != len(set(observed)) or set(observed) != set(expected):
-            raise CollectorError(f"{owner} rehearsal-window universe differs from manifest")
     connect_roles = {"connect_checkout", "dispute_created", "dispute_closed"}
-    expected_connect_events = {manifest["local_ids"]["webhook_events"][role] for role in connect_roles}
-    first_connect_events = _connect_event_enumeration(supabase, manifest, event_window_ended_at, label="Connect webhook event window pass 1")
-    second_connect_events = _connect_event_enumeration(supabase, manifest, event_window_ended_at, label="Connect webhook event window pass 2")
-    if canonical(first_connect_events) != canonical(second_connect_events):
-        raise CollectorError("Connect webhook event enumerations are unstable")
-    observed_connect = [str(row.get("stripe_event_id") or "") for row in second_connect_events]
-    if len(observed_connect) != len(set(observed_connect)) or set(observed_connect) != expected_connect_events:
-        raise CollectorError("Connect webhook event window differs from manifest")
+    params = {
+        "p_studio_id": manifest["studio_id"],
+        "p_stripe_account_id": manifest["stripe_account_id"],
+        "p_connect_account_generation": manifest["connect_account_generation"],
+        "p_rehearsal_started_at": manifest["rehearsal_started_at"],
+        "p_event_window_ended_at": event_window_ended_at,
+        "p_local_ids": manifest["local_ids"],
+        "p_actor_ids": sorted(manifest["actor_bindings"]),
+        "p_external_audit_id": manifest["external_payment_audit_ids"][0],
+        "p_connect_event_ids": sorted(manifest["local_ids"]["webhook_events"][role] for role in connect_roles),
+        "p_platform_event_ids": [manifest["local_ids"]["webhook_events"]["platform_subscription"]],
+    }
+    if set(params) != LOCAL_EVIDENCE_RPC_PARAM_KEYS:
+        raise CollectorError("local evidence RPC parameters are not exact")
+    try:
+        response = supabase.rpc(LOCAL_EVIDENCE_RPC, params).execute()
+        payload = response.data
+    except Exception as exc:
+        raise CollectorError("local evidence RPC failed") from None
+    try:
+        envelope_value = _plain(payload)
+    except Exception:
+        raise CollectorError("local evidence RPC response is malformed") from None
+    envelope = exact(envelope_value, LOCAL_EVIDENCE_RESPONSE_KEYS, "local evidence RPC response")
+    if type(envelope["schema_version"]) is not int or envelope["schema_version"] != LOCAL_EVIDENCE_RPC_VERSION or not isinstance(envelope["studio_id"], str) or envelope["studio_id"] != manifest["studio_id"] or not isinstance(envelope["stripe_account_id"], str) or envelope["stripe_account_id"] != manifest["stripe_account_id"] or type(envelope["connect_account_generation"]) is not int or envelope["connect_account_generation"] != manifest["connect_account_generation"]:
+        raise CollectorError("local evidence RPC response context is invalid")
+    if not isinstance(envelope["rehearsal_started_at"], str) or not isinstance(envelope["event_window_ended_at"], str) or not _same_instant(envelope["rehearsal_started_at"], manifest["rehearsal_started_at"]) or not _same_instant(envelope["event_window_ended_at"], event_window_ended_at):
+        raise CollectorError("local evidence RPC response boundary is invalid")
+    if not isinstance(envelope["local_id_bindings"], dict) or canonical(envelope["local_id_bindings"]) != canonical(manifest["local_ids"]):
+        raise CollectorError("local evidence RPC response bindings differ from manifest")
+    raw_rows = envelope["local_rows"]
+    if not isinstance(raw_rows, list) or any(not isinstance(row, dict) for row in raw_rows):
+        raise CollectorError("local evidence RPC local_rows must be a list of objects")
+    allowed_owners = set(TABLES) | {"staff_roles", "audit_logs"}
+    output: list[dict[str, Any]] = []
+    for raw in raw_rows:
+        row = _plain(raw)
+        owner = row.pop("owner", None)
+        if owner not in allowed_owners:
+            raise CollectorError("local evidence RPC row owner is invalid")
+        normalized = normalize_audit(row) if owner == "audit_logs" else normalize_local(row)
+        output.append({"owner": owner, **normalized})
+    for owner, (_table, id_column) in TABLES.items():
+        expected = list(dict.fromkeys(manifest["local_ids"][owner].values()))
+        observed = [str(row.get(id_column) or "") for row in output if row["owner"] == owner]
+        if len(observed) != len(set(observed)) or set(observed) != set(expected):
+            raise CollectorError(f"{owner} RPC rows are missing, extra, or duplicated")
     operation_rows = [row for row in output if row["owner"] == "operations"]
     for row in operation_rows:
         if row.get("studio_id") != manifest["studio_id"] or row.get("stripe_connected_account_id") != manifest["stripe_account_id"] or row.get("connect_account_generation") != manifest["connect_account_generation"]:
@@ -517,17 +492,17 @@ def collect_local(supabase: Any, manifest: dict[str, Any], *, event_window_ended
     if not operation_actors or operation_actors != set(manifest["actor_bindings"]):
         raise CollectorError("operation actors do not match manifest actor bindings")
     for actor_id in sorted(operation_actors):
-        memberships = _rows_once(
-            supabase.table("staff_roles").select("id,studio_id,user_id,role,created_at,updated_at,archived_at").eq("studio_id", manifest["studio_id"]).eq("user_id", actor_id),
-            label="staff role",
-        )
+        memberships = [row for row in output if row["owner"] == "staff_roles" and row.get("user_id") == actor_id]
         if len(memberships) != 1:
             raise CollectorError(f"actor {actor_id} does not have one exact studio membership")
         membership = memberships[0]
-        earliest = min(str(row.get("created_at") or "") for row in operation_rows if row.get("actor_id") == actor_id)
-        if membership.get("role") != manifest["actor_bindings"][actor_id] or membership.get("archived_at") is not None or not membership.get("updated_at") or str(membership["updated_at"]) > earliest:
+        operation_times = [_parse_instant(str(row.get("created_at") or "")) for row in operation_rows if row.get("actor_id") == actor_id]
+        membership_updated_at = _parse_instant(str(membership.get("updated_at") or ""))
+        if any(value is None for value in operation_times):
+            raise CollectorError(f"actor {actor_id} operation timestamp is invalid")
+        earliest = min(value for value in operation_times if value is not None)
+        if membership.get("role") != manifest["actor_bindings"][actor_id] or membership.get("archived_at") is not None or membership_updated_at is None or membership_updated_at > earliest:
             raise CollectorError(f"actor {actor_id} membership is wrong, late, or archived")
-        output.append({"owner": "staff_roles", **normalize_local(membership)})
     external_payment_id = manifest["local_ids"]["payments"].get("payments.external")
     if not external_payment_id:
         raise CollectorError("payments inventory lacks payments.external role")
@@ -535,14 +510,14 @@ def collect_local(supabase: Any, manifest: dict[str, Any], *, event_window_ended
     if payment is None:
         raise CollectorError("external payment row is missing")
     audit_id = manifest["external_payment_audit_ids"][0]
-    audits = _rows_once(supabase.table("audit_logs").select(AUDIT_PROJECTION).eq("id", audit_id), label="external-payment audit")
-    window_audits = _rows_once(supabase.table("audit_logs").select(AUDIT_PROJECTION).eq("studio_id", manifest["studio_id"]).eq("action", "billing.external_payment_recorded").eq("entity_id", external_payment_id).gte("created_at", manifest["rehearsal_started_at"]), label="external-payment audit window")
-    if len(audits) != 1 or len(window_audits) != 1 or window_audits[0].get("id") != audit_id:
+    audits = [row for row in output if row["owner"] == "audit_logs" and row.get("id") == audit_id]
+    window_audits = [row for row in output if row["owner"] == "audit_logs" and row.get("studio_id") == manifest["studio_id"] and row.get("action") == "billing.external_payment_recorded" and row.get("entity_id") == external_payment_id and _at_or_after(str(row.get("created_at") or ""), manifest["rehearsal_started_at"])]
+    if len(audits) != 1 or len(window_audits) != 1:
         raise CollectorError("external payment audit is missing, duplicated, or unlisted in the rehearsal window")
     audit = audits[0]
-    if audit.get("studio_id") != manifest["studio_id"] or audit.get("actor_id") not in manifest["actor_bindings"] or audit.get("action") != "billing.external_payment_recorded" or audit.get("entity_type") != "billing" or audit.get("entity_id") != external_payment_id or str(audit.get("created_at") or "") < manifest["rehearsal_started_at"] or audit.get("audit_amount_cents") != payment.get("amount_cents") or audit.get("audit_external_method") != payment.get("external_method"):
+    metadata = audit.get("metadata") or {}
+    if audit.get("studio_id") != manifest["studio_id"] or audit.get("actor_id") not in manifest["actor_bindings"] or audit.get("action") != "billing.external_payment_recorded" or audit.get("entity_type") != "billing" or audit.get("entity_id") != external_payment_id or not _at_or_after(str(audit.get("created_at") or ""), manifest["rehearsal_started_at"]) or metadata.get("amount_cents") != payment.get("amount_cents") or metadata.get("external_method") != payment.get("external_method"):
         raise CollectorError("external payment audit does not bind the exact payment source")
-    output.append({"owner": "audit_logs", **normalize_audit(audit)})
     return sorted(output, key=lambda row: (row["owner"], str(row.get("id") or row.get("stripe_event_id"))))
 
 
