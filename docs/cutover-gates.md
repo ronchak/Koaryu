@@ -40,24 +40,24 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-The latest read-only staging diagnosis for candidate
-`5461a568f65aa4a1e9d6cb6af4c25bf3415ba7b0` found 126/head
-`20260826185651` at exact V31. The candidate finishes at 129/head
-`20260830151714`, readiness V15, and `release-db-attestation-v34`. The guarded
+The latest read-only staging diagnosis found 126/head `20260826185651` at exact
+V31. The candidate finishes at 130/head `20260831022021`, readiness V16, and
+`release-db-attestation-v35`. The guarded
 rollout tool accepts this live V31 tuple only when its history, readiness, and
-catalog all match, then derives this exact three-file remainder:
+catalog all match, then derives this exact four-file remainder:
 
 - `20260830065627_release_invoice_retry_preread_lease_v32.sql`
 - `20260830082610_invoice_retry_release_compatibility_v33.sql`
 - `20260830151714_invoice_retry_closeout_contract_v34.sql`
+- `20260831022021_stripe_rehearsal_evidence_rpc_v35.sql`
 
-Exact V32 and V33 are also state-bound forward-recovery points. They may resume
-only the two-file or one-file suffix respectively; hybrid histories, catalogs,
-or readiness results are refused.
+Exact V32, V33, and V34 are also state-bound forward-recovery points. They may
+resume only the three-file, two-file, or one-file suffix respectively; hybrid
+histories, catalogs, or readiness results are refused.
 
 Migration 119 keeps `koaryu_release_schema_preflight_v4` returning the historical
 V24 shape. The Payments chain preserves the schedule-shaped V5 response and owns
-V6 through V15. The candidate backend reads V15 and serves only at exact 129/V34;
+V6 through V16. The candidate backend reads V16 and serves only at exact 130/V35;
 older deployed backends retain their corresponding compatibility response during
 the database-first cutover.
 The temporary V22 and
@@ -88,13 +88,14 @@ post-110 rollback set. A database still at exact 110 must classify
 `20260825042838_schedule_window_read_rpc.sql`,
 `20260825043911_attest_schedule_window_release.sql`, and the ten Payments
 migrations from `20260826030234_live_billing_reconciliation_v3.sql` through
-`20260830151714_invoice_retry_closeout_contract_v34.sql`. If a future approved
+`20260830151714_invoice_retry_closeout_contract_v34.sql`, followed by
+`20260831022021_stripe_rehearsal_evidence_rpc_v35.sql`. If a future approved
 disaster recovery explicitly returns production to the proved restored V22
 snapshot, it must classify exact `state=restored-v22` and dry-run only
-migrations 116 through 129. These are hypothetical forward-recovery cases, not
+migrations 116 through 130. These are hypothetical forward-recovery cases, not
 the current live state. In either case, only the authorized operator runs the
-production apply gate, and promotion remains blocked until migration 129
-produces exact V34 readiness and the final raw catalog/provider fingerprint.
+production apply gate, and promotion remains blocked until migration 130
+produces exact V35 readiness and the final raw catalog/provider fingerprint.
 
 The V33 retry-hash capture stays enabled throughout the database-first rolling
 deploy. Do not call `finalize_billing_invoice_retry_hash_capture_v33` during the

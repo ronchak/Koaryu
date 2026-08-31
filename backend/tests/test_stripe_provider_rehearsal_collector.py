@@ -85,15 +85,19 @@ class FakeQuery:
         return FakeResponse(copy.deepcopy(rows))
 
 
+class FakeRpcQuery:
+    def __init__(self, client): self.client = client
+    def execute(self):
+        if self.client.error is not None: raise self.client.error
+        return FakeResponse(copy.deepcopy(self.client.envelope))
+
+
 class FakeSupabase:
-    def __init__(self, tables, late_event=None): self.tables, self.calls, self.ranges, self.selections, self.late_event, self.event_page_count = tables, [], [], [], late_event, 0
-    def _after_execute(self, query, _rows):
-        if query.maximum is not None:
-            self.event_page_count += 1
-            if self.event_page_count == 1 and self.late_event is not None:
-                self.tables["stripe_events"].append(copy.deepcopy(self.late_event))
-    def table(self, name): self.calls.append(name); return FakeQuery(self.tables.get(name, []), self.ranges if name == "stripe_events" else None, self._after_execute if name == "stripe_events" else None, name, self.selections)
-    def rpc(self, *_args, **_kwargs): raise AssertionError("RPC forbidden")
+    def __init__(self, envelope, error=None): self.envelope, self.error, self.calls = envelope, error, []
+    def table(self, _name): raise AssertionError("direct table access forbidden")
+    def rpc(self, name, params):
+        self.calls.append((name, copy.deepcopy(params)))
+        return FakeRpcQuery(self)
 
 
 class FakeStripe:
@@ -304,30 +308,30 @@ def assembled_chain():
     return chain()
 
 
+def rpc_envelope(m, local_rows, boundary):
+    rows = copy.deepcopy(local_rows)
+    for row in rows:
+        if row.get("owner") == "audit_logs":
+            metadata = row.pop("metadata")
+            row["audit_amount_cents"] = metadata["amount_cents"]
+            row["audit_external_method"] = metadata["external_method"]
+    rows.extend([
+        {"owner":"staff_roles","id":"staff1","studio_id":"studio_1","user_id":"actor_1","role":"admin","created_at":"2026-08-29T09:00:00Z","updated_at":"2026-08-29T09:00:00Z","archived_at":None},
+        {"owner":"staff_roles","id":"staff2","studio_id":"studio_1","user_id":"actor_2","role":"front_desk","created_at":"2026-08-29T09:00:00Z","updated_at":"2026-08-29T09:00:00Z","archived_at":None},
+    ])
+    return {"schema_version":1,"studio_id":m["studio_id"],"stripe_account_id":m["stripe_account_id"],"connect_account_generation":m["connect_account_generation"],"rehearsal_started_at":m["rehearsal_started_at"],"event_window_ended_at":boundary,"local_id_bindings":copy.deepcopy(m["local_ids"]),"local_rows":rows}
+
+
 def adapter_chain(source=None):
     m, source = chain() if source is None else source
     captures, supabase_clients, stripe_clients = [], [], []
-    staff = [
-        {"id":"staff1","studio_id":"studio_1","user_id":"actor_1","role":"admin","created_at":"2026-08-29T09:00:00Z","updated_at":"2026-08-29T09:00:00Z","archived_at":None},
-        {"id":"staff2","studio_id":"studio_1","user_id":"actor_2","role":"front_desk","created_at":"2026-08-29T09:00:00Z","updated_at":"2026-08-29T09:00:00Z","archived_at":None},
-    ]
     for index, phase in enumerate(C.PHASES):
         local_rows = source[index]["local_rows"]
-        tables = {table: [{key:value for key,value in row.items() if key != "owner"} for row in local_rows if row.get("owner") == owner] for owner, (table, _) in C.TABLES.items()}
-        for payer_row in tables["billing_payers"]:
-            payer_row.update(display_name="Private Payer", email="private@example.invalid", phone="555-private", address_line1="Private", address_city="Private", address_state="ZZ", address_zip="00000", metadata={"private":True})
-        for table_name in ("billing_plans","student_billing_enrollments","billing_invoices","billing_payments","studio_subscriptions"):
-            for private_row in tables[table_name]: private_row["metadata"] = {"private":True}
-        for invoice_row in tables["billing_invoices"]: invoice_row["hosted_invoice_url"] = "https://private.invalid/invoice"
-        for payment_row in tables["billing_payments"]: payment_row["note"] = "private note"
-        for event in tables["stripe_events"]:
-            event.update(payload={"private":"must-not-emit"}, error=None, error_reference=None)
-        tables["staff_roles"] = staff
-        tables["audit_logs"] = [{key:value for key,value in row.items() if key != "owner"} for row in local_rows if row.get("owner") == "audit_logs"]
-        supabase = FakeSupabase(tables)
+        boundary = f"2026-08-29T10:0{index}:00Z"
+        supabase = FakeSupabase(rpc_envelope(m, local_rows, boundary))
         provider_rows = source[index]["provider_objects"]
         stripe = FakeStripe({row["id"]: {key:value for key,value in row.items() if key not in {"role","kind","context"}} for row in provider_rows})
-        captures.append(C.capture_phase(m, phase, readiness=READINESS, local_reader=lambda boundary, client=supabase: C.collect_local(client, m, event_window_ended_at=boundary), provider_reader=lambda current, client=stripe: C.collect_provider(client, m, current), now=lambda index=index: f"2026-08-29T10:0{index}:00Z"))
+        captures.append(C.capture_phase(m, phase, readiness=READINESS, local_reader=lambda observed, client=supabase: C.collect_local(client, m, event_window_ended_at=observed), provider_reader=lambda current, client=stripe: C.collect_provider(client, m, current), now=lambda boundary=boundary: boundary))
         supabase_clients.append(supabase); stripe_clients.append(stripe)
     return m, captures, supabase_clients, stripe_clients
 
@@ -566,19 +570,17 @@ class CollectorArtifactTest(unittest.TestCase):
         self.assertTrue(all(row["count"] == 0 for row in packet["terminal_counts"]["counts"].values()))
         self.assertEqual(packet["workflow_facts"]["period_quantity_after"], 1)
         self.assertEqual(packet["supplemental_evidence"]["ambiguity_recovery"]["provider_mutation_count"], 1)
-        expected_tables = set(table for table, _ in C.TABLES.values()) | {"staff_roles", "audit_logs"}
-        for client in supabase_clients:
-            self.assertEqual(set(client.calls), expected_tables)
-            self.assertEqual(client.ranges, [("keyset", ("2026-08-29T10:00:00Z", 3)), ("keyset", ("2026-08-29T10:00:00Z", 3))])
-            self.assertTrue(all(columns != "*" for _table, columns in client.selections))
-            for owner, (table, _id_column) in C.TABLES.items():
-                expected = C.EVENT_SAFE_PROJECTION if owner == "webhook_events" else C.LOCAL_PROJECTION[owner]
-                self.assertIn((table, expected), client.selections)
-            audit_selects = [columns for table, columns in client.selections if table == "audit_logs"]
-            self.assertTrue(audit_selects and all(columns == C.AUDIT_PROJECTION for columns in audit_selects))
-            for table, columns in client.selections:
-                if table != "audit_logs":
-                    self.assertFalse(any(private in columns.split(",") for private in ("display_name","email","phone","address_line1","address_city","address_state","address_zip","metadata","payload","error","error_reference","hosted_invoice_url","note")))
+        for index, client in enumerate(supabase_clients):
+            self.assertEqual(len(client.calls), 1)
+            name, params = client.calls[0]
+            self.assertEqual(name, C.LOCAL_EVIDENCE_RPC)
+            self.assertEqual(set(params), C.LOCAL_EVIDENCE_RPC_PARAM_KEYS)
+            self.assertEqual(params, {
+                "p_studio_id":"studio_1", "p_stripe_account_id":"acct_Test1", "p_connect_account_generation":1,
+                "p_rehearsal_started_at":"2026-08-29T10:00:00Z", "p_event_window_ended_at":f"2026-08-29T10:0{index}:00Z",
+                "p_local_ids":m["local_ids"], "p_actor_ids":["actor_1","actor_2"], "p_external_audit_id":"audit_1",
+                "p_connect_event_ids":["evt_connect","evt_disputeclosed","evt_disputecreated"], "p_platform_event_ids":["evt_platform"],
+            })
         for client in stripe_clients:
             self.assertEqual(len(client.calls), len(C.PROVIDER_ROLE_SCHEMA))
             for _owner, identifier, kwargs in client.calls:
@@ -590,6 +592,26 @@ class CollectorArtifactTest(unittest.TestCase):
         self.assertEqual(packet["supplemental_evidence"]["external_payment"]["audit_count"], 1)
         self.assertTrue(all(artifact["readiness"] == READINESS for artifact in captures))
         self.assertEqual(packet["health_commit_sha"], READINESS["commit_sha"])
+        operation = next(row for row in captures[4]["local_rows"] if row["owner"] == "operations" and row.get("caller_request_key_sha256"))
+        self.assertRegex(operation["caller_request_key_sha256"], r"^[0-9a-f]{64}$")
+        self.assertNotIn("caller_request_key", operation)
+        self.assertEqual(m["local_ids"]["operations"]["plan_product_create"], m["local_ids"]["operations"]["plan_price_create"])
+        self.assertEqual(supabase_clients[0].calls[0][1]["p_local_ids"]["operations"]["plan_product_create"], supabase_clients[0].calls[0][1]["p_local_ids"]["operations"]["plan_price_create"])
+
+    def test_rpc_boundaries_accept_postgres_utc_offset_rendering(self):
+        m, _captures, clients, _ = adapter_chain()
+        client = copy.deepcopy(clients[4])
+        client.envelope["rehearsal_started_at"] = "2026-08-29T10:00:00+00:00"
+        client.envelope["event_window_ended_at"] = "2026-08-29T10:04:00+00:00"
+        for row in client.envelope["local_rows"]:
+            for key, value in list(row.items()):
+                if (key.endswith("_at") or key == "period_boundary") and isinstance(value, str) and value.endswith("Z"):
+                    row[key] = value[:-1] + "+00:00"
+        self.assertTrue(C.collect_local(client, m, event_window_ended_at="2026-08-29T10:04:00Z"))
+        client = copy.deepcopy(clients[4])
+        client.envelope["event_window_ended_at"] = "2026-08-29T10:04:01+00:00"
+        with self.assertRaisesRegex(C.CollectorError, "response boundary is invalid"):
+            C.collect_local(client, m, event_window_ended_at="2026-08-29T10:04:00Z")
 
     def test_live_adapter_state_drift_is_refused(self):
         m, source = chain()
@@ -600,21 +622,23 @@ class CollectorArtifactTest(unittest.TestCase):
         with self.assertRaisesRegex(C.CollectorError, "terminal count failed must be zero"):
             C.assemble(m, captures)
 
-    def test_connect_event_window_and_real_failure_semantics(self):
+    def test_rpc_envelope_and_row_drift_are_refused(self):
         m, _captures, clients, _ = adapter_chain()
-        wrong_account = copy.deepcopy(clients[4])
-        event = next(row for row in wrong_account.tables["stripe_events"] if row["stripe_event_id"] == "evt_connect")
-        event["stripe_account_id"] = "acct_Wrong"
-        with self.assertRaisesRegex(C.CollectorError, "Connect webhook event window"):
-            C.collect_local(wrong_account, m, event_window_ended_at="2026-08-29T10:04:00Z")
-        extra = copy.deepcopy(clients[4])
-        extra.tables["stripe_events"].append({"id":"extra","stripe_event_id":"evt_extra","stripe_account_id":"acct_Test1","type":"invoice.paid","processing_status":"processed","livemode":False,"created_at":"2026-08-29T10:01:00Z","live_billing_ingest_sequence":5,"payload":{},"error":None,"error_reference":None})
-        with self.assertRaisesRegex(C.CollectorError, "Connect webhook event window"):
-            C.collect_local(extra, m, event_window_ended_at="2026-08-29T10:04:00Z")
-        duplicate = copy.deepcopy(clients[4])
-        duplicate.tables["stripe_events"].append(copy.deepcopy(next(row for row in duplicate.tables["stripe_events"] if row["stripe_event_id"] == "evt_connect")))
-        with self.assertRaisesRegex(C.CollectorError, "webhook_events exact-ID"):
-            C.collect_local(duplicate, m, event_window_ended_at="2026-08-29T10:04:00Z")
+        cases = {
+            "missing-envelope": lambda envelope: envelope.pop("local_rows"),
+            "extra-envelope": lambda envelope: envelope.update(unexpected=True),
+            "version": lambda envelope: envelope.update(schema_version=2),
+            "context": lambda envelope: envelope.update(stripe_account_id="acct_Wrong"),
+            "boundary": lambda envelope: envelope.update(event_window_ended_at="2026-08-29T10:03:00Z"),
+            "bindings": lambda envelope: envelope["local_id_bindings"]["payments"].update(automatic="wrong"),
+            "malformed-rows": lambda envelope: envelope.update(local_rows={}),
+            "missing-row": lambda envelope: envelope["local_rows"].pop(next(i for i, row in enumerate(envelope["local_rows"]) if row.get("owner") == "payments")),
+            "duplicate-row": lambda envelope: envelope["local_rows"].append(copy.deepcopy(next(row for row in envelope["local_rows"] if row.get("owner") == "payments"))),
+        }
+        for label, mutate in cases.items():
+            with self.subTest(label=label):
+                client = copy.deepcopy(clients[4]); mutate(client.envelope)
+                with self.assertRaises(C.CollectorError): C.collect_local(client, m, event_window_ended_at="2026-08-29T10:04:00Z")
         m, artifacts = chain()
         for phase in (2, 4):
             event = next(row for row in artifacts[phase]["local_rows"] if row.get("stripe_event_id") == "evt_connect")
@@ -639,41 +663,16 @@ class CollectorArtifactTest(unittest.TestCase):
         with self.assertRaisesRegex(C.CollectorError, "fields are not exact"):
             C.validate_phase_chain(m, missing)
 
-    def test_event_projection_excludes_payload_and_raw_errors(self):
-        m, _captures, clients, _ = adapter_chain()
-        client = copy.deepcopy(clients[4])
-        event = next(row for row in client.tables["stripe_events"] if row["stripe_event_id"] == "evt_connect")
-        event.update(payload={"secret":"never-emit"}, error="private handler detail", error_reference="a" * 32)
-        captured = C.collect_local(client, m, event_window_ended_at="2026-08-29T10:04:00Z")
-        emitted = next(row for row in captured if row.get("stripe_event_id") == "evt_connect")
-        self.assertNotIn("payload", emitted); self.assertNotIn("error", emitted); self.assertNotIn("error_reference", emitted)
-        self.assertTrue(emitted["error_present"]); self.assertTrue(emitted["error_reference_present"])
-
-    def test_keyset_pagination_is_stable_across_concurrent_boundary_inserts(self):
-        rows = [
-            {"stripe_event_id":f"evt_{sequence}","stripe_account_id":"acct_Test1","created_at":"2026-08-29T10:00:00Z","live_billing_ingest_sequence":sequence}
-            for sequence in (1, 2, 3)
-        ]
-        inserted = False
-        def make_query(cursor):
-            nonlocal inserted
-            if cursor is not None and not inserted:
-                rows.append({"stripe_event_id":"evt_4","stripe_account_id":"acct_Test1","created_at":"2026-08-29T10:00:00Z","live_billing_ingest_sequence":4}); inserted = True
-            query = FakeQuery(rows).eq("stripe_account_id", "acct_Test1").gte("created_at", "2026-08-29T10:00:00Z").lte("created_at", "2026-08-29T10:04:00Z").order("created_at").order("live_billing_ingest_sequence")
-            if cursor: query.or_(f"created_at.gt.{cursor[0]},and(created_at.eq.{cursor[0]},live_billing_ingest_sequence.gt.{cursor[1]})")
-            return query
-        observed = C._rows_paginated(make_query, label="concurrent event window")
-        self.assertEqual([row["stripe_event_id"] for row in observed], ["evt_1", "evt_2", "evt_3", "evt_4"])
-        duplicate = copy.deepcopy(rows); duplicate.append(copy.deepcopy(rows[-1]))
-        with self.assertRaisesRegex(C.CollectorError, "keyset order"):
-            C._rows_paginated(lambda _cursor: FakeQuery(duplicate).order("created_at").order("live_billing_ingest_sequence"), label="duplicate event window")
-
-    def test_second_enumeration_catches_late_event_behind_first_cursor(self):
-        m, _captures, clients, _ = adapter_chain()
-        late = {"id":"late","stripe_event_id":"evt_late","stripe_account_id":"acct_Test1","type":"invoice.paid","processing_status":"processed","livemode":False,"created_at":"2026-08-29T10:00:00Z","live_billing_ingest_sequence":2,"payload":{},"error":None,"error_reference":None}
-        client = FakeSupabase(copy.deepcopy(clients[4].tables), late_event=late)
-        with self.assertRaisesRegex(C.CollectorError, "enumerations are unstable"):
+    def test_rpc_failure_is_sanitized_and_never_falls_back_to_table(self):
+        m = manifest(); client = FakeSupabase({}, error=RuntimeError("PRIVATE raw response secret"))
+        with self.assertRaisesRegex(C.CollectorError, "local evidence RPC failed") as raised:
             C.collect_local(client, m, event_window_ended_at="2026-08-29T10:04:00Z")
+        self.assertNotIn("PRIVATE", str(raised.exception))
+        self.assertEqual(len(client.calls), 1)
+        malformed = FakeSupabase(["PRIVATE raw response secret"])
+        with self.assertRaisesRegex(C.CollectorError, "response is malformed") as malformed_error:
+            C.collect_local(malformed, m, event_window_ended_at="2026-08-29T10:04:00Z")
+        self.assertNotIn("PRIVATE", str(malformed_error.exception))
 
     def test_each_proof_step_requires_its_projected_predicate(self):
         m, artifacts = chain(); validator, _ = C._load_contract()
@@ -734,7 +733,8 @@ class CollectorArtifactTest(unittest.TestCase):
             ("missing", lambda rows: rows.pop()),
         ):
             with self.subTest(label=label):
-                client = copy.deepcopy(clients[4]); mutate(client.tables["billing_payments"])
+                client = copy.deepcopy(clients[4]); rows = [row for row in client.envelope["local_rows"] if row.get("owner") == "payments"]; mutate(rows)
+                client.envelope["local_rows"] = [row for row in client.envelope["local_rows"] if row.get("owner") != "payments"] + rows
                 with self.assertRaisesRegex(C.CollectorError, "payments"):
                     C.collect_local(client, m, event_window_ended_at="2026-08-29T10:04:00Z")
     def test_accepts_hash_bound_stable_phase_chain(self):

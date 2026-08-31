@@ -329,6 +329,13 @@ binds closeout adoption to the full operation and resource tuple. Its V15
 readiness function reports `release-db-attestation-v34`; V31 and V33 remain
 historical compatibility anchors rather than the final release state.
 
+The additive V35 collector boundary advances the chain to 130/V35
+(`20260831022021`). It keeps protected billing-operation tables unavailable to
+direct `service_role` reads and exposes one bounded, manifest-bound,
+`SECURITY DEFINER` evidence snapshot instead. The collector makes exactly one
+RPC call per capture phase, receives only the approved sanitized projection,
+and the V16 readiness function reports `release-db-attestation-v35`.
+
 Latest local candidate evidence before publication:
 
 - backend: all 1,417 tests passed;

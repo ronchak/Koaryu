@@ -2,6 +2,14 @@
 
 Use this worksheet for one approved staging rehearsal of one exact candidate. It is an offline evidence contract, not a provider client. Never paste secrets, hosted URLs, payment details, KYC data, request or response payloads, or live financial data into the evidence file.
 
+Apply the V35 collector boundary before capture. Each local phase read must use
+exactly one `read_stripe_rehearsal_local_evidence_v1` call; direct
+`service_role` reads of protected operation, step, resource, setup, consent,
+and transition tables remain denied. The RPC binds the complete manifest,
+actors, account generation, webhook IDs, audit universe, and capture window and
+returns only the sanitized projection. A missing or refused RPC is a hard stop;
+there is no direct-table fallback.
+
 Before opening Stripe, verify the exact staging frontend and backend SHA and require Stripe test mode:
 
 ```bash
