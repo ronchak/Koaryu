@@ -333,6 +333,8 @@ REVOKE ALL ON FUNCTION private.validate_billing_payment_identity_change()
 -- identities while their studio is disconnected. Keep those identities generationless
 -- and unusable by live workflows instead of relabeling them as a real account generation.
 DO $generation_backfills$
+DECLARE
+    v_normalized_connected_demo_payers INTEGER := 0;
 BEGIN
     EXECUTE 'LOCK TABLE public.studio_payment_accounts IN SHARE ROW EXCLUSIVE MODE';
     EXECUTE 'LOCK TABLE public.billing_payers IN SHARE ROW EXCLUSIVE MODE';
@@ -340,6 +342,52 @@ BEGIN
     EXECUTE 'LOCK TABLE public.billing_plan_prices IN SHARE ROW EXCLUSIVE MODE';
     EXECUTE 'LOCK TABLE public.billing_subscriptions IN SHARE ROW EXCLUSIVE MODE';
     EXECUTE 'LOCK TABLE public.billing_invoices IN SHARE ROW EXCLUSIVE MODE';
+
+    -- Some production-only QA studios connected a real account after the
+    -- repository demo billing seed had already written synthetic cus_demo_*
+    -- identities. Those IDs are not Stripe customers and must never inherit the
+    -- live account generation. Remove only that explicit synthetic identity,
+    -- leave the local payer and its historical demo billing rows intact, and
+    -- record why the provider-shaped fields were normalized.
+    UPDATE public.billing_payers AS payer
+    SET stripe_customer_id = NULL,
+        default_payment_method_id = NULL,
+        default_payment_method_brand = NULL,
+        default_payment_method_last4 = NULL,
+        default_payment_method_exp_month = NULL,
+        default_payment_method_exp_year = NULL,
+        autopay_status = CASE
+            WHEN payer.autopay_status IN ('pending', 'enabled')
+                THEN 'not_configured'
+            ELSE payer.autopay_status
+        END,
+        autopay_authorized_at = NULL,
+        autopay_disabled_at = NULL,
+        autopay_terms_accepted_at = NULL,
+        metadata = jsonb_set(
+            payer.metadata,
+            '{v31_demo_provider_identity_normalization}',
+            jsonb_build_object(
+                'reason', 'synthetic_customer_under_connected_account',
+                'synthetic_customer_id', payer.stripe_customer_id
+            ),
+            true
+        ),
+        updated_at = clock_timestamp()
+    FROM public.studio_payment_accounts AS account
+    WHERE payer.studio_id = account.studio_id
+      AND payer.metadata @> '{"demo":true}'::JSONB
+      AND payer.stripe_account_id IS NULL
+      AND payer.stripe_customer_id ~ '^cus_demo_[a-z0-9_]+$'
+      AND payer.connect_account_generation IS NULL
+      AND account.stripe_connected_account_id IS NOT NULL
+      AND account.stripe_connected_account_id <> 'acct_demo_river_city';
+
+    GET DIAGNOSTICS v_normalized_connected_demo_payers = ROW_COUNT;
+    IF v_normalized_connected_demo_payers > 0 THEN
+        RAISE NOTICE 'KOARYU_V31_CONNECTED_DEMO_PAYERS_NORMALIZED=%',
+            v_normalized_connected_demo_payers;
+    END IF;
 
     UPDATE public.billing_payers AS payer
     SET connect_account_generation =
