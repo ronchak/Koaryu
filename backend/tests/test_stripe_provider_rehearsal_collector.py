@@ -513,6 +513,13 @@ class CollectorArtifactTest(unittest.TestCase):
                 with self.assertRaisesRegex(C.CollectorError, f"terminal count {name} must be zero"):
                     C.assemble(m, values)
 
+    def test_terminal_count_compares_lease_instants_not_strings(self):
+        m, values = assembled_chain(); row = next(row for row in values[4]["local_rows"] if row["owner"] == "operations")
+        row.update(state="provider_request_in_flight", lease_expires_at="2026-08-29T03:05:01-07:00")
+        validator, _ = C._load_contract()
+        counts = C._terminal_counts(m, values[4]["local_rows"], values[5]["provider_objects"], values[5]["observed_at"], validator)
+        self.assertEqual(counts["counts"]["stuck"]["count"], 0)
+
     def test_rejects_missing_extra_duplicate_and_wrong_source_classes(self):
         for label, mutate in (
             ("missing", lambda rows: rows.pop(0)),
@@ -611,6 +618,35 @@ class CollectorArtifactTest(unittest.TestCase):
         client = copy.deepcopy(clients[4])
         client.envelope["event_window_ended_at"] = "2026-08-29T10:04:01+00:00"
         with self.assertRaisesRegex(C.CollectorError, "response boundary is invalid"):
+            C.collect_local(client, m, event_window_ended_at="2026-08-29T10:04:00Z")
+
+    def test_full_chain_normalizes_postgres_timestamps_before_assembly(self):
+        def postgres_timestamp(value):
+            return value[:-1] + ".123456+00:00" if isinstance(value, str) and value.endswith("Z") and "T" in value else value
+
+        m, source = chain(); captures = []
+        for index, phase in enumerate(C.PHASES):
+            boundary = f"2026-08-29T10:0{index}:00Z"
+            supabase = FakeSupabase(rpc_envelope(m, source[index]["local_rows"], boundary))
+            supabase.envelope["rehearsal_started_at"] = m["rehearsal_started_at"][:-1] + "+00:00"
+            supabase.envelope["event_window_ended_at"] = boundary[:-1] + "+00:00"
+            for row in supabase.envelope["local_rows"]:
+                for key, value in list(row.items()):
+                    if key.endswith("_at") or key == "period_boundary":
+                        row[key] = postgres_timestamp(value)
+            stripe = FakeStripe({row["id"]: {key: value for key, value in row.items() if key not in {"role", "kind", "context"}} for row in source[index]["provider_objects"]})
+            captures.append(C.capture_phase(m, phase, readiness=READINESS, local_reader=lambda observed, client=supabase: C.collect_local(client, m, event_window_ended_at=observed), provider_reader=lambda current, client=stripe: C.collect_provider(client, m, current), now=lambda current=boundary: current))
+        self.assertTrue(C.assemble(m, captures))
+        for capture in captures:
+            for row in capture["local_rows"]:
+                for key, value in row.items():
+                    if key.endswith("_at") or key == "period_boundary":
+                        self.assertRegex(value, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+    def test_rpc_timestamp_values_fail_closed(self):
+        m, _captures, clients, _ = adapter_chain(); client = copy.deepcopy(clients[4])
+        next(row for row in client.envelope["local_rows"] if row.get("created_at"))["created_at"] = "not-an-instant"
+        with self.assertRaisesRegex(C.CollectorError, "local timestamp is invalid"):
             C.collect_local(client, m, event_window_ended_at="2026-08-29T10:04:00Z")
 
     def test_live_adapter_state_drift_is_refused(self):
