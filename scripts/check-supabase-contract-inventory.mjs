@@ -45,6 +45,7 @@ export const EXPECTED_SUPABASE_CONTRACTS = Object.freeze([
   "schedule_window_read_contract.sql",
   "stripe_event_worker_claim_controls.sql",
   "stripe_rehearsal_evidence_rpc_v35.sql",
+  "payer_setup_recovery_v36.sql",
   "student_import_row_atomic_contract.sql",
   "student_import_run_worker_claim_controls.sql",
   "student_profile_write_atomic_contract.sql",

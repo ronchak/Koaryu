@@ -139,8 +139,8 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The current candidate's `/health/ready` calls the V16 schema preflight and serves
-only at 130/head `20260831022021` with `release-db-attestation-v35`. It fails
+The current candidate's `/health/ready` calls the V17 schema preflight and serves
+only at 131/head `20260831054918` with `release-db-attestation-v36`. It fails
 closed at every other migration state. That is deliberate, and it is why a
 backend deployed ahead of its migration will sit unhealthy rather than serve.
 

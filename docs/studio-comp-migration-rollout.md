@@ -1,6 +1,6 @@
 # Studio-Comp Migration Rollout
 
-Status: **read-only diagnosis observed staging at exact 126/V31; the candidate targets 130/head 20260831022021 and V35**
+Status: **staging is serving exact 130/V35; the candidate targets 131/head 20260831054918 and V36**
 
 ## Combined schedule-window and Payments extension
 
@@ -13,20 +13,23 @@ combined candidate adds the two schedule-window migrations:
 followed by the Payments migrations from
 `20260826030234_live_billing_reconciliation_v3.sql` through
 `20260830151714_invoice_retry_closeout_contract_v34.sql`, then the guarded
-collector boundary `20260831022021_stripe_rehearsal_evidence_rpc_v35.sql`.
+collector boundary `20260831022021_stripe_rehearsal_evidence_rpc_v35.sql`, and
+the proof-backed payer Setup Checkout recovery fix
+`20260831054918_payer_setup_recovery_v36.sql`.
 
-The guarded tool classifies the observed staging tuple only as exact `v31` and
-selects the ordered V32, V33, V34, and V35 migrations. Exact `v32` resumes V33
-through V35; exact `v33` resumes V34 and V35; exact `v34` resumes V35. Each
+The guarded tool classifies the observed staging tuple as exact `v35` and
+selects only V36. Exact `v31`, `v32`, `v33`, and `v34` remain guarded
+forward-recovery states that derive their immutable suffix through V36. Each
 state requires its own history, head, count, readiness, and raw catalog and
 mints a state-bound inspection token. The sole candidate post-state is migration
-130/head `20260831022021` with readiness V16,
-`release-db-attestation-v35`, and the exact V35 catalog/evidence fingerprint.
+131/head `20260831054918` with readiness V17,
+`release-db-attestation-v36`, and the exact V36 catalog and recovery fingerprint.
 
 Migration 119 retains the historical V24-shaped `preflight_v4` compatibility
-response, while the Payments and collector chain owns V6 through V16 and
-preserves the schedule-shaped V5 response. The candidate backend uses
-`preflight_v16` and requires the exact 130/V35 state.
+response, while the Payments and collector chain owns V6 through V17 and
+preserves the schedule-shaped V5 response. V36 also preserves the V35-shaped
+`preflight_v16` response for the database-first cutover. The candidate backend
+uses `preflight_v17` and requires the exact 131/V36 state.
 
 ## Historical V24 rollout record
 
@@ -379,25 +382,25 @@ to the proved V22 snapshot may classify `restored-v22` and dry-run only
 migrations 116 and 117. Do not relabel a hybrid or failing V23 row as either
 accepted state. The sole supported partial state after 116 is
 `restored-v23-pending-v24`, which may resume only 117. These historical recovery
-states are not sufficient for the combined candidate. The latest read-only
-staging diagnosis classified exact `v31` at 126/head `20260826185651`; this
+states are not sufficient for the combined candidate. The latest hosted staging
+readiness readback reported exact `v35` at 130/head `20260831022021`; this
 runbook does not assert a current production state.
 
 The current candidate's staging apply requires a fresh inspection token, exact
-project ref, and exact-body PR #134 approval comment bound to the candidate and
+project ref, and exact-body PR #138 approval comment bound to the candidate and
 remaining manifest. The tool also verifies the comment API record's exact
-`issue_url` belongs to `ronchak/Koaryu` PR #134, so a matching body copied to a
+`issue_url` belongs to `ronchak/Koaryu` PR #138, so a matching body copied to a
 different issue or pull request is refused. The record must be authored by GitHub login
 `ronchak` with `author_association=OWNER`; collaborator and outside-user comments are
 refused. It additionally requires
 `--approve-staging-apply`:
 
 > Concretely, staging apply needs `--confirm-project <ref>` and
-> `--approval-record <exact-PR-134-issue-comment-url>` **in addition to**
+> `--approval-record <exact-PR-138-issue-comment-url>` **in addition to**
 > `--approve-staging-apply`.
 > Passing only the staging flag is refused. See `docs/cutover-gates.md`.
 
-1. require count 130, head `20260831022021`, the exact candidate sequence, and the
+1. require count 131, head `20260831054918`, the exact candidate sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, table-ACL, sequence-ACL, and column-ACL identity in the final semantic
@@ -407,10 +410,10 @@ refused. It additionally requires
    exact: extra policies halt, constant-false deny predicates and the guarded
    membership predicate are classified canonically, and arbitrary non-null
    expressions do not pass;
-3. invoke the service-role-only V16 readiness RPC during every apparent-post
+3. invoke the service-role-only V17 readiness RPC during every apparent-post
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
-   `release-db-attestation-v35`; a missing, malformed, stale, or failing result
+   `release-db-attestation-v36`; a missing, malformed, stale, or failing result
    halts before `state=post` or a fingerprint can be emitted. Linked scalar
    results are decoded as strict single-column CSV, including standard quoting
    for the comma-delimited pending-version tuple; extra rows, extra columns, or
@@ -462,7 +465,7 @@ node scripts/studio-comp-migration-rollout.mjs \
   --mode apply \
   --inspection-token <token-from-production-inspect> \
   --confirm-project mimguepumzsgmcaycdsh \
-  --approval-record <exact-PR-134-issue-comment-url> \
+  --approval-record <exact-PR-138-issue-comment-url> \
   --human-production-operator \
   --expected-provider-fingerprint <staging-provider-fingerprint> \
   --confirmed-restore-window <confirmed-window-or-record> \
@@ -491,15 +494,15 @@ add a new forward corrective migration. Never mark history reverted, drop the
 trigger/functions, or use a production restore as ordinary rollback.
 
 If a migration transaction leaves any accepted state from `staff-identity` through
-V34, stop and inspect again. Mint the new state-bound token, derive the exact immutable
-remainder through migration 130, obtain a new exact-body approval comment for that
+V35, stop and inspect again. Mint the new state-bound token, derive the exact immutable
+remainder through migration 131, obtain a new exact-body approval comment for that
 remainder, and rerun dry-run before apply. Historical restored production may begin at
-`restored-v22`, while the observed staging path is now exact V31; neither changes
-the forward-only rule. Promotion requires exact V35 readiness and the final raw
+`restored-v22`, while the observed staging path is now exact V35; neither changes
+the forward-only rule. Promotion requires exact V36 readiness and the final raw
 catalog/provider fingerprint. No approved application serves at an intermediate head.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 130 head and
+database-first: Render `/health/ready` remains 503 until the exact 131 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

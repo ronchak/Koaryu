@@ -543,12 +543,45 @@ DECLARE
     v_v6 RECORD;
     v_v5 RECORD;
     v_v4 RECORD;
+    v_current_count INTEGER;
+    v_current_head TEXT;
 BEGIN
+    SELECT count(*)::INTEGER,max(version)
+    INTO v_current_count,v_current_head
+    FROM supabase_migrations.schema_migrations;
     SELECT * INTO v_v7 FROM public.koaryu_release_schema_preflight_v7();
     SELECT * INTO v_v6 FROM public.koaryu_release_schema_preflight_v6();
     SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
     SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
-    IF v_v7.ready IS DISTINCT FROM true
+    IF v_current_count=131 AND v_current_head='20260831054918' THEN
+        IF v_v7.ready IS DISTINCT FROM false
+           OR v_v7.migration_count<>126
+           OR v_v7.migration_head<>'20260826185651'
+           OR v_v7.security_failures
+              IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
+           OR v_v7.manifest_version<>'release-db-attestation-v26'
+           OR v_v6.ready IS DISTINCT FROM false
+           OR v_v6.migration_count<>126
+           OR v_v6.migration_head<>'20260826185651'
+           OR v_v6.security_failures
+              IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
+           OR v_v6.manifest_version<>'release-db-attestation-v25'
+           OR v_v5.ready IS DISTINCT FROM false
+           OR v_v5.migration_count<>126
+           OR v_v5.migration_head<>'20260826185651'
+           OR v_v5.security_failures
+              IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
+           OR v_v5.manifest_version<>'release-db-attestation-v25'
+           OR v_v4.ready IS DISTINCT FROM false
+           OR v_v4.migration_count<>126
+           OR v_v4.migration_head<>'20260826185651'
+           OR v_v4.security_failures
+              IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
+           OR v_v4.manifest_version<>'release-db-attestation-v24' THEN
+            RAISE EXCEPTION 'V36 obsolete-readiness classification drifted: v7=%, v6=%, v5=%, v4=%',
+                row_to_json(v_v7), row_to_json(v_v6), row_to_json(v_v5), row_to_json(v_v4);
+        END IF;
+    ELSIF v_v7.ready IS DISTINCT FROM true
        OR v_v7.migration_count <> 121
        OR v_v7.migration_head <> '20260826030249'
        OR v_v7.security_failures IS DISTINCT FROM ARRAY[]::TEXT[]

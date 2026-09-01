@@ -19,6 +19,7 @@ from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
     PAYER_SETUP_OPERATION_TYPE,
+    payer_setup_operation_disposition,
 )
 from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
 from app.services.stripe_mutation_policy import StripeMutationBlocked
@@ -27,7 +28,7 @@ from app.services.stripe_service import StripeService
 
 ACTIVE_AUTOPAY_SUBSCRIPTION_STATUSES = ["pending", "trialing", "active", "incomplete", "past_due"]
 AUTOPAY_SETUP_OPERATION_LIFETIME = timedelta(minutes=30)
-AUTOPAY_SETUP_PROVIDER_LIFETIME = timedelta(minutes=35)
+AUTOPAY_SETUP_PROVIDER_LIFETIME = timedelta(minutes=65)
 AUTOPAY_SETUP_PROVIDER_MINIMUM_LIFETIME = timedelta(minutes=30)
 AUTOPAY_SETUP_IN_PROGRESS_DETAIL = (
     "Autopay setup is still being reconciled. Retry with the same Idempotency-Key."
@@ -135,7 +136,16 @@ class BillingAutopayManager:
             lease_owner=lease_owner,
         )
         operation = claimed["operation"]
-        outcome = str(claimed.get("outcome") or "")
+        outcome = payer_setup_operation_disposition(
+            claimed,
+            studio_id=studio_id,
+            actor_id=actor_id,
+            caller_request_key=normalized_key,
+            request_sha256=request_sha256,
+            stripe_connected_account_id=account_id,
+            connect_account_generation=generation,
+        )
+        recovery_safe_retry = outcome == "recovery_safe_retry"
         context = BillingProviderOperationContext(
             operation_id=str(operation["id"]),
             studio_id=studio_id,
@@ -145,7 +155,11 @@ class BillingAutopayManager:
             request_sha256=request_sha256,
             stripe_connected_account_id=account_id,
             connect_account_generation=generation,
-            lease_owner=lease_owner,
+            lease_owner=(
+                str(operation["lease_owner"])
+                if recovery_safe_retry
+                else lease_owner
+            ),
         )
         if outcome in {"busy", "provider_request_in_flight"}:
             raise HTTPException(
@@ -215,23 +229,43 @@ class BillingAutopayManager:
             account_id=account_id,
             generation=generation,
         )
-        setup_request = coordinator.prepare_payer_setup(
-            context,
-            operation,
-            setup_request_id=setup_request_id,
-            payer_id=payer_id,
-            terms_version=AUTOPAY_TERMS_VERSION,
-            expires_at=expires_at.isoformat(),
-        )
+        if recovery_safe_retry and setup_request is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Payer setup recovery state could not be verified.",
+            )
+        if not recovery_safe_retry:
+            setup_request = coordinator.prepare_payer_setup(
+                context,
+                operation,
+                setup_request_id=setup_request_id,
+                payer_id=payer_id,
+                terms_version=AUTOPAY_TERMS_VERSION,
+                expires_at=expires_at.isoformat(),
+            )
         if expires_at < (
             datetime.now(timezone.utc) + AUTOPAY_SETUP_PROVIDER_MINIMUM_LIFETIME
         ):
-            coordinator.transition(
-                context,
-                operation,
-                "definitive_rejected",
-                error_code="setup_request_lifetime_insufficient",
-            )
+            if recovery_safe_retry:
+                rejected = coordinator.reject_payer_setup_without_provider(
+                    context,
+                    operation=operation,
+                    setup_request=setup_request,
+                    payer_id=payer_id,
+                )
+                if (
+                    rejected.get("outcome") not in {"rejected", "replay"}
+                    or (rejected.get("operation") or {}).get("error_code")
+                    != "setup_request_lifetime_insufficient"
+                ):
+                    raise RuntimeError("payer_setup_lifetime_rejection_not_converged")
+            else:
+                coordinator.transition(
+                    context,
+                    operation,
+                    "definitive_rejected",
+                    error_code="setup_request_lifetime_insufficient",
+                )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -245,6 +279,11 @@ class BillingAutopayManager:
             "provider_request_in_flight",
             result_code="payer_setup_requested",
         )
+        if recovery_safe_retry and int(operation.get("provider_request_attempt_count") or 0) != 2:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Payer setup recovery state could not be verified.",
+            )
         try:
             link = self.stripe_service_cls().create_setup_checkout_session(
                 account_id=account_id,

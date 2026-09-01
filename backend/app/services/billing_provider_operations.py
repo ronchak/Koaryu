@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
 
@@ -54,6 +54,68 @@ REFUND_PRIOR_SETTLING_DETAIL = (
 RESOURCE_IDENTITY_RECONCILIATION_DETAIL = (
     "The payer or payment provider identity requires reconciliation before this operation can continue."
 )
+
+
+def payer_setup_operation_disposition(
+    claimed: dict[str, Any],
+    *,
+    studio_id: str,
+    actor_id: str,
+    caller_request_key: str,
+    request_sha256: str,
+    stripe_connected_account_id: str,
+    connect_account_generation: int,
+) -> str:
+    operation = claimed.get("operation")
+    outcome = str(claimed.get("outcome") or "")
+    if not isinstance(operation, dict):
+        raise HTTPException(status_code=503, detail="Payer setup recovery state could not be verified.")
+    exact_identity = (
+        operation.get("studio_id") == studio_id
+        and operation.get("actor_id") == actor_id
+        and operation.get("operation_type") == PAYER_SETUP_OPERATION_TYPE
+        and operation.get("caller_request_key") == caller_request_key
+        and operation.get("request_sha256") == request_sha256
+        and operation.get("stripe_connected_account_id") == stripe_connected_account_id
+        and operation.get("connect_account_generation") == connect_account_generation
+    )
+    if not exact_identity:
+        raise HTTPException(status_code=503, detail="Payer setup recovery state could not be verified.")
+    if operation.get("state") != "recovery_authorized":
+        return outcome
+    try:
+        proof = str(operation["recovery_proof_sha256"])
+        UUID(str(operation["recovery_actor_id"]))
+        UUID(str(operation["lease_owner"]))
+        authorized_at = datetime.fromisoformat(
+            str(operation["recovery_authorized_at"]).replace("Z", "+00:00")
+        )
+        lease_expires_at = datetime.fromisoformat(
+            str(operation["lease_expires_at"]).replace("Z", "+00:00")
+        )
+        if authorized_at.utcoffset() is None or lease_expires_at.utcoffset() is None:
+            raise ValueError("payer setup recovery timestamps must be timezone-aware")
+        authorized_at = authorized_at.astimezone(timezone.utc)
+        lease_expires_at = lease_expires_at.astimezone(timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=503, detail="Payer setup recovery state could not be verified.") from None
+    now = datetime.now(timezone.utc)
+    if (
+        outcome != "continued"
+        or operation.get("recovery_outcome") != "provider_no_object_safe_to_retry"
+        or int(operation.get("provider_request_attempt_count") or 0) != 1
+        or operation.get("provider_object_id") is not None
+        or operation.get("provider_secondary_object_id") is not None
+        or operation.get("provider_request_id") is not None
+        or operation.get("provider_step_plan_sha256") is not None
+        or operation.get("provider_step_expected_count") is not None
+        or len(proof) != 64
+        or any(character not in "0123456789abcdef" for character in proof)
+        or authorized_at > now
+        or lease_expires_at <= now
+    ):
+        raise HTTPException(status_code=503, detail="Payer setup recovery state could not be verified.")
+    return "recovery_safe_retry"
 
 
 def provider_operation_disposition(claimed: dict[str, Any]) -> str:

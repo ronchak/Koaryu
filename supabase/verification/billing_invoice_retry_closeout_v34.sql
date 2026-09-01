@@ -1,8 +1,16 @@
 BEGIN;
 
 DO $$
-DECLARE v_ready RECORD;
+DECLARE
+  v_ready RECORD;
+  v_current_count INTEGER;
+  v_current_head TEXT;
+  v_v31_expectation_state TEXT;
+  v_expected_v31_expectation_state TEXT;
 BEGIN
+  SELECT count(*)::INTEGER,max(version)
+    INTO v_current_count,v_current_head
+  FROM supabase_migrations.schema_migrations;
   SELECT * INTO v_ready FROM public.koaryu_release_schema_preflight_v15();
   IF v_ready.ready IS DISTINCT FROM true
      OR v_ready.migration_count<>129
@@ -15,19 +23,34 @@ BEGIN
      <>'0:d054ae0cf5ce43ce2c241ca628e0724b5239bd696c323ba9c817b8bd21ee0eec' THEN
     RAISE EXCEPTION 'V34 closeout manifest mismatch.';
   END IF;
-  IF private.koaryu_release_operational_contract_v29()
-     <>'0:5d022e3d25e3c09fd56cc80fd26ed8e6233b5ce881ddcc60b6b8593d8801190a'
-     OR private.koaryu_release_operational_manifest_v10()
-     <>'a1f100a662af004ba6683ae15f0f9834493013131142612721a5b6d410971a3f'
-     OR private.koaryu_release_payments_replay_repairs_manifest_v30()
-     <>'0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98' THEN
-    RAISE EXCEPTION 'V34 legacy compatibility manifests mismatch.';
+  IF v_current_count=131 AND v_current_head='20260831054918' THEN
+    IF private.koaryu_release_operational_contract_v29()
+       <>'0:1abbf21f66bcd927d0c1adf1f16255f4d4eebd030b0685f6dd3a2891d5afb5b9'
+       OR private.koaryu_release_operational_manifest_v10()
+       <>'4f6e364fe37e1325f47e098a810daacc53175b68cb01ed5bda74103f567805c5'
+       OR private.koaryu_release_payments_replay_repairs_manifest_v30()
+       <>'0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98' THEN
+      RAISE EXCEPTION 'V36 current compatibility manifests mismatch.';
+    END IF;
+  ELSIF private.koaryu_release_operational_contract_v29()
+       <>'0:5d022e3d25e3c09fd56cc80fd26ed8e6233b5ce881ddcc60b6b8593d8801190a'
+       OR private.koaryu_release_operational_manifest_v10()
+       <>'a1f100a662af004ba6683ae15f0f9834493013131142612721a5b6d410971a3f'
+       OR private.koaryu_release_payments_replay_repairs_manifest_v30()
+       <>'0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98' THEN
+      RAISE EXCEPTION 'V34 legacy compatibility manifests mismatch.';
   END IF;
-  IF (SELECT count(*)::TEXT||':'||encode(extensions.digest(convert_to(
+  SELECT count(*)::TEXT||':'||encode(extensions.digest(convert_to(
         COALESCE(string_agg(expectation_key||':'||expected_sha256,'|'
           ORDER BY expectation_key COLLATE "C"),''),'UTF8'),'sha256'),'hex')
-      FROM private.koaryu_release_v31_expectations)
-     <>'1:98b3c2abb6dbe454ea0b9d84d3bdd31769f47b4fe72af9a5dcd5df476a62e443' THEN
+    INTO v_v31_expectation_state
+  FROM private.koaryu_release_v31_expectations;
+  v_expected_v31_expectation_state:=CASE
+    WHEN v_current_count=131 AND v_current_head='20260831054918'
+         THEN '1:3d764f9527b71e81235d6ae5dbc62047149958b39b741d63e6600f3d78a4a587'
+    ELSE '1:98b3c2abb6dbe454ea0b9d84d3bdd31769f47b4fe72af9a5dcd5df476a62e443'
+  END;
+  IF v_v31_expectation_state IS DISTINCT FROM v_expected_v31_expectation_state THEN
     RAISE EXCEPTION 'V34 V31 compatibility expectation state mismatch.';
   END IF;
   IF position('requires_action' IN pg_get_functiondef(
