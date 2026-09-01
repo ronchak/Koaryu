@@ -161,6 +161,7 @@ LOCAL_ALLOWED = {
     "id", "stripe_event_id", "studio_id", "student_id", "actor_id", "user_id", "initiated_by", "payer_id", "plan_id", "billing_plan_id", "billing_subscription_id", "setup_request_id", "consent_id", "invoice_id", "payment_id", "operation_id", "provider_operation_id", "source_intent_id", "parent_operation_id", "step_id", "resource_id", "workflow_id", "operation", "operation_type", "transition_kind", "provider_operation", "step_name", "step_order", "resource_type", "resource_key", "actor_role", "role", "status", "state", "processing_status", "state_category", "scope", "stripe_account_id", "stripe_connected_account_id", "connect_account_generation", "livemode", "revision", "request_sha256", "provider_request_sha256", "caller_request_key_sha256", "automatic_retry_count", "provider_mutation_count", "provider_request_attempt_count", "reconciliation_required", "reconciliation_required_at", "reconciliation_reason_code", "definitive_failed_at", "definitive_rejected_at", "error_code", "lease_expires_at", "created_at", "updated_at", "archived_at", "processed_at", "completed_at", "accepted_at", "superseded_at", "revoked_at", "finalized_at", "sent_at", "scheduled_at", "due_claimed_at", "period_boundary", "provider_succeeded_at", "projected_at", "amount", "amount_cents", "currency", "external_method", "application_fee_cents", "application_fee_amount_cents", "gross_paid_cents", "refunded_cents", "disputed_cents", "disputed_amount_cents", "net_collected_cents", "net_collected_amount_cents", "refundable_remaining_cents", "refundable_amount_cents", "expected_quantity", "expected_subscription_item_count", "same_item_active_count", "provider_quantity", "mutation_strategy", "stripe_customer_id", "stripe_product_id", "stripe_price_id", "stripe_subscription_id", "stripe_subscription_item_id", "stripe_subscription_schedule_id", "provider_object_id", "provider_secondary_object_id", "stripe_invoice_id", "stripe_payment_intent_id", "stripe_charge_id", "stripe_refund_id", "stripe_dispute_id", "stripe_checkout_session_id", "stripe_setup_intent_id", "stripe_payment_method_id", "checkout_session_id", "setup_intent_id", "payment_method_id", "terms_version", "active", "initiator", "type", "action", "entity_type", "entity_id",
     "billing_status", "amount_remaining_cents", "enrollment_id", "recovery_outcome", "adjustment_reconciliation_required", "error_present", "error_reference_present",
 }
+LOCAL_TIMESTAMP_KEYS = {key for key in LOCAL_ALLOWED if key.endswith("_at")} | {"period_boundary"}
 PROVIDER_ALLOWED = {"id", "object", "livemode", "status", "created", "frozen_time", "customer", "subscription", "subscription_item", "setup_intent", "payment_method", "payment_intent", "latest_charge", "charge", "invoice", "refund", "amount", "amount_refunded", "application_fee_amount", "quantity", "product", "price", "test_clock", "account", "type", "metadata", "last_payment_error", "canceled_at", "ended_at", "released_at"}
 METADATA_ALLOWED = {"studio_id", "connect_account_generation", "payer_id", "plan_id", "payment_id", "invoice_id", "operation_id"}
 
@@ -183,6 +184,13 @@ def _parse_instant(value: str) -> datetime | None:
     except (AttributeError, ValueError):
         return None
     return parsed.astimezone(timezone.utc) if parsed.tzinfo is not None else None
+
+
+def _normalize_packet_instant(value: Any) -> str:
+    parsed = _parse_instant(value) if isinstance(value, str) else None
+    if parsed is None:
+        raise CollectorError("local timestamp is invalid")
+    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _same_instant(left: str, right: str) -> bool:
@@ -327,11 +335,8 @@ def normalize_local(row: Mapping[str, Any]) -> dict[str, Any]:
     if forbidden:
         raise CollectorError("local row contains a forbidden field")
     result = {key: row[key] for key in sorted(set(row) & LOCAL_ALLOWED) if row[key] is not None}
-    caller_key = row.get("caller_request_key") or row.get("stripe_idempotency_key") or row.get("provider_caller_request_key") or row.get("idempotency_key")
-    if caller_key is not None:
-        if not isinstance(caller_key, str) or not caller_key:
-            raise CollectorError("local caller key is invalid")
-        result["caller_request_key_sha256"] = hashlib.sha256(caller_key.encode()).hexdigest()
+    for key in sorted(set(result) & LOCAL_TIMESTAMP_KEYS):
+        result[key] = _normalize_packet_instant(result[key])
     if row.get("error") is not None:
         result["error_present"] = True
     if row.get("error_reference") is not None:
@@ -444,7 +449,7 @@ def collect_local(supabase: Any, manifest: dict[str, Any], *, event_window_ended
     try:
         response = supabase.rpc(LOCAL_EVIDENCE_RPC, params).execute()
         payload = response.data
-    except Exception as exc:
+    except Exception:
         raise CollectorError("local evidence RPC failed") from None
     try:
         envelope_value = _plain(payload)
@@ -958,9 +963,11 @@ def _terminal_counts(manifest: dict[str, Any], rows: list[dict[str, Any]], objec
         expected_account = None if role == "platform_subscription" else manifest["stripe_account_id"]
         if role is None or row.get("stripe_account_id") != expected_account or row.get("processing_status") == "failed" or row.get("error") is not None or row.get("error_reference") is not None or row.get("error_present") is True or row.get("error_reference_present") is True or row.get("processing_status") not in {"pending", "processing", "processed", "ignored"}:
             unmapped += 1
+    # Packet timestamps have second granularity. Truncation treats a lease within the
+    # boundary's second as at-boundary, so the zero-terminal-count gate fails loudly.
     raw = {
         "failed": sum(row.get("state") in {"definitive_failed", "definitive_rejected"} for row in operations + steps + transitions),
-        "stuck": sum(row.get("state") in {"provider_request_in_flight", "recovery_authorized", "due_claimed"} and bool(row.get("lease_expires_at")) and str(row["lease_expires_at"]) <= boundary for row in operations + steps + transitions),
+        "stuck": sum(row.get("state") in {"provider_request_in_flight", "recovery_authorized", "due_claimed"} and bool(row.get("lease_expires_at")) and _at_or_after(boundary, str(row["lease_expires_at"])) for row in operations + steps + transitions),
         "unmapped": unmapped,
         "wrong_mode": provider_wrong + local_wrong,
         "wrong_generation": wrong_generation,
