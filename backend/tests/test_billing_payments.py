@@ -1008,7 +1008,45 @@ class BillingPaymentManagerTests(unittest.TestCase):
             _FakeStripeService.refunds[0]["idempotency_key"],
             "koaryu:payment-refund:00000000-0000-4000-8000-000000009001",
         )
+        self.assertFalse(_FakeStripeService.refunds[0]["refund_application_fee"])
         self.assertEqual(facade.supabase.tables["audit_logs"][0]["action"], "billing.payment_refunded")
+
+    def test_refund_payment_refunds_application_fee_only_when_positive(self):
+        for application_fee_amount_cents, expected in ((0, False), (6, True)):
+            with self.subTest(application_fee_amount_cents=application_fee_amount_cents):
+                _FakeStripeService.reset()
+                facade = _BillingFacade({
+                    "billing_payments": [{
+                        "id": "payment_1",
+                        "studio_id": "studio_1",
+                        "stripe_charge_id": "ch_1",
+                        "stripe_account_id": "acct_1",
+                        "amount_cents": 1200,
+                        "refunded_amount_cents": 0,
+                        "application_fee_amount_cents": application_fee_amount_cents,
+                    }]
+                })
+                manager = BillingPaymentManager(
+                    facade,
+                    stripe_service_cls=_FakeStripeService,
+                )
+
+                asyncio.run(manager.refund_payment(
+                    "payment_1",
+                    BillingRefundCreate(
+                        amount_cents=500,
+                        reason="requested_by_customer",
+                    ),
+                    "studio_1",
+                    "actor_1",
+                    f"refund-key-fee-{application_fee_amount_cents}",
+                ))
+
+                self.assertEqual(len(_FakeStripeService.refunds), 1)
+                self.assertIs(
+                    _FakeStripeService.refunds[0]["refund_application_fee"],
+                    expected,
+                )
 
     def test_pending_refund_audits_request_without_claiming_money_returned(self):
         class PendingRefundFacade(_BillingFacade):
