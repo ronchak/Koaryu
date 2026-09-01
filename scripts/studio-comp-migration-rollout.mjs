@@ -3213,9 +3213,9 @@ export function validateApplyAuthorization(config) {
     throw new RolloutError(`--confirm-project must exactly equal the pinned ${config.target} ref.`);
   }
   assertPlainText("--approval-record", config.approvalRecord);
-  if (!/^https:\/\/github\.com\/ronchak\/Koaryu\/pull\/134#issuecomment-[1-9][0-9]*$/.test(config.approvalRecord)) {
+  if (!/^https:\/\/github\.com\/ronchak\/Koaryu\/pull\/138#issuecomment-[1-9][0-9]*$/.test(config.approvalRecord)) {
     throw new RolloutError(
-      "--approval-record must be an exact PR #134 GitHub issue-comment URL.",
+      "--approval-record must be an exact PR #138 GitHub issue-comment URL.",
     );
   }
   if (config.target === "staging") {
@@ -3268,11 +3268,11 @@ export function validateApplyApprovalRecord(
 ) {
   if (config.mode !== "apply") return;
   const match = config.approvalRecord.match(
-    /^https:\/\/github\.com\/ronchak\/Koaryu\/pull\/134#issuecomment-([1-9][0-9]*)$/,
+    /^https:\/\/github\.com\/ronchak\/Koaryu\/pull\/138#issuecomment-([1-9][0-9]*)$/,
   );
   if (!match) {
     throw new RolloutError(
-      "--approval-record must be an exact PR #134 GitHub issue-comment URL.",
+      "--approval-record must be an exact PR #138 GitHub issue-comment URL.",
     );
   }
   const rawComment = commandRunner(
@@ -3304,9 +3304,9 @@ export function validateApplyApprovalRecord(
       "Durable approval record lookup did not return structured GitHub comment data.",
     );
   }
-  if (comment.issue_url !== "https://api.github.com/repos/ronchak/Koaryu/issues/134") {
+  if (comment.issue_url !== "https://api.github.com/repos/ronchak/Koaryu/issues/138") {
     throw new RolloutError(
-      "Durable approval record does not belong to ronchak/Koaryu PR #134.",
+      "Durable approval record does not belong to ronchak/Koaryu PR #138.",
     );
   }
   if (
@@ -5038,7 +5038,7 @@ function usage() {
 
 diagnose performs linked, read-only SELECT diagnosis and needs no inspection token.
 Dry-run and apply require the inspection_token from a preceding inspect. Apply additionally requires:
-  --confirm-project <exact-ref> --approval-record <exact-PR-134-issue-comment-url>
+  --confirm-project <exact-ref> --approval-record <exact-PR-138-issue-comment-url>
   staging:    --approve-staging-apply
   production: --human-production-operator --expected-provider-fingerprint <staging-fingerprint>
               --confirmed-restore-window <window-or-record>

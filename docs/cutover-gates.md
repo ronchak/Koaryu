@@ -40,24 +40,22 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-The latest read-only staging diagnosis found 126/head `20260826185651` at exact
-V31. The candidate finishes at 130/head `20260831022021`, readiness V16, and
-`release-db-attestation-v35`. The guarded
-rollout tool accepts this live V31 tuple only when its history, readiness, and
-catalog all match, then derives this exact four-file remainder:
+The latest hosted staging readiness readback reported 130/head `20260831022021`
+at exact V35. The candidate finishes at 131/head `20260831054918`, readiness
+V17, and `release-db-attestation-v36`. The guarded rollout tool accepts the
+live V35 tuple only when its history, readiness, and catalog all match, then
+derives this exact one-file remainder:
 
-- `20260830065627_release_invoice_retry_preread_lease_v32.sql`
-- `20260830082610_invoice_retry_release_compatibility_v33.sql`
-- `20260830151714_invoice_retry_closeout_contract_v34.sql`
-- `20260831022021_stripe_rehearsal_evidence_rpc_v35.sql`
+- `20260831054918_payer_setup_recovery_v36.sql`
 
-Exact V32, V33, and V34 are also state-bound forward-recovery points. They may
-resume only the three-file, two-file, or one-file suffix respectively; hybrid
-histories, catalogs, or readiness results are refused.
+Exact V31, V32, V33, and V34 remain state-bound forward-recovery points. They
+may resume only their immutable suffix through V36; hybrid histories, catalogs,
+or readiness results are refused.
 
 Migration 119 keeps `koaryu_release_schema_preflight_v4` returning the historical
 V24 shape. The Payments chain preserves the schedule-shaped V5 response and owns
-V6 through V16. The candidate backend reads V16 and serves only at exact 130/V35;
+V6 through V17. V36 preserves the V35-shaped V16 response during the
+database-first cutover. The candidate backend reads V17 and serves only at exact 131/V36;
 older deployed backends retain their corresponding compatibility response during
 the database-first cutover.
 The temporary V22 and
@@ -89,13 +87,14 @@ post-110 rollback set. A database still at exact 110 must classify
 `20260825043911_attest_schedule_window_release.sql`, and the ten Payments
 migrations from `20260826030234_live_billing_reconciliation_v3.sql` through
 `20260830151714_invoice_retry_closeout_contract_v34.sql`, followed by
-`20260831022021_stripe_rehearsal_evidence_rpc_v35.sql`. If a future approved
+`20260831022021_stripe_rehearsal_evidence_rpc_v35.sql` and
+`20260831054918_payer_setup_recovery_v36.sql`. If a future approved
 disaster recovery explicitly returns production to the proved restored V22
 snapshot, it must classify exact `state=restored-v22` and dry-run only
-migrations 116 through 130. These are hypothetical forward-recovery cases, not
+migrations 116 through 131. These are hypothetical forward-recovery cases, not
 the current live state. In either case, only the authorized operator runs the
-production apply gate, and promotion remains blocked until migration 130
-produces exact V35 readiness and the final raw catalog/provider fingerprint.
+production apply gate, and promotion remains blocked until migration 131
+produces exact V36 readiness and the final raw catalog/provider fingerprint.
 
 The V33 retry-hash capture stays enabled throughout the database-first rolling
 deploy. Do not call `finalize_billing_invoice_retry_hash_capture_v33` during the
@@ -120,17 +119,17 @@ deliberately deferred as known issues — makes `mergeStateStatus` `BLOCKED`, an
 before starting, and record *why* on each thread if the finding is being deferred.
 
 **Run the rollout tool from the exact candidate implementation.** For an unmerged
-release, invoke the tool from PR #134's worktree and pass its exact 40-character head.
-The tool creates a detached worktree at that SHA and verifies the 129-file sequence and
+release, invoke the tool from PR #138's worktree and pass its exact 40-character head.
+The tool creates a detached worktree at that SHA and verifies the 131-file sequence and
 source hashes there. Do not run an older `main` copy of the tool and do not merge the PR
 to obtain the rollout script.
 
 **Staging apply needs more than `--approve-staging-apply`.** It also requires
-`--confirm-project <ref>` and an exact PR #134 issue-comment URL. The tool reads that
+`--confirm-project <ref>` and an exact PR #138 issue-comment URL. The tool reads that
 comment through GitHub and requires its complete body to bind the candidate SHA, target,
 project ref, inspected state, remaining migration count/set, and remaining manifest. It
 also requires the GitHub API record's exact `issue_url` to identify
-`ronchak/Koaryu` PR #134, preventing a matching body on another issue or pull request
+`ronchak/Koaryu` PR #138, preventing a matching body on another issue or pull request
 from serving as the approval. The API record must also identify `ronchak` with GitHub
 `author_association=OWNER`; comments from collaborators or outside users are refused.
 A stale approval record is rejected after any code, state, or remainder change.

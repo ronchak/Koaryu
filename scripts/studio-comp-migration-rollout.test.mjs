@@ -2985,7 +2985,7 @@ describe("studio-comp migration rollout guard", () => {
       "--target", "staging", "--candidate-sha", candidateSha, "--mode", "apply",
       "--inspection-token", buildInspectionToken(packet, "staging", "pre"),
       "--confirm-project", ROLLOUT.stagingRef,
-      "--approval-record", "https://github.com/ronchak/Koaryu/pull/134#issuecomment-123456789",
+      "--approval-record", "https://github.com/ronchak/Koaryu/pull/138#issuecomment-123456789",
       "--approve-staging-apply",
     ]);
     assert.doesNotThrow(() => validateApplyAuthorization(config));
@@ -2999,7 +2999,7 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.throws(
       () => validateApplyAuthorization({ ...config, approvalRecord: "director-phase-b-approval" }),
-      /exact PR #134 GitHub issue-comment URL/,
+      /exact PR #138 GitHub issue-comment URL/,
     );
   });
 
@@ -3009,7 +3009,7 @@ describe("studio-comp migration rollout guard", () => {
       "--target", "staging", "--candidate-sha", candidateSha, "--mode", "apply",
       "--inspection-token", buildInspectionToken(candidatePacket(), "staging", "schedule-v25"),
       "--confirm-project", ROLLOUT.stagingRef,
-      "--approval-record", "https://github.com/ronchak/Koaryu/pull/134#issuecomment-123456789",
+      "--approval-record", "https://github.com/ronchak/Koaryu/pull/138#issuecomment-123456789",
       "--approve-staging-apply",
     ]);
     const expectedBody = buildApplyApprovalRecordBody(packet, "staging", "schedule-v25");
@@ -3020,7 +3020,7 @@ describe("studio-comp migration rollout guard", () => {
       ]);
       return JSON.stringify({
         body: expectedBody,
-        issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/134",
+        issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/138",
         user: { login: "ronchak" },
         author_association: "OWNER",
       });
@@ -3055,7 +3055,7 @@ describe("studio-comp migration rollout guard", () => {
         forgedOtherIssueRunner,
         {},
       ),
-      /does not belong to ronchak\/Koaryu PR #134/,
+      /does not belong to ronchak\/Koaryu PR #138/,
     );
     for (const untrustedAuthor of [
       {
@@ -3069,7 +3069,7 @@ describe("studio-comp migration rollout guard", () => {
     ]) {
       const untrustedAuthorRunner = () => JSON.stringify({
         body: expectedBody,
-        issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/134",
+        issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/138",
         ...untrustedAuthor,
       });
       assert.throws(
@@ -3085,7 +3085,7 @@ describe("studio-comp migration rollout guard", () => {
     }
     const missingAuthorRunner = () => JSON.stringify({
       body: expectedBody,
-      issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/134",
+      issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/138",
     });
     assert.throws(
       () => validateApplyApprovalRecord(
@@ -3105,7 +3105,7 @@ describe("studio-comp migration rollout guard", () => {
       "--target", "production", "--candidate-sha", candidateSha, "--mode", "apply",
       "--inspection-token", buildInspectionToken(packet, "production", "pre"),
       "--confirm-project", ROLLOUT.productionRef,
-      "--approval-record", "https://github.com/ronchak/Koaryu/pull/134#issuecomment-987654321",
+      "--approval-record", "https://github.com/ronchak/Koaryu/pull/138#issuecomment-987654321",
       "--human-production-operator", "--expected-provider-fingerprint", validFingerprint,
       "--confirmed-restore-window", "2026-07-31T18:00:00Z/PITR-confirmed",
       "--restore-decision-authority", "Ronak Chakraborty",

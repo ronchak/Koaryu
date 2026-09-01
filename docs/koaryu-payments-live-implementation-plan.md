@@ -336,7 +336,16 @@ direct `service_role` reads and exposes one bounded, manifest-bound,
 RPC call per capture phase, receives only the approved sanitized projection,
 and the V16 readiness function reports `release-db-attestation-v35`.
 
-Latest local candidate evidence before publication:
+The additive V36 payer-setup recovery contract advances the chain to 131/V36
+(`20260831054918`). It lets an exact `recovery_authorized` payer Setup Checkout
+reuse its durable operation and provider idempotency identity for at most one
+proof-backed second attempt after Stripe readback proves no Session exists. A
+stale request closes atomically without another provider call. Mismatched,
+expired, timezone-naive, or incomplete recovery state fails closed. The V17
+readiness function reports `release-db-attestation-v36` while V16 retains its
+V35 compatibility response for database-first deployment.
+
+Historical V35 candidate evidence before publication:
 
 - backend: all 1,417 tests passed;
 - frontend: all 728 tests passed outside the sandbox, including the three
