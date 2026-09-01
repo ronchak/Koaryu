@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 130 ]]; then
-  echo "ERROR: Expected the canonical 130-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 131 ]]; then
+  echo "ERROR: Expected the canonical 131-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 48 ]]; then
-  echo "ERROR: Expected the canonical 48-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 49 ]]; then
+  echo "ERROR: Expected the canonical 49-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
@@ -674,6 +674,9 @@ SQL
             print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260831022021_stripe_rehearsal_evidence_rpc_v35.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260831022021'\'','\''stripe_rehearsal_evidence_rpc_v35'\'');\" >/dev/null"
             print "echo RESTORED_V35_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
             print "echo RESTORED_V35_READINESS=\"$(read_restored \"SELECT ready::TEXT||'\''|'\''||migration_count::TEXT||'\''|'\''||migration_head||'\''|'\''||cardinality(security_failures)::TEXT||'\''|'\''||COALESCE(array_to_string(security_failures,'\'','\''),'\'''\'')||'\''|'\''||manifest_version FROM public.koaryu_release_schema_preflight_v16();\")\""
+            print "\"$psql_bin\" \"\${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260831054918_payer_setup_recovery_v36.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260831054918'\'','\''payer_setup_recovery_v36'\'');\" >/dev/null"
+            print "echo RESTORED_V36_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
+            print "echo RESTORED_V36_READINESS=\"$(read_restored \"SELECT ready::TEXT||'\''|'\''||migration_count::TEXT||'\''|'\''||migration_head||'\''|'\''||cardinality(security_failures)::TEXT||'\''|'\''||COALESCE(array_to_string(security_failures,'\'','\''),'\'''\'')||'\''|'\''||manifest_version FROM public.koaryu_release_schema_preflight_v17();\")\""
           }
           { print }
         ' "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh"
@@ -683,6 +686,8 @@ SQL
       restored_v34_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V34_CATALOG_STATE=//p' | tail -1)"
       restored_v35_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V35_CATALOG_STATE=//p' | tail -1)"
       restored_v35_readiness="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V35_READINESS=//p' | tail -1)"
+      restored_v36_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V36_CATALOG_STATE=//p' | tail -1)"
+      restored_v36_readiness="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V36_READINESS=//p' | tail -1)"
       expected_restored_v34_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V34_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V34_RESTORED_CATALOG_STATE);")"
       if [[ "$restored_v34_catalog" != "$expected_restored_v34_catalog" ]]; then
         echo "[restored V34] FAIL exact restored catalog: $restored_v34_catalog" >&2
@@ -699,6 +704,16 @@ SQL
         exit 1
       fi
       echo "[restored V35] PASS V30 dump/restore then migrations 126-130"
+      expected_restored_v36_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V36_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V36_RESTORED_CATALOG_STATE);")"
+      if [[ "$restored_v36_catalog" != "$expected_restored_v36_catalog" ]]; then
+        echo "[restored V36] FAIL exact restored catalog: $restored_v36_catalog" >&2
+        exit 1
+      fi
+      if [[ "$restored_v36_readiness" != "true|131|20260831054918|0||release-db-attestation-v36" ]]; then
+        echo "[restored V36] FAIL exact readiness: $restored_v36_readiness" >&2
+        exit 1
+      fi
+      echo "[restored V36] PASS V30 dump/restore then migrations 126-131"
     else
       status=$?
       echo "[restored V31] FAIL V30 dump/restore then migration 126 (exit $status)" >&2
@@ -1106,7 +1121,7 @@ v27_expectation_state="$({
 if (
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { validateV30CompatV27ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30CompatV27ExpectationState(process.argv[1]);" \
+    "import { validateV36CompatV27ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV36CompatV27ExpectationState(process.argv[1]);" \
     "$v27_expectation_state"
 ); then
   echo "[V27 expectation] PASS private singleton release expectation"
@@ -1125,7 +1140,7 @@ v28_expectation_state="$({
 if (
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { validateV30CompatV28ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30CompatV28ExpectationState(process.argv[1]);" \
+    "import { validateV36CompatV28ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV36CompatV28ExpectationState(process.argv[1]);" \
     "$v28_expectation_state"
 ); then
   echo "[V28 expectation] PASS private singleton release expectation"
@@ -1144,7 +1159,7 @@ v29_expectation_state="$({
 if (
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { validateV30CompatV29ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30CompatV29ExpectationState(process.argv[1]);" \
+    "import { validateV36CompatV29ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV36CompatV29ExpectationState(process.argv[1]);" \
     "$v29_expectation_state"
 ); then
   echo "[V29 expectation] PASS V30-compatible private singleton expectation"
@@ -1163,7 +1178,7 @@ v30_expectation_state="$({
 if (
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { validateV30ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30ExpectationState(process.argv[1]);" \
+    "import { validateV36CompatV30ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV36CompatV30ExpectationState(process.argv[1]);" \
     "$v30_expectation_state"
 ); then
   echo "[V30 expectation] PASS exact private singleton expectation"

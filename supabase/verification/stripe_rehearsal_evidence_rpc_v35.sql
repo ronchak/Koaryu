@@ -1,8 +1,14 @@
 BEGIN;
 
 DO $acl$
-DECLARE v_preflight RECORD;
+DECLARE
+  v_preflight RECORD;
+  v_current_count INTEGER;
+  v_current_head TEXT;
 BEGIN
+  SELECT count(*)::INTEGER,max(version)
+  INTO v_current_count,v_current_head
+  FROM supabase_migrations.schema_migrations;
   IF has_function_privilege(
       'anon',
       'public.read_stripe_rehearsal_local_evidence_v1(uuid,text,integer,timestamptz,timestamptz,jsonb,uuid[],uuid,text[],text[])',
@@ -56,11 +62,18 @@ BEGIN
     ) = 0 THEN
     RAISE EXCEPTION 'V35 evidence RPC security definition mismatch.';
   END IF;
-  IF position('migration_history_v35' IN pg_get_functiondef(
-      'public.koaryu_release_schema_preflight_v16()'::regprocedure))=0
-    OR position('migration_history_v34' IN pg_get_functiondef(
-      'public.koaryu_release_schema_preflight_v16()'::regprocedure))<>0 THEN
-    RAISE EXCEPTION 'V35 readiness diagnostics retained a stale history label.';
+  IF v_current_count=131 AND v_current_head='20260831054918' THEN
+    IF position('migration_history_v36' IN pg_get_functiondef(
+        'public.koaryu_release_schema_preflight_v17()'::regprocedure))=0
+      OR position('migration_history_v35' IN pg_get_functiondef(
+        'public.koaryu_release_schema_preflight_v17()'::regprocedure))<>0 THEN
+      RAISE EXCEPTION 'V36 readiness diagnostics retained a stale history label.';
+    END IF;
+  ELSIF position('migration_history_v35' IN pg_get_functiondef(
+        'public.koaryu_release_schema_preflight_v16()'::regprocedure))=0
+      OR position('migration_history_v34' IN pg_get_functiondef(
+        'public.koaryu_release_schema_preflight_v16()'::regprocedure))<>0 THEN
+      RAISE EXCEPTION 'V35 readiness diagnostics retained a stale history label.';
   END IF;
   IF private.koaryu_release_stripe_rehearsal_evidence_manifest_v35()
        IS DISTINCT FROM (SELECT evidence_manifest

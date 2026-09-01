@@ -7,6 +7,7 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.platform_billing_helpers import stable_hash
 from app.services.billing_autopay import BillingAutopayManager
+from app.services.billing_provider_operations import payer_setup_operation_disposition
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 
 from tests.billing_lifecycle_helpers import (
@@ -441,8 +442,22 @@ class _AutopayOperationSupabase(_FakeSupabase):
         ]
         assert self.operation["revision"] == params["p_expected_operation_revision"]
         assert self.setup_request["revision"] == params["p_expected_setup_revision"]
-        assert self.operation["state"] == "provider_request_in_flight"
-        assert self.operation["provider_request_attempt_count"] == 1
+        recovery_lifetime_rejection = (
+            self.operation["state"] == "recovery_authorized"
+            and self.operation.get("recovery_outcome")
+            == "provider_no_object_safe_to_retry"
+        )
+        recovered_policy_rejection = (
+            self.operation["state"] == "provider_request_in_flight"
+            and self.operation["provider_request_attempt_count"] == 2
+            and self.operation.get("recovery_outcome")
+            == "provider_no_object_safe_to_retry"
+            and bool(self.operation.get("recovery_proof_sha256"))
+        )
+        assert self.operation["state"] == "provider_request_in_flight" or recovery_lifetime_rejection
+        assert self.operation["provider_request_attempt_count"] == (
+            2 if recovered_policy_rejection else 1
+        )
         assert self.operation.get("provider_object_id") is None
         assert self.operation.get("provider_secondary_object_id") is None
         assert self.setup_request.get("stripe_checkout_session_id") is None
@@ -454,16 +469,22 @@ class _AutopayOperationSupabase(_FakeSupabase):
             and not self.consent.get("superseded_at")
         ):
             self.consent["superseded_at"] = "2026-08-26T12:21:00+00:00"
+        reason = (
+            "setup_request_lifetime_insufficient"
+            if recovery_lifetime_rejection
+            else "provider_mutation_blocked"
+        )
+        proof = self.operation.get("recovery_proof_sha256") if recovery_lifetime_rejection else None
         self.setup_request.update({
             "superseded_at": "2026-08-26T12:21:00+00:00",
             "closed_at": "2026-08-26T12:21:00+00:00",
-            "close_reason_code": "provider_mutation_blocked",
-            "provider_read_proof_sha256": None,
+            "close_reason_code": reason,
+            "provider_read_proof_sha256": proof,
             "revision": self.setup_request["revision"] + 1,
         })
         self.operation.update({
             "state": "definitive_rejected",
-            "error_code": "provider_mutation_blocked",
+            "error_code": reason,
             "revision": self.operation["revision"] + 1,
         })
         return {
@@ -547,6 +568,43 @@ def _autopay_tables(*, saved_card: bool = False) -> dict[str, list[dict]]:
 
 
 class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
+    def test_payer_setup_recovery_rejects_timezone_naive_evidence(self):
+        claimed = {
+            "outcome": "continued",
+            "operation": {
+                "studio_id": "studio_1",
+                "actor_id": "user_1",
+                "operation_type": "payer.setup",
+                "caller_request_key": "recovery-key",
+                "request_sha256": "a" * 64,
+                "stripe_connected_account_id": "acct_1",
+                "connect_account_generation": 1,
+                "state": "recovery_authorized",
+                "recovery_outcome": "provider_no_object_safe_to_retry",
+                "provider_request_attempt_count": 1,
+                "provider_object_id": None,
+                "provider_secondary_object_id": None,
+                "provider_request_id": None,
+                "provider_step_plan_sha256": None,
+                "provider_step_expected_count": None,
+                "recovery_proof_sha256": "b" * 64,
+                "recovery_actor_id": "00000000-0000-4000-8000-000000000202",
+                "lease_owner": "00000000-0000-4000-8000-000000000102",
+                "recovery_authorized_at": "2026-08-26T12:30:00",
+                "lease_expires_at": "2026-08-26T12:32:00+00:00",
+            },
+        }
+        with self.assertRaisesRegex(HTTPException, "recovery state could not be verified"):
+            payer_setup_operation_disposition(
+                claimed,
+                studio_id="studio_1",
+                actor_id="user_1",
+                caller_request_key="recovery-key",
+                request_sha256="a" * 64,
+                stripe_connected_account_id="acct_1",
+                connect_account_generation=1,
+            )
+
     def _enabled_payer_replacement_setup(self):
         service = self.service()
         service.settings = type("Settings", (), {
@@ -1026,11 +1084,11 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertNotIn("url", repr(service.supabase.setup_request))
         self.assertEqual(
             checkout["expires_at"],
-            int(datetime(2026, 8, 26, 12, 55, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 8, 26, 13, 25, tzinfo=timezone.utc).timestamp()),
         )
         self.assertEqual(
             service.supabase.setup_request["setup_request_expires_at"],
-            "2026-08-26T12:55:00+00:00",
+            "2026-08-26T13:25:00+00:00",
         )
         self.assertGreaterEqual(
             checkout["expires_at"]
@@ -1451,9 +1509,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         with (
             patch("app.services.billing_service.StripeService", _FakeStripeService),
             patch("app.services.billing_autopay.datetime", AtTwelveTwentySeven),
-            self.assertRaises(HTTPException) as expiring,
         ):
-            asyncio.run(service.create_autopay_setup_link(
+            recovered = asyncio.run(service.create_autopay_setup_link(
                 "payer_1",
                 BillingPayerAutopaySetupRequest(),
                 "studio_1",
@@ -1461,41 +1518,164 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "autopay-key",
             ))
 
-        self.assertEqual(expiring.exception.status_code, 409)
-        self.assertIn("new Idempotency-Key", expiring.exception.detail)
+        self.assertEqual(recovered.url, "https://checkout.stripe.test/setup")
         self.assertEqual(database.setup_request["id"], original_request_id)
         self.assertEqual(
             database.setup_request["setup_request_expires_at"],
-            "2026-08-26T12:36:00+00:00",
+            "2026-08-26T13:06:00+00:00",
         )
-        self.assertEqual(database.operation["state"], "definitive_rejected")
-        self.assertEqual(database.operation["provider_request_attempt_count"], 0)
-        self.assertEqual(len(database.prepare_calls), 2)
-        self.assertEqual(
-            database.prepare_calls[0]["p_setup_request_id"],
-            database.prepare_calls[1]["p_setup_request_id"],
-        )
-        self.assertEqual(_FakeStripeService.setup_calls, [])
 
-        database.operation_started_at = "2026-08-26T12:27:00+00:00"
-        with (
-            patch("app.services.billing_service.StripeService", _FakeStripeService),
-            patch("app.services.billing_autopay.datetime", AtTwelveTwentySeven),
-        ):
-            fresh = asyncio.run(service.create_autopay_setup_link(
+    def test_no_object_recovery_with_thirty_minutes_remaining_skips_prepare_and_retries_once(self):
+        class AtTwelveOhOne(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                value = cls(2026, 8, 26, 12, 1, tzinfo=timezone.utc)
+                return value if tz is None else value.astimezone(tz)
+        class AtTwelveThirtyOne(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                value = cls(2026, 8, 26, 12, 31, tzinfo=timezone.utc)
+                return value if tz is None else value.astimezone(tz)
+        service = self.service()
+        service.settings = type("Settings", (), {"BILLING_PLATFORM_FEE_BPS": 50, "FRONTEND_URL": "https://app.koaryu.test"})()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        database.operation_started_at = "2026-08-26T12:00:00+00:00"
+        service.supabase = database
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1", "charges_enabled": True, "payouts_enabled": True,
+            "details_submitted": True, "requirements": {"currently_due": []},
+        }
+        with patch("app.services.billing_service.StripeService", _FakeStripeService), patch("app.services.billing_autopay.datetime", AtTwelveOhOne):
+            asyncio.run(service.create_autopay_setup_link("payer_1", BillingPayerAutopaySetupRequest(), "studio_1", "user_1", "recovery-key"))
+        operation = database.operation
+        operation.update({
+            "state": "recovery_authorized", "provider_object_id": None,
+            "provider_secondary_object_id": None, "provider_request_id": None,
+            "recovery_outcome": "provider_no_object_safe_to_retry",
+            "recovery_proof_sha256": "a" * 64,
+            "recovery_actor_id": "00000000-0000-4000-8000-000000000202",
+            "recovery_authorized_at": "2026-08-26T12:30:00+00:00",
+            "lease_owner": "00000000-0000-4000-8000-000000000102",
+            "lease_expires_at": "2026-08-26T12:32:00+00:00",
+        })
+        database.setup_request["stripe_checkout_session_id"] = None
+        prepare_count = len(database.prepare_calls)
+        with patch("app.services.billing_service.StripeService", _FakeStripeService), patch("app.services.billing_autopay.datetime", AtTwelveThirtyOne), patch("app.services.billing_provider_operations.datetime", AtTwelveThirtyOne):
+            asyncio.run(service.create_autopay_setup_link("payer_1", BillingPayerAutopaySetupRequest(), "studio_1", "user_1", "recovery-key"))
+        self.assertEqual(len(database.prepare_calls), prepare_count)
+        self.assertEqual(database.operation["provider_request_attempt_count"], 2)
+        self.assertEqual(len(_FakeStripeService.setup_calls), 2)
+
+    def test_stale_no_object_recovery_closes_request_with_proof_and_requires_new_key(self):
+        service, database, _session = self._prepared_consent_setup()
+        operation = database.operation
+        operation.update({
+            "state": "recovery_authorized", "provider_object_id": None,
+            "provider_secondary_object_id": None, "provider_request_id": None,
+            "recovery_outcome": "provider_no_object_safe_to_retry",
+            "recovery_proof_sha256": "b" * 64,
+            "recovery_actor_id": "00000000-0000-4000-8000-000000000202",
+            "recovery_authorized_at": datetime.now(timezone.utc).isoformat(),
+            "lease_owner": "00000000-0000-4000-8000-000000000102",
+            "lease_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
+        })
+        database.setup_request["stripe_checkout_session_id"] = None
+        database.setup_request["setup_request_expires_at"] = (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat()
+        call_count = len(_FakeStripeService.setup_calls)
+        with patch("app.services.billing_service.StripeService", _FakeStripeService), self.assertRaises(HTTPException) as rejected:
+            asyncio.run(service.create_autopay_setup_link("payer_1", BillingPayerAutopaySetupRequest(), "studio_1", "user_1", "autopay-key"))
+        self.assertEqual(rejected.exception.status_code, 409)
+        self.assertEqual(len(_FakeStripeService.setup_calls), call_count)
+        self.assertEqual(database.operation["error_code"], "setup_request_lifetime_insufficient")
+        self.assertEqual(database.setup_request["close_reason_code"], "setup_request_lifetime_insufficient")
+        self.assertEqual(database.setup_request["provider_read_proof_sha256"], "b" * 64)
+        attempts = database.operation["provider_request_attempt_count"]
+        with patch("app.services.billing_service.StripeService", _FakeStripeService), self.assertRaises(HTTPException):
+            asyncio.run(service.create_autopay_setup_link("payer_1", BillingPayerAutopaySetupRequest(), "studio_1", "user_1", "autopay-key"))
+        self.assertEqual(database.operation["provider_request_attempt_count"], attempts)
+
+    def test_recovered_retry_blocked_by_policy_closes_without_provider_object(self):
+        class RecoveryPolicyBlockedStripeService(_FakeStripeService):
+            attempts = 0
+
+            def create_setup_checkout_session(self, **payload):
+                self.__class__.attempts += 1
+                raise StripeMutationBlocked(
+                    status_code=503,
+                    detail="provider mutation blocked",
+                )
+
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        database.operation_started_at = datetime.now(timezone.utc).isoformat()
+        service.supabase = database
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            asyncio.run(service.create_autopay_setup_link(
                 "payer_1",
                 BillingPayerAutopaySetupRequest(),
                 "studio_1",
                 "user_1",
-                "autopay-key-new",
+                "recovered-policy-key",
             ))
 
-        self.assertEqual(fresh.url, "https://checkout.stripe.test/setup")
-        self.assertEqual(len(_FakeStripeService.setup_calls), 1)
-        self.assertEqual(
-            database.closed_operations[0]["operation"]["provider_request_attempt_count"],
-            0,
+        operation = database.operation
+        operation.update({
+            "state": "recovery_authorized",
+            "provider_object_id": None,
+            "provider_secondary_object_id": None,
+            "provider_request_id": None,
+            "recovery_outcome": "provider_no_object_safe_to_retry",
+            "recovery_proof_sha256": "c" * 64,
+            "recovery_actor_id": "00000000-0000-4000-8000-000000000202",
+            "recovery_authorized_at": datetime.now(timezone.utc).isoformat(),
+            "lease_owner": "00000000-0000-4000-8000-000000000102",
+            "lease_expires_at": (
+                datetime.now(timezone.utc) + timedelta(minutes=2)
+            ).isoformat(),
+        })
+        database.setup_request["stripe_checkout_session_id"] = None
+        RecoveryPolicyBlockedStripeService.retrieve_account_response = (
+            _FakeStripeService.retrieve_account_response
         )
+        RecoveryPolicyBlockedStripeService.attempts = 0
+
+        with (
+            patch(
+                "app.services.billing_service.StripeService",
+                RecoveryPolicyBlockedStripeService,
+            ),
+            self.assertRaises(StripeMutationBlocked),
+        ):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "recovered-policy-key",
+            ))
+
+        self.assertEqual(RecoveryPolicyBlockedStripeService.attempts, 1)
+        self.assertEqual(database.operation["state"], "definitive_rejected")
+        self.assertEqual(database.operation["provider_request_attempt_count"], 2)
+        self.assertEqual(database.operation["error_code"], "provider_mutation_blocked")
+        self.assertEqual(
+            database.setup_request["close_reason_code"],
+            "provider_mutation_blocked",
+        )
+        self.assertIsNone(database.setup_request["provider_read_proof_sha256"])
+        self.assertIsNone(database.operation.get("provider_object_id"))
+        self.assertIsNotNone(database.setup_request["closed_at"])
 
     def test_expired_checkout_closes_old_request_before_deliberate_new_key(self):
         class ExpiredCheckoutStripeService(_FakeStripeService):
