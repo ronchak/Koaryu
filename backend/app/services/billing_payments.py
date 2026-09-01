@@ -581,7 +581,9 @@ class BillingPaymentManager:
                     charge_id=payment["stripe_charge_id"],
                     amount=amount,
                     reason=data.reason,
-                    refund_application_fee=True,
+                    refund_application_fee=(
+                        int(payment.get("application_fee_amount_cents") or 0) > 0
+                    ),
                     metadata={
                         "studio_id": studio_id,
                         "payment_id": payment_id,
