@@ -342,6 +342,110 @@ archive/RLS candidate is recorded in the Migration-111 section that follows.
 - Rollback verification: exact migration history/readiness/fingerprint, both public health routes, and live Stripe mode
 - Outcome: successful V24 convergence; temporary V22/V23 application bridges removed in the follow-up cleanup
 
+### Production V36 billing cutover and V37 canary repair — 2026-09-02
+
+- Environment: production Supabase `mimguepumzsgmcaycdsh`, Render service
+  `srv-d7mogk1kh4rs73aq6hqg`, Vercel project
+  `prj_ROzEAXoVf0NbUn3jNIKEJPWjF9HU`, and live Stripe.
+- Application commit: `69eacbde92656f32274c12791e3393d17a049624`.
+- Repository migration head:
+  `20260902001000_fix_billing_adjustment_trigger_table_guards.sql`.
+- Applied migration head: 132 / `20260902001000`, exact V37 readiness and
+  `release-db-attestation-v37`.
+- Migration comparison: the original V36 rollout advanced production from 117
+  through 131 after PR #139 repaired one explicit connected demo-payer
+  invariant. The live refund canary then exposed a table-polymorphic trigger
+  bug. PR #141 added the forward-only V37 repair, preserved the V36
+  compatibility response, passed staging first, and applied one exact
+  production migration with manifest
+  `c1b35df63a21b031f7c207898d681ef44b5fa2797556809b04c278957bce3bfb`.
+- Deployed at: Render deploy `dep-dabnbb7qj5pc738n0t2g` was live at
+  `2026-09-02T01:03:38Z`; Vercel deployment
+  `dpl_GdLm9rRk37T56t6LdDQKXNXjN8U2` was created at
+  `2026-09-02T01:04:09Z` and reached `READY` before the production aliases
+  resolved to it.
+- Operator: Ronak Chakraborty / Codex release orchestrator under the release
+  goal's explicit production, deployment, Stripe, financial-canary, recovery,
+  and repository authority.
+- Approval/review: PRs #139, #140, and #141 passed their exact-head required
+  checks. PR #141 merged through `scripts/merge-release-pr.sh` after two
+  authenticated Render readbacks confirmed production auto-deploy was off. The
+  V37 production database approval record is
+  `https://github.com/ronchak/Koaryu/pull/138#issuecomment-5502730490`.
+- Verification:
+  - The private production backup
+    `/private/tmp/koaryu-v36-production-backup.6xweva/production-v24.custom.dump`
+    is mode `0600`, 1,750,396 bytes, and SHA-256
+    `d889362d86f99b6e6fc1e0645564186f3bb290985797ab71b7026afd1b62e1ba`.
+    It restored successfully on PostgreSQL 17.6 with representative row counts
+    and schema state matching production. The temporary backup role and restore
+    container were removed.
+  - The 132-migration PostgreSQL 17 verification passed in GitHub, including
+    schema lint, all 49 SQL contracts, the refund/dispute identity-update
+    regression, concurrency checks, and a V30-to-V37 dump/restore proof.
+    Production and staging both report the expected V37 manifest. Production
+    matches the approved restored-catalog variant.
+  - `npm run verify:deployed-release -- --environment production
+    --expected-sha 69eacbde92656f32274c12791e3393d17a049624 --frontend-origin
+    https://koaryu.app --backend-api https://koaryu.onrender.com/api/v1`
+    passed. Both backend readiness paths report production, live Stripe mode,
+    and the exact SHA; `/api/version` reports the same frontend SHA. Production
+    CORS allows `https://koaryu.app`.
+  - Vercel owns `koaryu.app`, `www.koaryu.app`, `koaryu.vercel.app`, and the
+    team production alias at the exact Git SHA. The new deployment had zero
+    runtime error clusters and no warning/error runtime entries. Its only build
+    warning was the existing broad Node engine range.
+  - Render startup verified jemalloc and completed once. Across the
+    `2026-09-02T01:02:30Z` to `01:16:00Z` instance window, 192 application logs
+    contained zero error/fatal labels and zero traceback, exception, or critical
+    messages. One Starlette deprecation warning remains non-blocking.
+  - Browser smoke passed on the public home, privacy, and terms routes and the
+    authenticated dashboard/billing workspace without console warnings or
+    errors. The dashboard resolved to the pilot studio. Billing showed live
+    Stripe, a 6/6 Connect checklist, and the `connect_payments` authorization.
+  - The pilot is `ronaks-gmail-test-dojo-3a199a`, mapped to live account
+    `acct_…FtKEF4k`, generation 1. Charges, payouts, and submitted details are
+    enabled with no requirements due. Exactly one platform and one Connect
+    webhook endpoint are enabled and contract-matched.
+  - The live financial canary created and paid a $0.50 USD invoice through the
+    application flow. PR #140 repaired the zero-application-fee refund path.
+    The final provider charge `ch_…eWh` is fully refunded by `re_…9N9`; the
+    local payment is `refunded` with 50 cents refunded, zero net collected, zero
+    refundable balance, and no reconciliation flags.
+  - V37 repaired the refund/dispute identity trigger. Exact replays of the two
+    previously failed live events (`refund.updated` and
+    `charge.refund.updated`) both converged to `processed` with errors cleared.
+    The post-replay reconciliation matched 27 provider events to 27 local events
+    with zero failed, unprocessed, provider-only, local-only, unmapped, or
+    endpoint-contract failures.
+  - Final checkpoint sequence 6 is
+    `f108c07f-aa5a-45c7-b4ce-cb0ddd907257`, watermark 254, candidate SHA
+    `69eacbde92656f32274c12791e3393d17a049624`, source report SHA-256
+    `afa0ef18a0fa719c3225082cc43bb995c12d5da2552cfe1fc75efc28e3aa84a0`,
+    and expiry `2026-09-02T21:07:59Z`. The pilot `connect_payments` grant is
+    enabled at revision 5 and expires `2026-09-02T13:07:59Z`.
+- Known gaps: the live Setup Checkout did not complete. Stripe required fresh
+  card entry and no authorized PAN/CVC or browser autofill was available. The
+  Session later expired, its SetupIntent was canceled, and the application
+  closed the setup request with `checkout_session_expired` plus a provider-read
+  proof. No autopay consent or saved payment method was fabricated. The
+  explicit-pay financial canary is complete, but Setup Checkout completion must
+  be rerun with a real cardholder present before claiming that gate.
+- Application rollback target:
+  `c2182f658372dfef2438c114a104d62903c3bf84` on Render and Vercel.
+- Database recovery action: forward-only corrective migration for any later
+  contract drift. The verified logical backup is disaster-recovery evidence,
+  not a routine rollback mechanism.
+- Rollback trigger: failed readiness or exact-SHA verification, V37 manifest or
+  provider-fingerprint drift, failed refund replay, reconciliation regression,
+  grant/checkpoint invalidation, or material deployment/runtime errors.
+- Rollback verification: exact provider SHA and aliases, both health routes,
+  live Stripe mode, V37 history/readiness/fingerprint, processed replay events,
+  refund/payment convergence, and a valid pilot checkpoint/grant.
+- Outcome: application, database, live billing pilot, payment, refund, webhook
+  repair, reconciliation, and cleanup are healthy. Release closure remains
+  blocked only on completing a fresh cardholder-driven Setup Checkout.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.
