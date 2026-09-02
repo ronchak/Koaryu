@@ -23,7 +23,16 @@ BEGIN
      <>'0:d054ae0cf5ce43ce2c241ca628e0724b5239bd696c323ba9c817b8bd21ee0eec' THEN
     RAISE EXCEPTION 'V34 closeout manifest mismatch.';
   END IF;
-  IF v_current_count=131 AND v_current_head='20260831054918' THEN
+  IF v_current_count=132 AND v_current_head='20260902001000' THEN
+    IF private.koaryu_release_operational_contract_v29()
+       <>'0:32706cfae7047b70ee6b563048ffafa91d945bc824939e3000fa01631a459ecb'
+       OR private.koaryu_release_operational_manifest_v10()
+       <>'e81893193bc199a3911d83ce0546d6458fdc4e63d34c05a1a8dd121da8087012'
+       OR private.koaryu_release_payments_replay_repairs_manifest_v30()
+       <>'0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98' THEN
+      RAISE EXCEPTION 'V37 current compatibility manifests mismatch.';
+    END IF;
+  ELSIF v_current_count=131 AND v_current_head='20260831054918' THEN
     IF private.koaryu_release_operational_contract_v29()
        <>'0:1abbf21f66bcd927d0c1adf1f16255f4d4eebd030b0685f6dd3a2891d5afb5b9'
        OR private.koaryu_release_operational_manifest_v10()
@@ -46,6 +55,8 @@ BEGIN
     INTO v_v31_expectation_state
   FROM private.koaryu_release_v31_expectations;
   v_expected_v31_expectation_state:=CASE
+    WHEN v_current_count=132 AND v_current_head='20260902001000'
+         THEN '1:95f3c8d7693b10b867a8e2a322bc0c40a04a444db18c0a8137f27198260776f5'
     WHEN v_current_count=131 AND v_current_head='20260831054918'
          THEN '1:3d764f9527b71e81235d6ae5dbc62047149958b39b741d63e6600f3d78a4a587'
     ELSE '1:98b3c2abb6dbe454ea0b9d84d3bdd31769f47b4fe72af9a5dcd5df476a62e443'

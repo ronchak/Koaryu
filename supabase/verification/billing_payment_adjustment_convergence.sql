@@ -317,7 +317,10 @@ BEGIN
         RAISE EXCEPTION 'Pending refund did not reserve refundable balance without changing confirmed totals.';
     END IF;
 
-    UPDATE public.billing_refunds SET status = 'failed' WHERE id = v_pending_refund;
+    UPDATE public.billing_refunds
+    SET status = 'failed',
+        stripe_refund_id = stripe_refund_id
+    WHERE id = v_pending_refund;
     SELECT * INTO v_payment_row FROM public.billing_payments WHERE id = v_payment;
     IF v_payment_row.refunded_amount_cents <> 75
        OR v_payment_row.net_collected_amount_cents <> 125
@@ -507,6 +510,11 @@ BEGIN
         'needs_response',
         'active'
     );
+
+    UPDATE public.billing_disputes
+    SET status = status,
+        stripe_dispute_id = stripe_dispute_id
+    WHERE id = v_dispute;
 
     SELECT * INTO v_payment_row FROM public.billing_payments WHERE id = v_payment;
     IF v_payment_row.status <> 'disputed'

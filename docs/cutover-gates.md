@@ -40,22 +40,22 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-The latest hosted staging readiness readback reported 130/head `20260831022021`
-at exact V35. The candidate finishes at 131/head `20260831054918`, readiness
-V17, and `release-db-attestation-v36`. The guarded rollout tool accepts the
-live V35 tuple only when its history, readiness, and catalog all match, then
-derives this exact one-file remainder:
+V36 is the accepted predecessor at 131/head `20260831054918`. The candidate
+finishes at 132/head `20260902001000`, readiness V18, and
+`release-db-attestation-v37`. The guarded rollout tool accepts V36 only when its
+history, readiness, and catalog all match, then derives this exact one-file
+remainder:
 
-- `20260831054918_payer_setup_recovery_v36.sql`
+- `20260902001000_fix_billing_adjustment_trigger_table_guards.sql`
 
-Exact V31, V32, V33, and V34 remain state-bound forward-recovery points. They
-may resume only their immutable suffix through V36; hybrid histories, catalogs,
+Exact V31 through V35 remain state-bound forward-recovery points. They
+may resume only their immutable suffix through V37; hybrid histories, catalogs,
 or readiness results are refused.
 
 Migration 119 keeps `koaryu_release_schema_preflight_v4` returning the historical
 V24 shape. The Payments chain preserves the schedule-shaped V5 response and owns
-V6 through V17. V36 preserves the V35-shaped V16 response during the
-database-first cutover. The candidate backend reads V17 and serves only at exact 131/V36;
+V6 through V18. V37 preserves the V36-shaped V17 response during the
+database-first cutover. The candidate backend reads V18 and serves only at exact 132/V37;
 older deployed backends retain their corresponding compatibility response during
 the database-first cutover.
 The temporary V22 and

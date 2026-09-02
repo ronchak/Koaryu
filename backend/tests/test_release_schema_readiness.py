@@ -29,20 +29,20 @@ def exact_preflight_row():
 
 
 class ReleaseSchemaReadinessTest(unittest.TestCase):
-    def test_v36_candidate_constants_are_exact(self):
-        self.assertEqual(EXPECTED_RELEASE_MIGRATION_COUNT, 131)
-        self.assertEqual(EXPECTED_RELEASE_MIGRATION_HEAD, "20260831054918")
+    def test_v37_candidate_constants_are_exact(self):
+        self.assertEqual(EXPECTED_RELEASE_MIGRATION_COUNT, 132)
+        self.assertEqual(EXPECTED_RELEASE_MIGRATION_HEAD, "20260902001000")
         self.assertEqual(
             EXPECTED_RELEASE_MANIFEST_VERSION,
-            "release-db-attestation-v36",
+            "release-db-attestation-v37",
         )
-        self.assertEqual(EXPECTED_RELEASE_PENDING_VERSIONS[-1], "20260831054918")
-        self.assertEqual(len(EXPECTED_RELEASE_PENDING_VERSIONS), 47)
+        self.assertEqual(EXPECTED_RELEASE_PENDING_VERSIONS[-1], "20260902001000")
+        self.assertEqual(len(EXPECTED_RELEASE_PENDING_VERSIONS), 48)
 
     def test_exact_preflight_is_ready(self):
         validate_release_schema_preflight(exact_preflight_row())
 
-    def test_incomplete_or_malformed_v17_shape_fails_closed(self):
+    def test_incomplete_or_malformed_v18_shape_fails_closed(self):
         rows = (
             {
                 key: value
@@ -115,7 +115,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
         with self.assertRaises(ReleaseSchemaNotReadyError):
             validate_release_schema_preflight(stale)
 
-    def test_v17_requires_exact_v36_pending_list_and_empty_failures(self):
+    def test_v18_requires_exact_v37_pending_list_and_empty_failures(self):
         wrong_pending = {
             **exact_preflight_row(),
             "pending_versions": [
@@ -220,9 +220,9 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v17", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v18", {})])
 
-    def test_hosted_check_does_not_fallback_on_v17_provider_failure(self):
+    def test_hosted_check_does_not_fallback_on_v18_provider_failure(self):
         calls = []
 
         def rpc(name, params):
@@ -239,9 +239,9 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ), self.assertRaises(PostgrestAPIError):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v17", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v18", {})])
 
-    def test_hosted_check_fails_closed_when_v17_is_missing(self):
+    def test_hosted_check_fails_closed_when_v18_is_missing(self):
         calls = []
 
         def rpc(name, params):
@@ -250,7 +250,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
                 "code": "PGRST202",
                 "message": (
                     "Could not find the function "
-                    "public.koaryu_release_schema_preflight_v17 in the schema cache"
+                    "public.koaryu_release_schema_preflight_v18 in the schema cache"
                 ),
             })
             return SimpleNamespace(execute=lambda: (_ for _ in ()).throw(error))
@@ -261,7 +261,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ), self.assertRaisesRegex(RuntimeError, "Apply the database migrations"):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v17", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v18", {})])
 
     def test_success_cache_rechecks_only_after_ttl(self):
         now = [10.0]

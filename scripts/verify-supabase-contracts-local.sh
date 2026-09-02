@@ -211,8 +211,8 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 131 ]]; then
-  echo "ERROR: Expected the canonical 131-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 132 ]]; then
+  echo "ERROR: Expected the canonical 132-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
 if [[ ${#verification_files[@]} -ne 49 ]]; then
@@ -677,6 +677,10 @@ SQL
             print "\"$psql_bin\" \"\${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260831054918_payer_setup_recovery_v36.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260831054918'\'','\''payer_setup_recovery_v36'\'');\" >/dev/null"
             print "echo RESTORED_V36_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
             print "echo RESTORED_V36_READINESS=\"$(read_restored \"SELECT ready::TEXT||'\''|'\''||migration_count::TEXT||'\''|'\''||migration_head||'\''|'\''||cardinality(security_failures)::TEXT||'\''|'\''||COALESCE(array_to_string(security_failures,'\'','\''),'\'''\'')||'\''|'\''||manifest_version FROM public.koaryu_release_schema_preflight_v17();\")\""
+            print "\"$psql_bin\" \"\${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260902001000_fix_billing_adjustment_trigger_table_guards.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260902001000'\'','\''fix_billing_adjustment_trigger_table_guards'\'');\" >/dev/null"
+            print "echo RESTORED_V37_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
+            print "echo RESTORED_V37_READINESS=\"$(read_restored \"SELECT ready::TEXT||'\''|'\''||migration_count::TEXT||'\''|'\''||migration_head||'\''|'\''||cardinality(security_failures)::TEXT||'\''|'\''||COALESCE(array_to_string(security_failures,'\'','\''),'\'''\'')||'\''|'\''||manifest_version FROM public.koaryu_release_schema_preflight_v18();\")\""
+            print "echo RESTORED_V37_TRIGGER_GUARD=\"$(read_restored \"SELECT private.koaryu_release_adjustment_trigger_guard_manifest_v37();\")\""
           }
           { print }
         ' "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh"
@@ -688,6 +692,9 @@ SQL
       restored_v35_readiness="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V35_READINESS=//p' | tail -1)"
       restored_v36_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V36_CATALOG_STATE=//p' | tail -1)"
       restored_v36_readiness="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V36_READINESS=//p' | tail -1)"
+      restored_v37_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V37_CATALOG_STATE=//p' | tail -1)"
+      restored_v37_readiness="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V37_READINESS=//p' | tail -1)"
+      restored_v37_trigger_guard="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V37_TRIGGER_GUARD=//p' | tail -1)"
       expected_restored_v34_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V34_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V34_RESTORED_CATALOG_STATE);")"
       if [[ "$restored_v34_catalog" != "$expected_restored_v34_catalog" ]]; then
         echo "[restored V34] FAIL exact restored catalog: $restored_v34_catalog" >&2
@@ -714,6 +721,20 @@ SQL
         exit 1
       fi
       echo "[restored V36] PASS V30 dump/restore then migrations 126-131"
+      expected_restored_v37_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V37_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V37_RESTORED_CATALOG_STATE);")"
+      if [[ "$restored_v37_catalog" != "$expected_restored_v37_catalog" ]]; then
+        echo "[restored V37] FAIL exact restored catalog: $restored_v37_catalog" >&2
+        exit 1
+      fi
+      if [[ "$restored_v37_readiness" != "true|132|20260902001000|0||release-db-attestation-v37" ]]; then
+        echo "[restored V37] FAIL exact readiness: $restored_v37_readiness" >&2
+        exit 1
+      fi
+      if [[ "$restored_v37_trigger_guard" != "0:414c9c3d38914f4bd3c8498159944e6118716230b3ee5c5c9d99180b7ba177dc" ]]; then
+        echo "[restored V37] FAIL adjustment trigger guard: $restored_v37_trigger_guard" >&2
+        exit 1
+      fi
+      echo "[restored V37] PASS V30 dump/restore then migrations 126-132"
     else
       status=$?
       echo "[restored V31] FAIL V30 dump/restore then migration 126 (exit $status)" >&2
@@ -1098,7 +1119,7 @@ else
   exit "$status"
 fi
 
-echo "[V30 compatibility] RUN re-pinned V26 singleton expectation"
+echo "[V37 compatibility] RUN re-pinned V26 singleton expectation"
 v26_expectation_state="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
@@ -1107,10 +1128,10 @@ v26_expectation_state="$({
 if (
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { validateV30CompatV26ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30CompatV26ExpectationState(process.argv[1]);" \
+    "import { validateV37CompatV26ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV37CompatV26ExpectationState(process.argv[1]);" \
     "$v26_expectation_state"
 ); then
-echo "[V30 compatibility] PASS re-pinned V26 singleton expectation"
+echo "[V37 compatibility] PASS re-pinned V26 singleton expectation"
 
 echo "[V27 expectation] RUN private singleton release expectation"
 v27_expectation_state="$({
@@ -1121,7 +1142,7 @@ v27_expectation_state="$({
 if (
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { validateV36CompatV27ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV36CompatV27ExpectationState(process.argv[1]);" \
+    "import { validateV37CompatV27ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV37CompatV27ExpectationState(process.argv[1]);" \
     "$v27_expectation_state"
 ); then
   echo "[V27 expectation] PASS private singleton release expectation"
@@ -1140,7 +1161,7 @@ v28_expectation_state="$({
 if (
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { validateV36CompatV28ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV36CompatV28ExpectationState(process.argv[1]);" \
+    "import { validateV37CompatV28ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV37CompatV28ExpectationState(process.argv[1]);" \
     "$v28_expectation_state"
 ); then
   echo "[V28 expectation] PASS private singleton release expectation"
@@ -1159,7 +1180,7 @@ v29_expectation_state="$({
 if (
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { validateV36CompatV29ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV36CompatV29ExpectationState(process.argv[1]);" \
+    "import { validateV37CompatV29ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV37CompatV29ExpectationState(process.argv[1]);" \
     "$v29_expectation_state"
 ); then
   echo "[V29 expectation] PASS V30-compatible private singleton expectation"
@@ -1178,7 +1199,7 @@ v30_expectation_state="$({
 if (
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { validateV36CompatV30ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV36CompatV30ExpectationState(process.argv[1]);" \
+    "import { validateV37CompatV30ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV37CompatV30ExpectationState(process.argv[1]);" \
     "$v30_expectation_state"
 ); then
   echo "[V30 expectation] PASS exact private singleton expectation"
@@ -1189,7 +1210,7 @@ else
 fi
 else
   status=$?
-  echo "[V30 compatibility] FAIL re-pinned V26 singleton expectation (exit $status)" >&2
+  echo "[V37 compatibility] FAIL re-pinned V26 singleton expectation (exit $status)" >&2
   exit "$status"
 fi
 
@@ -1322,7 +1343,7 @@ assert_v27_compat_v26_release_rejects() {
   if (
     cd "$ROOT_DIR"
     node --input-type=module --eval \
-      "import { validateV30CompatV26ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV30CompatV26ExpectationState(process.argv[1]);" \
+      "import { validateV37CompatV26ExpectationState } from './scripts/studio-comp-migration-rollout.mjs'; validateV37CompatV26ExpectationState(process.argv[1]);" \
       "$drifted_expectation_state" >/dev/null 2>&1
   ); then
     expectation_accepted=true

@@ -3,7 +3,12 @@ DO $$
 DECLARE
  v_ready RECORD;
  v_v31_expectation_state TEXT;
+ v_current_count INTEGER;
+ v_current_head TEXT;
 BEGIN
+ SELECT count(*)::INTEGER,max(version)
+ INTO v_current_count,v_current_head
+ FROM supabase_migrations.schema_migrations;
  SELECT * INTO v_ready FROM public.koaryu_release_schema_preflight_v17();
  IF v_ready.ready IS DISTINCT FROM true
     OR v_ready.migration_count<>131
@@ -12,17 +17,45 @@ BEGIN
     OR cardinality(v_ready.security_failures)<>0 THEN
   RAISE EXCEPTION 'V36 readiness contract mismatch: %',row_to_json(v_ready);
  END IF;
- IF position('migration_history_v36' IN pg_get_functiondef(
-      'public.koaryu_release_schema_preflight_v17()'::regprocedure))=0
-    OR position('migration_history_v35' IN pg_get_functiondef(
-      'public.koaryu_release_schema_preflight_v17()'::regprocedure))<>0 THEN
-  RAISE EXCEPTION 'V36 readiness diagnostics retained a stale history label.';
+ IF v_current_count=132 AND v_current_head='20260902001000' THEN
+  IF position('migration_history_v37' IN pg_get_functiondef(
+       'public.koaryu_release_schema_preflight_v18()'::regprocedure))=0
+     OR position('migration_history_v36' IN pg_get_functiondef(
+       'public.koaryu_release_schema_preflight_v18()'::regprocedure))<>0
+     OR position('koaryu_release_schema_preflight_v18' IN pg_get_functiondef(
+       'public.koaryu_release_schema_preflight_v17()'::regprocedure))=0 THEN
+   RAISE EXCEPTION 'V37 readiness diagnostics or V36 compatibility wrapper drifted.';
+  END IF;
+ ELSIF position('migration_history_v36' IN pg_get_functiondef(
+       'public.koaryu_release_schema_preflight_v17()'::regprocedure))=0
+     OR position('migration_history_v35' IN pg_get_functiondef(
+       'public.koaryu_release_schema_preflight_v17()'::regprocedure))<>0 THEN
+   RAISE EXCEPTION 'V36 readiness diagnostics retained a stale history label.';
  END IF;
  IF private.koaryu_release_payer_setup_recovery_manifest_v36()
     <>'0:455520fff5182b12b23368da1afe60e133a01b78913fada73e8a708b94ae8dbb' THEN
   RAISE EXCEPTION 'V36 payer setup recovery manifest mismatch.';
  END IF;
- IF private.koaryu_release_operational_contract_v29()
+ IF v_current_count=132 AND v_current_head='20260902001000' THEN
+  IF private.koaryu_release_operational_contract_v29()
+     <>'0:32706cfae7047b70ee6b563048ffafa91d945bc824939e3000fa01631a459ecb'
+     OR private.koaryu_release_operational_manifest_v10()
+     <>'e81893193bc199a3911d83ce0546d6458fdc4e63d34c05a1a8dd121da8087012'
+     OR private.koaryu_release_payments_replay_repairs_manifest_v30()
+     <>'0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98'
+     OR private.koaryu_release_operational_contract_v30()
+     <>'0:2b57633cdd638418ca7837de9a496755e0a3620f381375657f099f6bcded8c23'
+     OR private.koaryu_release_operational_manifest_v11()
+     <>'43bb07edfbd3c6ee1431b6abda46ca1785b8ea117de2a13f95636fc7a3c3b263'
+     OR private.koaryu_release_resource_ownership_manifest_v31()
+     <>'0:c609fd207f20746d6076d49d86a39240021d20122007278d053bcab160cfa2c9'
+     OR private.koaryu_release_operational_contract_v31()
+     <>'0:abfd3d70c27d61b7be33193069739ddaef7db8e8a4cc591be1aeeebe130b64cc'
+     OR private.koaryu_release_operational_manifest_v12()
+     <>'ba219b8a319d416680ab268ba09c8dad109d4d73db0bfdadedf31318bead365d' THEN
+   RAISE EXCEPTION 'V37 predecessor compatibility manifests mismatch.';
+  END IF;
+ ELSIF private.koaryu_release_operational_contract_v29()
     <>'0:1abbf21f66bcd927d0c1adf1f16255f4d4eebd030b0685f6dd3a2891d5afb5b9'
     OR private.koaryu_release_operational_manifest_v10()
     <>'4f6e364fe37e1325f47e098a810daacc53175b68cb01ed5bda74103f567805c5'
@@ -45,8 +78,11 @@ BEGIN
          ORDER BY expectation_key COLLATE "C"),''),'UTF8'),'sha256'),'hex')
    INTO v_v31_expectation_state
  FROM private.koaryu_release_v31_expectations;
- IF v_v31_expectation_state
-    <>'1:3d764f9527b71e81235d6ae5dbc62047149958b39b741d63e6600f3d78a4a587' THEN
+ IF v_v31_expectation_state <> (CASE
+      WHEN v_current_count=132 AND v_current_head='20260902001000'
+      THEN '1:95f3c8d7693b10b867a8e2a322bc0c40a04a444db18c0a8137f27198260776f5'
+      ELSE '1:3d764f9527b71e81235d6ae5dbc62047149958b39b741d63e6600f3d78a4a587'
+    END) THEN
   RAISE EXCEPTION 'V36 V31 compatibility expectation state mismatch.';
  END IF;
 END $$;
