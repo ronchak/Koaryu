@@ -60,10 +60,32 @@ interface JourneyControllerProps {
   readonly children: ReactNode;
 }
 
+type HistoryMode = "replace" | "push";
+
 interface NavigateOptions {
   readonly canonicalHash?: string;
   readonly faqGroup?: number | null;
+  readonly historyMode?: HistoryMode;
   readonly writeHash?: boolean;
+}
+
+function writeJourneyUrl(relativeUrl: string, historyMode: HistoryMode) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const destination = new URL(relativeUrl, window.location.href);
+  const requestedRelativeUrl = `${destination.pathname}${destination.search}${destination.hash}`;
+  const currentRelativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (requestedRelativeUrl === currentRelativeUrl) {
+    return;
+  }
+
+  if (historyMode === "push") {
+    window.history.pushState(null, "", requestedRelativeUrl);
+  } else {
+    window.history.replaceState(null, "", requestedRelativeUrl);
+  }
 }
 
 function metricsFor(element: HTMLElement): ScrollMetrics {
@@ -177,14 +199,18 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
       if (options.writeHash !== false && typeof window !== "undefined") {
         const nextHash = options.canonicalHash ?? nextChapter.id;
-        window.history.replaceState(null, "", `#${nextHash}`);
+        writeJourneyUrl(`#${nextHash}`, options.historyMode ?? "replace");
       }
     },
     [animateScene]
   );
 
   const applyResolvedHash = useCallback(
-    (resolved: ResolvedJourneyHash, animate: boolean) => {
+    (
+      resolved: ResolvedJourneyHash,
+      animate: boolean,
+      historyMode: HistoryMode = "replace"
+    ) => {
       const chapter = chapters[resolved.chapterIndex];
       if (!chapter) {
         return;
@@ -194,6 +220,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         navigateTo(resolved.chapterIndex, {
           canonicalHash: resolved.canonicalHash,
           faqGroup: resolved.faqGroup,
+          historyMode: resolved.wasAlias ? "replace" : historyMode,
         });
       } else {
         stopAnimation();
@@ -205,8 +232,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
         setOpenFaq(0);
       }
 
-      if (resolved.wasAlias && typeof window !== "undefined") {
-        window.history.replaceState(null, "", `#${resolved.canonicalHash}`);
+      if (resolved.wasAlias) {
+        writeJourneyUrl(`#${resolved.canonicalHash}`, "replace");
       }
     },
     [navigateTo, stopAnimation]
@@ -219,7 +246,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     setFaqGroup(nextGroup);
     setOpenFaq(0);
     if (typeof window !== "undefined" && pageRef.current === faqChapterIndex) {
-      window.history.replaceState(null, "", `#${FAQ_HASHES[nextGroup]}`);
+      writeJourneyUrl(`#${FAQ_HASHES[nextGroup]}`, "replace");
     }
   }, []);
 
@@ -556,15 +583,14 @@ export function JourneyController({ children }: JourneyControllerProps) {
     }
     event.preventDefault();
     if (decision.action === "reset") {
-      window.history.replaceState(
-        null,
-        "",
-        `${destination.pathname}${destination.search}`
+      writeJourneyUrl(
+        `${destination.pathname}${destination.search}`,
+        "push"
       );
       navigateTo(decision.chapterIndex, { writeHash: decision.writeHash });
       return;
     }
-    applyResolvedHash(decision.resolved, true);
+    applyResolvedHash(decision.resolved, true, "push");
   };
 
   const activeChapter = chapters[pageIndex] ?? firstChapter;
