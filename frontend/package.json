@@ -12,6 +12,7 @@
     "analyze": "next build --experimental-analyze",
     "start": "next start",
     "lint": "eslint",
+    "profile:request-bodies": "node --experimental-strip-types --expose-gc scripts/profile-request-body-buffering.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "test:e2e": "playwright test e2e",
     "test:e2e:preview-smoke": "KOARYU_PREVIEW_SMOKE_E2E=true playwright test e2e/preview-smoke.spec.ts",

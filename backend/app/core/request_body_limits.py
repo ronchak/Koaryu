@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -43,6 +44,9 @@ CSV_IMPORT_REQUEST_MAX_BYTES = (
     + CSV_IMPORT_MAPPING_JSON_MAX_BYTES
     + CSV_IMPORT_MULTIPART_METADATA_ALLOWANCE_BYTES
 )
+# Four maximum envelopes plus the measured full-app baseline stay near 300 MiB
+# on the 512 MiB single-process Render instance; eight ungated envelopes did not.
+CSV_IMPORT_MAX_IN_FLIGHT_REQUESTS = 4
 
 
 def request_body_limit_for_route(
@@ -119,6 +123,9 @@ class RequestBodyLimitMiddleware:
     def __init__(self, app: ASGIApp, *, api_v1_prefix: str):
         self.app = app
         self.api_v1_prefix = api_v1_prefix
+        self._csv_import_capacity = asyncio.Semaphore(
+            CSV_IMPORT_MAX_IN_FLIGHT_REQUESTS
+        )
 
     async def __call__(
         self,
@@ -161,33 +168,42 @@ class RequestBodyLimitMiddleware:
             )
             return
 
-        messages: deque[ASGIMessage] = deque()
-        received_bytes = 0
-        while True:
-            message = await receive()
-            messages.append(message)
-            if message.get("type") == "http.disconnect":
-                break
-            if message.get("type") != "http.request":
-                continue
+        csv_import_slot_acquired = False
+        if max_bytes == CSV_IMPORT_REQUEST_MAX_BYTES:
+            await self._csv_import_capacity.acquire()
+            csv_import_slot_acquired = True
 
-            chunk = message.get("body", b"")
-            received_bytes += len(chunk)
-            if received_bytes > max_bytes:
-                await _send_error(
-                    scope,
-                    receive,
-                    send,
-                    status_code=413,
-                    detail="Request body is too large.",
-                )
-                return
-            if not message.get("more_body", False):
-                break
+        try:
+            messages: deque[ASGIMessage] = deque()
+            received_bytes = 0
+            while True:
+                message = await receive()
+                messages.append(message)
+                if message.get("type") == "http.disconnect":
+                    break
+                if message.get("type") != "http.request":
+                    continue
 
-        async def replay_receive() -> ASGIMessage:
-            if messages:
-                return messages.popleft()
-            return await receive()
+                chunk = message.get("body", b"")
+                received_bytes += len(chunk)
+                if received_bytes > max_bytes:
+                    await _send_error(
+                        scope,
+                        receive,
+                        send,
+                        status_code=413,
+                        detail="Request body is too large.",
+                    )
+                    return
+                if not message.get("more_body", False):
+                    break
 
-        await self.app(scope, replay_receive, send)
+            async def replay_receive() -> ASGIMessage:
+                if messages:
+                    return messages.popleft()
+                return await receive()
+
+            await self.app(scope, replay_receive, send)
+        finally:
+            if csv_import_slot_acquired:
+                self._csv_import_capacity.release()
