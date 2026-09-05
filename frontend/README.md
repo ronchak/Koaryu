@@ -201,5 +201,9 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 Pending staff, program-usage and deferred summary reads recover from token rotation
 through their existing owners, with at most two replays using the current token.
 Identity changes, sign-out and subscription revocation invalidate that recovery.
-Mutations are not replayed. A null session clears private state and replaces the
-route with `/login`, including when it supersedes a pending initial session read.
+Mutations are not replayed. A confirmed missing session or sign-out clears private
+state and replaces the route with `/login`. A transient session error instead hides
+protected content and offers Retry workspace while preserving SDK credentials.
+Null initial-session notifications are confirmed outside the Auth callback lock.
+Subscription denial preserves an already verified identity and legal-name gate so
+the recovery page can render after studio data is cleared.

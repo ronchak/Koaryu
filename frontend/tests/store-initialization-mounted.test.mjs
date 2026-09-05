@@ -11,7 +11,7 @@ import { chromium } from "@playwright/test";
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-function bundle(mode, { preview = false, layout = false, leadsPage = false, programsSection = false } = {}) {
+function bundle(mode, { preview = false, layout = false, leadsPage = false, programsSection = false, subscriptionPage = false } = {}) {
   if (!["production", "development"].includes(mode) || typeof preview !== "boolean") throw new Error("Unsupported fixture environment");
   const modules = [];
   const ids = new Map();
@@ -20,7 +20,7 @@ function bundle(mode, { preview = false, layout = false, leadsPage = false, prog
     "@/components/loading-screen": `exports.LoadingScreen=()=>null;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
-    "@/lib/performance": `exports.markPerformance=()=>{};exports.measurePerformance=()=>{};exports.markDashboardReadiness=(route,generation,state)=>{window.fixture.readiness?.push(state);return ()=>{};};`,
+    "@/lib/performance": `exports.markPerformance=name=>{window.fixture.marks?.push(name);};exports.measurePerformance=()=>{};exports.markDashboardReadiness=(route,generation,state)=>{window.fixture.readiness?.push(state);return ()=>{};};`,
     ...(leadsPage ? {
       "@/components/header": `exports.Header=()=>null;`,
       "@/components/leads/lead-ledger-loading": `exports.LeadLedgerLoading=()=>null;`,
@@ -39,13 +39,24 @@ function bundle(mode, { preview = false, layout = false, leadsPage = false, prog
       "@/components/ui/dismissible-notice": `exports.DismissibleNotice=({children})=>children;`,
       "lucide-react": `for (const name of ['Archive','Check','Plus','RefreshCw','RotateCcw','Save','Settings2','UserPlus']) exports[name]=()=>null;`,
     } : {}),
+    ...(subscriptionPage ? {
+      "@/components/header": `exports.Header=()=>null;`,
+      "@/components/operations/operations-surface": `exports.OperationsSurface=({children})=>require('react').createElement('section',{'data-recovery-page':'true'},children);`,
+      "@/components/ui/button": `exports.Button=({children,onClick,disabled})=>require('react').createElement('button',{onClick,disabled},children);`,
+      "@/components/logo": `exports.Logo=()=>null;`,
+      "@/components/dashboard-loading-skeleton": `exports.DashboardLoadingSkeleton=()=>require('react').createElement('div',{'data-preview-gate':'pending'});`,
+      "./dashboard-shell.module.css": `module.exports={};`,
+      "lucide-react": `for (const name of ['ArrowUpRight','CheckCircle2','CreditCard','Loader2','ShieldCheck']) exports[name]=()=>null;`,
+    } : {}),
     ...(preview || layout ? {
       "@/components/dashboard-shell.module.css": `module.exports={};`,
       "@/components/theme-provider": `exports.useTheme=()=>({navigationPlacement:'side'});`,
       "@/components/dashboard-route-transition": `exports.DashboardRouteTransition=({children})=>children;`,
       "@/components/dashboard-shell": `exports.DashboardSlugBand=()=>null;`,
-      "@/components/dashboard-shell-readiness": `exports.DashboardShellReadiness=({identityReady})=>{window.fixture.identityObservations.push(identityReady);return null;};`,
-      "@/components/dashboard-identity-skeleton": `exports.DashboardIdentitySkeleton=()=>require('react').createElement('div',{'data-preview-gate':'pending'});`,
+      "@/components/dashboard-shell-readiness": `exports.DashboardShellReadiness=({identityReady})=>{window.fixture.store=require("@/lib/store").useStore();window.fixture.identityObservations.push(identityReady);return null;};`,
+      ...(subscriptionPage ? {} : {
+        "@/components/dashboard-identity-skeleton": `exports.DashboardIdentitySkeleton=()=>require('react').createElement('div',{'data-preview-gate':'pending'});`,
+      }),
       "@/components/account/legal-name-blocking-screen": `exports.LegalNameBlockingScreen=()=>require('react').createElement('div',{'data-preview-gate':'legal-name'});`,
       "@/components/sidebar": `exports.Sidebar=()=>require('react').createElement('nav',{'data-preview-sidebar':'ready'});`,
     } : {}),
@@ -77,8 +88,9 @@ function bundle(mode, { preview = false, layout = false, leadsPage = false, prog
   const store = add("@/lib/store");
   const leads = leadsPage ? add("@/app/(dashboard)/leads/page") : null;
   const programs = programsSection ? add("@/components/settings/programs-section") : null;
+  const subscription = subscriptionPage ? add("@/app/(dashboard)/subscription-required/page") : null;
   const provider = preview || layout ? `require(${add("@/app/(dashboard)/layout")}).default` : "StoreProvider";
-  return `(()=>{const process={env:{NODE_ENV:${mode === "development" ? '"development"' : '"production"'},NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {StoreProvider,useStore}=require(${store});function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer),${leads === null ? "null" : `React.createElement(require(${leads}).default)`},${programs === null ? "null" : `React.createElement(require(${programs}).ProgramsSection)`})));})();`;
+  return `(()=>{const process={env:{NODE_ENV:${mode === "development" ? '"development"' : '"production"'},NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {StoreProvider,useStore}=require(${store});function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer),${leads === null ? "null" : `React.createElement(require(${leads}).default)`},${programs === null ? "null" : `React.createElement(require(${programs}).ProgramsSection)`},${subscription === null ? "null" : `React.createElement(require(${subscription}).default)`})));})();`;
 }
 
 for (const mode of ["production", "development"]) {
@@ -368,7 +380,7 @@ for (const outcome of ["success", "failure"]) {
       await page.evaluate(outcome => {
         const user = { id: "route-user", email: "route@example.test", user_metadata: {} };
         const session = { access_token: "route-old-token", user };
-        const fixture = window.fixture = { observations: [], readiness: [], requests: [], waiters: [], listeners: new Set(), session };
+        const fixture = window.fixture = { observations: [], readiness: [], marks: [], requests: [], waiters: [], listeners: new Set(), session };
         fixture.emit = (event, session) => { fixture.session = session; for (const listener of fixture.listeners) listener(event, session); };
         fixture.supabase = { auth: {
           getSession: async () => ({ data: { session: fixture.session } }),
@@ -407,6 +419,7 @@ for (const outcome of ["success", "failure"]) {
       assert.deepEqual(await page.evaluate(() => fixture.requests.filter(r => r.path.startsWith("/staff")).map(r => r.token)), ["route-old-token", "route-new-token"]);
       assert.deepEqual(await page.evaluate(() => fixture.requests.filter(r => r.path.startsWith("/programs")).map(r => r.token)), ["route-old-token", "route-new-token"]);
       assert.equal(await page.evaluate(() => fixture.store.dashboardSummary?.marker), "current");
+      assert.equal(await page.evaluate(() => fixture.marks.filter(name => name === "dashboard.summary_started").length), 1, "summary timing includes every auth replay");
       assert.deepEqual(await page.evaluate(() => fixture.requests.filter(r => r.path === "/dashboard/summary").map(r => r.token)), ["route-old-token", "route-new-token"]);
       await page.evaluate(() => fixture.root.unmount());
     } finally { await browser.close(); }
@@ -423,10 +436,10 @@ for (const event of ["INITIAL_SESSION", "SIGNED_OUT"]) {
       await page.evaluate(event => {
         const user = { id: "signed-out-user", email: "out@example.test", user_metadata: {} };
         const session = { access_token: "signed-out-token", user };
-        const fixture = window.fixture = { observations: [], identityObservations: [], redirects: [], requests: [], listeners: new Set(), waiters: [] };
+        const fixture = window.fixture = { observations: [], identityObservations: [], redirects: [], requests: [], listeners: new Set(), waiters: [], sessionReads: 0 };
         fixture.emit = () => { for (const listener of fixture.listeners) listener(event, null); };
         fixture.supabase = { auth: {
-          getSession: async () => { if (event === "INITIAL_SESSION") await new Promise(resolve => fixture.waiters.push(resolve)); return { data: { session } }; },
+          getSession: async () => { fixture.sessionReads += 1; if (event === "INITIAL_SESSION") { if (fixture.sessionReads > 1) return { data: { session: null }, error: null }; await new Promise(resolve => fixture.waiters.push(resolve)); } return { data: { session }, error: null }; },
           onAuthStateChange: callback => { fixture.listeners.add(callback); return { data: { subscription: { unsubscribe: () => fixture.listeners.delete(callback) } } }; },
         } };
         fixture.api = { get: async path => {
@@ -447,6 +460,169 @@ for (const event of ["INITIAL_SESSION", "SIGNED_OUT"]) {
       assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 0);
       assert.ok((await page.evaluate(() => fixture.identityObservations)).every(ready => !ready));
       if (event === "INITIAL_SESSION") assert.deepEqual(await page.evaluate(() => fixture.requests), []);
+      await page.evaluate(() => fixture.root.unmount());
+    } finally { await browser.close(); }
+  });
+}
+
+for (const legalNamePresent of [true, false]) {
+  test(`subscription denial preserves verified identity and legal-name constraints (${legalNamePresent})`, async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.route("http://fixture.local/", route => route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }));
+      await page.goto("http://fixture.local/");
+      await page.evaluate(legalNamePresent => {
+        const user = { id: "recovery-user", email: "recovery@example.test", legal_first_name: legalNamePresent ? "Recovery" : null, legal_last_name: legalNamePresent ? "User" : null };
+        const session = { access_token: "recovery-token", user };
+        const profile = { user, membership_status: "active", studio_id: "recovery-studio", role: "admin", staff_profiles_available: true };
+        const fixture = window.fixture = { observations: [], identityObservations: [], requests: [], waiters: [] };
+        fixture.supabase = { auth: {
+          getSession: async () => ({ data: { session } }),
+          onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+        } };
+        fixture.api = { get: async path => {
+          fixture.requests.push(path);
+          if (path === "/dashboard/bootstrap") return { auth: profile, students: [], programs: [], leads: [], belt_ladders: [], primary_belt_ladder: null, summary: { auth: profile } };
+          if (path.startsWith("/schedule/window")) return { sessions: [], templates: [], attendance: [] };
+          if (path === "/auth/me") return profile;
+          if (path === "/platform-billing/status") return { status: "canceled", comped: false, monthly_price_cents: 2700, currency: "usd" };
+          if (path === "/billing/system/status") return { mutation_capabilities: { core_subscription: true } };
+          if (path.startsWith("/staff") || path.startsWith("/programs")) {
+            await new Promise(resolve => fixture.waiters.push(resolve));
+            return [{ id: "late-obsolete-data", name: "Obsolete" }];
+          }
+          throw new Error(`Unexpected request ${path}`);
+        } };
+      }, legalNamePresent);
+      await page.addScriptTag({ content: bundle("production", { layout: true, subscriptionPage: true }) });
+      await page.waitForFunction(() => fixture.store?.identityReady);
+      await page.evaluate(() => { fixture.staffRead = fixture.store.refreshStaff(); fixture.programRead = fixture.store.refreshPrograms(); });
+      await page.waitForFunction(() => fixture.waiters.length === 2);
+      await page.evaluate(() => fixture.store.markSubscriptionRequired());
+      await page.waitForFunction(() => fixture.redirects?.includes("/subscription-required"));
+      assert.deepEqual(await page.evaluate(() => [fixture.store.identityReady, fixture.store.staffProfilesAvailable, fixture.store.currentRole]), [true, true, "admin"]);
+      assert.equal(await page.locator('[data-preview-gate="pending"]').count(), 0);
+      if (legalNamePresent) {
+        await page.locator('[data-recovery-page="true"]').waitFor();
+        assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 1);
+      } else {
+        assert.equal(await page.locator('[data-preview-gate="legal-name"]').count(), 1);
+        assert.equal(await page.locator('[data-recovery-page="true"]').count(), 0);
+      }
+      await page.evaluate(async () => { for (const resolve of fixture.waiters) resolve(); await Promise.all([fixture.staffRead, fixture.programRead]); });
+      assert.deepEqual(await page.evaluate(() => [fixture.store.staffMembers, fixture.store.programs]), [[], []]);
+      assert.equal(await page.evaluate(() => fixture.requests.filter(path => path.startsWith("/staff") || path.startsWith("/programs")).length), 2, "revoked reads cannot replay or commit");
+      await page.evaluate(() => fixture.root.unmount());
+    } finally { await browser.close(); }
+  });
+}
+
+test("unknown identity after bootstrap402 renders a retryable error and recovers after profile verification", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route("http://fixture.local/", route => route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }));
+    await page.goto("http://fixture.local/");
+    await page.evaluate(() => {
+      const user = { id: "unknown-recovery-user", email: "unknown@example.test", legal_first_name: "Verified", legal_last_name: "User" };
+      const session = { access_token: "unknown-recovery-token", user };
+      const profile = { user, membership_status: "active", studio_id: "unknown-recovery-studio", role: "admin", staff_profiles_available: true };
+      const fixture = window.fixture = { observations: [], identityObservations: [], requests: [], failProfile: true };
+      fixture.supabase = { auth: {
+        getSession: async () => ({ data: { session } }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+      } };
+      fixture.api = { get: async path => {
+        fixture.requests.push(path);
+        if (path === "/dashboard/bootstrap") throw Object.assign(new Error("Subscription required"), { status: 402 });
+        if (path === "/auth/me") { if (fixture.failProfile) throw new Error("Profile unavailable"); return profile; }
+        if (path === "/platform-billing/status") return { status: "canceled", comped: false, monthly_price_cents: 2700, currency: "usd" };
+        if (path === "/billing/system/status") return { mutation_capabilities: { core_subscription: true } };
+        throw new Error(`Unexpected request ${path}`);
+      } };
+    });
+    await page.addScriptTag({ content: bundle("production", { layout: true, subscriptionPage: true }) });
+    await page.getByRole("alert").waitFor();
+    assert.match(await page.getByRole("alert").textContent(), /account and studio access could not be verified/);
+    assert.equal(await page.evaluate(() => fixture.store.identityReady), false);
+    assert.equal(await page.locator('[data-recovery-page="true"]').count(), 0);
+    assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 0);
+    await page.evaluate(() => { fixture.failProfile = false; });
+    await page.getByRole("button", { name: "Retry workspace" }).click();
+    await page.locator('[data-recovery-page="true"]').waitFor();
+    assert.equal(await page.evaluate(() => fixture.store.identityReady), true);
+    assert.equal(await page.evaluate(() => fixture.store.identityLoadError), null);
+    assert.equal(await page.evaluate(() => fixture.requests.filter(path => path === "/dashboard/bootstrap").length), 2);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally { await browser.close(); }
+});
+
+for (const sessionFailure of ["returned", "thrown"]) {
+  test(`SDK session refresh outage stays retryable despite null INITIAL_SESSION (${sessionFailure})`, async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.route("http://fixture.local/", route => route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }));
+      await page.goto("http://fixture.local/");
+      await page.evaluate(sessionFailure => {
+        const user = { id: "refresh-outage-user", email: "refresh@example.test", legal_first_name: "Refresh", legal_last_name: "User" };
+        const session = { access_token: "refresh-outage-token", user };
+        const profile = { user, membership_status: "active", studio_id: "refresh-outage-studio", role: "admin", staff_profiles_available: true };
+        const fixture = window.fixture = { observations: [], identityObservations: [], requests: [], listeners: new Set(), failSession: true, sessionReads: 0 };
+        document.cookie = "koaryu-active-studio=refresh-outage-studio; path=/";
+        localStorage.setItem("fixture-sdk-session", "retained");
+        fixture.supabase = { auth: {
+          getSession: async () => {
+            fixture.sessionReads += 1;
+            if (fixture.failSession) {
+              const error = Object.assign(new Error("Refresh service unavailable"), { name: "AuthRetryableFetchError", status: 503 });
+              if (sessionFailure === "thrown") throw error;
+              return { data: { session: null }, error };
+            }
+            return { data: { session }, error: null };
+          },
+          onAuthStateChange: callback => {
+            fixture.listeners.add(callback);
+            // auth-js _emitInitialSession reports null on __loadSession errors,
+            // while retryable refresh failures retain the stored SDK session.
+            queueMicrotask(() => { if (fixture.listeners.has(callback) && (sessionFailure === "returned" || !fixture.failSession)) callback("INITIAL_SESSION", fixture.failSession ? null : session); });
+            return { data: { subscription: { unsubscribe: () => fixture.listeners.delete(callback) } } };
+          },
+        } };
+        fixture.api = { get: async path => {
+          fixture.requests.push(path);
+          if (path === "/dashboard/bootstrap") return { auth: profile, students: [], programs: [], leads: [], belt_ladders: [], primary_belt_ladder: null, summary: { auth: profile } };
+          if (path.startsWith("/schedule/window")) return { sessions: [], templates: [], attendance: [] };
+          if (path === "/auth/me") return profile;
+          if (path === "/platform-billing/status") return { status: "canceled", comped: false, monthly_price_cents: 2700, currency: "usd" };
+          if (path === "/billing/system/status") return { mutation_capabilities: { core_subscription: true } };
+          throw new Error(`Unexpected request ${path}`);
+        } };
+      }, sessionFailure);
+      await page.addScriptTag({ content: bundle("production", { layout: true, subscriptionPage: true }) });
+      await page.getByRole("alert").waitFor();
+      assert.match(await page.getByRole("alert").textContent(), /session could not be checked/);
+      assert.equal(await page.evaluate(() => fixture.store.identityReady), false);
+      assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 0);
+      assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), [], "a retryable session error is not sign-out");
+      assert.deepEqual(await page.evaluate(() => fixture.requests), [], "unverified identity must not fetch protected datasets");
+      assert.equal(await page.evaluate(() => fixture.sessionReads), sessionFailure === "returned" ? 2 : 1, "only null INITIAL_SESSION requires one bounded confirmation probe");
+      assert.equal(await page.evaluate(() => localStorage.getItem("fixture-sdk-session")), "retained");
+      assert.match(await page.evaluate(() => document.cookie), /koaryu-active-studio=refresh-outage-studio/);
+      await page.evaluate(() => { fixture.failSession = false; });
+      await page.getByRole("button", { name: "Retry workspace" }).click();
+      await page.locator('[data-preview-sidebar="ready"]').waitFor({ state: "attached" });
+      assert.equal(await page.evaluate(() => fixture.store.identityReady), true);
+      assert.equal(await page.evaluate(() => fixture.store.identityLoadError), null);
+      assert.equal(await page.evaluate(() => fixture.requests.filter(path => path === "/dashboard/bootstrap").length), 1);
+      await page.evaluate(() => { fixture.failSession = true; fixture.store.retryInitialization(); });
+      await page.getByRole("alert").waitFor();
+      assert.deepEqual(await page.evaluate(() => [fixture.store.identityReady, fixture.store.currentUserId, fixture.store.token]), [false, "", null], "an outage on recheck hides the prior identity and invalidates app requests");
+      assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 0);
+      assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
+      assert.equal(await page.evaluate(() => localStorage.getItem("fixture-sdk-session")), "retained");
+      assert.match(await page.evaluate(() => document.cookie), /koaryu-active-studio=refresh-outage-studio/);
       await page.evaluate(() => fixture.root.unmount());
     } finally { await browser.close(); }
   });

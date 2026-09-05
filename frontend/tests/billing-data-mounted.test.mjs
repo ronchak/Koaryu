@@ -62,7 +62,7 @@ async function mountBillingFixture(browser) {
     if(path===f.held) await new Promise(resolve=>f.waiters.push(resolve));
     if(path===f.fail) throw new Error('Required dataset failed');
     if(path===f.subscriptionRequired) throw Object.assign(new Error('Subscription required'),{status:402});
-    if(path==='/billing/landing') return {studio_id:identity,system_status:{payment_account:{studio_id:identity},workflow_capabilities:[]},platform_status:null,financial_access:f.denied?'subscription_required':'available',aggregates:f.denied?null:{active_student_count:8,payment_cohort:{payment_count:1001}},errors:f.warnings??[]};
+    if(path==='/billing/landing') return {studio_id:identity,system_status:{payment_account:{studio_id:identity},workflow_capabilities:[]},platform_status:null,financial_access:f.financialAccess??(f.denied?'subscription_required':'available'),aggregates:f.denied?null:{active_student_count:8,payment_cohort:{payment_count:1001}},errors:f.warnings??[]};
     if(path.includes('/page')) {
      const more=path.includes('/invoices/') ? f.moreInvoices ?? f.more : f.more;
      return {items:[{id:identity}],next_cursor:more && !path.includes('?')?'older':null,complete:!more || path.includes('?')};
@@ -231,5 +231,44 @@ test("mounted Billing restores diagnostics for each cached tab and invalidates t
   await page.evaluate(()=>{fixture.options={...fixture.options,identityKey:null,token:null,canViewStudioBilling:false};fixture.render();});
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   assert.equal(await page.evaluate(()=>fixture.error),'','signout cannot retain another access scope diagnostic');
+ } finally {await browser.close();}
+});
+
+
+test("mounted Billing keeps denied landing diagnostics during Connect reads without crossing access scopes", async () => {
+ const browser=await chromium.launch({headless:true});
+ try {
+  for (const [access, warnings, expected] of [
+   ['subscription_required', [], 'Koaryu Core subscription is required for financial data. Account status and recovery remain available.'],
+   ['unavailable', ['Financial verification is unavailable.'], 'Financial verification is unavailable.'],
+   ['unavailable', [], 'Financial totals are unavailable.'],
+  ]) {
+   const page=await mountBillingFixture(browser);
+   await page.evaluate(({access,warnings})=>{
+    fixture.financialAccess=access;fixture.warnings=warnings;
+    return fixture.state.refreshBilling();
+   },{access,warnings});
+   assert.equal(await page.evaluate(()=>fixture.error),expected);
+   assert.ok(await page.evaluate(()=>fixture.state.billingSystemStatus),'denied financial data retains account diagnostics');
+   await page.evaluate(()=>{
+    fixture.held='/billing/connect/status';fixture.fail='/billing/connect/status';
+    void fixture.state.refreshConnectStatus();
+   });
+   await page.waitForFunction(()=>fixture.waiters.length===1);
+   assert.equal(await page.evaluate(()=>fixture.error),expected,'pending Connect status preserves the financial access explanation');
+   await page.evaluate(()=>{fixture.held=null;fixture.waiters.splice(0).forEach(resolve=>resolve());});
+   await page.waitForFunction(()=>fixture.error.includes('Required dataset failed'));
+   assert.equal(await page.evaluate(()=>fixture.error),`${expected} Required dataset failed`,'a failed Connect read includes the financial access explanation');
+   await page.evaluate(()=>{
+    fixture.financialAccess='available';fixture.warnings=[];fixture.fail=null;fixture.held='/billing/landing';
+    fixture.options={...fixture.options,identityKey:'new:studio:admin:2'};fixture.render();
+   });
+   await page.waitForFunction(()=>fixture.waiters.length===1);
+   assert.equal(await page.evaluate(()=>fixture.error),'','another access scope cannot inherit financial or Connect errors');
+   await page.evaluate(()=>{fixture.held=null;fixture.waiters.splice(0).forEach(resolve=>resolve());});
+   await page.waitForFunction(()=>fixture.state.hasBillingLoadSettled);
+   assert.equal(await page.evaluate(()=>fixture.error),'');
+   await page.close();
+  }
  } finally {await browser.close();}
 });

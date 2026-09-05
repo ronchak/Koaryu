@@ -39,6 +39,8 @@ The implementation-base endpoint baseline uses the corrected fixture against bas
 
 ## September 4 implementation evidence
 
+The measurements below describe implementation checkpoint `eef4ebd3f49e95a90d0752850fece9be029d3ee0`. Later review fixes add error and session-recovery paths; these numbers are not a final-head hosted latency claim.
+
 The local PostgreSQL 17 run passed all 133 migrations and 50 contracts, including
 restore compatibility, deliberate permission/body drift and concurrent writes.
 On the complete Billing fixture with 201 invoices and 1,003 payments, twenty

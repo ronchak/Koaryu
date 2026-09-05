@@ -182,9 +182,10 @@ export function useBillingDataController({
         setLoadedAccessKey(requestAccess.accessKey);
         if (result.financial_access !== "available") {
           clearFinancialData();
-          setError(result.financial_access === "subscription_required"
+          errorsRef.current.set(`${activeAccessKey}:landing`, result.financial_access === "subscription_required"
             ? "Koaryu Core subscription is required for financial data. Account status and recovery remain available."
             : result.errors.join(" ") || "Financial totals are unavailable.");
+          showTabError(cacheKey);
           return;
         }
         retainedRef.current.set(`${activeAccessKey}:landing`, Date.now());
@@ -229,7 +230,7 @@ export function useBillingDataController({
         markTabSettled(cacheKey, true);
       }
     }
-  }, [activeAccessKey, activeTab, clearFinancialData, isCurrentRequest, markTabSettled, onSubscriptionRequired, resetBillingData, setError, showTabError]);
+  }, [activeAccessKey, activeTab, clearFinancialData, isCurrentRequest, markTabSettled, onSubscriptionRequired, resetBillingData, showTabError]);
   const refreshBilling = useCallback(() => loadBilling(true), [loadBilling]);
   const ensureBilling = useCallback(() => loadBilling(false), [loadBilling]);
 

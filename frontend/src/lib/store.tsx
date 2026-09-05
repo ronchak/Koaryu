@@ -685,8 +685,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
-    setIdentityReady(false);
-    setStaffProfilesAvailable(false);
+    // Subscription access gates studio data, not an already verified identity.
+    // The recovery page still needs the dashboard shell and legal-name gate.
     applyLiveStudioDataResetState(buildSubscriptionRequiredStudioResetState());
   }, [applyLiveStudioDataResetState]);
 
@@ -979,7 +979,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async function initializeLive(providedSession?: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]) {
       const studentsRevisionAtStart = studentsRevisionRef.current;
       const notificationRevision = authNotificationRevision;
-      const session = providedSession ?? (await supabase.auth.getSession()).data.session;
+      let session = providedSession;
+      if (!session) {
+        try {
+          const result = await supabase.auth.getSession();
+          if (!mounted || notificationRevision !== authNotificationRevision) return;
+          if (result.error) throw result.error;
+          session = result.data.session;
+        } catch {
+          if (!mounted || notificationRevision !== authNotificationRevision) return;
+          // A refresh outage can leave the stored SDK session recoverable. Hide protected data,
+          // but leave its storage and cookies intact so an explicit retry can recover.
+          tokenRef.current = null;
+          setToken(null);
+          resetLiveStudioState();
+          setIdentityLoadError("Your session could not be checked. Please retry.");
+          setHydrated(true);
+          return;
+        }
+      }
       if (!mounted || notificationRevision !== authNotificationRevision) {
         return;
       }
@@ -1088,6 +1106,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               setDashboardSummaryLoaded(true);
             };
 
+            markPerformance("dashboard.summary_started");
             void withCurrentLiveAuthRead(() => {
               const request = beginLiveAuthRequest();
               return {
@@ -1096,7 +1115,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   && request.canRetryAfterTokenChange(),
               };
             }, async (request) => {
-              markPerformance("dashboard.summary_started");
               try {
                 const summaryRes = await api.get<DashboardSummary>(
                   "/dashboard/summary",
@@ -1171,6 +1189,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             applySubscriptionRequiredState(authProfile, session.user);
           } else {
             markSubscriptionRequired();
+            setIdentityLoadError("Your account and studio access could not be verified. Please retry.");
           }
           setHydrated(true);
           return;
@@ -1221,6 +1240,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         && tokenRef.current === (session?.access_token ?? null)
         && authUserIdRef.current === (session?.user.id ?? null)) return;
       authNotificationRevision += 1;
+      if (event === "INITIAL_SESSION" && !session) {
+        // The SDK also emits this event when refreshing a stored session fails.
+        // Confirm absence through getSession's error result outside the auth lock.
+        tokenRef.current = null;
+        setToken(null);
+        resetLiveStudioState();
+        setHydrated(true);
+        const notificationRevision = authNotificationRevision;
+        queueMicrotask(() => {
+          if (mounted && notificationRevision === authNotificationRevision) {
+            void initializeLive();
+          }
+        });
+        return;
+      }
       if (session) {
         const needsInitialization = authUserIdRef.current !== session.user.id
           || event === "USER_UPDATED"

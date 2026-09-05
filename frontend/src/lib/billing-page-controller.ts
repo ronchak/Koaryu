@@ -147,7 +147,8 @@ export function useBillingPageController({
     subscriptions,
   } = useBillingDataController({
     activeTab,
-    identityKey: currentUserId && currentStudioId ? `${currentUserId}:${currentStudioId}:${currentRole}:${identityGeneration}` : null,    canManageKoaryuSubscription,
+    identityKey: currentUserId && currentStudioId ? `${currentUserId}:${currentStudioId}:${currentRole}:${identityGeneration}` : null,
+    canManageKoaryuSubscription,
     canViewStudioBilling,
     isPreviewMode,
     onSubscriptionRequired: handleSubscriptionRequired,
