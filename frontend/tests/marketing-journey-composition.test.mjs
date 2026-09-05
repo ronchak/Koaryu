@@ -151,15 +151,35 @@ describe("Journey progressive enhancement and accessibility", () => {
     );
   });
 
-  it("keeps controller browser access guarded and history replacement canonical", () => {
+  it("keeps browser access guarded and separates explicit history pushes", () => {
     assert.match(controllerSource, /^"use client";/);
     assert.match(controllerSource, /if \(typeof window === "undefined"/);
     assert.match(controllerSource, /typeof Element === "undefined"/);
     assert.match(controllerSource, /typeof Node === "undefined"/);
     assert.match(controllerSource, /activeElement === document\.body/);
     assert.match(controllerSource, /shouldHandleJourneyKeyboardFocus/);
+    assert.match(controllerSource, /type HistoryMode = "replace" \| "push"/);
+    assert.match(
+      controllerSource,
+      /const requestedRelativeUrl = `\$\{destination\.pathname\}\$\{destination\.search\}\$\{destination\.hash\}`[\s\S]*const currentRelativeUrl = `\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{window\.location\.hash\}`[\s\S]*requestedRelativeUrl === currentRelativeUrl/
+    );
+    assert.equal(
+      controllerSource.match(/window\.history\.pushState/g)?.length,
+      1,
+      "raw history pushes must stay inside the private URL writer"
+    );
+    assert.equal(
+      controllerSource.match(/window\.history\.replaceState/g)?.length,
+      1,
+      "raw history replacements must stay inside the private URL writer"
+    );
+    assert.match(
+      controllerSource,
+      /writeJourneyUrl\(`#\$\{nextHash\}`, options\.historyMode \?\? "replace"\)/,
+      "passive navigateTo callers must default to replacement"
+    );
     assert.match(controllerSource, /window\.history\.replaceState/);
-    assert.doesNotMatch(controllerSource, /pushState/);
+    assert.match(controllerSource, /window\.history\.pushState/);
     assert.match(controllerSource, /decideJourneyHashChange\(window\.location\.hash\)/);
     assert.match(
       controllerSource,
@@ -168,6 +188,11 @@ describe("Journey progressive enhancement and accessibility", () => {
     assert.match(
       controllerSource,
       /decision\.action === "navigate"[\s\S]*applyResolvedHash\(decision\.resolved, true\)/
+    );
+    assert.match(
+      controllerSource,
+      /historyMode: resolved\.wasAlias \? "replace" : historyMode[\s\S]*resolved\.wasAlias[\s\S]*writeJourneyUrl\(`#\$\{resolved\.canonicalHash\}`, "replace"\)/,
+      "legacy aliases must still canonicalize with replacement"
     );
     assert.match(controllerSource, /options\.writeHash !== false/);
     assert.match(controllerSource, /event\.metaKey/);
@@ -182,8 +207,13 @@ describe("Journey progressive enhancement and accessibility", () => {
     );
     assert.match(
       controllerSource,
-      /window\.history\.replaceState\([\s\S]*destination\.pathname[\s\S]*navigateTo\(decision\.chapterIndex, \{ writeHash: decision\.writeHash \}\)/,
-      "the hashless brand link must replace the URL and reset without writing a hash"
+      /writeJourneyUrl\([\s\S]*destination\.pathname[\s\S]*"push"[\s\S]*navigateTo\(decision\.chapterIndex, \{ writeHash: decision\.writeHash \}\)/,
+      "the hashless brand link must push once and reset without writing a hash"
+    );
+    assert.match(
+      controllerSource,
+      /applyResolvedHash\(decision\.resolved, true, "push"\)/,
+      "only captured same-page links opt into history pushes"
     );
     assert.match(
       controllerSource,

@@ -42,6 +42,17 @@ npm run dev
 
 The local dev server runs at [http://localhost:4000](http://localhost:4000).
 
+`next.config.ts` pins both Turbopack and output tracing to the repository root
+so a lockfile above the repository cannot change the workspace root. Keeping the
+tracing root at the monorepo level also preserves Vercel's frontend asset paths.
+
+If development stalls at `Compiling /` while a production build serves normally,
+stop the dev server and move `.next/dev/cache/turbopack` to a temporary directory
+outside the frontend. Restart and test `/` before opening a browser. This isolates
+persisted compiler state without deleting the production build or changing code.
+Keep the old cache until recovery is verified; increasing browser test timeouts
+does not repair a stalled compiler.
+
 ## Build
 
 ```bash
@@ -58,6 +69,16 @@ them touch state. The full e2e command is:
 ```bash
 npm run test:e2e
 ```
+
+The landing-page history regression needs only a running local frontend, with no
+login or database setup. Run it with one browser worker:
+
+```bash
+npx playwright test e2e/marketing-journey-history.spec.ts --workers=1 --max-failures=1
+```
+
+It checks explicit chapter links, Back/Forward, duplicate clicks, and replacement
+of the current history entry during keyboard chapter navigation.
 
 The preview CSV-import check runs against preview mode and uses the checked-in
 demo CSV:
