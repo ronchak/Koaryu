@@ -50,6 +50,7 @@ export function useBillingDataController({
   const [landing, setLanding] = useState<BillingLanding | null>(null);
   const tokenRef = useRef(token);
   const retainedRef = useRef(new Map<string, number>());
+  const errorsRef = useRef(new Map<string, string>());
   const dataScopeRef = useRef<string | null>(null);
   const [platformBilling, setPlatformBilling] = useState<PlatformBillingStatus | null>(null);
   const [billingSystemStatus, setBillingSystemStatus] = useState<BillingSystemStatus | null>(null);
@@ -84,6 +85,13 @@ export function useBillingDataController({
     : null;
   const requestSequenceRef = useRef(0);
   const latestAccessKeyRef = useRef(activeAccessKey);
+  const showTabError = useCallback((cacheKey: string, message?: string) => {
+    if (message !== undefined) errorsRef.current.set(cacheKey, message);
+    setError([
+      errorsRef.current.get(`${activeAccessKey}:landing`),
+      errorsRef.current.get(cacheKey),
+    ].filter(Boolean).join(" "));
+  }, [activeAccessKey, setError]);
 
   const shouldSettleWithoutAccess = !token || shouldSettleEarly;
   const clearFinancialData = useCallback(() => {
@@ -100,6 +108,7 @@ export function useBillingDataController({
     setIsLoadingMore(false);
     loadMoreInFlightRef.current = null;
     retainedRef.current.clear();
+    errorsRef.current.clear();
     setSettledTabs(new Set());
     setSettledAttemptKey(null);
   }, []);
@@ -110,7 +119,8 @@ export function useBillingDataController({
     setBillingSystemStatus(null);
     setPaymentAccount(null);
     setLoadedAccessKey(null);
-  }, [clearFinancialData]);
+    setError("");
+  }, [clearFinancialData, setError]);
 
   const isCurrentRequest = useCallback((requestId: number, access: BillingAccessSnapshot) => {
     return requestSequenceRef.current === requestId && latestAccessKeyRef.current === access.accessKey;
@@ -121,9 +131,11 @@ export function useBillingDataController({
   useLayoutEffect(() => {
     requestSequenceRef.current += 1;
     retainedRef.current.clear();
+    errorsRef.current.clear();
+    setError("");
     latestAccessKeyRef.current = activeAccessKey;
     return () => { requestSequenceRef.current += 1; };
-  }, [activeAccessKey]);
+  }, [activeAccessKey, setError]);
 
   useLayoutEffect(() => {
     requestSequenceRef.current += 1;
@@ -143,18 +155,20 @@ export function useBillingDataController({
     loadMoreInFlightRef.current = null;
     if (force) {
       retainedRef.current.clear();
+      errorsRef.current.clear();
       setSettledTabs(new Set());
     }
     const cacheKey = `${activeAccessKey}:${activeTab}`;
     const freshAt = retainedRef.current.get(cacheKey);
     if (freshAt !== undefined && Date.now() - freshAt < 30_000) {
+      showTabError(cacheKey);
       markTabSettled(cacheKey, true, true);
       return;
     }
     const requestAccess = { accessKey: activeAccessKey };
     const requestId = requestSequenceRef.current += 1;
     markTabSettled(cacheKey, false);
-    setError("");
+    showTabError(cacheKey, "");
     try {
       const freshLanding = retainedRef.current.get(`${activeAccessKey}:landing`);
       if (force || freshLanding === undefined || Date.now() - freshLanding >= 30_000) {
@@ -174,7 +188,8 @@ export function useBillingDataController({
           return;
         }
         retainedRef.current.set(`${activeAccessKey}:landing`, Date.now());
-        if (result.errors.length) setError(result.errors.join(" "));
+        errorsRef.current.set(`${activeAccessKey}:landing`, result.errors.join(" "));
+        showTabError(cacheKey);
       }
       const requests: Promise<void>[] = [];
       const load = <T,>(path: string, apply: (value: T) => void) => {
@@ -208,13 +223,13 @@ export function useBillingDataController({
         onSubscriptionRequired();
         return;
       }
-      setError(err instanceof Error ? err.message : "Billing could not be loaded.");
+      showTabError(cacheKey, err instanceof Error ? err.message : "Billing could not be loaded.");
     } finally {
       if (isCurrentRequest(requestId, requestAccess)) {
         markTabSettled(cacheKey, true);
       }
     }
-  }, [activeAccessKey, activeTab, clearFinancialData, isCurrentRequest, markTabSettled, onSubscriptionRequired, resetBillingData, setError]);
+  }, [activeAccessKey, activeTab, clearFinancialData, isCurrentRequest, markTabSettled, onSubscriptionRequired, resetBillingData, setError, showTabError]);
   const refreshBilling = useCallback(() => loadBilling(true), [loadBilling]);
   const ensureBilling = useCallback(() => loadBilling(false), [loadBilling]);
 
@@ -224,6 +239,8 @@ export function useBillingDataController({
     const operation = Symbol("history-page");
     loadMoreInFlightRef.current = operation;
     const requestId = requestSequenceRef.current;
+    const cacheKey = `${activeAccessKey}:${activeTab}`;
+    showTabError(cacheKey, "");
     setIsLoadingMore(true);
     try {
       const results = await Promise.allSettled([
@@ -241,12 +258,12 @@ export function useBillingDataController({
       const failed = results.find(result => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
     } catch (err) {
-      if (isCurrentRequest(requestId, { accessKey: activeAccessKey })) setError(err instanceof Error ? err.message : "Older billing history is unavailable.");
+      if (isCurrentRequest(requestId, { accessKey: activeAccessKey })) showTabError(cacheKey, err instanceof Error ? err.message : "Older billing history is unavailable.");
     } finally {
       if (loadMoreInFlightRef.current === operation) loadMoreInFlightRef.current = null;
       if (isCurrentRequest(requestId, { accessKey: activeAccessKey })) setIsLoadingMore(false);
     }
-  }, [activeAccessKey, activeTab, invoiceCursor, paymentCursor, isCurrentRequest, setError]);
+  }, [activeAccessKey, activeTab, invoiceCursor, paymentCursor, isCurrentRequest, showTabError]);
 
   const refreshConnectStatus = useCallback(async ({ sync = false }: { sync?: boolean } = {}) => {
     if (!activeAccessKey || !token) {
@@ -257,7 +274,7 @@ export function useBillingDataController({
     const requestAccess = { accessKey: activeAccessKey };
     const requestId = requestSequenceRef.current += 1;
     markTabSettled(cacheKey, false);
-    setError("");
+    showTabError(cacheKey, "");
     try {
       const account = sync
         ? await api.post<StudioPaymentAccount>("/billing/connect/sync", {}, token, { timeoutMs: 30000 })
@@ -279,7 +296,7 @@ export function useBillingDataController({
         onSubscriptionRequired();
         return;
       }
-      setError(err instanceof Error ? err.message : "Stripe Connect status could not be loaded.");
+      showTabError(cacheKey, err instanceof Error ? err.message : "Stripe Connect status could not be loaded.");
     } finally {
       if (isCurrentRequest(requestId, requestAccess)) {
         markTabSettled(cacheKey, true);
@@ -293,7 +310,7 @@ export function useBillingDataController({
     onSubscriptionRequired,
     refreshBilling,
     resetBillingData,
-    setError,
+    showTabError,
     setMessage,
     token,
   ]);

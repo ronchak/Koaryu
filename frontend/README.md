@@ -197,3 +197,9 @@ Both tools are destructive. They are designed to preserve Koaryu Core subscripti
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+Pending staff, program-usage and deferred summary reads recover from token rotation
+through their existing owners, with at most two replays using the current token.
+Identity changes, sign-out and subscription revocation invalidate that recovery.
+Mutations are not replayed. A null session clears private state and replaces the
+route with `/login`, including when it supersedes a pending initial session read.

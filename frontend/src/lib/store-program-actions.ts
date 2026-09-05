@@ -9,7 +9,7 @@ import {
   buildPreviewProgramLadder,
   upsertProgram,
 } from "@/lib/program-store-model";
-import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
+import { withCurrentLiveAuthRead, type BeginLiveAuthRequest, type StoreRef } from "@/lib/store-action-types";
 import { KEYS, load, localId } from "@/lib/store-storage";
 import { MOCK_PROGRAMS } from "@/lib/preview-studio-data";
 import type { BeltLadder, Program, ProgramCreate, ProgramUpdate } from "@/types";
@@ -61,7 +61,7 @@ export function useStoreProgramActions({
     setProgramsUsageLoadError(null);
 
     const identity = {};
-    const pending = (async () => {
+    const pending = withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
       try {
         const result = await api.get<Program[]>(
           `/programs?include_archived=${options?.includeArchived ? "true" : "false"}`,
@@ -78,10 +78,12 @@ export function useStoreProgramActions({
           setProgramsUsageLoadError(error instanceof Error ? error.message : "Program usage could not be loaded.");
         }
         throw error;
-      } finally {
-        if (usageRequestsRef.current.get(key)?.identity === identity) usageRequestsRef.current.delete(key);
       }
-    })();
+    }, (error) => {
+      setProgramsUsageLoadError(error.message);
+    }).finally(() => {
+      if (usageRequestsRef.current.get(key)?.identity === identity) usageRequestsRef.current.delete(key);
+    });
     usageRequestsRef.current.set(key, { identity, promise: pending, isCurrent: request.isCurrent });
     return pending;
   }, [beginLiveAuthRequest, isPreviewMode, persistPrograms, setProgramsUsageLoaded, setProgramsUsageLoadError]);

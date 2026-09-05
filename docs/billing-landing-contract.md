@@ -30,3 +30,8 @@ permissions. Production application remains an owner-run interactive operation.
 Invoice history loads and advances only the invoice cursor. Reports loads and
 advances only the payment cursor. A retained cursor from another tab cannot
 advertise older history or trigger invisible page reads.
+
+Read errors are retained with their access scope and tab. A cached revisit restores
+its own error and the retained landing warnings, rather than inheriting another
+tab's failure. Successful retries, refresh and scope changes clear the appropriate
+error state alongside the data they replace.

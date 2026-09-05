@@ -16,7 +16,7 @@ import {
   sortStaffMembers,
   upsertStaffMember,
 } from "@/lib/staff-store-model";
-import type { BeginLiveAuthRequest } from "@/lib/store-action-types";
+import { withCurrentLiveAuthRead, type BeginLiveAuthRequest } from "@/lib/store-action-types";
 import type {
   StaffInviteCreate,
   StaffDeletionRequestResponse,
@@ -56,30 +56,33 @@ export function useStoreStaffActions({
       return sorted;
     }
 
-    const request = beginLiveAuthRequest();
-
-    try {
-      const result = await api.get<StaffMember[]>(buildStaffListPath(includeArchived), request.token);
-      const sorted = sortStaffMembers(result, activeUserId);
-      if (!request.isCurrent()) {
-        return sorted;
-      }
-      setStaffMembers(sorted);
-      setStaffLoaded(true);
-      setStaffLoadError(null);
-      return sorted;
-    } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : "";
-      const message =
-        rawMessage && rawMessage !== "Internal Server Error"
-          ? rawMessage
-          : "Staff could not be loaded. Please try again.";
-      if (request.isCurrent()) {
+    return withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
+      try {
+        const result = await api.get<StaffMember[]>(buildStaffListPath(includeArchived), request.token);
+        const sorted = sortStaffMembers(result, activeUserId);
+        if (!request.isCurrent()) {
+          return sorted;
+        }
+        setStaffMembers(sorted);
         setStaffLoaded(true);
-        setStaffLoadError(message);
+        setStaffLoadError(null);
+        return sorted;
+      } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : "";
+        const message =
+          rawMessage && rawMessage !== "Internal Server Error"
+            ? rawMessage
+            : "Staff could not be loaded. Please try again.";
+        if (request.isCurrent()) {
+          setStaffLoaded(true);
+          setStaffLoadError(message);
+        }
+        throw error;
       }
-      throw error;
-    }
+    }, (error) => {
+      setStaffLoaded(true);
+      setStaffLoadError(error.message);
+    });
   }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setStaffLoadError, setStaffLoaded, setStaffMembers, staffMembers]);
 
   const inviteStaff = useCallback(async (data: StaffInviteCreate): Promise<StaffMember> => {

@@ -49,9 +49,7 @@ function bundle() {
   return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});function Observer(){const state=useBillingDataController(window.fixture.options);window.fixture.state=state;React.useLayoutEffect(()=>{window.fixture.commits.push({tab:window.fixture.options.activeTab,settled:state.hasBillingLoadSettled,loading:state.isLoading,requestCount:window.fixture.requests.length});});React.useEffect(()=>{void state.ensureBilling();},[state.ensureBilling]);return React.createElement('output',null,JSON.stringify({landing:state.landing,plans:state.plans,payers:state.payers}));}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(Observer));window.fixture.render();})();`;
 }
 
-test("mounted Billing landing, tab retention, mutations and identity isolation", async () => {
- const browser=await chromium.launch({headless:true});
- try {
+async function mountBillingFixture(browser) {
   const page=await browser.newPage();
   await page.route("http://fixture.local/",r=>r.fulfill({contentType:"text/html",body:'<div id="root"></div>'}));
   await page.goto("http://fixture.local/");
@@ -63,7 +61,8 @@ test("mounted Billing landing, tab retention, mutations and identity isolation",
     f.requests.push({path,token,identity});
     if(path===f.held) await new Promise(resolve=>f.waiters.push(resolve));
     if(path===f.fail) throw new Error('Required dataset failed');
-    if(path==='/billing/landing') return {studio_id:identity,system_status:{payment_account:{studio_id:identity},workflow_capabilities:[]},platform_status:null,financial_access:f.denied?'subscription_required':'available',aggregates:f.denied?null:{active_student_count:8,payment_cohort:{payment_count:1001}},errors:[]};
+    if(path===f.subscriptionRequired) throw Object.assign(new Error('Subscription required'),{status:402});
+    if(path==='/billing/landing') return {studio_id:identity,system_status:{payment_account:{studio_id:identity},workflow_capabilities:[]},platform_status:null,financial_access:f.denied?'subscription_required':'available',aggregates:f.denied?null:{active_student_count:8,payment_cohort:{payment_count:1001}},errors:f.warnings??[]};
     if(path.includes('/page')) {
      const more=path.includes('/invoices/') ? f.moreInvoices ?? f.more : f.more;
      return {items:[{id:identity}],next_cursor:more && !path.includes('?')?'older':null,complete:!more || path.includes('?')};
@@ -73,6 +72,14 @@ test("mounted Billing landing, tab retention, mutations and identity isolation",
    }};
   });
   await page.addScriptTag({content:bundle()});
+  await page.waitForFunction(()=>fixture.state?.hasBillingLoadSettled);
+  return page;
+}
+
+test("mounted Billing landing, tab retention, mutations and identity isolation", async () => {
+ const browser=await chromium.launch({headless:true});
+ try {
+  const page=await mountBillingFixture(browser);
   await page.waitForFunction(()=>fixture.state?.hasBillingLoadSettled);
   assert.deepEqual(await page.evaluate(()=>fixture.requests.map(r=>r.path)),['/billing/landing']);
   await page.evaluate(()=>{fixture.held='/billing/plans';fixture.commits=[];fixture.options={...fixture.options,activeTab:'plans'};fixture.render();});
@@ -158,5 +165,71 @@ test("mounted Billing landing, tab retention, mutations and identity isolation",
   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   assert.deepEqual(await page.evaluate(n=>fixture.requests.slice(n).map(r=>r.path),deniedStart),['/billing/landing'],'denied landing cannot launch a financial tab read');
   assert.equal(await page.evaluate(()=>fixture.redirected),undefined,'diagnostics remain visible on denied subscription');
+ } finally {await browser.close();}
+});
+
+
+test("mounted Billing restores diagnostics for each cached tab and invalidates them with access and refresh", async () => {
+ const browser=await chromium.launch({headless:true});
+ try {
+  const page=await mountBillingFixture(browser);
+  const visit=async tab=>{
+   await page.evaluate(tab=>{fixture.options={...fixture.options,activeTab:tab};fixture.render();},tab);
+   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+   await page.waitForFunction(()=>fixture.state.hasBillingLoadSettled);
+  };
+  await page.evaluate(()=>{fixture.fail='/billing/payers';});
+  await visit('families');
+  assert.equal(await page.evaluate(()=>fixture.error),'Required dataset failed');
+  const beforeOverview=await page.evaluate(()=>fixture.requests.length);
+  await visit('overview');
+  assert.equal(await page.evaluate(()=>fixture.requests.length),beforeOverview,'Overview uses its retained successful data');
+  assert.equal(await page.evaluate(()=>fixture.error),'','a Families failure cannot leak into cached Overview');
+
+  await page.evaluate(()=>{fixture.fail=null;fixture.warnings=['Stripe diagnostics are unavailable.'];return fixture.state.refreshBilling();});
+  assert.equal(await page.evaluate(()=>fixture.error),'Stripe diagnostics are unavailable.');
+  await visit('plans');
+  assert.equal(await page.evaluate(()=>fixture.error),'Stripe diagnostics are unavailable.','retained landing warnings survive a successful tab fetch');
+  await page.evaluate(()=>{fixture.fail='/billing/payers';});
+  await visit('families');
+  assert.equal(await page.evaluate(()=>fixture.error),'Stripe diagnostics are unavailable. Required dataset failed');
+  const beforeWarningOverview=await page.evaluate(()=>fixture.requests.length);
+  await visit('overview');
+  assert.equal(await page.evaluate(()=>fixture.requests.length),beforeWarningOverview);
+  assert.equal(await page.evaluate(()=>fixture.error),'Stripe diagnostics are unavailable.','cached Overview restores landing warnings without an unrelated tab failure');
+  await page.evaluate(()=>{fixture.fail=null;});
+  await visit('families');
+  assert.equal(await page.evaluate(()=>fixture.error),'Stripe diagnostics are unavailable.','successful retry clears only the tab failure');
+
+  await page.evaluate(()=>{fixture.more=true;});
+  await visit('reports');
+  await page.evaluate(()=>{fixture.fail='/billing/payments/page?cursor=older';return fixture.state.loadMoreHistory();});
+  assert.equal(await page.evaluate(()=>fixture.error),'Stripe diagnostics are unavailable. Required dataset failed');
+  await visit('overview');
+  assert.equal(await page.evaluate(()=>fixture.error),'Stripe diagnostics are unavailable.');
+  await visit('reports');
+  assert.equal(await page.evaluate(()=>fixture.error),'Stripe diagnostics are unavailable. Required dataset failed','cached history retains its own failed pagination diagnostic');
+  await page.evaluate(()=>{fixture.fail=null;return fixture.state.loadMoreHistory();});
+  assert.equal(await page.evaluate(()=>fixture.error),'Stripe diagnostics are unavailable.','successful history retry clears its failure');
+
+  await page.evaluate(()=>{fixture.warnings=[];return fixture.state.refreshBilling();});
+  assert.equal(await page.evaluate(()=>fixture.error),'','forced mutation refresh clears resolved landing warnings');
+  await visit('overview');
+  assert.equal(await page.evaluate(()=>fixture.error),'','invalidated tabs do not restore old warnings');
+  await page.evaluate(()=>{fixture.warnings=['Old identity warning.'];return fixture.state.refreshBilling();});
+  await page.evaluate(()=>{fixture.warnings=[];fixture.held='/billing/landing';fixture.options={...fixture.options,identityKey:'other:studio:admin:2'};fixture.render();});
+  await page.waitForFunction(()=>fixture.waiters.length===1);
+  assert.equal(await page.evaluate(()=>fixture.error),'','an identity change clears diagnostics before its response arrives');
+  await page.evaluate(()=>{fixture.held=null;fixture.waiters.splice(0).forEach(resolve=>resolve());});
+  await page.waitForFunction(()=>fixture.state.hasBillingLoadSettled);
+  await page.evaluate(()=>{fixture.warnings=['Current identity warning.'];return fixture.state.refreshBilling();});
+  await page.evaluate(()=>{fixture.subscriptionRequired='/billing/payers';});
+  await visit('families');
+  assert.equal(await page.evaluate(()=>fixture.redirected),true);
+  assert.equal(await page.evaluate(()=>fixture.error),'','subscription denial discards retained diagnostics with financial data');
+  assert.equal(await page.evaluate(()=>fixture.state.landing),null);
+  await page.evaluate(()=>{fixture.options={...fixture.options,identityKey:null,token:null,canViewStudioBilling:false};fixture.render();});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await page.evaluate(()=>fixture.error),'','signout cannot retain another access scope diagnostic');
  } finally {await browser.close();}
 });

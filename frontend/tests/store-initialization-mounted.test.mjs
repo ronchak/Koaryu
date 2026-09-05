@@ -11,12 +11,12 @@ import { chromium } from "@playwright/test";
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-function bundle(mode, { preview = false, layout = false, leadsPage = false } = {}) {
+function bundle(mode, { preview = false, layout = false, leadsPage = false, programsSection = false } = {}) {
   if (!["production", "development"].includes(mode) || typeof preview !== "boolean") throw new Error("Unsupported fixture environment");
   const modules = [];
   const ids = new Map();
   const stubs = {
-    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router;`,
+    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(path){(window.fixture.redirects??=[]).push(path)}}; exports.useRouter=()=>router;`,
     "@/components/loading-screen": `exports.LoadingScreen=()=>null;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
@@ -32,6 +32,12 @@ function bundle(mode, { preview = false, layout = false, leadsPage = false } = {
       "@/components/ui/button": `exports.Button=({children,onClick})=>require('react').createElement('button',{onClick},children);`,
       "@/components/ui/dismissible-notice": `exports.DismissibleNotice=({children})=>children;`,
       "lucide-react": `exports.UserPlus=()=>null;`,
+    } : {}),
+    ...(programsSection ? {
+      "@/components/ui/input": `exports.Input=()=>null;`,
+      "@/components/ui/button": `exports.Button=({children,onClick})=>require('react').createElement('button',{onClick},children);`,
+      "@/components/ui/dismissible-notice": `exports.DismissibleNotice=({children})=>children;`,
+      "lucide-react": `for (const name of ['Archive','Check','Plus','RefreshCw','RotateCcw','Save','Settings2','UserPlus']) exports[name]=()=>null;`,
     } : {}),
     ...(preview || layout ? {
       "@/components/dashboard-shell.module.css": `module.exports={};`,
@@ -70,8 +76,9 @@ function bundle(mode, { preview = false, layout = false, leadsPage = false } = {
   const dom = add("react-dom/client");
   const store = add("@/lib/store");
   const leads = leadsPage ? add("@/app/(dashboard)/leads/page") : null;
+  const programs = programsSection ? add("@/components/settings/programs-section") : null;
   const provider = preview || layout ? `require(${add("@/app/(dashboard)/layout")}).default` : "StoreProvider";
-  return `(()=>{const process={env:{NODE_ENV:${mode === "development" ? '"development"' : '"production"'},NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {StoreProvider,useStore}=require(${store});function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer),${leads === null ? "null" : `React.createElement(require(${leads}).default)`})));})();`;
+  return `(()=>{const process={env:{NODE_ENV:${mode === "development" ? '"development"' : '"production"'},NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {StoreProvider,useStore}=require(${store});function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer),${leads === null ? "null" : `React.createElement(require(${leads}).default)`},${programs === null ? "null" : `React.createElement(require(${programs}).ProgramsSection)`})));})();`;
 }
 
 for (const mode of ["production", "development"]) {
@@ -148,6 +155,7 @@ for (const mode of ["production", "development"]) {
       await page.waitForFunction(() => fixture.store.token === "fixture-token-renewed");
       assert.equal(await page.evaluate(() => fixture.requests.filter(r => r.path === "/dashboard/bootstrap").length), 1);
       await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+      await page.waitForFunction(() => fixture.redirects.includes("/login"));
       await page.waitForFunction(() => fixture.store.currentRole === null && fixture.store.currentStudioId === null);
       await page.evaluate(() => fixture.emit("SIGNED_IN", {access_token:"fixture-token-b",user:{id:"user-b",email:"b@example.test",user_metadata:{}}}));
       await page.waitForFunction(() => fixture.store.currentStudioId === "studio-user-b");
@@ -346,6 +354,100 @@ for (const role of ["admin", "front_desk"]) {
       }
       await page.waitForFunction(() => fixture.readiness.at(-1)?.complete, null, { timeout: 3000 });
       assert.equal(await page.evaluate(() => fixture.requests.filter(path => path.startsWith("/staff")).length), role === "admin" ? 2 : 0);
+    } finally { await browser.close(); }
+  });
+}
+
+for (const outcome of ["success", "failure"]) {
+  test(`mounted route-owned staff, program and summary reads recover after token rotation (${outcome})`, async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.route("http://fixture.local/", route => route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }));
+      await page.goto("http://fixture.local/");
+      await page.evaluate(outcome => {
+        const user = { id: "route-user", email: "route@example.test", user_metadata: {} };
+        const session = { access_token: "route-old-token", user };
+        const fixture = window.fixture = { observations: [], readiness: [], requests: [], waiters: [], listeners: new Set(), session };
+        fixture.emit = (event, session) => { fixture.session = session; for (const listener of fixture.listeners) listener(event, session); };
+        fixture.supabase = { auth: {
+          getSession: async () => ({ data: { session: fixture.session } }),
+          onAuthStateChange: callback => { fixture.listeners.add(callback); return { data: { subscription: { unsubscribe: () => fixture.listeners.delete(callback) } } }; },
+        } };
+        fixture.api = { get: async (path, token) => {
+          fixture.requests.push({ path, token });
+          if (path === "/dashboard/bootstrap") return {
+            auth: { membership_status: "active", studio_id: "route-studio", role: "admin", staff_profiles_available: true, user },
+            students: [], programs: [], leads: [], belt_ladders: [], primary_belt_ladder: null,
+          };
+          if (path.startsWith("/schedule/window")) return { sessions: [], templates: [], attendance: [] };
+          if (path.startsWith("/staff") || path.startsWith("/programs") || path === "/dashboard/summary") {
+            if (token === "route-old-token") {
+              await new Promise(resolve => fixture.waiters.push(resolve));
+              if (outcome === "failure") throw new Error("Expired token");
+              return path === "/dashboard/summary" ? { auth: { studio_id: "route-studio" }, marker: "obsolete" } : [{ id: "obsolete-row", name: "Obsolete" }];
+            }
+            return path === "/dashboard/summary" ? { auth: { studio_id: "route-studio" }, marker: "current" } : [];
+          }
+          throw new Error(`Unexpected request ${path}`);
+        } };
+      }, outcome);
+      await page.addScriptTag({ content: bundle("production", { leadsPage: true, programsSection: true }) });
+      await page.waitForFunction(() => fixture.waiters.length === 3);
+      const generation = await page.evaluate(() => fixture.store.identityGeneration);
+      await page.evaluate(() => {
+        fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "route-new-token" });
+        for (const resolve of fixture.waiters) resolve();
+      });
+      await page.waitForFunction(() => fixture.store.staffLoaded && fixture.store.programsUsageLoaded && fixture.store.dashboardSummaryLoaded && fixture.readiness.at(-1)?.complete);
+      assert.equal(await page.evaluate(() => fixture.store.identityGeneration), generation, "token rotation must preserve identity and shell");
+      assert.deepEqual(await page.evaluate(() => [fixture.store.staffMembers, fixture.store.programs]), [[], []], "obsolete results never commit");
+      assert.deepEqual(await page.evaluate(() => [fixture.store.staffLoadError, fixture.store.programsUsageLoadError]), [null, null]);
+      assert.equal(await page.evaluate(() => fixture.requests.filter(r => r.path === "/dashboard/bootstrap").length), 1);
+      assert.deepEqual(await page.evaluate(() => fixture.requests.filter(r => r.path.startsWith("/staff")).map(r => r.token)), ["route-old-token", "route-new-token"]);
+      assert.deepEqual(await page.evaluate(() => fixture.requests.filter(r => r.path.startsWith("/programs")).map(r => r.token)), ["route-old-token", "route-new-token"]);
+      assert.equal(await page.evaluate(() => fixture.store.dashboardSummary?.marker), "current");
+      assert.deepEqual(await page.evaluate(() => fixture.requests.filter(r => r.path === "/dashboard/summary").map(r => r.token)), ["route-old-token", "route-new-token"]);
+      await page.evaluate(() => fixture.root.unmount());
+    } finally { await browser.close(); }
+  });
+}
+
+for (const event of ["INITIAL_SESSION", "SIGNED_OUT"]) {
+  test(`mounted Dashboard redirects after null ${event} and discards pending identity reads`, async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.route("http://fixture.local/", route => route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }));
+      await page.goto("http://fixture.local/");
+      await page.evaluate(event => {
+        const user = { id: "signed-out-user", email: "out@example.test", user_metadata: {} };
+        const session = { access_token: "signed-out-token", user };
+        const fixture = window.fixture = { observations: [], identityObservations: [], redirects: [], requests: [], listeners: new Set(), waiters: [] };
+        fixture.emit = () => { for (const listener of fixture.listeners) listener(event, null); };
+        fixture.supabase = { auth: {
+          getSession: async () => { if (event === "INITIAL_SESSION") await new Promise(resolve => fixture.waiters.push(resolve)); return { data: { session } }; },
+          onAuthStateChange: callback => { fixture.listeners.add(callback); return { data: { subscription: { unsubscribe: () => fixture.listeners.delete(callback) } } }; },
+        } };
+        fixture.api = { get: async path => {
+          fixture.requests.push(path);
+          if (path === "/dashboard/bootstrap") {
+            await new Promise(resolve => fixture.waiters.push(resolve));
+            return { auth: { membership_status: "active", studio_id: "old-studio", role: "admin", staff_profiles_available: true, user }, students: [], programs: [], leads: [], belt_ladders: [], primary_belt_ladder: null, summary: { studio_id: "old-studio" } };
+          }
+          throw new Error(`Unexpected request ${path}`);
+        } };
+      }, event);
+      await page.addScriptTag({ content: bundle("production", { layout: true }) });
+      await page.waitForFunction(() => fixture.waiters.length === 1);
+      await page.evaluate(() => fixture.emit());
+      await page.waitForFunction(() => fixture.redirects.includes("/login"), null, { timeout: 3000 });
+      await page.evaluate(() => { for (const resolve of fixture.waiters) resolve(); });
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 0);
+      assert.ok((await page.evaluate(() => fixture.identityObservations)).every(ready => !ready));
+      if (event === "INITIAL_SESSION") assert.deepEqual(await page.evaluate(() => fixture.requests), []);
+      await page.evaluate(() => fixture.root.unmount());
     } finally { await browser.close(); }
   });
 }

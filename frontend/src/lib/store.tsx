@@ -102,6 +102,7 @@ import {
   type AuthProfileResponse,
   type BootstrapResponse,
 } from "@/lib/store-bootstrap-model";
+import { withCurrentLiveAuthRead } from "@/lib/store-action-types";
 import { routeForMembershipStatus } from "@/lib/auth-route-model";
 import {
   buildPreviewHydratedLadderState,
@@ -134,6 +135,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [identityLoadError, setIdentityLoadError] = useState<string | null>(null);
   const [identityGeneration, setIdentityGeneration] = useState(0);
   const authoritativeIdentityRef = useRef<string | null>(null);
+  const identityEpochRef = useRef(0);
   const [initializationAttempt, setInitializationAttempt] = useState(0);
   const retryInitialization = useCallback(() => setInitializationAttempt((value) => value + 1), []);
   const [token, setToken] = useState<string | null>(null);
@@ -286,8 +288,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       throw new Error("Not authenticated");
     }
     const requestGeneration = authGenerationRef.current;
+    const identityEpoch = identityEpochRef.current;
+    const identity = authoritativeIdentityRef.current;
     return {
       token: requestToken,
+      canRetryAfterTokenChange: () => Boolean(
+        identity && identity === authoritativeIdentityRef.current
+        && identityEpoch === identityEpochRef.current
+        && tokenRef.current && requestToken !== tokenRef.current
+      ),
       isCurrent: () => isLiveAuthRequestCurrent({
         requestToken,
         requestGeneration,
@@ -604,6 +613,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
+    identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
     authUserIdRef.current = null;
@@ -622,6 +632,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const commitAuthoritativeAuthProfile = useCallback((authProfile: AuthProfileResponse) => {
     const identity = `${authProfile.user.id}:${authProfile.studio_id ?? ""}:${authProfile.role ?? ""}`;
     if (authoritativeIdentityRef.current !== identity) {
+      identityEpochRef.current += 1;
       authoritativeIdentityRef.current = identity;
       setIdentityGeneration((value) => value + 1);
     }
@@ -640,6 +651,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     authProfile: AuthProfileResponse,
     sessionUser: { id: string; email?: string | null; user_metadata?: { full_name?: string | null } }
   ) => {
+    identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
 
@@ -670,6 +682,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commitAuthoritativeAuthProfile, resetLiveStudioState, router]);
 
   const markSubscriptionRequired = useCallback(() => {
+    identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
     setIdentityReady(false);
@@ -977,6 +990,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         clearStoredStudioSessionCookies();
         resetLiveStudioState();
         setHydrated(true);
+        router.replace("/login");
         return;
       }
 
@@ -1062,50 +1076,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (!bootstrapSummary) {
             const summaryRequestSeq = dashboardSummaryRequestSeqRef.current + 1;
             dashboardSummaryRequestSeqRef.current = summaryRequestSeq;
-            const summaryToken = sessionToken;
             const summaryStudioId = authProfile.studio_id;
-
-            void (async () => {
-              markPerformance("dashboard.summary_started");
-              const summaryRes = await api.get<DashboardSummary>(
-                "/dashboard/summary",
-                summaryToken,
-                {
-                  timeoutMs: 30000,
-                  timeoutMessage: "Dashboard summary timed out.",
-                }
-              );
-              if (
-                !mounted ||
-                authGenerationRef.current !== sessionGeneration ||
-                dashboardSummaryRequestSeqRef.current !== summaryRequestSeq ||
-                tokenRef.current !== summaryToken ||
-                  !isDashboardSummaryForStudio(summaryRes, summaryStudioId)
-              ) {
-                return;
-              }
-              setDashboardSummary(summaryRes);
-              setDashboardSummaryLoaded(true);
-              markPerformance("dashboard.summary_finished");
-              measurePerformance(
-                "dashboard.summary_duration",
-                "dashboard.summary_started",
-                "dashboard.summary_finished",
-                { source: "deferred" }
-              );
-            })().catch((error) => {
-              if (
-                !mounted ||
-                authGenerationRef.current !== sessionGeneration ||
-                dashboardSummaryRequestSeqRef.current !== summaryRequestSeq ||
-                tokenRef.current !== summaryToken
-              ) {
-                return;
-              }
+            const summaryIdentityEpoch = identityEpochRef.current;
+            const isSummaryOwnerCurrent = () => mounted
+              && identityEpochRef.current === summaryIdentityEpoch
+              && dashboardSummaryRequestSeqRef.current === summaryRequestSeq;
+            const failSummary = (error: unknown) => {
+              if (!isSummaryOwnerCurrent()) return;
               console.warn("Failed to load dashboard summary", error);
               setDashboardSummary(null);
               setDashboardSummaryLoaded(true);
-            });
+            };
+
+            void withCurrentLiveAuthRead(() => {
+              const request = beginLiveAuthRequest();
+              return {
+                ...request,
+                canRetryAfterTokenChange: () => isSummaryOwnerCurrent()
+                  && request.canRetryAfterTokenChange(),
+              };
+            }, async (request) => {
+              markPerformance("dashboard.summary_started");
+              try {
+                const summaryRes = await api.get<DashboardSummary>(
+                  "/dashboard/summary",
+                  request.token,
+                  { timeoutMs: 30000, timeoutMessage: "Dashboard summary timed out." }
+                );
+                if (!isSummaryOwnerCurrent() || !request.isCurrent()
+                  || !isDashboardSummaryForStudio(summaryRes, summaryStudioId)) return;
+                setDashboardSummary(summaryRes);
+                setDashboardSummaryLoaded(true);
+                markPerformance("dashboard.summary_finished");
+                measurePerformance(
+                  "dashboard.summary_duration",
+                  "dashboard.summary_started",
+                  "dashboard.summary_finished",
+                  { source: "deferred" }
+                );
+              } catch (error) {
+                if (request.isCurrent()) failSummary(error);
+                throw error;
+              }
+            }, failSummary).catch(() => undefined);
           }
         }
 
@@ -1204,7 +1217,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       // A fresh subscription also emits INITIAL_SESSION for an unchanged session.
       // It must not cancel a manual bootstrap retry waiting on getSession.
-      if (event === "INITIAL_SESSION"
+      if (event === "INITIAL_SESSION" && session
         && tokenRef.current === (session?.access_token ?? null)
         && authUserIdRef.current === (session?.user.id ?? null)) return;
       authNotificationRevision += 1;
@@ -1228,7 +1241,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setScheduleLoadError(null);
           setScheduleStatus("loading");
           authGenerationRef.current += 1;
-          dashboardSummaryRequestSeqRef.current += 1;
           if (preservesScheduleGeneration) {
             scheduleCoordinatorRef.current = refreshScheduleCoordinatorAuthState(
               scheduleCoordinatorRef.current
@@ -1252,6 +1264,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         clearStoredStudioSessionCookies();
         resetLiveStudioState();
         setHydrated(true);
+        router.replace("/login");
       }
     });
 
@@ -1259,7 +1272,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
+  }, [applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
