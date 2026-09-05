@@ -91,3 +91,16 @@ changes, delayed responses, schedule/attendance ordering and retry recovery.
 Navigation feedback committed within 100 ms in the unthrottled loopback browser
 checks, with both normal and reduced motion. Those checks intentionally delay
 the RSC response and are lab interaction checks, not INP.
+
+Production bundle analysis used `.env.example` with preview disabled. The table sums Next’s analyzer module-byte contributions to browser chunks, including shared JavaScript, CSS and compatibility code. It is bundle-graph evidence, not source-file sizes, compressed transfer bytes or initial-execution CPU time.
+
+| Route | Base client bytes | Candidate client bytes | Base/candidate chunks |
+| --- | ---: | ---: | ---: |
+| dashboard | 1,355,732 | 1,345,523 | 21/21 |
+| students | 1,338,798 | 1,333,176 | 22/22 |
+| schedule | 1,300,448 | 1,295,724 | 20/20 |
+| billing | 1,357,045 | 1,355,740 | 20/20 |
+| settings | 1,278,598 | 1,273,339 | 20/20 |
+| leads | 1,292,948 | 1,287,445 | 21/21 |
+
+No eager dialog split was retained. The measured bundle correction keeps the new Leads loading boundary from pulling in a second copy of the interactive board. Its skeleton now has a shared presentation-only component. Broader bootstrap projections, store partitioning, selective eligibility invalidation and dialog splitting remain conditional on live profiling evidence.
