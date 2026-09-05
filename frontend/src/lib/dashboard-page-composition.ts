@@ -1,26 +1,9 @@
+import type { SetupStep } from "@/components/ui/overview";
 import {
-  Award,
-  Calendar,
-  CreditCard,
-  TrendingDown,
-  UserPlus,
-  Users,
-} from "lucide-react";
-
-import type { DashboardOwnerBrief } from "@/components/dashboard/dashboard-overview-sections";
-import type { MetricSegment } from "@/components/dashboard/dashboard-page-sections";
-import type {
-  OverviewAction,
-  SetupStep,
-} from "@/components/ui/overview";
-import { selectDashboardBriefGreeting } from "./dashboard-brief-greetings";
-import {
-  getDashboardBillingActionKind,
   isDashboardBillingSetupComplete,
   selectDashboardBillingSummary,
   type DashboardBillingSummary,
 } from "./dashboard-billing-summary";
-import { formatCount } from "./dashboard-page-utils";
 import {
   isDashboardBeltSetupComplete,
   isDashboardSetupStepComplete,
@@ -71,8 +54,6 @@ export type DashboardPageCompositionInput = {
   canSeeBilling: boolean;
   isPreviewMode: boolean;
   localStats: DashboardLocalStats;
-  ownerName: string | null;
-  ownerSeedKey: string | null;
   programs: Program[];
   rosterSummaryPending: boolean;
   sessionCount: number;
@@ -80,8 +61,6 @@ export type DashboardPageCompositionInput = {
   studentCount: number;
   summary: DashboardSummary | null;
   templateCount: number;
-  todayDateKey: string;
-  todayLabel: string;
 };
 
 export type DashboardPageComposition = {
@@ -95,27 +74,13 @@ export type DashboardPageComposition = {
   displayedChurnStats: DashboardChurnStats;
   displayedTestReadinessStats: DashboardTestReadinessStats;
   displayedBillingSummary: DashboardBillingSummary;
-  inactiveSegments: MetricSegment[];
-  newStudentSegments: MetricSegment[];
-  ownerBrief: DashboardOwnerBrief;
   setupSteps: SetupStep[];
-  todayActions: OverviewAction[];
 };
-
-export function formatDashboardTodayLabel(displayedToday: string) {
-  return new Date(`${displayedToday}T00:00:00`).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 export function buildDashboardPageComposition({
   canSeeBilling,
   isPreviewMode,
   localStats,
-  ownerName,
-  ownerSeedKey,
   programs,
   rosterSummaryPending,
   sessionCount,
@@ -123,8 +88,6 @@ export function buildDashboardPageComposition({
   studentCount,
   summary,
   templateCount,
-  todayDateKey,
-  todayLabel,
 }: DashboardPageCompositionInput): DashboardPageComposition {
   const displayStats = selectDashboardDisplayStats({
     isPreviewMode,
@@ -132,15 +95,6 @@ export function buildDashboardPageComposition({
     rosterSummaryPending,
     shouldShowLocalStudentDetails,
     summary,
-  });
-  const inactiveSegments = buildDashboardInactiveSegments({
-    inactivityStats: displayStats.displayedInactivityStats,
-    rosterSummaryPending,
-    studentStats: displayStats.displayedStudentStats,
-  });
-  const newStudentSegments = buildDashboardNewStudentSegments({
-    newStudentStats: displayStats.displayedNewStudentStats,
-    rosterSummaryPending,
   });
   const setupSteps = buildDashboardSetupSteps({
     beltStats: displayStats.displayedBeltStats,
@@ -153,41 +107,9 @@ export function buildDashboardPageComposition({
     summary,
     templateCount,
   });
-  const todayActions = buildDashboardTodayActions({
-    beltStats: displayStats.displayedBeltStats,
-    billingSummary: displayStats.displayedBillingSummary,
-    canSeeBilling,
-    inactivityStats: displayStats.displayedInactivityStats,
-    leadStats: displayStats.displayedLeadStats,
-    rosterSummaryPending,
-    sessionCount,
-    templateCount,
-    testReadinessStats: displayStats.displayedTestReadinessStats,
-    todayLabel,
-    todaySessions: displayStats.displayedTodaySessions,
-  });
-  const ownerBrief = buildDashboardOwnerBrief({
-    billingSummary: displayStats.displayedBillingSummary,
-    canSeeBilling,
-    inactivityStats: displayStats.displayedInactivityStats,
-    leadStats: displayStats.displayedLeadStats,
-    ownerName,
-    ownerSeedKey,
-    rosterSummaryPending,
-    setupSteps,
-    testReadinessStats: displayStats.displayedTestReadinessStats,
-    todayActions,
-    todayDateKey,
-    todaySessions: displayStats.displayedTodaySessions,
-  });
-
   return {
     ...displayStats,
-    inactiveSegments,
-    newStudentSegments,
-    ownerBrief,
     setupSteps,
-    todayActions,
   };
 }
 
@@ -309,78 +231,6 @@ function selectDashboardDisplayStats({
   };
 }
 
-function buildDashboardInactiveSegments({
-  inactivityStats,
-  rosterSummaryPending,
-  studentStats,
-}: {
-  inactivityStats: DashboardInactivityStats;
-  rosterSummaryPending: boolean;
-  studentStats: DashboardStudentStats;
-}): MetricSegment[] {
-  return [
-    {
-      label: "14+ inactive",
-      value: rosterSummaryPending ? "—" : inactivityStats.watch14,
-      color: "#F59E0B",
-      href: "/students?inactiveDays=14",
-    },
-    {
-      label: "30+ inactive",
-      value: rosterSummaryPending ? "—" : inactivityStats.watch30,
-      color: "#EF4444",
-      href: "/students?inactiveDays=30",
-    },
-    {
-      label: "90+ inactive",
-      value: rosterSummaryPending ? "—" : inactivityStats.watch90,
-      color: "#B91C1C",
-      href: "/students?inactiveDays=90",
-    },
-    {
-      label: "On hold",
-      value: rosterSummaryPending ? "—" : studentStats.onHoldStudents,
-      color: "#64748B",
-      href: "/students",
-    },
-  ];
-}
-
-function buildDashboardNewStudentSegments({
-  newStudentStats,
-  rosterSummaryPending,
-}: {
-  newStudentStats: DashboardNewStudentStats;
-  rosterSummaryPending: boolean;
-}): MetricSegment[] {
-  return [
-    {
-      label: "Last 14 days",
-      value: rosterSummaryPending ? "—" : newStudentStats.new14,
-      color: "#38BDF8",
-      href: "/students?newStudents=14",
-    },
-    {
-      label: "Last 30 days",
-      value: rosterSummaryPending ? "—" : newStudentStats.new30,
-      color: "#22C55E",
-      href: "/students?newStudents=30",
-    },
-    {
-      label: "Last 90 days",
-      value: rosterSummaryPending ? "—" : newStudentStats.new90,
-      color: "#8B5CF6",
-      href: "/students?newStudents=90",
-    },
-    {
-      label: "Year to date",
-      value: rosterSummaryPending ? "—" : newStudentStats.newYearToDate,
-      color: "#F59E0B",
-      href: "/students?newStudents=ytd",
-    },
-  ];
-}
-
 function buildDashboardSetupSteps({
   beltStats,
   billingSummary,
@@ -463,229 +313,4 @@ function buildDashboardSetupSteps({
   }
 
   return steps;
-}
-
-function buildDashboardTodayActions({
-  beltStats,
-  billingSummary,
-  canSeeBilling,
-  inactivityStats,
-  leadStats,
-  rosterSummaryPending,
-  sessionCount,
-  templateCount,
-  testReadinessStats,
-  todayLabel,
-  todaySessions,
-}: {
-  beltStats: DashboardBeltStats;
-  billingSummary: DashboardBillingSummary;
-  canSeeBilling: boolean;
-  inactivityStats: DashboardInactivityStats;
-  leadStats: DashboardLeadStats;
-  rosterSummaryPending: boolean;
-  sessionCount: number;
-  templateCount: number;
-  testReadinessStats: DashboardTestReadinessStats;
-  todayLabel: string;
-  todaySessions: DashboardTodaySessions;
-}): OverviewAction[] {
-  const actions: OverviewAction[] = [];
-
-  if (leadStats.dueTodayLeads > 0) {
-    actions.push({
-      id: "lead-followups",
-      title: `Follow up with ${formatCount(leadStats.dueTodayLeads, "lead")}`,
-      description: "These prospects are due today. Handle them before the next class block gets busy.",
-      href: "/leads",
-      icon: UserPlus,
-      tone: "accent",
-      meta: "Today",
-    });
-  } else if (leadStats.activeLeads === 0) {
-    actions.push({
-      id: "first-lead",
-      title: "Add your first lead",
-      description: "Track a trial student or parent inquiry so follow-ups do not live in someone's memory.",
-      href: "/leads",
-      icon: UserPlus,
-      tone: "accent",
-    });
-  }
-
-  if (todaySessions > 0) {
-    actions.push({
-      id: "today-classes",
-      title: `Check in ${formatCount(todaySessions, "class", "classes")}`,
-      description: "Open today's schedule, mark attendance, and keep promotion progress accurate.",
-      href: "/schedule",
-      icon: Calendar,
-      tone: "warning",
-      meta: todayLabel,
-    });
-  } else if (templateCount === 0 && sessionCount === 0) {
-    actions.push({
-      id: "first-class",
-      title: "Add weekly classes",
-      description: "Build the normal schedule so instructors can run attendance from Koaryu.",
-      href: "/schedule",
-      icon: Calendar,
-      tone: "warning",
-    });
-  }
-
-  if (testReadinessStats.readyToTest > 0) {
-    actions.push({
-      id: "ready-to-promote",
-      title: `Review ${formatCount(testReadinessStats.readyToTest, "student")} ready to promote`,
-      description: "These students meet the configured class, time, and approval rules for their next rank.",
-      href: "/belt-tracker",
-      icon: Award,
-      tone: "success",
-      meta: `${testReadinessStats.needsApproval} approvals`,
-    });
-  } else if (beltStats.beltCount === 0) {
-    actions.push({
-      id: "belt-system",
-      title: "Set up your belt system",
-      description: "Add ranks and promotion rules before your first test cycle sneaks up on you.",
-      href: "/belt-tracker",
-      icon: Award,
-      tone: "success",
-    });
-  }
-
-  if (rosterSummaryPending) {
-    actions.push({
-      id: "load-full-roster",
-      title: "Load full roster details",
-      description: "The dashboard is waiting for an exact roster summary before surfacing retention calls.",
-      href: "/students?fullRoster=1",
-      icon: Users,
-      tone: "neutral",
-    });
-  } else if (inactivityStats.watch14 > 0) {
-    actions.push({
-      id: "students-going-quiet",
-      title: `Reach out to ${formatCount(inactivityStats.watch14, "student")} going quiet`,
-      description: "They have crossed 14 days without attendance and are not currently on hold.",
-      href: "/students?inactiveDays=14",
-      icon: TrendingDown,
-      tone: "warning",
-    });
-  }
-
-  const billingActionKind = getDashboardBillingActionKind({
-    billingSummary,
-    canSeeBilling,
-  });
-
-  if (billingActionKind === "payment-issues") {
-    const paymentAttentionCount = billingSummary.paymentAttentionCount ?? 0;
-    actions.push({
-      id: "payment-issues",
-      title: `Fix ${formatCount(paymentAttentionCount, "tuition issue")}`,
-      description: "Review failed payments, past-due families, and invoices that need manual attention.",
-      href: "/billing",
-      icon: CreditCard,
-      tone: "danger",
-    });
-  } else if (billingActionKind === "payments-setup") {
-    actions.push({
-      id: "payments-setup",
-      title: "Review billing records",
-      description: "Check existing plan, family, and invoice records without changing provider setup.",
-      href: "/billing",
-      icon: CreditCard,
-      tone: "neutral",
-    });
-  }
-
-  return actions.slice(0, 5);
-}
-
-function buildDashboardOwnerBrief({
-  billingSummary,
-  canSeeBilling,
-  inactivityStats,
-  leadStats,
-  ownerName,
-  ownerSeedKey,
-  rosterSummaryPending,
-  setupSteps,
-  testReadinessStats,
-  todayActions,
-  todayDateKey,
-  todaySessions,
-}: {
-  billingSummary: DashboardBillingSummary;
-  canSeeBilling: boolean;
-  inactivityStats: DashboardInactivityStats;
-  leadStats: DashboardLeadStats;
-  ownerName: string | null;
-  ownerSeedKey: string | null;
-  rosterSummaryPending: boolean;
-  setupSteps: SetupStep[];
-  testReadinessStats: DashboardTestReadinessStats;
-  todayActions: OverviewAction[];
-  todayDateKey: string;
-  todaySessions: DashboardTodaySessions;
-}): DashboardOwnerBrief {
-  const setupCompletedCount = setupSteps.filter((step) => step.complete).length;
-  const billingUnknown = canSeeBilling && billingSummary.paymentAttentionCount === null;
-  const billingIssues = canSeeBilling && billingSummary.paymentAttentionCount !== null
-    ? billingSummary.paymentAttentionCount
-    : 0;
-  const pressureScore =
-    (leadStats.dueTodayLeads > 0 ? 2 : 0) +
-    Math.min(todaySessions, 3) +
-    (testReadinessStats.readyToTest > 0 ? 2 : 0) +
-    (!rosterSummaryPending && inactivityStats.watch14 > 0 ? 2 : 0) +
-    (billingIssues > 0 ? 2 : 0);
-  const tone: DashboardOwnerBrief["tone"] = rosterSummaryPending
-    ? "warning"
-    : pressureScore >= 7
-      ? "danger"
-      : pressureScore >= 4
-        ? "warning"
-        : "success";
-  const label = rosterSummaryPending
-    ? "Roster summary pending"
-    : pressureScore >= 7
-      ? "High pressure"
-      : pressureScore >= 4
-        ? "Focused day"
-        : "Clear day";
-  const reasons = [
-    todaySessions > 0 ? formatCount(todaySessions, "class", "classes") : null,
-    leadStats.dueTodayLeads > 0 ? formatCount(leadStats.dueTodayLeads, "lead follow-up") : null,
-    testReadinessStats.readyToTest > 0
-      ? formatCount(testReadinessStats.readyToTest, "promotion review")
-      : null,
-    rosterSummaryPending
-      ? "retention summary loading"
-      : inactivityStats.watch14 > 0
-        ? formatCount(inactivityStats.watch14, "retention check")
-        : null,
-    billingIssues > 0 ? formatCount(billingIssues, "tuition issue") : null,
-    billingUnknown ? "billing queue unavailable" : null,
-  ].filter((reason): reason is string => Boolean(reason));
-  const primaryAction = todayActions[0] ?? null;
-
-  return {
-    tone,
-    label,
-    greeting: selectDashboardBriefGreeting({
-      dateKey: todayDateKey,
-      ownerName,
-      seedKey: ownerSeedKey,
-    }),
-    primaryAction,
-    summary: reasons.length > 0
-      ? reasons.join(" · ")
-      : canSeeBilling
-        ? "No urgent follow-ups, attendance checks, promotions, retention alerts, or tuition issues are pressing."
-        : "No urgent follow-ups, attendance checks, promotions, or retention alerts are pressing. Billing is admin/front desk only.",
-    setupCopy: `${setupCompletedCount} of ${setupSteps.length} setup steps complete`,
-  };
 }

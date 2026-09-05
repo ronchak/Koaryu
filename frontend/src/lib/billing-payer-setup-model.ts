@@ -41,35 +41,6 @@ export function createPayerAutopaySetupRequestKey() {
   return `payer-setup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function resolvePayerAutopaySetupRequestKey(
-  keysByPayer: Map<string, string>,
-  payerId: string,
-  startNewRequest = false,
-  createKey: () => string = createPayerAutopaySetupRequestKey,
-) {
-  const existing = keysByPayer.get(payerId);
-  if (existing && !startNewRequest) {
-    return existing;
-  }
-  const next = createKey();
-  keysByPayer.set(payerId, next);
-  return next;
-}
-
-export function resolvePayerSyncRequestKey(
-  keysByPayer: Map<string, string>,
-  payerId: string,
-  startNewRequest = false,
-  createKey: () => string = createPayerAutopaySetupRequestKey,
-) {
-  return resolvePayerAutopaySetupRequestKey(
-    keysByPayer,
-    payerId,
-    startNewRequest,
-    createKey,
-  );
-}
-
 export function buildPayerSyncRequest(requestKey: string): PayerSyncRequest {
   return { headers: { "Idempotency-Key": requestKey } };
 }

@@ -11,7 +11,6 @@ import {
   formatSessionTime,
   getActiveStudentProgramIds,
   getScheduleStudentName,
-  studentBelongsToProgram,
 } from "../src/lib/session-detail-model.ts";
 
 const programs = [
@@ -162,8 +161,6 @@ describe("session detail model", () => {
     const preferredStudent = { ...activeStudent, preferred_name: "Jay" };
 
     assert.deepEqual(getActiveStudentProgramIds(activeStudent), ["adult", "kids"]);
-    assert.equal(studentBelongsToProgram(activeStudent, "adult"), true);
-    assert.equal(studentBelongsToProgram(activeStudent, "archived"), false);
     assert.equal(getScheduleStudentName(preferredStudent), "Jay Lee");
   });
 

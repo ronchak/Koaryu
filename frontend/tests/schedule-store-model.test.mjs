@@ -12,7 +12,6 @@ import {
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
   isAuthoritativeScheduleReady,
-  isScheduleRangeCommitCurrent,
   isScheduleReadCurrent,
   mergeAttendanceForSessions,
   mergeSessionsForRange,
@@ -291,9 +290,6 @@ describe("schedule store model", () => {
   });
 
   it("retries range and attendance supersession before claiming a committed range", async () => {
-    assert.equal(isScheduleRangeCommitCurrent(false, true), false);
-    assert.equal(isScheduleRangeCommitCurrent(true, false), false);
-    assert.equal(isScheduleRangeCommitCurrent(true, true), true);
 
     const outcomes = [
       { committed: false, value: "range-superseded" },

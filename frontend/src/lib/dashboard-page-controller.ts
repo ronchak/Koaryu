@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo } from "react";
 import { canViewDashboardBilling } from "@/lib/dashboard-billing-summary";
 import {
   buildDashboardPageComposition,
-  formatDashboardTodayLabel,
 } from "@/lib/dashboard-page-composition";
 import {
   buildDashboardBeltStats,
@@ -74,7 +73,7 @@ type DashboardPageControllerOptions = {
   >;
   studioStore: Pick<
     StudioStoreContextValue,
-    "identityGeneration" | "currentStudioId" | "currentUserId" | "studioName" | "userName"
+    "identityGeneration" | "currentStudioId" | "currentUserId" | "studioName"
   >;
 };
 
@@ -118,7 +117,7 @@ export function useDashboardPageController({
     studentsLoadError,
     studentsMayBePartial,
   } = studentsStore;
-  const { identityGeneration, currentStudioId, currentUserId, studioName, userName } = studioStore;
+  const { identityGeneration, currentStudioId, currentUserId, studioName } = studioStore;
 
   const summary = isPreviewMode ? null : dashboardSummary;
   const hasDashboardSummary = Boolean(summary);
@@ -166,11 +165,6 @@ export function useDashboardPageController({
   const rosterSummaryPending = hasPartialStudentSample && !summary;
   const shouldShowLocalStudentDetails = !hasPartialStudentSample;
   const today = toLocalDateKey();
-  const displayedToday = summary?.today ?? today;
-  const todayLabel = useMemo(
-    () => formatDashboardTodayLabel(displayedToday),
-    [displayedToday]
-  );
   const canSeeBilling = canViewDashboardBilling({ currentRole, summary });
   const studentCount = students.length;
   const sessionCount = sessions.length;
@@ -250,8 +244,6 @@ export function useDashboardPageController({
         churnStats,
         testReadinessStats,
       },
-      ownerName: userName || null,
-      ownerSeedKey: currentUserId || userName || null,
       programs,
       rosterSummaryPending,
       sessionCount,
@@ -259,15 +251,11 @@ export function useDashboardPageController({
       studentCount,
       summary,
       templateCount,
-      todayDateKey: displayedToday,
-      todayLabel,
     }),
     [
       beltStats,
       canSeeBilling,
       churnStats,
-      currentUserId,
-      displayedToday,
       inactivityStats,
       isPreviewMode,
       leadStats,
@@ -282,9 +270,7 @@ export function useDashboardPageController({
       summary,
       templateCount,
       testReadinessStats,
-      todayLabel,
       todaySessions,
-      userName,
     ]
   );
 
@@ -356,7 +342,6 @@ export function useDashboardPageController({
       onVisibleWidgetsChange,
       currentStudioId,
       currentUserId,
-      dashboardComposition,
       datasetLoadError: datasetReadiness.error,
       isDashboardDataReady: datasetReadiness.status === "ready",
       hasDashboardSummary,
@@ -370,7 +355,6 @@ export function useDashboardPageController({
       shouldShowLocalStudentDetails,
       studioDescription,
       today,
-      todayLabel,
       isPreviewMode,
       widgetViewModels,
     },

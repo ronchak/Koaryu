@@ -1,7 +1,6 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from supabase import Client
 
 from app.core.deps import ProviderDependency, get_supabase, run_supabase_operation
 from app.core.request_body_limits import STRIPE_WEBHOOK_REQUEST_MAX_BYTES

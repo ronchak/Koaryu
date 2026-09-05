@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  buildBillingInvoiceCreatePayload,
   buildBillingPayerCreatePayload,
   buildBillingPlanCreatePayload,
   canSubmitStudentBillingEnrollmentForm,
@@ -179,47 +178,6 @@ describe("billing page form model", () => {
         payerCount: 0,
       }),
       true
-    );
-  });
-
-  it("validates and builds invoice payloads", () => {
-    assert.deepEqual(
-      buildBillingInvoiceCreatePayload({
-        invoicePayerId: "",
-        invoiceEnrollmentId: "",
-        invoiceStudentId: "",
-        invoiceAmount: "129",
-        invoiceDueDate: "",
-        invoiceDescription: "",
-        invoiceSendHosted: true,
-      }),
-      { ok: false, error: "Choose a payer for this invoice." }
-    );
-
-    assert.deepEqual(
-      buildBillingInvoiceCreatePayload({
-        invoicePayerId: "payer-1",
-        invoiceEnrollmentId: "",
-        invoiceStudentId: "student-1",
-        invoiceAmount: "129.5",
-        invoiceDueDate: "2026-06-15",
-        invoiceDescription: " June tuition ",
-        invoiceSendHosted: false,
-      }),
-      {
-        ok: true,
-        payload: {
-          payer_id: "payer-1",
-          enrollment_id: undefined,
-          student_id: "student-1",
-          amount_cents: 12950,
-          currency: "usd",
-          invoice_type: "tuition",
-          due_date: "2026-06-15",
-          description: "June tuition",
-          send_hosted_invoice: false,
-        },
-      }
     );
   });
 

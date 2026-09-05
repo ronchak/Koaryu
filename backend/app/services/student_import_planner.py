@@ -6,7 +6,6 @@ from typing import Any, Optional
 from supabase import Client
 
 from app.schemas.student import (
-    CsvImportIssue,
     CsvImportOptions,
     CsvImportResult,
 )
@@ -18,10 +17,7 @@ from app.services.student_import_plan_result import build_import_result
 from app.services.student_import_plan_rows import (
     append_import_note,
     build_import_row_plan,
-    classify_belt_creation_target,
-    normalize_import_status,
     parse_import_date,
-    resolve_belt_rank_reference,
     resolve_named_import_reference,
 )
 
@@ -36,13 +32,6 @@ class StudentImportPlanner:
         field_label: str,
     ) -> tuple[Optional[str], Optional[str]]:
         return parse_import_date(raw_value, field_label)
-
-    def _parse_import_date(
-        self,
-        raw_value: Optional[str],
-        field_label: str,
-    ) -> tuple[Optional[str], Optional[str]]:
-        return self.parse_import_date(raw_value, field_label)
 
     def build_named_record_lookup(
         self,
@@ -80,13 +69,6 @@ class StudentImportPlanner:
                 name_lookup[normalized_name] = record_id
 
         return id_lookup, name_lookup, ambiguous_names
-
-    def _build_named_record_lookup(
-        self,
-        table_name: str,
-        studio_id: str,
-    ) -> tuple[set[str], dict[str, str], set[str]]:
-        return self.build_named_record_lookup(table_name, studio_id)
 
     def build_belt_rank_lookup(self, studio_id: str) -> dict[str, Any]:
         ladders_result = (
@@ -184,73 +166,6 @@ class StudentImportPlanner:
             "rank_count": len(rank_meta),
         }
 
-    def _build_belt_rank_lookup(self, studio_id: str) -> dict[str, Any]:
-        return self.build_belt_rank_lookup(studio_id)
-
-    def resolve_belt_rank_reference(
-        self,
-        raw_value: Optional[str],
-        *,
-        resolved_program_id: Optional[str],
-        raw_program_value: Optional[str],
-        belt_rank_lookup: dict[str, Any],
-    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        return resolve_belt_rank_reference(
-            raw_value,
-            resolved_program_id=resolved_program_id,
-            raw_program_value=raw_program_value,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
-    def _resolve_belt_rank_reference(
-        self,
-        raw_value: Optional[str],
-        *,
-        resolved_program_id: Optional[str],
-        raw_program_value: Optional[str],
-        belt_rank_lookup: dict[str, Any],
-    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        return self.resolve_belt_rank_reference(
-            raw_value,
-            resolved_program_id=resolved_program_id,
-            raw_program_value=raw_program_value,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
-    def classify_belt_creation_target(
-        self,
-        *,
-        resolved_program_id: Optional[str],
-        pending_program_name: Optional[str],
-        raw_program_value: Optional[str],
-        options: CsvImportOptions,
-        belt_rank_lookup: dict[str, Any],
-    ) -> dict[str, Any]:
-        return classify_belt_creation_target(
-            resolved_program_id=resolved_program_id,
-            pending_program_name=pending_program_name,
-            raw_program_value=raw_program_value,
-            options=options,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
-    def _classify_belt_creation_target(
-        self,
-        *,
-        resolved_program_id: Optional[str],
-        pending_program_name: Optional[str],
-        raw_program_value: Optional[str],
-        options: CsvImportOptions,
-        belt_rank_lookup: dict[str, Any],
-    ) -> dict[str, Any]:
-        return self.classify_belt_creation_target(
-            resolved_program_id=resolved_program_id,
-            pending_program_name=pending_program_name,
-            raw_program_value=raw_program_value,
-            options=options,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
     def resolve_named_import_reference(
         self,
         raw_value: Optional[str],
@@ -268,44 +183,8 @@ class StudentImportPlanner:
             ambiguous_names=ambiguous_names,
         )
 
-    def _resolve_named_import_reference(
-        self,
-        raw_value: Optional[str],
-        *,
-        label: str,
-        id_lookup: set[str],
-        name_lookup: dict[str, str],
-        ambiguous_names: set[str],
-    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        return self.resolve_named_import_reference(
-            raw_value,
-            label=label,
-            id_lookup=id_lookup,
-            name_lookup=name_lookup,
-            ambiguous_names=ambiguous_names,
-        )
-
     def append_import_note(self, existing: Optional[str], note: str) -> str:
         return append_import_note(existing, note)
-
-    def _append_import_note(self, existing: Optional[str], note: str) -> str:
-        return self.append_import_note(existing, note)
-
-    def normalize_import_status(
-        self,
-        raw_value: Optional[str],
-        options: CsvImportOptions,
-        issues: list[CsvImportIssue],
-    ) -> Optional[str]:
-        return normalize_import_status(raw_value, options, issues)
-
-    def _normalize_import_status(
-        self,
-        raw_value: Optional[str],
-        options: CsvImportOptions,
-        issues: list[CsvImportIssue],
-    ) -> Optional[str]:
-        return self.normalize_import_status(raw_value, options, issues)
 
     def build_import_row_plan(
         self,
@@ -324,23 +203,6 @@ class StudentImportPlanner:
             belt_rank_lookup=belt_rank_lookup,
         )
 
-    def _build_import_row_plan(
-        self,
-        raw_row: dict,
-        mapping: dict[str, str],
-        *,
-        options: CsvImportOptions,
-        program_lookup: Optional[tuple[set[str], dict[str, str], set[str]]] = None,
-        belt_rank_lookup: Optional[dict[str, Any]] = None,
-    ) -> dict[str, Any]:
-        return self.build_import_row_plan(
-            raw_row,
-            mapping,
-            options=options,
-            program_lookup=program_lookup,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
     def build_import_result(
         self,
         rows: list[dict[str, Any]],
@@ -348,14 +210,6 @@ class StudentImportPlanner:
         total_rows: int,
     ) -> CsvImportResult:
         return build_import_result(rows, total_rows=total_rows)
-
-    def _build_import_result(
-        self,
-        rows: list[dict[str, Any]],
-        *,
-        total_rows: int,
-    ) -> CsvImportResult:
-        return self.build_import_result(rows, total_rows=total_rows)
 
     def prepare_import(
         self,
@@ -382,15 +236,6 @@ class StudentImportPlanner:
 
         return self.build_import_result(planned_rows, total_rows=len(rows)), planned_rows
 
-    def _prepare_import(
-        self,
-        rows: list[dict],
-        mapping: dict[str, str],
-        studio_id: Optional[str],
-        options: CsvImportOptions,
-    ) -> tuple[CsvImportResult, list[dict[str, Any]]]:
-        return self.prepare_import(rows, mapping, studio_id, options)
-
     def hydrate_import_result(
         self,
         planned_rows: list[dict[str, Any]],
@@ -411,26 +256,3 @@ class StudentImportPlanner:
         result.imported_count = imported_count
         result.idempotency_key = idempotency_key
         return result
-
-    def _hydrate_import_result(
-        self,
-        planned_rows: list[dict[str, Any]],
-        *,
-        total_rows: int,
-        created_programs: Optional[list[str]] = None,
-        created_ladders: Optional[list[str]] = None,
-        created_belts: Optional[list[str]] = None,
-        imported_without_belt_count: int = 0,
-        imported_count: int = 0,
-        idempotency_key: Optional[str] = None,
-    ) -> CsvImportResult:
-        return self.hydrate_import_result(
-            planned_rows,
-            total_rows=total_rows,
-            created_programs=created_programs,
-            created_ladders=created_ladders,
-            created_belts=created_belts,
-            imported_without_belt_count=imported_without_belt_count,
-            imported_count=imported_count,
-            idempotency_key=idempotency_key,
-        )

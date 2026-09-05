@@ -761,26 +761,6 @@ class BillingRefundResponse(BaseModel):
     updated_at: Optional[str] = None
 
 
-class BillingDisputeResponse(BaseModel):
-    id: str
-    studio_id: str
-    payment_id: Optional[str] = None
-    stripe_dispute_id: Optional[str] = None
-    stripe_charge_id: Optional[str] = None
-    stripe_payment_intent_id: Optional[str] = None
-    stripe_account_id: Optional[str] = None
-    connect_account_generation: Optional[int] = None
-    amount_cents: int = 0
-    status: str
-    state_category: Literal["warning", "active", "won", "lost", "unknown"] = "unknown"
-    reason: Optional[str] = None
-    liability_owner: str = "studio"
-    reconciliation_required: bool = False
-    reconciliation_reason_code: Optional[str] = None
-    created_at: str
-    updated_at: str
-
-
 class BillingLandingAggregatesResponse(BaseModel):
     active_student_count: int
     active_subscription_count: int

@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 from fastapi import HTTPException, status
 
 from app.schemas.billing import BillingInvoiceCreate, BillingPlanProgramResponse, BillingPlanResponse
-from app.services.billing_autopay import BillingAutopayManager
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
     BillingProviderOperationCoordinator,
@@ -20,11 +19,6 @@ from app.services.billing_plans import BillingPlanManager
 from app.services.billing_system_status import BillingSystemStatusReporter
 from app.services.platform_billing_helpers import build_idempotency_key
 from app.services.billing_webhook_event_state import (
-    date_from_epoch,
-    epoch_seconds,
-    is_same_second_status_regression,
-    is_stale_stripe_event,
-    preserve_invoice_terminal_state,
     timestamp,
 )
 
@@ -237,14 +231,6 @@ class BillingPrivateFacadeMixin:
         return self._webhook_projector()._find_payment_by_charge(account_id, charge_id)
     def _find_payment_by_intent(self, account_id: Optional[str], payment_intent_id: Optional[str]) -> Optional[dict[str, Any]]:
         return self._webhook_projector()._find_payment_by_intent(account_id, payment_intent_id)
-    def _webhook_health(self, account_id: Optional[str]):
-        return BillingSystemStatusReporter(
-            self.supabase,
-            settings=self.settings,
-            connect_accounts=self._connect_accounts(),
-            payment_account_loader=self.get_payment_account,
-        ).webhook_health(account_id)
-
     @staticmethod
     def _is_stale_webhook_processing(row: dict[str, Any]) -> bool:
         return BillingSystemStatusReporter.is_stale_webhook_processing(row)
@@ -479,8 +465,6 @@ class BillingPrivateFacadeMixin:
     def _invoice_request_hash(self, data: BillingInvoiceCreate) -> str:
         return BillingInvoiceManager(self, stripe_service_cls=self._billing_stripe_service_cls())._invoice_request_hash(data)
 
-    def _is_stale_stripe_event(self, row: dict[str, Any], event_created: Optional[int]) -> bool:
-        return is_stale_stripe_event(row, event_created)
     def _update_invoice_last_event(self, invoice: dict[str, Any], studio_id: str, event_created: int) -> dict[str, Any]:
         return self._webhook_projector()._update_invoice_last_event(invoice, studio_id, event_created)
     def _resolve_stripe_event_studio_id(
@@ -512,24 +496,6 @@ class BillingPrivateFacadeMixin:
             return row_account_id == account_id
         return row_account_id is None
 
-    def _is_same_second_status_regression(
-        self,
-        last_event_created: Any,
-        event_created: Optional[int],
-        *,
-        current_status: Optional[str],
-        incoming_status: Optional[str],
-        status_order: dict[str, int],
-    ) -> bool:
-        return is_same_second_status_regression(
-            last_event_created,
-            event_created,
-            current_status=current_status,
-            incoming_status=incoming_status,
-            status_order=status_order,
-        )
-    def _preserve_invoice_terminal_state(self, update: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
-        return preserve_invoice_terminal_state(update, current)
     def _claim_invoice_create_request(
         self,
         studio_id: str,
@@ -555,10 +521,6 @@ class BillingPrivateFacadeMixin:
 
     def _timestamp(self, value: Any) -> Optional[str]:
         return timestamp(value)
-    def _epoch_seconds(self, value: Any) -> Optional[float]:
-        return epoch_seconds(value)
-    def _date_from_epoch(self, value: Any) -> Optional[str]:
-        return date_from_epoch(value)
     def _date_to_epoch(self, value: str) -> int:
         return BillingInvoiceManager(self, stripe_service_cls=self._billing_stripe_service_cls())._date_to_epoch(value)
 

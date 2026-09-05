@@ -8,7 +8,6 @@ import {
   buildDashboardLeadStats,
   buildDashboardNewStudentStats,
   buildDashboardOperationalStats,
-  buildDashboardProgramBuckets,
   buildDashboardRecentStudentRows,
   buildDashboardStudentStats,
   buildDashboardTestReadinessStats,
@@ -41,18 +40,6 @@ function lead(id, overrides = {}) {
     is_minor: false,
     created_at: "2026-05-01T00:00:00.000Z",
     updated_at: "2026-05-01T00:00:00.000Z",
-    ...overrides,
-  };
-}
-
-function program(id, overrides = {}) {
-  return {
-    id,
-    name: id,
-    sort_order: 0,
-    color_hex: "#22C55E",
-    is_system: false,
-    usage: {},
     ...overrides,
   };
 }
@@ -200,60 +187,5 @@ describe("dashboard page model", () => {
       buildDashboardRecentStudentRows(null, [student("local", { preferred_name: "Ace", legal_last_name: "Stone" })], false),
       [{ id: "local", displayName: "Ace Stone", status: "active", startedOn: "2026-05-01" }]
     );
-  });
-
-  it("aggregates program buckets from active students, open leads, and today's non-canceled sessions", () => {
-    const programs = [
-      program("kids", { name: "Kids" }),
-      program("archived", { name: "Archived", archived_at: "2026-05-01" }),
-    ];
-    const programById = new Map(programs.map((item) => [item.id, item]));
-    const rows = buildDashboardProgramBuckets(
-      programs,
-      programById,
-      [
-        student("active-kids", {
-          program_memberships: [{ program_id: "kids", status: "active" }],
-        }),
-        student("trial-archived", { status: "trialing", program_id: "archived" }),
-        student("active-unassigned"),
-        student("inactive-kids", { status: "inactive", program_id: "kids" }),
-      ],
-      [
-        lead("lead-kids", { program_id: "kids" }),
-        lead("lead-unknown", { program_interest: "Birthday Trial" }),
-        lead("lead-enrolled", { program_id: "kids", stage: "enrolled" }),
-        lead("lead-lost", { program_id: "kids", stage: "closed_lost" }),
-      ],
-      [
-        session("kids-today", { program_id: "kids" }),
-        session("archived-canceled", { program_id: "archived", status: "canceled" }),
-        session("unassigned-today", { program_id: null }),
-      ],
-      "2026-05-24"
-    );
-
-    const kids = rows.find((row) => row.label === "Kids");
-    const unassigned = rows.find((row) => row.label === "No program");
-    const archived = rows.find((row) => row.label === "Archived");
-
-    assert.deepEqual(kids, {
-      programId: "kids",
-      label: "Kids",
-      activeStudents: 1,
-      trialingStudents: 0,
-      activeLeads: 1,
-      todaySessions: 1,
-    });
-    assert.deepEqual(unassigned, {
-      programId: null,
-      label: "No program",
-      activeStudents: 1,
-      trialingStudents: 0,
-      activeLeads: 1,
-      todaySessions: 1,
-    });
-    assert.equal(archived.trialingStudents, 1);
-    assert.equal(rows[0].label, "Kids");
   });
 });

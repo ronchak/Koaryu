@@ -11,29 +11,6 @@ export type PageDatasetReadiness = {
   status: "loading" | "ready" | "error";
 };
 
-export async function loadIndependentDataset<T>({
-  context,
-  fallback,
-  load,
-  onError,
-  onLoaded,
-}: {
-  context: Promise<unknown>;
-  fallback: T;
-  load: Promise<T>;
-  onError: (error: unknown) => void;
-  onLoaded: (value: T) => void;
-}) {
-  try {
-    const [, value] = await Promise.all([context, load]);
-    onLoaded(value);
-    return value;
-  } catch (error) {
-    onError(error);
-    return fallback;
-  }
-}
-
 export function loadedDataset({
   error,
   label,

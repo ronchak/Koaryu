@@ -1,5 +1,4 @@
 import type {
-  BillingInvoiceCreate,
   BillingPlan,
   BillingPlanCreate,
   BillingPayerCreate,
@@ -176,47 +175,6 @@ export function buildStudentBillingEnrollmentCreatePayload({
       start_date: enrollmentStartDate,
       end_date: enrollmentEndDate || null,
       next_bill_on: enrollmentNextBillDate || null,
-    },
-  };
-}
-
-export function buildBillingInvoiceCreatePayload({
-  invoicePayerId,
-  invoiceEnrollmentId,
-  invoiceStudentId,
-  invoiceAmount,
-  invoiceDueDate,
-  invoiceDescription,
-  invoiceSendHosted,
-}: {
-  invoicePayerId: string;
-  invoiceEnrollmentId: string;
-  invoiceStudentId: string;
-  invoiceAmount: string;
-  invoiceDueDate: string;
-  invoiceDescription: string;
-  invoiceSendHosted: boolean;
-}): BillingFormPayloadResult<BillingInvoiceCreate> {
-  const amount = Number(invoiceAmount);
-  if (!invoicePayerId) {
-    return { ok: false, error: "Choose a payer for this invoice." };
-  }
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return { ok: false, error: "Enter a valid invoice amount." };
-  }
-
-  return {
-    ok: true,
-    payload: {
-      payer_id: invoicePayerId,
-      enrollment_id: invoiceEnrollmentId || undefined,
-      student_id: invoiceStudentId || undefined,
-      amount_cents: moneyInputToCents(invoiceAmount),
-      currency: "usd",
-      invoice_type: "tuition",
-      due_date: invoiceDueDate || undefined,
-      description: optionalText(invoiceDescription),
-      send_hosted_invoice: invoiceSendHosted,
     },
   };
 }

@@ -3,7 +3,6 @@ import { describe, it } from "node:test";
 
 import {
   canViewDashboardBilling,
-  getDashboardBillingActionKind,
   isDashboardBillingSetupComplete,
   selectDashboardBillingSummary,
 } from "../src/lib/dashboard-billing-summary.ts";
@@ -133,41 +132,6 @@ describe("dashboard billing summary", () => {
         summary: null,
       }),
       true
-    );
-  });
-
-  it("exposes billing actions only for roles that can see billing", () => {
-    const issueSummary = {
-      paymentAttentionCount: 3,
-      hasPlans: true,
-      paymentsReady: true,
-    };
-    const setupSummary = {
-      paymentAttentionCount: null,
-      hasPlans: false,
-      paymentsReady: false,
-    };
-
-    assert.equal(
-      getDashboardBillingActionKind({
-        billingSummary: issueSummary,
-        canSeeBilling: true,
-      }),
-      "payment-issues"
-    );
-    assert.equal(
-      getDashboardBillingActionKind({
-        billingSummary: setupSummary,
-        canSeeBilling: true,
-      }),
-      "payments-setup"
-    );
-    assert.equal(
-      getDashboardBillingActionKind({
-        billingSummary: issueSummary,
-        canSeeBilling: false,
-      }),
-      null
     );
   });
 });

@@ -705,8 +705,6 @@ export const exploreSections: ExploreSection[] = [
 export const featurePages = withMarketingPageMeta("feature", featurePageDrafts);
 export const useCasePages = withMarketingPageMeta("useCase", useCasePageDrafts);
 export const studioTypePages = withMarketingPageMeta("studioType", studioTypePageDrafts);
-export const allMarketingPages = [...featurePages, ...useCasePages];
-export const allPublicMarketingPages = [...featurePages, ...useCasePages, ...studioTypePages];
 
 export function getFeaturePage(slug: string) {
   return featurePages.find((page) => page.slug === slug);

@@ -1,8 +1,7 @@
 /**
- * Mock data for frontend development without a live Supabase connection.
- * Remove or replace with real API calls once credentials are in place.
+ * Demo data for the public preview and isolated frontend tests.
  */
-import type { Student, StudentListResponse, StudentProgramMembership } from "@/types";
+import type { Student, StudentProgramMembership } from "@/types";
 
 function dateDaysFromToday(offsetDays: number): string {
   const date = new Date();
@@ -357,13 +356,6 @@ const MOCK_ADDITIONAL_STUDENTS: Student[] = [
 });
 
 export const MOCK_STUDENTS: Student[] = [...MOCK_BASE_STUDENTS, ...MOCK_ADDITIONAL_STUDENTS];
-
-export const MOCK_STUDENT_LIST: StudentListResponse = {
-  items: MOCK_STUDENTS,
-  total: MOCK_STUDENTS.length,
-  page: 1,
-  page_size: 50,
-};
 
 // ---- Phase 3: Schedule Mock Data ----
 

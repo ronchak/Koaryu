@@ -34,10 +34,6 @@ export function toCalendarDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-export function isSameCalendarDay(left: Date, right: Date) {
-  return toCalendarDateKey(left) === toCalendarDateKey(right);
-}
-
 export function isDateInMonth(date: Date, month: Date) {
   return date.getFullYear() === month.getFullYear() && date.getMonth() === month.getMonth();
 }
@@ -170,10 +166,6 @@ export function getConflictingSessionIds(sessions: ClassSession[]) {
   }
 
   return conflictingIds;
-}
-
-export function getSessionConflictCount(sessions: ClassSession[]) {
-  return getConflictingSessionIds(sessions).size;
 }
 
 function sessionMatchesTemplate(session: ClassSession, template: ClassTemplate) {

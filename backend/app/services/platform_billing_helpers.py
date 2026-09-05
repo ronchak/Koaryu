@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -105,44 +105,6 @@ def merge_metadata(row: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]
         else:
             metadata[key] = value
     return metadata
-
-
-def pending_checkout_url(row: dict[str, Any], now: Optional[datetime] = None) -> Optional[str]:
-    pending = row_metadata(row).get(PENDING_CHECKOUT_METADATA_KEY)
-    if not isinstance(pending, dict):
-        return None
-    session_url = pending.get("url")
-    expires_at = pending.get("expires_at")
-    if not session_url or not expires_at:
-        return None
-    try:
-        expires_epoch = int(expires_at)
-    except (TypeError, ValueError):
-        return None
-    now = now or datetime.now(timezone.utc)
-    if expires_epoch <= int(now.timestamp()) + 60:
-        return None
-    return str(session_url)
-
-
-def pending_checkout_metadata_update(
-    row: dict[str, Any],
-    *,
-    session_id: Optional[str],
-    session_url: str,
-    expires_at: Optional[int],
-    now: Optional[datetime] = None,
-) -> Optional[dict[str, Any]]:
-    if not expires_at:
-        return None
-    now = now or datetime.now(timezone.utc)
-    pending = {
-        "id": session_id,
-        "url": session_url,
-        "expires_at": int(expires_at),
-        "created_at": now.isoformat(),
-    }
-    return {"metadata": merge_metadata(row, {PENDING_CHECKOUT_METADATA_KEY: pending})}
 
 
 def status_response(

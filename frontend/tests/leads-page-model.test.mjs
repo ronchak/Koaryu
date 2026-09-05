@@ -5,7 +5,8 @@ import {
   LOST_REASON_LABELS,
   SOURCE_LABELS,
   buildLeadUpdateSuccessMessage,
-  buildLeadsPageModel,
+  buildLeadsDatasetModel,
+  selectLeadsPageModel,
   buildOptimisticLeadUpdate,
   formatDate,
   fullName,
@@ -13,7 +14,6 @@ import {
   getDueTodayCount,
   getFollowUpStatusLabel,
   getLeadFollowUpInputValue,
-  getLeadFollowUpTone,
   getLostLeads,
   getNextStage,
   getObligationLedgerLeads,
@@ -23,7 +23,6 @@ import {
   groupLeadsByStage,
   mergeOptimisticLeads,
   removeOptimisticLeadUpdate,
-  timeAgo,
 } from "../src/lib/leads-page-model.ts";
 
 function lead(overrides = {}) {
@@ -81,13 +80,9 @@ describe("leads page model", () => {
     assert.equal(fullName(lead({ first_name: "Kai", last_name: "Rivera" })), "Kai Rivera");
     assert.equal(formatDate("2026-05-24"), "May 24");
     assert.equal(formatDate("2026-05-24", true), "May 24, 2026");
-    assert.equal(timeAgo("2026-05-23T12:00:00.000Z", Date.parse("2026-05-24T12:00:00.000Z")), "Yesterday");
     assert.equal(getFollowUpStatusLabel("2026-05-24", "2026-05-24"), "Due today");
     assert.equal(getFollowUpStatusLabel("2026-05-22", "2026-05-24"), "2d overdue");
     assert.equal(getFollowUpStatusLabel("2026-05-26", "2026-05-24"), "Due May 26");
-    assert.equal(getLeadFollowUpTone("2026-05-24", "2026-05-24"), "due-today");
-    assert.equal(getLeadFollowUpTone("2026-05-22", "2026-05-24"), "overdue");
-    assert.equal(getLeadFollowUpTone("2026-05-26", "2026-05-24"), null);
   });
 
   it("builds lead pipeline buckets and follow-up queues outside the route", () => {
@@ -145,14 +140,13 @@ describe("leads page model", () => {
   });
 
   it("builds page-level lead state from stores without route-local duplication", () => {
-    const model = buildLeadsPageModel({
+    const dataset = buildLeadsDatasetModel({
       baseLeads: [
         lead({ id: "lead-1", first_name: "Base", follow_up_date: "2026-05-24" }),
         lead({ id: "lead-2", stage: "trial_scheduled", follow_up_date: "2026-05-22" }),
         lead({ id: "lead-3", stage: "enrolled", follow_up_date: "2026-05-20" }),
         lead({ id: "lead-4", stage: "closed_lost" }),
       ],
-      draggedLeadId: "lead-2",
       optimisticLeads: {
         "lead-1": lead({
           id: "lead-1",
@@ -165,9 +159,10 @@ describe("leads page model", () => {
         program({ id: "active-program", name: "Active Program" }),
         program({ id: "archived-program", name: "Archived Program", archived_at: "2026-05-01T00:00:00.000Z" }),
       ],
-      selectedLeadId: "lead-1",
       today: "2026-05-24",
     });
+
+    const model = selectLeadsPageModel(dataset, "lead-1", "lead-2");
 
     assert.deepEqual(model.activePrograms.map((item) => item.id), ["active-program"]);
     assert.equal(model.programById.get("archived-program")?.name, "Archived Program");

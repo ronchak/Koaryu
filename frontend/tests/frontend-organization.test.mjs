@@ -2,9 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  buildRankFamilyIndex,
-} from "../src/lib/dashboard-kpi-breakdowns.ts";
-import {
   formatMoney,
   requirementGroupItems,
   statusTone,
@@ -190,33 +187,6 @@ describe("frontend extracted helper behavior", () => {
     assert.equal(model.payerNameById.get("payer_1"), "Lane Family");
     assert.equal(model.studentNameById.get("student_1"), "Ari Lane");
     assert.equal(model.paymentsReady, true);
-  });
-
-  it("preserves dashboard belt-family indexing outside the route", () => {
-    const rankFamilyById = buildRankFamilyIndex([
-      {
-        id: "ladder_1",
-        name: "Adults",
-        program_id: "program_1",
-        ranks: [
-          { id: "white", name: "White Belt", is_tip: false, display_order: 1 },
-          { id: "tip-1", name: "White Tip", is_tip: true, display_order: 2 },
-        ],
-      },
-    ], new Map([["program_1", { id: "program_1", name: "Adults", color_hex: "#335577", sort_order: 1 }]]));
-
-    assert.deepEqual(
-      {
-        sectionLabel: rankFamilyById.get("tip-1")?.sectionLabel,
-        groupLabel: rankFamilyById.get("tip-1")?.groupLabel,
-        exactLabel: rankFamilyById.get("tip-1")?.exactLabel,
-      },
-      {
-        sectionLabel: "Adults",
-        groupLabel: "White Belt",
-        exactLabel: "White Tip",
-      }
-    );
   });
 
   it("preserves preview storage behavior without touching non-Koaryu keys", () => {

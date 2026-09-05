@@ -4,45 +4,11 @@ import { describe, it } from "node:test";
 import {
   dashboardSummaryDataset,
   eligibilityDataset,
-  loadIndependentDataset,
   loadedDataset,
   resolvePageDatasetReadiness,
 } from "../src/lib/page-dataset-readiness.ts";
 
 describe("page dataset readiness", () => {
-  it("commits a required fallback dataset while an unrelated request remains pending", async () => {
-    let resolveUnrelated;
-    let unrelatedSettled = false;
-    const unrelatedLoad = new Promise((resolve) => {
-      resolveUnrelated = resolve;
-    });
-    const commits = [];
-    const context = Promise.resolve();
-
-    const required = loadIndependentDataset({
-      context,
-      fallback: [],
-      load: Promise.resolve(["program-1"]),
-      onError: () => {},
-      onLoaded: (value) => commits.push(value),
-    });
-    const unrelated = loadIndependentDataset({
-      context,
-      fallback: [],
-      load: unrelatedLoad,
-      onError: () => {},
-      onLoaded: () => {
-        unrelatedSettled = true;
-      },
-    });
-
-    assert.deepEqual(await required, ["program-1"]);
-    assert.deepEqual(commits, [["program-1"]]);
-    assert.equal(unrelatedSettled, false);
-
-    resolveUnrelated([]);
-    await unrelated;
-  });
   it("allows unrelated datasets to remain unsettled when they are not declared", () => {
     assert.deepEqual(
       resolvePageDatasetReadiness([

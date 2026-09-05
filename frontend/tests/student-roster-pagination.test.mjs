@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  buildStudentRosterPageTotals,
   chooseStudentRosterRecoveryTarget,
   isStudentRosterRequestCurrent,
   MAX_STUDENT_ROSTER_CURSOR_RECOVERY_ATTEMPTS,
@@ -104,16 +103,5 @@ describe("student roster cursor traversal", () => {
       activeQueryKey: "query-b",
       authCurrent: true,
     }), false);
-  });
-
-  it("keeps footer totals exact while retaining one page for an empty roster", () => {
-    assert.deepEqual(buildStudentRosterPageTotals(0, 50), {
-      totalPages: 1,
-      visibleTotal: 0,
-    });
-    assert.deepEqual(buildStudentRosterPageTotals(101, 50), {
-      totalPages: 3,
-      visibleTotal: 101,
-    });
   });
 });
