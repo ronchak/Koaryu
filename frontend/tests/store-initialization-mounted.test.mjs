@@ -188,6 +188,7 @@ for (const mode of ["production", "development"]) {
       await page.waitForFunction(() => fixture.bootstrapWaiters.length === 1);
       await page.evaluate(() => {fixture.holdBootstrap=false;fixture.emit("SIGNED_IN", {access_token:"fixture-token-d",user:{id:"user-d",email:"d@example.test",user_metadata:{}}});});
       await page.waitForFunction(() => fixture.store.currentStudioId === "studio-user-d");
+      assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), true, "a fresh identity scope still accepts its initial lead snapshot");
       await page.evaluate(() => {for (const resolve of fixture.bootstrapWaiters) resolve();});
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       assert.equal(await page.evaluate(() => fixture.store.currentStudioId), "studio-user-d", "superseded bootstrap must never commit");
@@ -838,4 +839,110 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
       await page.evaluate(() => fixture.root.unmount());
     } finally { await browser.close(); }
   });
+}
+
+for (const operation of ["add", "update", "delete", "convert"]) {
+  for (const mutationStart of ["before-retry", "during-retry"]) {
+    for (const mutationFinish of ["before-bootstrap", "after-bootstrap"]) {
+      test(`bootstrap preserves ${operation} begun ${mutationStart} and settled ${mutationFinish}`, async () => {
+        const browser = await chromium.launch({ headless: true });
+        try {
+          const page = await browser.newPage();
+          await page.route("http://fixture.local/", route => route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }));
+          await page.goto("http://fixture.local/");
+          await page.evaluate(operation => {
+            const user = { id: "lead-race-user", email: "lead-race@example.test", legal_first_name: "Lead", legal_last_name: "Owner" };
+            const session = { access_token: "lead-race-token", user };
+            const profile = { user, membership_status: "active", studio_id: "lead-race-studio", role: "admin", staff_profiles_available: true };
+            const initialLead = { id: "existing-lead", first_name: "Original", last_name: "Lead", stage: "new", converted_student_id: null };
+            const fixture = window.fixture = { observations: [], identityObservations: [], initialLead, dbLeads: [initialLead], requests: [], holdBootstrap: false, bootstrapCalls: 0, mutationCalls: 0 };
+            fixture.supabase = { auth: {
+              getSession: async () => ({ data: { session }, error: null }),
+              onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+            } };
+            fixture.api = { get: async path => {
+              fixture.requests.push(path);
+              if (path === "/dashboard/bootstrap?allow_partial=true") {
+                fixture.bootstrapCalls += 1;
+                const leads = structuredClone(fixture.dbLeads);
+                if (fixture.holdBootstrap) await new Promise(resolve => { fixture.releaseBootstrap = resolve; });
+                return { auth: profile, studio_name: "Lead race studio", leads, students: [], programs: [], belt_ladders: [], primary_belt_ladder: null, summary: { auth: profile } };
+              }
+              if (path.startsWith("/schedule/window")) return { sessions: [], templates: [], attendance: [] };
+              if (path.startsWith("/students")) return { items: [{ id: "converted-student", legal_first_name: "Converted", legal_last_name: "Student", status: "active" }], total: 1, page_size: 200 };
+              if (path === "/leads") throw new Error("Leads refresh failed");
+              throw new Error(`Unexpected request ${path}`);
+            } };
+            fixture.mutate = async () => {
+              fixture.mutationCalls += 1;
+              let result;
+              if (operation === "add") {
+                result = { ...initialLead, id: "created-lead", first_name: "Created" };
+                fixture.dbLeads = [result, ...fixture.dbLeads];
+              } else if (operation === "delete") {
+                fixture.dbLeads = [];
+              } else {
+                result = { ...initialLead, first_name: "Changed", ...(operation === "convert" ? { stage: "enrolled", converted_student_id: "converted-student" } : {}) };
+                fixture.dbLeads = [result];
+              }
+              await new Promise(resolve => { fixture.releaseMutation = resolve; });
+              return result;
+            };
+            fixture.api.post = fixture.mutate;
+            fixture.api.patch = fixture.mutate;
+            fixture.api.delete = fixture.mutate;
+            fixture.startMutation = () => {
+              fixture.mutation = operation === "add" ? fixture.store.addLead({ first_name: "Created" })
+                : operation === "update" ? fixture.store.updateLead("existing-lead", { first_name: "Changed" })
+                : operation === "delete" ? fixture.store.deleteLead("existing-lead")
+                : fixture.store.convertLeadToStudent("existing-lead");
+            };
+          }, operation);
+          await page.addScriptTag({ content: bundle("production", { layout: true }) });
+          await page.waitForFunction(() => fixture.store?.identityReady && fixture.store.leadsLoaded);
+          if (mutationStart === "before-retry") {
+            await page.evaluate(() => fixture.startMutation());
+            await page.waitForFunction(() => fixture.mutationCalls === 1);
+          }
+          await page.evaluate(() => { fixture.holdBootstrap = true; fixture.store.retryInitialization(); });
+          await page.waitForFunction(() => fixture.bootstrapCalls === 2 && Boolean(fixture.releaseBootstrap));
+          if (mutationStart === "during-retry") {
+            await page.evaluate(() => fixture.startMutation());
+            await page.waitForFunction(() => fixture.mutationCalls === 1);
+          }
+          if (mutationFinish === "before-bootstrap") {
+            await page.evaluate(async () => { fixture.releaseMutation(); await fixture.mutation; });
+            await page.waitForFunction(() => JSON.stringify(fixture.store.leads) === JSON.stringify(fixture.dbLeads));
+            await page.evaluate(() => fixture.releaseBootstrap());
+          } else {
+            await page.evaluate(() => fixture.releaseBootstrap());
+            await page.waitForFunction(() => fixture.store.identityReady);
+            assert.deepEqual(await page.evaluate(() => fixture.store.leads), [await page.evaluate(() => fixture.initialLead)], "a pending mutation excludes the bootstrap snapshot even if the server already committed it");
+            await page.evaluate(async () => { fixture.releaseMutation(); await fixture.mutation; });
+          }
+          await page.waitForFunction(() => fixture.store.identityReady && JSON.stringify(fixture.store.leads) === JSON.stringify(fixture.dbLeads));
+          assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), true);
+          assert.equal(await page.evaluate(() => fixture.store.leadsLoadError), null);
+          assert.equal(await page.evaluate(() => fixture.mutationCalls), 1, "bootstrap cannot cancel or replay successful writes");
+          if (operation === "convert") {
+            assert.equal(await page.evaluate(() => fixture.store.leads[0]?.converted_student_id), "converted-student");
+            assert.equal(await page.evaluate(() => fixture.store.students.some(student => student.id === "converted-student")), true, "student revision protection survives the lead guard");
+          }
+          if (operation === "update" && mutationStart === "before-retry" && mutationFinish === "before-bootstrap") {
+            const message = await page.evaluate(async () => {
+              fixture.api.patch = async () => { throw new Error("Lead write failed"); };
+              return fixture.store.updateLead("existing-lead", { first_name: "Rejected" }).catch(error => error.message);
+            });
+            assert.equal(message, "Lead write failed", "failed writes must settle their pending scope before the next retry");
+          }
+          await page.evaluate(() => fixture.store.refreshLeads().catch(() => undefined));
+          await page.waitForFunction(() => fixture.store.leadsLoadError === "Leads refresh failed" && !fixture.store.leadsLoaded);
+          await page.evaluate(() => { fixture.holdBootstrap = false; fixture.store.retryInitialization(); });
+          await page.waitForFunction(() => fixture.bootstrapCalls === 3 && fixture.store.identityReady && fixture.store.leadsLoaded && !fixture.store.leadsLoadError);
+          assert.deepEqual(await page.evaluate(() => fixture.store.leads), await page.evaluate(() => fixture.dbLeads), "an uncontested retry still restores the complete dataset");
+          await page.evaluate(() => fixture.root.unmount());
+        } finally { await browser.close(); }
+      });
+    }
+  }
 }

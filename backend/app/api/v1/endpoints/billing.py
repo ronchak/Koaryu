@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 from typing import Optional
 
@@ -5,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from supabase import Client
 
 from app.core.config import get_settings
-from app.core.deps import ProviderDependency, get_current_user_id, get_requested_studio_id, get_supabase, run_supabase_operation
+from app.core.deps import PROVIDER_OPERATION_TIMEOUT_DETAIL, ProviderDependency, get_current_user_id, get_requested_studio_id, get_supabase, run_supabase_operation
 from app.schemas.billing import (
     BillingLandingResponse,
     BillingInvoicePageResponse,
@@ -131,13 +132,24 @@ async def get_billing_landing(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
-    from app.services.billing_landing import get_billing_landing as compose_landing
+    from app.services.billing_landing import (
+        BILLING_LANDING_REQUEST_TIMEOUT_SECONDS,
+        get_billing_landing as compose_landing,
+    )
 
     response.headers["Cache-Control"] = "no-store"
+    deadline = asyncio.get_running_loop().time() + BILLING_LANDING_REQUEST_TIMEOUT_SECONDS
     async def _provider_operation(client):
-        membership = resolve_billing_manager_staff_role_for_user(client, user_id, requested_studio_id)
-        return await compose_landing(client, membership)
-    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+        return resolve_billing_manager_staff_role_for_user(client, user_id, requested_studio_id)
+    membership_timeout = asyncio.timeout_at(deadline)
+    try:
+        async with membership_timeout:
+            membership = await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+    except TimeoutError as exc:
+        if not membership_timeout.expired():
+            raise
+        raise HTTPException(504, PROVIDER_OPERATION_TIMEOUT_DETAIL, headers={"Retry-After": "1"}) from exc
+    return await compose_landing(supabase, membership, deadline=deadline)
 
 
 @router.get("/invoices/page", response_model=BillingInvoicePageResponse)

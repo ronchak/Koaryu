@@ -19,6 +19,8 @@ const SAFE_RESOURCE_PATHS = Object.freeze({
   "/dashboard/summary": "dashboard-summary",
 });
 const REQUIRED_RESOURCES = new Set(Object.values(SAFE_RESOURCE_PATHS));
+const RENDER_RESOURCE_TYPES = new Set(["document", "script", "stylesheet", "image", "font"]);
+export const WEB_VITALS_STABILIZATION = Object.freeze({ timeout_ms: 10_000, quiet_window_ms: 500 });
 const SAFE_SERVER_TIMING_NAMES = new Set([
   "koaryu_studio", "koaryu_students", "koaryu_leads", "koaryu_belts",
   "koaryu_programs", "koaryu_total", "koaryu_route_total",
@@ -182,6 +184,68 @@ export function parseArgs(argv) {
   return { ...releaseArgs, storageState };
 }
 
+function readVisualReadiness() {
+  const evidence = globalThis.__koaryuEvidence;
+  if (!evidence) throw new Error("browser performance observers are missing.");
+  evidence.imageDecodes ??= new WeakMap();
+  let imagesReady = true;
+  let imageFailed = false;
+  for (const image of document.images) {
+    const rect = image.getBoundingClientRect();
+    if (!rect.width || !rect.height || rect.bottom <= 0 || rect.right <= 0
+      || rect.top >= innerHeight || rect.left >= innerWidth
+      || getComputedStyle(image).visibility === "hidden") continue;
+    const source = image.currentSrc || image.src;
+    if (!source) continue;
+    let decode = evidence.imageDecodes.get(image);
+    if (!decode || decode.source !== source) {
+      decode = { source, ready: false, failed: false };
+      evidence.imageDecodes.set(image, decode);
+      image.decode().then(() => { decode.ready = true; }, () => { decode.failed = true; });
+    }
+    imagesReady &&= image.complete && decode.ready;
+    imageFailed ||= decode.failed;
+  }
+  return {
+    ready: document.readyState === "complete" && document.fonts.status === "loaded" && imagesReady,
+    image_failed: imageFailed,
+    lcp: evidence.lcp,
+    cls: evidence.cls,
+  };
+}
+
+export async function stabilizeWebVitals(page, renderRequests, policy = WEB_VITALS_STABILIZATION) {
+  const startedAt = performance.now();
+  const timeoutError = () => new Error("Web Vitals stabilization timed out; capture has no finalized LCP/CLS evidence.");
+  let quietSince = startedAt;
+  let previous = null;
+  while (performance.now() - startedAt < policy.timeout_ms) {
+    let timer;
+    let visual;
+    try {
+      visual = await Promise.race([
+        page.evaluate(readVisualReadiness),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(timeoutError()), Math.max(0, policy.timeout_ms - (performance.now() - startedAt))); }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+    const requests = renderRequests();
+    const now = performance.now();
+    if (visual.image_failed) throw new Error("Web Vitals stabilization failed: visible image decoding failed.");
+    if (!visual.ready || requests.pending !== 0 || !previous
+      || visual.lcp !== previous.lcp || visual.cls !== previous.cls
+      || requests.revision !== previous.revision) quietSince = now;
+    if (visual.ready && requests.pending === 0 && now - quietSince >= policy.quiet_window_ms
+      && now - startedAt < policy.timeout_ms) {
+      return { status: "stabilized", timeout_ms: policy.timeout_ms, quiet_window_ms: policy.quiet_window_ms };
+    }
+    previous = { lcp: visual.lcp, cls: visual.cls, revision: requests.revision };
+    await new Promise((resolve) => setTimeout(resolve, Math.min(50, Math.max(0, policy.timeout_ms - (performance.now() - startedAt)))));
+  }
+  throw timeoutError();
+}
+
 export async function captureDashboardPerformance(options, dependencies = {}) {
   const routeLabel = options.route ?? "dashboard";
   if (!Object.hasOwn(CAPTURE_ROUTES, routeLabel)) throw new Error("unknown capture route.");
@@ -206,6 +270,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
   const requestCompletions = [];
   const requestStatuses = new Map();
   const responseTimings = [];
+  let renderRequestRevision = 0;
   let acceptingRequestEvents = true;
   let evidence;
 
@@ -227,6 +292,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
     const navigationGeneration = 1;
     page.on("request", (request) => {
       if (!acceptingRequestEvents) return;
+      if (RENDER_RESOURCE_TYPES.has(request.resourceType())) renderRequestRevision += 1;
       requestStarts.set(request, { started_at_ms: performance.now(), generation: navigationGeneration });
     });
     page.on("requestfinished", (request) => {
@@ -235,11 +301,15 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       requestStarts.delete(request);
       if (!start) return;
       const endedAt = performance.now();
-      requestCompletions.push((async () => {
+      const completion = (async () => {
         const sizes = await request.sizes();
         requests.push({ route: routeLabel, navigation_generation: start.generation, resource: classifyResource(request.url()) ?? "other", initiator: ["document", "fetch", "xhr", "script", "stylesheet", "image", "font"].includes(request.resourceType()) ? request.resourceType() : "other", outcome: "complete", status: requestStatuses.get(request) ?? 0, response_body_bytes: sizes.responseBodySize, started_at_ms: start.started_at_ms, ended_at_ms: endedAt });
         requestStatuses.delete(request);
-      })());
+      })();
+      // The stabilization window can outlast a rejected lookup. Observe the
+      // rejection now; Promise.all below still rejects the capture with it.
+      completion.catch(() => {});
+      requestCompletions.push(completion);
     });
     page.on("requestfailed", (request) => {
       if (!acceptingRequestEvents) return;
@@ -297,6 +367,10 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       throw new Error("authenticated storage state did not reach /dashboard.");
     }
 
+    const webVitalsObservation = await stabilizeWebVitals(page, () => ({
+      pending: [...requestStarts.keys()].filter((request) => RENDER_RESOURCE_TYPES.has(request.resourceType())).length,
+      revision: renderRequestRevision,
+    }));
     const browserEvidence = await page.evaluate(() => {
       const navigation = performance.getEntriesByType("navigation")[0];
       const paints = Object.fromEntries(
@@ -370,6 +444,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       interactions: { source: "browser-lab-event-timing-not-field-inp", entries: browserEvidence.interactions },
       browser_long_tasks: browserEvidence.long_tasks,
       web_vitals: {
+        observation: webVitalsObservation,
         first_contentful_paint_ms: roundRequired(
           browserEvidence.first_contentful_paint_ms,
           "first_contentful_paint_ms",

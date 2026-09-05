@@ -31,6 +31,18 @@ Readiness timestamps come from effects after committed UI has had a paint opport
 
 The capture exports fixed labels, numeric request start/end times, status, response bytes and initiator categories. Requests still pending at capture have a null end time and an explicit pending outcome; failed requests are retained. It excludes request URLs, query strings, bodies, cookies, headers and user records. Current `koaryu_summary_context` and `koaryu_summary_facts` timings survive the allowlist. Request navigation generations identify the capture's document navigation; visible UI marks also identify their own identity-scoped navigation generation.
 
+After recording application readiness, both capture modes allow up to 10 seconds
+for Web Vitals stabilization. The document must finish loading, fonts must finish
+loading, visible images must decode, and document/script/stylesheet/image/font
+requests must finish. Then native LCP and CLS must remain unchanged for 500 ms
+with no new rendering request. A timeout, stalled browser evaluation, or visible
+image decode failure rejects the capture; an early LCP is never substituted.
+The result declares this policy in `web_vitals.observation`. These are browser
+lab values sampled after stabilization, not full-visit field Web Vitals. Compare
+runs using the same observation policy. Readiness marks retain their original
+timestamps and legacy/selected-data meanings. Background fetches can remain
+pending and appear in the request inventory at its later synchronous cutoff.
+
 Playwright interception disables browser HTTP caching. Every routed capture says so. A fresh browser context also has a fresh Router Cache. Backend fact-cache state and server warmth remain separately marked as uncontrolled. Do not treat a routed reload as a normal cached revisit. Normal cache measurements require equivalent traffic restrictions outside Playwright routing, which this command does not provision. Scripted interaction timing is lab evidence, not field INP.
 
 ## Baseline limits

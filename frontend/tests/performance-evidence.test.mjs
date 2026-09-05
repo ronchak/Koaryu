@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import { describe, it } from "node:test";
+import { chromium } from "@playwright/test";
 
 import {
   captureDashboardPerformance,
@@ -9,8 +12,10 @@ import {
   measureDashboardReady,
   openVerifiedBrowser,
   sanitizeServerTiming,
+  stabilizeWebVitals,
   validateCapturedEvidence,
   verifyPostCaptureRelease,
+  WEB_VITALS_STABILIZATION,
 } from "../scripts/capture-dashboard-performance.mjs";
 
 const homeSource = readFileSync(new URL("../src/components/dashboard/dashboard-home.tsx", import.meta.url), "utf8");
@@ -53,7 +58,8 @@ function deferredCapture() {
   };
   let evaluateCalls = 0;
   const snapshotWait = Promise.withResolvers();
-  page.evaluate = async () => {
+  page.evaluate = async (read) => {
+    if (read.name === "readVisualReadiness") return { ready: true, image_failed: false, lcp: 2, cls: 0 };
     if (evaluateCalls++ === 0) {
       return ["navigation.started", "visible.shell", "visible.identity", "visible.useful", "visible.complete"].map((stage, index) => ({
         name: `koaryu.${stage}`, startTime: index * 10,
@@ -99,6 +105,80 @@ function deferredCapture() {
 }
 
 describe("privacy-safe performance evidence", () => {
+  it("captures a late native LCP after complete-data marks while the image is still loading", async () => {
+    const imageRequested = Promise.withResolvers();
+    let imageResponse;
+    const server = createServer((request, response) => {
+      if (request.url === "/late.png") {
+        imageResponse = response;
+        imageRequested.resolve();
+        return;
+      }
+      response.setHeader("Content-Type", "text/html");
+      response.end(`<html><body><h1>Billing ready</h1><img src="/late.png" width="512" height="512"><script>
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          for (const stage of ["navigation.started", "visible.shell", "visible.identity", "visible.useful", "visible.complete"])
+            performance.mark("koaryu." + stage, { detail: { route: "billing", identity_generation: 1, navigation_generation: 1 } });
+        }));
+      </script></body></html>`);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const browser = await chromium.launch({ headless: true });
+    let capture;
+    try {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      const origin = `http://127.0.0.1:${server.address().port}`;
+      capture = captureDashboardPerformance({ route: "billing", frontendOrigin: origin, backendApi: origin + "/api/v1", storageState: "/unused-test-state" }, {
+        verifyDeployment: async () => ({ verified: true, expected_sha: "a".repeat(40), environment: "staging" }),
+        launchBrowser: async () => ({ newContext: async () => ({ newPage: async () => page }), version: () => browser.version(), close: async () => {} }),
+      });
+      let settled = false;
+      capture.then(() => { settled = true; }, () => { settled = true; });
+      await imageRequested.promise;
+      await page.waitForFunction(() => performance.getEntriesByName("koaryu.visible.complete").length && globalThis.__koaryuEvidence?.lcp !== null);
+      const earlyLcp = await page.evaluate(() => globalThis.__koaryuEvidence.lcp);
+      await delay(WEB_VITALS_STABILIZATION.quiet_window_ms + 100);
+      assert.equal(settled, false, "an unfinished image must prevent even a quiet early LCP from being accepted");
+      imageResponse.setHeader("Content-Type", "image/png");
+      imageResponse.end(readFileSync(new URL("../public/icons/icon-512.png", import.meta.url)));
+      const evidence = await capture;
+      assert.ok(evidence.web_vitals.largest_contentful_paint_ms > earlyLcp);
+      assert.ok(evidence.web_vitals.largest_contentful_paint_ms > evidence.selected_required_data_ms);
+      assert.deepEqual(evidence.web_vitals.observation, { status: "stabilized", ...WEB_VITALS_STABILIZATION });
+      assert.equal(evidence.requests.filter((entry) => entry.initiator === "image" && entry.outcome === "complete").length, 1);
+    } finally {
+      imageResponse?.destroy();
+      await browser.close();
+      await capture?.catch(() => {});
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it("bounds visual stabilization and rejects instead of returning an early metric", async () => {
+    const started = performance.now();
+    const page = { evaluate: async () => ({ ready: false, image_failed: false, lcp: 1, cls: 0 }) };
+    await assert.rejects(stabilizeWebVitals(page, () => ({ pending: 1, revision: 1 }), { timeout_ms: 100, quiet_window_ms: 20 }), /stabilization timed out/);
+    assert.ok(performance.now() - started < 1_000);
+    await assert.rejects(stabilizeWebVitals({ evaluate: () => new Promise(() => {}) }, () => ({ pending: 0, revision: 0 }), { timeout_ms: 100, quiet_window_ms: 20 }), /stabilization timed out/);
+    await assert.rejects(stabilizeWebVitals({ evaluate: async () => ({ image_failed: true }) }, () => ({ pending: 0, revision: 1 })), /visible image decoding failed/);
+  });
+
+  it("restarts the quiet interval for a later LCP and a rendering request between samples", async () => {
+    let reads = 0;
+    let revision = 0;
+    const started = performance.now();
+    const result = await stabilizeWebVitals({ evaluate: async () => {
+      reads += 1;
+      if (reads === 2) revision += 1;
+      return { ready: true, image_failed: false, lcp: reads >= 3 ? 30 : 1, cls: 0 };
+    } }, () => ({ pending: 0, revision }), { timeout_ms: 1_000, quiet_window_ms: 60 });
+    assert.equal(result.status, "stabilized");
+    assert.ok(reads >= 5);
+    assert.ok(performance.now() - started >= 160);
+  });
+
   it("freezes an exhaustive request inventory before deferred size lookups settle", async () => {
     const fixture = deferredCapture();
     await fixture.snapshotWait;

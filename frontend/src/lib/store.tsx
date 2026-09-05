@@ -182,6 +182,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [leadsLoaded, setLeadsLoaded] = useState(isPreviewMode);
   const [leadsLoadError, setLeadsLoadError] = useState<string | null>(null);
   const leadsRef = useRef<Lead[]>(leads);
+  const leadMutationScopeRef = useRef({ revision: 0, pending: 0 });
+  const beginLeadMutation = useCallback(() => {
+    const scope = leadMutationScopeRef.current;
+    scope.revision += 1;
+    scope.pending += 1;
+    return () => {
+      scope.revision += 1;
+      scope.pending -= 1;
+    };
+  }, []);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
     isPreviewMode ? MOCK_BELT_LADDERS : []
   );
@@ -564,6 +574,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commitEligibilityRows]);
 
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
+    leadMutationScopeRef.current = { revision: 0, pending: 0 };
     applyLiveStudioDataResetRefs({
       staffMembers: staffMembersRef,
       programs: programsRef,
@@ -988,6 +999,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     async function initializeLive(providedSession?: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]) {
       const studentsRevisionAtStart = studentsRevisionRef.current;
+      const leadMutationScope = leadMutationScopeRef.current;
+      const leadMutationRevisionAtStart = leadMutationScope.revision;
+      const hadPendingLeadMutation = leadMutationScope.pending > 0;
       const notificationRevision = authNotificationRevision;
       let session = providedSession;
       if (!session) {
@@ -1098,9 +1112,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               });
             }
           }
-          if (!datasetErrors?.leads) setLeads(criticalData.leads);
-          setLeadsLoaded(!datasetErrors?.leads);
-          setLeadsLoadError(datasetErrors?.leads ?? null);
+          if (!hadPendingLeadMutation
+            && leadMutationScope === leadMutationScopeRef.current
+            && leadMutationScope.revision === leadMutationRevisionAtStart
+            && leadMutationScope.pending === 0) {
+            if (!datasetErrors?.leads) setLeads(criticalData.leads);
+            setLeadsLoaded(!datasetErrors?.leads);
+            setLeadsLoadError(datasetErrors?.leads ?? null);
+          }
           if (datasetErrors?.belts) {
             setBeltLaddersLoadError(datasetErrors.belts);
           } else {
@@ -1478,6 +1497,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshLeads,
     updateLead,
   } = useStoreLeadActions({
+    beginLeadMutation,
     beginLiveAuthRequest,
     beltLaddersRef,
     beltRanksRef,

@@ -51,6 +51,17 @@ owner cannot update `pg_catalog.pg_index`; the portable contract needs no such g
 
 System diagnostics, platform status and financial access fail independently in landing composition. A diagnostic failure cannot hide the administrator's platform subscription recovery. The normal composition reuses the reporter's Connect account; only a failed reporter attempts the standalone Connect status read.
 
+Landing has one 30-second deadline covering membership resolution and all
+projections. After membership succeeds, financial data, administrator-only
+platform recovery and diagnostics run independently on the bounded interactive
+provider lane. Each operation uses its worker's own client. Completed projections
+remain in the single response when another projection exhausts the remaining
+deadline; unavailable fields carry their existing errors. There is no shorter
+diagnostic cutoff. Membership failure still rejects the request, and financial
+totals still require independently verified subscription access. A timed-out or
+cancelled caller does not free provider capacity early: the runtime retains the
+source operation and its client until the underlying work finishes.
+
 The new schema is V38 at 133 migrations, head `20260905022339`. Backend readiness
 uses `koaryu_release_schema_preflight_v19`; the previous V18 entry point retains
 the exact V37 response through a checked compatibility bridge. The guarded
