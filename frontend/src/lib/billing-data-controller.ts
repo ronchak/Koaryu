@@ -172,7 +172,11 @@ export function useBillingDataController({
     try {
       const freshLanding = retainedRef.current.get(`${activeAccessKey}:landing`);
       if (force || freshLanding === undefined || Date.now() - freshLanding >= 30_000) {
-        const result = await api.get<BillingLanding>("/billing/landing", currentToken);
+        const result = await api.get<BillingLanding>("/billing/landing", currentToken, {
+          // The composed endpoint has a 30s provider deadline. Leave room for
+          // admission, response headers, and the body before the browser aborts.
+          timeoutMs: 35_000,
+        });
         if (!isCurrentRequest(requestId, requestAccess)) return;
         setLanding(result);
         setPlatformBilling(result.platform_status ?? null);

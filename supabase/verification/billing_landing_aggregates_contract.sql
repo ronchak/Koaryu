@@ -181,10 +181,10 @@ BEGIN
   ASSERT NOT ready_row.ready AND 'billing_history_indexes_v38'=ANY(ready_row.security_failures), 'V38 detects the wrong history index order';
   EXECUTE format('DROP INDEX public.%I',index_name);
   EXECUTE original_definition;
-  UPDATE pg_catalog.pg_index SET indisvalid=false WHERE indexrelid=to_regclass('public.'||index_name);
-  SELECT * INTO ready_row FROM public.koaryu_release_schema_preflight_v19();
-  ASSERT NOT ready_row.ready AND 'billing_history_indexes_v38'=ANY(ready_row.security_failures), 'V38 detects an invalid history index';
-  UPDATE pg_catalog.pg_index SET indisvalid=true WHERE indexrelid=to_regclass('public.'||index_name);
+  -- Supabase's postgres owner cannot update pg_index. The dedicated ephemeral
+  -- verifier corrupts all three flags for both indexes and checks raw/V38/V37 rejection.
+  ASSERT (SELECT indisvalid AND indisready AND indislive FROM pg_catalog.pg_index
+   WHERE indexrelid=to_regclass('public.'||index_name)) IS TRUE, 'restored history index is valid, ready, and live';
   SELECT * INTO ready_row FROM public.koaryu_release_schema_preflight_v19();
   ASSERT ready_row.ready, 'V38 ready after restoring the valid history index';
  END LOOP;

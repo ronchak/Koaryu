@@ -42,6 +42,13 @@ verifier disables fsync; update throughput was not measured. V38 and the guarded
 rollout attest both index definitions, order and validity. V37 compatibility
 rejects a V38 installation whose required history index is missing or invalid.
 
+The portable SQL contract tests missing and wrong-order indexes using owner DDL
+and confirms restored indexes are valid, ready and live. Direct corruption of
+those catalog flags belongs to `scripts/verify-supabase-contracts-local.sh`, whose
+disposable PostgreSQL superuser checks each flag on both indexes against the raw
+manifest, V38 readiness and V37 compatibility. Supabase's constrained `postgres`
+owner cannot update `pg_catalog.pg_index`; the portable contract needs no such grant.
+
 System diagnostics, platform status and financial access fail independently in landing composition. A diagnostic failure cannot hide the administrator's platform subscription recovery. The normal composition reuses the reporter's Connect account; only a failed reporter attempts the standalone Connect status read.
 
 The new schema is V38 at 133 migrations, head `20260905022339`. Backend readiness

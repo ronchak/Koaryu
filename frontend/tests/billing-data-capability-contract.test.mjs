@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 describe("billing data capability loading", () => {
   it("loads studio billing capabilities for front desk without exposing platform billing", () => {
     const source = fs.readFileSync(path.join(root, "src/lib/billing-data-controller.ts"), "utf8");
-    assert.match(source, /api\.get<BillingLanding>\("\/billing\/landing", currentToken\)/);
+    assert.match(source, /api\.get<BillingLanding>\("\/billing\/landing", currentToken,/);
     assert.doesNotMatch(source, /api\.get<PlatformBillingStatus>/);
     assert.doesNotMatch(source, /api\.get<BillingSystemStatus>/);
 

@@ -139,10 +139,13 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The current candidate's `/health/ready` calls the V18 schema preflight and serves
-only at 132/head `20260902001000` with `release-db-attestation-v37`. It fails
+The current candidate's `/health/ready` calls `koaryu_release_schema_preflight_v19`
+and serves only at 133/head `20260905022339` with `release-db-attestation-v38`. It fails
 closed at every other migration state. That is deliberate, and it is why a
 backend deployed ahead of its migration will sit unhealthy rather than serve.
+This describes the candidate contract, not a new hosted-state verification.
+The V38 migration preserves the V37-shaped V18 response for the previous backend
+only when V19 proves the complete V38 state, allowing the database-first cutover.
 
 ## Supabase — database, auth, storage
 

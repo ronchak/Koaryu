@@ -11,7 +11,7 @@ import { chromium } from "@playwright/test";
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-function bundle() {
+function bundle({ realApi = false } = {}) {
   const modules = [];
   const ids = new Map();
   const stubs = {
@@ -21,6 +21,7 @@ function bundle() {
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
     "@/lib/performance": `exports.markPerformance=()=>{};exports.measurePerformance=()=>{};`,
   };
+  if (realApi) delete stubs["@/lib/api"];
   function add(specifier, parent = resolve(frontend, "entry.js")) {
     let key = specifier;
     if (!(key in stubs)) {
@@ -35,7 +36,7 @@ function bundle() {
     ids.set(key, id);
     modules.push("");
     let source = stubs[key] ?? readFileSync(key, "utf8");
-    if (/\.tsx?$/.test(key)) source = ts.transpileModule(source, { compilerOptions: {
+    if (/\.tsx?$/.test(key)) source = ts.transpileModule(source, { fileName: key, compilerOptions: {
       jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
       esModuleInterop: true,
     }}).outputText;
@@ -75,6 +76,59 @@ async function mountBillingFixture(browser) {
   await page.waitForFunction(()=>fixture.state?.hasBillingLoadSettled);
   return page;
 }
+
+test("Billing landing waits for its server budget and body but still bounds stalled requests", async () => {
+ const browser=await chromium.launch({headless:true});
+ try {
+  const page=await browser.newPage();
+  await page.route("http://fixture.local/",r=>r.fulfill({contentType:"text/html",body:'<div id="root"></div>'}));
+  await page.goto("http://fixture.local/");
+  await page.clock.install();
+  await page.evaluate(()=>{
+   const f=window.fixture={requests:[],commits:[],error:"",aborts:0};
+   f.options={activeTab:'overview',identityKey:'user:studio:admin:1',canManageKoaryuSubscription:true,canViewStudioBilling:true,isPreviewMode:false,shouldSettleEarly:false,token:'token-a',onSubscriptionRequired:()=>{},setError:value=>{f.error=value;},setMessage:()=>{}};
+   window.fetch=(url,{signal})=>new Promise((resolve,reject)=>{
+    f.requests.push({url});
+    let stream;
+    signal.addEventListener('abort',()=>{
+     f.aborts+=1;
+     const error=new DOMException('Aborted','AbortError');
+     reject(error);
+     stream?.error(error);
+    },{once:true});
+    f.sendHeaders=(status=200)=>resolve(new Response(new ReadableStream({start(controller){stream=controller;}}),{status,headers:{'content-type':'application/json'}}));
+    f.sendBody=value=>{stream.enqueue(new TextEncoder().encode(JSON.stringify(value)));stream.close();};
+   });
+  });
+  await page.addScriptTag({content:bundle({realApi:true})});
+  await page.waitForFunction(()=>fixture.requests.length===1 || fixture.error, undefined, {timeout:3000});
+  assert.equal(await page.evaluate(()=>fixture.error),"");
+  await page.clock.fastForward(12_500);
+  assert.deepEqual(await page.evaluate(()=>[fixture.state.hasBillingLoadSettled,fixture.error,fixture.aborts]),[false,"",0],"a valid composed read must survive the generic 12s deadline");
+  await page.evaluate(()=>fixture.sendHeaders());
+  await page.clock.fastForward(18_000);
+  assert.deepEqual(await page.evaluate(()=>[fixture.state.hasBillingLoadSettled,fixture.error,fixture.aborts]),[false,"",0],"body transfer has room beyond the server's 30s deadline");
+  await page.evaluate(()=>fixture.sendBody({studio_id:'studio',system_status:null,financial_access:'available',errors:[],aggregates:{active_student_count:8}}));
+  await page.waitForFunction(()=>fixture.state.hasBillingLoadSettled);
+  assert.equal(await page.evaluate(()=>fixture.state.landing.aggregates.active_student_count),8);
+  assert.equal(await page.evaluate(()=>fixture.error),"");
+
+  await page.evaluate(()=>{void fixture.state.refreshBilling();});
+  await page.waitForFunction(()=>fixture.requests.length===2);
+  await page.evaluate(()=>fixture.sendHeaders());
+  await page.clock.fastForward(35_001);
+  await page.waitForFunction(()=>fixture.state.hasBillingLoadSettled && fixture.error);
+  assert.equal(await page.evaluate(()=>fixture.error),"Request timed out. Please try again.");
+  assert.equal(await page.evaluate(()=>fixture.aborts),1,"a stalled body is canceled when the bounded landing deadline expires");
+
+  await page.evaluate(()=>{void fixture.state.refreshBilling();});
+  await page.waitForFunction(()=>fixture.requests.length===3);
+  await page.clock.fastForward(30_000);
+  await page.evaluate(()=>{fixture.sendHeaders(504);fixture.sendBody({detail:'Provider operation timed out.'});});
+  await page.waitForFunction(()=>fixture.state.hasBillingLoadSettled && fixture.error==='Provider operation timed out.');
+  assert.equal(await page.evaluate(()=>fixture.aborts),1,"the server's timeout detail arrives before the browser deadline");
+ } finally {await browser.close();}
+});
 
 test("mounted Billing landing, tab retention, mutations and identity isolation", async () => {
  const browser=await chromium.launch({headless:true});
