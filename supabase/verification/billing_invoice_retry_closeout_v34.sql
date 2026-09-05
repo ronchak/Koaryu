@@ -23,7 +23,7 @@ BEGIN
      <>'0:d054ae0cf5ce43ce2c241ca628e0724b5239bd696c323ba9c817b8bd21ee0eec' THEN
     RAISE EXCEPTION 'V34 closeout manifest mismatch.';
   END IF;
-  IF v_current_count=132 AND v_current_head='20260902001000' THEN
+  IF (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339') THEN
     IF private.koaryu_release_operational_contract_v29()
        <>'0:32706cfae7047b70ee6b563048ffafa91d945bc824939e3000fa01631a459ecb'
        OR private.koaryu_release_operational_manifest_v10()
@@ -55,7 +55,7 @@ BEGIN
     INTO v_v31_expectation_state
   FROM private.koaryu_release_v31_expectations;
   v_expected_v31_expectation_state:=CASE
-    WHEN v_current_count=132 AND v_current_head='20260902001000'
+    WHEN (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339')
          THEN '1:95f3c8d7693b10b867a8e2a322bc0c40a04a444db18c0a8137f27198260776f5'
     WHEN v_current_count=131 AND v_current_head='20260831054918'
          THEN '1:3d764f9527b71e81235d6ae5dbc62047149958b39b741d63e6600f3d78a4a587'

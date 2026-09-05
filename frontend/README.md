@@ -120,6 +120,36 @@ This uses Next.js 16's built-in Turbopack analyzer (`next build --experimental-a
 
 See [docs/performance-rollout.md](../docs/performance-rollout.md) before enabling the v0.1.1 rendering changes in production. The short version: keep `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER=true`, let the dashboard summary load after bootstrap, and use the documented switches only for rollback or short diagnostic windows.
 
+## Authenticated loading
+
+The store initializes once per identity scope. Committing a role does not restart
+bootstrap or the Auth subscription. Token renewal preserves the identity and
+reconciles schedule reads; account/profile scope changes discard the old data.
+An unavailable bootstrap shows a retryable identity error. It does not fan out
+into legacy dataset requests. Deploy a backend with `/dashboard/bootstrap`
+before this frontend; mixed versions without that endpoint are unsupported.
+
+Dashboard panels report their own loading and error states. Summary-backed
+panels can appear before schedule or promotion eligibility finishes. Eligibility
+loads when Promotions Due is selected or Belt Tracker opens. The original
+`data-koaryu-dashboard-data-ready` marker retains its aggregate requirements;
+`data-koaryu-dashboard-selected-data-ready` measures the selected panels, and
+`data-koaryu-dashboard-useful-ready` identifies the first ready data panel.
+Program metadata comes from bootstrap. Settings refreshes usage when opened,
+shows loading or unavailable usage explicitly, and retains successful usage
+while refreshing. Bootstrap rows never establish paginated roster authority.
+
+Schedule initialization and visible calendar ranges use the same reconciliation
+queue. New ranges remain pending until their materialization completes. Refresh
+keeps the current range visible, and obsolete range responses cannot replace a
+newer window or attendance mutation.
+
+The default frontend test suite includes a mounted StoreProvider test in
+Chromium using synthetic external I/O. Install its browser with
+`npx playwright install chromium` before running `npm test`. It exercises both
+production React and development Strict Mode without a running application,
+credentials, or a database.
+
 ## Landing Page And Backend Warmup
 
 The `/` landing page is intentionally outside the Supabase auth middleware matcher so it can paint immediately as informational UI. After hydration, `BackendWarmup` calls `/api/proxy/health` in the background. That request wakes the Render backend without blocking the landing page or requiring a logged-in session.
@@ -167,3 +197,20 @@ Both tools are destructive. They are designed to preserve Koaryu Core subscripti
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+Pending staff, program-usage and deferred summary reads recover from token rotation
+through their existing owners, with at most two replays using the current token.
+Identity changes, sign-out and subscription revocation invalidate that recovery.
+Mutations are not replayed. A confirmed missing session or sign-out clears private
+state and replaces the route with `/login`. A transient session error instead hides
+protected content and offers Retry workspace while preserving SDK credentials.
+Null initial-session notifications are confirmed outside the Auth callback lock.
+Subscription denial preserves an already verified identity and legal-name gate so
+the recovery page can render after studio data is cleared.
+
+Bootstrap partial projections are opt-in through `allow_partial=true`. Healthy
+identity and datasets can render even when an independent projection fails;
+missing studio/program/belt metadata remains explicit and retryable. Older
+frontends retain strict failure behavior. A same-identity token renewal keeps an
+in-flight Schedule range caller attached to the existing reconciliation owner;
+it cannot hide the newly reconciled range or replay attendance mutations.

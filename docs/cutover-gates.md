@@ -40,22 +40,31 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-V36 is the accepted predecessor at 131/head `20260831054918`. The candidate
-finishes at 132/head `20260902001000`, readiness V18, and
-`release-db-attestation-v37`. The guarded rollout tool accepts V36 only when its
+V37 is the accepted predecessor at 132/head `20260902001000`. The candidate
+finishes at 133/head `20260905022339`, readiness V19, and
+`release-db-attestation-v38`. These are candidate requirements, not a claim about
+the current hosted database state. The guarded rollout tool accepts V37 only when its
 history, readiness, and catalog all match, then derives this exact one-file
 remainder:
 
-- `20260902001000_fix_billing_adjustment_trigger_table_guards.sql`
+- `20260905022339_billing_landing_aggregates.sql`
 
-Exact V31 through V35 remain state-bound forward-recovery points. They
-may resume only their immutable suffix through V37; hybrid histories, catalogs,
+This migration builds ordinary indexes on `billing_invoices` and
+`billing_payments`. Their write locks can delay billing and webhook writes until
+the migration transaction finishes; reads remain available. Plan that write
+pause for the separately authorized rollout. Its hosted duration has not been
+measured; the local index-size samples are not a production lock-time estimate.
+See PostgreSQL's [index-build locking behavior](https://www.postgresql.org/docs/17/sql-createindex.html#SQL-CREATEINDEX-CONCURRENTLY).
+
+Exact V31 through V36 remain state-bound forward-recovery points. They
+may resume only their immutable suffix through V38; hybrid histories, catalogs,
 or readiness results are refused.
 
 Migration 119 keeps `koaryu_release_schema_preflight_v4` returning the historical
 V24 shape. The Payments chain preserves the schedule-shaped V5 response and owns
-V6 through V18. V37 preserves the V36-shaped V17 response during the
-database-first cutover. The candidate backend reads V18 and serves only at exact 132/V37;
+V6 through V19. V37 preserves the V36-shaped V17 response; V38 preserves the
+V37-shaped V18 response only after V19 proves the exact V38 state. The candidate
+backend reads V19 and serves only at exact 133/V38;
 older deployed backends retain their corresponding compatibility response during
 the database-first cutover.
 The temporary V22 and
@@ -68,8 +77,9 @@ The operational manifest string is **not** echoed in the response body. A runboo
 look for it is wrong. `"status": "ready"` *is* the proof the attestation matched.
 
 If migration 113 commits and migration 114 does not, stop. No approved
-application is eligible to serve at that V20 head. The prior `709239` application
-requires V16, while the release candidate requires V24. Older V2 consumers from
+application is eligible to serve at that V20 head. During the historical V24 release,
+the prior `709239` application required V16 and that release candidate required V24.
+The current candidate requires V38. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
@@ -88,13 +98,15 @@ post-110 rollback set. A database still at exact 110 must classify
 migrations from `20260826030234_live_billing_reconciliation_v3.sql` through
 `20260830151714_invoice_retry_closeout_contract_v34.sql`, followed by
 `20260831022021_stripe_rehearsal_evidence_rpc_v35.sql` and
-`20260831054918_payer_setup_recovery_v36.sql`. If a future approved
+`20260831054918_payer_setup_recovery_v36.sql`,
+`20260902001000_fix_billing_adjustment_trigger_table_guards.sql`, and
+`20260905022339_billing_landing_aggregates.sql`. If a future approved
 disaster recovery explicitly returns production to the proved restored V22
 snapshot, it must classify exact `state=restored-v22` and dry-run only
-migrations 116 through 131. These are hypothetical forward-recovery cases, not
+migrations 116 through 133. These are hypothetical forward-recovery cases, not
 the current live state. In either case, only the authorized operator runs the
-production apply gate, and promotion remains blocked until migration 131
-produces exact V36 readiness and the final raw catalog/provider fingerprint.
+production apply gate, and candidate promotion remains blocked until migration 133
+produces exact V38 readiness and the final raw catalog/provider fingerprint.
 
 The V33 retry-hash capture stays enabled throughout the database-first rolling
 deploy. Do not call `finalize_billing_invoice_retry_hash_capture_v33` during the
@@ -119,8 +131,8 @@ deliberately deferred as known issues — makes `mergeStateStatus` `BLOCKED`, an
 before starting, and record *why* on each thread if the finding is being deferred.
 
 **Run the rollout tool from the exact candidate implementation.** For an unmerged
-release, invoke the tool from PR #138's worktree and pass its exact 40-character head.
-The tool creates a detached worktree at that SHA and verifies the 131-file sequence and
+release, invoke the tool from that candidate's worktree and pass its exact 40-character head.
+The tool creates a detached worktree at that SHA and verifies the 133-file sequence and
 source hashes there. Do not run an older `main` copy of the tool and do not merge the PR
 to obtain the rollout script.
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { markDashboardReadiness } from "@/lib/performance";
 import {
   Fragment,
   useCallback,
@@ -64,6 +65,8 @@ import styles from "./dashboard-home.module.css";
 
 type DashboardHomeProps = {
   currentRole: string | null;
+  identityGeneration: number;
+  onVisibleWidgetsChange: (ids: DashboardWidgetId[]) => void;
   currentStudioId: string | null;
   currentUserId: string;
   datasetLoadError: string | null;
@@ -609,6 +612,8 @@ function HomeWidget({
 
 export function DashboardHome({
   currentRole,
+  identityGeneration,
+  onVisibleWidgetsChange,
   currentStudioId,
   currentUserId,
   datasetLoadError,
@@ -693,6 +698,25 @@ export function DashboardHome({
       active = false;
     };
   }, [identity, identityReady, identityScope]);
+
+  useEffect(() => {
+    if (layoutResolved) onVisibleWidgetsChange(layout.items.map((item) => item.widget_id));
+  }, [layout.items, layoutResolved, onVisibleWidgetsChange]);
+
+  const firstUsefulContentReady = layoutResolved && layout.items.some((item) => {
+    const state = viewModels[item.widget_id].state;
+    return item.widget_id !== "quick_actions" && (state === "ready" || state === "empty");
+  });
+  const selectedContentComplete = layoutResolved && layout.items.every((item) => {
+    const state = viewModels[item.widget_id].state;
+    return state === "ready" || state === "empty";
+  });
+  useEffect(() => markDashboardReadiness("dashboard", identityGeneration, {
+    identity: identityReady,
+    useful: firstUsefulContentReady,
+    complete: selectedContentComplete,
+    legacyComplete: layoutResolved && dataReady,
+  }), [identityGeneration, identityReady, firstUsefulContentReady, selectedContentComplete, layoutResolved, dataReady]);
 
   const capturePanelPositions = useCallback(() => {
     if (!layoutResolved) {
@@ -1590,6 +1614,8 @@ export function DashboardHome({
       className={styles.home}
       data-koaryu-dashboard-home="true"
       data-koaryu-dashboard-shell-ready={layoutResolved ? "true" : "false"}
+      data-koaryu-dashboard-useful-ready={firstUsefulContentReady ? "true" : "false"}
+      data-koaryu-dashboard-selected-data-ready={selectedContentComplete ? "true" : "false"}
       data-koaryu-dashboard-data-ready={layoutResolved && dataReady ? "true" : "false"}
       data-koaryu-dashboard-ready={layoutResolved ? "true" : "false"}
       data-layout-resolved={layoutResolved ? "true" : "false"}

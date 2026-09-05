@@ -7,7 +7,8 @@ import { hasStaffPermission } from "@/lib/staff-permissions";
 import {
   PIPELINE_STAGES,
   buildLeadUpdateSuccessMessage,
-  buildLeadsPageModel,
+  buildLeadsDatasetModel,
+  selectLeadsPageModel,
   buildOptimisticLeadUpdate,
   fullName,
   getLeadFollowUpInputValue,
@@ -73,17 +74,13 @@ export function useLeadsPageController({
   const [selectedLeadActivityStatus, setSelectedLeadActivityStatus] = useState<LeadActivityStatus>("idle");
   const [activityRefreshKey, setActivityRefreshKey] = useState(0);
 
+  const dataset = useMemo(
+    () => buildLeadsDatasetModel({ baseLeads, optimisticLeads, programs, today }),
+    [baseLeads, optimisticLeads, programs, today]
+  );
   const model = useMemo(
-    () =>
-      buildLeadsPageModel({
-        baseLeads,
-        draggedLeadId: draggedLead,
-        optimisticLeads,
-        programs,
-        selectedLeadId,
-        today,
-      }),
-    [baseLeads, draggedLead, optimisticLeads, programs, selectedLeadId, today]
+    () => selectLeadsPageModel(dataset, selectedLeadId, draggedLead),
+    [dataset, selectedLeadId, draggedLead]
   );
 
   useEffect(() => {

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.fakes.billing_reads import BillingReadRpcMixin
+
 import asyncio
 import hashlib
 import json
@@ -26,7 +28,7 @@ from tests.fakes.billing_provider_operations import BillingProviderOperationRpcM
 from tests.fakes.supabase import RpcBackedSupabase
 
 
-class _FakeSupabase(BillingProviderOperationRpcMixin, RpcBackedSupabase):
+class _FakeSupabase(BillingReadRpcMixin, BillingProviderOperationRpcMixin, RpcBackedSupabase):
     def __init__(self, tables):
         super().__init__(tables)
         self.initialize_billing_provider_operations()

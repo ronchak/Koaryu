@@ -49,6 +49,12 @@ import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
 export interface StoreContextValue {
   isPreviewMode: boolean;
   token: string | null;
+  identityGeneration: number;
+  identityReady: boolean;
+  identityLoadError: string | null;
+  studioLoadError: string | null;
+  beltLaddersLoadError: string | null;
+  retryInitialization: () => void;
   subscriptionRequired: boolean;
   markSubscriptionRequired: () => void;
   clearSubscriptionRequired: () => void;
@@ -91,6 +97,8 @@ export interface StoreContextValue {
 
   programs: Program[];
   programsLoaded: boolean;
+  programsUsageLoaded: boolean;
+  programsUsageLoadError: string | null;
   programsLoadError: string | null;
   refreshPrograms: (options?: { includeArchived?: boolean }) => Promise<Program[]>;
   createProgram: (data: ProgramCreate) => Promise<Program>;
@@ -111,6 +119,7 @@ export interface StoreContextValue {
   beltRanks: BeltRank[];
   currentLadderId: string | null;
   setCurrentLadder: (ladderId: string) => Promise<void>;
+  loadEligibilityForLadder: (ladderId?: string | null, options?: { force?: boolean }) => Promise<EligibilityEntry[]>;
   setBeltRanks: (ranks: BeltRank[], options?: { subRankTerm?: string }) => Promise<void>;
   ladderName: string;
   setLadderName: (name: string) => void;
@@ -216,6 +225,8 @@ export type ProgramsStoreContextValue = Pick<
   StoreContextValue,
   | "programs"
   | "programsLoaded"
+  | "programsUsageLoaded"
+  | "programsUsageLoadError"
   | "programsLoadError"
   | "refreshPrograms"
   | "createProgram"
@@ -236,10 +247,12 @@ export type LeadsStoreContextValue = Pick<
 >;
 export type BeltsStoreContextValue = Pick<
   StoreContextValue,
+  | "beltLaddersLoadError"
   | "beltLadders"
   | "beltRanks"
   | "currentLadderId"
   | "setCurrentLadder"
+  | "loadEligibilityForLadder"
   | "setBeltRanks"
   | "ladderName"
   | "setLadderName"
@@ -271,6 +284,7 @@ export type ScheduleStoreContextValue = Pick<
 >;
 export type StudioStoreContextValue = Pick<
   StoreContextValue,
+  | "studioLoadError"
   | "studioName"
   | "currentUserId"
   | "currentStudioId"
@@ -278,6 +292,10 @@ export type StudioStoreContextValue = Pick<
   | "userEmail"
   | "userName"
   | "staffProfilesAvailable"
+  | "identityGeneration"
+  | "identityReady"
+  | "identityLoadError"
+  | "retryInitialization"
   | "legalFirstName"
   | "legalLastName"
   | "staffMembers"

@@ -1,12 +1,17 @@
+import asyncio
 import inspect
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Response, status
 from supabase import Client
 
 from app.core.config import get_settings
-from app.core.deps import ProviderDependency, get_current_user_id, get_requested_studio_id, get_supabase, run_supabase_operation
+from app.core.deps import PROVIDER_OPERATION_TIMEOUT_DETAIL, ProviderDependency, get_current_user_id, get_requested_studio_id, get_supabase, run_supabase_operation
+from app.core.provider_runtime import SupabaseProviderRuntime
 from app.schemas.billing import (
+    BillingLandingResponse,
+    BillingInvoicePageResponse,
+    BillingPaymentPageResponse,
     BillingInvoiceCreate,
     BillingInvoiceResponse,
     BillingEnrollmentTransitionRequest,
@@ -119,6 +124,67 @@ def _routine_studio_id(
         requested_studio_id,
         require_platform_subscription=require_platform_subscription,
     )["studio_id"]
+
+
+@router.get("/landing", response_model=BillingLandingResponse)
+async def get_billing_landing(
+    response: Response,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    from app.services.billing_landing import (
+        BILLING_LANDING_REQUEST_TIMEOUT_SECONDS,
+        get_billing_landing as compose_landing,
+    )
+
+    response.headers["Cache-Control"] = "no-store"
+    deadline = asyncio.get_running_loop().time() + BILLING_LANDING_REQUEST_TIMEOUT_SECONDS
+    async def _provider_operation(client):
+        return resolve_billing_manager_staff_role_for_user(client, user_id, requested_studio_id)
+    membership_timeout = asyncio.timeout_at(deadline)
+    try:
+        async with membership_timeout:
+            membership = await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+    except TimeoutError as exc:
+        if not membership_timeout.expired():
+            raise
+        if isinstance(supabase, SupabaseProviderRuntime):
+            supabase.record_request_timeout("interactive")
+        raise HTTPException(504, PROVIDER_OPERATION_TIMEOUT_DETAIL, headers={"Retry-After": "1"}) from exc
+    return await compose_landing(supabase, membership, deadline=deadline)
+
+
+@router.get("/invoices/page", response_model=BillingInvoicePageResponse)
+async def get_invoices_page(
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=100),
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    from app.services.billing_read_pages import get_billing_page
+
+    def _provider_operation(client):
+        studio_id = _manager_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        return get_billing_page(client, studio_id, "invoices", cursor, limit)
+    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+
+
+@router.get("/payments/page", response_model=BillingPaymentPageResponse)
+async def get_payments_page(
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=100),
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    from app.services.billing_read_pages import get_billing_page
+
+    def _provider_operation(client):
+        studio_id = _manager_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        return get_billing_page(client, studio_id, "payments", cursor, limit)
+    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
 
 
 @router.get("/connect/status", response_model=StudioPaymentAccountResponse)

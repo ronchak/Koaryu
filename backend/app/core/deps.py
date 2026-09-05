@@ -2,6 +2,8 @@ import asyncio
 import inspect
 from typing import Any, Awaitable, Callable, Literal, Optional, TypeVar
 
+from httpx import TimeoutException
+
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.concurrency import run_in_threadpool
@@ -98,7 +100,7 @@ async def run_supabase_operation(
                 detail=PROVIDER_CAPACITY_UNAVAILABLE_DETAIL,
                 headers={"Retry-After": "1"},
             ) from exc
-        except ProviderLaneOperationTimeoutError as exc:
+        except (ProviderLaneOperationTimeoutError, TimeoutException) as exc:
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                 detail=PROVIDER_OPERATION_TIMEOUT_DETAIL,
@@ -107,6 +109,7 @@ async def run_supabase_operation(
         except TimeoutError as exc:
             if not timeout.expired():
                 raise
+            provider.record_request_timeout(lane)
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                 detail=PROVIDER_OPERATION_TIMEOUT_DETAIL,

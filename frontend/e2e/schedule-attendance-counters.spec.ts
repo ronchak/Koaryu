@@ -6,6 +6,7 @@ const previewTest = previewE2eEnabled ? test : test.skip;
 
 async function openKidsSession(page: Page) {
   await page.goto(`${FRONTEND_URL}/schedule`);
+  await page.getByRole("group", { name: "Schedule view", exact: true }).getByRole("button", { name: "Day", exact: true }).click();
   await page.getByRole("button", { name: "Open Kids BJJ Fundamentals at 4:00 PM" }).click();
   await expect(page.getByTestId("attendance-summary")).toHaveAttribute("aria-busy", "false");
 }
@@ -118,18 +119,32 @@ previewTest("clearing attendance removes all duplicate rows and stays cleared af
       if (!(button instanceof HTMLButtonElement)) {
         throw new Error("Expected a session button");
       }
-      button.click();
-      return new Promise<string | null | undefined>((resolve) => {
+      return new Promise<boolean>((resolve) => {
+        let committedPending = false;
+        const summarySelector = '[data-testid="attendance-summary"]';
+        const observer = new MutationObserver((records) => {
+          for (const record of records) {
+            if (record.type === "attributes"
+              && record.target instanceof Element
+              && record.target.matches(summarySelector)
+              && record.oldValue === "true") committedPending = true;
+          }
+          if (document.querySelector(summarySelector)?.getAttribute("aria-busy") === "true") {
+            committedPending = true;
+          }
+        });
+        observer.observe(document.body, {
+          subtree: true, childList: true, attributes: true,
+          attributeFilter: ["aria-busy"], attributeOldValue: true,
+        });
+        button.click();
         window.requestAnimationFrame(() => {
-          resolve(
-            document
-              .querySelector('[data-testid="attendance-summary"]')
-              ?.getAttribute("aria-busy")
-          );
+          observer.disconnect();
+          resolve(committedPending);
         });
       });
     });
-  expect(busyOnReopen, "same-session reopen must render pending before refresh effects settle").toBe("true");
+  expect(busyOnReopen, "same-session reopen must commit pending before refresh effects settle").toBe(true);
   await expect(page.getByTestId("attendance-summary")).toHaveAttribute("aria-busy", "false");
   await expect(page.getByRole("button").filter({ hasText: "Aiko Tanaka" })).toContainText("Check in");
 });

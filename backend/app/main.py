@@ -30,12 +30,14 @@ INTERACTIVE_PROVIDER_CONFIG = SupabaseLaneConfig(
     max_queue=16,
     queue_wait_timeout=0.25,
     operation_wait_timeout=30.0,
+    postgrest_client_timeout=10.0,
 )
 BULK_PROVIDER_CONFIG = SupabaseLaneConfig(
     max_workers=1,
     max_queue=2,
     queue_wait_timeout=0.25,
     operation_wait_timeout=120.0,
+    postgrest_client_timeout=30.0,
 )
 
 

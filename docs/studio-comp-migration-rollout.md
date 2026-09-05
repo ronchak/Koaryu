@@ -1,8 +1,8 @@
 # Studio-Comp Migration Rollout
 
-Status: **V36 is the accepted predecessor; the candidate targets 132/head 20260902001000 and V37**
+Status: **V37 is the accepted predecessor; the candidate targets 133/head 20260905022339 and V38**
 
-## Combined schedule-window and Payments extension
+## Combined schedule-window, Payments, and performance extension
 
 The completed V24 rollout remains the historical base described below. The
 combined candidate adds the two schedule-window migrations:
@@ -17,21 +17,28 @@ collector boundary `20260831022021_stripe_rehearsal_evidence_rpc_v35.sql`, and
 the proof-backed payer Setup Checkout recovery fix
 `20260831054918_payer_setup_recovery_v36.sql`, followed by the production-canary
 refund/dispute trigger guard repair
-`20260902001000_fix_billing_adjustment_trigger_table_guards.sql`.
+`20260902001000_fix_billing_adjustment_trigger_table_guards.sql`, then the
+aggregate reads and history indexes in
+`20260905022339_billing_landing_aggregates.sql`.
 
-The guarded tool classifies an exact V36 tuple as `v36` and selects only V37.
-Exact `v31` through `v35` remain guarded forward-recovery states that derive
-their immutable suffix through V37. Each
+The guarded tool classifies exact 132/head `20260902001000` with V18 readiness
+and `release-db-attestation-v37` as `v37` and selects only migration 133.
+Exact `v31` through `v36` remain guarded forward-recovery states that derive
+their immutable suffix through V38. Each
 state requires its own history, head, count, readiness, and raw catalog and
 mints a state-bound inspection token. The sole candidate post-state is migration
-132/head `20260902001000` with readiness V18,
-`release-db-attestation-v37`, and the exact V37 catalog and trigger-guard fingerprint.
+133/head `20260905022339` with readiness V19 and
+`release-db-attestation-v38`. It must retain the V37 catalog and trigger-guard
+fingerprint, pass the V37 compatibility response check, and match the V38 Billing
+function and history-index manifest. This is the candidate contract, not an
+assertion that a hosted database has reached it.
 
 Migration 119 retains the historical V24-shaped `preflight_v4` compatibility
-response, while the Payments and collector chain owns V6 through V18 and
+response, while the Payments, collector, and performance chain owns V6 through V19 and
 preserves the schedule-shaped V5 response. V37 also preserves the V36-shaped
-`preflight_v17` response for the database-first cutover. The candidate backend
-uses `preflight_v18` and requires the exact 132/V37 state.
+`preflight_v17` response. V38 preserves the V37-shaped `preflight_v18` response
+only when `preflight_v19` proves the complete V38 state. The candidate backend
+uses `preflight_v19` and requires the exact 133/V38 state.
 
 ## Historical V24 rollout record
 
@@ -384,9 +391,10 @@ to the proved V22 snapshot may classify `restored-v22` and dry-run only
 migrations 116 and 117. Do not relabel a hybrid or failing V23 row as either
 accepted state. The sole supported partial state after 116 is
 `restored-v23-pending-v24`, which may resume only 117. These historical recovery
-states are not sufficient for the combined candidate. The latest hosted staging
-readiness readback reported exact `v35` at 130/head `20260831022021`; this
-runbook does not assert a current production state.
+states are not sufficient for the combined candidate. A previously recorded hosted
+staging readiness readback reported exact `v35` at 130/head `20260831022021`.
+Inspect hosted state again before a rollout; this documentation update includes
+no new staging or production readback.
 
 The current candidate's staging apply requires a fresh inspection token, exact
 project ref, and exact-body PR #138 approval comment bound to the candidate and
@@ -402,7 +410,7 @@ refused. It additionally requires
 > `--approve-staging-apply`.
 > Passing only the staging flag is refused. See `docs/cutover-gates.md`.
 
-1. require count 132, head `20260902001000`, the exact candidate sequence, and the
+1. require count 133, head `20260905022339`, the exact candidate sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, table-ACL, sequence-ACL, and column-ACL identity in the final semantic
@@ -412,14 +420,17 @@ refused. It additionally requires
    exact: extra policies halt, constant-false deny predicates and the guarded
    membership predicate are classified canonically, and arbitrary non-null
    expressions do not pass;
-3. invoke the service-role-only V18 readiness RPC during every apparent-post
+3. invoke the service-role-only V19 readiness RPC during every apparent-post
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
-   `release-db-attestation-v37`; a missing, malformed, stale, or failing result
+   `release-db-attestation-v38`; a missing, malformed, stale, or failing result
    halts before `state=post` or a fingerprint can be emitted. Linked scalar
    results are decoded as strict single-column CSV, including standard quoting
    for the comma-delimited pending-version tuple; extra rows, extra columns, or
-   malformed quoting halt without reflecting returned data; also attest the V2
+   malformed quoting halt without reflecting returned data. Require the V18
+   compatibility RPC to return the exact V37 predecessor contract, and attest
+   the V38 Billing functions and both history-index definitions, owners, tables,
+   order, and validity. Also attest the historical V2
    deployed-predecessor compatibility signature and its V7-shaped response, which may
    report ready only when the V3 check proves exact V18 and the V17
    archive-critical semantic manifest returns
@@ -496,15 +507,16 @@ add a new forward corrective migration. Never mark history reverted, drop the
 trigger/functions, or use a production restore as ordinary rollback.
 
 If a migration transaction leaves any accepted state from `staff-identity` through
-V36, stop and inspect again. Mint the new state-bound token, derive the exact immutable
-remainder through migration 132, obtain a new exact-body approval comment for that
+V37, stop and inspect again. Mint the new state-bound token, derive the exact immutable
+remainder through migration 133, obtain a new exact-body approval comment for that
 remainder, and rerun dry-run before apply. Historical restored production may begin at
-`restored-v22`; neither that path nor an exact V36 predecessor changes
-the forward-only rule. Promotion requires exact V37 readiness and the final raw
-catalog/provider fingerprint. No approved application serves at an intermediate head.
+`restored-v22`; neither that path nor an exact V37 predecessor changes
+the forward-only rule. Candidate promotion requires exact V38 readiness and the final raw
+catalog/provider fingerprint. The candidate does not serve at an intermediate head;
+the prior V37 backend retains its compatibility response during the cutover.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 132 head and
+database-first: the candidate's Render `/health/ready` remains 503 until the exact 133 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

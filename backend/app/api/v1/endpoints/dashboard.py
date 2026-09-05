@@ -30,6 +30,7 @@ def _set_private_dashboard_headers(
 @router.get("/bootstrap", response_model=DashboardBootstrapResponse)
 async def get_dashboard_bootstrap(
     response: Response,
+    allow_partial: bool = False,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
@@ -41,6 +42,7 @@ async def get_dashboard_bootstrap(
             user_id,
             requested_studio_id,
             provider_owned=True,
+            allow_partial=allow_partial,
         )
     payload, timings = await run_supabase_operation(
         supabase,

@@ -32,6 +32,11 @@ DECLARE
     v_previous JSONB;
     v_row JSONB;
     v_plan TEXT;
+    v_rpc_plan JSONB;
+    v_rpc_family TEXT;
+    v_deep_next JSONB;
+    v_deep_previous JSONB;
+    v_deep_index INTEGER;
     v_denied BOOLEAN;
     v_sort_by TEXT;
     v_sort_dir TEXT;
@@ -456,6 +461,39 @@ BEGIN
         RAISE EXCEPTION 'Large new-student roster filter is not bounded: %', v_page;
     END IF;
 
+    -- Measure the full production RPC as well as the explanatory query-family
+    -- excerpts below. Navigate 1,000 real rows to obtain query-bound anchors.
+    v_page := public.list_student_roster(v_large_studio, NULL, NULL, NULL, NULL, NULL, DATE '2026-05-20', 'name', 'asc', 50, NULL, NULL, NULL);
+    FOR v_deep_index IN 1..20 LOOP
+        v_deep_next := v_page->'next_anchor';
+        v_page := public.list_student_roster(v_large_studio, NULL, NULL, NULL, NULL, NULL, DATE '2026-05-20', 'name', 'asc', 50, 'next', (v_deep_next->>'id')::UUID, v_deep_next->>'revision');
+        IF jsonb_array_length(v_page->'items') <> 50 OR v_page->>'total' <> '2500' THEN
+            RAISE EXCEPTION 'Deep roster page lost bounded rows or total.';
+        END IF;
+    END LOOP;
+    v_deep_next := v_page->'next_anchor';
+    v_deep_previous := v_page->'previous_anchor';
+    FOREACH v_rpc_family IN ARRAY ARRAY['first', 'deep-next', 'deep-previous', 'created-sort', 'status-sort', 'search-selective', 'search-common', 'program', 'inactivity'] LOOP
+        EXECUTE 'EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT public.list_student_roster($1,$2,$3,$4,$5,NULL,DATE ''2026-05-20'',$6,$7,50,$8,$9,$10)'
+        INTO v_rpc_plan
+        USING v_large_studio,
+            CASE v_rpc_family WHEN 'search-selective' THEN 'Needle' WHEN 'search-common' THEN 'Student' ELSE NULL END,
+            CASE v_rpc_family WHEN 'status-sort' THEN 'active' ELSE NULL END,
+            CASE v_rpc_family WHEN 'program' THEN v_large_program ELSE NULL END,
+            CASE v_rpc_family WHEN 'inactivity' THEN 14 ELSE NULL END,
+            CASE v_rpc_family WHEN 'created-sort' THEN 'created_at' WHEN 'status-sort' THEN 'status' ELSE 'name' END,
+            CASE v_rpc_family WHEN 'created-sort' THEN 'desc' ELSE 'asc' END,
+            CASE v_rpc_family WHEN 'deep-next' THEN 'next' WHEN 'deep-previous' THEN 'previous' ELSE NULL END,
+            CASE v_rpc_family WHEN 'deep-next' THEN (v_deep_next->>'id')::UUID WHEN 'deep-previous' THEN (v_deep_previous->>'id')::UUID ELSE NULL END,
+            CASE v_rpc_family WHEN 'deep-next' THEN v_deep_next->>'revision' WHEN 'deep-previous' THEN v_deep_previous->>'revision' ELSE NULL END;
+        IF v_rpc_plan->0->>'Execution Time' IS NULL THEN
+            RAISE EXCEPTION 'Full roster RPC plan did not execute.';
+        END IF;
+        RAISE NOTICE 'roster_rpc_plan profile=large students=2500 family=% planning_ms=% execution_ms=% shared_hit_blocks=% shared_read_blocks=%',
+            v_rpc_family, v_rpc_plan->0->>'Planning Time', v_rpc_plan->0->>'Execution Time',
+            v_rpc_plan->0->'Plan'->>'Shared Hit Blocks', v_rpc_plan->0->'Plan'->>'Shared Read Blocks';
+    END LOOP;
+
     FOREACH v_plan_studio IN ARRAY ARRAY[v_medium_studio, v_large_studio] LOOP
         IF v_plan_studio = v_medium_studio THEN
             v_plan_profile := 'medium';
@@ -464,7 +502,7 @@ BEGIN
             v_plan_profile := 'large';
             v_plan_program := v_large_program;
         END IF;
-        RAISE NOTICE 'roster-plan fixture profile=% students=% source=dashboard-summary-fixture-v1', v_plan_profile,
+        RAISE NOTICE 'roster-plan fixture profile=% students=% source=student-roster-rpc-contract', v_plan_profile,
             CASE WHEN v_plan_profile = 'medium' THEN 250 ELSE 2500 END;
 
         -- First and deep name keyset pages use the installed name index and

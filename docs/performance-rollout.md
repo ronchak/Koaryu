@@ -1,6 +1,6 @@
 # Koaryu Rendering Performance Rollout
 
-This runbook covers the v0.1.1 rendering and roster-performance changes. It is intentionally conservative: FastAPI remains the authorization wall, authenticated CRM data remains uncached, and every rollback switch favors correctness over speed.
+This runbook covers Dashboard, roster, Schedule and Billing performance changes. FastAPI remains the authorization boundary. Private reads retain their scope and access checks, with rollback paths that preserve correctness.
 
 ## Read-path architecture decision
 
@@ -27,19 +27,23 @@ POST. `POST /schedule/window/materialize` performs the existing write RPC, then
 calls the same read RPC. The two database operations are deliberate: the write
 commits recurring occurrences, and the read returns one validated page model.
 
-Billing still makes several independent initial requests. Its permission and
-payment-state boundaries need a separate read-model design and are not changed
-here.
+Billing Overview uses one `/billing/landing` request for diagnostic status and
+complete database aggregates. It does not load the full student roster or invoice
+list. Financial tab reads start on activation. See
+[billing-landing-contract.md](billing-landing-contract.md) for the field access
+matrix, retention, aggregate formulas, deployment order and rollback window.
 
 ### Release order and rollback
 
-Apply the two additive database migrations before deploying the backend and
-frontend. The old Schedule endpoints remain available during rollout. If the
-new window path needs to be rolled back, restore the frontend first, then the
-backend. The unused read RPC can remain in the database until a later additive
-cleanup migration removes it.
+For the performance candidate, apply `20260905022339_billing_landing_aggregates.sql`
+through the guarded rollout workflow, verify V19 readiness at 133 migrations,
+then deploy the backend before the frontend. The V18 compatibility bridge keeps
+the previous V37 backend healthy during database-first rollout. Existing Billing
+and Schedule endpoints remain available for frontend rollback. Keep the new
+backend while the additive RPCs remain installed unless the older backend passes
+its exact compatibility readiness checks.
 
-Migration `20260825043911` keeps `koaryu_release_schema_preflight_v4` returning
+The earlier Schedule migration `20260825043911` keeps `koaryu_release_schema_preflight_v4` returning
 the exact V24-shaped row after V25 lands, so the currently deployed backend
 stays healthy during database-first rollout. The new backend uses
 `koaryu_release_schema_preflight_v5`. Remove the V24 bridge in a later additive
@@ -84,15 +88,18 @@ npm --prefix frontend run analyze
 
 ## Deterministic Regression Gate
 
-The canonical local gate measures the real `dashboard-summary` service against
-the synthetic fixture, not a browser or a hosted database. It runs the three
+The canonical local gate calls the real Dashboard summary endpoint, including
+fresh context resolution, cached RPC facts and response assembly, against fake
+provider I/O. It is not a browser or hosted database latency measurement. It runs the three
 fixed profiles in `performance/dashboard-summary-budget.json`: `small` (25
 students), `medium` (250 students), and `large` (2,500 students). Each profile
-uses the same fixed request, route, role, and supporting table cardinalities.
+uses the same fixed request, route and role. Supporting cardinalities vary
+independently, including attendance, memberships, leads, invoices, payments and
+Stripe events.
 
 The versioned budget manifest is the owner of the profile ceilings and metric
-semantics. Its `dashboard-summary-performance-v1` manifest version and
-`dashboard-summary-fixture-v1` fixture revision must remain bound to emitted
+semantics. Its `dashboard-summary-performance-v2` manifest version and
+`dashboard-summary-endpoint-fixture-v2` fixture revision must remain bound to emitted
 evidence. The gate emits one aggregate-only JSON object to stdout. It never
 emits fixture rows, names, payloads, tenant identifiers, or other privacy-
 bearing data; the stdout result is run evidence and is ephemeral, not a
@@ -136,14 +143,17 @@ npm run verify:deployed-release -- \
 The verifier performs GET-only probes against pinned Koaryu targets, rejects redirects, and requires the frontend plus both Render readiness paths to report the same full SHA. A mismatch invalidates subsequent performance evidence.
 
 The browser harness records two separate readiness metrics. `dashboard_shell_ready_ms`
-is elapsed time until the dashboard shell/layout marker appears after identity
-and persisted layout resolution; it does not prove that the owner data is present.
-`dashboard_ready_ms` is elapsed time until the true-data marker appears after
+comes from a committed visible shell mark scoped to the current route and identity
+generation. It does not prove that identity or owner data is present. The legacy
+shell/layout DOM attribute still requires identity and persisted layout resolution.
+`dashboard_ready_ms` comes from a committed complete-data mark after
 layout resolution and the controller's complete required-dataset aggregate is
 ready: students, programs, leads, schedule, dashboard summary, and
 selected-ladder belt eligibility. Preview semantics remain owned by the same
-resolver. Treat the latter as the true-data readiness measure. The optional
-network-idle wait happens afterward and is excluded from both metrics.
+resolver. Treat the latter as the true-data readiness measure. Identity and first-useful content have separate committed marks. Marks are written
+after a paint opportunity and retain only fixed route labels and numeric
+generations. The optional network-idle wait happens afterward and is excluded
+from readiness timings.
 Separately, evidence validation requires HTTP 200 responses from
 `/dashboard/bootstrap` and `/dashboard/summary`, resource timings, and at least one allowlisted
 finite, nonnegative `Server-Timing` duration for each response; those two
@@ -202,8 +212,8 @@ Expected improvements:
 Known tradeoffs:
 
 - The normal Students roster now depends on backend round trips for search/filter/sort. Debounce and stable loading states should keep small studios feeling responsive.
-- Derived Students views still use the full roster because inactivity and new-student filters depend on schedule/attendance-derived accuracy.
-- Dashboard summary is fail-soft in bootstrap. If it fails, the route should still load and later client data can fill in.
+- Derived Students views retain the existing bounded roster RPC, query-bound cursors, exact totals and page-only enrichment. Bootstrap rows do not establish roster-page authority.
+- Summary-backed widgets, schedule widgets and optional eligibility report their own readiness. Required errors remain visible. First-useful content never substitutes for the complete-data metric.
 - Production console performance logging is intentionally manual. There is no third-party telemetry sink in this pass.
 - The evidence harness is an operator-run point-in-time capture, not durable telemetry or an SLO monitor. Speed Insights and other retained/paid sinks remain uninstalled pending destination, sampling, retention, privacy, and cost decisions.
 
@@ -234,3 +244,84 @@ If production needs temporary performance debugging:
 - Search grammar injection: backend Students search strips PostgREST delimiter and wildcard characters before building the raw `or` filter.
 - Hidden route errors: heavy/admin routes have reduced auto-prefetch, so route-level loading screens and direct smoke checks are part of release verification.
 - Misleading metrics: loading skeletons should never display zero as a placeholder.
+
+
+## Initialization, loading and stalled requests
+
+The live session initialization and Auth subscription have a stable owner. Role
+resolution does not restart bootstrap. Signout and identity changes clear old
+scope data; token renewal preserves the identity while outstanding requests keep
+the existing generation checks. A bootstrap outage shows a retryable identity
+error instead of launching the legacy dataset fan-out.
+
+Before authoritative identity, the layout renders neutral geometry. Tenant
+labels, role actions and page content wait for the profile and legal-name gate.
+Program metadata and usage have separate readiness. Settings requests enriched
+usage when mounted and preserves valid counts during refresh. Dashboard loads
+eligibility only for selected panels that consume it; Belt Tracker owns its read.
+Students continues using the existing roster contract.
+
+Navigation links expose pending feedback through Next's `useLinkStatus`. There is
+no global Router Cache `staleTimes` override. Middleware retains `getUser()`;
+changing document admission to `getClaims()` remains conditional on the hosted
+revocation and refresh checks in the implementation plan. SSR refresh cookies
+and cache-prevention headers are copied together on ordinary and redirect responses.
+
+Browser API deadlines now cover headers and the complete JSON, error or download
+body. The default remains 12 seconds; call-specific overrides and null deadlines
+remain supported. Caller cancellation stays distinguishable from timeout. Proxy
+responses keep streaming, with a 150-second upstream deadline and cancellation
+when the caller or response consumer stops.
+
+The interactive PostgREST transport uses a 10-second per-I/O timeout and the bulk
+transport uses 30 seconds. Bootstrap’s five short-lived clients inherit their
+parent client’s budget; the isolated Stripe authorization read has a 10-second
+budget. These are not total multi-query deadlines. Existing
+caller waits and worker/queue capacity remain unchanged at 30 seconds with 4+16
+interactive slots and 120 seconds with 1+2 bulk slots. Capacity returns only when
+provider work ends, even after a caller stops waiting. No automatic money retry
+or rollback-on-abort assumption was added.
+
+The lane emits bounded aggregate metrics at most once a minute while work is
+active. Queue wait, operation duration, active work, saturation, caller timeout
+and transport timeout remain distinct. Records carry no studio, user, query or
+operation payload.
+
+## Measurement environments
+
+See [performance-measurement.md](performance-measurement.md) for the fixture
+contract, fixed routes and functional capture command.
+
+`capture-dashboard-performance.mjs` remains fail-closed and read-only from the
+browser. Known Billing provider-refresh reads are blocked as well as write
+methods. HTTP GET alone does not establish that server-side provider state is
+unchanged. Auth/context reads can still resolve provider state according to
+existing backend rules.
+
+`frontend/scripts/capture-functional-performance.mjs` is a separate disposable
+staging workflow. It permits only the expected token refresh and schedule
+materialization writes, retains pinned origins and verifies the exact deployed
+pair before and after capture. Both intercepted workflows explicitly report
+that Playwright routing disables the HTTP cache. A normal-cache measurement
+needs equivalent traffic restrictions outside Playwright routing; it cannot be
+inferred from those runs.
+
+Local preview browser measurements exercise rendering with synthetic data only.
+They cannot validate live authorization, provider latency, billing correctness,
+refresh-token endurance or hosted latency targets. The local SQL contract runner
+is the database correctness and query-plan check. Deployment validation and the
+30% median/1.5-second targets require a separately verified deployed candidate.
+
+## Bootstrap projection failures
+
+The frontend requests `/dashboard/bootstrap?allow_partial=true`. The backend
+still resolves authoritative identity and subscription access first. An isolated
+studio/student/lead/belt/program projection failure then returns a typed
+`dataset_errors` entry alongside healthy projections. Failed student totals are
+null and failed arrays do not become ready/empty data. Missing metadata gets a
+visible error and scoped retry; dependent belt content remains guarded.
+
+Authentication and subscription failures remain fatal. Older frontends omit the
+opt-in and retain the strict whole-response failure contract, so backend-first
+rollout or frontend rollback cannot turn a missing dataset into a false zero.
+The frontend does not restart a legacy global dataset fan-out after an outage.

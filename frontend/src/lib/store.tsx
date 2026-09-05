@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { LoadingScreen } from "@/components/loading-screen";
 import { createClient } from "@/lib/supabase/client";
 import { api, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
 import { markPerformance, measurePerformance } from "@/lib/performance";
@@ -19,7 +18,6 @@ import {
   load,
   save,
 } from "@/lib/store-storage";
-import { fetchStudentPage } from "@/lib/store-student-pages";
 import { useSyncedRefValue } from "@/lib/store-ref-sync";
 import { invalidateEligibilityAfterStudentMutation } from "@/lib/store-eligibility-invalidation";
 import { buildPreviewEligibilityForLadder } from "@/lib/preview-belt-eligibility";
@@ -38,7 +36,7 @@ import {
   type PromotionHistoryRequests,
 } from "@/lib/store-promotion-history";
 import type {
-  Student, Studio,
+  Student,
   Lead,
   BeltRank, BeltLadder,
   ClassSession,
@@ -93,7 +91,6 @@ import { selectBeltLadder, sortBeltLadders } from "@/lib/belt-store-model";
 import {
   buildAuthUserProfile,
   buildDeferredScheduleDateRange,
-  buildLegacyBootstrapResponse,
   buildSessionUserProfile,
   isStaffProfilesAvailable,
   isDashboardSummaryForStudio,
@@ -105,6 +102,7 @@ import {
   type AuthProfileResponse,
   type BootstrapResponse,
 } from "@/lib/store-bootstrap-model";
+import { withCurrentLiveAuthRead } from "@/lib/store-action-types";
 import { routeForMembershipStatus } from "@/lib/auth-route-model";
 import {
   buildPreviewHydratedLadderState,
@@ -114,7 +112,6 @@ import {
 import {
   sortPrograms,
 } from "@/lib/program-store-model";
-import { loadIndependentDataset } from "@/lib/page-dataset-readiness";
 import { canMaterializeScheduleRange } from "@/lib/staff-permissions";
 
 export {
@@ -134,6 +131,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
   const [hydrated, setHydrated] = useState(false);
   const [subscriptionRequired, setSubscriptionRequired] = useState(false);
+  const [identityReady, setIdentityReady] = useState(false);
+  const [identityLoadError, setIdentityLoadError] = useState<string | null>(null);
+  const [identityGeneration, setIdentityGeneration] = useState(0);
+  const authoritativeIdentityRef = useRef<string | null>(null);
+  const identityEpochRef = useRef(0);
+  const [initializationAttempt, setInitializationAttempt] = useState(0);
+  const retryInitialization = useCallback(() => setInitializationAttempt((value) => value + 1), []);
   const [token, setToken] = useState<string | null>(null);
   const tokenRef = useRef<string | null>(null);
   const authGenerationRef = useRef(0);
@@ -162,28 +166,52 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [programs, setPrograms] = useState<Program[]>(() =>
     isPreviewMode ? MOCK_PROGRAMS : []
   );
-  const [programsLoaded, setProgramsLoaded] = useState(isPreviewMode);
+  const [programsLoaded, setProgramsLoadedState] = useState(isPreviewMode);
+  const programsLoadedRef = useRef(isPreviewMode);
+  const setProgramsLoaded = useCallback((loaded: boolean) => {
+    programsLoadedRef.current = loaded;
+    setProgramsLoadedState(loaded);
+  }, []);
   const [programsLoadError, setProgramsLoadError] = useState<string | null>(null);
   const programsRef = useRef<Program[]>(programs);
+  const [programsUsageLoaded, setProgramsUsageLoaded] = useState(isPreviewMode);
+  const [programsUsageLoadError, setProgramsUsageLoadError] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[]>(() =>
     isPreviewMode ? MOCK_LEADS : []
   );
   const [leadsLoaded, setLeadsLoaded] = useState(isPreviewMode);
   const [leadsLoadError, setLeadsLoadError] = useState<string | null>(null);
   const leadsRef = useRef<Lead[]>(leads);
+  const leadMutationScopeRef = useRef({ revision: 0, pending: 0 });
+  const beginLeadMutation = useCallback(() => {
+    const scope = leadMutationScopeRef.current;
+    scope.revision += 1;
+    scope.pending += 1;
+    return () => {
+      scope.revision += 1;
+      scope.pending -= 1;
+    };
+  }, []);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
     isPreviewMode ? MOCK_BELT_LADDERS : []
   );
+  const [beltLaddersLoadError, setBeltLaddersLoadError] = useState<string | null>(null);
+  const [studioLoadError, setStudioLoadError] = useState<string | null>(null);
   const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
   const [beltRanks, setBeltRanksState] = useState<BeltRank[]>(() =>
     isPreviewMode ? MOCK_BELT_LADDER.ranks : []
   );
   const beltRanksRef = useRef<BeltRank[]>(beltRanks);
   const refreshBeltsRef = useRef<((preferredLadderId?: string | null) => Promise<void>) | null>(null);
-  const [sessions, setSessions] = useState<ClassSession[]>(() =>
+  const [sessions, setSessionsState] = useState<ClassSession[]>(() =>
     isPreviewMode ? MOCK_SESSIONS : []
   );
   const sessionsRef = useRef<ClassSession[]>(sessions);
+  const setSessions = useCallback((update: ClassSession[] | ((current: ClassSession[]) => ClassSession[])) => {
+    const next = typeof update === "function" ? update(sessionsRef.current) : update;
+    sessionsRef.current = next;
+    setSessionsState(next);
+  }, []);
   const [templates, setTemplates] = useState<ClassTemplate[]>(() =>
     isPreviewMode ? MOCK_CLASS_TEMPLATES : []
   );
@@ -227,6 +255,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [currentRole, setCurrentRole] = useState<StaffRoleName | null>(() =>
     isPreviewMode ? "admin" : null
   );
+  const currentRoleRef = useRef(currentRole);
   const [staffProfilesAvailable, setStaffProfilesAvailable] = useState(false);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() =>
     isPreviewMode ? MOCK_STAFF_MEMBERS : []
@@ -276,8 +305,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       throw new Error("Not authenticated");
     }
     const requestGeneration = authGenerationRef.current;
+    const identityEpoch = identityEpochRef.current;
+    const identity = authoritativeIdentityRef.current;
     return {
       token: requestToken,
+      canRetryAfterTokenChange: () => Boolean(
+        identity && identity === authoritativeIdentityRef.current
+        && identityEpoch === identityEpochRef.current
+        && tokenRef.current && requestToken !== tokenRef.current
+      ),
       isCurrent: () => isLiveAuthRequestCurrent({
         requestToken,
         requestGeneration,
@@ -337,7 +373,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         startDate,
         endDate,
         intent,
-        canMaterializeScheduleRange(currentRole)
+        canMaterializeScheduleRange(currentRoleRef.current)
       ),
       isCurrentScheduleWindowRead
     );
@@ -354,9 +390,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...rangeSessions.map((session) => session.id),
     ]));
     setTemplates(scheduleWindow.templates);
-    setSessions((existing) =>
-      mergeSessionsForRange(existing, rangeSessions, startDate, endDate)
-    );
+    setSessions((existing) => mergeSessionsForRange(existing, rangeSessions, startDate, endDate));
     setAttendance((existing) =>
       mergeAttendanceForSessions(
         existing,
@@ -369,7 +403,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
     setScheduleLoadError(null);
     setScheduleStatus("ready");
-  }, [beginLiveAuthRequest, currentRole]);
+  }, [beginLiveAuthRequest, setSessions]);
 
   const reconcileSchedule = useCallback(async (intent: ScheduleRangeRefreshIntent) => {
     const requestToken = tokenRef.current;
@@ -457,6 +491,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const applyLadderSelection = useCallback((ladders: BeltLadder[], preferredLadderId?: string | null) => {
+    setBeltLaddersLoadError(null);
     const orderedLadders = sortBeltLadders(ladders);
     const selectedLadder = selectBeltLadder(
       orderedLadders,
@@ -510,7 +545,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useSyncedRefValue(beltRanksRef, beltRanks);
 
-  useSyncedRefValue(sessionsRef, sessions);
 
   useSyncedRefValue(templatesRef, templates);
 
@@ -540,6 +574,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commitEligibilityRows]);
 
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
+    leadMutationScopeRef.current = { revision: 0, pending: 0 };
     applyLiveStudioDataResetRefs({
       staffMembers: staffMembersRef,
       programs: programsRef,
@@ -557,12 +592,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }, state);
     setSubscriptionRequired(state.subscriptionRequired);
     setStudioNameState(state.studioName);
+    setStudioLoadError(null);
+    setBeltLaddersLoadError(null);
     setStaffMembers(state.staffMembers);
     setStaffLoaded(state.staffLoaded);
     setStaffLoadError(state.staffLoadError);
     setPrograms(state.programs);
     setProgramsLoaded(state.programsLoaded);
     setProgramsLoadError(state.programsLoadError);
+    setProgramsUsageLoaded(false);
+    setProgramsUsageLoadError(null);
     setDashboardSummary(state.dashboardSummary);
     setDashboardSummaryLoaded(state.dashboardSummaryLoaded);
     studentsRevisionRef.current += 1;
@@ -592,32 +631,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [destructivelyResetScheduleCoordinator, updateCurrentLadderId]);
+  }, [setProgramsLoaded, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
+    identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
     authUserIdRef.current = null;
     setCurrentUser(null);
     setCurrentStudioId(null);
+    currentRoleRef.current = null;
+    authoritativeIdentityRef.current = null;
+    setIdentityGeneration((value) => value + 1);
+    setIdentityLoadError(null);
     setCurrentRole(null);
+    setIdentityReady(false);
     setStaffProfilesAvailable(false);
     applyLiveStudioDataResetState(buildSignedOutStudioResetState());
   }, [applyLiveStudioDataResetState]);
 
   const commitAuthoritativeAuthProfile = useCallback((authProfile: AuthProfileResponse) => {
+    const identity = `${authProfile.user.id}:${authProfile.studio_id ?? ""}:${authProfile.role ?? ""}`;
+    if (authoritativeIdentityRef.current !== identity) {
+      identityEpochRef.current += 1;
+      authoritativeIdentityRef.current = identity;
+      setIdentityGeneration((value) => value + 1);
+    }
+    setIdentityLoadError(null);
+    currentRoleRef.current = authProfile.role ?? null;
     setCurrentUser(buildAuthUserProfile(authProfile));
     setCurrentStudioId(
       authProfile.membership_status === "active" ? authProfile.studio_id ?? null : null
     );
     setCurrentRole(authProfile.role ?? null);
     setStaffProfilesAvailable(isStaffProfilesAvailable(authProfile));
+    setIdentityReady(true);
   }, []);
 
   const applySubscriptionRequiredState = useCallback((
     authProfile: AuthProfileResponse,
     sessionUser: { id: string; email?: string | null; user_metadata?: { full_name?: string | null } }
   ) => {
+    identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
 
@@ -648,9 +703,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commitAuthoritativeAuthProfile, resetLiveStudioState, router]);
 
   const markSubscriptionRequired = useCallback(() => {
+    identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
-    setStaffProfilesAvailable(false);
+    // Subscription access gates studio data, not an already verified identity.
+    // The recovery page still needs the dashboard shell and legal-name gate.
     applyLiveStudioDataResetState(buildSubscriptionRequiredStudioResetState());
   }, [applyLiveStudioDataResetState]);
 
@@ -670,7 +727,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     destructivelyResetScheduleCoordinator();
     setScheduleLoadError(restored.scheduleLoadError);
     setScheduleStatus(restored.scheduleStatus);
-  }, [destructivelyResetScheduleCoordinator]);
+  }, [setProgramsLoaded, destructivelyResetScheduleCoordinator]);
 
   useEffect(() => {
     if (!hydrated || !subscriptionRequired || pathname === "/subscription-required") {
@@ -706,7 +763,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessions(data.sessions.sort(compareSessions));
     setAttendance(data.attendance);
     clearPromotionHistoryCache();
-  }, [applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator]);
+  }, [setProgramsLoaded, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
 
   const applyClearedStudioData = useCallback((studioNameValue?: string) => {
     dashboardSummaryRequestSeqRef.current += 1;
@@ -739,12 +796,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setAttendance([]);
     clearEligibilityState();
     clearPromotionHistoryCache();
-  }, [
+  }, [setProgramsLoaded,
     clearEligibilityState,
     clearPromotionHistoryCache,
     commitStudents,
     destructivelyResetScheduleCoordinator,
     isPreviewMode,
+    setSessions,
     updateCurrentLadderId,
   ]);
 
@@ -806,13 +864,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setAttendance(load(KEYS.attendance, MOCK_ATTENDANCE));
       setStudentsLoaded(true);
       setStudentsLoadError(null);
+      setCurrentUser((current) => current ? {
+        ...current,
+        legal_first_name: current.legal_first_name ?? "Demo",
+        legal_last_name: current.legal_last_name ?? "User",
+      } : current);
+      setStaffProfilesAvailable(true);
+      setIdentityReady(true);
+      setIdentityGeneration((generation) => generation + 1);
       setHydrated(true);
     }, 0);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode]);
+  }, [setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
 
   const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
     return buildPreviewEligibilityForLadder({
@@ -913,14 +979,50 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [beginLiveAuthRequest, commitEligibilityRows, fetchEligibilityForLadder, isPreviewMode]);
 
+  // Belt Tracker owns its initial eligibility read. Dashboard requests it only for a selected panel.
+  useEffect(() => {
+    if (pathname !== "/belt-tracker" || !identityReady || !currentLadderId
+      || eligibilityLadderId === currentLadderId || eligibilityPendingLadderId
+      || eligibilityLoadError) return;
+    let current = true;
+    queueMicrotask(() => {
+      if (current) void loadEligibilityForLadder(currentLadderId).catch(() => undefined);
+    });
+    return () => { current = false; };
+  }, [pathname, identityReady, currentLadderId, eligibilityLadderId,
+    eligibilityPendingLadderId, eligibilityLoadError, loadEligibilityForLadder]);
+
   // Authentication and Data Fetching
   useEffect(() => {
     let mounted = true;
+    let authNotificationRevision = 0;
 
-    async function initializeLive() {
+    async function initializeLive(providedSession?: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]) {
       const studentsRevisionAtStart = studentsRevisionRef.current;
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!mounted) {
+      const leadMutationScope = leadMutationScopeRef.current;
+      const leadMutationRevisionAtStart = leadMutationScope.revision;
+      const hadPendingLeadMutation = leadMutationScope.pending > 0;
+      const notificationRevision = authNotificationRevision;
+      let session = providedSession;
+      if (!session) {
+        try {
+          const result = await supabase.auth.getSession();
+          if (!mounted || notificationRevision !== authNotificationRevision) return;
+          if (result.error) throw result.error;
+          session = result.data.session;
+        } catch {
+          if (!mounted || notificationRevision !== authNotificationRevision) return;
+          // A refresh outage can leave the stored SDK session recoverable. Hide protected data,
+          // but leave its storage and cookies intact so an explicit retry can recover.
+          tokenRef.current = null;
+          setToken(null);
+          resetLiveStudioState();
+          setIdentityLoadError("Your session could not be checked. Please retry.");
+          setHydrated(true);
+          return;
+        }
+      }
+      if (!mounted || notificationRevision !== authNotificationRevision) {
         return;
       }
 
@@ -930,6 +1032,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         clearStoredStudioSessionCookies();
         resetLiveStudioState();
         setHydrated(true);
+        router.replace("/login");
         return;
       }
 
@@ -953,240 +1056,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       authUserIdRef.current = session.user.id;
       setToken(sessionToken);
       setCurrentUser(buildSessionUserProfile(session.user));
+      setIdentityReady(false);
       setStaffProfilesAvailable(false);
+      setIdentityLoadError(null);
       setHydrated(true);
       markPerformance("auth.session_resolved");
 
       try {
-        let criticalData: BootstrapResponse;
-        let bootstrapStudentsError: string | null = null;
-        let bootstrapProgramsError: string | null = null;
-        let bootstrapLeadsError: string | null = null;
-        let bootstrapBeltsError: string | null = null;
-        let usedLegacyFallback = false;
-
-        try {
-          markPerformance("dashboard.bootstrap_started");
-          criticalData = await api.get<BootstrapResponse>("/dashboard/bootstrap", sessionToken);
-          markPerformance("dashboard.bootstrap_finished");
-          measurePerformance(
-            "dashboard.bootstrap_duration",
-            "dashboard.bootstrap_started",
-            "dashboard.bootstrap_finished"
-          );
-        } catch (bootstrapError) {
-          usedLegacyFallback = true;
-          if (isSubscriptionRequiredError(bootstrapError)) {
-            const authProfile = parseAuthProfileResponse(await api.get<unknown>(
-              "/auth/me",
-              sessionToken,
-              { omitStudioHeader: true }
-            ));
-            if (!isCurrentSession()) {
-              return;
-            }
-
-            if (authProfile.membership_status !== "active" || !authProfile.studio_id) {
-              applyAuthoritativeNoStudioState(authProfile, session.user);
-              return;
-            }
-
-            applySubscriptionRequiredState(authProfile, session.user);
-            setHydrated(true);
-            return;
-          }
-
-          const authProfile = parseAuthProfileResponse(await api.get<unknown>(
-            "/auth/me",
-            sessionToken,
-            { omitStudioHeader: true }
-          ));
-          if (!isCurrentSession()) {
-            return;
-          }
-
-          if (authProfile.membership_status !== "active" || !authProfile.studio_id) {
-            applyAuthoritativeNoStudioState(authProfile, session.user);
-            return;
-          }
-
-          const studioPromise = api.get<Studio>("/studios/current", sessionToken)
-            .then((studioRes) => {
-              if (isCurrentSession()) {
-                setSubscriptionRequired(false);
-                commitAuthoritativeAuthProfile(authProfile);
-                syncStoredStudioSessionCookies(
-                  session.user.id,
-                  authProfile.studio_id,
-                  authProfile.membership_status
-                );
-                setStudioNameState(studioRes.name);
-              }
-              return studioRes;
-            });
-
-          void studioPromise.then(async () => {
-            if (!isCurrentSession()) {
-              return;
-            }
-            markPerformance("schedule.deferred_started");
-            await refreshSchedule();
-            markPerformance("schedule.deferred_finished");
-            measurePerformance(
-              "schedule.deferred_duration",
-              "schedule.deferred_started",
-              "schedule.deferred_finished"
-            );
-          }).catch((error) => {
-            console.error("Failed to load deferred dashboard data", error);
-          });
-
-          const studentsPromise = loadIndependentDataset({
-            context: studioPromise,
-            fallback: {
-              items: [],
-              total: 0,
-              page_size: 200,
-              page_ordinal: 1,
-              has_next: false,
-              next_cursor: null,
-              has_previous: false,
-              previous_cursor: null,
-            },
-            load: fetchStudentPage(
-              sessionToken,
-              { page: 1, pageSize: 200, sortKey: "name", sortDir: "asc" },
-              { timeoutMs: 30000 }
-            ),
-            onError: (error) => {
-              bootstrapStudentsError = error instanceof Error
-                ? error.message
-                : "Student roster could not be loaded.";
-              if (isCurrentSession()) {
-                studentsRef.current = [];
-                setStudents([]);
-                setStudentsLoaded(false);
-                setStudentsLoadError(bootstrapStudentsError);
-                setStudentsLastLoadedAt(null);
-                setStudentsMayBePartial(false);
-              }
-            },
-            onLoaded: (studentsPageRes) => {
-              if (
-                isCurrentSession()
-                && studentsRevisionRef.current === studentsRevisionAtStart
-              ) {
-                commitStudents(studentsPageRes.items, {
-                  mayBePartial: studentsPageRes.total > studentsPageRes.items.length,
-                });
-              }
-            },
-          });
-
-          const programsPromise = loadIndependentDataset<Program[]>({
-            context: studioPromise,
-            fallback: [],
-            load: api.get<Program[]>("/programs?include_archived=true", sessionToken),
-            onError: (error) => {
-              bootstrapProgramsError = error instanceof Error
-                ? error.message
-                : "Programs could not be loaded.";
-              if (isCurrentSession()) {
-                setPrograms([]);
-                setProgramsLoaded(false);
-                setProgramsLoadError(bootstrapProgramsError);
-              }
-            },
-            onLoaded: (programsRes) => {
-              if (isCurrentSession()) {
-                setPrograms(programsRes);
-                setProgramsLoaded(true);
-                setProgramsLoadError(null);
-              }
-            },
-          });
-
-          const leadsPromise = loadIndependentDataset<Lead[]>({
-            context: studioPromise,
-            fallback: [],
-            load: api.get<Lead[]>("/leads", sessionToken),
-            onError: (error) => {
-              bootstrapLeadsError = error instanceof Error
-                ? error.message
-                : "Leads could not be loaded.";
-              if (isCurrentSession()) {
-                setLeads([]);
-                setLeadsLoaded(false);
-                setLeadsLoadError(bootstrapLeadsError);
-              }
-            },
-            onLoaded: (leadsRes) => {
-              if (isCurrentSession()) {
-                setLeads(leadsRes);
-                setLeadsLoaded(true);
-                setLeadsLoadError(null);
-              }
-            },
-          });
-
-          const beltLaddersPromise = loadIndependentDataset<BeltLadder[]>({
-            context: studioPromise,
-            fallback: [],
-            load: api.get<BeltLadder[]>("/belts/ladders", sessionToken),
-            onError: (error) => {
-              bootstrapBeltsError = error instanceof Error
-                ? error.message
-                : "Belt ladders could not be loaded.";
-              if (isCurrentSession()) {
-                applyLadderSelection([], null);
-                commitEligibilityRows(null, []);
-                setEligibilityPendingLadderId(null);
-                setEligibilityLoadError(bootstrapBeltsError);
-              }
-            },
-            onLoaded: (beltLaddersRes) => {
-              if (isCurrentSession()) {
-                const selectedLadder = applyLadderSelection(
-                  beltLaddersRes,
-                  beltLaddersRes[0]?.id
-                );
-                if (selectedLadder) {
-                  void loadEligibilityForLadder(selectedLadder.id, { force: true })
-                    .catch(() => undefined);
-                } else {
-                  commitEligibilityRows(null, []);
-                  setEligibilityPendingLadderId(null);
-                  setEligibilityLoadError(null);
-                }
-              }
-            },
-          });
-
-          const [
-            studioRes,
-            studentsPageRes,
-            programsRes,
-            leadsRes,
-            beltLaddersRes,
-          ] = await Promise.all([
-            studioPromise,
-            studentsPromise,
-            programsPromise,
-            leadsPromise,
-            beltLaddersPromise,
-          ]);
-
-          criticalData = buildLegacyBootstrapResponse({
-            auth: authProfile,
-            studio: studioRes,
-            studentsPage: studentsPageRes,
-            programs: programsRes,
-            leads: leadsRes,
-            beltLadders: beltLaddersRes,
-          });
-
-          console.warn("Falling back to legacy dashboard bootstrap", bootstrapError);
-        }
+        markPerformance("dashboard.bootstrap_started");
+        // Allow the server's 30s interactive budget plus response transfer time.
+        const criticalData = await api.get<BootstrapResponse>("/dashboard/bootstrap?allow_partial=true", sessionToken, {
+          timeoutMs: 35_000,
+          timeoutMessage: "Workspace loading timed out. Please retry.",
+        });
+        markPerformance("dashboard.bootstrap_finished");
+        measurePerformance(
+          "dashboard.bootstrap_duration",
+          "dashboard.bootstrap_started",
+          "dashboard.bootstrap_finished"
+        );
 
         if (isCurrentSession()) {
           const authProfile = parseAuthProfileResponse(criticalData.auth);
@@ -1205,111 +1093,108 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
 
           clearPromotionHistoryCache();
-          setStudioNameState(resolveBootstrapStudioName(criticalData));
+          const datasetErrors = criticalData.dataset_errors;
+          setStudioNameState(datasetErrors?.studio ? "" : resolveBootstrapStudioName(criticalData));
+          setStudioLoadError(datasetErrors?.studio ?? null);
           const bootstrapSummary = criticalData.summary ?? null;
           setDashboardSummary(bootstrapSummary);
           setDashboardSummaryLoaded(Boolean(bootstrapSummary));
-          if (!usedLegacyFallback) {
-            setPrograms(criticalData.programs || []);
-            setProgramsLoaded(true);
-            setProgramsLoadError(null);
-            if (studentsRevisionRef.current === studentsRevisionAtStart) {
+          if (!datasetErrors?.programs) setPrograms(criticalData.programs || []);
+          setProgramsUsageLoaded(false);
+          setProgramsUsageLoadError(null);
+          setProgramsLoaded(!datasetErrors?.programs);
+          setProgramsLoadError(datasetErrors?.programs ?? null);
+          if (studentsRevisionRef.current === studentsRevisionAtStart) {
+            if (datasetErrors?.students) {
+              setStudentsLoaded(false);
+              setStudentsLoadError(datasetErrors.students);
+              setStudentsMayBePartial(true);
+            } else {
               commitStudents(criticalData.students, {
                 mayBePartial: criticalData.students_may_be_partial
                   ?? criticalData.students.length >= (criticalData.students_page_size ?? 200),
               });
             }
-            setLeads(criticalData.leads);
-            setLeadsLoaded(true);
-            setLeadsLoadError(null);
+          }
+          if (!hadPendingLeadMutation
+            && leadMutationScope === leadMutationScopeRef.current
+            && leadMutationScope.revision === leadMutationRevisionAtStart
+            && leadMutationScope.pending === 0) {
+            if (!datasetErrors?.leads) setLeads(criticalData.leads);
+            setLeadsLoaded(!datasetErrors?.leads);
+            setLeadsLoadError(datasetErrors?.leads ?? null);
+          }
+          if (datasetErrors?.belts) {
+            setBeltLaddersLoadError(datasetErrors.belts);
+          } else {
             const selectedInitialLadder = applyLadderSelection(
               resolveBootstrapLadders(criticalData),
               criticalData.primary_belt_ladder?.id ?? null
             );
-            if (selectedInitialLadder) {
-              void loadEligibilityForLadder(selectedInitialLadder.id, { force: true }).catch(() => undefined);
-            } else {
-              commitEligibilityRows(null, []);
-            }
+            if (!selectedInitialLadder) commitEligibilityRows(null, []);
           }
 
           if (!bootstrapSummary) {
             const summaryRequestSeq = dashboardSummaryRequestSeqRef.current + 1;
             dashboardSummaryRequestSeqRef.current = summaryRequestSeq;
-            const summaryToken = sessionToken;
             const summaryStudioId = authProfile.studio_id;
-
-            void (async () => {
-              markPerformance("dashboard.summary_started");
-              const summaryRes = await api.get<DashboardSummary>(
-                "/dashboard/summary",
-                summaryToken,
-                {
-                  timeoutMs: 30000,
-                  timeoutMessage: "Dashboard summary timed out.",
-                }
-              );
-              if (
-                !mounted ||
-                authGenerationRef.current !== sessionGeneration ||
-                dashboardSummaryRequestSeqRef.current !== summaryRequestSeq ||
-                tokenRef.current !== summaryToken ||
-                  !isDashboardSummaryForStudio(summaryRes, summaryStudioId)
-              ) {
-                return;
-              }
-              setDashboardSummary(summaryRes);
-              setDashboardSummaryLoaded(true);
-              markPerformance("dashboard.summary_finished");
-              measurePerformance(
-                "dashboard.summary_duration",
-                "dashboard.summary_started",
-                "dashboard.summary_finished",
-                { source: "deferred" }
-              );
-            })().catch((error) => {
-              if (
-                !mounted ||
-                authGenerationRef.current !== sessionGeneration ||
-                dashboardSummaryRequestSeqRef.current !== summaryRequestSeq ||
-                tokenRef.current !== summaryToken
-              ) {
-                return;
-              }
+            const summaryIdentityEpoch = identityEpochRef.current;
+            const isSummaryOwnerCurrent = () => mounted
+              && identityEpochRef.current === summaryIdentityEpoch
+              && dashboardSummaryRequestSeqRef.current === summaryRequestSeq;
+            const failSummary = (error: unknown) => {
+              if (!isSummaryOwnerCurrent()) return;
               console.warn("Failed to load dashboard summary", error);
               setDashboardSummary(null);
               setDashboardSummaryLoaded(true);
-            });
-          }
+            };
 
-          void api
-            .get<Program[]>("/programs?include_archived=true", sessionToken)
-            .then((programsRes) => {
-              if (!isCurrentSession()) {
-                return;
+            markPerformance("dashboard.summary_started");
+            void withCurrentLiveAuthRead(() => {
+              const request = beginLiveAuthRequest();
+              return {
+                ...request,
+                canRetryAfterTokenChange: () => isSummaryOwnerCurrent()
+                  && request.canRetryAfterTokenChange(),
+              };
+            }, async (request) => {
+              try {
+                const summaryRes = await api.get<DashboardSummary>(
+                  "/dashboard/summary",
+                  request.token,
+                  { timeoutMs: 30000, timeoutMessage: "Dashboard summary timed out." }
+                );
+                if (!isSummaryOwnerCurrent() || !request.isCurrent()
+                  || !isDashboardSummaryForStudio(summaryRes, summaryStudioId)) return;
+                setDashboardSummary(summaryRes);
+                setDashboardSummaryLoaded(true);
+                markPerformance("dashboard.summary_finished");
+                measurePerformance(
+                  "dashboard.summary_duration",
+                  "dashboard.summary_started",
+                  "dashboard.summary_finished",
+                  { source: "deferred" }
+                );
+              } catch (error) {
+                if (request.isCurrent()) failSummary(error);
+                throw error;
               }
-                setPrograms(programsRes);
-                setProgramsLoaded(true);
-                setProgramsLoadError(null);
-            })
-            .catch((error) => {
-              console.warn("Failed to refresh program usage after bootstrap", error);
-            });
+            }, failSummary).catch(() => undefined);
+          }
         }
 
-        if (!usedLegacyFallback) {
-          markPerformance("schedule.deferred_started");
-          void refreshSchedule().then(() => {
-            markPerformance("schedule.deferred_finished");
-            measurePerformance(
-              "schedule.deferred_duration",
-              "schedule.deferred_started",
-              "schedule.deferred_finished"
-            );
-          }).catch((error) => {
-            console.error("Failed to load deferred dashboard data", error);
-          });
-        }
+        if (!isCurrentSession()) return;
+        markPerformance("schedule.deferred_started");
+        void refreshSchedule().then(() => {
+          markPerformance("schedule.deferred_finished");
+          measurePerformance(
+            "schedule.deferred_duration",
+            "schedule.deferred_started",
+            "schedule.deferred_finished"
+          );
+        }).catch((error) => {
+          console.error("Failed to load deferred dashboard data", error);
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         if (isCurrentSession() && isStaffArchivedError(error)) {
@@ -1347,6 +1232,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             applySubscriptionRequiredState(authProfile, session.user);
           } else {
             markSubscriptionRequired();
+            setIdentityLoadError("Your account and studio access could not be verified. Please retry.");
           }
           setHydrated(true);
           return;
@@ -1361,7 +1247,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const loadError = error instanceof Error
             ? error.message
             : "Initial studio data could not be loaded.";
+          setIdentityReady(false);
           setStaffProfilesAvailable(false);
+          setIdentityLoadError(loadError);
           setStudentsLoadError(loadError);
           setProgramsLoaded(false);
           setProgramsLoadError(loadError);
@@ -1381,12 +1269,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    initializeLive();
+    void initializeLive().catch((error) => {
+      if (mounted) {
+        setIdentityLoadError(error instanceof Error ? error.message : "Session could not be loaded.");
+        setHydrated(true);
+      }
+    });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      // A fresh subscription also emits INITIAL_SESSION for an unchanged session.
+      // It must not cancel a manual bootstrap retry waiting on getSession.
+      if (event === "INITIAL_SESSION" && session
+        && tokenRef.current === (session?.access_token ?? null)
+        && authUserIdRef.current === (session?.user.id ?? null)) return;
+      authNotificationRevision += 1;
+      if (event === "INITIAL_SESSION" && !session) {
+        // The SDK also emits this event when refreshing a stored session fails.
+        // Confirm absence through getSession's error result outside the auth lock.
+        tokenRef.current = null;
+        setToken(null);
+        resetLiveStudioState();
+        setHydrated(true);
+        const notificationRevision = authNotificationRevision;
+        queueMicrotask(() => {
+          if (mounted && notificationRevision === authNotificationRevision) {
+            void initializeLive();
+          }
+        });
+        return;
+      }
       if (session) {
+        const needsInitialization = authUserIdRef.current !== session.user.id
+          || event === "USER_UPDATED"
+          || (!authoritativeIdentityRef.current && tokenRef.current !== session.access_token);
+        if (needsInitialization) {
+          resetLiveStudioState();
+          // Do not await a Supabase operation inside its auth notification lock.
+          void initializeLive(session);
+          return;
+        }
         const tokenChanged = tokenRef.current !== session.access_token;
-        const sessionUserChanged = authUserIdRef.current !== session.user.id;
         if (tokenChanged) {
           const preservesScheduleGeneration = shouldPreserveScheduleMutationsOnAuthChange(
             event,
@@ -1396,7 +1318,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setScheduleLoadError(null);
           setScheduleStatus("loading");
           authGenerationRef.current += 1;
-          dashboardSummaryRequestSeqRef.current += 1;
           if (preservesScheduleGeneration) {
             scheduleCoordinatorRef.current = refreshScheduleCoordinatorAuthState(
               scheduleCoordinatorRef.current
@@ -1408,9 +1329,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         tokenRef.current = session.access_token;
         authUserIdRef.current = session.user.id;
         setToken(session.access_token);
-        if (sessionUserChanged) {
-          setStaffProfilesAvailable(false);
-        }
         if (tokenChanged) {
           void reconcileSchedule("read").catch((error) => {
             console.error("Failed to reconcile schedule after an auth token change", error);
@@ -1423,6 +1341,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         clearStoredStudioSessionCookies();
         resetLiveStudioState();
         setHydrated(true);
+        router.replace("/login");
       }
     });
 
@@ -1430,7 +1349,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
+  }, [setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1445,7 +1364,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProgramsLoaded(true);
     setProgramsLoadError(null);
     if (isPreviewMode) save(KEYS.programs, sorted);
-  }, [isPreviewMode]);
+  }, [setProgramsLoaded, isPreviewMode]);
 
   const persistLeads = useCallback((next: Lead[]) => {
     setLeads(next);
@@ -1466,8 +1385,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode,
     persistPrograms,
     programsRef,
+    programsLoadedRef,
     refreshBeltsRef,
     setProgramsLoadError,
+    setProgramsUsageLoaded,
+    setProgramsUsageLoadError,
   });
 
   const persistBeltRanks = useCallback((next: BeltRank[]) => {
@@ -1483,7 +1405,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const persistSessions = useCallback((next: ClassSession[]) => {
     setSessions(next);
     if (isPreviewMode) save(KEYS.sessions, next);
-  }, [isPreviewMode]);
+  }, [isPreviewMode, setSessions]);
 
   const persistAttendance = useCallback((next: AttendanceRecord[]) => {
     setAttendance(next);
@@ -1579,6 +1501,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshLeads,
     updateLead,
   } = useStoreLeadActions({
+    beginLeadMutation,
     beginLiveAuthRequest,
     beltLaddersRef,
     beltRanksRef,
@@ -1640,7 +1563,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   } = useStoreScheduleActions({
     attendanceRef,
     beginLiveAuthRequest,
-    currentRole,
     isPreviewMode,
     persistAttendance,
     persistSessions,
@@ -1713,6 +1635,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     archiveProgram,
     attendance,
     beltLadders,
+    beltLaddersLoadError,
     beltRanks,
     bulkAddTagsToStudents,
     bulkUpdateStudentStatus,
@@ -1744,9 +1667,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     leadsLoadError,
     listStudentsPage,
     loadPromotionHistory,
+    loadEligibilityForLadder,
     markSubscriptionRequired,
     programs,
     programsLoaded,
+    programsUsageLoaded,
+    programsUsageLoadError,
     programsLoadError,
     promoteStudent,
     promotionHistoryCache,
@@ -1779,11 +1705,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     studentsLoaded,
     studentsMayBePartial,
     studioName,
+    studioLoadError,
     subRankTerm,
     subscriptionRequired,
     templates,
     toggleCheckIn,
     token,
+    identityGeneration,
+    identityReady,
+    identityLoadError,
+    retryInitialization,
     unarchiveStaff,
     updateLead,
     updateProgram,
@@ -1798,10 +1729,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     legalFirstName: currentUser?.legal_first_name ?? "",
     legalLastName: currentUser?.legal_last_name ?? "",
   });
-
-  if (!hydrated) {
-    return <LoadingScreen />;
-  }
 
   return (
     <StoreContextProviders values={contextValues}>

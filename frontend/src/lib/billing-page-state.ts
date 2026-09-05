@@ -72,7 +72,7 @@ export function resolveBillingAuxiliaryReadiness({
       loadedDataset({ error: programsLoadError, label: "Programs", loaded: programsLoaded })
     );
   }
-  if (["overview", "enrollments", "invoices"].includes(activeTab)) {
+  if (["enrollments", "invoices"].includes(activeTab)) {
     requiredDatasets.push(loadedDataset({
       error: studentsLoadError,
       label: "Student roster",

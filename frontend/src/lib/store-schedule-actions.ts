@@ -4,15 +4,11 @@ import { api } from "@/lib/api";
 import {
   beginScheduleMutationState,
   compareSessions,
-  discardSupersededScheduleWindowFailure,
-  fetchScheduleWindowRange,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
-  isScheduleRangeCommitCurrent,
   isScheduleReadCurrent,
   shouldReconcileSchedule,
   mergeAttendanceForSessions,
-  mergeSessionsForRange,
   normalizeAttendanceRecords,
   runOptimisticAttendanceToggle,
   runScheduleRangeRefreshWithRetry,
@@ -25,7 +21,6 @@ import {
 } from "@/lib/schedule-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
-import { canMaterializeScheduleRange } from "@/lib/staff-permissions";
 import { localId } from "@/lib/store-storage";
 import type {
   AttendanceRecord,
@@ -34,13 +29,11 @@ import type {
   ClassSessionDeleteScope,
   ClassTemplate,
   ClassTemplateCreate,
-  StaffRoleName,
 } from "@/types";
 
 interface UseStoreScheduleActionsOptions {
   attendanceRef: StoreRef<AttendanceRecord[]>;
   beginLiveAuthRequest: BeginLiveAuthRequest;
-  currentRole: StaffRoleName | null;
   isPreviewMode: boolean;
   persistAttendance: (next: AttendanceRecord[]) => void;
   persistSessions: (next: ClassSession[]) => void;
@@ -59,7 +52,6 @@ interface UseStoreScheduleActionsOptions {
 export function useStoreScheduleActions({
   attendanceRef,
   beginLiveAuthRequest,
-  currentRole,
   isPreviewMode,
   persistAttendance,
   persistSessions,
@@ -74,7 +66,7 @@ export function useStoreScheduleActions({
   setTemplates,
   templatesRef,
 }: UseStoreScheduleActionsOptions) {
-  const canMaterializeSchedule = canMaterializeScheduleRange(currentRole);
+  const rangeRequestRef = useRef<{ identity: object; key: string; promise: Promise<ClassSession[]>; isCurrent: () => boolean } | null>(null);
   const scheduleMutationWaitersRef = useRef(new Set<() => void>());
 
   const releaseScheduleMutationWaiters = useCallback(() => {
@@ -145,111 +137,66 @@ export function useStoreScheduleActions({
     setScheduleStatus,
   ]);
 
-  const refreshScheduleRange = useCallback(async (
+  const refreshScheduleRange = useCallback((
     startDate: string,
     endDate: string,
     intent: ScheduleRangeRefreshIntent
   ): Promise<ClassSession[]> => {
     if (isPreviewMode) {
-      return sessionsRef.current.filter((session) => session.date >= startDate && session.date <= endDate);
+      return Promise.resolve(sessionsRef.current.filter((session) => session.date >= startDate && session.date <= endDate));
     }
+    const request = beginLiveAuthRequest();
+    const coordinator = scheduleCoordinatorRef.current;
+    const key = `${request.token}:${coordinator.generation}:${startDate}:${endDate}:${intent}`;
+    const pending = rangeRequestRef.current;
+    if (pending?.key === key && pending.isCurrent()) return pending.promise;
 
-    try {
-      return await runScheduleRangeRefreshWithRetry(async () => {
-      const request = beginLiveAuthRequest();
-      const coordinator = scheduleCoordinatorRef.current;
-      const requestSequence = coordinator.rangeRequestSequence + 1;
-      const attendanceRequestSequence = coordinator.attendanceRequestSequence + 1;
-      scheduleCoordinatorRef.current = {
-        ...setScheduleRequestedRangeState(coordinator, { startDate, endDate }),
-        attendanceRequestSequence,
-        rangeRequestSequence: requestSequence,
-      };
-      const dataRevision = coordinator.dataRevision;
-      const generation = coordinator.generation;
-      const isCurrentRequest = () => isScheduleReadCurrent({
-        authCurrent: request.isCurrent(),
-        currentGeneration: scheduleCoordinatorRef.current.generation,
-        currentDataRevision: scheduleCoordinatorRef.current.dataRevision,
-        currentRequestSequence: scheduleCoordinatorRef.current.rangeRequestSequence,
-        dataRevisionAtStart: dataRevision,
-        generationAtStart: generation,
-        mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
-        requestSequenceAtStart: requestSequence,
-      });
-      const attendanceIsCurrent = () => isScheduleReadCurrent({
-        authCurrent: request.isCurrent(),
-        currentGeneration: scheduleCoordinatorRef.current.generation,
-        currentDataRevision: scheduleCoordinatorRef.current.dataRevision,
-        currentRequestSequence: scheduleCoordinatorRef.current.attendanceRequestSequence,
-        dataRevisionAtStart: dataRevision,
-        generationAtStart: generation,
-        mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
-        requestSequenceAtStart: attendanceRequestSequence,
-      });
-      const isCurrentScheduleWindowRead = () =>
-        isScheduleRangeCommitCurrent(isCurrentRequest(), attendanceIsCurrent());
-      const scheduleWindow = await discardSupersededScheduleWindowFailure(
-        () => fetchScheduleWindowRange(
-          api,
-          request.token,
-          startDate,
-          endDate,
-          intent,
-          canMaterializeSchedule
-        ),
-        isCurrentScheduleWindowRead
-      );
-      if (!scheduleWindow) {
-        return {
-          committed: false,
-          value: sessionsRef.current.filter(
-            (session) => session.date >= startDate && session.date <= endDate
-          ),
+    // The existing reconciliation queue owns every window read and materialization.
+    // Changing the desired range invalidates older reads before they can commit or retry.
+    scheduleCoordinatorRef.current = {
+      ...setScheduleRequestedRangeState(coordinator, { startDate, endDate }),
+      hasAuthoritativeSnapshot: false,
+      attendanceRequestSequence: coordinator.attendanceRequestSequence + 1,
+      rangeRequestSequence: coordinator.rangeRequestSequence + 1,
+    };
+    const identity = {};
+    // A token renewal invalidates transport results, not the caller's calendar range.
+    // Keep that caller alive only while the authoritative identity and range survive.
+    const isCurrent = () => (
+      request.isCurrent() || request.canRetryAfterTokenChange?.() === true
+    ) && rangeRequestRef.current?.identity === identity
+      && scheduleCoordinatorRef.current.requestedRange?.startDate === startDate
+      && scheduleCoordinatorRef.current.requestedRange?.endDate === endDate;
+    const promise = runScheduleRangeRefreshWithRetry(async () => {
+      if (!isCurrent()) throw new Error("Schedule range refresh was superseded. Please retry.");
+      const attemptRequest = beginLiveAuthRequest();
+      try {
+        await reconcileSchedule(intent);
+      } catch (error) {
+        if (!isCurrent() || !attemptRequest.canRetryAfterTokenChange?.()) throw error;
+      }
+      if (!isCurrent()) throw new Error("Schedule range refresh was superseded. Please retry.");
+      if (!attemptRequest.isCurrent()) {
+        // Replay through the same queue with current auth and the original intent.
+        // A renewal's background read cannot stand in for calendar materialization.
+        scheduleCoordinatorRef.current = {
+          ...scheduleCoordinatorRef.current,
+          hasAuthoritativeSnapshot: false,
         };
+        return { committed: false, value: [] };
       }
-      const rangeSessions = scheduleWindow.sessions;
-      const attendanceRecords = normalizeAttendanceRecords(scheduleWindow.attendance);
-
-      if (!isCurrentScheduleWindowRead()) {
-        return { committed: false, value: rangeSessions };
-      }
-
-      const replacedSessionIds = Array.from(
-        new Set([
-          ...sessionsRef.current
-            .filter((session) => session.date >= startDate && session.date <= endDate)
-            .map((session) => session.id),
-          ...rangeSessions.map((session) => session.id),
-        ])
-      );
-
-      setTemplates(scheduleWindow.templates);
-      setSessions((current) => mergeSessionsForRange(current, rangeSessions, startDate, endDate));
-      setAttendance((current) =>
-        mergeAttendanceForSessions(current, attendanceRecords, replacedSessionIds)
-      );
-      return { committed: true, value: rangeSessions };
-      }, 3, waitForScheduleMutationSettlement);
-    } finally {
-      if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
-        void reconcileSchedule(intent).catch((error) => {
-          console.error("Failed to reconcile schedule after a range refresh", error);
-        });
-      }
-    }
-  }, [
-    beginLiveAuthRequest,
-    canMaterializeSchedule,
-    isPreviewMode,
-    reconcileSchedule,
-    scheduleCoordinatorRef,
-    sessionsRef,
-    setAttendance,
-    setSessions,
-    setTemplates,
-    waitForScheduleMutationSettlement,
-  ]);
+      return {
+        committed: scheduleCoordinatorRef.current.hasAuthoritativeSnapshot
+          && scheduleCoordinatorRef.current.mutationsInFlight === 0,
+        value: sessionsRef.current.filter((session) => session.date >= startDate && session.date <= endDate),
+      };
+    }, 3, waitForScheduleMutationSettlement).finally(() => {
+      if (rangeRequestRef.current?.promise === promise) rangeRequestRef.current = null;
+    });
+    rangeRequestRef.current = { identity, key, promise, isCurrent };
+    return promise;
+  }, [beginLiveAuthRequest, isPreviewMode, reconcileSchedule, scheduleCoordinatorRef,
+    sessionsRef, waitForScheduleMutationSettlement]);
 
   const refreshSessionAttendance = useCallback(async (
     sessionId: string

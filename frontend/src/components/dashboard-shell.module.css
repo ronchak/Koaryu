@@ -55,6 +55,24 @@
     "Segoe UI", Roboto, sans-serif;
 }
 
+.navigationPending {
+  flex: 0 0 0.6rem;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-left: auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.identityPlaceholder {
+  display: block;
+  height: 1rem;
+  width: 70%;
+  margin: 1rem;
+  border-radius: 6px;
+  background: var(--product-rule-soft);
+}
+
 :global([data-theme="dark"]) .shellRoot {
   --product-ground: #17130e;
   --product-sunk: #1c1811;

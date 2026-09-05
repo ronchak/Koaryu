@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from fastapi import HTTPException, Response
+from app.api.v1.endpoints.dashboard import get_dashboard_summary
+from app.services.dashboard_summary_service import dashboard_summary_fact_cache, DASHBOARD_SUMMARY_FORMULA_VERSION
+from tests.fakes.supabase import FakeResult, FakeRpcCall
 import json
 import os
 import re
@@ -18,7 +26,7 @@ from tests.fakes.supabase import FakeTableQuery, TableBackedSupabase
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = ROOT_DIR / "performance" / "dashboard-summary-budget.json"
-FIXTURE_REVISION = "dashboard-summary-fixture-v1"
+FIXTURE_REVISION = "dashboard-summary-endpoint-fixture-v2"
 STUDIO_ID = "fixture-studio"
 
 
@@ -36,6 +44,21 @@ class CountingTableBackedSupabase(TableBackedSupabase):
         self.returned_row_count = 0
         self.provider_response_bytes = 0
         self.measurement = self
+        self.auth_call_count = 0
+        self.auth = SimpleNamespace(admin=SimpleNamespace(get_user_by_id=self.get_user_by_id))
+        self.facts = None
+
+    def get_user_by_id(self, user_id):
+        self.auth_call_count += 1
+        return SimpleNamespace(user=SimpleNamespace(id=user_id, email="fixture@example.invalid", user_metadata={}))
+
+    def rpc(self, name, params):
+        assert name == "dashboard_summary_facts"
+        self.rpc_calls.append((name, params))
+        def execute():
+            self.record_table_result(FakeResult(self.facts))
+            return self.facts
+        return FakeRpcCall(execute)
 
     def table(self, name: str):
         return CountingFakeTableQuery(self, name)
@@ -76,7 +99,7 @@ def _student_row(index: int) -> dict[str, Any]:
 def build_tables(cardinalities: dict[str, int]) -> dict[str, list[dict[str, Any]]]:
     student_count = cardinalities["students"]
     students = [_student_row(index) for index in range(student_count)]
-    return {
+    tables = {
         "students": students,
         "leads": [
             {"id": "fixture-lead-1", "studio_id": STUDIO_ID, "stage": "inquiry", "follow_up_date": "2026-05-20"},
@@ -115,6 +138,28 @@ def build_tables(cardinalities: dict[str, int]) -> dict[str, list[dict[str, Any]
         "studio_payment_accounts": [{"studio_id": STUDIO_ID, "charges_enabled": True}],
     }
 
+    # Dimensions are independently sized. Duplicate names deliberately exercise
+    # deterministic ordering; endpoint timing never executes this semantic builder.
+    for student in students:
+        student["legal_first_name"] = "Duplicate"
+    for name in ("leads", "class_sessions", "attendance", "billing_invoices"):
+        seeds = tables[name]
+        tables[name] = [
+            {**seeds[index % len(seeds)], "id": f"{name}-{index}"}
+            for index in range(cardinalities[name])
+        ]
+    for index, row in enumerate(tables["attendance"]):
+        row["student_id"] = students[index % student_count]["id"]
+        row["session_id"] = tables["class_sessions"][index % len(tables["class_sessions"])]["id"]
+    tables["student_program_memberships"] = [{"id": f"membership-{index}", "student_id": students[index % student_count]["id"], "program_id": "fixture-program", "studio_id": STUDIO_ID, "status": "active" if index < student_count else "inactive"} for index in range(cardinalities["student_program_memberships"])]
+    tables["billing_payments"] = [{"id": f"payment-{index}", "studio_id": STUDIO_ID, "status": "succeeded", "amount_cents": 100, "processed_at": "2026-05-20T00:00:00Z"} for index in range(cardinalities["billing_payments"])]
+    tables["stripe_events"] = [{"id": f"event-{index}", "stripe_event_id": f"evt_fixture_{index}", "stripe_account_id": "acct_fixture", "type": "invoice.paid", "payload": {}, "processing_status": "processed", "livemode": False} for index in range(cardinalities["stripe_events"])]
+    tables["staff_roles"] = [{"user_id": "fixture-user", "studio_id": STUDIO_ID, "role": "admin", "archived_at": None}]
+    tables["staff_profiles"] = [{"user_id": "fixture-user", "legal_first_name": "Fixture", "legal_last_name": "User"}]
+    tables["studio_subscriptions"] = [{"studio_id": STUDIO_ID, "status": "comped", "comped": True}]
+    tables["studios"] = [{"id": STUDIO_ID, "name": "Fixture Studio", "timezone": "America/Los_Angeles"}]
+    return tables
+
 
 def _rss_bytes() -> int:
     value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -131,44 +176,87 @@ def measure_profile(profile: str, git_sha: str) -> dict[str, Any]:
     if {name: len(rows) for name, rows in tables.items()} != cardinalities:
         raise AssertionError(f"fixture cardinalities do not match manifest for {profile}")
 
+    # This old builder is a semantic reference only. Its execution and fake
+    # provider rows are explicitly excluded from endpoint performance evidence.
+    reference_client = CountingTableBackedSupabase(tables)
+    reference_auth = AuthResponse(user=UserProfile(id="fixture-user", email="fixture@example.invalid"), staff_profiles_available=True, studio_id=STUDIO_ID, role="admin")
+    reference, _ = DashboardSummaryService(reference_client)._build_summary_sync(
+        reference_auth, tables["studios"][0], today_override=date(2026, 5, 20),
+    )
     supabase = CountingTableBackedSupabase(tables)
-    service = DashboardSummaryService(supabase)
-    auth = AuthResponse(
-        user=UserProfile(id="fixture-user", email="fixture@example.invalid", full_name="Fixture User"),
-        staff_profiles_available=True,
-        studio_id=STUDIO_ID,
-        role=manifest["fixed_request"]["role"],
-    )
-    studio_row = {"id": STUDIO_ID, "name": "Fixture Studio", "timezone": manifest["fixed_request"]["timezone"]}
-    started = time.perf_counter()
-    summary, timings = service._build_summary_sync(
-        auth,
-        studio_row,
-        today_override=date.fromisoformat(manifest["fixed_request"]["date"]),
-    )
-    serialization_started = time.perf_counter()
-    serialized_payload = summary.model_dump_json()
-    serialization_duration_ms = (time.perf_counter() - serialization_started) * 1000
-    total_duration_ms = (time.perf_counter() - started) * 1000
-    stage_durations = [value for key, value in timings.items() if key != "total"]
-    stage_durations.append(serialization_duration_ms)
-    threshold_ms = manifest["long_task_threshold_ms"]
+    supabase.facts = reference.model_dump(mode="json", exclude={"auth", "generated_at"})
+    supabase.facts["formula_version"] = DASHBOARD_SUMMARY_FORMULA_VERSION
+    stage_durations = []
+    serialized_bytes = 0
 
+    async def request():
+        nonlocal serialized_bytes
+        response = Response()
+        started = time.perf_counter()
+        payload = await get_dashboard_summary(response, "fixture-user", STUDIO_ID, supabase)
+        encoded = payload.model_dump_json().encode()
+        stage_durations.append((time.perf_counter() - started) * 1000)
+        serialized_bytes += len(encoded)
+        assert response.headers["cache-control"] == "no-store, private"
+        assert "koaryu_summary_context" in response.headers["server-timing"]
+        assert "koaryu_summary_facts" in response.headers["server-timing"]
+        assert payload.auth.user.id == "fixture-user"
+        assert payload.students == reference.students
+        return payload
+
+    async def exercise():
+        dashboard_summary_fact_cache.invalidate(STUDIO_ID, domain="dashboard")
+        await request()  # miss
+        assert len(supabase.rpc_calls) == 1
+        before = len(supabase.rpc_calls)
+        await request()  # hit, with fresh Auth and table context
+        hit_rpc_count = len(supabase.rpc_calls) - before
+        dashboard_summary_fact_cache.invalidate(STUDIO_ID, domain="dashboard")
+        before = len(supabase.rpc_calls)
+        await asyncio.gather(request(), request(), request())
+        concurrent_rpc_count = len(supabase.rpc_calls) - before
+        dashboard_summary_fact_cache.invalidate(STUDIO_ID, domain="dashboard")
+        before = len(supabase.rpc_calls)
+        await request()
+        invalidation_rpc_count = len(supabase.rpc_calls) - before
+        # Revoking subscription must deny even while entitled facts are cached.
+        tables["studio_subscriptions"][0].update(status="canceled", comped=False)
+        before = len(supabase.rpc_calls)
+        try:
+            await request()
+        except HTTPException as exc:
+            assert exc.status_code == 402
+        else:
+            raise AssertionError("cached facts bypassed fresh subscription authorization")
+        denied_rpc_count = len(supabase.rpc_calls) - before
+        return hit_rpc_count, concurrent_rpc_count, invalidation_rpc_count, denied_rpc_count
+
+    started = time.perf_counter()
+    with patch.object(DashboardSummaryService, "_studio_today", return_value=(date(2026, 5, 20), "America/Los_Angeles")):
+        hit, concurrent, invalidated, denied = asyncio.run(exercise())
+    total_duration_ms = (time.perf_counter() - started) * 1000
+    dashboard_summary_fact_cache.invalidate(STUDIO_ID, domain="dashboard")
+    assert (hit, concurrent, invalidated, denied) == (0, 1, 1, 0)
     return {
         "profile": profile,
         "route": manifest["fixed_request"]["route"],
         "cardinalities": cardinalities,
         "metrics": {
-            "request_count": 1,
+            "request_count": 7,
+            "auth_call_count": supabase.auth_call_count,
             "table_query_count": len(supabase.query_log),
             "rpc_count": len(supabase.rpc_calls),
-            "total_provider_call_count": len(supabase.query_log) + len(supabase.rpc_calls),
+            "cache_hit_rpc_count": hit,
+            "concurrent_miss_rpc_count": concurrent,
+            "invalidation_rpc_count": invalidated,
+            "denied_rpc_count": denied,
+            "total_provider_call_count": supabase.auth_call_count + len(supabase.query_log) + len(supabase.rpc_calls),
             "returned_row_count": supabase.returned_row_count,
             "provider_response_bytes": supabase.provider_response_bytes,
-            "serialized_response_payload_bytes": len(serialized_payload.encode("utf-8")),
+            "serialized_response_payload_bytes": serialized_bytes,
             "total_duration_ms": round(total_duration_ms, 3),
             "max_stage_duration_ms": round(max(stage_durations, default=0), 3),
-            "long_task_count": sum(value > threshold_ms for value in stage_durations),
+            "slow_backend_stage_count": sum(value > manifest["backend_stage_threshold_ms"] for value in stage_durations),
             "peak_rss_bytes": _rss_bytes(),
             "data_ready": True,
         },

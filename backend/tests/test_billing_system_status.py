@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from app.schemas.billing import StudioPaymentAccountResponse
 from app.services.billing_system_status import BillingSystemStatusReporter
-from tests.fakes.supabase import RpcBackedSupabase, TableBackedSupabase
+from tests.fakes.billing_reads import BillingReadSupabase as RpcBackedSupabase, BillingReadSupabase as TableBackedSupabase
 
 TEST_STRIPE_LIVE_KEY = "_".join(("sk", "live", "configured"))
 
@@ -390,6 +390,20 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertEqual(response.connect_webhooks.pending_count, 1)
         processing_check = next(check for check in response.checks if check.name == "Connect webhook processing")
         self.assertEqual(processing_check.status, "fail")
+
+    def test_platform_and_connected_health_share_one_scoped_rpc(self):
+        now = datetime.now(timezone.utc)
+        reporter = self.reporter({"stripe_events": [
+            _processed_event(account_id=None, observed_at=now),
+            _processed_event(account_id="acct_1", observed_at=now),
+        ]})
+        platform, connected = reporter.webhook_health_pair("acct_1")
+        self.assertEqual(platform.latest_event_type, "customer.subscription.updated")
+        self.assertEqual(connected.latest_event_type, "invoice.paid")
+        self.assertEqual(len(reporter.supabase.rpc_calls), 1)
+        self.assertEqual(reporter.supabase.rpc_calls[0][0], "billing_webhook_health")
+        self.assertEqual(reporter.supabase.rpc_calls[0][1]["p_account_id"], "acct_1")
+        self.assertEqual(reporter.supabase.query_log, [])
 
     def test_webhook_health_counts_unresolved_rows_beyond_latest_fifty(self):
         now = datetime.now(timezone.utc)

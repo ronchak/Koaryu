@@ -83,7 +83,7 @@ describe("resolveBillingAuxiliaryReadiness", () => {
     assert.equal(resolveBillingAuxiliaryReadiness({
       ...ready,
       studentsLoadError: "Roster timed out",
-    }).status, "error");
+    }).status, "ready", "overview uses landing counts even if roster fails");
     assert.equal(resolveBillingAuxiliaryReadiness({
       ...ready,
       activeTab: "plans",

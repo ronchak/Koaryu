@@ -33,7 +33,10 @@ interface SchedulePageSectionProps {
   templates: ClassTemplate[];
   programs: Program[];
   scheduleLoadError: string | null;
+  hasLoadedRange: boolean;
+  isRefreshingRange: boolean;
   actionMessage: string | null;
+  onRetryRange: () => void;
   onNavigate: (direction: number) => void;
   onJumpToToday: () => void;
   onViewChange: (view: SchedulePageView) => void;
@@ -113,8 +116,11 @@ export function SchedulePageSection({
   templates,
   programs,
   scheduleLoadError,
+  hasLoadedRange,
+  isRefreshingRange,
   actionMessage,
   onNavigate,
+  onRetryRange,
   onJumpToToday,
   onViewChange,
   onProgramFilterChange,
@@ -394,11 +400,11 @@ export function SchedulePageSection({
         </div>
         <div className="rounded-[10px] bg-surface-raised px-4 py-3">
           <p className="text-xs font-medium text-muted">Scheduled</p>
-          <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">{filteredSessions.length}</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">{hasLoadedRange ? filteredSessions.length : "Pending"}</p>
         </div>
         <div className="rounded-[10px] bg-surface-raised px-4 py-3">
           <p className="text-xs font-medium text-muted">Recurring slots</p>
-          <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">{filteredTemplates.length}</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">{hasLoadedRange ? filteredTemplates.length : "Pending"}</p>
         </div>
         <div className="rounded-[10px] bg-surface-raised px-4 py-3">
           <p className="text-xs font-medium text-muted">Program scope</p>
@@ -477,6 +483,7 @@ export function SchedulePageSection({
         <div className="px-6 sm:px-8 pt-4">
           <DismissibleNotice tone="danger" onDismiss={onDismissScheduleLoadError}>
             {scheduleLoadError}
+            <Button variant="ghost" size="sm" onClick={onRetryRange}>Retry</Button>
           </DismissibleNotice>
         </div>
       ) : null}
@@ -489,7 +496,15 @@ export function SchedulePageSection({
         </div>
       ) : null}
 
-      {view === "month" && (
+      {!hasLoadedRange ? (
+        <div role="status" aria-busy={isRefreshingRange} className="m-6 rounded-[10px] bg-surface-raised p-6 text-sm text-muted">
+          {scheduleLoadError ? "This calendar range is unavailable. Retry or choose another range." : "Loading this calendar range..."}
+        </div>
+      ) : isRefreshingRange ? (
+        <p role="status" className="px-6 pt-3 text-xs text-muted">Refreshing calendar. Showing the last loaded schedule.</p>
+      ) : null}
+
+      {hasLoadedRange && view === "month" && (
         <div className="flex-1 p-3 sm:p-6">
           <MonthScheduleView
             month={currentDate}
@@ -514,7 +529,7 @@ export function SchedulePageSection({
         </div>
       )}
 
-      {view === "week" && (
+      {hasLoadedRange && view === "week" && (
         <>
           <div
             className="flex-1 overflow-x-auto overscroll-x-contain"
@@ -663,7 +678,7 @@ export function SchedulePageSection({
         </>
       )}
 
-      {view === "day" && (
+      {hasLoadedRange && view === "day" && (
         <div className="flex-1 px-3 py-6 sm:px-8">
           <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-border pb-3">
           <h2 className="text-sm font-semibold text-text-primary">

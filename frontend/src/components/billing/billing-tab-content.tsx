@@ -28,6 +28,7 @@ type BillingTabContentProps = {
   activeSubscriptionCount: number;
   activeTab: BillingTab;
   billingConnect: StudioPaymentAccount | null;
+  billingObservedAt: string | null;
   billingEnrollments: StudentBillingEnrollment[];
   billingInvoices: BillingInvoice[];
   billingPayers: BillingPayer[];
@@ -77,6 +78,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
     activeSubscriptionCount,
     activeTab,
     billingConnect,
+    billingObservedAt,
     billingEnrollments,
     billingInvoices,
     billingPayers,
@@ -157,7 +159,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
         activeStudents={activeStudents}
         activeSubscriptionCount={activeSubscriptionCount}
         billingConnect={billingConnect}
-        billingInvoicesLength={billingInvoices.length}
+        billingObservedAt={billingObservedAt}
         currentMonthPaymentCount={currentMonthPaymentCount}
         billingPeriod={billingPeriod}
         billingPlatform={billingPlatform}

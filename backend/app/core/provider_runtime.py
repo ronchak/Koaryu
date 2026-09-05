@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import math
 import threading
 from dataclasses import dataclass
+from functools import partial
 from typing import Awaitable, Callable, Generic, TypeVar, cast
 
 from supabase import Client
@@ -26,6 +28,11 @@ class SupabaseLaneConfig:
     max_queue: int
     queue_wait_timeout: float
     operation_wait_timeout: float
+    postgrest_client_timeout: float = 10.0
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.postgrest_client_timeout) or self.postgrest_client_timeout <= 0:
+            raise ValueError("postgrest_client_timeout must be finite and positive")
 
 
 class SupabaseProviderRuntimeCleanupError(RuntimeError):
@@ -50,7 +57,7 @@ class SupabaseProviderRuntime(Generic[ResultT]):
         interactive: SupabaseLaneConfig,
         bulk: SupabaseLaneConfig,
         *,
-        client_factory: Callable[[], Client] = create_supabase_client,
+        client_factory: Callable[[], Client] | None = None,
         client_closer: Callable[[Client], None] = close_supabase_client,
         thread_name_prefix: str = "supabase-provider",
     ) -> None:
@@ -63,13 +70,19 @@ class SupabaseProviderRuntime(Generic[ResultT]):
         try:
             interactive_executor = self._build_executor(
                 interactive,
-                client_factory,
+                client_factory or partial(
+                    create_supabase_client,
+                    postgrest_client_timeout=interactive.postgrest_client_timeout,
+                ),
                 client_closer,
                 f"{thread_name_prefix}-interactive",
             )
             bulk_executor = self._build_executor(
                 bulk,
-                client_factory,
+                client_factory or partial(
+                    create_supabase_client,
+                    postgrest_client_timeout=bulk.postgrest_client_timeout,
+                ),
                 client_closer,
                 f"{thread_name_prefix}-bulk",
             )
@@ -78,12 +91,14 @@ class SupabaseProviderRuntime(Generic[ResultT]):
                 max_queue=interactive.max_queue,
                 queue_wait_timeout=interactive.queue_wait_timeout,
                 operation_wait_timeout=interactive.operation_wait_timeout,
+                name="interactive",
             )
             self._bulk_lane = ProviderLane(
                 bulk_executor,
                 max_queue=bulk.max_queue,
                 queue_wait_timeout=bulk.queue_wait_timeout,
                 operation_wait_timeout=bulk.operation_wait_timeout,
+                name="bulk",
             )
         except BaseException:
             if bulk_executor is not None:
@@ -119,6 +134,14 @@ class SupabaseProviderRuntime(Generic[ResultT]):
 
     def bulk_snapshot(self) -> ProviderLaneSnapshot:
         return self._bulk_lane.snapshot()
+
+    def record_request_timeout(self, lane: str) -> None:
+        if lane == "interactive":
+            self._interactive_lane.record_request_timeout()
+        elif lane == "bulk":
+            self._bulk_lane.record_request_timeout()
+        else:
+            raise ValueError(f"unknown provider lane: {lane}")
 
     def operation_wait_timeout(self, lane: str) -> float:
         """Return the full caller deadline for one request-boundary operation."""

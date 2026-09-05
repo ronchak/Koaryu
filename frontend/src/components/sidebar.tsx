@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AccountMenu } from "@/components/account-menu";
+import { NavigationPending } from "@/components/navigation-pending";
 import { MartialArtsBelt } from "@/components/icons/martial-arts-belt";
 import type { NavigationPlacement } from "@/components/theme-provider";
 import { Logo } from "./logo";
@@ -66,6 +67,7 @@ function NavigationLinks({ pathname }: { pathname: string }) {
         >
           <Icon className={styles.navIcon} aria-hidden="true" size={17} strokeWidth={1.8} />
           <span className={styles.navLabel}>{item.label}</span>
+          <NavigationPending />
         </Link>
       </li>
     );

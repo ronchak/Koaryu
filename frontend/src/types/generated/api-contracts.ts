@@ -197,6 +197,12 @@ export interface ApiBillingInvoiceItemCreate {
   billing_plan_id?: string | null;
 }
 
+export interface ApiBillingInvoicePageResponse {
+  items: ApiBillingInvoiceResponse[];
+  next_cursor?: string | null;
+  complete: boolean;
+}
+
 export interface ApiBillingInvoiceResponse {
   id: string;
   studio_id: string;
@@ -229,6 +235,29 @@ export interface ApiBillingInvoiceResponse {
   external: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ApiBillingLandingAggregatesResponse {
+  active_student_count: number;
+  active_subscription_count: number;
+  failed_payer_count: number;
+  open_invoice_amount_cents: number;
+  has_billing_plans: boolean;
+  has_family_accounts: boolean;
+  has_student_billing: boolean;
+  has_collection_history: boolean;
+  payment_cohort: ApiBillingPaymentCohortSummaryResponse;
+}
+
+export interface ApiBillingLandingResponse {
+  studio_id: string;
+  observed_at: string;
+  system_status?: ApiBillingSystemStatusResponse | null;
+  payment_account?: ApiStudioPaymentAccountResponse | null;
+  platform_status?: ApiPlatformBillingStatusResponse | null;
+  financial_access: "available" | "subscription_required" | "unavailable";
+  aggregates?: ApiBillingLandingAggregatesResponse | null;
+  errors: string[];
 }
 
 export interface ApiBillingLinkResponse {
@@ -318,6 +347,12 @@ export interface ApiBillingPaymentCohortSummaryResponse {
   net_amount_cents: number;
   scope: "payment_cohort_net_of_confirmed_adjustments";
   disclosure: string;
+}
+
+export interface ApiBillingPaymentPageResponse {
+  items: ApiBillingPaymentResponse[];
+  next_cursor?: string | null;
+  complete: boolean;
 }
 
 export interface ApiBillingPaymentResponse {
@@ -738,12 +773,20 @@ export interface ApiCsvParseResponse {
   required_fields: string[];
 }
 
+export interface ApiDashboardBootstrapDatasetErrors {
+  studio?: string | null;
+  students?: string | null;
+  leads?: string | null;
+  belts?: string | null;
+  programs?: string | null;
+}
+
 export interface ApiDashboardBootstrapResponse {
   auth: ApiAuthResponse;
   studio?: ApiDashboardBootstrapStudioSummary | null;
   studio_name?: string | null;
   students: ApiStudentResponse[];
-  students_total: number;
+  students_total?: number | null;
   students_page_size: number;
   students_may_be_partial: boolean;
   programs: ApiProgramResponse[];
@@ -751,6 +794,7 @@ export interface ApiDashboardBootstrapResponse {
   belt_ladders: ApiBeltLadderResponse[];
   primary_belt_ladder?: ApiBeltLadderResponse | null;
   summary?: ApiDashboardSummaryResponse | null;
+  dataset_errors?: ApiDashboardBootstrapDatasetErrors | null;
 }
 
 export interface ApiDashboardBootstrapStudioSummary {

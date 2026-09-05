@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "budget_manifest_version": "dashboard-summary-performance-v1",
-  "fixture_revision": "dashboard-summary-fixture-v1",
+  "budget_manifest_version": "dashboard-summary-performance-v2",
+  "fixture_revision": "dashboard-summary-endpoint-fixture-v2",
   "privacy": "aggregate-only-no-payloads",
   "fixed_request": {
     "route": "dashboard-summary",
@@ -9,102 +9,140 @@
     "timezone": "America/Los_Angeles",
     "role": "admin"
   },
-  "long_task_threshold_ms": 50,
   "metric_semantics": {
-    "returned_row_count": "sum of rows returned by table executes; exact-count scalars are not rows",
+    "returned_row_count": "rows returned by Auth-context table executes plus aggregate RPC objects; Auth response bytes are not included",
     "provider_response_bytes": "UTF-8 bytes of canonical aggregate provider envelopes, counted internally and never emitted",
-    "total_duration_ms": "wall time from service invocation through successful response serialization",
-    "max_stage_duration_ms": "maximum individual service stage or response-serialization duration, excluding total",
-    "long_task_count": "number of individual stages above long_task_threshold_ms"
+    "total_duration_ms": "wall time for seven real endpoint invocations with fake provider I/O; excludes old builder semantic reference and SQL/network cost",
+    "max_stage_duration_ms": "maximum successful endpoint invocation including serialization",
+    "slow_backend_stage_count": "successful endpoint invocations above backend_stage_threshold_ms; this is not a browser long-task or INP metric"
   },
-  "routes": ["dashboard-summary"],
+  "routes": [
+    "dashboard-summary"
+  ],
   "profiles": {
     "small": {
       "cardinalities": {
         "students": 25,
-        "leads": 3,
-        "class_sessions": 3,
+        "leads": 25,
+        "class_sessions": 30,
         "class_templates": 2,
-        "attendance": 3,
+        "attendance": 250,
         "programs": 2,
         "belt_ladders": 1,
         "belt_ranks": 2,
         "billing_payers": 1,
-        "billing_invoices": 2,
+        "billing_invoices": 200,
         "billing_plans": 1,
-        "studio_payment_accounts": 1
+        "studio_payment_accounts": 1,
+        "student_program_memberships": 35,
+        "billing_payments": 1000,
+        "stripe_events": 100,
+        "staff_roles": 1,
+        "staff_profiles": 1,
+        "studio_subscriptions": 1,
+        "studios": 1
       },
       "budgets": {
-        "request_count": 1,
+        "request_count": 7,
         "table_query_count": 28,
-        "rpc_count": 0,
-        "total_provider_call_count": 28,
-        "returned_row_count": 49,
-        "provider_response_bytes": 16000,
-        "serialized_response_payload_bytes": 5000,
+        "rpc_count": 3,
+        "total_provider_call_count": 38,
+        "returned_row_count": 31,
+        "provider_response_bytes": 30000,
+        "serialized_response_payload_bytes": 30000,
         "total_duration_ms": 15000,
         "max_stage_duration_ms": 15000,
-        "long_task_count": 20,
-        "peak_rss_bytes": 536870912
+        "peak_rss_bytes": 536870912,
+        "auth_call_count": 7,
+        "cache_hit_rpc_count": 0,
+        "concurrent_miss_rpc_count": 1,
+        "invalidation_rpc_count": 1,
+        "denied_rpc_count": 0,
+        "slow_backend_stage_count": 20
       }
     },
     "medium": {
       "cardinalities": {
         "students": 250,
-        "leads": 3,
-        "class_sessions": 3,
+        "leads": 500,
+        "class_sessions": 365,
         "class_templates": 2,
-        "attendance": 3,
+        "attendance": 10000,
         "programs": 2,
         "belt_ladders": 1,
         "belt_ranks": 2,
         "billing_payers": 1,
-        "billing_invoices": 2,
+        "billing_invoices": 201,
         "billing_plans": 1,
-        "studio_payment_accounts": 1
+        "studio_payment_accounts": 1,
+        "student_program_memberships": 500,
+        "billing_payments": 1001,
+        "stripe_events": 2500,
+        "staff_roles": 1,
+        "staff_profiles": 1,
+        "studio_subscriptions": 1,
+        "studios": 1
       },
       "budgets": {
-        "request_count": 1,
-        "table_query_count": 30,
-        "rpc_count": 0,
-        "total_provider_call_count": 30,
-        "returned_row_count": 274,
-        "provider_response_bytes": 100000,
-        "serialized_response_payload_bytes": 5000,
+        "request_count": 7,
+        "table_query_count": 28,
+        "rpc_count": 3,
+        "total_provider_call_count": 38,
+        "returned_row_count": 31,
+        "provider_response_bytes": 30000,
+        "serialized_response_payload_bytes": 30000,
         "total_duration_ms": 15000,
         "max_stage_duration_ms": 15000,
-        "long_task_count": 20,
-        "peak_rss_bytes": 536870912
+        "peak_rss_bytes": 536870912,
+        "auth_call_count": 7,
+        "cache_hit_rpc_count": 0,
+        "concurrent_miss_rpc_count": 1,
+        "invalidation_rpc_count": 1,
+        "denied_rpc_count": 0,
+        "slow_backend_stage_count": 20
       }
     },
     "large": {
       "cardinalities": {
         "students": 2500,
-        "leads": 3,
-        "class_sessions": 3,
+        "leads": 5000,
+        "class_sessions": 2500,
         "class_templates": 2,
-        "attendance": 3,
+        "attendance": 50000,
         "programs": 2,
         "belt_ladders": 1,
         "belt_ranks": 2,
         "billing_payers": 1,
-        "billing_invoices": 2,
+        "billing_invoices": 2500,
         "billing_plans": 1,
-        "studio_payment_accounts": 1
+        "studio_payment_accounts": 1,
+        "student_program_memberships": 7500,
+        "billing_payments": 10000,
+        "stripe_events": 25000,
+        "staff_roles": 1,
+        "staff_profiles": 1,
+        "studio_subscriptions": 1,
+        "studios": 1
       },
       "budgets": {
-        "request_count": 1,
-        "table_query_count": 54,
-        "rpc_count": 0,
-        "total_provider_call_count": 54,
-        "returned_row_count": 2524,
-        "provider_response_bytes": 900000,
-        "serialized_response_payload_bytes": 5000,
+        "request_count": 7,
+        "table_query_count": 28,
+        "rpc_count": 3,
+        "total_provider_call_count": 38,
+        "returned_row_count": 31,
+        "provider_response_bytes": 30000,
+        "serialized_response_payload_bytes": 30000,
         "total_duration_ms": 15000,
         "max_stage_duration_ms": 15000,
-        "long_task_count": 20,
-        "peak_rss_bytes": 536870912
+        "peak_rss_bytes": 536870912,
+        "auth_call_count": 7,
+        "cache_hit_rpc_count": 0,
+        "concurrent_miss_rpc_count": 1,
+        "invalidation_rpc_count": 1,
+        "denied_rpc_count": 0,
+        "slow_backend_stage_count": 20
       }
     }
-  }
+  },
+  "backend_stage_threshold_ms": 50
 }

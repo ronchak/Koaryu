@@ -20,6 +20,7 @@ StripeMode = Literal["test", "live"]
 LIVE_MUTATIONS_DISABLED_DETAIL = "Live Stripe mutations are disabled for this environment."
 STRIPE_OPERATION_UNSUPPORTED_DETAIL = "This Stripe mutation is not owned by a supported billing workflow."
 STRIPE_MODE_MISMATCH_DETAIL = "Stripe mode does not match the configured Stripe API key."
+LIVE_AUTHORIZATION_POSTGREST_TIMEOUT_SECONDS = 10.0
 CORE_SELF_CHECKOUT_OPERATIONS = frozenset({
     "customer.create",
     "core_checkout_session.create",
@@ -220,7 +221,9 @@ class StripeMutationPolicy:
     def _with_isolated_store(callback):
         # Live authorization is rare and owns a private client for the
         # duration of the calling worker operation.
-        client = create_supabase_client()
+        client = create_supabase_client(
+            postgrest_client_timeout=LIVE_AUTHORIZATION_POSTGREST_TIMEOUT_SECONDS,
+        )
         try:
             return callback(StudioLiveBillingAuthorizationStore(client))
         finally:

@@ -17,12 +17,20 @@ class DashboardBootstrapStudioSummary(BaseModel):
     logo_url: Optional[str] = None
 
 
+class DashboardBootstrapDatasetErrors(BaseModel):
+    studio: Optional[str] = None
+    students: Optional[str] = None
+    leads: Optional[str] = None
+    belts: Optional[str] = None
+    programs: Optional[str] = None
+
+
 class DashboardBootstrapResponse(BaseModel):
     auth: AuthResponse
     studio: Optional[DashboardBootstrapStudioSummary] = None
     studio_name: Optional[str] = None
     students: list[StudentResponse] = Field(default_factory=list)
-    students_total: int = 0
+    students_total: Optional[int] = 0
     students_page_size: int = 200
     students_may_be_partial: bool = False
     programs: list[ProgramResponse] = Field(default_factory=list)
@@ -30,3 +38,4 @@ class DashboardBootstrapResponse(BaseModel):
     belt_ladders: list[BeltLadderResponse] = Field(default_factory=list)
     primary_belt_ladder: Optional[BeltLadderResponse] = None
     summary: Optional[DashboardSummaryResponse] = None
+    dataset_errors: Optional[DashboardBootstrapDatasetErrors] = None

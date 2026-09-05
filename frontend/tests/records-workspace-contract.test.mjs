@@ -60,6 +60,7 @@ describe("records workspace composition contracts", () => {
     const eligibility = await source("../src/components/belt-tracker/eligibility-panel.tsx");
     const leads = await source("../src/components/leads/lead-pipeline-board.tsx");
     const leadPage = await source("../src/app/(dashboard)/leads/page.tsx");
+    const ageBands = await source("../src/lib/leads-age-bands.ts");
 
     assert.match(belt, /styles\.rankRail/);
     assert.match(belt, /data-progression-stratum/);
@@ -71,7 +72,7 @@ describe("records workspace composition contracts", () => {
     assert.match(leads, /<ol className=\{styles\.stageRail\}/);
     assert.match(leads, /<div className=\{styles\.ageQueue\}/);
     for (const band of ["8+ days overdue", "3–7 days overdue", "1–2 days overdue", "Due today", "Upcoming", "Unscheduled / completed"]) {
-      assert.ok(leads.includes(band));
+      assert.ok(ageBands.includes(band));
     }
     assert.match(leads, /getLeadNextAction\(lead\)/);
     assert.match(leadPage, /leadsLoadError/);

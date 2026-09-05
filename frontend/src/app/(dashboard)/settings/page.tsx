@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { markDashboardReadiness } from "@/lib/performance";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
@@ -8,14 +9,20 @@ import { OperationsIndex, OperationsSurface } from "@/components/operations/oper
 import { ProgramsSection } from "@/components/settings/programs-section";
 import { StaffRolesSection } from "@/components/settings/staff-roles-section";
 import { api } from "@/lib/api";
-import { useConfigStore, useStudioStore } from "@/lib/store";
+import { useConfigStore, useStudioStore, useProgramStore } from "@/lib/store";
 import { AlertTriangle, Save, Check, RotateCcw, Trash2 } from "lucide-react";
 import { canAccessSettings } from "./access-policy";
 
 type StudioDataConfirmAction = "demo-reset" | "clear-data" | null;
 
 export default function SettingsPage() {
-  const { currentRole } = useStudioStore();
+  const { currentRole, identityGeneration, identityReady, staffLoaded, staffLoadError } = useStudioStore();
+  const { programsLoaded, programsUsageLoaded, programsLoadError, programsUsageLoadError } = useProgramStore();
+  const completeReady = identityReady && (!canAccessSettings(currentRole)
+    || (staffLoaded && !staffLoadError && programsLoaded && programsUsageLoaded && !programsLoadError && !programsUsageLoadError));
+  useEffect(() => markDashboardReadiness("settings", identityGeneration, {
+    useful: identityReady, complete: completeReady,
+  }), [identityGeneration, identityReady, completeReady]);
 
   return (
     <OperationsSurface page="settings">

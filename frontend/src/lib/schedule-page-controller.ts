@@ -76,6 +76,9 @@ export function useSchedulePageController({
   const [showAddClass, setShowAddClass] = useState(false);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
   const [createClassError, setCreateClassError] = useState<string | null>(null);
+  const [rangeLoadAttempt, setRangeLoadAttempt] = useState(0);
+  const [loadedRangeKey, setLoadedRangeKey] = useState<string | null>(null);
+  const [refreshingRangeKey, setRefreshingRangeKey] = useState<string | null>(null);
   const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null);
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const [studentRosterLoadError, setStudentRosterLoadError] = useState<string | null>(null);
@@ -97,18 +100,24 @@ export function useSchedulePageController({
     [currentDate, view]
   );
 
+  const visibleRangeKey = `${visibleRange.start}:${visibleRange.end}`;
+
   useEffect(() => {
     let cancelled = false;
 
     async function loadRange() {
       setScheduleLoadError(null);
+      setRefreshingRangeKey(visibleRangeKey);
       try {
         await refreshScheduleRange(visibleRange.start, visibleRange.end, "materialize");
+        if (!cancelled) setLoadedRangeKey(visibleRangeKey);
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to load schedule range", error);
           setScheduleLoadError("Could not load this calendar range. Please try again.");
         }
+      } finally {
+        if (!cancelled) setRefreshingRangeKey(null);
       }
     }
 
@@ -117,7 +126,7 @@ export function useSchedulePageController({
     return () => {
       cancelled = true;
     };
-  }, [refreshScheduleRange, visibleRange.end, visibleRange.start]);
+  }, [rangeLoadAttempt, refreshScheduleRange, visibleRange.end, visibleRange.start, visibleRangeKey]);
 
   useEffect(() => {
     if (!selectedSession) {
@@ -299,6 +308,8 @@ export function useSchedulePageController({
       programFilter,
       programs,
       scheduleLoadError,
+      hasLoadedRange: loadedRangeKey === visibleRangeKey,
+      isRefreshingRange: refreshingRangeKey === visibleRangeKey,
       selectedSession,
       selectedSessionAttendance,
       studentRosterLoadError,
@@ -322,6 +333,7 @@ export function useSchedulePageController({
       onDismissActionMessage: () => setActionMessage(null),
       onDismissAttendanceError: () => setAttendanceError(null),
       onDismissCreateClassError: () => setCreateClassError(null),
+      onRetryRange: () => setRangeLoadAttempt((value) => value + 1),
       onDismissScheduleLoadError: () => setScheduleLoadError(null),
       onDismissStudentRosterLoadError: () => setStudentRosterLoadError(null),
       onJumpToToday: jumpToToday,

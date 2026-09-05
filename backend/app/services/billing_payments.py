@@ -113,84 +113,15 @@ class BillingPaymentManager:
         *,
         as_of: datetime | None = None,
     ) -> BillingPaymentCohortSummaryResponse:
-        observed_at = as_of or datetime.now(timezone.utc)
-        if observed_at.tzinfo is None:
-            observed_at = observed_at.replace(tzinfo=timezone.utc)
-        observed_at = observed_at.astimezone(timezone.utc)
-        period_start = observed_at.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        if period_start.month == 12:
-            period_end = period_start.replace(year=period_start.year + 1, month=1)
-        else:
-            period_end = period_start.replace(month=period_start.month + 1)
+        from app.services.billing_landing import payment_cohort_period
 
-        page_size = 1000
-        offset = 0
-        rows: list[dict[str, Any]] = []
-        while True:
-            page = (
-                self.supabase.table("billing_payments")
-                .select(
-                    "id, status, amount_cents, gross_paid_amount_cents, refunded_amount_cents, disputed_amount_cents, "
-                    "net_collected_amount_cents, processed_at"
-                )
-                .eq("studio_id", studio_id)
-                .in_("status", ["succeeded", "refunded", "disputed", "externally_recorded"])
-                .gte("processed_at", period_start.isoformat())
-                .lt("processed_at", period_end.isoformat())
-                .order("processed_at")
-                .order("id")
-                .range(offset, offset + page_size - 1)
-                .execute()
-                .data
-                or []
-            )
-            rows.extend(page)
-            if len(page) < page_size:
-                break
-            offset += page_size
-
-        stripe_net = 0
-        external_net = 0
-        gross_paid = 0
-        refunded_total = 0
-        disputed_total = 0
-        for payment in rows:
-            gross = max(
-                0,
-                int(payment.get("gross_paid_amount_cents"))
-                if payment.get("gross_paid_amount_cents") is not None
-                else int(payment.get("amount_cents") or 0),
-            )
-            refunded = min(gross, max(0, int(payment.get("refunded_amount_cents") or 0)))
-            disputed = min(
-                max(0, gross - refunded),
-                max(0, int(payment.get("disputed_amount_cents") or 0)),
-            )
-            net_amount = max(
-                0,
-                int(payment.get("net_collected_amount_cents"))
-                if payment.get("net_collected_amount_cents") is not None
-                else gross - refunded - disputed,
-            )
-            gross_paid += gross
-            refunded_total += refunded
-            disputed_total += disputed
-            if payment.get("status") == "externally_recorded":
-                external_net += net_amount
-            else:
-                stripe_net += net_amount
-
-        return BillingPaymentCohortSummaryResponse(
-            period_start=period_start.isoformat(),
-            period_end=period_end.isoformat(),
-            payment_count=len(rows),
-            gross_paid_amount_cents=gross_paid,
-            refunded_amount_cents=refunded_total,
-            disputed_amount_cents=disputed_total,
-            stripe_net_amount_cents=stripe_net,
-            external_net_amount_cents=external_net,
-            net_amount_cents=stripe_net + external_net,
-        )
+        period_start, period_end = payment_cohort_period(as_of)
+        result = execute_required_rpc(self.supabase, "billing_payment_cohort", {
+            "p_studio_id": studio_id,
+            "p_period_start": period_start.isoformat(),
+            "p_period_end": period_end.isoformat(),
+        })
+        return BillingPaymentCohortSummaryResponse.model_validate(result.data)
 
     async def record_external_payment(
         self,

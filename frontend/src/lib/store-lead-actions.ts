@@ -12,6 +12,7 @@ import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type { BeltLadder, BeltRank, Lead, Program, Student } from "@/types";
 
 interface UseStoreLeadActionsOptions {
+  beginLeadMutation: () => () => void;
   beginLiveAuthRequest: BeginLiveAuthRequest;
   beltLaddersRef: StoreRef<BeltLadder[]>;
   beltRanksRef: StoreRef<BeltRank[]>;
@@ -29,6 +30,7 @@ interface UseStoreLeadActionsOptions {
 }
 
 export function useStoreLeadActions({
+  beginLeadMutation,
   beginLiveAuthRequest,
   beltLaddersRef,
   beltRanksRef,
@@ -52,12 +54,17 @@ export function useStoreLeadActions({
     }
 
     const liveRequest = beginLiveAuthRequest();
-    const result = await api.post<Lead>("/leads", data, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return;
+    const finishMutation = beginLeadMutation();
+    try {
+      const result = await api.post<Lead>("/leads", data, liveRequest.token);
+      if (!liveRequest.isCurrent()) {
+        return;
+      }
+      setLeads((current) => [result, ...current]);
+    } finally {
+      finishMutation();
     }
-    setLeads((current) => [result, ...current]);
-  }, [beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, setLeads]);
+  }, [beginLeadMutation, beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, setLeads]);
 
   const updateLead = useCallback(async (id: string, data: Partial<Lead>) => {
     if (isPreviewMode) {
@@ -66,12 +73,17 @@ export function useStoreLeadActions({
     }
 
     const liveRequest = beginLiveAuthRequest();
-    const result = await api.patch<Lead>(`/leads/${id}`, data, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return;
+    const finishMutation = beginLeadMutation();
+    try {
+      const result = await api.patch<Lead>(`/leads/${id}`, data, liveRequest.token);
+      if (!liveRequest.isCurrent()) {
+        return;
+      }
+      setLeads((current) => current.map((lead) => lead.id === id ? result : lead));
+    } finally {
+      finishMutation();
     }
-    setLeads((current) => current.map((lead) => lead.id === id ? result : lead));
-  }, [beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, setLeads]);
+  }, [beginLeadMutation, beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, setLeads]);
 
   const deleteLead = useCallback(async (id: string) => {
     if (isPreviewMode) {
@@ -80,12 +92,17 @@ export function useStoreLeadActions({
     }
 
     const liveRequest = beginLiveAuthRequest();
-    await api.delete(`/leads/${id}`, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return;
+    const finishMutation = beginLeadMutation();
+    try {
+      await api.delete(`/leads/${id}`, liveRequest.token);
+      if (!liveRequest.isCurrent()) {
+        return;
+      }
+      setLeads((current) => current.filter((lead) => lead.id !== id));
+    } finally {
+      finishMutation();
     }
-    setLeads((current) => current.filter((lead) => lead.id !== id));
-  }, [beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, setLeads]);
+  }, [beginLeadMutation, beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, setLeads]);
 
   const refreshLeads = useCallback(async (): Promise<Lead[]> => {
     if (isPreviewMode) {
@@ -136,36 +153,42 @@ export function useStoreLeadActions({
     }
 
     const liveRequest = beginLiveAuthRequest();
-    const membershipStartDate = new Date().toISOString().split("T")[0];
-    const result = await api.post<Lead>(
-      `/leads/${leadId}/convert`,
-      {
-        status: "active",
-        membership_start_date: membershipStartDate,
-        program_id: lead.program_id || undefined,
-      },
-      liveRequest.token
-    );
-    if (!liveRequest.isCurrent()) {
+    const finishMutation = beginLeadMutation();
+    try {
+      const membershipStartDate = new Date().toISOString().split("T")[0];
+      const result = await api.post<Lead>(
+        `/leads/${leadId}/convert`,
+        {
+          status: "active",
+          membership_start_date: membershipStartDate,
+          program_id: lead.program_id || undefined,
+        },
+        liveRequest.token
+      );
+      if (!liveRequest.isCurrent()) {
+        return {
+          lead: result,
+          studentId: result.converted_student_id ?? null,
+        };
+      }
+
+      setLeads((current) => current.map((item) => (item.id === leadId ? result : item)));
+      try {
+        await refreshStudents();
+      } catch (error) {
+        console.error("Failed to refresh students after lead conversion", error);
+      }
+      onStudentMutation();
+
       return {
         lead: result,
         studentId: result.converted_student_id ?? null,
       };
+    } finally {
+      finishMutation();
     }
-
-    setLeads((current) => current.map((item) => (item.id === leadId ? result : item)));
-    try {
-      await refreshStudents();
-    } catch (error) {
-      console.error("Failed to refresh students after lead conversion", error);
-    }
-    onStudentMutation();
-
-    return {
-      lead: result,
-      studentId: result.converted_student_id ?? null,
-    };
   }, [
+    beginLeadMutation,
     beginLiveAuthRequest,
     beltLaddersRef,
     beltRanksRef,

@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 
 import { api } from "@/lib/api";
 import {
@@ -9,7 +9,7 @@ import {
   buildPreviewProgramLadder,
   upsertProgram,
 } from "@/lib/program-store-model";
-import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
+import { withCurrentLiveAuthRead, type BeginLiveAuthRequest, type StoreRef } from "@/lib/store-action-types";
 import { KEYS, load, localId } from "@/lib/store-storage";
 import { MOCK_PROGRAMS } from "@/lib/preview-studio-data";
 import type { BeltLadder, Program, ProgramCreate, ProgramUpdate } from "@/types";
@@ -25,7 +25,10 @@ interface UseStoreProgramActionsOptions {
   isPreviewMode: boolean;
   persistPrograms: (next: Program[]) => void;
   programsRef: StoreRef<Program[]>;
+  programsLoadedRef: StoreRef<boolean>;
   refreshBeltsRef: StoreRef<((preferredLadderId?: string | null) => Promise<void>) | null>;
+  setProgramsUsageLoaded: Dispatch<SetStateAction<boolean>>;
+  setProgramsUsageLoadError: Dispatch<SetStateAction<string | null>>;
   setProgramsLoadError: Dispatch<SetStateAction<string | null>>;
 }
 
@@ -37,39 +40,61 @@ export function useStoreProgramActions({
   isPreviewMode,
   persistPrograms,
   programsRef,
+  programsLoadedRef,
   refreshBeltsRef,
+  setProgramsUsageLoaded,
+  setProgramsUsageLoadError,
   setProgramsLoadError,
 }: UseStoreProgramActionsOptions) {
+  const usageRequestsRef = useRef(new Map<string, { identity: object; promise: Promise<Program[]>; isCurrent: () => boolean }>());
   const refreshPrograms = useCallback(async (
     options?: { includeArchived?: boolean }
   ): Promise<Program[]> => {
     if (isPreviewMode) {
       const stored = load(KEYS.programs, MOCK_PROGRAMS);
       persistPrograms(stored);
+      setProgramsUsageLoaded(true);
+      setProgramsUsageLoadError(null);
       return stored;
     }
 
     const request = beginLiveAuthRequest();
-    setProgramsLoadError(null);
+    const key = `${request.token}:${options?.includeArchived === true}`;
+    const retainedRequest = usageRequestsRef.current.get(key);
+    if (retainedRequest?.isCurrent()) return retainedRequest.promise;
+    setProgramsUsageLoadError(null);
+    if (!programsLoadedRef.current) setProgramsLoadError(null);
 
-    try {
-      const result = await api.get<Program[]>(
-        `/programs?include_archived=${options?.includeArchived ? "true" : "false"}`,
-        request.token
-      );
-      if (!request.isCurrent()) {
+    const identity = {};
+    const pending = withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
+      try {
+        const result = await api.get<Program[]>(
+          `/programs?include_archived=${options?.includeArchived ? "true" : "false"}`,
+          request.token
+        );
+        if (request.isCurrent()) {
+          persistPrograms(result);
+          setProgramsUsageLoaded(true);
+          setProgramsUsageLoadError(null);
+        }
         return result;
+      } catch (error) {
+        if (request.isCurrent()) {
+          const message = error instanceof Error ? error.message : "Programs could not be loaded.";
+          setProgramsUsageLoadError(message);
+          if (!programsLoadedRef.current) setProgramsLoadError(message);
+        }
+        throw error;
       }
-      persistPrograms(result);
-      return result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load programs.";
-      if (request.isCurrent()) {
-        setProgramsLoadError(message);
-      }
-      throw error;
-    }
-  }, [beginLiveAuthRequest, isPreviewMode, persistPrograms, setProgramsLoadError]);
+    }, (error) => {
+      setProgramsUsageLoadError(error.message);
+      if (!programsLoadedRef.current) setProgramsLoadError(error.message);
+    }).finally(() => {
+      if (usageRequestsRef.current.get(key)?.identity === identity) usageRequestsRef.current.delete(key);
+    });
+    usageRequestsRef.current.set(key, { identity, promise: pending, isCurrent: request.isCurrent });
+    return pending;
+  }, [beginLiveAuthRequest, isPreviewMode, persistPrograms, programsLoadedRef, setProgramsLoadError, setProgramsUsageLoaded, setProgramsUsageLoadError]);
 
   const createProgram = useCallback(async (data: ProgramCreate): Promise<Program> => {
     if (isPreviewMode) {

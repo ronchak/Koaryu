@@ -107,7 +107,7 @@ function buildRequestHeaders({
   return headers;
 }
 
-async function executeApiRequest(
+async function executeApiRequest<T>(
   path: string,
   init: Omit<RequestInit, "signal">,
   {
@@ -115,8 +115,9 @@ async function executeApiRequest(
     timeoutMs = API_TIMEOUT_MS,
     timeoutMessage,
     networkErrorMessage,
-  }: RequestRuntimeOptions
-) {
+  }: RequestRuntimeOptions,
+  consume: (response: Response) => Promise<T>,
+): Promise<T> {
   const controller = new AbortController();
   let abortReason: AbortReason = null;
   const timeout = timeoutMs == null
@@ -136,18 +137,22 @@ async function executeApiRequest(
     signal?.addEventListener("abort", abortFromCaller, { once: true });
   }
 
+  let receivedHeaders = false;
   try {
-    return await fetch(apiUrl(path), {
+    const response = await fetch(apiUrl(path), {
       ...init,
       signal: controller.signal,
     });
+    receivedHeaders = true;
+    return await consume(response);
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (abortReason !== null || (error instanceof Error && error.name === "AbortError")) {
       if (abortReason === "timeout") {
         throw new Error(timeoutMessage);
       }
       throw createAbortError();
     }
+    if (receivedHeaders) throw error;
     throw new Error(networkErrorMessage);
   } finally {
     if (timeout) {
@@ -289,7 +294,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     },
   });
 
-  const res = await executeApiRequest(
+  return executeApiRequest(
     path,
     {
       method,
@@ -301,15 +306,15 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
-    }
+    },
+    async (res) => {
+      if (!res.ok) {
+        const parsedError = await parseErrorResponse(res);
+        throw new ApiError(parsedError.message, res.status, parsedError.detail);
+      }
+      return parseSuccessResponse<T>(res);
+    },
   );
-
-  if (!res.ok) {
-    const parsedError = await parseErrorResponse(res);
-    throw new ApiError(parsedError.message, res.status, parsedError.detail);
-  }
-
-  return parseSuccessResponse<T>(res);
 }
 
 async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T> {
@@ -326,7 +331,7 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
   } = options;
   const headers = buildRequestHeaders({ token, headers: extraHeaders, omitStudioHeader });
 
-  const res = await executeApiRequest(
+  return executeApiRequest(
     path,
     {
       method,
@@ -338,15 +343,15 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
-    }
+    },
+    async (res) => {
+      if (!res.ok) {
+        const parsedError = await parseErrorResponse(res);
+        throw new ApiError(parsedError.message, res.status, parsedError.detail);
+      }
+      return parseSuccessResponse<T>(res);
+    },
   );
-
-  if (!res.ok) {
-    const parsedError = await parseErrorResponse(res);
-    throw new ApiError(parsedError.message, res.status, parsedError.detail);
-  }
-
-  return parseSuccessResponse<T>(res);
 }
 
 async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ blob: Blob; filename: string | null }> {
@@ -368,7 +373,7 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
     },
   });
 
-  const res = await executeApiRequest(
+  return executeApiRequest(
     path,
     {
       method: "GET",
@@ -379,20 +384,20 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
-    }
+    },
+    async (res) => {
+      if (!res.ok) {
+        const parsedError = await parseErrorResponse(res);
+        throw new ApiError(parsedError.message, res.status, parsedError.detail);
+      }
+      const contentDisposition = res.headers.get("content-disposition") || "";
+      const filenameMatch = /filename="?([^"]+)"?/i.exec(contentDisposition);
+      return {
+        blob: await res.blob(),
+        filename: filenameMatch?.[1] ?? null,
+      };
+    },
   );
-
-  if (!res.ok) {
-    const parsedError = await parseErrorResponse(res);
-    throw new ApiError(parsedError.message, res.status, parsedError.detail);
-  }
-
-  const contentDisposition = res.headers.get("content-disposition") || "";
-  const filenameMatch = /filename="?([^"]+)"?/i.exec(contentDisposition);
-  return {
-    blob: await res.blob(),
-    filename: filenameMatch?.[1] ?? null,
-  };
 }
 
 export const api = {

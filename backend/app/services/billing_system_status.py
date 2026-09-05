@@ -16,12 +16,12 @@ from app.schemas.billing import (
     BillingWebhookHealthResponse,
     StudioPaymentAccountResponse,
 )
+from app.services.supabase_rpc import execute_required_rpc
 from app.services.billing_workflow_catalog import (
     LIVE_SCOPE_OPERATIONS,
     workflow_capabilities_for_role,
 )
 from app.services.billing_connect_accounts import BillingConnectAccountStore
-from app.services.billing_invoice_projection import _to_text
 from app.services.stripe_mutation_policy import (
     StripeMutationPolicy,
     configured_stripe_mode,
@@ -124,12 +124,7 @@ class BillingSystemStatusReporter:
                 f"Supabase billing tables are not reachable. Reference: {error_id}",
             )
 
-        platform_webhooks = self.webhook_health(None)
-        connect_webhooks = (
-            self.webhook_health(account_response.stripe_connected_account_id)
-            if account_response.stripe_connected_account_id
-            else BillingWebhookHealthResponse()
-        )
+        platform_webhooks, connect_webhooks = self.webhook_health_pair(account_response.stripe_connected_account_id)
         self._add_webhook_checks(add_check, platform_webhooks, connect_webhooks)
 
         stripe_mode = configured_stripe_mode(self.settings)
@@ -244,110 +239,28 @@ class BillingSystemStatusReporter:
         except Exception:
             return False
 
-    def webhook_health(self, account_id: Optional[str]) -> BillingWebhookHealthResponse:
+    def webhook_health_pair(self, account_id: Optional[str]) -> tuple[BillingWebhookHealthResponse, BillingWebhookHealthResponse]:
         try:
-            latest_processed_query = (
-                self.supabase.table("stripe_events")
-                .select("type, processed_at")
-                .eq("processing_status", "processed")
-                .not_.is_("processed_at", "null")
-                .order("processed_at", desc=True)
-                .limit(1)
-            )
-            latest_processed_rows = (
-                self._scope_webhook_query(latest_processed_query, account_id).execute().data or []
-            )
-            latest_processed = latest_processed_rows[0] if latest_processed_rows else None
-            expected_livemode = self._expected_stripe_livemode()
-            pending_count = self._count_webhook_events(
-                account_id,
-                processing_status="pending",
-            )
-            processing_count = self._count_webhook_events(
-                account_id,
-                processing_status="processing",
-            )
-            failed_count = self._count_webhook_events(
-                account_id,
-                processing_status="failed",
-            )
-            stale_processing_count = self._count_webhook_events(
-                account_id,
-                processing_status="processing",
-                processing_started_before=(
-                    datetime.now(timezone.utc) - BILLING_WEBHOOK_PROCESSING_STALE_AFTER
-                ),
-            )
-            stale_processing_count += self._count_webhook_events(
-                account_id,
-                processing_status="processing",
-                processing_started_is_null=True,
-                created_before=(
-                    datetime.now(timezone.utc) - BILLING_WEBHOOK_PROCESSING_STALE_AFTER
-                ),
-            )
-            mode_mismatch_count = (
-                self._count_webhook_events(
-                    account_id,
-                    livemode_not=expected_livemode,
-                )
-                if expected_livemode is not None
-                else 0
-            )
+            result = execute_required_rpc(self.supabase, "billing_webhook_health", {
+                "p_account_id": account_id,
+                "p_expected_livemode": self._expected_stripe_livemode(),
+                "p_stale_before": (datetime.now(timezone.utc) - BILLING_WEBHOOK_PROCESSING_STALE_AFTER).isoformat(),
+            })
+            platform = BillingWebhookHealthResponse.model_validate(result.data["platform"])
+            connected = BillingWebhookHealthResponse.model_validate(result.data[account_id]) if account_id else BillingWebhookHealthResponse()
+            return platform, connected
         except Exception as exc:
             error_id = uuid4().hex
-            self._log_readiness_exception(
-                "Stripe webhook readiness query failed",
-                exc,
-                error_id=error_id,
-            )
-            return BillingWebhookHealthResponse(
-                stripe_account_id=account_id,
-                failed_count=1,
-                stale_processing_count=0,
-                error_reference=error_id,
+            self._log_readiness_exception("Stripe webhook readiness query failed", exc, error_id=error_id)
+            return (
+                BillingWebhookHealthResponse(failed_count=1, error_reference=error_id),
+                BillingWebhookHealthResponse(stripe_account_id=account_id, failed_count=1, error_reference=error_id)
+                if account_id else BillingWebhookHealthResponse(),
             )
 
-        return BillingWebhookHealthResponse(
-            stripe_account_id=account_id,
-            latest_processed_at=_to_text((latest_processed or {}).get("processed_at")),
-            latest_event_type=(latest_processed or {}).get("type"),
-            pending_count=pending_count,
-            processing_count=processing_count,
-            failed_count=failed_count,
-            stale_processing_count=stale_processing_count,
-            mode_mismatch_count=mode_mismatch_count,
-        )
-
-    def _count_webhook_events(
-        self,
-        account_id: Optional[str],
-        *,
-        processing_status: Optional[str] = None,
-        processing_started_before: Optional[datetime] = None,
-        processing_started_is_null: bool = False,
-        created_before: Optional[datetime] = None,
-        livemode_not: Optional[bool] = None,
-    ) -> int:
-        query = self.supabase.table("stripe_events").select("id", count="exact").limit(1)
-        query = self._scope_webhook_query(query, account_id)
-        if processing_status is not None:
-            query = query.eq("processing_status", processing_status)
-        if processing_started_before is not None:
-            query = query.lte("processing_started_at", processing_started_before.isoformat())
-        if processing_started_is_null:
-            query = query.is_("processing_started_at", "null")
-        if created_before is not None:
-            query = query.lte("created_at", created_before.isoformat())
-        if livemode_not is not None:
-            query = query.neq("livemode", livemode_not)
-        return int(query.execute().count or 0)
-
-    @staticmethod
-    def _scope_webhook_query(query: Any, account_id: Optional[str]):
-        if account_id:
-            return query.eq("stripe_account_id", account_id)
-        return query.is_("stripe_account_id", "null")
+    def webhook_health(self, account_id: Optional[str]) -> BillingWebhookHealthResponse:
+        platform, connected = self.webhook_health_pair(account_id)
+        return connected if account_id else platform
 
     def _add_configuration_checks(self, add_check: Callable[..., None], *, studio_id: str) -> None:
         stripe_mode = configured_stripe_mode(self.settings)
