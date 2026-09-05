@@ -127,33 +127,3 @@ class StudentMembershipActions:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Student not found")
-
-    def _sync_active_programs(self, student_id: str, studio_id: str) -> None:
-        active_program_ids = self._active_program_ids(student_id, studio_id)
-        if active_program_ids:
-            self.membership_store.sync_legacy_program_fields(student_id, studio_id, active_program_ids)
-
-    def _active_program_ids(self, student_id: str, studio_id: str) -> list[str]:
-        return [
-            membership.program_id
-            for membership in self.response_builder.fetch_memberships_for_student(student_id, studio_id)
-            if membership.status in {"active", "paused"} and not membership.ended_at
-        ]
-
-    def _write_audit_log(
-        self,
-        studio_id: str,
-        actor_id: str,
-        action: str,
-        entity_type: str,
-        entity_id: str,
-        metadata: dict,
-    ) -> None:
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": action,
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "metadata": metadata,
-        }).execute()

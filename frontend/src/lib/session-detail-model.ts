@@ -84,10 +84,6 @@ export function getActiveStudentProgramIds(student: Student) {
   return Array.from(new Set([...membershipProgramIds, student.program_id].filter(Boolean) as string[]));
 }
 
-export function studentBelongsToProgram(student: Student, programId: string) {
-  return getActiveStudentProgramIds(student).includes(programId);
-}
-
 export function buildSessionAttendanceSummary(
   attendance: AttendanceRecord[],
   students: Pick<Student, "id">[],

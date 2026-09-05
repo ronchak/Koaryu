@@ -75,10 +75,3 @@ export function isStudentRosterRequestCurrent({
     requestQueryKey === activeQueryKey
   );
 }
-
-export function buildStudentRosterPageTotals(total: number, pageSize: number) {
-  return {
-    totalPages: Math.max(1, Math.ceil(total / pageSize)),
-    visibleTotal: total,
-  };
-}

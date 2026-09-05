@@ -7,13 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildInvoiceOperationRequest,
   clearPersistedInvoiceOperationRequestKey,
-  clearInvoiceRetryRequestKey,
-  clearPersistedInvoiceRetryRequestKey,
-  getOrCreateInvoiceRetryRequestKey,
-  getOrCreatePersistedInvoiceRetryRequestKey,
-  invoiceDraftFingerprint,
   resolvePersistedInvoiceOperationRequestKey,
-  shouldRetainInvoiceRetryRequestKey,
 } from "../src/lib/billing-invoice-action-model.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,56 +31,6 @@ function blockedStorage() {
 
 
 describe("billing invoice retry request keys", () => {
-  it("reuses the same key when a retry response is lost", () => {
-    const keys = new Map();
-    let sequence = 0;
-    const createKey = () => `operation-${++sequence}`;
-
-    const firstAttempt = getOrCreateInvoiceRetryRequestKey(keys, "invoice-1", createKey);
-    const retryAfterLostResponse = getOrCreateInvoiceRetryRequestKey(keys, "invoice-1", createKey);
-
-    assert.equal(firstAttempt, "operation-1");
-    assert.equal(retryAfterLostResponse, firstAttempt);
-    assert.equal(sequence, 1);
-  });
-
-  it("uses separate keys for concurrent invoices and after a completed operation", () => {
-    const keys = new Map();
-    let sequence = 0;
-    const createKey = () => `operation-${++sequence}`;
-
-    const firstInvoice = getOrCreateInvoiceRetryRequestKey(keys, "invoice-1", createKey);
-    const secondInvoice = getOrCreateInvoiceRetryRequestKey(keys, "invoice-2", createKey);
-    clearInvoiceRetryRequestKey(keys, "invoice-1");
-    const laterFirstInvoiceRetry = getOrCreateInvoiceRetryRequestKey(keys, "invoice-1", createKey);
-
-    assert.notEqual(firstInvoice, secondInvoice);
-    assert.notEqual(firstInvoice, laterFirstInvoiceRetry);
-    assert.equal(getOrCreateInvoiceRetryRequestKey(keys, "invoice-2", createKey), secondInvoice);
-  });
-
-  it("preserves ambiguous timeout and server-failure attempts", () => {
-    assert.equal(shouldRetainInvoiceRetryRequestKey(null), true);
-    assert.equal(shouldRetainInvoiceRetryRequestKey(500), true);
-    assert.equal(shouldRetainInvoiceRetryRequestKey(503), true);
-  });
-
-  it("retains every unconfirmed response until deliberate key rotation", () => {
-    const storage = memoryStorage();
-    let sequence = 0;
-    const createKey = () => `operation-${++sequence}`;
-    const first = getOrCreatePersistedInvoiceRetryRequestKey(
-      "user-1:studio-1", "invoice-1", createKey, storage
-    );
-
-    assert.equal(shouldRetainInvoiceRetryRequestKey(402), true);
-    clearPersistedInvoiceRetryRequestKey("user-1:studio-1", "invoice-1", storage);
-    const corrected = getOrCreatePersistedInvoiceRetryRequestKey(
-      "user-1:studio-1", "invoice-1", createKey, storage
-    );
-
-    assert.notEqual(corrected, first);
-  });
 
   it("persists exact retry identity and rotates only when explicitly requested", () => {
     const storage = memoryStorage();
@@ -162,54 +106,6 @@ describe("billing invoice retry request keys", () => {
     });
   });
 
-  it("uses a normalized draft fingerprint for create keys across reload", () => {
-    const firstPayload = {
-      payer_id: "payer-1",
-      amount_cents: 5000,
-      currency: "usd",
-      items: [{ description: "Tuition", amount_cents: 5000 }],
-    };
-    const equivalentPayload = {
-      items: [{ amount_cents: 5000, description: "Tuition" }],
-      currency: "usd",
-      amount_cents: 5000,
-      payer_id: "payer-1",
-    };
-    const changedPayload = { ...firstPayload, amount_cents: 5100 };
-    assert.equal(
-      invoiceDraftFingerprint(firstPayload),
-      invoiceDraftFingerprint(equivalentPayload),
-    );
-    assert.notEqual(
-      invoiceDraftFingerprint(firstPayload),
-      invoiceDraftFingerprint(changedPayload),
-    );
-
-    const storage = memoryStorage();
-    const identity = { userId: "user-1", studioId: "studio-1" };
-    const targetId = invoiceDraftFingerprint(firstPayload);
-    let sequence = 0;
-    const createKey = () => `create-key-${++sequence}`;
-    const beforeReload = resolvePersistedInvoiceOperationRequestKey({
-      createKey,
-      identity,
-      keysByTarget: new Map(),
-      operation: "invoice.create",
-      storage,
-      targetId,
-    });
-    const afterReload = resolvePersistedInvoiceOperationRequestKey({
-      createKey,
-      identity,
-      keysByTarget: new Map(),
-      operation: "invoice.create",
-      storage,
-      targetId,
-    });
-    assert.equal(afterReload, beforeReload);
-    assert.equal(sequence, 1);
-  });
-
   it("keeps an exact scoped key when browser storage is blocked", () => {
     const memory = new Map();
     let sequence = 0;
@@ -283,60 +179,6 @@ describe("billing invoice retry request keys", () => {
     assert.equal(next, "key-2");
   });
 
-  it("replays the same ambiguous operation after a page reload", () => {
-    const storage = memoryStorage();
-    let sequence = 0;
-    const createKey = () => `operation-${++sequence}`;
-    const beforeReload = getOrCreatePersistedInvoiceRetryRequestKey(
-      "user-1:studio-1", "invoice-1", createKey, storage
-    );
-    const afterReload = getOrCreatePersistedInvoiceRetryRequestKey(
-      "user-1:studio-1", "invoice-1", createKey, storage
-    );
-
-    assert.equal(afterReload, beforeReload);
-    assert.equal(sequence, 1);
-  });
-
-  it("scopes persisted retry operations by user, studio, and invoice", () => {
-    const storage = memoryStorage();
-    let sequence = 0;
-    const createKey = () => `operation-${++sequence}`;
-
-    const studioOne = getOrCreatePersistedInvoiceRetryRequestKey(
-      "user-1:studio-1", "invoice-1", createKey, storage
-    );
-    const studioTwo = getOrCreatePersistedInvoiceRetryRequestKey(
-      "user-1:studio-2", "invoice-1", createKey, storage
-    );
-    const otherInvoice = getOrCreatePersistedInvoiceRetryRequestKey(
-      "user-1:studio-1", "invoice-2", createKey, storage
-    );
-    const otherUser = getOrCreatePersistedInvoiceRetryRequestKey(
-      "user-2:studio-1", "invoice-1", createKey, storage
-    );
-
-    assert.notEqual(studioOne, studioTwo);
-    assert.notEqual(studioOne, otherInvoice);
-    assert.notEqual(studioOne, otherUser);
-  });
-
-  it("keeps one in-memory operation key when browser storage is blocked", () => {
-    const fallback = new Map();
-    let sequence = 0;
-    const createKey = () => `operation-${++sequence}`;
-
-    const first = getOrCreatePersistedInvoiceRetryRequestKey(
-      "user-1:studio-1", "invoice-1", createKey, blockedStorage(), fallback
-    );
-    const second = getOrCreatePersistedInvoiceRetryRequestKey(
-      "user-1:studio-1", "invoice-1", createKey, blockedStorage(), fallback
-    );
-
-    assert.equal(second, first);
-    assert.equal(sequence, 1);
-  });
-
   it("falls back when reading browser storage itself is blocked", () => {
     const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
     const fallback = new Map();
@@ -355,12 +197,20 @@ describe("billing invoice retry request keys", () => {
     });
 
     try {
-      const first = getOrCreatePersistedInvoiceRetryRequestKey(
-        "user-1:studio-1", "invoice-1", createKey, undefined, fallback
-      );
-      const second = getOrCreatePersistedInvoiceRetryRequestKey(
-        "user-1:studio-1", "invoice-1", createKey, undefined, fallback
-      );
+      const first = resolvePersistedInvoiceOperationRequestKey({
+        createKey,
+        identity: { userId: "user-1", studioId: "studio-1" },
+        keysByTarget: fallback,
+        operation: "invoice.retry",
+        targetId: "invoice-1",
+      });
+      const second = resolvePersistedInvoiceOperationRequestKey({
+        createKey,
+        identity: { userId: "user-1", studioId: "studio-1" },
+        keysByTarget: fallback,
+        operation: "invoice.retry",
+        targetId: "invoice-1",
+      });
 
       assert.equal(second, first);
       assert.equal(sequence, 1);

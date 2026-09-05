@@ -1,7 +1,6 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends
-from supabase import Client
 from app.core.deps import ProviderDependency, run_supabase_operation
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
 from app.schemas.auth import AuthResponse

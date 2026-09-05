@@ -48,9 +48,3 @@ export const studioTypeMarketingDetailRouteConfig = {
     relatedActionLabel: "Back to Explore",
   },
 } satisfies MarketingDetailRouteConfig;
-
-export const marketingDetailRouteConfigs = [
-  featureMarketingDetailRouteConfig,
-  useCaseMarketingDetailRouteConfig,
-  studioTypeMarketingDetailRouteConfig,
-] as const;

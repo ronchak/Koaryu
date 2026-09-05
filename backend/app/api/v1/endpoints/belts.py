@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
-from supabase import Client
 from app.core.deps import ProviderDependency, run_supabase_operation
 from app.core.deps import (
     get_belt_configuration_admin_studio_id,

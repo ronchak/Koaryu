@@ -9,7 +9,6 @@ from fastapi import HTTPException, status
 
 from app.core.config import get_settings, parse_stripe_webhook_secrets
 from app.services.stripe_connect_gateway import (
-    STRIPE_ACCOUNTS_V2_VERSION,
     StripeConnectGateway,
     _StripeV2RequestError,
     stripe_v2_request,

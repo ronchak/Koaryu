@@ -125,25 +125,6 @@ class BillingEnrollmentStripeLifecycle:
             rows = [row for row in rows if row.get("id") != exclude_enrollment_id]
         return len(rows)
 
-    def _remaining_enrollments_for_subscription(self, enrollment: dict[str, Any]) -> list[dict[str, Any]]:
-        group_id = enrollment.get("billing_subscription_id")
-        if not group_id:
-            return []
-        result = (
-            self.supabase.table("student_billing_enrollments")
-            .select("id, metadata")
-            .eq("studio_id", enrollment["studio_id"])
-            .eq("billing_subscription_id", group_id)
-            .neq("id", enrollment["id"])
-            .in_("status", ["pending", "active"])
-            .execute()
-        )
-        return [
-            row
-            for row in (result.data or [])
-            if not (row.get("metadata") or {}).get("stripe_detach_pending")
-        ]
-
     def _claim_subscription_quantity_sync_lock(self, studio_id: str, group_id: str) -> str:
         token = str(uuid4())
         result = execute_required_rpc(

@@ -14,8 +14,7 @@ import {
   isPayerSetupReplacementEligible,
   payerSetupActionLabel,
   resolvePersistedPayerOperationRequestKey,
-  resolvePayerAutopaySetupRequestKey,
-  resolvePayerSyncRequestKey,
+  resolvePersistedPayerSetupRequestKey,
 } from "../src/lib/billing-payer-setup-model.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -47,16 +46,6 @@ describe("hidden payer autopay setup adapter", () => {
       fs.existsSync(path.join(root, "src/app/payer-setup-complete/page.tsx")),
       true,
     );
-  });
-
-  it("reuses one payer key for retries and rotates only for a deliberate new setup", () => {
-    const keys = new Map();
-    const generated = ["key-1", "key-2"];
-    const createKey = () => generated.shift();
-
-    assert.equal(resolvePayerAutopaySetupRequestKey(keys, "payer-1", false, createKey), "key-1");
-    assert.equal(resolvePayerAutopaySetupRequestKey(keys, "payer-1", false, createKey), "key-1");
-    assert.equal(resolvePayerAutopaySetupRequestKey(keys, "payer-1", true, createKey), "key-2");
   });
 
   it("sends a new key on the first click for completed payer setup", () => {
@@ -100,16 +89,20 @@ describe("hidden payer autopay setup adapter", () => {
       { autopay_status: "not_configured", stripe_payment_method_id: null },
       { autopay_status: "disabled", stripe_payment_method_id: null },
     ]) {
-      const keys = new Map([["payer-1", "current-key"]]);
+      const options = {
+        identity: { userId: "user-1", studioId: "studio-1" },
+        keysByPayer: new Map(),
+        attemptsByPayer: new Map(),
+        payer: { ...payer, id: "payer-1" },
+      };
+      resolvePersistedPayerSetupRequestKey({ ...options, createKey: () => "current-key" });
       assert.equal(isPayerSetupReplacementEligible(payer), false);
       assert.equal(payerSetupActionLabel(payer), "Payer setup link");
       assert.equal(
-        resolvePayerAutopaySetupRequestKey(
-          keys,
-          "payer-1",
-          isPayerSetupReplacementEligible(payer),
-          () => assert.fail("pending setup minted a second key"),
-        ),
+        resolvePersistedPayerSetupRequestKey({
+          ...options,
+          createKey: () => assert.fail("pending setup minted a second key"),
+        }),
         "current-key",
       );
     }
@@ -157,9 +150,16 @@ describe("hidden payer autopay setup adapter", () => {
     const generated = ["sync-key-1", "sync-key-2"];
     const createKey = () => generated.shift();
 
-    const first = resolvePayerSyncRequestKey(keys, "payer-1", false, createKey);
-    const replay = resolvePayerSyncRequestKey(keys, "payer-1", false, createKey);
-    const fresh = resolvePayerSyncRequestKey(keys, "payer-1", true, createKey);
+    const options = {
+      createKey,
+      identity: { userId: "user-1", studioId: "studio-1" },
+      keysByPayer: keys,
+      operation: "payer.sync",
+      payerId: "payer-1",
+    };
+    const first = resolvePersistedPayerOperationRequestKey(options);
+    const replay = resolvePersistedPayerOperationRequestKey(options);
+    const fresh = resolvePersistedPayerOperationRequestKey({ ...options, startNewRequest: true });
 
     assert.deepEqual(buildPayerSyncRequest(first), {
       headers: { "Idempotency-Key": "sync-key-1" },

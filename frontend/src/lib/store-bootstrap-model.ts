@@ -2,12 +2,10 @@ import type {
   AuthResponse,
   BeltLadder,
   DashboardBootstrapResponse,
-  DashboardBootstrapStudioSummary,
   DashboardSummary,
   Lead,
   Program,
   Student,
-  StudentRosterPageResponse,
   UserProfile,
 } from "@/types";
 
@@ -77,35 +75,6 @@ export function resolveBootstrapLadders(
     : data.primary_belt_ladder
       ? [data.primary_belt_ladder]
       : [];
-}
-
-export function buildLegacyBootstrapResponse({
-  auth,
-  studio,
-  studentsPage,
-  programs,
-  leads,
-  beltLadders,
-}: {
-  auth: AuthProfileResponse;
-  studio: DashboardBootstrapStudioSummary;
-  studentsPage: Pick<StudentRosterPageResponse, "items" | "total" | "page_size">;
-  programs: Program[];
-  leads: Lead[];
-  beltLadders: BeltLadder[];
-}): BootstrapResponse {
-  return {
-    auth,
-    studio,
-    students: studentsPage.items,
-    students_total: studentsPage.total,
-    students_page_size: studentsPage.page_size,
-    students_may_be_partial: studentsPage.total > studentsPage.items.length,
-    programs,
-    leads,
-    belt_ladders: beltLadders,
-    primary_belt_ladder: beltLadders[0] ?? null,
-  };
 }
 
 export function buildDeferredScheduleDateRange(now = new Date()): {

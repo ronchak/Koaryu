@@ -215,14 +215,6 @@ class ReportExportService:
         report = self.get_report(report_id)
         return await self.build_csv_for_report(report, studio_id)
 
-    async def build_csv_artifact(
-        self,
-        report_id: str,
-        studio_id: str,
-    ) -> ReportExportArtifact:
-        report = self.get_report(report_id)
-        return await self.build_csv_artifact_for_report(report, studio_id)
-
     async def build_csv_artifact_for_report(
         self,
         report: CsvReport,

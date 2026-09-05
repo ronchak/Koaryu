@@ -7,7 +7,6 @@ export type DashboardBillingSummary = {
   paymentsReady: boolean | null;
 };
 
-export type DashboardBillingActionKind = "payment-issues" | "payments-setup";
 
 export function canViewDashboardBilling({
   currentRole,
@@ -70,29 +69,4 @@ export function isDashboardBillingSetupComplete({
 }) {
   const hasTuitionPlans = summary?.setup.has_tuition_plans ?? billingSummary.hasPlans;
   return hasTuitionPlans === true;
-}
-
-export function getDashboardBillingActionKind({
-  billingSummary,
-  canSeeBilling,
-}: {
-  billingSummary: DashboardBillingSummary;
-  canSeeBilling: boolean;
-}): DashboardBillingActionKind | null {
-  if (!canSeeBilling) {
-    return null;
-  }
-
-  if (
-    billingSummary.paymentAttentionCount !== null &&
-    billingSummary.paymentAttentionCount > 0
-  ) {
-    return "payment-issues";
-  }
-
-  if (billingSummary.paymentsReady === false) {
-    return "payments-setup";
-  }
-
-  return null;
 }

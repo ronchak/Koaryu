@@ -4,7 +4,6 @@ import { describe, it } from "node:test";
 import {
   buildAuthUserProfile,
   buildDeferredScheduleDateRange,
-  buildLegacyBootstrapResponse,
   buildSessionUserProfile,
   isStaffProfilesAvailable,
   isDashboardSummaryForStudio,
@@ -24,55 +23,6 @@ function ladder(id, overrides = {}) {
     updated_at: "2026-05-01T00:00:00.000Z",
     ranks: [],
     ...overrides,
-  };
-}
-
-function program(id) {
-  return {
-    id,
-    studio_id: "studio-1",
-    name: id,
-    color_hex: "#38BDF8",
-    sort_order: 0,
-    is_system: false,
-    created_at: "2026-05-01T00:00:00.000Z",
-    updated_at: "2026-05-01T00:00:00.000Z",
-    usage: {
-      student_count: 0,
-      active_student_count: 0,
-      class_count: 0,
-      active_class_count: 0,
-      lead_count: 0,
-      belt_ladder_count: 0,
-    },
-  };
-}
-
-function lead(id) {
-  return {
-    id,
-    studio_id: "studio-1",
-    first_name: "Ari",
-    last_name: "Stone",
-    source: "walk_in",
-    stage: "inquiry",
-    is_minor: false,
-    created_at: "2026-05-01T00:00:00.000Z",
-    updated_at: "2026-05-01T00:00:00.000Z",
-  };
-}
-
-function student(id) {
-  return {
-    id,
-    studio_id: "studio-1",
-    legal_first_name: "Ava",
-    legal_last_name: "Lane",
-    status: "active",
-    tags: [],
-    guardians: [],
-    created_at: "2026-05-01T00:00:00.000Z",
-    updated_at: "2026-05-01T00:00:00.000Z",
   };
 }
 
@@ -177,47 +127,6 @@ describe("store bootstrap model", () => {
       ["primary"]
     );
     assert.deepEqual(resolveBootstrapLadders({ belt_ladders: [], primary_belt_ladder: null }), []);
-  });
-
-  it("builds the legacy bootstrap response from fallback endpoint results", () => {
-    const ladders = [ladder("ladder-1")];
-    const auth = {
-      user: { id: "user-1", email: "owner@example.test" },
-      staff_profiles_available: true,
-      membership_status: "active",
-      studio_id: "studio-1",
-      role: "admin",
-    };
-    const response = buildLegacyBootstrapResponse({
-      auth,
-      studio: { name: "River City" },
-      studentsPage: { items: [student("student-1")], total: 1, page: 1, page_size: 200 },
-      programs: [program("program-1")],
-      leads: [lead("lead-1")],
-      beltLadders: ladders,
-    });
-
-    assert.deepEqual(
-      {
-        studio: response.studio,
-        studentIds: response.students.map((item) => item.id),
-        programIds: response.programs?.map((item) => item.id),
-        leadIds: response.leads.map((item) => item.id),
-        ladderIds: response.belt_ladders.map((item) => item.id),
-        primaryLadderId: response.primary_belt_ladder?.id,
-      },
-      {
-        studio: { name: "River City" },
-        studentIds: ["student-1"],
-        programIds: ["program-1"],
-        leadIds: ["lead-1"],
-        ladderIds: ["ladder-1"],
-        primaryLadderId: "ladder-1",
-      }
-    );
-    assert.equal(response.auth, auth);
-    assert.equal(response.auth.staff_profiles_available, true);
-    assert.equal(response.auth.membership_status, "active");
   });
 
   it("requires an explicit membership status when parsing authoritative auth", () => {

@@ -753,14 +753,6 @@ class StaffService:
         except Exception:
             return
 
-    def _cleanup_failed_invite_link(
-        self,
-        staff_role_id: str,
-        studio_id: str,
-        user_id: Optional[str],
-    ) -> None:
-        self._cleanup_failed_invite_resources([staff_role_id], studio_id, user_id)
-
     def _cleanup_failed_invite_resources(
         self,
         staff_role_ids: list[str],

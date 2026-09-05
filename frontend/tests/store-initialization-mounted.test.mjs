@@ -17,7 +17,6 @@ function bundle(mode, { preview = false, layout = false, leadsPage = false, prog
   const ids = new Map();
   const stubs = {
     "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(path){(window.fixture.redirects??=[]).push(path)}}; exports.useRouter=()=>router;`,
-    "@/components/loading-screen": `exports.LoadingScreen=()=>null;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
     "@/lib/performance": `exports.markPerformance=name=>{window.fixture.marks?.push(name);};exports.measurePerformance=()=>{};exports.markDashboardReadiness=(route,generation,state)=>{window.fixture.readiness?.push(state);return ()=>{};};`,

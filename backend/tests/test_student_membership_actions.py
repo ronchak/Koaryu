@@ -43,19 +43,6 @@ class StudentMembershipActionsTenantScopeTest(unittest.TestCase):
 
         self.assertEqual(response_builder.calls, [("student_1", "studio_1")])
 
-    def test_active_program_ids_fetches_memberships_with_student_studio_scope(self):
-        response_builder = RecordingResponseBuilder()
-        actions = StudentMembershipActions(
-            TableBackedSupabase(),
-            FakeMembershipStore(),
-            response_builder,
-        )
-
-        active_ids = actions._active_program_ids("student_1", "studio_1")
-
-        self.assertEqual(active_ids, ["program_1"])
-        self.assertEqual(response_builder.calls, [("student_1", "studio_1")])
-
     def test_add_maps_concurrent_student_deletion_to_not_found(self):
         actions = StudentMembershipActions(
             TableBackedSupabase(),

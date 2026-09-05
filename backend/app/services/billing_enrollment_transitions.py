@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.billing_invoice_projection import _object_get, _stripe_id, subscription_period_bounds

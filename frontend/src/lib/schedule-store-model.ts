@@ -182,13 +182,6 @@ export type ScheduleDateRange = {
   startDate: string;
 };
 
-export function isScheduleRangeCommitCurrent(
-  rangeCurrent: boolean,
-  attendanceCurrent: boolean
-) {
-  return rangeCurrent && attendanceCurrent;
-}
-
 export async function runScheduleRangeRefreshWithRetry<T>(
   attempt: () => Promise<{ committed: boolean; value: T }>,
   maximumAttempts = 3,

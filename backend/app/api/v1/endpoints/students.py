@@ -2,7 +2,6 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Header, status as http_status
 from typing import Optional
-from supabase import Client
 from app.core.deps import ProviderDependency, run_supabase_operation
 from app.core.deps import (
     get_current_studio_id,
@@ -19,7 +18,7 @@ from app.schemas.billing import (
     StudentBillingEnrollmentResponse,
 )
 from app.schemas.student import (
-    StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
+    StudentCreate, StudentUpdate, StudentResponse,
     StudentRosterPageResponse,
     StudentRosterCursorErrorResponse,
     BulkStudentUpdateResponse,

@@ -64,14 +64,6 @@ export function formatDate(value?: string | null, withYear = false) {
   );
 }
 
-export function timeAgo(value: string, nowMs = Date.now()) {
-  const diff = nowMs - new Date(value).getTime();
-  const days = Math.floor(diff / DAY_MS);
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  return `${days}d ago`;
-}
-
 export function todayDateString(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -114,14 +106,6 @@ export function getFollowUpStatusLabel(date: string, today: string) {
   }
 
   return `Due ${formatDate(date)}`;
-}
-
-export function getLeadFollowUpTone(
-  followUpDate: string | null | undefined,
-  today: string
-): "due-today" | "overdue" | null {
-  if (!followUpDate || followUpDate > today) return null;
-  return followUpDate < today ? "overdue" : "due-today";
 }
 
 export function getProgramLabel(lead: Lead, program?: Program | null) {
@@ -252,10 +236,6 @@ export function selectLeadsPageModel(
     selectedLead: selectedLeadId ? dataset.leadById.get(selectedLeadId) ?? null : null,
     draggedLeadRecord: draggedLeadId ? dataset.leadById.get(draggedLeadId) ?? null : null,
   };
-}
-
-export function buildLeadsPageModel(input: LeadsPageModelInput): LeadsPageModel {
-  return selectLeadsPageModel(buildLeadsDatasetModel(input), input.selectedLeadId, input.draggedLeadId);
 }
 
 export function getLeadFollowUpInputValue(

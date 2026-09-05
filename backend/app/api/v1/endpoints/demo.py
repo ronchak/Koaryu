@@ -1,7 +1,6 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from supabase import Client
 from app.core.deps import ProviderDependency, run_supabase_operation
 
 from app.core.config import get_settings

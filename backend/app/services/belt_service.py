@@ -72,19 +72,6 @@ class BeltService:
 
         raise HTTPException(status_code=status_code, detail=detail) from exc
 
-    async def _get_ladder(self, ladder_id: str, studio_id: str) -> BeltLadderResponse:
-        result = (
-            self.supabase.table("belt_ladders")
-            .select("*, belt_ranks(*)")
-            .eq("id", ladder_id)
-            .eq("studio_id", studio_id)
-            .single()
-            .execute()
-        )
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Belt ladder not found")
-        return self._build_ladder_response(result.data)
-
     def _get_ladder_row(self, ladder_id: str, studio_id: str) -> dict[str, Any]:
         result = (
             self.supabase.table("belt_ladders")

@@ -176,10 +176,6 @@ CONNECTED_STRIPE_SINKS = {
 }
 
 
-def workflow_for_route(route_name: str) -> BillingWorkflowDefinition:
-    return WORKFLOWS_BY_ROUTE[route_name]
-
-
 def stripe_operation_scope(operation: str) -> LiveBillingScope | None:
     if operation in {"core_checkout_session.expire", "core_subscription.cancel"}:
         return "core_subscription"
