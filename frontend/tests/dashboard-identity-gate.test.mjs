@@ -8,7 +8,7 @@ import ts from 'typescript';
 import { shouldBlockForLegalName } from '../src/lib/legal-name-model.ts';
 const require = createRequire(import.meta.url);
 
-function renderGate(profile) {
+function renderGate(profile, programs = { programsLoaded: true, programsLoadError: null, refreshPrograms: async () => [] }) {
   const source = readFileSync(new URL('../src/app/(dashboard)/layout.tsx', import.meta.url), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: {
     jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true,
@@ -26,7 +26,7 @@ function renderGate(profile) {
     '@/components/sidebar': { Sidebar: () => 'tenant-navigation' },
     '@/components/theme-provider': { useTheme: () => ({ navigationPlacement: 'side' }) },
     '@/components/account/legal-name-blocking-screen': { LegalNameBlockingScreen: () => 'legal-name-form' },
-    '@/lib/store': { StoreProvider: passthrough, useStudioStore: () => profile },
+    '@/lib/store': { StoreProvider: passthrough, useStudioStore: () => profile, useProgramStore: () => programs },
     '@/lib/legal-name-model': { shouldBlockForLegalName },
     '@/components/dashboard-shell.module.css': {},
   };
@@ -61,4 +61,12 @@ test('authoritative legacy profile without legal-name schema retains its existin
   assert.match(html, /tenant-navigation/);
   assert.match(html, /protected-records/);
   assert.doesNotMatch(html, /neutral-workspace|legal-name-form/);
+});
+
+
+test('program metadata warnings stay behind identity and legal-name gates', () => {
+  const unavailablePrograms = { programsLoaded: false, programsLoadError: 'Metadata unavailable', refreshPrograms: async () => [] };
+  assert.doesNotMatch(renderGate(profile, unavailablePrograms), /Program options are unavailable/);
+  assert.doesNotMatch(renderGate({ ...profile, identityReady: true, staffProfilesAvailable: true }, unavailablePrograms), /Program options are unavailable/);
+  assert.match(renderGate({ ...profile, identityReady: true, currentRole: 'admin' }, unavailablePrograms), /Program options are unavailable/);
 });

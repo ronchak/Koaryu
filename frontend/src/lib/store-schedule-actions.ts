@@ -160,13 +160,34 @@ export function useStoreScheduleActions({
       rangeRequestSequence: coordinator.rangeRequestSequence + 1,
     };
     const identity = {};
-    const isCurrent = () => request.isCurrent() && rangeRequestRef.current?.identity === identity;
+    // A token renewal invalidates transport results, not the caller's calendar range.
+    // Keep that caller alive only while the authoritative identity and range survive.
+    const isCurrent = () => (
+      request.isCurrent() || request.canRetryAfterTokenChange?.() === true
+    ) && rangeRequestRef.current?.identity === identity
+      && scheduleCoordinatorRef.current.requestedRange?.startDate === startDate
+      && scheduleCoordinatorRef.current.requestedRange?.endDate === endDate;
     const promise = runScheduleRangeRefreshWithRetry(async () => {
       if (!isCurrent()) throw new Error("Schedule range refresh was superseded. Please retry.");
-      await reconcileSchedule(intent);
+      const attemptRequest = beginLiveAuthRequest();
+      try {
+        await reconcileSchedule(intent);
+      } catch (error) {
+        if (!isCurrent() || !attemptRequest.canRetryAfterTokenChange?.()) throw error;
+      }
       if (!isCurrent()) throw new Error("Schedule range refresh was superseded. Please retry.");
+      if (!attemptRequest.isCurrent()) {
+        // Replay through the same queue with current auth and the original intent.
+        // A renewal's background read cannot stand in for calendar materialization.
+        scheduleCoordinatorRef.current = {
+          ...scheduleCoordinatorRef.current,
+          hasAuthoritativeSnapshot: false,
+        };
+        return { committed: false, value: [] };
+      }
       return {
-        committed: scheduleCoordinatorRef.current.hasAuthoritativeSnapshot,
+        committed: scheduleCoordinatorRef.current.hasAuthoritativeSnapshot
+          && scheduleCoordinatorRef.current.mutationsInFlight === 0,
         value: sessionsRef.current.filter((session) => session.date >= startDate && session.date <= endDate),
       };
     }, 3, waitForScheduleMutationSettlement).finally(() => {

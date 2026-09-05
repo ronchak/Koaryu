@@ -773,12 +773,20 @@ export interface ApiCsvParseResponse {
   required_fields: string[];
 }
 
+export interface ApiDashboardBootstrapDatasetErrors {
+  studio?: string | null;
+  students?: string | null;
+  leads?: string | null;
+  belts?: string | null;
+  programs?: string | null;
+}
+
 export interface ApiDashboardBootstrapResponse {
   auth: ApiAuthResponse;
   studio?: ApiDashboardBootstrapStudioSummary | null;
   studio_name?: string | null;
   students: ApiStudentResponse[];
-  students_total: number;
+  students_total?: number | null;
   students_page_size: number;
   students_may_be_partial: boolean;
   programs: ApiProgramResponse[];
@@ -786,6 +794,7 @@ export interface ApiDashboardBootstrapResponse {
   belt_ladders: ApiBeltLadderResponse[];
   primary_belt_ladder?: ApiBeltLadderResponse | null;
   summary?: ApiDashboardSummaryResponse | null;
+  dataset_errors?: ApiDashboardBootstrapDatasetErrors | null;
 }
 
 export interface ApiDashboardBootstrapStudioSummary {

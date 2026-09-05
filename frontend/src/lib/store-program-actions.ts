@@ -25,9 +25,11 @@ interface UseStoreProgramActionsOptions {
   isPreviewMode: boolean;
   persistPrograms: (next: Program[]) => void;
   programsRef: StoreRef<Program[]>;
+  programsLoadedRef: StoreRef<boolean>;
   refreshBeltsRef: StoreRef<((preferredLadderId?: string | null) => Promise<void>) | null>;
   setProgramsUsageLoaded: Dispatch<SetStateAction<boolean>>;
   setProgramsUsageLoadError: Dispatch<SetStateAction<string | null>>;
+  setProgramsLoadError: Dispatch<SetStateAction<string | null>>;
 }
 
 export function useStoreProgramActions({
@@ -38,9 +40,11 @@ export function useStoreProgramActions({
   isPreviewMode,
   persistPrograms,
   programsRef,
+  programsLoadedRef,
   refreshBeltsRef,
   setProgramsUsageLoaded,
   setProgramsUsageLoadError,
+  setProgramsLoadError,
 }: UseStoreProgramActionsOptions) {
   const usageRequestsRef = useRef(new Map<string, { identity: object; promise: Promise<Program[]>; isCurrent: () => boolean }>());
   const refreshPrograms = useCallback(async (
@@ -59,6 +63,7 @@ export function useStoreProgramActions({
     const retainedRequest = usageRequestsRef.current.get(key);
     if (retainedRequest?.isCurrent()) return retainedRequest.promise;
     setProgramsUsageLoadError(null);
+    if (!programsLoadedRef.current) setProgramsLoadError(null);
 
     const identity = {};
     const pending = withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
@@ -75,18 +80,21 @@ export function useStoreProgramActions({
         return result;
       } catch (error) {
         if (request.isCurrent()) {
-          setProgramsUsageLoadError(error instanceof Error ? error.message : "Program usage could not be loaded.");
+          const message = error instanceof Error ? error.message : "Programs could not be loaded.";
+          setProgramsUsageLoadError(message);
+          if (!programsLoadedRef.current) setProgramsLoadError(message);
         }
         throw error;
       }
     }, (error) => {
       setProgramsUsageLoadError(error.message);
+      if (!programsLoadedRef.current) setProgramsLoadError(error.message);
     }).finally(() => {
       if (usageRequestsRef.current.get(key)?.identity === identity) usageRequestsRef.current.delete(key);
     });
     usageRequestsRef.current.set(key, { identity, promise: pending, isCurrent: request.isCurrent });
     return pending;
-  }, [beginLiveAuthRequest, isPreviewMode, persistPrograms, setProgramsUsageLoaded, setProgramsUsageLoadError]);
+  }, [beginLiveAuthRequest, isPreviewMode, persistPrograms, programsLoadedRef, setProgramsLoadError, setProgramsUsageLoaded, setProgramsUsageLoadError]);
 
   const createProgram = useCallback(async (data: ProgramCreate): Promise<Program> => {
     if (isPreviewMode) {

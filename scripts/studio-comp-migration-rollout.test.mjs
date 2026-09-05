@@ -3347,6 +3347,10 @@ describe("V38 Billing migration cutover", () => {
     for (const change of [
       { v38BillingManifest: null },
       { v38BillingManifest: `${EXPECTED_V38_BILLING_MANIFEST}extra` },
+      // The earlier V38 bodies counted soft-deleted active students.
+      { v38BillingManifest: "5:f6a36acdbaab0e919409fc1438cbb84ed7dbd3899161afceb8604ebf0b0e91a2:0" },
+      // Function-only V38 does not prove that the required history indexes exist.
+      { v38BillingManifest: "5:7051869ef238a4547dec198e7719f5fc255321fb46f69d1662342aaea5cdeeb5:0" },
       { v37CompatibilityReadiness: null },
       { v37CompatibilityReadiness: EXPECTED_OPERATIONAL_READINESS },
       { operationalReadiness: EXPECTED_V37_OPERATIONAL_READINESS },
@@ -3358,8 +3362,12 @@ describe("V38 Billing migration cutover", () => {
     for (const routine of ["billing_payment_cohort", "billing_landing_aggregates", "billing_webhook_health", "koaryu_release_schema_preflight_v18", "koaryu_release_schema_preflight_v19"]) {
       assert.ok(V38_BILLING_MANIFEST_SQL.includes(`public.${routine}(`));
     }
-    for (const guard of ["prosrc", "prosecdef", "provolatile", "proowner", "proconfig", "pg_get_function_result", "aclexplode", "is_grantable"]) {
+    for (const guard of ["prosrc", "prosecdef", "provolatile", "proowner", "proconfig", "pg_get_function_result", "aclexplode", "is_grantable", "pg_get_indexdef", "indisvalid", "indisready", "indislive", "indisunique"]) {
       assert.ok(V38_BILLING_MANIFEST_SQL.includes(guard));
+    }
+    for (const dataset of ["invoices", "payments"]) {
+      assert.ok(V38_BILLING_MANIFEST_SQL.includes(`public.idx_billing_${dataset}_studio_history`));
+      assert.ok(V38_BILLING_MANIFEST_SQL.includes(`ON public.billing_${dataset} USING btree (studio_id, created_at DESC, id DESC)`));
     }
   });
 });

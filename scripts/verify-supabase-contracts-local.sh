@@ -1112,6 +1112,45 @@ if [[ "$v38_billing_manifest" != "$expected_v38_billing_manifest" ]]; then
 fi
 echo "[Billing landing V38] PASS exact read definitions and privileges"
 
+assert_v38_history_index_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local result=""
+  local raw_manifest=""
+  local v38_ready=""
+  local v37_ready=""
+  echo "[Billing history V38 negative] RUN $label"
+  result="$({
+    printf 'BEGIN;\n%s\n' "$mutation_sql"
+    (
+      cd "$ROOT_DIR"
+      node --input-type=module --eval \
+        "import { V38_BILLING_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V38_BILLING_MANIFEST_SQL);"
+    )
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v19();\nSELECT ready FROM public.koaryu_release_schema_preflight_v18();\nROLLBACK;\n'
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  raw_manifest="$(printf '%s\n' "$result" | sed -n '1p')"
+  v38_ready="$(printf '%s\n' "$result" | sed -n '2p')"
+  v37_ready="$(printf '%s\n' "$result" | sed -n '3p')"
+  if [[ "$raw_manifest" == "$expected_v38_billing_manifest" || "$v38_ready" != "f" || "$v37_ready" != "f" ]]; then
+    echo "[Billing history V38 negative] FAIL $label: $result" >&2
+    exit 1
+  fi
+  echo "[Billing history V38 negative] PASS $label"
+}
+
+for history_dataset in invoices payments; do
+  history_index="idx_billing_${history_dataset}_studio_history"
+  assert_v38_history_index_rejects "$history_dataset missing index" \
+    "DROP INDEX public.$history_index;"
+  assert_v38_history_index_rejects "$history_dataset wrong index order" \
+    "DROP INDEX public.$history_index; CREATE INDEX $history_index ON public.billing_$history_dataset(studio_id,id DESC,created_at DESC);"
+  for index_flag in indisvalid indisready indislive; do
+    assert_v38_history_index_rejects "$history_dataset $index_flag=false" \
+      "UPDATE pg_catalog.pg_index SET $index_flag=false WHERE indexrelid='public.$history_index'::regclass;"
+  done
+done
+
 echo "[catalog] RUN deterministic raw catalog security fingerprint"
 catalog_state="$({
   cd "$ROOT_DIR"

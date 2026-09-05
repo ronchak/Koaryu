@@ -10,7 +10,7 @@ import { DashboardShellReadiness } from "@/components/dashboard-shell-readiness"
 import { Sidebar } from "@/components/sidebar";
 import { useTheme } from "@/components/theme-provider";
 import { LegalNameBlockingScreen } from "@/components/account/legal-name-blocking-screen";
-import { StoreProvider, useStudioStore } from "@/lib/store";
+import { StoreProvider, useProgramStore, useStudioStore } from "@/lib/store";
 import { shouldBlockForLegalName } from "@/lib/legal-name-model";
 import { useState } from "react";
 import styles from "@/components/dashboard-shell.module.css";
@@ -22,6 +22,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
   const { navigationPlacement } = useTheme();
+  const { programsLoaded, programsLoadError, refreshPrograms } = useProgramStore();
   const {
     currentRole,
     legalFirstName,
@@ -29,6 +30,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     staffProfilesAvailable,
     identityReady,
     studioName,
+    studioLoadError,
     userEmail,
     userName,
     identityLoadError,
@@ -111,6 +113,18 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
               role={currentRole}
               studioName={studioName}
             />
+            {studioLoadError && (
+              <div role="alert" className="p-4 text-sm">
+                <p>{studioLoadError}</p>
+                <button type="button" onClick={retryInitialization} className="mt-2 rounded border border-border px-3 py-2">Retry studio details</button>
+              </div>
+            )}
+            {!programsLoaded && programsLoadError && (
+              <div role="alert" className="p-4 text-sm">
+                <p>Program options are unavailable. {programsLoadError}</p>
+                <button type="button" onClick={() => void refreshPrograms({ includeArchived: true }).catch(() => undefined)} className="mt-2 rounded border border-border px-3 py-2">Retry programs</button>
+              </div>
+            )}
             <DashboardRouteTransition>{children}</DashboardRouteTransition>
           </main>
         </>

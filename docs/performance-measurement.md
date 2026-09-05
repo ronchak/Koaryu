@@ -111,3 +111,5 @@ Leads completion includes staff assignments only for admins, matching the existi
 staff endpoint's permission boundary. The route starts that read itself; lead
 content can become useful first, while a staff failure remains visible and
 retryable. Other roles do not wait for or request the admin-only dataset.
+
+Request evidence uses one synchronous observation cutoff. Events accepted before it are either completed, failed, or pending at that cutoff; response-size lookups may finish afterward without removing any request from the inventory. Events after the cutoff do not alter recorded statuses or add new observations.

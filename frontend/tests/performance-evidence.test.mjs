@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import {
+  captureDashboardPerformance,
   classifyResource,
   measureDashboardReady,
   openVerifiedBrowser,
@@ -15,7 +17,132 @@ const homeSource = readFileSync(new URL("../src/components/dashboard/dashboard-h
 const controllerSource = readFileSync(new URL("../src/lib/dashboard-page-controller.ts", import.meta.url), "utf8");
 const captureSource = readFileSync(new URL("../scripts/capture-dashboard-performance.mjs", import.meta.url), "utf8");
 
+function deferredCapture() {
+  const sizes = Promise.withResolvers();
+  const lateSizes = Promise.withResolvers();
+  const page = new EventEmitter();
+  const request = (path, responseSizes = async () => ({ responseBodySize: 0 })) => ({
+    url: () => `https://frontend.invalid${path}?email=private@example.invalid`,
+    resourceType: () => "fetch",
+    sizes: responseSizes,
+  });
+  let lateSizeCalls = 0;
+  const completed = request("/api/dashboard/bootstrap", () => sizes.promise);
+  const pending = request("/private-student", () => {
+    lateSizeCalls += 1;
+    return lateSizes.promise;
+  });
+  const pendingFailure = request("/api/dashboard/summary");
+  const failed = request("/private-failed");
+  const respond = (request, status) => page.emit("response", {
+    request: () => request,
+    status: () => status,
+    url: request.url,
+    headers: () => ({ "server-timing": "koaryu_total;dur=1, secret;desc=private" }),
+  });
+  page.route = async () => {};
+  page.addInitScript = async () => {};
+  page.waitForFunction = async () => {};
+  page.url = () => "https://frontend.invalid/billing";
+  page.goto = async () => {
+    for (const entry of [completed, pending, pendingFailure, failed]) page.emit("request", entry);
+    respond(completed, 200);
+    respond(pending, 202);
+    page.emit("requestfinished", completed);
+    page.emit("requestfailed", failed);
+  };
+  let evaluateCalls = 0;
+  const snapshotWait = Promise.withResolvers();
+  page.evaluate = async () => {
+    if (evaluateCalls++ === 0) {
+      return ["navigation.started", "visible.shell", "visible.identity", "visible.useful", "visible.complete"].map((stage, index) => ({
+        name: `koaryu.${stage}`, startTime: index * 10,
+        detail: { route: "billing", identity_generation: 2, navigation_generation: 1 },
+      }));
+    }
+    // The capture reaches its final await through promise microtasks first. This
+    // next task runs while the first request's size lookup is still deferred.
+    setImmediate(() => snapshotWait.resolve());
+    return {
+      navigation: { dom_content_loaded_ms: 2, load_event_ms: 3 },
+      first_contentful_paint_ms: 1, largest_contentful_paint_ms: 2,
+      cumulative_layout_shift: 0, resources: [], interactions: [], long_tasks: [],
+    };
+  };
+  let closed = false;
+  let verifications = 0;
+  const capture = captureDashboardPerformance({
+    route: "billing", frontendOrigin: "https://frontend.invalid",
+    backendApi: "https://backend.invalid/api/v1", storageState: "/private/state.json",
+  }, {
+    verifyDeployment: async () => {
+      verifications += 1;
+      return { verified: true, expected_sha: "a".repeat(40), environment: "staging" };
+    },
+    launchBrowser: async () => ({
+      newContext: async () => ({ newPage: async () => page }),
+      version: () => "test-browser", close: async () => { closed = true; },
+    }),
+  });
+  return {
+    capture, sizes, lateSizes, snapshotWait: snapshotWait.promise,
+    state: () => ({ closed, verifications, lateSizeCalls }),
+    finishDuringSnapshot: () => {
+      respond(pending, 503);
+      page.emit("requestfinished", pending);
+      page.emit("requestfailed", pendingFailure);
+      const late = request("/private-late");
+      page.emit("request", late);
+      page.emit("requestfinished", late);
+    },
+  };
+}
+
 describe("privacy-safe performance evidence", () => {
+  it("freezes an exhaustive request inventory before deferred size lookups settle", async () => {
+    const fixture = deferredCapture();
+    await fixture.snapshotWait;
+    fixture.finishDuringSnapshot();
+    fixture.sizes.resolve({ responseBodySize: 123 });
+    const evidence = await fixture.capture;
+    fixture.lateSizes.resolve({ responseBodySize: 999 });
+
+    assert.equal(evidence.requests.length, 4);
+    const completed = evidence.requests.filter((entry) => entry.outcome === "complete");
+    const pending = evidence.requests.filter((entry) => entry.outcome === "pending-at-capture");
+    const failed = evidence.requests.filter((entry) => entry.outcome === "failed");
+    assert.deepEqual(pending.map((entry) => [entry.resource, entry.status]), [["other", 202], ["dashboard-summary", 0]]);
+    assert.equal(completed.length, 1);
+    assert.equal(completed[0].resource, "dashboard-bootstrap");
+    assert.equal(completed[0].response_body_bytes, 123);
+    assert.equal(completed[0].status, 200);
+    assert.equal(typeof completed[0].end_ms, "number");
+    assert.equal(failed.length, 1);
+    assert.equal(failed[0].status, 0);
+    assert.equal(pending.length, 2);
+    assert.equal(pending[0].observed_until_ms, pending[1].observed_until_ms);
+    for (const entry of pending) {
+      assert.equal(entry.end_ms, null);
+      assert.equal(entry.response_body_bytes, 0);
+    }
+    for (const entry of evidence.requests) {
+      assert.deepEqual(Object.keys(entry).sort(), ["route", "navigation_generation", "resource", "initiator", "outcome", "status", "response_body_bytes", "start_ms", "end_ms", "observed_until_ms"].sort());
+      assert.equal(entry.route, "billing");
+      assert.equal(entry.navigation_generation, 1);
+    }
+    assert.doesNotMatch(JSON.stringify(evidence), /private|email|secret/);
+    assert.deepEqual(fixture.state(), { closed: true, verifications: 2, lateSizeCalls: 0 });
+  });
+
+  it("rejects failed size collection instead of returning incomplete request evidence", async () => {
+    const fixture = deferredCapture();
+    const rejected = assert.rejects(fixture.capture, /size collection failed/);
+    await fixture.snapshotWait;
+    fixture.sizes.reject(new Error("size collection failed"));
+    await rejected;
+    assert.deepEqual(fixture.state(), { closed: true, verifications: 1, lateSizeCalls: 0 });
+  });
+
   it("separates identity-scoped shell readiness from aggregate data readiness", () => {
     assert.match(homeSource, /data-koaryu-dashboard-shell-ready=\{layoutResolved \? "true" : "false"\}/);
     assert.match(homeSource, /data-koaryu-dashboard-data-ready=\{layoutResolved && dataReady \? "true" : "false"\}/);

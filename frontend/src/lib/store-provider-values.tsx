@@ -51,6 +51,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     archiveProgram,
     attendance,
     beltLadders,
+    beltLaddersLoadError,
     beltRanks,
     bulkAddTagsToStudents,
     bulkUpdateStudentStatus,
@@ -120,6 +121,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     studentsLoaded,
     studentsMayBePartial,
     studioName,
+    studioLoadError,
     subRankTerm,
     subscriptionRequired,
     staffProfilesAvailable,
@@ -243,6 +245,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
 
   const beltsValue = useMemo<BeltsStoreContextValue>(() => ({
     beltLadders,
+    beltLaddersLoadError,
     beltRanks,
     currentLadderId,
     setCurrentLadder,
@@ -262,6 +265,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     promoteStudent,
   }), [
     beltLadders,
+    beltLaddersLoadError,
     beltRanks,
     currentLadderId,
     demoteStudent,
@@ -311,6 +315,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
 
   const studioValue = useMemo<StudioStoreContextValue>(() => ({
     studioName,
+    studioLoadError,
     currentStudioId,
     currentUserId,
     currentRole,
@@ -355,6 +360,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     staffLoaded,
     staffMembers,
     studioName,
+    studioLoadError,
     updateUserLegalName,
     updateUserName,
     updateStaffRole,

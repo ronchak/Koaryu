@@ -41,6 +41,8 @@ def get_billing_page(
         except (ValueError, ValidationError) as exc:
             raise HTTPException(400, "Invalid billing page cursor.") from exc
         stamp = anchor.created_at.isoformat()
+        # Bound the index scan by time; the OR predicate still breaks timestamp ties by ID.
+        query = query.lte("created_at", stamp)
         query = query.or_(f"created_at.lt.{stamp},and(created_at.eq.{stamp},id.lt.{anchor.id})")
     rows = query.order("created_at", desc=True).order("id", desc=True).limit(limit + 1).execute().data or []
     complete = len(rows) <= limit

@@ -19,7 +19,7 @@ export type BootstrapResponse = Omit<
 > & {
   auth: AuthProfileResponse;
   students: Student[];
-  students_total?: number;
+  students_total?: number | null;
   students_page_size?: number;
   students_may_be_partial?: boolean;
   programs: Program[];

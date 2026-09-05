@@ -52,6 +52,8 @@ export interface StoreContextValue {
   identityGeneration: number;
   identityReady: boolean;
   identityLoadError: string | null;
+  studioLoadError: string | null;
+  beltLaddersLoadError: string | null;
   retryInitialization: () => void;
   subscriptionRequired: boolean;
   markSubscriptionRequired: () => void;
@@ -245,6 +247,7 @@ export type LeadsStoreContextValue = Pick<
 >;
 export type BeltsStoreContextValue = Pick<
   StoreContextValue,
+  | "beltLaddersLoadError"
   | "beltLadders"
   | "beltRanks"
   | "currentLadderId"
@@ -281,6 +284,7 @@ export type ScheduleStoreContextValue = Pick<
 >;
 export type StudioStoreContextValue = Pick<
   StoreContextValue,
+  | "studioLoadError"
   | "studioName"
   | "currentUserId"
   | "currentStudioId"

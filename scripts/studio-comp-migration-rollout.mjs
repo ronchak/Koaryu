@@ -1041,18 +1041,25 @@ export const FINAL_OPERATIONAL_READINESS_SQL = V37_OPERATIONAL_READINESS_SQL.rep
 // Body hashes come from the complete local migration chain on PostgreSQL 17.
 const V38_FUNCTIONS = Object.freeze([
   ["public.billing_payment_cohort(uuid,timestamptz,timestamptz)", "5d6f683e3c56fe05db7e4101073d1a23792081192219cfa9eda4db8dcf734a1d", "sql", false, 'search_path=""', "jsonb", "p_studio_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone"],
-  ["public.billing_landing_aggregates(uuid,timestamptz,timestamptz)", "8341aba1a37f078c6b1bc87e96b6e7d3257275f18c0772cab16619bcbce5d05a", "sql", false, 'search_path=""', "jsonb", "p_studio_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone"],
+  ["public.billing_landing_aggregates(uuid,timestamptz,timestamptz)", "7adf5dc3a58e5f96aa87c3a4c1e4f509b081e97185a104e8d8239ad1fae2a222", "sql", false, 'search_path=""', "jsonb", "p_studio_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone"],
   ["public.billing_webhook_health(text,boolean,timestamptz)", "3bdcc77c7d768e5ede8750900c0b75ac98bdffbb14ada059c580185133a9fd52", "sql", false, 'search_path=""', "jsonb", "p_account_id text, p_expected_livemode boolean, p_stale_before timestamp with time zone"],
   ["public.koaryu_release_schema_preflight_v18()", "a066fe2bd2a64f4c28561d3a9e5ec39adb2645efd711d01f46af21a96688990c", "plpgsql", true, "search_path=pg_catalog", "TABLE(ready boolean, migration_count integer, migration_head text, pending_versions text[], security_failures text[], manifest_version text)", ""],
-  ["public.koaryu_release_schema_preflight_v19()", "e7f308e6fe351e8afb819953911350b8c67ec9a61a032966edb5985c9d628cdd", "plpgsql", true, "search_path=pg_catalog", "TABLE(ready boolean, migration_count integer, migration_head text, pending_versions text[], security_failures text[], manifest_version text)", ""],
+  ["public.koaryu_release_schema_preflight_v19()", "8dc88fe13096cc71d8fc688cd7f266705bb81f7bbee94c44c7109d8ab28f0109", "plpgsql", true, "search_path=pg_catalog", "TABLE(ready boolean, migration_count integer, migration_head text, pending_versions text[], security_failures text[], manifest_version text)", ""],
 ]);
-export const EXPECTED_V38_BILLING_MANIFEST = `5:${digest(
-  "sha256", V38_FUNCTIONS.map(([signature, bodyHash]) => `${signature}:${bodyHash}`).sort().join("|"),
+const V38_HISTORY_INDEXES = Object.freeze([
+  ["public.idx_billing_invoices_studio_history", "public.billing_invoices", "CREATE INDEX idx_billing_invoices_studio_history ON public.billing_invoices USING btree (studio_id, created_at DESC, id DESC)"],
+  ["public.idx_billing_payments_studio_history", "public.billing_payments", "CREATE INDEX idx_billing_payments_studio_history ON public.billing_payments USING btree (studio_id, created_at DESC, id DESC)"],
+]);
+export const EXPECTED_V38_BILLING_MANIFEST = `${V38_FUNCTIONS.length + V38_HISTORY_INDEXES.length}:${digest(
+  "sha256", [
+    ...V38_FUNCTIONS.map(([signature, bodyHash]) => `${signature}:${bodyHash}`),
+    ...V38_HISTORY_INDEXES.map(([signature, , definition]) => `${signature}:${digest("sha256", definition)}`),
+  ].sort().join("|"),
 )}:0`;
 export const V38_BILLING_MANIFEST_SQL = `
 with expected(signature, body_hash, language_name, security_definer, search_path_config, result_contract, arguments) as (
   values ${V38_FUNCTIONS.map((row) => `(${row.map((value) => typeof value === "boolean" ? String(value) : `'${value.replaceAll("'", "''")}'`).join(",")})`).join(",\n")}
-), actual as (
+), actual_functions as (
  select e.signature, encode(extensions.digest(convert_to(p.prosrc,'UTF8'),'sha256'),'hex') as body_hash,
    p.oid is not null and p.proowner='postgres'::regrole and p.prosecdef=e.security_definer
    and p.provolatile='s' and l.lanname=e.language_name
@@ -1066,6 +1073,17 @@ with expected(signature, body_hash, language_name, security_definer, search_path
        or (a.grantee='service_role'::regrole and a.is_grantable))) as valid
  from expected e left join pg_proc p on p.oid=to_regprocedure(e.signature)
  left join pg_language l on l.oid=p.prolang
+), expected_indexes(signature, table_name, definition) as (
+  values ${V38_HISTORY_INDEXES.map((row) => `(${row.map((value) => `'${value.replaceAll("'", "''")}'`).join(",")})`).join(",\n")}
+), actual_indexes as (
+ select e.signature, encode(extensions.digest(convert_to(pg_get_indexdef(i.indexrelid),'UTF8'),'sha256'),'hex') as body_hash,
+  c.oid is not null and c.relkind='i' and c.relowner='postgres'::regrole
+  and i.indrelid=to_regclass(e.table_name) and i.indisvalid and i.indisready and i.indislive
+  and not i.indisunique and pg_get_indexdef(i.indexrelid)=e.definition as valid
+ from expected_indexes e left join pg_class c on c.oid=to_regclass(e.signature)
+ left join pg_index i on i.indexrelid=c.oid
+), actual as (
+ select * from actual_functions union all select * from actual_indexes
 )
 select count(*)::text || ':' || encode(extensions.digest(convert_to(
   string_agg(signature || ':' || coalesce(body_hash,''),'|' order by signature collate "C"),'UTF8'),'sha256'),'hex')

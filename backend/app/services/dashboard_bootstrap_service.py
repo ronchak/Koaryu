@@ -1,7 +1,8 @@
 import asyncio
+import logging
 import time
 from types import SimpleNamespace
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from fastapi import HTTPException, status
 from supabase import Client
@@ -17,6 +18,9 @@ from app.services.program_service import ProgramService
 from app.services.auth_service import AuthService
 from app.services.student_service import StudentService
 from app.services.studio_scope import ensure_platform_subscription_access
+
+logger = logging.getLogger(__name__)
+
 
 class DashboardBootstrapService:
     STUDENTS_BOOTSTRAP_PAGE_SIZE = 200
@@ -132,6 +136,7 @@ class DashboardBootstrapService:
         requested_studio_id: Optional[str] = None,
         *,
         provider_owned: bool = False,
+        allow_partial: bool = False,
     ) -> tuple[DashboardBootstrapResponse, dict[str, float]]:
         total_started = time.perf_counter()
         if provider_owned:
@@ -150,57 +155,80 @@ class DashboardBootstrapService:
         # calls, so each bootstrap read gets its own short-lived client. Carry
         # the owning lane's I/O policy into these clients before crossing threads.
         postgrest_client_timeout = self.supabase.options.postgrest_client_timeout
-        results = await asyncio.gather(
-            asyncio.to_thread(self._timed_fetch_with_isolated_client, "studio", "_fetch_studio_summary", studio_id, postgrest_client_timeout),
-            asyncio.to_thread(self._timed_fetch_with_isolated_client, "students", "_fetch_students", studio_id, postgrest_client_timeout),
-            asyncio.to_thread(self._timed_fetch_with_isolated_client, "leads", "_fetch_leads", studio_id, postgrest_client_timeout),
-            asyncio.to_thread(self._timed_fetch_with_isolated_client, "belts", "_fetch_belt_ladders", studio_id, postgrest_client_timeout),
-            asyncio.to_thread(self._timed_fetch_with_isolated_client, "programs", "_fetch_programs", studio_id, postgrest_client_timeout),
-        )
-        (studio_result, studio_timing), (students_result, students_timing), (leads_result, leads_timing), (ladders_result, ladders_timing), (programs, programs_timing) = results
+        errors: dict[str, str] = {}
+        timings: dict[str, float] = {}
 
-        if not studio_result.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Studio not found",
+        async def load_projection(label: str, method_name: str, project: Callable[[Any], Any]):
+            started = time.perf_counter()
+            try:
+                result, (_label, duration_ms) = await asyncio.to_thread(
+                    self._timed_fetch_with_isolated_client,
+                    label, method_name, studio_id, postgrest_client_timeout,
+                )
+                value = project(result)
+                timings[label] = duration_ms
+                return value
+            except Exception as error:
+                if not allow_partial:
+                    raise
+                # Access failures must never become partial-success responses.
+                if isinstance(error, HTTPException) and (
+                    error.status_code in {401, 402, 403}
+                    or (label == "studio" and error.status_code == 404)
+                ):
+                    raise
+                if getattr(error, "code", None) in {"42501", "28000", "28P01", "PGRST301", "PGRST302", "PGRST303"}:
+                    raise
+                errors[label] = {
+                    "studio": "Studio details could not be loaded. Please retry.",
+                    "students": "Student roster could not be loaded. Please retry.",
+                    "leads": "Leads could not be loaded. Please retry.",
+                    "belts": "Belt plans could not be loaded. Please retry.",
+                    "programs": "Programs could not be loaded. Please retry.",
+                }[label]
+                timings[label] = (time.perf_counter() - started) * 1000
+                logger.warning("Dashboard bootstrap projection unavailable", extra={
+                    "dataset": label, "error_type": type(error).__name__,
+                })
+                return None
+
+        def studio_projection(result):
+            if not result.data:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Studio not found")
+            return DashboardBootstrapStudioSummary(**result.data)
+
+        def students_projection(result):
+            students = StudentService(self.supabase).rows_to_responses(
+                result.data or [], include_guardians=False, include_photo_urls=False,
             )
+            total = getattr(result, "count", None)
+            return students, total if total is not None else len(students)
 
-        student_service = StudentService(self.supabase)
-        students = student_service.rows_to_responses(
-            students_result.data or [],
-            include_guardians=False,
-            include_photo_urls=False,
+        studio, student_projection, leads, belt_ladders, programs = await asyncio.gather(
+            load_projection("studio", "_fetch_studio_summary", studio_projection),
+            load_projection("students", "_fetch_students", students_projection),
+            load_projection("leads", "_fetch_leads", lambda result: [LeadResponse(**row) for row in (result.data or [])]),
+            load_projection("belts", "_fetch_belt_ladders", lambda result: [self._build_ladder_response(row) for row in (result.data or [])]),
+            load_projection("programs", "_fetch_programs", lambda result: result),
         )
-        students_total = getattr(students_result, "count", None)
-        if students_total is None:
-            students_total = len(students)
-
-        leads = [LeadResponse(**row) for row in (leads_result.data or [])]
-
-        belt_ladders = [
-            self._build_ladder_response(ladder_row)
-            for ladder_row in (ladders_result.data or [])
-        ]
-        primary_belt_ladder = belt_ladders[0] if belt_ladders else None
-
-        studio = DashboardBootstrapStudioSummary(**studio_result.data)
-
-        timings = dict([studio_timing, students_timing, leads_timing, ladders_timing, programs_timing])
+        students, students_total = student_projection if student_projection is not None else ([], None)
+        belt_ladders = belt_ladders if belt_ladders is not None else []
         timings["total"] = (time.perf_counter() - total_started) * 1000
 
         return (
             DashboardBootstrapResponse(
                 auth=auth,
                 studio=studio,
-                studio_name=studio.name,
+                studio_name=studio.name if studio is not None else None,
                 students=students,
                 students_total=students_total,
                 students_page_size=self.STUDENTS_BOOTSTRAP_PAGE_SIZE,
-                students_may_be_partial=students_total > len(students),
-                programs=programs,
-                leads=leads,
+                students_may_be_partial=students_total is None or students_total > len(students),
+                programs=programs if programs is not None else [],
+                leads=leads if leads is not None else [],
                 belt_ladders=belt_ladders,
-                primary_belt_ladder=primary_belt_ladder,
+                primary_belt_ladder=belt_ladders[0] if belt_ladders else None,
+                dataset_errors=errors,
             ),
             timings,
         )

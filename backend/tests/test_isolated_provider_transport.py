@@ -80,7 +80,8 @@ def bootstrap_auth():
 
 
 @pytest.mark.parametrize("stalled", [False, True])
-def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_returns(nested_provider, stalled):
+@pytest.mark.parametrize("allow_partial", [False, True])
+def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_returns(nested_provider, stalled, allow_partial):
     nested_provider.stall = stalled
     created = []
     closed = []
@@ -104,7 +105,11 @@ def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_ret
         try:
             # Initialize the parent client independently of the nested fault.
             parent_id = await runtime.run_interactive(lambda client: id(client))
-            operation = lambda client: DashboardBootstrapService(client).get_dashboard_bootstrap("user-1", provider_owned=True)
+            completed_payloads = []
+            async def operation(client):
+                result = await DashboardBootstrapService(client).get_dashboard_bootstrap("user-1", provider_owned=True, allow_partial=allow_partial)
+                completed_payloads.append(result[0])
+                return result
             if stalled:
                 started = time.monotonic()
                 with pytest.raises(HTTPException) as error:
@@ -119,7 +124,11 @@ def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_ret
                 while runtime.interactive_snapshot().admitted:
                     assert time.monotonic() - started < 2
                     await asyncio.sleep(0.005)
-                assert runtime.interactive_snapshot().transport_timed_out == 1
+                assert runtime.interactive_snapshot().transport_timed_out == (0 if allow_partial else 1)
+                if allow_partial:
+                    assert len(completed_payloads) == 1
+                    assert set(completed_payloads[0].dataset_errors.model_dump(exclude_none=True)) == {"studio", "students", "leads", "belts", "programs"}
+                    assert completed_payloads[0].students_total is None
             else:
                 response, _timings = await run_supabase_operation(runtime, operation)
                 assert response.studio.id == "studio-1"

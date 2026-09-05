@@ -166,7 +166,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [programs, setPrograms] = useState<Program[]>(() =>
     isPreviewMode ? MOCK_PROGRAMS : []
   );
-  const [programsLoaded, setProgramsLoaded] = useState(isPreviewMode);
+  const [programsLoaded, setProgramsLoadedState] = useState(isPreviewMode);
+  const programsLoadedRef = useRef(isPreviewMode);
+  const setProgramsLoaded = useCallback((loaded: boolean) => {
+    programsLoadedRef.current = loaded;
+    setProgramsLoadedState(loaded);
+  }, []);
   const [programsLoadError, setProgramsLoadError] = useState<string | null>(null);
   const programsRef = useRef<Program[]>(programs);
   const [programsUsageLoaded, setProgramsUsageLoaded] = useState(isPreviewMode);
@@ -180,6 +185,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
     isPreviewMode ? MOCK_BELT_LADDERS : []
   );
+  const [beltLaddersLoadError, setBeltLaddersLoadError] = useState<string | null>(null);
+  const [studioLoadError, setStudioLoadError] = useState<string | null>(null);
   const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
   const [beltRanks, setBeltRanksState] = useState<BeltRank[]>(() =>
     isPreviewMode ? MOCK_BELT_LADDER.ranks : []
@@ -474,6 +481,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const applyLadderSelection = useCallback((ladders: BeltLadder[], preferredLadderId?: string | null) => {
+    setBeltLaddersLoadError(null);
     const orderedLadders = sortBeltLadders(ladders);
     const selectedLadder = selectBeltLadder(
       orderedLadders,
@@ -573,6 +581,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }, state);
     setSubscriptionRequired(state.subscriptionRequired);
     setStudioNameState(state.studioName);
+    setStudioLoadError(null);
+    setBeltLaddersLoadError(null);
     setStaffMembers(state.staffMembers);
     setStaffLoaded(state.staffLoaded);
     setStaffLoadError(state.staffLoadError);
@@ -610,7 +620,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
+  }, [setProgramsLoaded, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     identityEpochRef.current += 1;
@@ -706,7 +716,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     destructivelyResetScheduleCoordinator();
     setScheduleLoadError(restored.scheduleLoadError);
     setScheduleStatus(restored.scheduleStatus);
-  }, [destructivelyResetScheduleCoordinator]);
+  }, [setProgramsLoaded, destructivelyResetScheduleCoordinator]);
 
   useEffect(() => {
     if (!hydrated || !subscriptionRequired || pathname === "/subscription-required") {
@@ -742,7 +752,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessions(data.sessions.sort(compareSessions));
     setAttendance(data.attendance);
     clearPromotionHistoryCache();
-  }, [applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
+  }, [setProgramsLoaded, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
 
   const applyClearedStudioData = useCallback((studioNameValue?: string) => {
     dashboardSummaryRequestSeqRef.current += 1;
@@ -775,7 +785,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setAttendance([]);
     clearEligibilityState();
     clearPromotionHistoryCache();
-  }, [
+  }, [setProgramsLoaded,
     clearEligibilityState,
     clearPromotionHistoryCache,
     commitStudents,
@@ -857,7 +867,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
+  }, [setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
 
   const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
     return buildPreviewEligibilityForLadder({
@@ -1040,7 +1050,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       try {
         markPerformance("dashboard.bootstrap_started");
-        const criticalData = await api.get<BootstrapResponse>("/dashboard/bootstrap", sessionToken);
+        const criticalData = await api.get<BootstrapResponse>("/dashboard/bootstrap?allow_partial=true", sessionToken);
         markPerformance("dashboard.bootstrap_finished");
         measurePerformance(
           "dashboard.bootstrap_duration",
@@ -1065,30 +1075,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
 
           clearPromotionHistoryCache();
-          setStudioNameState(resolveBootstrapStudioName(criticalData));
+          const datasetErrors = criticalData.dataset_errors;
+          setStudioNameState(datasetErrors?.studio ? "" : resolveBootstrapStudioName(criticalData));
+          setStudioLoadError(datasetErrors?.studio ?? null);
           const bootstrapSummary = criticalData.summary ?? null;
           setDashboardSummary(bootstrapSummary);
           setDashboardSummaryLoaded(Boolean(bootstrapSummary));
-          setPrograms(criticalData.programs || []);
+          if (!datasetErrors?.programs) setPrograms(criticalData.programs || []);
           setProgramsUsageLoaded(false);
           setProgramsUsageLoadError(null);
-          setProgramsLoaded(true);
-          setProgramsLoadError(null);
+          setProgramsLoaded(!datasetErrors?.programs);
+          setProgramsLoadError(datasetErrors?.programs ?? null);
           if (studentsRevisionRef.current === studentsRevisionAtStart) {
-            commitStudents(criticalData.students, {
-              mayBePartial: criticalData.students_may_be_partial
-                ?? criticalData.students.length >= (criticalData.students_page_size ?? 200),
-            });
+            if (datasetErrors?.students) {
+              setStudentsLoaded(false);
+              setStudentsLoadError(datasetErrors.students);
+              setStudentsMayBePartial(true);
+            } else {
+              commitStudents(criticalData.students, {
+                mayBePartial: criticalData.students_may_be_partial
+                  ?? criticalData.students.length >= (criticalData.students_page_size ?? 200),
+              });
+            }
           }
-          setLeads(criticalData.leads);
-          setLeadsLoaded(true);
-          setLeadsLoadError(null);
-          const selectedInitialLadder = applyLadderSelection(
-            resolveBootstrapLadders(criticalData),
-            criticalData.primary_belt_ladder?.id ?? null
-          );
-          if (!selectedInitialLadder) {
-            commitEligibilityRows(null, []);
+          if (!datasetErrors?.leads) setLeads(criticalData.leads);
+          setLeadsLoaded(!datasetErrors?.leads);
+          setLeadsLoadError(datasetErrors?.leads ?? null);
+          if (datasetErrors?.belts) {
+            setBeltLaddersLoadError(datasetErrors.belts);
+          } else {
+            const selectedInitialLadder = applyLadderSelection(
+              resolveBootstrapLadders(criticalData),
+              criticalData.primary_belt_ladder?.id ?? null
+            );
+            if (!selectedInitialLadder) commitEligibilityRows(null, []);
           }
 
           if (!bootstrapSummary) {
@@ -1306,7 +1326,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
+  }, [setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1321,7 +1341,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProgramsLoaded(true);
     setProgramsLoadError(null);
     if (isPreviewMode) save(KEYS.programs, sorted);
-  }, [isPreviewMode]);
+  }, [setProgramsLoaded, isPreviewMode]);
 
   const persistLeads = useCallback((next: Lead[]) => {
     setLeads(next);
@@ -1342,7 +1362,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode,
     persistPrograms,
     programsRef,
+    programsLoadedRef,
     refreshBeltsRef,
+    setProgramsLoadError,
     setProgramsUsageLoaded,
     setProgramsUsageLoadError,
   });
@@ -1589,6 +1611,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     archiveProgram,
     attendance,
     beltLadders,
+    beltLaddersLoadError,
     beltRanks,
     bulkAddTagsToStudents,
     bulkUpdateStudentStatus,
@@ -1658,6 +1681,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     studentsLoaded,
     studentsMayBePartial,
     studioName,
+    studioLoadError,
     subRankTerm,
     subscriptionRequired,
     templates,

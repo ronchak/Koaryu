@@ -207,3 +207,10 @@ protected content and offers Retry workspace while preserving SDK credentials.
 Null initial-session notifications are confirmed outside the Auth callback lock.
 Subscription denial preserves an already verified identity and legal-name gate so
 the recovery page can render after studio data is cleared.
+
+Bootstrap partial projections are opt-in through `allow_partial=true`. Healthy
+identity and datasets can render even when an independent projection fails;
+missing studio/program/belt metadata remains explicit and retryable. Older
+frontends retain strict failure behavior. A same-identity token renewal keeps an
+in-flight Schedule range caller attached to the existing reconciliation owner;
+it cannot hide the newly reconciled range or replay attendance mutations.

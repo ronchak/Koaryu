@@ -311,3 +311,17 @@ They cannot validate live authorization, provider latency, billing correctness,
 refresh-token endurance or hosted latency targets. The local SQL contract runner
 is the database correctness and query-plan check. Deployment validation and the
 30% median/1.5-second targets require a separately verified deployed candidate.
+
+## Bootstrap projection failures
+
+The frontend requests `/dashboard/bootstrap?allow_partial=true`. The backend
+still resolves authoritative identity and subscription access first. An isolated
+studio/student/lead/belt/program projection failure then returns a typed
+`dataset_errors` entry alongside healthy projections. Failed student totals are
+null and failed arrays do not become ready/empty data. Missing metadata gets a
+visible error and scoped retry; dependent belt content remains guarded.
+
+Authentication and subscription failures remain fatal. Older frontends omit the
+opt-in and retain the strict whole-response failure contract, so backend-first
+rollout or frontend rollback cannot turn a missing dataset into a false zero.
+The frontend does not restart a legacy global dataset fan-out after an outage.

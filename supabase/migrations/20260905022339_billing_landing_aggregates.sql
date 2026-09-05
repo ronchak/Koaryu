@@ -9,6 +9,11 @@ BEGIN
  END IF;
 END $guard$;
 
+CREATE INDEX idx_billing_invoices_studio_history
+ ON public.billing_invoices (studio_id, created_at DESC, id DESC);
+CREATE INDEX idx_billing_payments_studio_history
+ ON public.billing_payments (studio_id, created_at DESC, id DESC);
+
 -- Service-role reads only. FastAPI resolves membership and subscription before financial access.
 CREATE FUNCTION public.billing_payment_cohort(p_studio_id uuid, p_period_start timestamptz, p_period_end timestamptz)
 RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $$
@@ -37,7 +42,7 @@ $$;
 CREATE FUNCTION public.billing_landing_aggregates(p_studio_id uuid, p_period_start timestamptz, p_period_end timestamptz)
 RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $$
 SELECT jsonb_build_object(
- 'active_student_count',(SELECT count(*) FROM public.students WHERE studio_id=p_studio_id AND status='active'),
+ 'active_student_count',(SELECT count(*) FROM public.students WHERE studio_id=p_studio_id AND status='active' AND deleted_at IS NULL),
  'active_subscription_count',(SELECT count(*) FROM public.billing_subscriptions WHERE studio_id=p_studio_id AND status IN ('active','trialing')),
  'failed_payer_count',(SELECT count(*) FROM public.billing_payers WHERE studio_id=p_studio_id AND billing_status IN ('past_due','failed')),
  'open_invoice_amount_cents',(SELECT coalesce(sum(greatest(amount_remaining_cents,0)),0) FROM public.billing_invoices WHERE studio_id=p_studio_id AND status IN ('draft','open','partially_refunded','uncollectible')),
@@ -83,7 +88,7 @@ BEGIN
  IF EXISTS (
   SELECT 1 FROM (VALUES
   ('public.billing_payment_cohort(uuid,timestamptz,timestamptz)','5d6f683e3c56fe05db7e4101073d1a23792081192219cfa9eda4db8dcf734a1d'),
-  ('public.billing_landing_aggregates(uuid,timestamptz,timestamptz)','8341aba1a37f078c6b1bc87e96b6e7d3257275f18c0772cab16619bcbce5d05a'),
+  ('public.billing_landing_aggregates(uuid,timestamptz,timestamptz)','7adf5dc3a58e5f96aa87c3a4c1e4f509b081e97185a104e8d8239ad1fae2a222'),
   ('public.billing_webhook_health(text,boolean,timestamptz)','3bdcc77c7d768e5ede8750900c0b75ac98bdffbb14ada059c580185133a9fd52')
   ) expected(signature,body_hash)
   LEFT JOIN pg_catalog.pg_proc p ON p.oid=to_regprocedure(expected.signature)
@@ -95,6 +100,19 @@ BEGIN
   OR EXISTS(SELECT 1 FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
             WHERE a.privilege_type='EXECUTE' AND a.grantee NOT IN ('postgres'::regrole,'service_role'::regrole))
  ) THEN v_failures:=array_append(v_failures,'billing_landing_reads_v38'); END IF;
+ IF EXISTS (
+  SELECT 1 FROM (VALUES
+   ('public.idx_billing_invoices_studio_history','public.billing_invoices','CREATE INDEX idx_billing_invoices_studio_history ON public.billing_invoices USING btree (studio_id, created_at DESC, id DESC)'),
+   ('public.idx_billing_payments_studio_history','public.billing_payments','CREATE INDEX idx_billing_payments_studio_history ON public.billing_payments USING btree (studio_id, created_at DESC, id DESC)')
+  ) expected(index_name,table_name,definition)
+  LEFT JOIN pg_catalog.pg_class c ON c.oid=to_regclass(expected.index_name)
+  LEFT JOIN pg_catalog.pg_index i ON i.indexrelid=c.oid
+  WHERE c.oid IS NULL OR c.relkind<>'i' OR c.relowner<>'postgres'::regrole
+   OR i.indrelid IS DISTINCT FROM to_regclass(expected.table_name)
+   OR i.indisvalid IS DISTINCT FROM true OR i.indisready IS DISTINCT FROM true
+   OR i.indislive IS DISTINCT FROM true OR i.indisunique IS DISTINCT FROM false
+   OR pg_get_indexdef(i.indexrelid) IS DISTINCT FROM expected.definition
+ ) THEN v_failures:=array_append(v_failures,'billing_history_indexes_v38'); END IF;
  RETURN QUERY SELECT cardinality(v_failures) = 0,$inject$);
  EXECUTE definition;
 END $build_v19$;

@@ -45,6 +45,7 @@ type DashboardPageControllerOptions = {
   beltStore: Pick<
     BeltsStoreContextValue,
     | "beltLadders"
+    | "beltLaddersLoadError"
     | "beltRanks"
     | "currentLadderId"
     | "loadEligibilityForLadder"
@@ -89,13 +90,15 @@ export function useDashboardPageController({
 }: DashboardPageControllerOptions) {
   const {
     beltRanks,
+    beltLaddersLoadError,
     currentLadderId,
     loadEligibilityForLadder,
     eligibility,
     eligibilityLadderId,
-    eligibilityLoadError,
+    eligibilityLoadError: eligibilityReadError,
     eligibilityPendingLadderId,
   } = beltStore;
+  const eligibilityLoadError = beltLaddersLoadError || eligibilityReadError;
   const { currentRole, isPreviewMode } = config;
   const { dashboardSummary, dashboardSummaryLoaded } = dashboardStore;
   const { leads, leadsLoaded, leadsLoadError, refreshLeads } = leadStore;
@@ -137,6 +140,7 @@ export function useDashboardPageController({
     pendingLadderId: eligibilityPendingLadderId,
   });
   const setupReadiness = resolvePageDatasetReadiness([
+    loadedDataset({ error: beltLaddersLoadError, label: "Belt plans", loaded: !beltLaddersLoadError }),
     loadedDataset({ error: studentsLoadError, label: "Student roster", loaded: studentsLoaded }),
     loadedDataset({ error: programsLoadError, label: "Programs", loaded: programsLoaded }),
     loadedDataset({ error: leadsLoadError, label: "Leads", loaded: leadsLoaded }),

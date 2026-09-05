@@ -206,6 +206,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
   const requestCompletions = [];
   const requestStatuses = new Map();
   const responseTimings = [];
+  let acceptingRequestEvents = true;
   let evidence;
 
   try {
@@ -225,9 +226,11 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
     });
     const navigationGeneration = 1;
     page.on("request", (request) => {
+      if (!acceptingRequestEvents) return;
       requestStarts.set(request, { started_at_ms: performance.now(), generation: navigationGeneration });
     });
     page.on("requestfinished", (request) => {
+      if (!acceptingRequestEvents) return;
       const start = requestStarts.get(request);
       requestStarts.delete(request);
       if (!start) return;
@@ -239,11 +242,13 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       })());
     });
     page.on("requestfailed", (request) => {
+      if (!acceptingRequestEvents) return;
       const start = requestStarts.get(request);
       requestStarts.delete(request);
       if (start) requests.push({ route: routeLabel, navigation_generation: start.generation, resource: classifyResource(request.url()) ?? "other", initiator: "other", outcome: "failed", status: 0, response_body_bytes: 0, started_at_ms: start.started_at_ms, ended_at_ms: performance.now() });
     });
     page.on("response", (response) => {
+      if (!acceptingRequestEvents) return;
       requestStatuses.set(response.request(), response.status());
       const resource = classifyResource(response.url());
       if (!resource) return;
@@ -324,11 +329,15 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       };
     });
 
-    await Promise.all(requestCompletions);
+    // Close the observation window before awaiting sizes. Otherwise a completion
+    // can leave requestStarts after Promise.all has copied its input, disappearing
+    // from both the completed and pending inventory.
+    acceptingRequestEvents = false;
     const requestSnapshotAt = performance.now();
     for (const [request, start] of requestStarts) {
       requests.push({ route: routeLabel, navigation_generation: start.generation, resource: classifyResource(request.url()) ?? "other", initiator: "other", outcome: "pending-at-capture", status: requestStatuses.get(request) ?? 0, response_body_bytes: 0, started_at_ms: start.started_at_ms, ended_at_ms: requestSnapshotAt });
     }
+    await Promise.all(requestCompletions);
     evidence = validateCapturedEvidence({
       schema_version: 3,
       route: routeLabel,
