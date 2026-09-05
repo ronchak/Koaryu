@@ -8,7 +8,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.utils import is_body_allowed_for_status_code
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
@@ -20,6 +20,14 @@ class ErrorMeta(BaseModel):
 class ErrorResponse(BaseModel):
     detail: Any
     error: ErrorMeta
+
+
+class PublicValidationError(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    loc: list[str | int]
+    msg: str
+    type: str
 
 
 STATUS_ERROR_CODES = {
@@ -55,6 +63,13 @@ def error_response_payload(
     }
 
 
+def normalize_validation_errors(errors: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        PublicValidationError.model_validate(error).model_dump(mode="json")
+        for error in errors
+    ]
+
+
 async def http_exception_handler(_request: Request, exc: StarletteHTTPException) -> Response:
     if not is_body_allowed_for_status_code(exc.status_code):
         return Response(status_code=exc.status_code, headers=exc.headers)
@@ -72,7 +87,7 @@ async def request_validation_exception_handler(
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=error_response_payload(
-            detail=exc.errors(),
+            detail=normalize_validation_errors(exc.errors()),
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             code="validation_error",
         ),
@@ -128,13 +143,9 @@ def _install_error_openapi_contract(app: FastAPI) -> None:
             if "error" not in required:
                 required.append("error")
 
-        validation_detail_schema = schemas.get("ValidationError")
-        if isinstance(validation_detail_schema, dict):
-            properties = validation_detail_schema.get("properties")
-            if isinstance(properties, dict):
-                properties.pop("input", None)
-                properties.pop("ctx", None)
-            validation_detail_schema["required"] = ["loc", "msg", "type"]
+        validation_detail_schema = PublicValidationError.model_json_schema()
+        validation_detail_schema["title"] = "ValidationError"
+        schemas["ValidationError"] = validation_detail_schema
 
         for path_item in (schema.get("paths") or {}).values():
             if not isinstance(path_item, dict):
