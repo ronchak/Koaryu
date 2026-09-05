@@ -61,6 +61,10 @@ diagnostic cutoff. Membership failure still rejects the request, and financial
 totals still require independently verified subscription access. A timed-out or
 cancelled caller does not free provider capacity early: the runtime retains the
 source operation and its client until the underlying work finishes.
+After membership succeeds, even failure of every projection returns HTTP 200
+with the structured landing response: unavailable fields are null,
+`financial_access` is `unavailable`, and `errors` explains the failed reads.
+This differs from a membership failure or timeout, which rejects the request.
 
 The new schema is V38 at 133 migrations, head `20260905022339`. Backend readiness
 uses `koaryu_release_schema_preflight_v19`; the previous V18 entry point retains

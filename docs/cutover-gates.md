@@ -49,6 +49,13 @@ remainder:
 
 - `20260905022339_billing_landing_aggregates.sql`
 
+This migration builds ordinary indexes on `billing_invoices` and
+`billing_payments`. Their write locks can delay billing and webhook writes until
+the migration transaction finishes; reads remain available. Plan that write
+pause for the separately authorized rollout. Its hosted duration has not been
+measured; the local index-size samples are not a production lock-time estimate.
+See PostgreSQL's [index-build locking behavior](https://www.postgresql.org/docs/17/sql-createindex.html#SQL-CREATEINDEX-CONCURRENTLY).
+
 Exact V31 through V36 remain state-bound forward-recovery points. They
 may resume only their immutable suffix through V38; hybrid histories, catalogs,
 or readiness results are refused.

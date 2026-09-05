@@ -24,7 +24,7 @@ AGGREGATES = dict(
 
 
 class LandingRuntimeFixture:
-    def __init__(self, monkeypatch, *, role='admin', required=False, membership_delay=0, budget=0.15):
+    def __init__(self, monkeypatch, *, role='admin', required=False, membership_delay=0, budget=0.15, operation_timeout=20):
         self.started = threading.Event()
         self.release = threading.Event()
         self.events = []
@@ -44,7 +44,7 @@ class LandingRuntimeFixture:
                 with fixture.lock:
                     fixture.events.append((operation, id(self), self.owner))
 
-        config = SupabaseLaneConfig(max_workers=3, max_queue=0, queue_wait_timeout=0.02, operation_wait_timeout=20)
+        config = SupabaseLaneConfig(max_workers=3, max_queue=0, queue_wait_timeout=0.02, operation_wait_timeout=operation_timeout)
         self.runtime = SupabaseProviderRuntime(
             config, config, client_factory=Resource, client_closer=lambda client: client.touch('closed'),
             thread_name_prefix='landing-runtime-proof',
@@ -149,6 +149,7 @@ def test_stalled_diagnostics_preserve_healthy_fields_affinity_and_capacity(monke
             assert (snapshot.admitted, snapshot.active) == (1, 1), 'timed-out work still owns its capacity'
             assert snapshot.submitted == (4 if role == 'admin' else 3), 'one membership read and role-allowed projections only'
             assert snapshot.cancelled >= 1
+            assert snapshot.timed_out == 1, 'only the stalled projection exhausts its owned deadline'
             assert ticks >= 5, 'blocking provider work must not block the ASGI loop'
             owners = {operation: client for operation, client, _ in fixture.events if operation in {'financial','platform','diagnostics'}}
             assert owners['diagnostics'] != owners['financial']
@@ -215,6 +216,7 @@ def test_request_cancellation_retains_provider_ownership_until_completion(monkey
             with pytest.raises(asyncio.CancelledError):
                 await request
             assert fixture.runtime.interactive_snapshot().admitted >= 1
+            assert fixture.runtime.interactive_snapshot().timed_out == 0, 'caller cancellation is not a deadline'
             assert not fixture.release.is_set()
         finally:
             await fixture.close()
@@ -243,8 +245,78 @@ def test_membership_deadline_rejects_without_starting_unauthorized_projections(m
             assert raised.value.status_code == 504
             assert fixture.runtime.interactive_snapshot().submitted == 1
             assert fixture.runtime.interactive_snapshot().admitted == 1
+            assert fixture.runtime.interactive_snapshot().timed_out == 1
             assert not fixture.started.is_set()
             assert fixture.rpc_calls == 0
+        finally:
+            await fixture.close()
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('role, projection_count', [('admin', 3), ('front_desk', 2)])
+def test_preexpired_projection_deadlines_count_without_submitting_work(monkeypatch, role, projection_count):
+    async def scenario():
+        fixture = LandingRuntimeFixture(monkeypatch, role=role)
+        try:
+            result = await billing_landing.get_billing_landing(
+                fixture.runtime, {'studio_id':'studio','role':role},
+                deadline=asyncio.get_running_loop().time()-1,
+            )
+            assert result.financial_access == 'unavailable'
+            assert result.aggregates is None and result.system_status is None
+            assert result.platform_status is None and result.errors
+            snapshot = fixture.runtime.interactive_snapshot()
+            assert snapshot.timed_out == projection_count
+            assert (snapshot.submitted, snapshot.admitted, snapshot.cancelled) == (0, 0, 0)
+        finally:
+            await fixture.close()
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('deadline_owner', ['request_boundary', 'provider_lane'])
+def test_inner_deadline_is_counted_once_and_still_retains_capacity(monkeypatch, deadline_owner):
+    async def scenario():
+        fixture = LandingRuntimeFixture(monkeypatch, budget=1, operation_timeout=0.15)
+        if deadline_owner == 'provider_lane':
+            # Let the real lane's shorter timer fire before the request boundary.
+            monkeypatch.setattr(fixture.runtime, 'operation_wait_timeout', lambda _lane: 0.75)
+        try:
+            result = await fixture.call()
+            assert result.financial_access == 'available'
+            assert result.platform_status is not None and result.system_status is None
+            snapshot = fixture.runtime.interactive_snapshot()
+            assert snapshot.timed_out == 1, 'landing must not recount an inner provider expiry'
+            assert (snapshot.admitted, snapshot.active) == (1, 1)
+            assert snapshot.cancelled == (0 if deadline_owner == 'provider_lane' else 1)
+        finally:
+            await fixture.close()
+        assert fixture.runtime.interactive_snapshot().timed_out == 1
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('failure_scope', ['membership', 'projection'])
+def test_unrelated_timeout_error_is_not_a_runtime_deadline(monkeypatch, failure_scope):
+    async def scenario():
+        fixture = LandingRuntimeFixture(monkeypatch)
+        failure = TimeoutError('application failure unrelated to a deadline')
+        def fail(client, *_args):
+            client.touch('unrelated-timeout')
+            raise failure
+        fixture.release.set()
+        try:
+            if failure_scope == 'membership':
+                monkeypatch.setattr(billing_endpoint, 'resolve_billing_manager_staff_role_for_user', fail)
+                with pytest.raises(TimeoutError) as raised:
+                    await fixture.call()
+                # asyncio.wrap_future reconstructs concurrent TimeoutError values.
+                assert type(raised.value) is TimeoutError
+                assert raised.value.args == failure.args
+            else:
+                monkeypatch.setattr(billing_landing, 'get_platform_subscription_access', fail)
+                result = await fixture.call()
+                assert result.financial_access == 'unavailable'
+                assert result.system_status is not None and result.platform_status is not None
+            assert fixture.runtime.interactive_snapshot().timed_out == 0
         finally:
             await fixture.close()
     asyncio.run(scenario())

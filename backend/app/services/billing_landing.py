@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from supabase import Client
 
 from app.core.deps import ProviderDependency, run_supabase_operation
+from app.core.provider_runtime import SupabaseProviderRuntime
 from app.schemas.billing import BillingLandingResponse, BillingLandingAggregatesResponse
 from app.services.billing_service import BillingService
 from app.services.platform_billing_service import PlatformBillingService
@@ -76,9 +77,17 @@ async def _bounded_projection(
     # Cancel only this caller's wait. The existing runtime owns the source future,
     # its thread-affine client and its capacity slot until provider work finishes.
     if deadline <= asyncio.get_running_loop().time():
+        if isinstance(provider, SupabaseProviderRuntime):
+            provider.record_request_timeout("interactive")
         raise TimeoutError("Billing landing request deadline expired.")
-    async with asyncio.timeout_at(deadline):
-        return await run_supabase_operation(provider, operation, lane="interactive")
+    projection_timeout = asyncio.timeout_at(deadline)
+    try:
+        async with projection_timeout:
+            return await run_supabase_operation(provider, operation, lane="interactive")
+    except TimeoutError:
+        if projection_timeout.expired() and isinstance(provider, SupabaseProviderRuntime):
+            provider.record_request_timeout("interactive")
+        raise
 
 
 async def get_billing_landing(
