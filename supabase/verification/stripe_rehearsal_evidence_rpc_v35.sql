@@ -62,7 +62,14 @@ BEGIN
     ) = 0 THEN
     RAISE EXCEPTION 'V35 evidence RPC security definition mismatch.';
   END IF;
-  IF v_current_count=132 AND v_current_head='20260902001000' THEN
+  IF v_current_count=133 AND v_current_head='20260905022339' THEN
+  IF position('migration_history_v38' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v19()'::regprocedure))=0
+     OR position('migration_history_v37' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v19()'::regprocedure))<>0
+     OR position('koaryu_release_schema_preflight_v19' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v18()'::regprocedure))=0
+     OR position('koaryu_release_schema_preflight_v18' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v17()'::regprocedure))=0 THEN
+    RAISE EXCEPTION 'V38 readiness diagnostics or predecessor adapters drifted.';
+  END IF;
+ ELSIF v_current_count=132 AND v_current_head='20260902001000' THEN
     IF position('migration_history_v37' IN pg_get_functiondef(
         'public.koaryu_release_schema_preflight_v18()'::regprocedure))=0
       OR position('migration_history_v36' IN pg_get_functiondef(

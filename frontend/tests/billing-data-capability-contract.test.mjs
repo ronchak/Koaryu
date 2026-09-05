@@ -11,15 +11,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 describe("billing data capability loading", () => {
   it("loads studio billing capabilities for front desk without exposing platform billing", () => {
     const source = fs.readFileSync(path.join(root, "src/lib/billing-data-controller.ts"), "utf8");
-    assert.match(source, /api\.get<BillingSystemStatus>\("\/billing\/system\/status", token\)/);
-    assert.doesNotMatch(
-      source,
-      /canManageKoaryuSubscription\s*\?\s*api\.get<BillingSystemStatus>/,
-    );
-    assert.match(
-      source,
-      /canManageKoaryuSubscription\s*\?\s*api\.get<PlatformBillingStatus>\("\/platform-billing\/status", token\)/,
-    );
+    assert.match(source, /api\.get<BillingLanding>\("\/billing\/landing", currentToken\)/);
+    assert.doesNotMatch(source, /api\.get<PlatformBillingStatus>/);
+    assert.doesNotMatch(source, /api\.get<BillingSystemStatus>/);
 
     const status = {
       workflow_capabilities: [

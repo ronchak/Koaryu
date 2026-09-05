@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { markDashboardReadiness } from "@/lib/performance";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   type BillingSetupStep,
@@ -71,7 +72,7 @@ type BillingPageControllerOptions = {
   >;
   studioStore: Pick<
     StudioStoreContextValue,
-    "currentRole" | "currentStudioId" | "currentUserId"
+    "currentRole" | "currentStudioId" | "currentUserId" | "identityGeneration"
   >;
 };
 
@@ -84,7 +85,7 @@ export function useBillingPageController({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isPreviewMode, token, markSubscriptionRequired } = config;
-  const { currentRole, currentStudioId, currentUserId } = studioStore;
+  const { currentRole, currentStudioId, currentUserId, identityGeneration } = studioStore;
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
   const {
     refreshStudents,
@@ -124,6 +125,11 @@ export function useBillingPageController({
   }, [markSubscriptionRequired, router]);
   const {
     billingSystemStatus,
+    landing,
+    ensureBilling,
+    hasMoreHistory,
+    isLoadingMore,
+    loadMoreHistory,
     enrollments,
     exportJobs,
     hasBillingLoadSettled,
@@ -140,7 +146,8 @@ export function useBillingPageController({
     setExportJobs,
     subscriptions,
   } = useBillingDataController({
-    canManageKoaryuSubscription,
+    activeTab,
+    identityKey: currentUserId && currentStudioId ? `${currentUserId}:${currentStudioId}:${currentRole}:${identityGeneration}` : null,    canManageKoaryuSubscription,
     canViewStudioBilling,
     isPreviewMode,
     onSubscriptionRequired: handleSubscriptionRequired,
@@ -191,7 +198,7 @@ export function useBillingPageController({
     studentsLoaded,
     studentsMayBePartial,
   });
-  const showBillingLoading = showPrimaryBillingLoading || auxiliaryReadiness.status === "loading";
+  const showBillingLoading = showPrimaryBillingLoading || (!isPreviewMode && isLoading && activeTab !== "overview") || auxiliaryReadiness.status === "loading";
   const billingPlatform = isPreviewMode ? PREVIEW_PLATFORM : platformBilling;
   const billingConnect = isPreviewMode ? PREVIEW_CONNECT : paymentAccount;
   const billingPlans = isPreviewMode ? PREVIEW_PLANS : plans;
@@ -266,6 +273,7 @@ export function useBillingPageController({
     [billingConnect?.requirements_due]
   );
   const billingPageModel = useMemo(() => buildBillingPageModel({
+    billingLandingAggregates: landing?.aggregates,
     billingMetricsAsOf: isPreviewMode ? PREVIEW_BILLING_METRICS_AS_OF : undefined,
     billingPaymentCohortSummary: isPreviewMode ? null : paymentCohortSummary,
     billingConnect,
@@ -280,6 +288,7 @@ export function useBillingPageController({
     programs,
     students,
   }), [
+    landing,
     billingConnect,
     billingEnrollments,
     billingInvoices,
@@ -369,13 +378,13 @@ export function useBillingPageController({
   const billingSetupCompleteCount = billingSetupSteps.filter((step) => step.complete).length;
 
   useEffect(() => {
-    if (!programsLoaded) {
+    if (activeTab === "plans" && !programsLoaded) {
       void refreshPrograms({ includeArchived: false }).catch(() => undefined);
     }
-  }, [programsLoaded, refreshPrograms]);
+  }, [activeTab, programsLoaded, refreshPrograms]);
 
   useEffect(() => {
-    if ((studentsLoaded && !studentsMayBePartial) || isPreviewMode) {
+    if (!["enrollments", "invoices"].includes(activeTab) || (studentsLoaded && !studentsMayBePartial) || isPreviewMode) {
       return;
     }
 
@@ -391,7 +400,7 @@ export function useBillingPageController({
     return () => {
       cancelled = true;
     };
-  }, [isPreviewMode, refreshStudents, studentsLoaded, studentsMayBePartial]);
+  }, [activeTab, isPreviewMode, refreshStudents, studentsLoaded, studentsMayBePartial]);
 
   useEffect(() => {
     if (!connectReturnPending || !token || currentRole === null) {
@@ -430,14 +439,14 @@ export function useBillingPageController({
       return;
     }
     const timer = window.setTimeout(() => {
-      void refreshBilling();
+      void ensureBilling();
     }, 0);
     return () => window.clearTimeout(timer);
   }, [
     billingInitialLoadAction,
     connectReturnPending,
     currentRole,
-    refreshBilling,
+    ensureBilling,
     token,
   ]);
 
@@ -446,11 +455,16 @@ export function useBillingPageController({
     if (activeTab === "plans") {
       requests.push(refreshPrograms({ includeArchived: false }));
     }
-    if (["overview", "enrollments", "invoices"].includes(activeTab)) {
+    if (["enrollments", "invoices"].includes(activeTab)) {
       requests.push(refreshStudents());
     }
     await Promise.allSettled(requests);
   }, [activeTab, refreshBilling, refreshPrograms, refreshStudents]);
+
+  useEffect(() => markDashboardReadiness("billing", identityGeneration, {
+    useful: Boolean(landing) && !showBillingLoading,
+    complete: Boolean(landing?.aggregates) && hasBillingLoadSettled && !showBillingLoading && !error,
+  }), [identityGeneration, landing, hasBillingLoadSettled, showBillingLoading, error]);
 
   const { connectEntityModal, openConnectEntityModal } = useBillingConnectEntityModal({
     isActionLoading: billingActions.isActionLoading,
@@ -484,6 +498,9 @@ export function useBillingPageController({
   return {
     contentProps: {
       activeTab,
+      hasMoreHistory,
+      isLoadingMore,
+      loadMoreHistory,
       billingSetupCompleteCount,
       billingSetupSteps,
       billingProviderCopy,
@@ -498,7 +515,7 @@ export function useBillingPageController({
       onDismissMessage: () => setMessage(""),
       onRefresh: () => void refreshRequiredBillingDatasets(),
       showBillingContent:
-        auxiliaryReadiness.status === "ready" && !showPrimaryBillingLoading,
+        auxiliaryReadiness.status === "ready" && !showBillingLoading,
       showBillingLoading,
       tabContentProps: {
         actions: billingActions,
@@ -507,6 +524,7 @@ export function useBillingPageController({
         activeSubscriptionCount,
         activeTab,
         billingConnect,
+        billingObservedAt: isPreviewMode ? PREVIEW_BILLING_METRICS_AS_OF.toISOString() : landing?.observed_at ?? null,
         billingEnrollments,
         billingInvoices,
         billingPayers,
@@ -546,7 +564,7 @@ export function useBillingPageController({
         planNameById,
         stripePaymentTotal,
         studentNameById,
-        studentsLoaded: studentsLoaded && !studentsMayBePartial,
+        studentsLoaded: isPreviewMode || Boolean(landing?.aggregates),
       },
     },
   };

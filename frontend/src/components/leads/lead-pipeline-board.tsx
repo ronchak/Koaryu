@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   PIPELINE_STAGES,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/leads-page-model";
 import type { Lead, Program, StaffMember } from "@/types";
 import { AlertTriangle, ChevronLeft, ChevronRight, UserPlus } from "lucide-react";
+import { LEAD_AGE_BANDS, groupLeadsByAgeBand } from "@/lib/leads-age-bands";
 import styles from "./leads-ledger.module.css";
 
 interface LeadPipelineBoardProps {
@@ -28,36 +30,6 @@ interface LeadPipelineBoardProps {
   onSelectLead: (leadId: string) => void;
 }
 
-const LEDGER_LOADING_ROWS = 6;
-
-type LeadAgeBandId = "overdue-8" | "overdue-3" | "overdue-1" | "today" | "upcoming" | "unscheduled";
-
-const LEAD_AGE_BANDS: { id: LeadAgeBandId; label: string }[] = [
-  { id: "overdue-8", label: "8+ days overdue" },
-  { id: "overdue-3", label: "3–7 days overdue" },
-  { id: "overdue-1", label: "1–2 days overdue" },
-  { id: "today", label: "Due today" },
-  { id: "upcoming", label: "Upcoming" },
-  { id: "unscheduled", label: "Unscheduled / completed" },
-];
-
-function dayDifference(date: string, today: string) {
-  const dayMs = 24 * 60 * 60 * 1000;
-  return Math.round(
-    (new Date(`${today}T00:00:00`).getTime() - new Date(`${date}T00:00:00`).getTime()) / dayMs
-  );
-}
-
-function getLeadAgeBand(lead: Lead, today: string): LeadAgeBandId {
-  if (!lead.follow_up_date || lead.stage === "enrolled") return "unscheduled";
-  const daysOverdue = dayDifference(lead.follow_up_date, today);
-  if (daysOverdue >= 8) return "overdue-8";
-  if (daysOverdue >= 3) return "overdue-3";
-  if (daysOverdue >= 1) return "overdue-1";
-  if (daysOverdue === 0) return "today";
-  return "upcoming";
-}
-
 function getLeadNextAction(lead: Lead) {
   if (lead.stage === "enrolled") return "Enrollment complete";
   if (!lead.follow_up_date) return "Schedule the next contact";
@@ -68,18 +40,6 @@ function getLeadNextAction(lead: Lead) {
     case "offer_sent": return "Follow up on the offer";
     case "closed_lost": return "Review closed record";
   }
-}
-
-function LeadLedgerIntroLoading() {
-  return (
-    <div className={styles.intro}>
-      <dl className={styles.totals} aria-hidden="true">
-        <div><dt>Overdue</dt><dd>—</dd></div>
-        <div><dt>Due today</dt><dd>—</dd></div>
-        <div><dt>Unassigned</dt><dd>—</dd></div>
-      </dl>
-    </div>
-  );
 }
 
 function LeadLedgerErrorIntro() {
@@ -95,25 +55,6 @@ function LeadLedgerErrorIntro() {
         <div><dt>Unassigned</dt><dd>—</dd></div>
       </dl>
     </div>
-  );
-}
-
-export function LeadLedgerLoading() {
-  return (
-    <section className={styles.workspace} aria-label="Loading lead follow-up obligations" role="status">
-      <LeadLedgerIntroLoading />
-      <p className="sr-only">Loading follow-up obligations…</p>
-      <div className={styles.stateFrame} aria-hidden="true">
-        <div className={styles.stateHeader}>
-          {Array.from({ length: 6 }).map((_, index) => <span key={index} className={styles.stateBar} />)}
-        </div>
-        {Array.from({ length: LEDGER_LOADING_ROWS }).map((_, row) => (
-          <div key={row} className={styles.stateRow}>
-            {Array.from({ length: 6 }).map((__, column) => <span key={column} className={styles.stateBar} />)}
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -152,12 +93,7 @@ export function LeadPipelineBoard({
   const overdue = leads.filter((lead) => lead.follow_up_date && lead.follow_up_date < today).length;
   const dueToday = leads.filter((lead) => lead.follow_up_date === today).length;
   const unassigned = leads.filter((lead) => !lead.assigned_staff_id).length;
-  const leadsByBand = new Map(
-    LEAD_AGE_BANDS.map((band) => [
-      band.id,
-      leads.filter((lead) => getLeadAgeBand(lead, today) === band.id),
-    ])
-  );
+  const leadsByBand = useMemo(() => groupLeadsByAgeBand(leads, today), [leads, today]);
 
   if (leads.length === 0) {
     return (

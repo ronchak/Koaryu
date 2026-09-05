@@ -197,6 +197,12 @@ export interface ApiBillingInvoiceItemCreate {
   billing_plan_id?: string | null;
 }
 
+export interface ApiBillingInvoicePageResponse {
+  items: ApiBillingInvoiceResponse[];
+  next_cursor?: string | null;
+  complete: boolean;
+}
+
 export interface ApiBillingInvoiceResponse {
   id: string;
   studio_id: string;
@@ -229,6 +235,29 @@ export interface ApiBillingInvoiceResponse {
   external: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ApiBillingLandingAggregatesResponse {
+  active_student_count: number;
+  active_subscription_count: number;
+  failed_payer_count: number;
+  open_invoice_amount_cents: number;
+  has_billing_plans: boolean;
+  has_family_accounts: boolean;
+  has_student_billing: boolean;
+  has_collection_history: boolean;
+  payment_cohort: ApiBillingPaymentCohortSummaryResponse;
+}
+
+export interface ApiBillingLandingResponse {
+  studio_id: string;
+  observed_at: string;
+  system_status?: ApiBillingSystemStatusResponse | null;
+  payment_account?: ApiStudioPaymentAccountResponse | null;
+  platform_status?: ApiPlatformBillingStatusResponse | null;
+  financial_access: "available" | "subscription_required" | "unavailable";
+  aggregates?: ApiBillingLandingAggregatesResponse | null;
+  errors: string[];
 }
 
 export interface ApiBillingLinkResponse {
@@ -318,6 +347,12 @@ export interface ApiBillingPaymentCohortSummaryResponse {
   net_amount_cents: number;
   scope: "payment_cohort_net_of_confirmed_adjustments";
   disclosure: string;
+}
+
+export interface ApiBillingPaymentPageResponse {
+  items: ApiBillingPaymentResponse[];
+  next_cursor?: string | null;
+  complete: boolean;
 }
 
 export interface ApiBillingPaymentResponse {

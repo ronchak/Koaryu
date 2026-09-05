@@ -8,6 +8,8 @@ type DashboardPageContentProps = DashboardPageController["contentProps"];
 
 export function DashboardPageContent({
   currentRole,
+  identityGeneration,
+  onVisibleWidgetsChange,
   currentStudioId,
   currentUserId,
   datasetLoadError,
@@ -32,6 +34,8 @@ export function DashboardPageContent({
     <DashboardHome
       key={`${currentUserId}:${currentStudioId ?? "no-studio"}:${currentRole ?? "unknown"}`}
       currentRole={currentRole}
+      identityGeneration={identityGeneration}
+      onVisibleWidgetsChange={onVisibleWidgetsChange}
       currentStudioId={currentStudioId}
       currentUserId={currentUserId}
       datasetLoadError={datasetLoadError}

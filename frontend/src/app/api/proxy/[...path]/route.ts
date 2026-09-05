@@ -8,6 +8,7 @@ import {
 import { buildUpstreamProxyRequestHeaders } from "../../../../lib/proxy-request-headers.ts";
 import { buildProxyTargetUrl, UnsafeProxyPathError } from "../../../../lib/proxy-target.ts";
 import { ACTIVE_STUDIO_COOKIE } from "../../../../lib/studio-state-cookie.ts";
+import { fetchProxyUpstream, ProxyUpstreamTimeoutError } from "../../../../lib/proxy-upstream.ts";
 
 export const runtime = "nodejs";
 
@@ -62,7 +63,7 @@ async function forwardRequest(
       );
     }
 
-    const upstream = await fetch(targetUrl, init);
+    const upstream = await fetchProxyUpstream(targetUrl, init, request.signal);
     const responseHeaders = buildPrivateProxyHeaders(upstream.headers);
 
     return new Response(upstream.body, {
@@ -70,6 +71,15 @@ async function forwardRequest(
       headers: responseHeaders,
     });
   } catch (error) {
+    if (error instanceof ProxyUpstreamTimeoutError) {
+      return Response.json(
+        { detail: error.message },
+        { status: 504, headers: buildPrivateProxyJsonHeaders() }
+      );
+    }
+    if (error instanceof Error && error.name === "AbortError") {
+      return new Response(null, { status: 499, headers: buildPrivateProxyJsonHeaders() });
+    }
     const requestBodyError = getProxyRequestBodyError(error);
     if (requestBodyError) {
       return Response.json(

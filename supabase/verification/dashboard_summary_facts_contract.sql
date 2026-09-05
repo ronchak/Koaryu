@@ -3,6 +3,14 @@ BEGIN;
 DO $$
 DECLARE
     v_owner UUID := gen_random_uuid();
+    v_empty UUID := gen_random_uuid();
+    v_sample INTEGER;
+    v_started TIMESTAMPTZ;
+    v_samples DOUBLE PRECISION[];
+    v_warmup_ms DOUBLE PRECISION;
+    v_median_ms DOUBLE PRECISION;
+    v_min_ms DOUBLE PRECISION;
+    v_max_ms DOUBLE PRECISION;
     v_small UUID := gen_random_uuid();
     v_medium UUID := gen_random_uuid();
     v_large UUID := gen_random_uuid();
@@ -74,6 +82,7 @@ BEGIN
     VALUES (v_owner, 'authenticated', 'authenticated', 'dashboard-facts-' || replace(v_owner::TEXT, '-', '') || '@example.invalid', '{}', '{}', now(), now());
     INSERT INTO public.studios (id, name, slug, owner_id, timezone)
     VALUES
+        (v_empty, 'Dashboard Facts Empty', 'dashboard-facts-empty-' || replace(v_empty::TEXT, '-', ''), v_owner, 'UTC'),
         (v_small, 'Dashboard Facts Small', 'dashboard-facts-small-' || replace(v_small::TEXT, '-', ''), v_owner, 'America/Los_Angeles'),
         (v_medium, 'Dashboard Facts Medium', 'dashboard-facts-medium-' || replace(v_medium::TEXT, '-', ''), v_owner, 'UTC'),
         (v_large, 'Dashboard Facts Large', 'dashboard-facts-large-' || replace(v_large::TEXT, '-', ''), v_owner, 'UTC');
@@ -386,8 +395,45 @@ BEGIN
         RAISE EXCEPTION 'Unavailable readiness formula mismatch.';
     END IF;
 
+    -- Expand independent non-roster dimensions after the focused formula checks.
+    INSERT INTO public.leads (studio_id, first_name, last_name, stage)
+    SELECT v_large, 'Duplicate', 'Name', 'inquiry' FROM generate_series(1, 5000);
+    INSERT INTO public.billing_invoices (studio_id, status, due_date)
+    SELECT v_medium, 'open', DATE '2026-05-20' FROM generate_series(1, 200);
+    INSERT INTO public.billing_invoices (studio_id, status, due_date)
+    SELECT v_large, 'open', DATE '2026-05-20' FROM generate_series(1, 201);
+    v_fact := public.dashboard_summary_facts(v_empty, 'billing_visible', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1');
+    IF (v_fact->'students'->>'total_students')::INTEGER <> 0
+       OR (v_fact->'leads'->>'active_leads')::INTEGER <> 0 THEN
+        RAISE EXCEPTION 'Empty studio leaked facts from populated studios.';
+    END IF;
+    v_fact := public.dashboard_summary_facts(v_large, 'billing_visible', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1');
+    IF (v_fact->'leads'->>'active_leads')::INTEGER <> 5000
+       OR (v_fact->'billing'->>'payment_attention_count')::INTEGER <> 201 THEN
+        RAISE EXCEPTION 'Scaled lead or uncapped invoice fact mismatch.';
+    END IF;
+
     FOREACH v_profile IN ARRAY ARRAY['small', 'medium', 'large']::TEXT[] LOOP
         v_profile_studio := CASE v_profile WHEN 'small' THEN v_small WHEN 'medium' THEN v_medium ELSE v_large END;
+        -- Local PostgreSQL cost only. One warmup and 20 fixed repetitions;
+        -- these samples do not claim network, hosted latency, or reliable p95.
+        v_started := clock_timestamp();
+        PERFORM public.dashboard_summary_facts(v_profile_studio, 'billing_visible',
+            CASE v_profile WHEN 'small' THEN 'America/Los_Angeles' ELSE 'UTC' END,
+            DATE '2026-05-20', 'dashboard-summary-v1');
+        v_warmup_ms := extract(epoch FROM clock_timestamp() - v_started) * 1000;
+        v_samples := ARRAY[]::DOUBLE PRECISION[];
+        FOR v_sample IN 1..20 LOOP
+            v_started := clock_timestamp();
+            PERFORM public.dashboard_summary_facts(v_profile_studio, 'billing_visible',
+                CASE v_profile WHEN 'small' THEN 'America/Los_Angeles' ELSE 'UTC' END,
+                DATE '2026-05-20', 'dashboard-summary-v1');
+            v_samples := array_append(v_samples, extract(epoch FROM clock_timestamp() - v_started) * 1000);
+        END LOOP;
+        SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY value), min(value), max(value)
+        INTO v_median_ms, v_min_ms, v_max_ms FROM unnest(v_samples) AS sample(value);
+        RAISE NOTICE 'dashboard_facts_samples profile=% warmup_count=1 warmup_ms=% sample_count=20 median_ms=% min_ms=% max_ms=%',
+            v_profile, v_warmup_ms, v_median_ms, v_min_ms, v_max_ms;
         v_expected_sessions := CASE v_profile WHEN 'small' THEN 7 WHEN 'medium' THEN 120 ELSE 640 END;
         v_expected_schedule_attendance := CASE v_profile WHEN 'small' THEN 1 WHEN 'medium' THEN 6 ELSE 10 END;
         v_expected_operational_attendance := CASE v_profile WHEN 'small' THEN 1 WHEN 'medium' THEN 240 ELSE 1280 END;

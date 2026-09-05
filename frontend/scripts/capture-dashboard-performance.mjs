@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { CAPTURE_ROUTES, blockedRequestCategory, sanitizeVisibleMarks, validateFunctionalCapture } from "./performance-capture-policy.mjs";
+
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -27,7 +29,7 @@ const SAFE_SERVER_TIMING_NAMES = new Set([
   "koaryu_summary_churn_counts", "koaryu_summary_test_readiness",
   "koaryu_summary_billing_counts", "koaryu_summary_setup_flags",
   "koaryu_summary_recent_students", "koaryu_summary_total",
-  "koaryu_summary_route_total",
+  "koaryu_summary_route_total", "koaryu_summary_context", "koaryu_summary_facts",
 ]);
 
 export function sanitizeServerTiming(value) {
@@ -60,6 +62,7 @@ export function classifyResource(value) {
 
 export async function openVerifiedBrowser(options, dependencies) {
   const verification = await dependencies.verifyDeployment(options);
+  if (verification?.verified !== true) throw new Error("exact deployed release verification did not succeed.");
   const browser = await dependencies.launchBrowser();
   return { verification, browser };
 }
@@ -77,6 +80,7 @@ export function validateCapturedEvidence(evidence) {
   if (
     evidence.blocked_requests.write_methods !== 0
     || evidence.blocked_requests.unknown_origins !== 0
+    || (evidence.blocked_requests.provider_refresh_reads ?? 0) !== 0
   ) {
     throw new Error("dashboard evidence contains blocked writes or unknown origins.");
   }
@@ -108,7 +112,7 @@ export function validateCapturedEvidence(evidence) {
     }
     timingResources.add(entry.resource);
   }
-  for (const resource of REQUIRED_RESOURCES) {
+  for (const resource of evidence.route && evidence.route !== "dashboard" ? [] : REQUIRED_RESOURCES) {
     if (
       !responseResources.has(resource)
       || !timingResources.has(resource)
@@ -118,7 +122,7 @@ export function validateCapturedEvidence(evidence) {
     }
   }
   const metrics = [
-    evidence.dashboard_ready_ms,
+    evidence.workflow === "disposable-staging-functional" && evidence.dashboard_ready_ms === null ? evidence.selected_required_data_ms : evidence.dashboard_ready_ms,
     evidence.dashboard_shell_ready_ms,
     evidence.navigation.dom_content_loaded_ms,
     evidence.navigation.load_event_ms,
@@ -144,22 +148,28 @@ export async function verifyPostCaptureRelease(options, initialVerification, ver
   return verification;
 }
 
-export async function measureDashboardReady(page, startedAt, now = Date.now) {
-  await page.locator('[data-koaryu-dashboard-shell-ready="true"]').waitFor({
-    state: "attached",
-    timeout: 20_000,
-  });
-  const dashboardShellReadyMs = now() - startedAt;
-  await page.locator('[data-koaryu-dashboard-data-ready="true"]').waitFor({
-    state: "attached",
-    timeout: 20_000,
-  });
-  const dashboardReadyMs = now() - startedAt;
-  await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-  return { dashboardReadyMs, dashboardShellReadyMs };
+export async function measureDashboardReady(page, route = "dashboard", { functional = false } = {}) {
+  // These legacy attributes retain complete-data semantics. They are waits only;
+  // timestamps come from marks written after committed UI had a paint opportunity.
+  if (route === "dashboard" && !functional) {
+    await page.locator('[data-koaryu-dashboard-shell-ready="true"]').waitFor({ state: "visible", timeout: 20_000 });
+    await page.locator('[data-koaryu-dashboard-data-ready="true"]').waitFor({ state: "visible", timeout: 20_000 });
+  }
+  await page.waitForFunction(({ expectedRoute, requireLegacy }) => {
+    const started = performance.getEntriesByName("koaryu.navigation.started").filter((entry) => entry.detail?.route === expectedRoute).at(-1);
+    return started && performance.getEntriesByName(requireLegacy ? "koaryu.visible.legacy-complete" : "koaryu.visible.complete").some((entry) => entry.detail?.route === expectedRoute && entry.detail.navigation_generation === started.detail.navigation_generation);
+  }, { expectedRoute: route, requireLegacy: route === "dashboard" && !functional }, { timeout: 20_000 });
+  const entries = await page.evaluate(() => performance.getEntriesByType("mark").map(({ name, startTime, detail }) => ({ name, startTime, detail })));
+  const marks = sanitizeVisibleMarks(entries, route);
+  const generation = marks.filter((entry) => entry.stage === "navigation.started").at(-1);
+  const current = marks.filter((entry) => entry.navigation_generation === generation?.navigation_generation && entry.identity_generation === generation?.identity_generation);
+  const at = (stage) => current.find((entry) => entry.stage === stage)?.at_ms;
+  const values = [at("shell"), at("identity"), at("useful"), at("complete")];
+  if (!values.every(finiteNonnegative) || (route === "dashboard" && !functional && !finiteNonnegative(at("legacy-complete")))) throw new Error("committed route/identity readiness evidence is incomplete.");
+  return { neutralShellReadyMs: marks.find((entry) => entry.stage === "shell")?.at_ms ?? at("shell"), dashboardShellReadyMs: at("shell"), dashboardReadyMs: route === "dashboard" ? (at("legacy-complete") ?? null) : at("complete"), selectedRequiredDataMs: at("complete"), identityReadyMs: at("identity"), usefulReadyMs: at("useful"), visibleMarks: marks };
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const releaseArgs = parseReleaseVerifierArgs(argv.filter((_, index) => {
     const previous = argv[index - 1];
     return previous !== "--storage-state" && argv[index] !== "--storage-state";
@@ -173,6 +183,9 @@ function parseArgs(argv) {
 }
 
 export async function captureDashboardPerformance(options, dependencies = {}) {
+  const routeLabel = options.route ?? "dashboard";
+  if (!Object.hasOwn(CAPTURE_ROUTES, routeLabel)) throw new Error("unknown capture route.");
+  if (options.functional) validateFunctionalCapture(options);
   const verifyDeployment = dependencies.verifyDeployment ?? verifyDeployedRelease;
   const launchBrowser = dependencies.launchBrowser ?? (async () => {
     const { chromium } = await import("playwright");
@@ -187,26 +200,51 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
     new URL(options.backendApi).origin,
     SUPABASE_ORIGINS[verification.environment],
   ]);
-  const blocked = { write_methods: 0, unknown_origins: 0 };
+  const blocked = { write_methods: 0, unknown_origins: 0, provider_refresh_reads: 0 };
+  const requests = [];
+  const requestStarts = new Map();
+  const requestCompletions = [];
+  const requestStatuses = new Map();
   const responseTimings = [];
   let evidence;
 
   try {
-    const context = await browser.newContext({ storageState: options.storageState });
+    const context = await browser.newContext({ storageState: options.storageState, serviceWorkers: "block" });
     const page = await context.newPage();
     await page.route("**/*", async (route) => {
       const request = route.request();
-      if (!new Set(["GET", "HEAD", "OPTIONS"]).has(request.method())) {
-        blocked.write_methods += 1;
-        return route.abort("blockedbyclient");
-      }
-      if (!allowedOrigins.has(new URL(request.url()).origin)) {
-        blocked.unknown_origins += 1;
+      const blockedCategory = blockedRequestCategory({ url: request.url(), method: request.method() }, {
+        allowedOrigins, frontendOrigin: options.frontendOrigin, backendOrigin: new URL(options.backendApi).origin,
+        supabaseOrigin: SUPABASE_ORIGINS[verification.environment], functional: options.functional === true,
+      });
+      if (blockedCategory) {
+        blocked[blockedCategory] += 1;
         return route.abort("blockedbyclient");
       }
       return route.continue();
     });
+    const navigationGeneration = 1;
+    page.on("request", (request) => {
+      requestStarts.set(request, { started_at_ms: performance.now(), generation: navigationGeneration });
+    });
+    page.on("requestfinished", (request) => {
+      const start = requestStarts.get(request);
+      requestStarts.delete(request);
+      if (!start) return;
+      const endedAt = performance.now();
+      requestCompletions.push((async () => {
+        const sizes = await request.sizes();
+        requests.push({ route: routeLabel, navigation_generation: start.generation, resource: classifyResource(request.url()) ?? "other", initiator: ["document", "fetch", "xhr", "script", "stylesheet", "image", "font"].includes(request.resourceType()) ? request.resourceType() : "other", outcome: "complete", status: requestStatuses.get(request) ?? 0, response_body_bytes: sizes.responseBodySize, started_at_ms: start.started_at_ms, ended_at_ms: endedAt });
+        requestStatuses.delete(request);
+      })());
+    });
+    page.on("requestfailed", (request) => {
+      const start = requestStarts.get(request);
+      requestStarts.delete(request);
+      if (start) requests.push({ route: routeLabel, navigation_generation: start.generation, resource: classifyResource(request.url()) ?? "other", initiator: "other", outcome: "failed", status: 0, response_body_bytes: 0, started_at_ms: start.started_at_ms, ended_at_ms: performance.now() });
+    });
     page.on("response", (response) => {
+      requestStatuses.set(response.request(), response.status());
       const resource = classifyResource(response.url());
       if (!resource) return;
       responseTimings.push({
@@ -216,7 +254,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       });
     });
     await page.addInitScript(() => {
-      globalThis.__koaryuEvidence = { cls: 0, lcp: null };
+      globalThis.__koaryuEvidence = { cls: 0, lcp: null, interactions: [], longTasks: [] };
       try {
         new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) globalThis.__koaryuEvidence.lcp = entry.startTime;
@@ -227,15 +265,30 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
           }
         }).observe({ type: "layout-shift", buffered: true });
       } catch {}
+      try {
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.interactionId > 0) globalThis.__koaryuEvidence.interactions.push({
+              interaction_id: entry.interactionId,
+              category: entry.name.startsWith("key") ? "keyboard" : "pointer",
+              start_ms: entry.startTime,
+              duration_ms: entry.duration,
+            });
+          }
+        }).observe({ type: "event", buffered: true, durationThreshold: 16 });
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) globalThis.__koaryuEvidence.longTasks.push({ start_ms: entry.startTime, duration_ms: entry.duration });
+        }).observe({ type: "longtask", buffered: true });
+      } catch {}
     });
 
-    const startedAt = Date.now();
-    await page.goto(`${options.frontendOrigin}/dashboard`, {
+    const captureStartedAt = performance.now();
+    await page.goto(`${options.frontendOrigin}${CAPTURE_ROUTES[routeLabel]}`, {
       waitUntil: "domcontentloaded",
       timeout: 30_000,
     });
-    const { dashboardReadyMs, dashboardShellReadyMs } = await measureDashboardReady(page, startedAt);
-    if (new URL(page.url()).pathname !== "/dashboard") {
+    const { dashboardReadyMs, dashboardShellReadyMs, neutralShellReadyMs, identityReadyMs, usefulReadyMs, selectedRequiredDataMs, visibleMarks } = await measureDashboardReady(page, routeLabel, { functional: options.functional === true });
+    if (new URL(page.url()).pathname !== CAPTURE_ROUTES[routeLabel]) {
       throw new Error("authenticated storage state did not reach /dashboard.");
     }
 
@@ -266,16 +319,36 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
         largest_contentful_paint_ms: globalThis.__koaryuEvidence?.lcp ?? null,
         cumulative_layout_shift: globalThis.__koaryuEvidence?.cls ?? null,
         resources,
+        interactions: globalThis.__koaryuEvidence?.interactions ?? [],
+        long_tasks: globalThis.__koaryuEvidence?.longTasks ?? [],
       };
     });
 
+    await Promise.all(requestCompletions);
+    const requestSnapshotAt = performance.now();
+    for (const [request, start] of requestStarts) {
+      requests.push({ route: routeLabel, navigation_generation: start.generation, resource: classifyResource(request.url()) ?? "other", initiator: "other", outcome: "pending-at-capture", status: requestStatuses.get(request) ?? 0, response_body_bytes: 0, started_at_ms: start.started_at_ms, ended_at_ms: requestSnapshotAt });
+    }
     evidence = validateCapturedEvidence({
-      schema_version: 2,
+      schema_version: 3,
+      route: routeLabel,
+      workflow: options.functional ? "disposable-staging-functional" : "read-only-observation",
+      browser_http_cache: "disabled-by-playwright-routing",
+      router_cache: "fresh-browser-context",
+      backend_fact_cache: "uncontrolled-record-separately",
+      server_warmth: "uncontrolled-record-separately",
+      browser_version: browser.version(),
+      neutral_shell_ready_ms: roundRequired(neutralShellReadyMs, "neutral_shell_ready_ms"),
+      identity_ready_ms: roundRequired(identityReadyMs, "identity_ready_ms"),
+      first_useful_content_ms: roundRequired(usefulReadyMs, "first_useful_content_ms"),
+      visible_marks: visibleMarks,
+      requests: requests.map(({ route, navigation_generation, resource, initiator, outcome, status, response_body_bytes, started_at_ms, ended_at_ms }) => ({ route, navigation_generation, resource, initiator, outcome, status, response_body_bytes, start_ms: roundRequired(Math.max(0, started_at_ms - captureStartedAt), "request.start"), end_ms: outcome === "pending-at-capture" ? null : roundRequired(Math.max(0, ended_at_ms - captureStartedAt), "request.end"), observed_until_ms: roundRequired(Math.max(0, ended_at_ms - captureStartedAt), "request.observed_until") })),
       captured_at: new Date().toISOString(),
       environment: verification.environment,
       exact_sha_verified: verification.expected_sha,
       privacy: "allowlisted-aggregate-timings-only",
-      dashboard_ready_ms: roundRequired(dashboardReadyMs, "dashboard_ready_ms"),
+      dashboard_ready_ms: options.functional && dashboardReadyMs === null ? null : roundRequired(dashboardReadyMs, "dashboard_ready_ms"),
+      selected_required_data_ms: roundRequired(selectedRequiredDataMs, "selected_required_data_ms"),
       dashboard_shell_ready_ms: roundRequired(dashboardShellReadyMs, "dashboard_shell_ready_ms"),
       blocked_requests: blocked,
       navigation: {
@@ -285,6 +358,8 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
         ),
         load_event_ms: roundRequired(browserEvidence.navigation?.load_event_ms, "load_event_ms"),
       },
+      interactions: { source: "browser-lab-event-timing-not-field-inp", entries: browserEvidence.interactions },
+      browser_long_tasks: browserEvidence.long_tasks,
       web_vitals: {
         first_contentful_paint_ms: roundRequired(
           browserEvidence.first_contentful_paint_ms,

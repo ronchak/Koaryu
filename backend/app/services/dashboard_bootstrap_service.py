@@ -80,8 +80,8 @@ class DashboardBootstrapService:
         )
 
     @staticmethod
-    def _fetch_with_isolated_client(method_name: str, studio_id: str):
-        client = create_supabase_client()
+    def _fetch_with_isolated_client(method_name: str, studio_id: str, postgrest_client_timeout: float):
+        client = create_supabase_client(postgrest_client_timeout=postgrest_client_timeout)
         try:
             service = DashboardBootstrapService(client)
             return getattr(service, method_name)(studio_id)
@@ -90,9 +90,9 @@ class DashboardBootstrapService:
                 close_supabase_client(client)
 
     @staticmethod
-    def _timed_fetch_with_isolated_client(label: str, method_name: str, studio_id: str):
+    def _timed_fetch_with_isolated_client(label: str, method_name: str, studio_id: str, postgrest_client_timeout: float):
         started = time.perf_counter()
-        result = DashboardBootstrapService._fetch_with_isolated_client(method_name, studio_id)
+        result = DashboardBootstrapService._fetch_with_isolated_client(method_name, studio_id, postgrest_client_timeout)
         duration_ms = (time.perf_counter() - started) * 1000
         return result, (label, duration_ms)
 
@@ -147,13 +147,15 @@ class DashboardBootstrapService:
         ensure_platform_subscription_access(self.supabase, studio_id)
 
         # supabase-py's sync client is not safe to share across parallel thread
-        # calls, so each bootstrap read gets its own short-lived client.
+        # calls, so each bootstrap read gets its own short-lived client. Carry
+        # the owning lane's I/O policy into these clients before crossing threads.
+        postgrest_client_timeout = self.supabase.options.postgrest_client_timeout
         results = await asyncio.gather(
-            asyncio.to_thread(self._timed_fetch_with_isolated_client, "studio", "_fetch_studio_summary", studio_id),
-            asyncio.to_thread(self._timed_fetch_with_isolated_client, "students", "_fetch_students", studio_id),
-            asyncio.to_thread(self._timed_fetch_with_isolated_client, "leads", "_fetch_leads", studio_id),
-            asyncio.to_thread(self._timed_fetch_with_isolated_client, "belts", "_fetch_belt_ladders", studio_id),
-            asyncio.to_thread(self._timed_fetch_with_isolated_client, "programs", "_fetch_programs", studio_id),
+            asyncio.to_thread(self._timed_fetch_with_isolated_client, "studio", "_fetch_studio_summary", studio_id, postgrest_client_timeout),
+            asyncio.to_thread(self._timed_fetch_with_isolated_client, "students", "_fetch_students", studio_id, postgrest_client_timeout),
+            asyncio.to_thread(self._timed_fetch_with_isolated_client, "leads", "_fetch_leads", studio_id, postgrest_client_timeout),
+            asyncio.to_thread(self._timed_fetch_with_isolated_client, "belts", "_fetch_belt_ladders", studio_id, postgrest_client_timeout),
+            asyncio.to_thread(self._timed_fetch_with_isolated_client, "programs", "_fetch_programs", studio_id, postgrest_client_timeout),
         )
         (studio_result, studio_timing), (students_result, students_timing), (leads_result, leads_timing), (ladders_result, ladders_timing), (programs, programs_timing) = results
 

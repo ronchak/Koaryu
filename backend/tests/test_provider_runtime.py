@@ -237,3 +237,32 @@ def test_shutdown_attempts_both_lanes_and_reports_cleanup_failures():
         runtime.shutdown()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan")])
+def test_lane_rejects_unbounded_or_invalid_transport_policy(timeout):
+    with pytest.raises(ValueError, match="finite and positive"):
+        SupabaseLaneConfig(1, 0, 1, 2, postgrest_client_timeout=timeout)
+
+
+def test_lane_metrics_are_aggregate_only_and_rate_limited(caplog):
+    async def scenario():
+        runtime = SupabaseProviderRuntime(
+            config(), config(), client_factory=object, client_closer=lambda _client: None,
+        )
+        try:
+            for _ in range(3):
+                await runtime.run_interactive(lambda _client: "private-row-not-for-metrics")
+            snapshot = runtime.interactive_snapshot()
+            assert snapshot.active == 0
+            assert snapshot.peak_active == 1
+            assert snapshot.operation_seconds > 0
+            assert snapshot.queue_wait_seconds >= snapshot.admission_wait_seconds
+        finally:
+            runtime.shutdown()
+    with caplog.at_level("INFO", logger="uvicorn.error.provider_lane"):
+        asyncio.run(scenario())
+    messages = [record.getMessage() for record in caplog.records if "provider_lane_metrics" in record.getMessage()]
+    assert len(messages) == 1
+    assert "lane=interactive" in messages[0]
+    assert "private-row-not-for-metrics" not in messages[0]

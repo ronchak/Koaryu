@@ -255,7 +255,9 @@ def test_all_request_provider_dependencies_are_wrapped_and_lane_mapping_is_expli
                         and call.args[0].id == "supabase"
                     ), f"{path.name}:{node.name} constructs a service from the dependency"
 
-    assert dependency_count == 137
+    assert dependency_count == 140
+    for name in ("get_billing_landing", "get_invoices_page", "get_payments_page"):
+        assert lane_by_function[name] == "interactive"
     assert wrapped_count == dependency_count
     assert {name for name, lane in lane_by_function.items() if lane == "bulk"} == EXPECTED_BULK_FUNCTIONS
 
@@ -299,3 +301,22 @@ def test_remaining_application_client_factories_are_isolated_special_cases():
     source = "\n".join(path.read_text() for path in (ROOT / "app").rglob("*.py"))
     assert "_client: Optional" in source
     assert "close_supabase_client" in source
+
+
+def test_outer_request_deadline_records_timeout_without_releasing_active_work():
+    async def scenario():
+        runtime = _runtime(workers=1, queue=0, operation_timeout=0.025)
+        release = threading.Event()
+        try:
+            with pytest.raises(HTTPException) as error:
+                await run_supabase_operation(runtime, lambda _client: release.wait(1))
+            assert error.value.status_code == 504
+            pending = runtime.interactive_snapshot()
+            assert pending.active == pending.admitted == 1
+            assert pending.timed_out == 1
+            assert pending.transport_timed_out == 0
+        finally:
+            release.set()
+            await asyncio.to_thread(runtime.shutdown)
+        assert runtime.interactive_snapshot().active == 0
+    asyncio.run(scenario())

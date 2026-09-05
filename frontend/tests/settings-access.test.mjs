@@ -25,7 +25,7 @@ describe("settings access policy", () => {
 describe("settings route access boundary", () => {
   it("uses the policy, keeps the notice local, and mounts settings content only for admins", () => {
     assert.match(pageSource, /import \{ canAccessSettings \} from "\.\/access-policy";/);
-    assert.match(pageSource, /const \{ currentRole \} = useStudioStore\(\);/);
+    assert.match(pageSource, /const \{ currentRole, identityGeneration, identityReady, staffLoaded, staffLoadError \} = useStudioStore\(\);/);
     assert.match(
       pageSource,
       /canAccessSettings\(currentRole\) \? <AdminSettingsContent \/> : <SettingsAccessNotice \/>/

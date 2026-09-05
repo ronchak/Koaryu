@@ -47,12 +47,12 @@ coreUiTest("renders selected program colors, month-first schedule, and card-leve
   await expect(amberProgramSwatch).toHaveAttribute("title", "#F59E0B selected");
 
   await page.goto(`${FRONTEND_URL}/schedule`);
-  await expect(page.getByRole("button", { name: "Show month schedule view" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("group", { name: "Schedule view", exact: true }).getByRole("button", { name: "Month", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: /^Open .+, .+ \d{1,2}, \d{4}$/ }).first()).toBeVisible();
 
   await page.goto(`${FRONTEND_URL}/leads`);
-  await expect(page.locator('[data-follow-up-state="due-today"]')).not.toHaveCount(0);
-  await expect(page.locator('[data-follow-up-state="overdue"]')).not.toHaveCount(0);
+  await expect(page.locator('[data-follow-up-state="today"]')).not.toHaveCount(0);
+  await expect(page.locator('[data-follow-up-state^="overdue-"]')).not.toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Follow-up today", exact: true })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("lead-card-follow-up-cues.png"), fullPage: true });
 
@@ -83,7 +83,7 @@ coreUiTest("prepopulates standard belt names and exposes working drag handles", 
   await signInToPreview(page);
 
   await page.goto(`${FRONTEND_URL}/belt-tracker`);
-  await page.getByRole("button", { name: "Rank Plan", exact: true }).click();
+  await page.getByRole("tab", { name: "Rank Plan", exact: true }).click();
   await page.getByRole("button", { name: "Add belt", exact: true }).click();
 
   await page.getByRole("button", { name: "Use Brown for belt color" }).click();

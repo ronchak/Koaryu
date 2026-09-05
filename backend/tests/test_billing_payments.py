@@ -24,6 +24,7 @@ from app.services.billing_provider_operations import (
 from app.services.platform_billing_helpers import MAX_IDEMPOTENCY_KEY_LENGTH, build_idempotency_key
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
+from tests.fakes.billing_reads import BillingReadRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
 
 
@@ -61,7 +62,7 @@ def _dated_defaults(_table: str) -> dict:
     }
 
 
-class _BillingSupabase(BillingProviderOperationRpcMixin, RpcBackedSupabase):
+class _BillingSupabase(BillingReadRpcMixin, BillingProviderOperationRpcMixin, RpcBackedSupabase):
     def __init__(self, tables):
         super().__init__(tables)
         self.initialize_billing_provider_operations()
@@ -583,6 +584,8 @@ class BillingPaymentManagerTests(unittest.TestCase):
             as_of=datetime(2026, 7, 20, tzinfo=timezone.utc),
         ))
 
+        self.assertEqual([name for name, _ in manager.supabase.rpc_calls], ["billing_payment_cohort"])
+        self.assertFalse(any(query["table"] == "billing_payments" for query in manager.supabase.query_log))
         self.assertEqual(summary.payment_count, 207)
         self.assertEqual(summary.gross_paid_amount_cents, 22000)
         self.assertEqual(summary.refunded_amount_cents, 400)

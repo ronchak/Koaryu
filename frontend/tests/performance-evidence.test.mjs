@@ -54,6 +54,15 @@ describe("privacy-safe performance evidence", () => {
     assert.equal(launched, false);
   });
 
+  it("does not launch when verification returns an unsuccessful result", async () => {
+    let launched = false;
+    await assert.rejects(openVerifiedBrowser({}, {
+      verifyDeployment: async () => ({ verified: false }),
+      launchBrowser: async () => { launched = true; },
+    }), /verification did not succeed/);
+    assert.equal(launched, false);
+  });
+
   it("retains only allowlisted route labels and numeric server timing", () => {
     assert.equal(
       classifyResource("https://koaryu.app/api/proxy/dashboard/bootstrap?studio=private"),
@@ -61,8 +70,10 @@ describe("privacy-safe performance evidence", () => {
     );
     assert.equal(classifyResource("https://koaryu.app/api/support/tickets/private"), null);
     assert.deepEqual(sanitizeServerTiming(
-      "koaryu_summary_total;dur=12.4, private;desc=customer@example.test, customer_123;dur=9",
+      "koaryu_summary_context;dur=2, koaryu_summary_facts;dur=3, koaryu_summary_total;dur=12.4, private;desc=customer@example.test, customer_123;dur=9",
     ), [
+      { name: "koaryu_summary_context", duration_ms: 2 },
+      { name: "koaryu_summary_facts", duration_ms: 3 },
       { name: "koaryu_summary_total", duration_ms: 12.4 },
     ]);
   });
@@ -158,29 +169,28 @@ describe("privacy-safe performance evidence", () => {
     );
   });
 
-  it("timestamps shell readiness, then data readiness, before the optional network-idle wait", async () => {
+  it("reads committed marks from the current route generation rather than observer wait duration", async () => {
     const events = [];
+    const marks = ["navigation.started", "visible.shell", "visible.identity", "visible.useful", "visible.complete", "visible.legacy-complete"].map((stage, index) => ({ name: `koaryu.${stage}`, startTime: index * 10, detail: { route: "dashboard", identity_generation: 2, navigation_generation: 3 } }));
     const page = {
-      locator: (selector) => ({
-        waitFor: async () => { events.push(`ready:${selector}`); },
-      }),
-      waitForLoadState: async () => { events.push("networkidle"); },
+      locator: (selector) => ({ waitFor: async ({ state }) => { events.push({ selector, state }); } }),
+      waitForFunction: async () => {},
+      evaluate: async () => marks,
     };
-    const timestamps = [125, 150];
-
-    const readiness = await measureDashboardReady(page, 100, () => {
-      events.push("timestamp");
-      return timestamps.shift();
-    });
-
-    assert.deepEqual(readiness, { dashboardReadyMs: 50, dashboardShellReadyMs: 25 });
-    assert.deepEqual(events, [
-      'ready:[data-koaryu-dashboard-shell-ready="true"]',
-      "timestamp",
-      'ready:[data-koaryu-dashboard-data-ready="true"]',
-      "timestamp",
-      "networkidle",
-    ]);
+    const readiness = await measureDashboardReady(page);
+    assert.equal(readiness.dashboardShellReadyMs, 10);
+    assert.equal(readiness.identityReadyMs, 20);
+    assert.equal(readiness.usefulReadyMs, 30);
+    assert.equal(readiness.dashboardReadyMs, 50);
+    assert.equal(readiness.selectedRequiredDataMs, 40);
+    assert.equal(events[0].state, "visible");
+    marks.pop();
+    await assert.rejects(measureDashboardReady(page), /readiness evidence is incomplete/);
+    const functional = await measureDashboardReady(page, "dashboard", { functional: true });
+    assert.equal(functional.dashboardReadyMs, null);
+    assert.equal(functional.selectedRequiredDataMs, 40);
+    marks.pop();
+    await assert.rejects(measureDashboardReady(page), /readiness evidence is incomplete/);
   });
 
   it("rejects an alias race when the post-capture release identity changes", async () => {

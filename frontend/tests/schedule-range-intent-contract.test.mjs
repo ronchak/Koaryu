@@ -41,11 +41,13 @@ describe("schedule range intent contracts", () => {
       2
     );
     assert.match(scheduleActionsSource, /await reconcileSchedule\("materialize"\)/);
-    assert.match(scheduleActionsSource, /reconcileSchedule\("materialize"\)\.catch/);
+    assert.match(rangeRefreshSource, /await reconcileSchedule\(intent\)/);
   });
 
   it("uses one schedule-window request instead of templates, sessions, and attendance fan-out", () => {
-    for (const readPath of [initialReconciliationSource, rangeRefreshSource]) {
+    assert.match(rangeRefreshSource, /await reconcileSchedule\(intent\)/);
+    assert.doesNotMatch(rangeRefreshSource, /fetchScheduleWindowRange|api\.get|api\.post/);
+    for (const readPath of [initialReconciliationSource]) {
       assert.match(readPath, /fetchScheduleWindowRange\(/);
       assert.match(readPath, /setTemplates\(scheduleWindow\.templates\)/);
       assert.doesNotMatch(readPath, /Promise\.allSettled/);

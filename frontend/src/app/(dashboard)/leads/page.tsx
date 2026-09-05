@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
+import { markDashboardReadiness } from "@/lib/performance";
+import { LeadLedgerLoading } from "@/components/leads/lead-ledger-loading";
 import { Header } from "@/components/header";
 import { AddLeadModal } from "@/components/leads/add-lead-modal";
 import { LeadDetailInspector } from "@/components/leads/lead-detail-modal";
 import {
   LeadLedgerLoadError,
-  LeadLedgerLoading,
   LeadPipelineBoard,
 } from "@/components/leads/lead-pipeline-board";
 import { LostLeadsSection } from "@/components/leads/lost-leads-section";
@@ -19,8 +21,8 @@ import styles from "@/components/leads/leads-ledger.module.css";
 
 export default function LeadsPage() {
   const { currentRole, isPreviewMode, token } = useConfigStore();
-  const { programs } = useProgramStore();
-  const { staffMembers } = useStudioStore();
+  const { programs, programsLoaded, programsLoadError } = useProgramStore();
+  const { staffMembers, staffLoaded, staffLoadError, identityReady, identityGeneration } = useStudioStore();
   const {
     leads: baseLeads,
     addLead,
@@ -30,6 +32,11 @@ export default function LeadsPage() {
     leadsLoadError,
     refreshLeads,
   } = useLeadStore();
+  const usefulReady = identityReady && leadsLoaded && !leadsLoadError;
+  const completeReady = usefulReady && programsLoaded && !programsLoadError && staffLoaded && !staffLoadError;
+  useEffect(() => markDashboardReadiness("leads", identityGeneration, {
+    useful: usefulReady, complete: completeReady,
+  }), [identityGeneration, usefulReady, completeReady]);
   const today = todayDateString();
   const controller = useLeadsPageController({
     addLead,
@@ -60,14 +67,16 @@ export default function LeadsPage() {
     <div className={`flex min-h-0 flex-1 flex-col ${styles.pageRoot}`}>
       <Header
         title="Leads"
-        description={`${totalActive} active · ${enrolledCount} enrolled · ${lostLeads.length} lost`}
+        description={leadsLoaded
+          ? `${totalActive} active · ${enrolledCount} enrolled · ${lostLeads.length} lost`
+          : leadsLoadError ? "Lead totals unavailable" : "Loading lead totals"}
       >
         <Button
           variant={controller.showLost ? "secondary" : "ghost"}
           size="sm"
           onClick={() => controller.setShowLost(!controller.showLost)}
         >
-          Lost ({lostLeads.length})
+          {leadsLoaded ? `Lost (${lostLeads.length})` : "Lost"}
         </Button>
         {controller.canManageLeads ? (
           <Button

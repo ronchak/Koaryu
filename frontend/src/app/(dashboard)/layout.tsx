@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { clearStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { DashboardRouteTransition } from "@/components/dashboard-route-transition";
 import { DashboardSlugBand } from "@/components/dashboard-shell";
+import { DashboardIdentitySkeleton } from "@/components/dashboard-identity-skeleton";
+import { DashboardShellReadiness } from "@/components/dashboard-shell-readiness";
 import { Sidebar } from "@/components/sidebar";
 import { useTheme } from "@/components/theme-provider";
 import { LegalNameBlockingScreen } from "@/components/account/legal-name-blocking-screen";
@@ -25,9 +27,13 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     legalFirstName,
     legalLastName,
     staffProfilesAvailable,
+    identityReady,
     studioName,
     userEmail,
     userName,
+    identityLoadError,
+    retryInitialization,
+    identityGeneration,
   } = useStudioStore();
 
   const isLegalNameBlocked = shouldBlockForLegalName({
@@ -35,6 +41,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     firstName: legalFirstName,
     lastName: legalLastName,
   });
+
 
   async function handleSignOut() {
     if (isSigningOut) return;
@@ -63,6 +70,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       data-spine-collapsed={navigationPlacement === "side" && isSidebarCollapsed ? "true" : "false"}
     >
       <a href="#main-content" className={styles.skipLink}>Skip to main content</a>
+      <DashboardShellReadiness identityGeneration={identityGeneration} identityReady={identityReady} shellVisible={!isLegalNameBlocked} />
       {signOutError && (
         <div className="fixed bottom-4 left-1/2 z-[70] w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 rounded-[6px] border border-danger/25 bg-surface px-4 py-3 text-sm text-text-primary shadow-2xl shadow-black/30">
           <div className="flex items-start justify-between gap-3">
@@ -77,7 +85,9 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       )}
-      {isLegalNameBlocked ? (
+      {!identityReady ? (
+        <DashboardIdentitySkeleton placement={navigationPlacement} error={identityLoadError} onRetry={retryInitialization} />
+      ) : isLegalNameBlocked ? (
         <LegalNameBlockingScreen onSignOut={handleSignOut} isSigningOut={isSigningOut} />
       ) : (
         <>

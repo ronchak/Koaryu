@@ -72,6 +72,12 @@ function copyResponseCookies(source: NextResponse, target: NextResponse) {
     const { name, value, ...options } = cookie;
     target.cookies.set(name, value, options);
   }
+  // SSR's refresh cookies and cache-prevention headers are one contract,
+  // including when the final response redirects to login or onboarding.
+  for (const name of ["cache-control", "expires", "pragma"]) {
+    const value = source.headers.get(name);
+    if (value !== null) target.headers.set(name, value);
+  }
 }
 
 export async function updateSession(request: NextRequest) {
@@ -104,15 +110,20 @@ export async function updateSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
+          const previousResponse = supabaseResponse;
           supabaseResponse = NextResponse.next({
             request,
           });
+          copyResponseCookies(previousResponse, supabaseResponse);
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
+          );
+          Object.entries(headers).forEach(([name, value]) =>
+            supabaseResponse.headers.set(name, value)
           );
         },
       },

@@ -17,7 +17,14 @@ BEGIN
     OR cardinality(v_ready.security_failures)<>0 THEN
   RAISE EXCEPTION 'V36 readiness contract mismatch: %',row_to_json(v_ready);
  END IF;
- IF v_current_count=132 AND v_current_head='20260902001000' THEN
+ IF v_current_count=133 AND v_current_head='20260905022339' THEN
+  IF position('migration_history_v38' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v19()'::regprocedure))=0
+     OR position('migration_history_v37' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v19()'::regprocedure))<>0
+     OR position('koaryu_release_schema_preflight_v19' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v18()'::regprocedure))=0
+     OR position('koaryu_release_schema_preflight_v18' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v17()'::regprocedure))=0 THEN
+    RAISE EXCEPTION 'V38 readiness diagnostics or predecessor adapters drifted.';
+  END IF;
+ ELSIF v_current_count=132 AND v_current_head='20260902001000' THEN
   IF position('migration_history_v37' IN pg_get_functiondef(
        'public.koaryu_release_schema_preflight_v18()'::regprocedure))=0
      OR position('migration_history_v36' IN pg_get_functiondef(
@@ -36,7 +43,7 @@ BEGIN
     <>'0:455520fff5182b12b23368da1afe60e133a01b78913fada73e8a708b94ae8dbb' THEN
   RAISE EXCEPTION 'V36 payer setup recovery manifest mismatch.';
  END IF;
- IF v_current_count=132 AND v_current_head='20260902001000' THEN
+ IF (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339') THEN
   IF private.koaryu_release_operational_contract_v29()
      <>'0:32706cfae7047b70ee6b563048ffafa91d945bc824939e3000fa01631a459ecb'
      OR private.koaryu_release_operational_manifest_v10()
@@ -79,7 +86,7 @@ BEGIN
    INTO v_v31_expectation_state
  FROM private.koaryu_release_v31_expectations;
  IF v_v31_expectation_state <> (CASE
-      WHEN v_current_count=132 AND v_current_head='20260902001000'
+      WHEN (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339')
       THEN '1:95f3c8d7693b10b867a8e2a322bc0c40a04a444db18c0a8137f27198260776f5'
       ELSE '1:3d764f9527b71e81235d6ae5dbc62047149958b39b741d63e6600f3d78a4a587'
     END) THEN

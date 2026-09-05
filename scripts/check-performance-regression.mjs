@@ -3,9 +3,9 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const ROOT_DIR = resolve(new URL("..", import.meta.url).pathname);
+const ROOT_DIR = fileURLToPath(new URL("..", import.meta.url));
 const MANIFEST_PATH = resolve(ROOT_DIR, "performance/dashboard-summary-budget.json");
 const LOCAL_PYTHON_PATH = resolve(ROOT_DIR, "backend/venv/bin/python");
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
@@ -15,12 +15,17 @@ const TOP_LEVEL_FIELDS = [
   "git_sha",
   "fixture_revision",
   "privacy",
-  "long_task_threshold_ms",
+  "backend_stage_threshold_ms",
   "profiles",
 ];
 const PROFILE_FIELDS = ["profile", "route", "cardinalities", "metrics"];
 const METRIC_FIELDS = [
   "request_count",
+  "auth_call_count",
+  "cache_hit_rpc_count",
+  "concurrent_miss_rpc_count",
+  "invalidation_rpc_count",
+  "denied_rpc_count",
   "table_query_count",
   "rpc_count",
   "total_provider_call_count",
@@ -29,24 +34,36 @@ const METRIC_FIELDS = [
   "serialized_response_payload_bytes",
   "total_duration_ms",
   "max_stage_duration_ms",
-  "long_task_count",
+  "slow_backend_stage_count",
   "peak_rss_bytes",
   "data_ready",
 ];
 const COUNT_FIELDS = new Set([
   "request_count",
+  "auth_call_count",
+  "cache_hit_rpc_count",
+  "concurrent_miss_rpc_count",
+  "invalidation_rpc_count",
+  "denied_rpc_count",
   "table_query_count",
   "rpc_count",
   "total_provider_call_count",
   "returned_row_count",
   "provider_response_bytes",
   "serialized_response_payload_bytes",
-  "long_task_count",
+  "slow_backend_stage_count",
   "peak_rss_bytes",
 ]);
 const DURATION_FIELDS = new Set(["total_duration_ms", "max_stage_duration_ms"]);
 const CARDINALITY_FIELDS = [
   "students",
+  "student_program_memberships",
+  "billing_payments",
+  "stripe_events",
+  "staff_roles",
+  "staff_profiles",
+  "studio_subscriptions",
+  "studios",
   "leads",
   "class_sessions",
   "class_templates",
@@ -64,7 +81,7 @@ const SEMANTIC_FIELDS = [
   "provider_response_bytes",
   "total_duration_ms",
   "max_stage_duration_ms",
-  "long_task_count",
+  "slow_backend_stage_count",
 ];
 
 function isPlainObject(value) {
@@ -103,15 +120,15 @@ function loadBudgetManifest(path = MANIFEST_PATH) {
     "fixture_revision",
     "privacy",
     "fixed_request",
-    "long_task_threshold_ms",
+    "backend_stage_threshold_ms",
     "metric_semantics",
     "routes",
     "profiles",
   ], "budget manifest");
-  if (manifest.schema_version !== 1 || manifest.budget_manifest_version !== "dashboard-summary-performance-v1") {
+  if (manifest.schema_version !== 1 || manifest.budget_manifest_version !== "dashboard-summary-performance-v2") {
     throw new Error("performance budget manifest version is unsupported.");
   }
-  if (manifest.fixture_revision !== "dashboard-summary-fixture-v1" || manifest.privacy !== "aggregate-only-no-payloads") {
+  if (manifest.fixture_revision !== "dashboard-summary-endpoint-fixture-v2" || manifest.privacy !== "aggregate-only-no-payloads") {
     throw new Error("performance budget manifest binding is unsupported.");
   }
   exactKeys(manifest.fixed_request, ["route", "date", "timezone", "role"], "fixed request");
@@ -121,7 +138,7 @@ function loadBudgetManifest(path = MANIFEST_PATH) {
     || manifest.fixed_request.timezone !== "America/Los_Angeles"
     || manifest.fixed_request.role !== "admin"
   ) throw new Error("performance budget manifest fixed request is unsupported.");
-  nonnegativeInteger(manifest.long_task_threshold_ms, "long_task_threshold_ms");
+  nonnegativeInteger(manifest.backend_stage_threshold_ms, "backend_stage_threshold_ms");
   exactKeys(manifest.metric_semantics, SEMANTIC_FIELDS, "metric semantics");
   if (manifest.routes.length !== 1 || manifest.routes[0] !== "dashboard-summary") {
     throw new Error("performance budget manifest must contain the dashboard-summary route once.");
@@ -153,7 +170,7 @@ function validatePerformanceEvidence(evidence, manifest, expectedSha) {
     || evidence.budget_manifest_version !== manifest.budget_manifest_version
     || evidence.fixture_revision !== manifest.fixture_revision
     || evidence.privacy !== manifest.privacy
-    || evidence.long_task_threshold_ms !== manifest.long_task_threshold_ms
+    || evidence.backend_stage_threshold_ms !== manifest.backend_stage_threshold_ms
   ) throw new Error("performance evidence has incorrect version, fixture, privacy, or threshold bindings.");
   if (!SHA_PATTERN.test(expectedSha) || evidence.git_sha !== expectedSha) {
     throw new Error("performance evidence is not bound to the exact expected Git SHA.");
@@ -190,11 +207,17 @@ function validatePerformanceEvidence(evidence, manifest, expectedSha) {
     if (entry.metrics.total_provider_call_count > profileBudget.budgets.total_provider_call_count) {
       throw new Error(`${entry.profile}.total_provider_call_count exceeds its performance budget.`);
     }
-    if (entry.metrics.total_provider_call_count !== entry.metrics.table_query_count + entry.metrics.rpc_count) {
-      throw new Error(`${entry.profile} provider call count does not equal table queries plus RPCs.`);
+    if (entry.metrics.total_provider_call_count !== entry.metrics.auth_call_count + entry.metrics.table_query_count + entry.metrics.rpc_count) {
+      throw new Error(`${entry.profile} provider call count does not equal Auth calls plus table queries plus RPCs.`);
     }
     for (const [metric, ceiling] of Object.entries(profileBudget.budgets)) {
       if (entry.metrics[metric] > ceiling) throw new Error(`${entry.profile}.${metric} exceeds its performance budget.`);
+    }
+    if (entry.metrics.request_count !== 7 || entry.metrics.auth_call_count !== 7
+      || entry.metrics.rpc_count !== 3 || entry.metrics.cache_hit_rpc_count !== 0
+      || entry.metrics.concurrent_miss_rpc_count !== 1 || entry.metrics.invalidation_rpc_count !== 1
+      || entry.metrics.denied_rpc_count !== 0) {
+      throw new Error(`${entry.profile} endpoint authorization or cache invariants failed.`);
     }
     seenProfiles.add(entry.profile);
     seenPairs.add(pair);
@@ -276,7 +299,7 @@ export function runPerformanceRegression({ expectedSha, manifest = loadBudgetMan
     git_sha: sha,
     fixture_revision: manifest.fixture_revision,
     privacy: manifest.privacy,
-    long_task_threshold_ms: manifest.long_task_threshold_ms,
+    backend_stage_threshold_ms: manifest.backend_stage_threshold_ms,
     profiles: Object.keys(manifest.profiles).map((profile) => runFixture(profile, sha)),
   };
   return validatePerformanceEvidence(evidence, manifest, sha);

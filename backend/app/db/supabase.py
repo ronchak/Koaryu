@@ -1,9 +1,10 @@
 import asyncio
+import math
 import time
 from typing import Optional
 
 from supabase import AsyncClient, Client, acreate_client, create_client
-from supabase.lib.client_options import AsyncClientOptions
+from supabase.lib.client_options import AsyncClientOptions, ClientOptions
 from app.core.config import get_settings
 
 _client: Optional[Client] = None
@@ -100,11 +101,20 @@ class DeadlineBoundSupabaseClient:
         return asyncio.run(self._execute_rpc(name, params, remaining))
 
 
-def create_supabase_client() -> Client:
+def create_supabase_client(*, postgrest_client_timeout: float | None = None) -> Client:
     """Create an isolated Supabase admin client."""
     settings = get_settings()
     settings.validate_supabase_service_role_configuration()
-    return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+    if postgrest_client_timeout is None:
+        # Legacy owner-run clients retain their SDK policy; runtime lanes pass
+        # an explicit interactive or bulk transport budget.
+        return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+    if not math.isfinite(postgrest_client_timeout) or postgrest_client_timeout <= 0:
+        raise ValueError("postgrest_client_timeout must be finite and positive")
+    return create_client(
+        settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY,
+        options=ClientOptions(postgrest_client_timeout=postgrest_client_timeout),
+    )
 
 
 def get_supabase_client() -> Client:

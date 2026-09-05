@@ -156,6 +156,23 @@ const DEFAULT_INPUT = {
 };
 
 describe("billing page model", () => {
+  it("uses complete landing counts without roster or list records", () => {
+    const aggregate = {
+      active_student_count: 81, active_subscription_count: 30, failed_payer_count: 3,
+      open_invoice_amount_cents: 20100, has_billing_plans: true, has_family_accounts: true,
+      has_student_billing: true, has_collection_history: true,
+    };
+    const model = buildBillingPageModel({ ...DEFAULT_INPUT, billingLandingAggregates: aggregate });
+    assert.equal(model.activeStudents, 81);
+    assert.equal(model.activeSubscriptionCount, 30);
+    assert.equal(model.failedInvoiceCount, 3);
+    assert.equal(model.openInvoiceTotal, 20100);
+    assert.equal(model.hasBillingPlans, true);
+    assert.equal(model.hasFamilyAccounts, true);
+    assert.equal(model.hasStudentBilling, true);
+    assert.equal(model.hasCollectionHistory, true);
+  });
+
   it("shows bounded reconciliation copy without exposing internal reason codes", () => {
     const flaggedPayment = payment("flagged", "succeeded", 10000, {
       adjustment_reconciliation_required: true,

@@ -897,7 +897,7 @@ describe("operations behavior proof", () => {
     assert.match(programs, /COLOR_SWATCHES\.map[\s\S]*className=\{`relative flex h-11 w-11 shrink-0/);
     assert.doesNotMatch(programs, /className=\{`relative flex h-8 w-8/);
     assert.match(programs, /break-words md:truncate" title=\{program\.description\}/);
-    assert.match(programs, /break-words md:truncate" title=\{usageLabel\(program\)\}/);
+    assert.match(programs, /break-words md:truncate" title=\{usageLabel\(program, programsUsageLoaded, programsUsageLoadError\)\}/);
     for (const marker of ["inviteEmail", "inviteFullName", "inviteLegalFirstName", "inviteLegalLastName", 'useState<StaffRoleName>("instructor")', "matchesStaffDeletionConfirmation", "archiveStaff", "unarchiveStaff", "scheduleStaffDeletion", "showArchived"]) {
       assert.match(staff, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }

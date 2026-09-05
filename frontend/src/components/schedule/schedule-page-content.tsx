@@ -24,6 +24,8 @@ export function SchedulePageContent({
   programFilter,
   programs,
   scheduleLoadError,
+  hasLoadedRange,
+  isRefreshingRange,
   selectedSession,
   selectedSessionAttendance,
   studentRosterLoadError,
@@ -46,6 +48,7 @@ export function SchedulePageContent({
   onNavigate,
   onOpenAddClass,
   onOpenSession,
+  onRetryRange,
   onProgramFilterChange,
   onSelectDate,
   onToggleAttendance,
@@ -62,6 +65,8 @@ export function SchedulePageContent({
         templates={templates}
         programs={programs}
         scheduleLoadError={scheduleLoadError}
+        hasLoadedRange={hasLoadedRange}
+        isRefreshingRange={isRefreshingRange}
         actionMessage={actionMessage}
         onNavigate={onNavigate}
         onJumpToToday={onJumpToToday}
@@ -71,6 +76,7 @@ export function SchedulePageContent({
         onDismissActionMessage={onDismissActionMessage}
         onSelectDate={onSelectDate}
         onOpenSession={onOpenSession}
+        onRetryRange={onRetryRange}
         onOpenAddClass={onOpenAddClass}
       />
 

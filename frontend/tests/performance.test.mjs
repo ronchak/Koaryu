@@ -99,3 +99,52 @@ describe("performance spans", () => {
     assert.match(measures[1].end, /^koaryu\.students\.page\.[a-z0-9]+\.finished$/);
   });
 });
+
+describe("committed dashboard readiness", () => {
+  it("waits for a paint opportunity, deduplicates a generation, and drops superseded callbacks", async () => {
+    const { beginDashboardNavigation, markDashboardReadiness } = await import("../src/lib/performance.ts");
+    const originalDocument = globalThis.document;
+    const frames = new Map();
+    const marks = [];
+    let sequence = 0;
+    globalThis.document = { visibilityState: "visible" };
+    globalThis.window = {
+      performance: { mark: (name, options) => marks.push({ name, detail: options.detail }) },
+      requestAnimationFrame: (callback) => { frames.set(++sequence, callback); return sequence; },
+      cancelAnimationFrame: (id) => frames.delete(id),
+    };
+    const frame = () => { const batch = [...frames.values()]; frames.clear(); batch.forEach((callback) => callback()); };
+    try {
+      markDashboardReadiness("dashboard", 10, { shell: true, identity: true, useful: true, complete: false });
+      frame();
+      assert.equal(marks.filter((entry) => entry.name.startsWith("koaryu.visible.")).length, 0);
+      frame();
+      assert.equal(marks.filter((entry) => entry.name.startsWith("koaryu.visible.")).length, 3);
+      const cancel = markDashboardReadiness("dashboard", 10, { shell: true, complete: true });
+      frame();
+      cancel();
+      frame();
+      assert.equal(marks.some((entry) => entry.name === "koaryu.visible.complete"), false);
+      markDashboardReadiness("dashboard", 10, { complete: true });
+      frame();
+      beginDashboardNavigation("students", 11);
+      frame();
+      assert.equal(marks.some((entry) => entry.name === "koaryu.visible.complete"), false);
+      assert.deepEqual(Object.keys(marks[0].detail).sort(), ["identity_generation", "navigation_generation", "route"]);
+      markDashboardReadiness("dashboard", 11, { complete: true });
+      frame();
+      markDashboardReadiness("students", 11, { complete: true });
+      frame();
+      markDashboardReadiness("dashboard", 11, { complete: true });
+      frame();
+      frame();
+      const complete = marks.filter((entry) => entry.name === "koaryu.visible.complete");
+      assert.equal(complete.length, 1);
+      assert.equal(complete[0].detail.route, "dashboard");
+      assert.equal(complete[0].detail.navigation_generation, marks.filter((entry) => entry.name === "koaryu.navigation.started").at(-1).detail.navigation_generation);
+    } finally {
+      if (originalDocument === undefined) delete globalThis.document;
+      else globalThis.document = originalDocument;
+    }
+  });
+});

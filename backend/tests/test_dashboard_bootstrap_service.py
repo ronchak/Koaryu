@@ -67,7 +67,7 @@ class DashboardBootstrapServiceTest(unittest.TestCase):
         )
 
     def test_bootstrap_does_not_build_dashboard_summary_inline(self):
-        supabase = object()
+        supabase = SimpleNamespace(options=SimpleNamespace(postgrest_client_timeout=10.0))
         service = DashboardBootstrapService(supabase=supabase)
         auth = AuthResponse(
             user=UserProfile(id="user-1", email="owner@example.com", full_name="Owner"),
@@ -76,7 +76,8 @@ class DashboardBootstrapServiceTest(unittest.TestCase):
             role="admin",
         )
 
-        def fake_timed_fetch(label, _method_name, studio_id):
+        def fake_timed_fetch(label, _method_name, studio_id, postgrest_client_timeout):
+            self.assertEqual(postgrest_client_timeout, 10.0)
             self.assertEqual(studio_id, "studio-1")
             if label == "studio":
                 return (

@@ -17,22 +17,27 @@ function validEvidence() {
     git_sha: SHA,
     fixture_revision: manifest.fixture_revision,
     privacy: manifest.privacy,
-    long_task_threshold_ms: manifest.long_task_threshold_ms,
+    backend_stage_threshold_ms: manifest.backend_stage_threshold_ms,
     profiles: Object.entries(manifest.profiles).map(([profile, definition]) => ({
       profile,
       route: "dashboard-summary",
       cardinalities: { ...definition.cardinalities },
       metrics: {
-        request_count: 1,
+        request_count: 7,
+        auth_call_count: 7,
+        cache_hit_rpc_count: 0,
+        concurrent_miss_rpc_count: 1,
+        invalidation_rpc_count: 1,
+        denied_rpc_count: 0,
         table_query_count: 0,
-        rpc_count: 0,
-        total_provider_call_count: 0,
+        rpc_count: 3,
+        total_provider_call_count: 10,
         returned_row_count: 0,
         provider_response_bytes: 0,
         serialized_response_payload_bytes: 1,
         total_duration_ms: 1,
         max_stage_duration_ms: 1,
-        long_task_count: 0,
+        slow_backend_stage_count: 0,
         peak_rss_bytes: 1,
         data_ready: true,
       },
@@ -78,7 +83,7 @@ describe("deterministic performance evidence validator", () => {
     ["total_provider_call_count", "provider calls"],
     ["returned_row_count", "rows"],
     ["peak_rss_bytes", "RSS"],
-    ["long_task_count", "long tasks"],
+    ["slow_backend_stage_count", "long tasks"],
   ]) {
     it(`rejects ${message} over budget`, () => {
       assert.throws(
@@ -102,7 +107,7 @@ describe("deterministic performance evidence validator", () => {
     );
 
     const missingMetric = validEvidence();
-    delete missingMetric.profiles[0].metrics.long_task_count;
+    delete missingMetric.profiles[0].metrics.slow_backend_stage_count;
     assert.throws(
       () => validatePerformanceEvidence(missingMetric, manifest, SHA),
       /unknown or missing fields/,

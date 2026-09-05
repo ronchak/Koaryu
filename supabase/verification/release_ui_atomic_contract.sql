@@ -554,7 +554,7 @@ BEGIN
     SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
     SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
     IF (v_current_count=131 AND v_current_head='20260831054918')
-       OR (v_current_count=132 AND v_current_head='20260902001000') THEN
+       OR ((v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339')) THEN
         IF v_v7.ready IS DISTINCT FROM false
            OR v_v7.migration_count<>126
            OR v_v7.migration_head<>'20260826185651'

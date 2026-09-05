@@ -82,9 +82,9 @@ export function ProgramChip({ program }: { program: BillingPlan["programs"][numb
 
 export function BillingOverviewTab({
   activeStudents,
+  billingObservedAt,
   activeSubscriptionCount,
   billingConnect,
-  billingInvoicesLength,
   currentMonthPaymentCount,
   billingPeriod,
   billingPlatform,
@@ -116,7 +116,7 @@ export function BillingOverviewTab({
   activeStudents: number;
   activeSubscriptionCount: number;
   billingConnect: StudioPaymentAccount | null;
-  billingInvoicesLength: number;
+  billingObservedAt: string | null;
   currentMonthPaymentCount: number;
   billingPeriod: BillingPeriodCopy;
   billingPlatform: PlatformBillingStatus | null;
@@ -148,8 +148,8 @@ export function BillingOverviewTab({
   const coreCheckoutAvailable = canStartCoreCheckout(billingPlatform);
   const [showConnectResetConfirm, setShowConnectResetConfirm] = useState(false);
   const moneyBand = [
-    { label: "Needs attention", value: String(failedInvoiceCount), helper: "Failed or past-due tuition", tone: "exception" },
-    { label: "Open receivables", value: formatMoney(openInvoiceTotal), helper: `${billingInvoicesLength} invoices tracked`, tone: "receivable" },
+    { label: "Needs attention", value: paymentCohortAvailable ? String(failedInvoiceCount) : "Unavailable", helper: "Failed or past-due tuition", tone: "exception" },
+    { label: "Open receivables", value: paymentCohortAvailable ? formatMoney(openInvoiceTotal) : "Unavailable", helper: "All outstanding invoices", tone: "receivable" },
     {
       label: "Collected this UTC month",
       value: paymentCohortAvailable ? formatMoney(paidRevenue) : "Unavailable",
@@ -158,7 +158,7 @@ export function BillingOverviewTab({
         : "Complete cohort could not be loaded",
       tone: "collected",
     },
-    { label: "Student coverage", value: studentsLoaded ? String(activeStudents) : "Loading", helper: `${activeSubscriptionCount} active subscriptions`, tone: "coverage" },
+    { label: "Student coverage", value: studentsLoaded ? String(activeStudents) : "Unavailable", helper: studentsLoaded ? `${activeSubscriptionCount} active subscriptions` : "Student totals unavailable", tone: "coverage" },
   ];
 
   return (
@@ -174,7 +174,7 @@ export function BillingOverviewTab({
           ))}
         </div>
         <p className="border-t border-border px-4 py-2 text-[11px] text-muted">
-          Scope: current studio · As of latest loaded billing refresh · Method: current UTC-month net collected after confirmed adjustments
+          Scope: current studio · Observed {billingObservedAt ? <time dateTime={billingObservedAt}>{new Date(billingObservedAt).toLocaleString("en-US", { timeZone: "UTC" })} UTC</time> : "unavailable"} · Current UTC-month net collected after confirmed adjustments
         </p>
       </section>
 

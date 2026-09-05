@@ -779,3 +779,38 @@ class BillingDisputeResponse(BaseModel):
     reconciliation_reason_code: Optional[str] = None
     created_at: str
     updated_at: str
+
+
+class BillingLandingAggregatesResponse(BaseModel):
+    active_student_count: int
+    active_subscription_count: int
+    failed_payer_count: int
+    open_invoice_amount_cents: int
+    has_billing_plans: bool
+    has_family_accounts: bool
+    has_student_billing: bool
+    has_collection_history: bool
+    payment_cohort: BillingPaymentCohortSummaryResponse
+
+
+class BillingLandingResponse(BaseModel):
+    studio_id: str
+    observed_at: str
+    system_status: BillingSystemStatusResponse | None = None
+    payment_account: StudioPaymentAccountResponse | None = None
+    platform_status: PlatformBillingStatusResponse | None = None
+    financial_access: Literal["available", "subscription_required", "unavailable"]
+    aggregates: BillingLandingAggregatesResponse | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
+class BillingInvoicePageResponse(BaseModel):
+    items: list[BillingInvoiceResponse]
+    next_cursor: str | None = None
+    complete: bool
+
+
+class BillingPaymentPageResponse(BaseModel):
+    items: list[BillingPaymentResponse]
+    next_cursor: str | None = None
+    complete: bool

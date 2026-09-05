@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 132 ]]; then
-  echo "ERROR: Expected the canonical 132-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 133 ]]; then
+  echo "ERROR: Expected the canonical 133-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 49 ]]; then
-  echo "ERROR: Expected the canonical 49-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 50 ]]; then
+  echo "ERROR: Expected the canonical 50-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
@@ -1098,6 +1098,19 @@ else
   echo "[V25 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
   exit "$status"
 fi
+
+echo "[Billing landing V38] RUN exact read definitions and privileges"
+v38_billing_manifest="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { V38_BILLING_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V38_BILLING_MANIFEST_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+expected_v38_billing_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V38_BILLING_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V38_BILLING_MANIFEST);")"
+if [[ "$v38_billing_manifest" != "$expected_v38_billing_manifest" ]]; then
+  echo "[Billing landing V38] FAIL exact read definitions and privileges: $v38_billing_manifest" >&2
+  exit 1
+fi
+echo "[Billing landing V38] PASS exact read definitions and privileges"
 
 echo "[catalog] RUN deterministic raw catalog security fingerprint"
 catalog_state="$({

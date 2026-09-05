@@ -78,6 +78,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Install Chromium for mounted lifecycle tests
+        run: npx playwright install --with-deps chromium
+
       - name: Run frontend tests
         run: npm test
 

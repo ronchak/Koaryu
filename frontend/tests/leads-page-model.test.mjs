@@ -228,3 +228,35 @@ describe("leads page model", () => {
     );
   });
 });
+
+it("retains dataset ordering and collections while selection changes; optimistic updates and rollback rebuild them", async () => {
+  const { buildLeadsDatasetModel, selectLeadsPageModel } = await import('../src/lib/leads-page-model.ts');
+  const baseLeads = [lead({ id: 'a', follow_up_date: '2026-05-19' }), lead({ id: 'b', follow_up_date: '2026-05-20' })];
+  const input = { baseLeads, optimisticLeads: {}, programs: [], today: '2026-05-20' };
+  const dataset = buildLeadsDatasetModel(input);
+  const selected = selectLeadsPageModel(dataset, 'b', 'a');
+  assert.equal(selected.selectedLead, baseLeads[1]);
+  assert.equal(selected.draggedLeadRecord, baseLeads[0]);
+  assert.equal(selected.obligationLedgerLeads, dataset.obligationLedgerLeads);
+  assert.equal(selected.followUpQueue, dataset.followUpQueue);
+  const optimistic = buildLeadsDatasetModel({ ...input, optimisticLeads: { a: buildOptimisticLeadUpdate(baseLeads[0], { stage: 'enrolled' }) } });
+  assert.deepEqual(optimistic.followUpQueue.map(row => row.id), ['b']);
+  assert.deepEqual(buildLeadsDatasetModel(input).followUpQueue, dataset.followUpQueue);
+});
+
+it("classifies each age band once without changing follow-up order or enrolled semantics", async () => {
+  const { groupLeadsByAgeBand } = await import('../src/lib/leads-age-bands.ts');
+  const leads = [
+    lead({ id: 'old', follow_up_date: '2026-05-01' }),
+    lead({ id: 'week', follow_up_date: '2026-05-16' }),
+    lead({ id: 'recent', follow_up_date: '2026-05-19' }),
+    lead({ id: 'today', follow_up_date: '2026-05-20' }),
+    lead({ id: 'future', follow_up_date: '2026-05-21' }),
+    lead({ id: 'enrolled', stage: 'enrolled', follow_up_date: '2026-05-01' }),
+    lead({ id: 'unset' }),
+  ];
+  const bands = groupLeadsByAgeBand(leads, '2026-05-20');
+  assert.deepEqual([...bands.values()].map(rows => rows.map(row => row.id)), [
+    ['old'], ['week'], ['recent'], ['today'], ['future'], ['enrolled', 'unset'],
+  ]);
+});

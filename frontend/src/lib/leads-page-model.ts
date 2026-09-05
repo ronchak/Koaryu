@@ -209,19 +209,16 @@ export function getUpcomingFollowUpCount(leads: Lead[], today: string) {
   ).length;
 }
 
-export function buildLeadsPageModel({
+export function buildLeadsDatasetModel({
   baseLeads,
-  draggedLeadId,
   optimisticLeads,
   programs,
-  selectedLeadId,
   today,
-}: LeadsPageModelInput): LeadsPageModel {
+}: Omit<LeadsPageModelInput, "draggedLeadId" | "selectedLeadId">) {
   const activePrograms = programs.filter((program) => !program.archived_at);
   const programById = new Map(programs.map((program) => [program.id, program]));
   const leads = mergeOptimisticLeads(baseLeads, optimisticLeads);
-  const selectedLead = leads.find((lead) => lead.id === selectedLeadId) ?? null;
-  const draggedLeadRecord = leads.find((lead) => lead.id === draggedLeadId) ?? null;
+  const leadById = new Map(leads.map((lead) => [lead.id, lead]));
   const leadsByStage = groupLeadsByStage(leads);
   const lostLeads = getLostLeads(leads);
   const followUpQueue = getDueFollowUpQueue(leads, today);
@@ -230,7 +227,7 @@ export function buildLeadsPageModel({
 
   return {
     activePrograms,
-    draggedLeadRecord,
+    leadById,
     dueTodayCount,
     enrolledCount: leads.filter((lead) => lead.stage === "enrolled").length,
     followUpQueue,
@@ -240,10 +237,25 @@ export function buildLeadsPageModel({
     lostLeads,
     overdueCount: followUpQueue.length - dueTodayCount,
     programById,
-    selectedLead,
     totalActive: leads.filter((lead) => lead.stage !== "closed_lost").length,
     upcomingFollowUps: getUpcomingFollowUpCount(leads, today),
   };
+}
+
+export function selectLeadsPageModel(
+  dataset: ReturnType<typeof buildLeadsDatasetModel>,
+  selectedLeadId: string | null,
+  draggedLeadId: string | null
+): LeadsPageModel {
+  return {
+    ...dataset,
+    selectedLead: selectedLeadId ? dataset.leadById.get(selectedLeadId) ?? null : null,
+    draggedLeadRecord: draggedLeadId ? dataset.leadById.get(draggedLeadId) ?? null : null,
+  };
+}
+
+export function buildLeadsPageModel(input: LeadsPageModelInput): LeadsPageModel {
+  return selectLeadsPageModel(buildLeadsDatasetModel(input), input.selectedLeadId, input.draggedLeadId);
 }
 
 export function getLeadFollowUpInputValue(

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo } from "react";
-import { buildKpiBreakdowns, buildRankFamilyIndex } from "@/lib/dashboard-kpi-breakdowns";
 import { canViewDashboardBilling } from "@/lib/dashboard-billing-summary";
 import {
   buildDashboardPageComposition,
@@ -14,7 +13,6 @@ import {
   buildDashboardLeadStats,
   buildDashboardNewStudentStats,
   buildDashboardOperationalStats,
-  buildDashboardProgramBuckets,
   buildDashboardRecentStudentRows,
   buildDashboardStudentStats,
   buildDashboardTestReadinessStats,
@@ -31,7 +29,7 @@ import {
 } from "@/lib/page-dataset-readiness";
 import { buildStudentInactivityRows } from "@/lib/student-insights";
 import { buildDashboardWidgetViewModels } from "@/lib/dashboard-widget-view-models";
-import { normalizeDashboardWidgetRole } from "@/lib/dashboard-widget-catalog";
+import { type DashboardWidgetId, normalizeDashboardWidgetRole } from "@/lib/dashboard-widget-catalog";
 import type {
   BeltsStoreContextValue,
   ConfigStoreContextValue,
@@ -49,6 +47,7 @@ type DashboardPageControllerOptions = {
     | "beltLadders"
     | "beltRanks"
     | "currentLadderId"
+    | "loadEligibilityForLadder"
     | "eligibility"
     | "eligibilityLadderId"
     | "eligibilityLoadError"
@@ -74,7 +73,7 @@ type DashboardPageControllerOptions = {
   >;
   studioStore: Pick<
     StudioStoreContextValue,
-    "currentStudioId" | "currentUserId" | "studioName" | "userName"
+    "identityGeneration" | "currentStudioId" | "currentUserId" | "studioName" | "userName"
   >;
 };
 
@@ -89,9 +88,9 @@ export function useDashboardPageController({
   studioStore,
 }: DashboardPageControllerOptions) {
   const {
-    beltLadders,
     beltRanks,
     currentLadderId,
+    loadEligibilityForLadder,
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError,
@@ -116,7 +115,7 @@ export function useDashboardPageController({
     studentsLoadError,
     studentsMayBePartial,
   } = studentsStore;
-  const { currentStudioId, currentUserId, studioName, userName } = studioStore;
+  const { identityGeneration, currentStudioId, currentUserId, studioName, userName } = studioStore;
 
   const summary = isPreviewMode ? null : dashboardSummary;
   const hasDashboardSummary = Boolean(summary);
@@ -137,7 +136,7 @@ export function useDashboardPageController({
     loadedLadderId: eligibilityLadderId,
     pendingLadderId: eligibilityPendingLadderId,
   });
-  const datasetReadiness = resolvePageDatasetReadiness([
+  const setupReadiness = resolvePageDatasetReadiness([
     loadedDataset({ error: studentsLoadError, label: "Student roster", loaded: studentsLoaded }),
     loadedDataset({ error: programsLoadError, label: "Programs", loaded: programsLoaded }),
     loadedDataset({ error: leadsLoadError, label: "Leads", loaded: leadsLoaded }),
@@ -147,8 +146,17 @@ export function useDashboardPageController({
       status: scheduleStatus,
     },
     summaryReadiness,
-    beltEligibilityReadiness,
   ]);
+  const datasetReadiness = resolvePageDatasetReadiness([
+    { label: "Dashboard data", ...setupReadiness }, beltEligibilityReadiness,
+  ]);
+  const onVisibleWidgetsChange = useCallback((ids: DashboardWidgetId[]) => {
+    if (!ids.includes("promotions_due") || !currentLadderId
+      || eligibilityLadderId === currentLadderId || eligibilityPendingLadderId
+      || eligibilityLoadError) return;
+    void loadEligibilityForLadder(currentLadderId).catch(() => undefined);
+  }, [currentLadderId, eligibilityLadderId, eligibilityPendingLadderId,
+    eligibilityLoadError, loadEligibilityForLadder]);
   const isInitialDashboardLoading = !isDashboardIdentityReady;
   const hasPartialStudentSample = !isPreviewMode && studentsMayBePartial;
   const rosterSummaryPending = hasPartialStudentSample && !summary;
@@ -202,21 +210,6 @@ export function useDashboardPageController({
   const lookback30 = useMemo(() => subtractDays(today, 30), [today]);
   const lookback90 = useMemo(() => subtractDays(today, 90), [today]);
   const yearStart = useMemo(() => `${today.slice(0, 4)}-01-01`, [today]);
-  const programById = useMemo(
-    () => new Map(programs.map((program) => [program.id, program])),
-    [programs]
-  );
-  const rankNameById = useMemo(
-    () => new Map(
-      (beltLadders.length > 0 ? beltLadders.flatMap((ladder) => ladder.ranks) : beltRanks)
-        .map((rank) => [rank.id, rank.name])
-    ),
-    [beltLadders, beltRanks]
-  );
-  const rankFamilyById = useMemo(
-    () => buildRankFamilyIndex(beltLadders, programById),
-    [beltLadders, programById]
-  );
 
   const studentStats = useMemo(() => buildDashboardStudentStats(students, today), [students, today]);
   const leadStats = useMemo(() => buildDashboardLeadStats(leads, today), [leads, today]);
@@ -290,19 +283,6 @@ export function useDashboardPageController({
       userName,
     ]
   );
-  const kpiBreakdowns = useMemo(() => {
-    return buildKpiBreakdowns({
-      attendance,
-      eligibility,
-      lookback30,
-      programById,
-      rankFamilyById,
-      rankNameById,
-      sessions,
-      students,
-      today,
-    });
-  }, [attendance, eligibility, lookback30, programById, rankFamilyById, rankNameById, sessions, students, today]);
 
   const recentStudentRows = useMemo(
     () => buildDashboardRecentStudentRows(summary?.recent_students, students, hasPartialStudentSample),
@@ -312,8 +292,8 @@ export function useDashboardPageController({
     isPreviewMode,
     dashboardSummary: summary,
     dashboardSummaryLoaded,
-    datasetLoadError: datasetReadiness.error,
-    allDatasetEvidenceReady: datasetReadiness.status === "ready",
+    datasetLoadError: setupReadiness.error,
+    allDatasetEvidenceReady: setupReadiness.status === "ready",
     canSeeBilling,
     canSeeLeads: normalizedRole === "admin" || normalizedRole === "front_desk",
     hasDashboardSummary,
@@ -337,8 +317,8 @@ export function useDashboardPageController({
     dashboardComposition,
     summary,
     dashboardSummaryLoaded,
-    datasetReadiness.error,
-    datasetReadiness.status,
+    setupReadiness.error,
+    setupReadiness.status,
     eligibility,
     eligibilityLoadError,
     hasDashboardSummary,
@@ -359,10 +339,7 @@ export function useDashboardPageController({
     normalizedRole,
     beltEligibilityReadiness.status,
   ]);
-  const programBuckets = useMemo(
-    () => buildDashboardProgramBuckets(programs, programById, students, leads, sessions, today),
-    [leads, programById, programs, sessions, students, today]
-  );
+
   const studioDescription = studioName || (
     isInitialDashboardLoading ? "Loading studio..." : "Your studio at a glance."
   );
@@ -371,6 +348,8 @@ export function useDashboardPageController({
     contentProps: {
       canSeeBilling,
       currentRole,
+      identityGeneration,
+      onVisibleWidgetsChange,
       currentStudioId,
       currentUserId,
       dashboardComposition,
@@ -380,10 +359,7 @@ export function useDashboardPageController({
       hasPartialStudentSample,
       isDashboardIdentityReady,
       isInitialDashboardLoading,
-      kpiBreakdowns,
       lookback30,
-      programBuckets,
-      programById,
       recentStudentRows,
       retryDashboardDatasets,
       rosterSummaryPending,

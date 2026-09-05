@@ -1,3 +1,4 @@
+import type { BillingLandingAggregates } from "./billing-landing";
 import type {
   BillingInvoice,
   BillingPayer,
@@ -18,6 +19,7 @@ const PREVIEW_BILLING_STUDENT_OPTIONS = [
 ];
 
 export interface BillingPageModelInput {
+  billingLandingAggregates?: BillingLandingAggregates | null;
   billingMetricsAsOf?: Date;
   billingPaymentCohortSummary?: BillingPaymentCohortSummary | null;
   billingConnect: StudioPaymentAccount | null;
@@ -93,6 +95,7 @@ export function currentMonthPaymentTotals(
 }
 
 export function buildBillingPageModel({
+  billingLandingAggregates,
   billingMetricsAsOf,
   billingPaymentCohortSummary,
   billingConnect,
@@ -158,8 +161,8 @@ export function buildBillingPageModel({
 
   return {
     activePrograms,
-    activeStudents,
-    activeSubscriptionCount: billingSubscriptions.filter(
+    activeStudents: billingLandingAggregates?.active_student_count ?? activeStudents,
+    activeSubscriptionCount: billingLandingAggregates?.active_subscription_count ?? billingSubscriptions.filter(
       (subscription) => subscription.status === "active" || subscription.status === "trialing"
     ).length,
     billingStudentOptions:
@@ -168,15 +171,15 @@ export function buildBillingPageModel({
         : billingStudentOptions,
     currentMonthPaymentCount,
     externalPaymentTotal,
-    failedInvoiceCount,
-    hasBillingPlans: billingPlans.some((plan) => !plan.archived_at),
-    hasCollectionHistory: billingInvoices.length > 0 || billingPayments.length > 0,
-    hasFamilyAccounts: billingPayers.length > 0,
-    hasStudentBilling: billingEnrollments.some(
+    failedInvoiceCount: billingLandingAggregates?.failed_payer_count ?? failedInvoiceCount,
+    hasBillingPlans: billingLandingAggregates?.has_billing_plans ?? billingPlans.some((plan) => !plan.archived_at),
+    hasCollectionHistory: billingLandingAggregates?.has_collection_history ?? (billingInvoices.length > 0 || billingPayments.length > 0),
+    hasFamilyAccounts: billingLandingAggregates?.has_family_accounts ?? billingPayers.length > 0,
+    hasStudentBilling: billingLandingAggregates?.has_student_billing ?? billingEnrollments.some(
       (enrollment) => enrollment.status !== "canceled" && enrollment.status !== "ended"
     ),
     koaryuFeeBasis: Math.max(stripePaymentTotal, 0),
-    openInvoiceTotal,
+    openInvoiceTotal: billingLandingAggregates?.open_invoice_amount_cents ?? openInvoiceTotal,
     paidRevenue,
     paymentCohortAvailable: isPreviewMode || Boolean(billingPaymentCohortSummary),
     payerNameById: new Map(billingPayers.map((payer) => [payer.id, payer.display_name])),

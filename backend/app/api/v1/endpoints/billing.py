@@ -1,12 +1,15 @@
 import inspect
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Response, status
 from supabase import Client
 
 from app.core.config import get_settings
 from app.core.deps import ProviderDependency, get_current_user_id, get_requested_studio_id, get_supabase, run_supabase_operation
 from app.schemas.billing import (
+    BillingLandingResponse,
+    BillingInvoicePageResponse,
+    BillingPaymentPageResponse,
     BillingInvoiceCreate,
     BillingInvoiceResponse,
     BillingEnrollmentTransitionRequest,
@@ -119,6 +122,54 @@ def _routine_studio_id(
         requested_studio_id,
         require_platform_subscription=require_platform_subscription,
     )["studio_id"]
+
+
+@router.get("/landing", response_model=BillingLandingResponse)
+async def get_billing_landing(
+    response: Response,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    from app.services.billing_landing import get_billing_landing as compose_landing
+
+    response.headers["Cache-Control"] = "no-store"
+    async def _provider_operation(client):
+        membership = resolve_billing_manager_staff_role_for_user(client, user_id, requested_studio_id)
+        return await compose_landing(client, membership)
+    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+
+
+@router.get("/invoices/page", response_model=BillingInvoicePageResponse)
+async def get_invoices_page(
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=100),
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    from app.services.billing_read_pages import get_billing_page
+
+    def _provider_operation(client):
+        studio_id = _manager_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        return get_billing_page(client, studio_id, "invoices", cursor, limit)
+    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+
+
+@router.get("/payments/page", response_model=BillingPaymentPageResponse)
+async def get_payments_page(
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=100),
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    from app.services.billing_read_pages import get_billing_page
+
+    def _provider_operation(client):
+        studio_id = _manager_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        return get_billing_page(client, studio_id, "payments", cursor, limit)
+    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
 
 
 @router.get("/connect/status", response_model=StudioPaymentAccountResponse)

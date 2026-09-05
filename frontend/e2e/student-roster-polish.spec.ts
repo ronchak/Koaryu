@@ -49,8 +49,21 @@ rosterUiTest("keeps desktop search, rows, and zero-fetch quick view composed", a
   await expect(page.getByText("Select all visible students", { exact: true }).first()).toBeHidden();
 
   const hoverRequests: string[] = [];
+  const navigationPaths = new Set([
+    "/", "/dashboard", "/students", "/belt-tracker", "/leads", "/schedule",
+    "/billing", "/automations", "/reports", "/settings",
+  ]);
   page.on("request", (request) => {
-    if (["fetch", "xhr"].includes(request.resourceType())) hoverRequests.push(request.url());
+    if (!["fetch", "xhr"].includes(request.resourceType())) return;
+    const url = new URL(request.url());
+    const headers = request.headers();
+    const isNavigationPrefetch = url.origin === frontendTarget.origin
+      && navigationPaths.has(url.pathname)
+      && url.searchParams.has("_rsc")
+      && headers.rsc === "1"
+      && headers["next-router-prefetch"] === "1";
+    // Router prefetch warms the existing navigation links; quick view must not read data.
+    if (!isNavigationPrefetch) hoverRequests.push(request.url());
   });
   const firstStudentRow = page.locator("tbody tr").first();
   await firstStudentRow.hover();

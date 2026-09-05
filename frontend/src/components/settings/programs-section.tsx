@@ -10,7 +10,8 @@ import { Archive, Check, Plus, RefreshCw, RotateCcw, Save, Settings2 } from "luc
 
 const COLOR_SWATCHES = ["#38BDF8", "#F59E0B", "#EF4444", "#22C55E", "#A855F7", "#94A3B8"];
 
-function usageLabel(program: Program) {
+function usageLabel(program: Program, loaded: boolean, error: string | null) {
+  if (!loaded) return error ? "Program usage unavailable" : "Loading program usage...";
   const usage = program.usage;
   const beltSetup = program.is_system
     ? "no belt plan"
@@ -21,10 +22,12 @@ function usageLabel(program: Program) {
 }
 
 export function ProgramsSection() {
-  const { currentRole } = useStudioStore();
+  const { currentRole, identityGeneration } = useStudioStore();
   const {
     programs,
     programsLoaded,
+    programsUsageLoaded,
+    programsUsageLoadError,
     programsLoadError,
     refreshPrograms,
     createProgram,
@@ -43,10 +46,8 @@ export function ProgramsSection() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (!programsLoaded && !programsLoadError) {
-      void refreshPrograms({ includeArchived: true }).catch(() => undefined);
-    }
-  }, [programsLoadError, programsLoaded, refreshPrograms]);
+    void refreshPrograms({ includeArchived: true }).catch(() => undefined);
+  }, [identityGeneration, refreshPrograms]);
 
   const sortedPrograms = useMemo(
     () => [...programs].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
@@ -139,7 +140,7 @@ export function ProgramsSection() {
           </div>
           <p className="mt-1 text-xs text-muted">Manage the programs that appear in Belt Tracker. Each program has one rank plan.</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => void refreshPrograms({ includeArchived: true })}>
+        <Button variant="ghost" size="sm" onClick={() => void refreshPrograms({ includeArchived: true }).catch(() => undefined)}>
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </Button>
@@ -220,6 +221,12 @@ export function ProgramsSection() {
         </DismissibleNotice>
       ) : null}
 
+      {programsUsageLoadError ? (
+        <p role="status" className="mb-3 text-xs text-danger">
+          {programsUsageLoadError} {programsUsageLoaded ? "Showing the last loaded usage." : "Use Refresh to retry."}
+        </p>
+      ) : null}
+
       <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/30">
         {!programsLoaded ? (
           <p className="p-4 text-sm text-muted">Loading programs...</p>
@@ -242,8 +249,8 @@ export function ProgramsSection() {
                     </p>
                   ) : null}
                   {program.description ? <span className="hidden shrink-0 md:inline">·</span> : null}
-                  <p className="min-w-0 break-words md:truncate" title={usageLabel(program)}>
-                    {usageLabel(program)}
+                  <p className="min-w-0 break-words md:truncate" title={usageLabel(program, programsUsageLoaded, programsUsageLoadError)}>
+                    {usageLabel(program, programsUsageLoaded, programsUsageLoadError)}
                   </p>
                 </div>
               </div>
