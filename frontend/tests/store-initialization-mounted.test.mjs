@@ -11,7 +11,8 @@ import { chromium } from "@playwright/test";
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-function bundle(mode, { preview = false, layout = false } = {}) {
+function bundle(mode, { preview = false, layout = false, leadsPage = false } = {}) {
+  if (!["production", "development"].includes(mode) || typeof preview !== "boolean") throw new Error("Unsupported fixture environment");
   const modules = [];
   const ids = new Map();
   const stubs = {
@@ -19,7 +20,19 @@ function bundle(mode, { preview = false, layout = false } = {}) {
     "@/components/loading-screen": `exports.LoadingScreen=()=>null;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
-    "@/lib/performance": `exports.markPerformance=()=>{};exports.measurePerformance=()=>{};`,
+    "@/lib/performance": `exports.markPerformance=()=>{};exports.measurePerformance=()=>{};exports.markDashboardReadiness=(route,generation,state)=>{window.fixture.readiness?.push(state);return ()=>{};};`,
+    ...(leadsPage ? {
+      "@/components/header": `exports.Header=()=>null;`,
+      "@/components/leads/lead-ledger-loading": `exports.LeadLedgerLoading=()=>null;`,
+      "@/components/leads/add-lead-modal": `exports.AddLeadModal=()=>null;`,
+      "@/components/leads/lead-detail-modal": `exports.LeadDetailInspector=()=>null;`,
+      "@/components/leads/lead-pipeline-board": `exports.LeadPipelineBoard=()=>null;exports.LeadLedgerLoadError=()=>null;`,
+      "@/components/leads/lost-leads-section": `exports.LostLeadsSection=()=>null;`,
+      "@/components/leads/leads-ledger.module.css": `module.exports={};`,
+      "@/components/ui/button": `exports.Button=({children,onClick})=>require('react').createElement('button',{onClick},children);`,
+      "@/components/ui/dismissible-notice": `exports.DismissibleNotice=({children})=>children;`,
+      "lucide-react": `exports.UserPlus=()=>null;`,
+    } : {}),
     ...(preview || layout ? {
       "@/components/dashboard-shell.module.css": `module.exports={};`,
       "@/components/theme-provider": `exports.useTheme=()=>({navigationPlacement:'side'});`,
@@ -56,8 +69,9 @@ function bundle(mode, { preview = false, layout = false } = {}) {
   const react = add("react");
   const dom = add("react-dom/client");
   const store = add("@/lib/store");
+  const leads = leadsPage ? add("@/app/(dashboard)/leads/page") : null;
   const provider = preview || layout ? `require(${add("@/app/(dashboard)/layout")}).default` : "StoreProvider";
-  return `(()=>{const process={env:{NODE_ENV:${JSON.stringify(mode)},NEXT_PUBLIC_PREVIEW_MODE:${JSON.stringify(String(preview))}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {StoreProvider,useStore}=require(${store});function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer))));})();`;
+  return `(()=>{const process={env:{NODE_ENV:${mode === "development" ? '"development"' : '"production"'},NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {StoreProvider,useStore}=require(${store});function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer),${leads === null ? "null" : `React.createElement(require(${leads}).default)`})));})();`;
 }
 
 for (const mode of ["production", "development"]) {
@@ -286,3 +300,52 @@ test("authoritative old-schema identity opens Dashboard without requiring legal-
     await page.evaluate(()=>fixture.root.unmount());
   } finally { await browser.close(); }
 });
+
+for (const role of ["admin", "front_desk"]) {
+  test(`mounted fresh Leads completes only its accessible datasets (${role})`, async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.route("http://fixture.local/", route => route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }));
+      await page.goto("http://fixture.local/");
+      await page.evaluate((role) => {
+        const user = { id: "leads-user", email: "leads@example.test", user_metadata: {} };
+        const fixture = window.fixture = { requests: [], observations: [], readiness: [], staffWaiters: [], role, failStaff: true };
+        fixture.supabase = { auth: {
+          getSession: async () => ({ data: { session: { access_token: "leads-token", user } } }),
+          onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+        } };
+        fixture.api = { get: async path => {
+          fixture.requests.push(path);
+          if (path === "/dashboard/bootstrap") return {
+            auth: { membership_status: "active", studio_id: "leads-studio", role, staff_profiles_available: true, user },
+            studio_name: "Leads studio", students: [], programs: [], leads: [], belt_ladders: [], primary_belt_ladder: null,
+          };
+          if (path.startsWith("/schedule/window")) return { sessions: [], templates: [], attendance: [] };
+          if (path.startsWith("/staff")) {
+            if (role !== "admin") throw new Error("Non-admin staff read is forbidden");
+            await new Promise(resolve => fixture.staffWaiters.push(resolve));
+            if (fixture.failStaff) throw new Error("Staff request failed");
+            return [];
+          }
+          throw new Error(`Unexpected request ${path}`);
+        } };
+      }, role);
+      await page.addScriptTag({ content: bundle("production", { leadsPage: true }) });
+      await page.waitForFunction(() => fixture.readiness.some(state => state.useful));
+      if (role === "admin") {
+        await page.waitForFunction(() => fixture.staffWaiters.length === 1, null, { timeout: 3000 });
+        assert.equal(await page.evaluate(() => fixture.readiness.at(-1).complete), false, "staff cannot block useful lead content, but complete waits for it");
+        await page.evaluate(() => fixture.staffWaiters.shift()());
+        await page.getByRole("button", { name: "Retry staff assignments" }).waitFor();
+        assert.equal(await page.evaluate(() => fixture.readiness.at(-1).complete), false, "staff failure is not complete data");
+        await page.evaluate(() => { fixture.failStaff = false; });
+        await page.getByRole("button", { name: "Retry staff assignments" }).click();
+        await page.waitForFunction(() => fixture.staffWaiters.length === 1);
+        await page.evaluate(() => fixture.staffWaiters.shift()());
+      }
+      await page.waitForFunction(() => fixture.readiness.at(-1)?.complete, null, { timeout: 3000 });
+      assert.equal(await page.evaluate(() => fixture.requests.filter(path => path.startsWith("/staff")).length), role === "admin" ? 2 : 0);
+    } finally { await browser.close(); }
+  });
+}

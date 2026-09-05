@@ -104,3 +104,8 @@ Production bundle analysis used `.env.example` with preview disabled. The table 
 | leads | 1,292,948 | 1,287,445 | 21/21 |
 
 No eager dialog split was retained. The measured bundle correction keeps the new Leads loading boundary from pulling in a second copy of the interactive board. Its skeleton now has a shared presentation-only component. Broader bootstrap projections, store partitioning, selective eligibility invalidation and dialog splitting remain conditional on live profiling evidence.
+
+Leads completion includes staff assignments only for admins, matching the existing
+staff endpoint's permission boundary. The route starts that read itself; lead
+content can become useful first, while a staff failure remains visible and
+retryable. Other roles do not wait for or request the admin-only dataset.

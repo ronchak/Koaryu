@@ -22,7 +22,7 @@ import styles from "@/components/leads/leads-ledger.module.css";
 export default function LeadsPage() {
   const { currentRole, isPreviewMode, token } = useConfigStore();
   const { programs, programsLoaded, programsLoadError } = useProgramStore();
-  const { staffMembers, staffLoaded, staffLoadError, identityReady, identityGeneration } = useStudioStore();
+  const { staffMembers, staffLoaded, staffLoadError, refreshStaff, identityReady, identityGeneration } = useStudioStore();
   const {
     leads: baseLeads,
     addLead,
@@ -32,8 +32,16 @@ export default function LeadsPage() {
     leadsLoadError,
     refreshLeads,
   } = useLeadStore();
+  // The existing staff endpoint is admin-only. Other roles must not wait on a
+  // dataset they cannot read; admins need it for assignment names and selectors.
+  const requiresStaff = currentRole === "admin";
+  useEffect(() => {
+    if (!identityReady || isPreviewMode || !requiresStaff || staffLoaded || staffLoadError) return;
+    void refreshStaff().catch(() => undefined);
+  }, [identityReady, isPreviewMode, requiresStaff, staffLoaded, staffLoadError, refreshStaff]);
   const usefulReady = identityReady && leadsLoaded && !leadsLoadError;
-  const completeReady = usefulReady && programsLoaded && !programsLoadError && staffLoaded && !staffLoadError;
+  const completeReady = usefulReady && programsLoaded && !programsLoadError
+    && (!requiresStaff || (staffLoaded && !staffLoadError));
   useEffect(() => markDashboardReadiness("leads", identityGeneration, {
     useful: usefulReady, complete: completeReady,
   }), [identityGeneration, usefulReady, completeReady]);
@@ -89,6 +97,17 @@ export default function LeadsPage() {
           </Button>
         ) : null}
       </Header>
+
+      {requiresStaff && staffLoadError ? (
+        <div role="alert" className="px-4 pt-4 sm:px-6 lg:px-8">
+          <p className="text-sm text-danger">Staff assignments are unavailable. {staffLoadError}</p>
+          <Button variant="secondary" size="sm" onClick={() => void refreshStaff().catch(() => undefined)}>
+            Retry staff assignments
+          </Button>
+        </div>
+      ) : requiresStaff && !staffLoaded ? (
+        <p role="status" className="px-4 pt-4 text-sm text-muted sm:px-6 lg:px-8">Loading staff assignments...</p>
+      ) : null}
 
       {controller.leadActionError && !selectedLead && (
         <div className="px-4 pt-4 sm:px-6 lg:px-8">

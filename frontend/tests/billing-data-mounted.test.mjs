@@ -64,7 +64,10 @@ test("mounted Billing landing, tab retention, mutations and identity isolation",
     if(path===f.held) await new Promise(resolve=>f.waiters.push(resolve));
     if(path===f.fail) throw new Error('Required dataset failed');
     if(path==='/billing/landing') return {studio_id:identity,system_status:{payment_account:{studio_id:identity},workflow_capabilities:[]},platform_status:null,financial_access:f.denied?'subscription_required':'available',aggregates:f.denied?null:{active_student_count:8,payment_cohort:{payment_count:1001}},errors:[]};
-    if(path.includes('/page')) return {items:[{id:identity}],next_cursor:f.more && !path.includes('?')?'older':null,complete:!f.more || path.includes('?')};
+    if(path.includes('/page')) {
+     const more=path.includes('/invoices/') ? f.moreInvoices ?? f.more : f.more;
+     return {items:[{id:identity}],next_cursor:more && !path.includes('?')?'older':null,complete:!more || path.includes('?')};
+    }
     if(path.startsWith('/billing/')) return [{id:identity}];
     throw new Error('Unexpected roster or other request');
    }};
@@ -89,6 +92,30 @@ test("mounted Billing landing, tab retention, mutations and identity isolation",
   await page.evaluate(()=>{fixture.options={...fixture.options,activeTab:'reports'};fixture.render();});
   await page.waitForFunction(()=>fixture.state.payers.length===1 && fixture.state.payments.length===1);
   assert.ok(await page.evaluate(()=>fixture.requests.some(r=>r.path==='/billing/payments/page')),'reports preserve refund/payment history');
+  await page.evaluate(()=>{fixture.more=true;return fixture.state.refreshBilling();});
+  assert.equal(await page.evaluate(()=>fixture.state.hasMoreHistory),true,'Reports has another payment page');
+  const beforeInvoices=await page.evaluate(()=>fixture.requests.length);
+  await page.evaluate(()=>{fixture.moreInvoices=false;fixture.options={...fixture.options,activeTab:'invoices'};fixture.render();});
+  await page.waitForFunction(()=>fixture.state.hasBillingLoadSettled);
+  assert.equal(await page.evaluate(()=>fixture.state.hasMoreHistory),false,'a retained payment cursor cannot advertise invisible history on Invoices');
+  assert.equal(await page.evaluate(n=>fixture.requests.slice(n).some(r=>r.path.startsWith('/billing/payments/')),beforeInvoices),false,'Invoices does not fetch payments it cannot render');
+  const beforeNoOp=await page.evaluate(()=>fixture.requests.length);
+  await page.evaluate(()=>fixture.state.loadMoreHistory());
+  assert.equal(await page.evaluate(()=>fixture.requests.length),beforeNoOp,'Invoices with no invoice cursor has no history work');
+  await page.evaluate(()=>{fixture.moreInvoices=true;return fixture.state.refreshBilling();});
+  assert.equal(await page.evaluate(()=>fixture.state.hasMoreHistory),true);
+  const beforeInvoicePage=await page.evaluate(()=>fixture.requests.length);
+  await page.evaluate(()=>fixture.state.loadMoreHistory());
+  assert.deepEqual(await page.evaluate(n=>fixture.requests.slice(n).map(r=>r.path),beforeInvoicePage),['/billing/invoices/page?cursor=older']);
+  assert.equal(await page.evaluate(()=>fixture.state.hasMoreHistory),false);
+  await page.evaluate(()=>{fixture.options={...fixture.options,activeTab:'reports'};fixture.render();});
+  await page.waitForFunction(()=>fixture.state.hasBillingLoadSettled);
+  assert.equal(await page.evaluate(()=>fixture.state.hasMoreHistory),true,'Reports retains its own payment cursor');
+  const beforePaymentPage=await page.evaluate(()=>fixture.requests.length);
+  await page.evaluate(()=>fixture.state.loadMoreHistory());
+  assert.deepEqual(await page.evaluate(n=>fixture.requests.slice(n).map(r=>r.path),beforePaymentPage),['/billing/payments/page?cursor=older']);
+  assert.equal(await page.evaluate(()=>fixture.state.hasMoreHistory),false);
+  await page.evaluate(()=>{fixture.more=false;fixture.moreInvoices=false;});
   await page.evaluate(()=>{fixture.fail='/billing/payers';fixture.commits=[];fixture.options={...fixture.options,activeTab:'families'};fixture.render();});
   await page.waitForFunction(()=>fixture.state.hasBillingLoadSettled && fixture.error==='Required dataset failed');
   assert.equal(await page.evaluate(()=>fixture.commits[0].settled),false,'a failed tab also begins honestly pending');

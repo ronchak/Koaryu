@@ -26,3 +26,7 @@ uses `koaryu_release_schema_preflight_v19`; the previous V18 entry point retains
 the exact V37 response through a checked compatibility bridge. The guarded
 rollout independently checks the new RPC bodies, signatures, ownership and
 permissions. Production application remains an owner-run interactive operation.
+
+Invoice history loads and advances only the invoice cursor. Reports loads and
+advances only the payment cursor. A retained cursor from another tab cannot
+advertise older history or trigger invisible page reads.

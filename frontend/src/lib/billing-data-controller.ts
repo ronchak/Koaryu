@@ -191,7 +191,7 @@ export function useBillingDataController({
       if (activeTab === "invoices") {
         load<BillingInvoicePage>("/billing/invoices/page", (page) => { setInvoices(page.items); setInvoiceCursor(page.next_cursor ?? null); });
       }
-      if (["invoices", "reports"].includes(activeTab)) {
+      if (activeTab === "reports") {
         load<BillingPaymentPage>("/billing/payments/page", (page) => { setPayments(page.items); setPaymentCursor(page.next_cursor ?? null); });
       }
       const results = await Promise.allSettled(requests);
@@ -232,7 +232,7 @@ export function useBillingDataController({
           setInvoices(current => [...current, ...page.items]);
           setInvoiceCursor(page.next_cursor ?? null);
         }) : Promise.resolve(),
-        paymentCursor ? api.get<BillingPaymentPage>(`/billing/payments/page?cursor=${encodeURIComponent(paymentCursor)}`, currentToken).then(page => {
+        activeTab === "reports" && paymentCursor ? api.get<BillingPaymentPage>(`/billing/payments/page?cursor=${encodeURIComponent(paymentCursor)}`, currentToken).then(page => {
           if (!isCurrentRequest(requestId, { accessKey: activeAccessKey })) return;
           setPayments(current => [...current, ...page.items]);
           setPaymentCursor(page.next_cursor ?? null);
@@ -317,7 +317,9 @@ export function useBillingDataController({
     platformBilling: hasVisibleBillingData ? platformBilling : null,
     ensureBilling,
     loadMoreHistory,
-    hasMoreHistory: hasVisibleBillingData && Boolean((activeTab === "invoices" && invoiceCursor) || paymentCursor),
+    hasMoreHistory: hasVisibleBillingData && Boolean(
+      (activeTab === "invoices" && invoiceCursor) || (activeTab === "reports" && paymentCursor)
+    ),
     isLoadingMore,
     landing: hasVisibleBillingData ? landing : null,
     refreshBilling,
