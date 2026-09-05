@@ -42,8 +42,9 @@ npm run dev
 
 The local dev server runs at [http://localhost:4000](http://localhost:4000).
 
-`next.config.ts` pins both Turbopack and output tracing to this package so a
-lockfile in a parent directory cannot change the workspace root.
+`next.config.ts` pins both Turbopack and output tracing to the repository root
+so a lockfile above the repository cannot change the workspace root. Keeping the
+tracing root at the monorepo level also preserves Vercel's frontend asset paths.
 
 If development stalls at `Compiling /` while a production build serves normally,
 stop the dev server and move `.next/dev/cache/turbopack` to a temporary directory

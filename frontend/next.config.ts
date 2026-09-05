@@ -1,15 +1,17 @@
 import type { NextConfig } from "next";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { securityHeadersFromProcessEnv } from "./src/lib/security-headers.ts";
 
-const frontendRoot = fileURLToPath(new URL(".", import.meta.url));
+// Keep local resolution and deployment asset paths within the monorepo.
+const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const nextConfig: NextConfig = {
   turbopack: {
-    root: frontendRoot,
+    root: workspaceRoot,
   },
-  outputFileTracingRoot: frontendRoot,
+  outputFileTracingRoot: workspaceRoot,
   // Drop the framework advertisement; it only helps someone fingerprinting us.
   poweredByHeader: false,
   async headers() {
