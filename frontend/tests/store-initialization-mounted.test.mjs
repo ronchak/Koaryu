@@ -11,7 +11,7 @@ import { chromium } from "@playwright/test";
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-function bundle(mode, { preview = false, layout = false, leadsPage = false, programsSection = false, subscriptionPage = false, scheduleController = false, dashboardController = false, beltPage = false } = {}) {
+function bundle(mode, { preview = false, layout = false, leadsPage = false, programsSection = false, subscriptionPage = false, scheduleController = false, dashboardController = false, beltPage = false, realApi = false } = {}) {
   if (!["production", "development"].includes(mode) || typeof preview !== "boolean") throw new Error("Unsupported fixture environment");
   const modules = [];
   const ids = new Map();
@@ -39,7 +39,7 @@ function bundle(mode, { preview = false, layout = false, leadsPage = false, prog
       "@/components/ui/dismissible-notice": `exports.DismissibleNotice=({children})=>children;`,
       "lucide-react": `for (const name of ['Archive','Check','Plus','RefreshCw','RotateCcw','Save','Settings2','UserPlus']) exports[name]=()=>null;`,
     } : {}),
-    ...(subscriptionPage ? {
+    ...(subscriptionPage || realApi ? {
       "@/components/header": `exports.Header=()=>null;`,
       "@/components/operations/operations-surface": `exports.OperationsSurface=({children})=>require('react').createElement('section',{'data-recovery-page':'true'},children);`,
       "@/components/ui/button": `exports.Button=({children,onClick,disabled})=>require('react').createElement('button',{onClick,disabled},children);`,
@@ -61,13 +61,14 @@ function bundle(mode, { preview = false, layout = false, leadsPage = false, prog
       "@/components/dashboard-route-transition": `exports.DashboardRouteTransition=({children})=>children;`,
       "@/components/dashboard-shell": `exports.DashboardSlugBand=()=>null;`,
       "@/components/dashboard-shell-readiness": `exports.DashboardShellReadiness=({identityReady})=>{window.fixture.store=require("@/lib/store").useStore();window.fixture.identityObservations.push(identityReady);return null;};`,
-      ...(subscriptionPage ? {} : {
+      ...(subscriptionPage || realApi ? {} : {
         "@/components/dashboard-identity-skeleton": `exports.DashboardIdentitySkeleton=()=>require('react').createElement('div',{'data-preview-gate':'pending'});`,
       }),
       "@/components/account/legal-name-blocking-screen": `exports.LegalNameBlockingScreen=()=>require('react').createElement('div',{'data-preview-gate':'legal-name'});`,
       "@/components/sidebar": `exports.Sidebar=()=>require('react').createElement('nav',{'data-preview-sidebar':'ready'});`,
     } : {}),
   };
+  if (realApi) delete stubs["@/lib/api"];
   function add(specifier, parent = resolve(frontend, "entry.js")) {
     let key = specifier;
     if (!(key in stubs)) {
@@ -82,7 +83,7 @@ function bundle(mode, { preview = false, layout = false, leadsPage = false, prog
     ids.set(key, id);
     modules.push("");
     let source = stubs[key] ?? readFileSync(key, "utf8");
-    if (/\.tsx?$/.test(key)) source = ts.transpileModule(source, { compilerOptions: {
+    if (/\.tsx?$/.test(key)) source = ts.transpileModule(source, { fileName: key, compilerOptions: {
       jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
       esModuleInterop: true,
     }}).outputText;
@@ -946,3 +947,79 @@ for (const operation of ["add", "update", "delete", "convert"]) {
     }
   }
 }
+
+test("real bootstrap transport survives its server budget and bounds a stalled body", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route("http://fixture.local/", route => route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }));
+    await page.goto("http://fixture.local/");
+    await page.clock.install();
+    await page.evaluate(() => {
+      const user = { id: "bootstrap-budget-user", email: "budget@example.test", legal_first_name: "Budget", legal_last_name: "User" };
+      const session = { access_token: "bootstrap-budget-token", user };
+      const profile = { user, membership_status: "active", studio_id: "budget-studio", role: "admin", staff_profiles_available: true };
+      const fixture = window.fixture = { observations: [], identityObservations: [], requests: [], aborts: [], signOutCalls: 0 };
+      fixture.payload = { auth: profile, studio_name: "Budget studio", leads: [], students: [], programs: [], belt_ladders: [], primary_belt_ladder: null, summary: { auth: profile } };
+      document.cookie = "koaryu-active-studio=budget-studio; path=/";
+      localStorage.setItem("fixture-sdk-session", "retained");
+      fixture.supabase = { auth: {
+        getSession: async () => ({ data: { session }, error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+        signOut: async () => { fixture.signOutCalls += 1; return { error: null }; },
+      } };
+      window.fetch = (url, { signal }) => {
+        const path = new URL(url, window.location.href).pathname;
+        if (path.includes("/schedule/window")) return Promise.resolve(Response.json({ sessions: [], templates: [], attendance: [] }));
+        return new Promise((resolve, reject) => {
+          const request = { path };
+          fixture.requests.push(request);
+          let stream;
+          signal.addEventListener("abort", () => {
+            fixture.aborts.push(path);
+            const error = new DOMException("Aborted", "AbortError");
+            reject(error);
+            stream?.error(error);
+          }, { once: true });
+          request.sendHeaders = () => resolve(new Response(new ReadableStream({ start(controller) { stream = controller; } }), { headers: { "content-type": "application/json" } }));
+          request.sendBody = value => { stream.enqueue(new TextEncoder().encode(JSON.stringify(value))); stream.close(); };
+        });
+      };
+    });
+    await page.addScriptTag({ content: bundle("production", { layout: true, realApi: true }) });
+    await page.waitForFunction(() => fixture.requests.length === 1, null, { timeout: 3000 });
+    await page.clock.fastForward(12_500);
+    assert.deepEqual(await page.evaluate(() => [fixture.store.identityReady, fixture.store.identityLoadError, fixture.aborts.length]), [false, null, 0], "pending bootstrap headers must outlive the generic 12s cutoff");
+    await page.evaluate(() => fixture.requests[0].sendHeaders());
+    await page.clock.fastForward(18_000);
+    assert.deepEqual(await page.evaluate(() => [fixture.store.identityReady, fixture.store.identityLoadError, fixture.aborts.length]), [false, null, 0], "the body remains within budget at 30.5s");
+    await page.evaluate(() => fixture.requests[0].sendBody(fixture.payload));
+    await page.waitForFunction(() => fixture.store.identityReady && fixture.store.scheduleStatus === "ready", null, { timeout: 3000 });
+    assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 1);
+    assert.equal(await page.evaluate(() => fixture.store.studioName), "Budget studio");
+
+    // The bootstrap override must not change other API consumers' 12s default.
+    await page.evaluate(() => { fixture.leadRead = fixture.store.refreshLeads().catch(error => { fixture.leadError = error.message; }); });
+    await page.waitForFunction(() => fixture.requests.length === 2);
+    await page.clock.fastForward(12_001);
+    await page.waitForFunction(() => fixture.leadError, null, { timeout: 3000 });
+    assert.equal(await page.evaluate(() => fixture.leadError), "Request timed out. Please try again.");
+    assert.equal(await page.evaluate(() => fixture.aborts.length), 1);
+
+    await page.evaluate(() => fixture.store.retryInitialization());
+    await page.waitForFunction(() => fixture.requests.length === 3);
+    await page.evaluate(() => fixture.requests[2].sendHeaders());
+    await page.clock.fastForward(35_001);
+    await page.getByRole("alert").waitFor();
+    assert.match(await page.getByRole("alert").textContent(), /Workspace loading timed out/);
+    assert.equal(await page.evaluate(() => fixture.store.identityReady), false);
+    assert.equal(await page.evaluate(() => fixture.aborts.length), 2, "the stalled bootstrap body aborts at its own 35s deadline");
+    assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 0);
+    assert.equal(await page.evaluate(() => fixture.signOutCalls), 0);
+    assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
+    assert.equal(await page.evaluate(() => localStorage.getItem("fixture-sdk-session")), "retained");
+    assert.match(await page.evaluate(() => document.cookie), /koaryu-active-studio=budget-studio/);
+    await page.getByRole("button", { name: "Retry workspace" }).waitFor();
+    await page.evaluate(() => fixture.root.unmount());
+  } finally { await browser.close(); }
+});

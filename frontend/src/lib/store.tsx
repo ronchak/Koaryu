@@ -1064,7 +1064,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       try {
         markPerformance("dashboard.bootstrap_started");
-        const criticalData = await api.get<BootstrapResponse>("/dashboard/bootstrap?allow_partial=true", sessionToken);
+        // Allow the server's 30s interactive budget plus response transfer time.
+        const criticalData = await api.get<BootstrapResponse>("/dashboard/bootstrap?allow_partial=true", sessionToken, {
+          timeoutMs: 35_000,
+          timeoutMessage: "Workspace loading timed out. Please retry.",
+        });
         markPerformance("dashboard.bootstrap_finished");
         measurePerformance(
           "dashboard.bootstrap_duration",
