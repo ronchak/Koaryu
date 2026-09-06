@@ -1,109 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import ts from "typescript";
 import { chromium } from "@playwright/test";
-
-// Mount the real provider and action hooks in Chromium. Only external I/O is replaced.
-// A tiny CommonJS packer avoids adding a second frontend build or test runtime.
-const require = createRequire(import.meta.url);
-const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-function bundle(mode, { preview = false, layout = false, leadsPage = false, programsSection = false, subscriptionPage = false, scheduleController = false, dashboardController = false, beltPage = false, realApi = false } = {}) {
-  if (!["production", "development"].includes(mode) || typeof preview !== "boolean") throw new Error("Unsupported fixture environment");
-  const modules = [];
-  const ids = new Map();
-  const stubs = {
-    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(path){(window.fixture.redirects??=[]).push(path)}}; exports.useRouter=()=>router;`,
-    "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
-    "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
-    "@/lib/performance": `exports.markPerformance=name=>{window.fixture.marks?.push(name);};exports.measurePerformance=()=>{};exports.markDashboardReadiness=(route,generation,state)=>{window.fixture.readiness?.push(state);return ()=>{};};`,
-    ...(leadsPage ? {
-      "@/components/header": `exports.Header=()=>null;`,
-      "@/components/leads/lead-ledger-loading": `exports.LeadLedgerLoading=()=>null;`,
-      "@/components/leads/add-lead-modal": `exports.AddLeadModal=()=>null;`,
-      "@/components/leads/lead-detail-modal": `exports.LeadDetailInspector=()=>null;`,
-      "@/components/leads/lead-pipeline-board": `exports.LeadPipelineBoard=()=>null;exports.LeadLedgerLoadError=()=>null;`,
-      "@/components/leads/lost-leads-section": `exports.LostLeadsSection=()=>null;`,
-      "@/components/leads/leads-ledger.module.css": `module.exports={};`,
-      "@/components/ui/button": `exports.Button=({children,onClick})=>require('react').createElement('button',{onClick},children);`,
-      "@/components/ui/dismissible-notice": `exports.DismissibleNotice=({children})=>children;`,
-      "lucide-react": `exports.UserPlus=()=>null;`,
-    } : {}),
-    ...(programsSection ? {
-      "@/components/ui/input": `exports.Input=()=>null;`,
-      "@/components/ui/button": `exports.Button=({children,onClick})=>require('react').createElement('button',{onClick},children);`,
-      "@/components/ui/dismissible-notice": `exports.DismissibleNotice=({children})=>children;`,
-      "lucide-react": `for (const name of ['Archive','Check','Plus','RefreshCw','RotateCcw','Save','Settings2','UserPlus']) exports[name]=()=>null;`,
-    } : {}),
-    ...(subscriptionPage || realApi ? {
-      "@/components/header": `exports.Header=()=>null;`,
-      "@/components/operations/operations-surface": `exports.OperationsSurface=({children})=>require('react').createElement('section',{'data-recovery-page':'true'},children);`,
-      "@/components/ui/button": `exports.Button=({children,onClick,disabled})=>require('react').createElement('button',{onClick,disabled},children);`,
-      "@/components/logo": `exports.Logo=()=>null;`,
-      "@/components/dashboard-loading-skeleton": `exports.DashboardLoadingSkeleton=()=>require('react').createElement('div',{'data-preview-gate':'pending'});`,
-      "./dashboard-shell.module.css": `module.exports={};`,
-      "lucide-react": `for (const name of ['ArrowUpRight','CheckCircle2','CreditCard','Loader2','ShieldCheck']) exports[name]=()=>null;`,
-    } : {}),
-    ...(beltPage ? {
-      "@/components/belt-tracker/belt-tracker-dialogs": `exports.BeltTrackerDialogs=()=>null;`,
-      "@/components/belt-tracker/belt-tracker-shell": `exports.BeltTrackerShell=({children})=>children;`,
-      "@/components/belt-tracker/eligibility-panel": `exports.EligibilityPanel=()=>null;`,
-      "@/components/belt-tracker/rank-plan-panel": `exports.RankPlanPanel=()=>null;`,
-      "@/lib/belt-tracker-page-controller": `exports.useBeltTrackerPageController=()=>({shellProps:{},eligibilityPanelProps:{},rankPlanPanelProps:{},dialogsProps:{},tab:'eligibility'});`,
-    } : {}),
-    ...(preview || layout ? {
-      "@/components/dashboard-shell.module.css": `module.exports={};`,
-      "@/components/theme-provider": `exports.useTheme=()=>({navigationPlacement:'side'});`,
-      "@/components/dashboard-route-transition": `exports.DashboardRouteTransition=({children})=>children;`,
-      "@/components/dashboard-shell": `exports.DashboardSlugBand=()=>null;`,
-      "@/components/dashboard-shell-readiness": `exports.DashboardShellReadiness=({identityReady})=>{window.fixture.store=require("@/lib/store").useStore();window.fixture.identityObservations.push(identityReady);return null;};`,
-      ...(subscriptionPage || realApi ? {} : {
-        "@/components/dashboard-identity-skeleton": `exports.DashboardIdentitySkeleton=()=>require('react').createElement('div',{'data-preview-gate':'pending'});`,
-      }),
-      "@/components/account/legal-name-blocking-screen": `exports.LegalNameBlockingScreen=()=>require('react').createElement('div',{'data-preview-gate':'legal-name'});`,
-      "@/components/sidebar": `exports.Sidebar=()=>require('react').createElement('nav',{'data-preview-sidebar':'ready'});`,
-    } : {}),
-  };
-  if (realApi) delete stubs["@/lib/api"];
-  function add(specifier, parent = resolve(frontend, "entry.js")) {
-    let key = specifier;
-    if (!(key in stubs)) {
-      if (specifier.startsWith("@/")) key = resolve(frontend, "src", specifier.slice(2));
-      else if (specifier.startsWith(".")) key = resolve(dirname(parent), specifier);
-      else key = require.resolve(specifier, { paths: [dirname(parent)] });
-      if (!existsSync(key)) key = [".ts", ".tsx", ".js"].map(ext => key + ext).find(existsSync);
-      if (!key) throw new Error(`Cannot resolve ${specifier} from ${parent}`);
-    }
-    if (ids.has(key)) return ids.get(key);
-    const id = modules.length;
-    ids.set(key, id);
-    modules.push("");
-    let source = stubs[key] ?? readFileSync(key, "utf8");
-    if (/\.tsx?$/.test(key)) source = ts.transpileModule(source, { fileName: key, compilerOptions: {
-      jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
-      esModuleInterop: true,
-    }}).outputText;
-    source = source.replace(/require\(["']([^"']+)["']\)/g, (_, dependency) => `require(${add(dependency, key)})`);
-    modules[id] = `function(module,exports,require){${source}\n}`;
-    return id;
-  }
-  const react = add("react");
-  const dom = add("react-dom/client");
-  const store = add("@/lib/store");
-  const leads = leadsPage ? add("@/app/(dashboard)/leads/page") : null;
-  const programs = programsSection ? add("@/components/settings/programs-section") : null;
-  const subscription = subscriptionPage ? add("@/app/(dashboard)/subscription-required/page") : null;
-  const schedule = scheduleController ? add("@/lib/schedule-page-controller") : null;
-  const scheduleObserver = schedule === null ? "" : `function ScheduleObserver(){const store=useStore();const controller=require(${schedule}).useSchedulePageController({config:store,programsStore:store,scheduleStore:store,studentsStore:store});window.fixture.controller=controller.contentProps;return React.createElement('output',{'data-schedule-state':controller.contentProps.hasLoadedRange?'ready':controller.contentProps.scheduleLoadError?'error':'loading'});}function ScheduleMount(){const [mounted,setMounted]=React.useState(false);window.fixture.mountSchedule=()=>setMounted(true);window.fixture.unmountSchedule=()=>setMounted(false);return mounted?React.createElement(ScheduleObserver):null;}`;
-  const dashboard = dashboardController ? add("@/lib/dashboard-page-controller") : null;
-  const belt = beltPage ? add("@/app/(dashboard)/belt-tracker/page") : null;
-  const dashboardObserver = dashboard === null ? "" : `function DashboardObserver(){const store=useStore();window.fixture.dashboard=require(${dashboard}).useDashboardPageController({config:store,beltStore:store,dashboardStore:store,leadStore:store,programsStore:store,scheduleStore:store,studentsStore:store,studioStore:store}).contentProps;return null;}`;
-  const provider = preview || layout ? `require(${add("@/app/(dashboard)/layout")}).default` : "StoreProvider";
-  return `(()=>{const process={env:{NODE_ENV:${mode === "development" ? '"development"' : '"production"'},NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {StoreProvider,useStore}=require(${store});${scheduleObserver}${dashboardObserver}function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer),${leads === null ? "null" : `React.createElement(require(${leads}).default)`},${programs === null ? "null" : `React.createElement(require(${programs}).ProgramsSection)`},${subscription === null ? "null" : `React.createElement(require(${subscription}).default)`},${schedule === null ? "null" : "React.createElement(ScheduleMount)"},${dashboard === null ? "null" : "React.createElement(DashboardObserver)"},${belt === null ? "null" : `React.createElement(require(${belt}).default)`})));})();`;
-}
+import { bundle as buildBundle } from "./helpers/store-browser-harness.mjs";
+const bundle = (mode, options = {}) => buildBundle(mode, { ...options, legacyBootstrapFixture: true });
 
 for (const mode of ["production", "development"]) {
   test(`mounted initialization stays stable after role commit (${mode})`, async () => {
@@ -513,18 +412,20 @@ for (const outcome of ["success", "failure"]) {
             students: [], programs: [], leads: [], belt_ladders: [], primary_belt_ladder: null,
           };
           if (path.startsWith("/schedule/window")) return { sessions: [], templates: [], attendance: [] };
-          if (path.startsWith("/staff") || path.startsWith("/programs") || path === "/dashboard/summary") {
+          if (path.startsWith("/staff") || path.startsWith("/programs") || path === "/dashboard/summary?fresh=true") {
             if (token === "route-old-token") {
               await new Promise(resolve => fixture.waiters.push(resolve));
               if (outcome === "failure") throw new Error("Expired token");
-              return path === "/dashboard/summary" ? { auth: { studio_id: "route-studio" }, marker: "obsolete" } : [{ id: "obsolete-row", name: "Obsolete" }];
+              return path === "/dashboard/summary?fresh=true" ? { auth: { studio_id: "route-studio" }, marker: "obsolete" } : [{ id: "obsolete-row", name: "Obsolete" }];
             }
-            return path === "/dashboard/summary" ? { auth: { studio_id: "route-studio" }, marker: "current" } : [];
+            return path === "/dashboard/summary?fresh=true" ? { auth: { studio_id: "route-studio" }, marker: "current" } : [];
           }
           throw new Error(`Unexpected request ${path}`);
         } };
       }, outcome);
       await page.addScriptTag({ content: bundle("production", { leadsPage: true, programsSection: true }) });
+      await page.waitForFunction(() => fixture.store?.identityReady);
+      await page.evaluate(() => { void fixture.store.refreshDashboardSummary().catch(() => {}); });
       await page.waitForFunction(() => fixture.waiters.length === 3);
       const generation = await page.evaluate(() => fixture.store.identityGeneration);
       await page.evaluate(() => {
@@ -540,7 +441,7 @@ for (const outcome of ["success", "failure"]) {
       assert.deepEqual(await page.evaluate(() => fixture.requests.filter(r => r.path.startsWith("/programs")).map(r => r.token)), ["route-old-token", "route-new-token"]);
       assert.equal(await page.evaluate(() => fixture.store.dashboardSummary?.marker), "current");
       assert.equal(await page.evaluate(() => fixture.marks.filter(name => name === "dashboard.summary_started").length), 1, "summary timing includes every auth replay");
-      assert.deepEqual(await page.evaluate(() => fixture.requests.filter(r => r.path === "/dashboard/summary").map(r => r.token)), ["route-old-token", "route-new-token"]);
+      assert.deepEqual(await page.evaluate(() => fixture.requests.filter(r => r.path === "/dashboard/summary?fresh=true").map(r => r.token)), ["route-old-token", "route-new-token"]);
       await page.evaluate(() => fixture.root.unmount());
     } finally { await browser.close(); }
   });
@@ -776,7 +677,7 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
             leads: [], belt_ladders: [], primary_belt_ladder: null,
             dataset_errors: fixture.failedDataset ? { [fixture.failedDataset]: `${fixture.failedDataset} projection failed. Please retry.` } : {},
           };
-          if (path === "/dashboard/summary") throw new Error("Summary unavailable");
+          if (path === "/dashboard/summary?fresh=true") throw new Error("Summary unavailable");
           if (path.startsWith("/schedule/window")) return { sessions: [], templates: [], attendance: [] };
           if (path.startsWith("/programs?")) {
             if (fixture.programsRetryFails) throw new Error("Programs retry unavailable");
@@ -797,7 +698,7 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
       assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), failedDataset !== "students");
       assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), failedDataset !== "leads");
       assert.equal(await page.evaluate(() => fixture.store.programsLoaded), failedDataset !== "programs");
-      assert.deepEqual(await page.evaluate(() => fixture.requests.filter(path => !path.startsWith("/schedule/window")).sort()), ["/dashboard/bootstrap?allow_partial=true", "/dashboard/summary"], "a partial response cannot trigger legacy dataset fan-out");
+      assert.deepEqual(await page.evaluate(() => fixture.requests.filter(path => !path.startsWith("/schedule/window")).sort()), ["/dashboard/bootstrap?allow_partial=true", "/dashboard/summary?fresh=true"], "a partial response cannot trigger legacy dataset fan-out");
       if (failedDataset === "students") {
         assert.equal(await page.evaluate(() => fixture.dashboard.widgetViewModels.student_pulse.state), "error");
         assert.equal(await page.evaluate(() => fixture.dashboard.widgetViewModels.student_pulse.metric), undefined, "failed roster is not zero active students");
@@ -936,7 +837,7 @@ for (const operation of ["add", "update", "delete", "convert"]) {
             assert.equal(message, "Lead write failed", "failed writes must settle their pending scope before the next retry");
           }
           await page.evaluate(() => fixture.store.refreshLeads().catch(() => undefined));
-          await page.waitForFunction(() => fixture.store.leadsLoadError === "Leads refresh failed" && !fixture.store.leadsLoaded);
+          await page.waitForFunction(() => fixture.store.leadsLoadError === "Leads refresh failed" && fixture.store.leadsLoaded);
           await page.evaluate(() => { fixture.holdBootstrap = false; fixture.store.retryInitialization(); });
           await page.waitForFunction(() => fixture.bootstrapCalls === 3 && fixture.store.identityReady && fixture.store.leadsLoaded && !fixture.store.leadsLoadError);
           assert.deepEqual(await page.evaluate(() => fixture.store.leads), await page.evaluate(() => fixture.dbLeads), "an uncontested retry still restores the complete dataset");
@@ -969,6 +870,7 @@ test("real bootstrap transport survives its server budget and bounds a stalled b
       } };
       window.fetch = (url, { signal }) => {
         const path = new URL(url, window.location.href).pathname;
+        if (path.includes("/dashboard/bootstrap")) return Promise.resolve(Response.json(fixture.payload));
         if (path.includes("/schedule/window")) return Promise.resolve(Response.json({ sessions: [], templates: [], attendance: [] }));
         return new Promise((resolve, reject) => {
           const request = { path };

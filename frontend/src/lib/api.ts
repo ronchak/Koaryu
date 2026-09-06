@@ -1,3 +1,5 @@
+import { CommandOutcomeUnknown } from "./command-outcome.ts";
+export { CommandOutcomeUnknown } from "./command-outcome.ts";
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import { serializeJsonRequestBody } from "@/lib/api-body";
 import { applyBrowserStudioHeader } from "@/lib/api-studio-header";
@@ -81,6 +83,8 @@ interface RequestRuntimeOptions {
   timeoutMs?: number | null;
   timeoutMessage: string;
   networkErrorMessage: string;
+  commandTimeoutMessage?: string;
+  commandNetworkMessage?: string;
 }
 
 function buildRequestHeaders({
@@ -115,6 +119,8 @@ async function executeApiRequest<T>(
     timeoutMs = API_TIMEOUT_MS,
     timeoutMessage,
     networkErrorMessage,
+    commandTimeoutMessage,
+    commandNetworkMessage,
   }: RequestRuntimeOptions,
   consume: (response: Response) => Promise<T>,
 ): Promise<T> {
@@ -138,14 +144,26 @@ async function executeApiRequest<T>(
   }
 
   let receivedHeaders = false;
+  let requestId: string | undefined;
+  let dispatched = false;
+  const isCommand = !["GET", "HEAD", "OPTIONS"].includes(init.method ?? "GET");
   try {
+    dispatched = !controller.signal.aborted;
     const response = await fetch(apiUrl(path), {
       ...init,
       signal: controller.signal,
     });
     receivedHeaders = true;
+    const diagnosticId = response.headers.get("x-request-id");
+    if (diagnosticId && /^[a-zA-Z0-9_-]{1,64}$/.test(diagnosticId)) requestId = diagnosticId;
     return await consume(response);
   } catch (error) {
+    // A transport abort, 5xx response, or lost success body cannot prove rollback.
+    if (isCommand && dispatched && (!(error instanceof ApiError) || error.status >= 500)) {
+      throw new CommandOutcomeUnknown(requestId, abortReason === "timeout"
+        ? commandTimeoutMessage
+        : !receivedHeaders && abortReason === null ? commandNetworkMessage : undefined);
+    }
     if (abortReason !== null || (error instanceof Error && error.name === "AbortError")) {
       if (abortReason === "timeout") {
         throw new Error(timeoutMessage);
@@ -306,6 +324,8 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
+      commandTimeoutMessage: options.timeoutMessage,
+      commandNetworkMessage: options.networkErrorMessage,
     },
     async (res) => {
       if (!res.ok) {
@@ -343,6 +363,8 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
+      commandTimeoutMessage: options.timeoutMessage,
+      commandNetworkMessage: options.networkErrorMessage,
     },
     async (res) => {
       if (!res.ok) {
@@ -384,6 +406,8 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
+      commandTimeoutMessage: options.timeoutMessage,
+      commandNetworkMessage: options.networkErrorMessage,
     },
     async (res) => {
       if (!res.ok) {

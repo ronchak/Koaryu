@@ -25,3 +25,15 @@ export function differenceInLocalDateKeys(from: string, to: string) {
 
   return Number.isFinite(days) ? Math.max(0, days) : 0;
 }
+
+export function studioDateKey(timezone: string, now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now);
+  const part = (type: string) => parts.find((value) => value.type === type)!.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+export function shiftDateKey(day: string, days: number): string {
+  return new Date(dateKeyToUtcMidnightMs(day) + days * MS_PER_DAY).toISOString().slice(0, 10);
+}

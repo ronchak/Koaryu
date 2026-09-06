@@ -13,6 +13,7 @@ interface AddLeadModalProps {
   activeStaff: StaffMember[];
   addLeadError: string | null;
   isAddingLead: boolean;
+  isOutcomeUnknown?: boolean;
   programById: Map<string, Program>;
   selectedProgramId: string | null;
   today: string;
@@ -27,6 +28,7 @@ export function AddLeadModal({
   activeStaff,
   addLeadError,
   isAddingLead,
+  isOutcomeUnknown = false,
   programById,
   selectedProgramId,
   today,
@@ -257,7 +259,7 @@ export function AddLeadModal({
           >
             Cancel
           </Button>
-          <Button variant="primary" size="sm" type="submit" disabled={isAddingLead}>
+          <Button variant="primary" size="sm" type="submit" disabled={isAddingLead || isOutcomeUnknown}>
             {isAddingLead ? "Saving..." : "Add lead"}
           </Button>
         </div>

@@ -11,7 +11,12 @@ import { localId } from "@/lib/store-storage";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type { BeltLadder, BeltRank, Lead, Program, Student } from "@/types";
 
+import type { ResourceScope } from "@/lib/store-resource-scope";
+import { canCommitLiveMutation } from "@/lib/store-action-types";
+
 interface UseStoreLeadActionsOptions {
+  leadMutationScopeRef: StoreRef<ResourceScope>;
+  businessDateRef: StoreRef<string>;
   beginLeadMutation: () => () => void;
   beginLiveAuthRequest: BeginLiveAuthRequest;
   beltLaddersRef: StoreRef<BeltLadder[]>;
@@ -31,6 +36,8 @@ interface UseStoreLeadActionsOptions {
 
 export function useStoreLeadActions({
   beginLeadMutation,
+  businessDateRef,
+  leadMutationScopeRef,
   beginLiveAuthRequest,
   beltLaddersRef,
   beltRanksRef,
@@ -57,7 +64,7 @@ export function useStoreLeadActions({
     const finishMutation = beginLeadMutation();
     try {
       const result = await api.post<Lead>("/leads", data, liveRequest.token);
-      if (!liveRequest.isCurrent()) {
+      if (!canCommitLiveMutation(liveRequest)) {
         return;
       }
       setLeads((current) => [result, ...current]);
@@ -76,7 +83,7 @@ export function useStoreLeadActions({
     const finishMutation = beginLeadMutation();
     try {
       const result = await api.patch<Lead>(`/leads/${id}`, data, liveRequest.token);
-      if (!liveRequest.isCurrent()) {
+      if (!canCommitLiveMutation(liveRequest)) {
         return;
       }
       setLeads((current) => current.map((lead) => lead.id === id ? result : lead));
@@ -95,7 +102,7 @@ export function useStoreLeadActions({
     const finishMutation = beginLeadMutation();
     try {
       await api.delete(`/leads/${id}`, liveRequest.token);
-      if (!liveRequest.isCurrent()) {
+      if (!canCommitLiveMutation(liveRequest)) {
         return;
       }
       setLeads((current) => current.filter((lead) => lead.id !== id));
@@ -111,6 +118,7 @@ export function useStoreLeadActions({
 
     return refreshLiveLeadDataset({
       beginLiveAuthRequest,
+      scopeRef: leadMutationScopeRef,
       fetchLeads: (requestToken) => api.get<Lead[]>("/leads", requestToken),
       setLeads,
       setLeadsLoaded,
@@ -118,6 +126,7 @@ export function useStoreLeadActions({
     });
   }, [
     beginLiveAuthRequest,
+    leadMutationScopeRef,
     isPreviewMode,
     leadsRef,
     setLeads,
@@ -140,6 +149,7 @@ export function useStoreLeadActions({
         beltLadders: beltLaddersRef.current,
         beltRanks: beltRanksRef.current,
         idFactory: localId,
+        businessDate: businessDateRef.current,
       });
 
       persistStudents([conversion.student, ...studentsRef.current]);
@@ -155,7 +165,7 @@ export function useStoreLeadActions({
     const liveRequest = beginLiveAuthRequest();
     const finishMutation = beginLeadMutation();
     try {
-      const membershipStartDate = new Date().toISOString().split("T")[0];
+      const membershipStartDate = businessDateRef.current;
       const result = await api.post<Lead>(
         `/leads/${leadId}/convert`,
         {
@@ -165,7 +175,7 @@ export function useStoreLeadActions({
         },
         liveRequest.token
       );
-      if (!liveRequest.isCurrent()) {
+      if (!canCommitLiveMutation(liveRequest)) {
         return {
           lead: result,
           studentId: result.converted_student_id ?? null,
@@ -189,6 +199,7 @@ export function useStoreLeadActions({
     }
   }, [
     beginLeadMutation,
+    businessDateRef,
     beginLiveAuthRequest,
     beltLaddersRef,
     beltRanksRef,

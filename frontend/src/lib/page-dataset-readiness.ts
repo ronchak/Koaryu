@@ -64,7 +64,7 @@ export function dashboardSummaryDataset({
 
   if (loaded) {
     return {
-      error: "could not be loaded. Reload the page to retry.",
+      error: "could not be loaded. Retry dashboard data to load this section.",
       label: "Dashboard summary",
       status: "error",
     };

@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 
+import { canCommitLiveMutation } from "@/lib/store-action-types";
 import { api } from "@/lib/api";
 import { markPerformance, measurePerformance, startStudentPagePerformanceSpan } from "@/lib/performance";
 import {
@@ -87,9 +88,10 @@ export function useStoreStudentRosterActions({
     studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
     const result = await api.post<Student>("/students", data, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
+    if (!canCommitLiveMutation(liveRequest)) {
       return result;
     }
+    studentMutationEpochRef.current += 1;
     commitStudents((current) => [result, ...current], { mayBePartial: studentsMayBePartial });
     onStudentMutation();
     return result;
@@ -132,9 +134,10 @@ export function useStoreStudentRosterActions({
     studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
     const result = await api.patch<Student>(`/students/${id}`, data, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
+    if (!canCommitLiveMutation(liveRequest)) {
       return result;
     }
+    studentMutationEpochRef.current += 1;
     commitStudents(
       (current) => current.map((student) => student.id === id ? result : student),
       { mayBePartial: studentsMayBePartial }

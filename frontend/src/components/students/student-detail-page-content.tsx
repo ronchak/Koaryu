@@ -20,6 +20,7 @@ export function StudentDetailPageContent({
   canManageStudentLifecycle,
   deleteError,
   detail,
+  detailReady,
   isDeleting,
   isLoadingBeltData,
   isLoadingStudent,
@@ -41,6 +42,7 @@ export function StudentDetailPageContent({
   onDismissActionMessage,
   onEdit,
   onPhotoSelected,
+  onRetryDetail,
   onShowDeleteConfirm,
   onShowEdit,
 }: StudentDetailPageContentProps) {
@@ -57,7 +59,7 @@ export function StudentDetailPageContent({
   if (!student || !detail) {
     return (
       <>
-        <Header title="Student not found">
+        <Header title={loadError ? "Student unavailable" : "Student not found"}>
           <Button variant="ghost" size="sm" onClick={onBackToStudents}>
             <ArrowLeft className="w-3.5 h-3.5" /> Back
           </Button>
@@ -67,6 +69,7 @@ export function StudentDetailPageContent({
             <p className="text-sm text-text-secondary">
               {loadError || "This student doesn't exist or has been archived."}
             </p>
+            {loadError ? <Button onClick={onRetryDetail}>Retry student details</Button> : null}
           </div>
         </div>
       </>
@@ -80,12 +83,12 @@ export function StudentDetailPageContent({
           <ArrowLeft className="w-3.5 h-3.5" />
           Back to students
         </Button>
-        <Button variant="secondary" size="sm" onClick={onShowEdit}>
+        <Button variant="secondary" size="sm" onClick={onShowEdit} disabled={!detailReady}>
           <Pencil className="w-3.5 h-3.5" />
           Edit
         </Button>
         {canManageRoster ? (
-          <Button variant="danger" size="sm" onClick={onShowDeleteConfirm}>
+          <Button variant="danger" size="sm" onClick={onShowDeleteConfirm} disabled={!detailReady}>
             <Trash2 className="w-3.5 h-3.5" />
             Archive
           </Button>
@@ -100,6 +103,21 @@ export function StudentDetailPageContent({
         </div>
       ) : null}
 
+      {detailReady && loadError ? (
+        <div className="px-6 pt-4" role="status">
+          <p>Showing the last loaded details. {loadError}</p>
+          <Button variant="secondary" size="sm" onClick={onRetryDetail}>Retry student details</Button>
+        </div>
+      ) : null}
+      {!detailReady ? (
+        <div className="p-6" role={loadError ? "alert" : "status"}>
+          {loadError ? <>
+            <p>{loadError}</p>
+            <Button onClick={onRetryDetail}>Retry student details</Button>
+          </> : <RecordsLoading title="Loading student details"
+            description="Loading guardian, photo, and training details." variant="folio" />}
+        </div>
+      ) : (
       <div className="flex-1 p-4 sm:p-6 lg:p-8">
         <div className={`grid grid-cols-1 gap-6 lg:grid-cols-[minmax(14rem,0.34fr)_minmax(0,1fr)] ${styles.folioGrid}`}>
           {canManageRoster && (showDeleteConfirm || deleteError) && (
@@ -173,7 +191,8 @@ export function StudentDetailPageContent({
         </div>
       </div>
 
-      {showEdit && (
+      )}
+      {showEdit && detailReady && (
         <StudentForm
           onSubmit={onEdit}
           onClose={onCloseEdit}

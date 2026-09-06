@@ -48,6 +48,8 @@ import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
 
 export interface StoreContextValue {
   isPreviewMode: boolean;
+  businessDate: string;
+  studioTimezone: string;
   token: string | null;
   identityGeneration: number;
   identityReady: boolean;
@@ -61,6 +63,8 @@ export interface StoreContextValue {
 
   dashboardSummary: DashboardSummary | null;
   dashboardSummaryLoaded: boolean;
+  dashboardSummaryLoadError: string | null;
+  refreshDashboardSummary: () => Promise<void>;
 
   students: Student[];
   studentsLoaded: boolean;
@@ -192,6 +196,8 @@ export interface StoreContextValue {
 export type ConfigStoreContextValue = Pick<
   StoreContextValue,
   | "isPreviewMode"
+  | "businessDate"
+  | "studioTimezone"
   | "token"
   | "subscriptionRequired"
   | "markSubscriptionRequired"
@@ -202,6 +208,8 @@ export type DashboardStoreContextValue = Pick<
   StoreContextValue,
   | "dashboardSummary"
   | "dashboardSummaryLoaded"
+  | "dashboardSummaryLoadError"
+  | "refreshDashboardSummary"
 >;
 export type StudentsStoreContextValue = Pick<
   StoreContextValue,

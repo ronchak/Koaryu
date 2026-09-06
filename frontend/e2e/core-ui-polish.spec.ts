@@ -125,3 +125,23 @@ coreUiTest("adds a program student at the starting belt and refreshes eligibilit
 
   await expectHealthyPage(page, pageErrors);
 });
+
+coreUiTest("keeps rapid roster input in sync with the URL and restores profile return", async ({ page }) => {
+  await signInToPreview(page);
+  await page.goto(`${FRONTEND_URL}/students`);
+  const search = page.getByRole("textbox", { name: "Search students", exact: true });
+  await search.pressSequentially("Maya", { delay: 20 });
+  await expect(search).toHaveValue("Maya");
+  await expect(page).toHaveURL(/\/students\?q=Maya/);
+  await page.getByRole("combobox", { name: "Filter by status" }).selectOption("active");
+  await expect(search).toHaveValue("Maya");
+  await page.getByRole("button", { name: "Open Maya Chen profile" }).click();
+  await expect(page.getByRole("heading", { name: "Maya Chen", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Back to students", exact: true }).click();
+  await expect(search).toHaveValue("Maya");
+  await expect(page.getByRole("combobox", { name: "Filter by status" })).toHaveValue("active");
+  await expect(page.getByRole("button", { name: "Open Maya Chen profile" })).toBeFocused();
+  await page.getByRole("link", { name: "Students", exact: true }).click();
+  await expect(search).toHaveValue("");
+  await expect(page).toHaveURL(`${FRONTEND_URL}/students`);
+});

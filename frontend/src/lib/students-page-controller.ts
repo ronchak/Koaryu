@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { consumeRosterReturn, loadRosterReturn, saveRosterReturn, safeStudentsReturn } from "@/lib/student-roster-location";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { StudentRosterBulkPanel } from "@/components/students/student-roster-controls";
-import { toLocalDateKey } from "@/lib/date";
 import {
   buildStudentInactivityRows,
   formatInactivityDaysForRange,
@@ -60,7 +60,7 @@ const STUDENTS_SEARCH_DEBOUNCE_MS = 250;
 const PAGED_STUDENTS_ROSTER_ENABLED = process.env.NEXT_PUBLIC_STUDENTS_PAGED_ROSTER !== "false";
 
 type StudentsPageControllerOptions = {
-  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode" | "token">;
+  config: Pick<ConfigStoreContextValue, "businessDate" | "currentRole" | "isPreviewMode" | "token">;
   programsStore: Pick<
     ProgramsStoreContextValue,
     "programs" | "programsLoadError" | "programsLoaded" | "refreshPrograms"
@@ -83,7 +83,7 @@ type StudentsPageControllerOptions = {
     | "studentsLoaded"
     | "studentsMayBePartial"
   >;
-  studioStore: Pick<StudioStoreContextValue, "currentStudioId">;
+  studioStore: Pick<StudioStoreContextValue, "currentStudioId" | "identityGeneration" | "currentUserId">;
 };
 
 function useDebouncedValue<T>(value: T, delayMs: number) {
@@ -108,7 +108,7 @@ export function useStudentsPageController({
   const searchParams = useSearchParams();
   const canManageRoster = hasStaffPermission(config.currentRole, "manage_roster_bulk");
   const canCreateStudents = hasStaffPermission(config.currentRole, "create_students");
-  const { currentStudioId } = studioStore;
+  const { currentStudioId, identityGeneration } = studioStore;
   const { programs, programsLoadError, programsLoaded, refreshPrograms } = programsStore;
   const {
     attendance,
@@ -129,7 +129,7 @@ export function useStudentsPageController({
     studentsMayBePartial,
   } = studentsStore;
 
-  const today = toLocalDateKey();
+  const today = config.businessDate;
   const inactiveDaysParam = searchParams.get("inactiveDays");
   const newStudentsParam = searchParams.get("newStudents");
   const fullRosterParam = searchParams.get("fullRoster");
@@ -151,11 +151,14 @@ export function useStudentsPageController({
     [fullRosterParam, inactiveDaysParam, newStudentsParam, today]
   );
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StudentRosterStatusFilter | "">("");
-  const [programFilter, setProgramFilter] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const returnScope = `${studioStore.currentUserId}:${currentStudioId}:${config.currentRole}:${identityGeneration}`;
+  const [initialReturn] = useState(() => loadRosterReturn(returnScope, safeStudentsReturn(`/students?${searchParams}`)));
+  const initialReturnRef = useRef(initialReturn);
+  const [search, setSearch] = useState(() => (searchParams.get("q") ?? "").slice(0, 200));
+  const [statusFilter, setStatusFilter] = useState<StudentRosterStatusFilter | "">(() => ["active", "trialing", "inactive", "paused", "canceled"].includes(searchParams.get("status") ?? "") ? searchParams.get("status") as StudentRosterStatusFilter : "");
+  const [programFilter, setProgramFilter] = useState(() => (searchParams.get("program") ?? "").slice(0, 100));
+  const [sortKey, setSortKey] = useState<SortKey>(() => ["name", "status", "membership_start_date", "created_at"].includes(searchParams.get("sort") ?? "") ? searchParams.get("sort") as SortKey : "name");
+  const [sortDir, setSortDir] = useState<SortDir>(() => searchParams.get("dir") === "desc" ? "desc" : "asc");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showForm, setShowForm] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
@@ -174,7 +177,7 @@ export function useStudentsPageController({
   const [pagedLoadError, setPagedLoadError] = useState<string | null>(null);
   const [isPagedLoading, setIsPagedLoading] = useState(false);
   const [isDerivedRosterRefreshing, setIsDerivedRosterRefreshing] = useState(false);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(initialReturn?.page ?? 1);
   const [pageRequestNonce, setPageRequestNonce] = useState(0);
   const [inactivityScheduleStatus, setInactivityScheduleStatus] = useState<
     "idle" | "loading" | "ready" | "error"
@@ -183,9 +186,9 @@ export function useStudentsPageController({
   const pagedRequestSeqRef = useRef(0);
   const pagedAbortControllerRef = useRef<AbortController | null>(null);
   const pagedQueryKeyRef = useRef("");
-  const cursorHistoryRef = useRef(new Map<number, StudentRosterCursorChainEntry>());
-  const pageRef = useRef(1);
-  const pagedCursorRef = useRef<string | null>(null);
+  const cursorHistoryRef = useRef(new Map<number, StudentRosterCursorChainEntry>(initialReturn?.history ?? []));
+  const pageRef = useRef(initialReturn?.page ?? 1);
+  const pagedCursorRef = useRef<string | null>(initialReturn?.cursor ?? null);
   const [pagedHasNext, setPagedHasNext] = useState(false);
   const [pagedHasPrevious, setPagedHasPrevious] = useState(false);
   const [pagedNextCursor, setPagedNextCursor] = useState<string | null>(null);
@@ -261,9 +264,9 @@ export function useStudentsPageController({
   const inactivityRows = useMemo(
     () =>
       inactivityThreshold && usesDerivedRosterFilters
-        ? buildStudentInactivityRows(students, sessions, attendance)
+        ? buildStudentInactivityRows(students, sessions, attendance, today)
         : [],
-    [attendance, inactivityThreshold, sessions, students, usesDerivedRosterFilters]
+    [attendance, inactivityThreshold, sessions, students, today, usesDerivedRosterFilters]
   );
   const localInactivityDaysByStudentId = useMemo(
     () => new Map(inactivityRows.map((row) => [row.student.id, row.daysInactive])),
@@ -294,6 +297,34 @@ export function useStudentsPageController({
     ? localInactivityByStudentId
     : serverInactivityByStudentId, [localInactivityByStudentId, serverInactivityByStudentId, usesDerivedRosterFilters]);
   const hasActiveFilters = Boolean(search || statusFilter || programFilter || inactivityThreshold || hasNewStudentFilter);
+
+  const rosterHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (search) params.set("q", search.slice(0, 200));
+    if (statusFilter) params.set("status", statusFilter);
+    if (programFilter) params.set("program", programFilter);
+    if (sortKey !== "name") params.set("sort", sortKey);
+    if (sortDir !== "asc") params.set("dir", sortDir);
+    if (inactiveDaysParam) params.set("inactiveDays", inactiveDaysParam);
+    if (newStudentsParam) params.set("newStudents", newStudentsParam);
+    if (fullRosterParam) params.set("fullRoster", fullRosterParam);
+    return safeStudentsReturn(`/students?${params}`);
+  }, [search, statusFilter, programFilter, sortKey, sortDir, inactiveDaysParam, newStudentsParam, fullRosterParam]);
+  const incomingRosterHref = safeStudentsReturn(`/students?${searchParams}`);
+  const lastRosterHrefRef = useRef(incomingRosterHref);
+
+  useEffect(() => {
+    const saved = initialReturnRef.current;
+    if (!saved || (!pagedLoaded && !usesDerivedRosterFilters)) return;
+    const frame = requestAnimationFrame(() => {
+      const row = document.querySelector(`[data-student-id="${CSS.escape(saved.focusId)}"]`);
+      row?.querySelector<HTMLElement>("button[data-open-student]")?.focus({ preventScroll: true });
+      document.getElementById("main-content")?.scrollTo({ top: saved.scroll });
+      consumeRosterReturn(saved);
+      initialReturnRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pagedLoaded, usesDerivedRosterFilters]);
 
   const newStudents = useMemo<StudentRosterNewStudentWindow | undefined>(() => {
     if (isNewStudentYtd) {
@@ -363,6 +394,33 @@ export function useStudentsPageController({
     setDeleteError(null);
     setBulkActionError(null);
   }, []);
+
+  useEffect(() => {
+    // Native history changes the address synchronously; Next's searchParams
+    // subscription can lag behind a second keystroke. Compare our write marker
+    // with the actual address so that delayed notifications cannot erase input.
+    if (window.location.pathname !== "/students") return;
+    const browserHref = safeStudentsReturn(`/students${window.location.search}`);
+    if (browserHref !== lastRosterHrefRef.current) {
+      const timer = window.setTimeout(() => {
+        const params = new URLSearchParams(browserHref.split("?")[1]);
+        lastRosterHrefRef.current = browserHref;
+        setSearch((params.get("q") ?? "").slice(0, 200));
+        setStatusFilter(["active", "trialing", "inactive", "paused", "canceled"].includes(params.get("status") ?? "")
+          ? params.get("status") as StudentRosterStatusFilter : "");
+        setProgramFilter((params.get("program") ?? "").slice(0, 100));
+        setSortKey(["name", "status", "membership_start_date", "created_at"].includes(params.get("sort") ?? "")
+          ? params.get("sort") as SortKey : "name");
+        setSortDir(params.get("dir") === "desc" ? "desc" : "asc");
+        resetRosterPaging();
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (browserHref !== rosterHref) {
+      lastRosterHrefRef.current = rosterHref;
+      window.history.replaceState(window.history.state, "", rosterHref);
+    }
+  }, [incomingRosterHref, resetRosterPaging, rosterHref]);
 
   const requestRosterPage = useCallback((requestedPage: number, requestedCursor: string | null) => {
     pageRef.current = requestedPage;
@@ -522,16 +580,12 @@ export function useStudentsPageController({
   ]);
 
   useEffect(() => {
-    if (!usesDerivedRosterFilters || config.isPreviewMode) {
-      return;
-    }
-
-    if (!studentsLoaded) {
+    if (!usesDerivedRosterFilters || config.isPreviewMode || studentsLoadError) {
       return;
     }
 
     if (
-      !studentsLoadError &&
+      studentsLoaded &&
       !studentsMayBePartial &&
       studentsLastLoadedAt &&
       Date.now() - studentsLastLoadedAt < STUDENTS_BOOTSTRAP_FRESH_MS
@@ -567,19 +621,17 @@ export function useStudentsPageController({
     usesDerivedRosterFilters,
   ]);
 
+  const pagingResetKey = JSON.stringify([identityGeneration, currentStudioId,
+    fullRosterParam, inactiveDaysParam, newStudentsParam, usesDerivedRosterFilters]);
+  const previousPagingResetKeyRef = useRef(pagingResetKey);
   useEffect(() => {
-    const timer = window.setTimeout(() => resetRosterPaging(), 0);
+    if (previousPagingResetKeyRef.current === pagingResetKey) return;
+    const timer = window.setTimeout(() => {
+      previousPagingResetKeyRef.current = pagingResetKey;
+      resetRosterPaging();
+    }, 0);
     return () => window.clearTimeout(timer);
-  }, [
-    config.token,
-    currentStudioId,
-    fullRosterParam,
-    inactiveDaysParam,
-    newStudentsParam,
-    resetRosterPaging,
-    today,
-    usesDerivedRosterFilters,
-  ]);
+  }, [pagingResetKey, resetRosterPaging]);
 
   useEffect(() => {
     if (usesDerivedRosterFilters) {
@@ -930,7 +982,7 @@ export function useStudentsPageController({
         resetRosterPaging();
         router.replace("/students");
       },
-      onCloseStudentForm: () => setShowForm(false),
+      onCloseStudentForm: () => { if (!isAdding) setShowForm(false); },
       onDeleteSelected: handleDeleteSelected,
       onDismissActionMessage: () => setActionMessage(null),
       onDismissRosterQueryNotice: () => router.push("/students"),
@@ -943,7 +995,13 @@ export function useStudentsPageController({
         }
         requestRosterPage(pageRef.current + 1, pagedNextCursor);
       },
-      onOpenStudent: (studentId: string) => router.push(`/students/${studentId}`),
+      onOpenStudent: (studentId: string) => {
+        saveRosterReturn({ scope: returnScope, href: rosterHref, page: pageRef.current,
+          cursor: pagedCursorRef.current, history: [...cursorHistoryRef.current],
+          scroll: document.getElementById("main-content")?.scrollTop ?? 0,
+          focusId: studentId, savedAt: Date.now() });
+        router.push(`/students/${studentId}?returnTo=${encodeURIComponent(rosterHref)}`);
+      },
       onPreviousPage: () => {
         if (usesDerivedRosterFilters || isPagedLoading || !pagedHasPrevious || !pagedPreviousCursor) {
           return;

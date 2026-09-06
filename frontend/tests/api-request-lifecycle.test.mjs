@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { register } from "node:module";
 
 register("./helpers/path-alias-loader.mjs", import.meta.url);
-const { api, ApiError } = await import("../src/lib/api.ts");
+const { api, ApiError, CommandOutcomeUnknown } = await import("../src/lib/api.ts");
 const nativeFetch = globalThis.fetch;
 let server;
 let origin;
@@ -40,7 +40,7 @@ for (const kind of ["json", "error", "download", "form"]) {
     const work = kind === "download" ? api.download("/test", undefined, options)
       : kind === "form" ? api.postForm("/test", new FormData(), undefined, options)
       : api.get("/test", undefined, options);
-    await assert.rejects(work, { message: "Deadline reached" });
+    await assert.rejects(work, kind === "form" ? CommandOutcomeUnknown : { message: "Deadline reached" });
     assert.equal(receivedHeaders, true);
   });
 }
@@ -86,4 +86,25 @@ test("null disables the request timer while retaining cancellation and normal er
   });
   await assert.rejects(api.get("/test", undefined, { timeoutMs: null }),
     error => error instanceof ApiError && error.status === 403 && error.message === "Forbidden");
+});
+
+
+test("a command accepted before timeout is unknown and never automatically replayed", async () => {
+  let writes = 0;
+  useServer((_request, response) => { writes += 1; response.writeHead(200, { "content-type": "application/json", "x-request-id": "synthetic-command" }); response.write('{'); });
+  await assert.rejects(api.post("/students", { legal_first_name: "Synthetic" }, undefined, { timeoutMs: 50 }),
+    error => error instanceof CommandOutcomeUnknown && error.outcome === "unknown" && error.requestId === "synthetic-command");
+  assert.equal(writes, 1);
+});
+test("a definite command rejection retains its status", async () => {
+  useServer((_request, response) => { response.writeHead(422, { "content-type": "application/json" }); response.end('{"detail":"Invalid input"}'); });
+  await assert.rejects(api.post("/students", {}), error => error instanceof ApiError && error.status === 422);
+});
+
+
+test("idempotent import recovery copy survives an unknown command timeout", async () => {
+  useServer(() => {});
+  const message = "Confirmation was lost. Retry this same file and options with the same import key.";
+  await assert.rejects(api.postForm("/students/import", new FormData(), undefined, { timeoutMs: 40, timeoutMessage: message }),
+    error => error instanceof CommandOutcomeUnknown && error.outcome === "unknown" && error.message === message);
 });

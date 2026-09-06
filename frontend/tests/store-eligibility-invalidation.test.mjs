@@ -22,7 +22,7 @@ describe("student eligibility invalidation", () => {
     );
     assert.match(
       importActionsSource,
-      /liveRequest\.isCurrent\(\) && shouldRefreshBelts[\s\S]*onStudentMutation\(\);/
+      /canCommitLiveMutation\(liveRequest\) && shouldRefreshBelts[\s\S]*onStudentMutation\(\);/
     );
     assert.match(
       storeSource,

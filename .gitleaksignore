@@ -9,3 +9,8 @@ d77b7d55a458096765428aa3377229dd043fb553:scripts/check-env-examples.test.mjs:str
 
 # Deterministic UUID used only to prove alert-delivery concurrency serialization.
 9107d842c8300fd11c78446640d15fe904cb0086:scripts/verify-operational-alert-clear-complete-race.sh:generic-api-key:14
+
+# Public browser sessionStorage name, not a credential or access token.
+dcb03a391ccdcf566f4558573efe056126f7af86:frontend/src/lib/student-roster-location.ts:generic-api-key:25
+# The same identifier in the separate current-tree scan.
+frontend/src/lib/student-roster-location.ts:generic-api-key:25

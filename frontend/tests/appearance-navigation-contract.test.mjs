@@ -56,8 +56,8 @@ describe("Appearance preference contracts", () => {
 
 describe("authenticated navigation placement contracts", () => {
   it("uses one exact NAV_ITEMS mapping for mobile, side, and top route inventory", () => {
-    assert.equal(navigationSource.match(/NAV_ITEMS\.map\(/g)?.length, 1);
-    assert.equal(navigationSource.match(/<NavigationLinks pathname=\{pathname\} \/>/g)?.length, 3);
+    assert.equal(navigationSource.match(/NAV_ITEMS\.filter\(/g)?.length, 1);
+    assert.equal(navigationSource.match(/<NavigationLinks pathname=\{pathname\} role=\{role\} \/>/g)?.length, 3);
     assert.match(navigationSource, /prefetch=\{item\.prefetch\}/);
     assert.match(navigationSource, /pathname === href \|\| pathname\.startsWith\(`\$\{href\}\//);
     assert.equal(NAV_ITEMS.find(({ href }) => href === "/belt-tracker")?.icon, "MartialArtsBelt");
@@ -71,7 +71,6 @@ describe("authenticated navigation placement contracts", () => {
         ["/leads", undefined],
         ["/schedule", undefined],
         ["/billing", false],
-        ["/automations", false],
         ["/reports", false],
         ["/settings", false],
       ]

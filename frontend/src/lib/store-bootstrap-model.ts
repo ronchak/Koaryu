@@ -77,19 +77,16 @@ export function resolveBootstrapLadders(
       : [];
 }
 
-export function buildDeferredScheduleDateRange(now = new Date()): {
+export function buildDeferredScheduleDateRange(now = new Date(), businessDate = now.toISOString().slice(0, 10)): {
   startDate: string;
   endDate: string;
 } {
-  const start = new Date(now);
-  start.setDate(start.getDate() - 30);
-  const end = new Date(now);
-  end.setDate(end.getDate() + 60);
-
-  return {
-    startDate: start.toISOString().split("T")[0],
-    endDate: end.toISOString().split("T")[0],
+  const shift = (days: number) => {
+    const date = new Date(`${businessDate}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
   };
+  return { startDate: shift(-30), endDate: shift(60) };
 }
 
 export function isDashboardSummaryForStudio(

@@ -13,6 +13,7 @@ export function SchedulePageContent({
   activeStudents,
   attendanceError,
   canManageSchedule,
+  classFormInitialValues,
   createClassError,
   currentDate,
   deleteError,
@@ -113,6 +114,7 @@ export function SchedulePageContent({
         title="Add class"
         defaultMode={canManageSchedule ? "weekly" : "single"}
         programs={programs}
+        initialValues={classFormInitialValues}
         onSubmit={onCreateClass}
       />
     </OperationsSurface>

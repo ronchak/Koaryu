@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, CommandOutcomeUnknown } from "@/lib/api";
 import { hasStaffPermission } from "@/lib/staff-permissions";
 import {
   PIPELINE_STAGES,
@@ -61,6 +61,7 @@ export function useLeadsPageController({
   const [showLost, setShowLost] = useState(false);
   const [draggedLead, setDraggedLead] = useState<string | null>(null);
   const [dropTargetStage, setDropTargetStage] = useState<LeadStage | null>(null);
+  const [addLeadOutcomeUnknown, setAddLeadOutcomeUnknown] = useState(false);
   const [isAddingLead, setIsAddingLead] = useState(false);
   const [addLeadError, setAddLeadError] = useState<string | null>(null);
   const [pendingLeadId, setPendingLeadId] = useState<string | null>(null);
@@ -130,13 +131,15 @@ export function useLeadsPageController({
 
   function openAddLeadModal() {
     if (!canManageLeads) return;
-    setAddLeadError(null);
+    if (!addLeadOutcomeUnknown) setAddLeadError(null);
     setAddLeadProgramId(null);
     setShowAddLead(true);
   }
 
   function closeAddLeadModal() {
+    if (isAddingLead) return;
     setShowAddLead(false);
+    setAddLeadOutcomeUnknown(false);
     setAddLeadProgramId(null);
   }
 
@@ -241,18 +244,20 @@ export function useLeadsPageController({
   }
 
   async function handleAddLead(data: Partial<Lead>) {
-    if (!canManageLeads) return;
+    if (!canManageLeads || addLeadOutcomeUnknown) return;
     setAddLeadError(null);
     setActionMessage(null);
     setIsAddingLead(true);
 
     try {
       await addLead(data);
-      closeAddLeadModal();
+      setShowAddLead(false);
+      setAddLeadProgramId(null);
       setActionMessage("Lead added to the pipeline.");
     } catch (error) {
       console.error("Failed to add lead", error);
-      setAddLeadError("Could not add this lead. Please try again.");
+      if (error instanceof CommandOutcomeUnknown) setAddLeadOutcomeUnknown(true);
+      setAddLeadError(error instanceof Error ? error.message : "Could not add this lead.");
     } finally {
       setIsAddingLead(false);
     }
@@ -480,6 +485,7 @@ export function useLeadsPageController({
     handleStageDragOver,
     handleStageSelection,
     isAddingLead,
+    addLeadOutcomeUnknown,
     leadActionError,
     model,
     openAddLeadModal,

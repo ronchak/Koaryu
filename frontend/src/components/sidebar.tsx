@@ -12,7 +12,6 @@ import {
   Settings,
   UserPlus,
   Users,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { AccountMenu } from "@/components/account-menu";
@@ -48,11 +47,10 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   Settings,
   UserPlus,
   Users,
-  Zap,
 };
 
-function NavigationLinks({ pathname }: { pathname: string }) {
-  return NAV_ITEMS.map((item) => {
+function NavigationLinks({ pathname, role }: { pathname: string; role?: string | null }) {
+  return NAV_ITEMS.filter((item) => role && (!item.roles || item.roles.includes(role))).map((item) => {
     const isActive = isActiveRoute(pathname, item.href);
     const Icon = NAV_ICONS[item.icon] ?? LayoutDashboard;
     return (
@@ -110,7 +108,7 @@ export function Sidebar({
         </div>
         <nav aria-label="Product navigation">
           <ul className={styles.mobileNav}>
-            <NavigationLinks pathname={pathname} />
+            <NavigationLinks pathname={pathname} role={role} />
           </ul>
         </nav>
       </div>
@@ -122,7 +120,7 @@ export function Sidebar({
           </Link>
           <nav className={styles.commandNav} aria-label="Product navigation">
             <ul className={styles.commandList}>
-              <NavigationLinks pathname={pathname} />
+              <NavigationLinks pathname={pathname} role={role} />
             </ul>
           </nav>
           <div className={styles.commandAccount}>
@@ -173,7 +171,7 @@ export function Sidebar({
                   </button>
                 </li>
               ) : null}
-              <NavigationLinks pathname={pathname} />
+              <NavigationLinks pathname={pathname} role={role} />
             </ul>
           </nav>
           <div className={styles.accountBand}>

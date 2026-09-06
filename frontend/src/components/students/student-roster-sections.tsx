@@ -320,6 +320,7 @@ export function StudentRosterTable({
           return (
             <tr
               key={student.id}
+              data-student-id={student.id}
               data-state={student.status}
               data-focused={focusedStudentId === student.id || undefined}
               onFocusCapture={() => onFocusStudent(student.id)}
@@ -357,6 +358,7 @@ export function StudentRosterTable({
                     event.stopPropagation();
                     onOpenStudent(student.id);
                   }}
+                  data-open-student
                   aria-label={`Open ${studentName} profile`}
                   className={styles.studentIdentityButton}
                 >
@@ -507,7 +509,8 @@ export function StudentRosterReadingRail({
         variant="primary"
         size="sm"
         className={styles.openRecordButton}
-        onClick={() => onOpenStudent(student.id)}
+        data-open-student
+                      onClick={() => onOpenStudent(student.id)}
       >
         Open full record
       </Button>

@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Mapping, Optional
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from app.services.studio_business_date import studio_today
 
 from pydantic import ValidationError
 from supabase import Client
@@ -77,13 +77,7 @@ class DashboardSummaryService:
 
     @staticmethod
     def _studio_today(timezone_name: Optional[str]) -> tuple[date, str]:
-        normalized_timezone = timezone_name or "UTC"
-        try:
-            zone = ZoneInfo(normalized_timezone)
-        except (ZoneInfoNotFoundError, ValueError):
-            normalized_timezone = "UTC"
-            zone = timezone.utc
-        return datetime.now(zone).date(), normalized_timezone
+        return studio_today(timezone_name)
 
     def _fetch_studio_summary(self, studio_id: str) -> dict[str, Any]:
         return self._counts().fetch_studio_summary(studio_id)
@@ -260,6 +254,7 @@ class DashboardSummaryService:
         context: DashboardSummaryRequestContext,
         *,
         cache: DashboardSummaryFactCache[dict[str, Any]] = dashboard_summary_fact_cache,
+        fresh: bool = False,
         timings: Optional[dict[str, float]] = None,
         total_started: Optional[float] = None,
     ) -> tuple[DashboardSummaryResponse, dict[str, float]]:
@@ -282,7 +277,9 @@ class DashboardSummaryService:
             )
 
         facts_started = time.perf_counter()
-        facts = await cache.get_or_load(context.key, load_facts)
+        # Confirmed-command reconciliation must not join an older flight or
+        # depend on which worker accepted the write. Authorization above is unchanged.
+        facts = await load_facts() if fresh else await cache.get_or_load(context.key, load_facts)
         timings["facts"] = (time.perf_counter() - facts_started) * 1000
         payload = cls.assemble_fact_response(context.auth, facts)
         timings["total"] = (time.perf_counter() - total_started) * 1000

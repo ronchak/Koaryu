@@ -18,7 +18,6 @@ import {
   countDashboardTodaySessions,
 } from "@/lib/dashboard-page-model";
 import { subtractDays } from "@/lib/dashboard-page-utils";
-import { toLocalDateKey } from "@/lib/date";
 import { markPerformance } from "@/lib/performance";
 import {
   dashboardSummaryDataset,
@@ -53,8 +52,8 @@ type DashboardPageControllerOptions = {
     | "eligibilityLoadError"
     | "eligibilityPendingLadderId"
   >;
-  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode">;
-  dashboardStore: Pick<DashboardStoreContextValue, "dashboardSummary" | "dashboardSummaryLoaded">;
+  config: Pick<ConfigStoreContextValue, "businessDate" | "currentRole" | "isPreviewMode">;
+  dashboardStore: Pick<DashboardStoreContextValue, "dashboardSummary" | "dashboardSummaryLoaded" | "dashboardSummaryLoadError" | "refreshDashboardSummary">;
   leadStore: Pick<
     LeadsStoreContextValue,
     "leads" | "leadsLoaded" | "leadsLoadError" | "refreshLeads"
@@ -99,7 +98,7 @@ export function useDashboardPageController({
   } = beltStore;
   const eligibilityLoadError = beltLaddersLoadError || eligibilityReadError;
   const { currentRole, isPreviewMode } = config;
-  const { dashboardSummary, dashboardSummaryLoaded } = dashboardStore;
+  const { dashboardSummary, dashboardSummaryLoaded, dashboardSummaryLoadError, refreshDashboardSummary } = dashboardStore;
   const { leads, leadsLoaded, leadsLoadError, refreshLeads } = leadStore;
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
   const {
@@ -164,7 +163,7 @@ export function useDashboardPageController({
   const hasPartialStudentSample = !isPreviewMode && studentsMayBePartial;
   const rosterSummaryPending = hasPartialStudentSample && !summary;
   const shouldShowLocalStudentDetails = !hasPartialStudentSample;
-  const today = toLocalDateKey();
+  const today = config.businessDate;
   const canSeeBilling = canViewDashboardBilling({ currentRole, summary });
   const studentCount = students.length;
   const sessionCount = sessions.length;
@@ -179,30 +178,22 @@ export function useDashboardPageController({
   }, [summary]);
 
   const retryDashboardDatasets = useCallback(() => {
-    if (
-      (!isPreviewMode && dashboardSummaryLoaded && !dashboardSummary)
-      || eligibilityLoadError
-    ) {
-      window.location.reload();
-      return;
-    }
-
     void Promise.allSettled([
+      refreshDashboardSummary(),
+      loadEligibilityForLadder(currentLadderId, { force: true }),
       refreshStudents(),
       refreshPrograms({ includeArchived: true }),
       refreshLeads(),
       refreshSchedule(),
     ]);
-  }, [
-    dashboardSummary,
-    dashboardSummaryLoaded,
-    eligibilityLoadError,
-    isPreviewMode,
-    refreshLeads,
-    refreshPrograms,
-    refreshSchedule,
-    refreshStudents,
-  ]);
+  }, [currentLadderId, loadEligibilityForLadder, refreshDashboardSummary,
+    refreshLeads, refreshPrograms, refreshSchedule, refreshStudents]);
+
+  useEffect(() => {
+    if (!isPreviewMode && isDashboardIdentityReady) {
+      void refreshDashboardSummary().catch(() => undefined);
+    }
+  }, [isDashboardIdentityReady, isPreviewMode, refreshDashboardSummary, today]);
 
   const lookback14 = useMemo(() => subtractDays(today, 14), [today]);
   const lookback30 = useMemo(() => subtractDays(today, 30), [today]);
@@ -342,7 +333,7 @@ export function useDashboardPageController({
       onVisibleWidgetsChange,
       currentStudioId,
       currentUserId,
-      datasetLoadError: datasetReadiness.error,
+      datasetLoadError: dashboardSummaryLoadError || datasetReadiness.error,
       isDashboardDataReady: datasetReadiness.status === "ready",
       hasDashboardSummary,
       hasPartialStudentSample,

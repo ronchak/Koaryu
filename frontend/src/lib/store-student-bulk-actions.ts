@@ -1,3 +1,4 @@
+import { canCommitLiveMutation } from "@/lib/store-action-types";
 import { useCallback } from "react";
 
 import { api } from "@/lib/api";
@@ -93,7 +94,7 @@ export function useStoreStudentBulkActions({
         liveRequest.token
       );
     } catch (error) {
-      if (liveRequest.isCurrent()) {
+      if (canCommitLiveMutation(liveRequest)) {
         onStudentMutation();
         try {
           await refreshStudents();
@@ -103,7 +104,7 @@ export function useStoreStudentBulkActions({
       }
       throw error;
     }
-    if (!liveRequest.isCurrent()) {
+    if (!canCommitLiveMutation(liveRequest)) {
       return response;
     }
 
@@ -112,7 +113,7 @@ export function useStoreStudentBulkActions({
         await refreshStudents();
       } catch (error) {
         console.error("Failed to refresh students after bulk tag update", error);
-        if (liveRequest.isCurrent()) {
+        if (canCommitLiveMutation(liveRequest)) {
           commitStudents((current) => applyAddedTagsToStudents(current, normalizedStudentIds, normalizedTags), {
             mayBePartial: studentsMayBePartial,
           });
@@ -175,7 +176,7 @@ export function useStoreStudentBulkActions({
         liveRequest.token
       );
     } catch (error) {
-      if (liveRequest.isCurrent()) {
+      if (canCommitLiveMutation(liveRequest)) {
         onStudentMutation();
         try {
           await refreshStudents();
@@ -185,7 +186,7 @@ export function useStoreStudentBulkActions({
       }
       throw error;
     }
-    if (!liveRequest.isCurrent()) {
+    if (!canCommitLiveMutation(liveRequest)) {
       return response;
     }
 
@@ -194,7 +195,7 @@ export function useStoreStudentBulkActions({
         await refreshStudents();
       } catch (error) {
         console.error("Failed to refresh students after bulk status update", error);
-        if (liveRequest.isCurrent()) {
+        if (canCommitLiveMutation(liveRequest)) {
           commitStudents((current) => applyStatusToStudents(current, normalizedStudentIds, status), {
             mayBePartial: studentsMayBePartial,
           });

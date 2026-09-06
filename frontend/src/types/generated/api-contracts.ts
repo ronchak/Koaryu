@@ -953,6 +953,11 @@ export interface ApiDashboardSummaryTodaySession {
   expected_count?: number | null;
 }
 
+export interface ApiDashboardWorkspaceResponse {
+  auth: ApiAuthResponse;
+  studio?: ApiDashboardBootstrapStudioSummary | null;
+}
+
 export interface ApiDemoResetCounts {
   students: number;
   leads: number;
