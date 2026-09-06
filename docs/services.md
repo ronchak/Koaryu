@@ -213,22 +213,24 @@ vault.
 
 | Secret | Where it lives |
 | --- | --- |
-| Render API key | macOS Keychain — service `com.koaryu.render.api-key`, account `koaryu-release-automation` |
+| Render API key | Owner-managed file on the OpenClaw Mac: `/Users/openclaw/.config/koaryu/secrets/render-api-key` |
 | Supabase service role / JWT secret | Render dashboard env vars, `sync: false` |
 | Stripe keys and webhook secrets | Render dashboard env vars, `sync: false` |
 | Shared test studio password | macOS Keychain, `Koaryu Shared Core Test - NO BILLING` |
 | Non-secret account references | Obsidian vault, `Codex Memory/` |
 
-The Render key is account-wide, not per-service, and is what
-`scripts/merge-release-pr.sh` needs. Load it into a shell without printing it:
+The Render key is account-wide, not per-service. The guarded merge script needs
+it in `RENDER_API_KEY`. On the OpenClaw Mac, load the owner-managed file without
+printing its value:
 
 ```bash
-export RENDER_API_KEY="$(security find-generic-password -s com.koaryu.render.api-key -w)"
+export RENDER_API_KEY="$(</Users/openclaw/.config/koaryu/secrets/render-api-key)"
 ```
 
-It is stored under a service name that does not contain the string
-`RENDER_API_KEY`, so searching the Keychain for the environment variable's name
-finds nothing and wrongly suggests the key is missing.
+The owner confirmed this location on 2026-09-06. The previously documented Keychain
+entry, service `com.koaryu.render.api-key`, was absent on this Mac. Other machines
+may still use that Keychain entry; do not assume it exists or copy credentials into
+the repository.
 
 ## Known gaps
 
