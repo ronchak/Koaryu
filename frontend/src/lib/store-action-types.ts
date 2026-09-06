@@ -5,6 +5,7 @@ export interface StoreRef<T> {
 export interface LiveAuthRequest {
   token: string;
   isCurrent: () => boolean;
+  isSameIdentity?: () => boolean;
   canRetryAfterTokenChange?: () => boolean;
 }
 
@@ -28,4 +29,9 @@ export async function withCurrentLiveAuthRead<T>(
   const error = new Error("Session changed repeatedly. Please retry loading this data.");
   onRetryLimit(error);
   throw error;
+}
+
+// A confirmed write may settle after credential renewal, but never across access scopes.
+export function canCommitLiveMutation(request: LiveAuthRequest): boolean {
+  return request.isSameIdentity?.() ?? request.isCurrent();
 }

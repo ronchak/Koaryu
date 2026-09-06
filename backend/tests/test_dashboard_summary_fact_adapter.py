@@ -268,3 +268,49 @@ def test_no_studio_and_subscription_denial_never_reach_dashboard_rpc():
         else:
             raise AssertionError("subscription denial was not preserved")
     assert denied_client.rpc_calls == []
+
+
+def test_fresh_summary_bypasses_a_warm_cache_and_an_older_flight():
+    from app.services.dashboard_summary_cache import DashboardSummaryFactCache
+    from app.services.dashboard_summary_service import DashboardSummaryRequestContext
+
+    client = RpcBackedSupabase()
+    requested_key = key()
+    context = DashboardSummaryRequestContext(auth=auth("user-1"), key=requested_key)
+    cache = DashboardSummaryFactCache()
+    calls = []
+
+    def rpc_handler(_params):
+        calls.append(1)
+        facts = facts_for(requested_key)
+        facts["students"]["total_students"] = 4
+        return facts
+
+    client._rpc_dashboard_summary_facts = rpc_handler
+
+    async def exercise():
+        old = facts_for(requested_key)
+        async def old_loader():
+            return old
+        await cache.get_or_load(requested_key, old_loader)
+        cached, _ = await DashboardSummaryService.get_dashboard_summary_from_fact_context(client, context, cache=cache)
+        assert cached.students.total_students == 3
+        assert calls == []
+        fresh, _ = await DashboardSummaryService.get_dashboard_summary_from_fact_context(client, context, cache=cache, fresh=True)
+        assert fresh.students.total_students == 4
+        assert calls == [1]
+        # An in-flight read in any other worker cannot be joined by fresh=True.
+        other_cache = DashboardSummaryFactCache()
+        started, release = asyncio.Event(), asyncio.Event()
+        async def slow_loader():
+            started.set()
+            await release.wait()
+            return old
+        pending = asyncio.create_task(other_cache.get_or_load(requested_key, slow_loader))
+        await started.wait()
+        fresh, _ = await DashboardSummaryService.get_dashboard_summary_from_fact_context(client, context, cache=other_cache, fresh=True)
+        assert fresh.students.total_students == 4
+        release.set()
+        await pending
+
+    asyncio.run(exercise())

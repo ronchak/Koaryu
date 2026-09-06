@@ -17,6 +17,11 @@ class DashboardBootstrapStudioSummary(BaseModel):
     logo_url: Optional[str] = None
 
 
+class DashboardWorkspaceResponse(BaseModel):
+    auth: AuthResponse
+    studio: Optional[DashboardBootstrapStudioSummary] = None
+
+
 class DashboardBootstrapDatasetErrors(BaseModel):
     studio: Optional[str] = None
     students: Optional[str] = None

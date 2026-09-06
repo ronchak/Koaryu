@@ -11,7 +11,7 @@ import {
   useStudentFormState,
   type StudentFormInitialData,
 } from "@/components/students/student-form-state";
-import { useProgramStore } from "@/lib/store";
+import { useProgramStore, useConfigStore } from "@/lib/store";
 import { X } from "lucide-react";
 
 interface StudentFormBaseProps {
@@ -33,6 +33,7 @@ type StudentFormProps =
 export function StudentForm(props: StudentFormProps) {
   const { onClose, isLoading, initialData, canManageLifecycle = true } = props;
   const { programs } = useProgramStore();
+  const { businessDate } = useConfigStore();
   const isEdit = !!initialData;
   const submitFormPayload = (data: StudentCreate | StudentUpdate) => {
     if (initialData) {
@@ -40,8 +41,9 @@ export function StudentForm(props: StudentFormProps) {
     }
     return (props.onSubmit as (data: StudentCreate) => Promise<void> | void)(data as StudentCreate);
   };
-  const { error, fields, handleSubmit, setField, setTab, tab } = useStudentFormState({
+  const { error, outcomeUnknown, fields, handleSubmit, setField, setTab, tab } = useStudentFormState({
     initialData,
+    businessDate,
     includeLifecycleFields: canManageLifecycle,
     onSubmit: submitFormPayload,
   });
@@ -340,7 +342,7 @@ export function StudentForm(props: StudentFormProps) {
               <Button type="button" variant="ghost" size="sm" onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary" size="sm" isLoading={isLoading}>
+              <Button type="submit" variant="primary" size="sm" isLoading={isLoading} disabled={outcomeUnknown}>
                 {isEdit ? "Save changes" : "Add student"}
               </Button>
             </div>

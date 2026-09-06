@@ -118,7 +118,7 @@ This uses Next.js 16's built-in Turbopack analyzer (`next build --experimental-a
 
 ## Performance Rollout
 
-See [docs/performance-rollout.md](../docs/performance-rollout.md) before enabling the v0.1.1 rendering changes in production. The short version: keep `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER=true`, let the dashboard summary load after bootstrap, and use the documented switches only for rollback or short diagnostic windows.
+See [docs/performance-rollout.md](../docs/performance-rollout.md) before enabling the v0.1.1 rendering changes in production. The short version: keep `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER=true`, let the dashboard route own summary loading after workspace access is verified, and use the documented switches only for rollback or short diagnostic windows.
 
 ## Authenticated loading
 
@@ -214,3 +214,24 @@ missing studio/program/belt metadata remains explicit and retryable. Older
 frontends retain strict failure behavior. A same-identity token renewal keeps an
 in-flight Schedule range caller attached to the existing reconciliation owner;
 it cannot hide the newly reconciled range or replay attendance mutations.
+
+
+## Workflow resource ownership
+
+`/dashboard/workspace` establishes authoritative membership, subscription access and
+studio timezone before feature reads. Student detail always ensures a complete
+record independently of the lightweight roster. Dashboard commands reconcile with
+`/dashboard/summary?fresh=true`; a failed refresh keeps known data and reports a
+warning. Token renewal preserves confirmed writes and roster position only within
+the same validated identity scope.
+
+Roster URLs retain bounded filters/sort. One identity-scoped session return record
+retains cursor/scroll/focus for 30 minutes. Unknown write outcomes must not be
+replayed automatically. Automations is a planned feature under Help for the Core
+release. See `docs/verification/workflow-stabilization.md` for evidence and limits.
+
+Run deterministic live-mode workflow checks without any external data plane:
+
+```bash
+node --experimental-strip-types --test tests/workflow-stabilization-mounted.test.mjs
+```

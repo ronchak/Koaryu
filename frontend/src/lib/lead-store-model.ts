@@ -9,6 +9,7 @@ export function buildPreviewLead(
   }: {
     idFactory: () => string;
     now?: Date;
+    businessDate?: string;
   }
 ): Lead {
   const nowIso = now.toISOString();
@@ -68,16 +69,18 @@ export function buildPreviewLeadConversion(
     beltRanks = [],
     idFactory,
     now = new Date(),
+    businessDate,
   }: {
     beltLadders?: BeltLadder[];
     beltRanks?: BeltRank[];
     idFactory: () => string;
     now?: Date;
+    businessDate?: string;
   }
 ): { lead: Lead; student: Student; studentId: string } {
   const studentId = idFactory();
   const nowIso = now.toISOString();
-  const membershipStartDate = nowIso.split("T")[0];
+  const membershipStartDate = businessDate ?? nowIso.split("T")[0];
   const selectedProgramId = lead.program_id || "program-unassigned";
   const selectedProgram = programs.find((program) => program.id === selectedProgramId);
   const startingRankId = findPreviewStartingRankId(selectedProgramId, beltLadders, beltRanks);

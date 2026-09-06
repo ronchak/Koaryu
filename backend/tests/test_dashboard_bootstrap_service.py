@@ -225,7 +225,57 @@ def test_bootstrap_endpoint_forwards_partial_opt_in_without_changing_private_hea
 
     with patch("app.api.v1.endpoints.dashboard.run_supabase_operation", side_effect=run_operation), patch.object(DashboardBootstrapService, "get_dashboard_bootstrap", new=AsyncMock(return_value=(payload, timings))) as bootstrap:
         result = asyncio.run(get_dashboard_bootstrap(response, allow_partial=allow_partial, user_id="partial-user", requested_studio_id="partial-studio", supabase=provider))
-    bootstrap.assert_awaited_once_with("partial-user", "partial-studio", provider_owned=True, allow_partial=allow_partial)
+    bootstrap.assert_awaited_once_with("partial-user", "partial-studio", provider_owned=True, allow_partial=allow_partial, view="dashboard")
     assert result is payload
     assert "private" in response.headers["cache-control"]
     assert "server-timing" in response.headers
+
+
+def test_workspace_does_not_load_feature_projections_and_keeps_subscription_enforcement():
+    from unittest.mock import Mock
+    profile = AuthResponse(user=UserProfile(id="fixture-user", email="fixture@example.test"),
+                           staff_profiles_available=True, membership_status="active", studio_id="fixture-studio", role="admin")
+    client = Mock()
+    service = DashboardBootstrapService(client)
+    studio = {"id": "fixture-studio", "name": "Fixture", "slug": "fixture", "timezone": "America/Los_Angeles"}
+    with patch("app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync", return_value=profile), \
+         patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access") as access, \
+         patch.object(service, "_fetch_studio_summary", return_value=SimpleNamespace(data=studio)), \
+         patch.object(service, "_fetch_students") as students, \
+         patch.object(service, "_fetch_leads") as leads, \
+         patch.object(service, "_fetch_belt_ladders") as belts:
+        result = service.get_workspace_sync("fixture-user", "fixture-studio")
+        assert result.auth == profile
+        assert result.studio.timezone == "America/Los_Angeles"
+        access.assert_called_once_with(client, "fixture-studio")
+        students.assert_not_called()
+        leads.assert_not_called()
+        belts.assert_not_called()
+        access.side_effect = HTTPException(status_code=402, detail="Subscription required")
+        with pytest.raises(HTTPException) as error:
+            service.get_workspace_sync("fixture-user", "fixture-studio")
+        assert error.value.status_code == 402
+
+
+def test_students_bootstrap_omits_unrelated_lead_and_belt_queries():
+    profile = AuthResponse(user=UserProfile(id="fixture-user", email="fixture@example.test"),
+                           staff_profiles_available=True, membership_status="active", studio_id="fixture-studio", role="admin")
+    service = DashboardBootstrapService(SimpleNamespace(options=SimpleNamespace(postgrest_client_timeout=10)))
+    labels = []
+    def fetch(label, *_args):
+        labels.append(label)
+        if label == "studio":
+            value = SimpleNamespace(data={"id": "fixture-studio", "name": "Fixture", "slug": "fixture", "timezone": "UTC"})
+        elif label == "students":
+            value = SimpleNamespace(data=[], count=0)
+        elif label == "programs":
+            value = []
+        else:
+            raise AssertionError(f"Unrelated projection: {label}")
+        return value, (label, 0)
+    with patch("app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync", return_value=profile), \
+         patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"), \
+         patch.object(service, "_timed_fetch_with_isolated_client", side_effect=fetch):
+        result, _ = asyncio.run(service.get_dashboard_bootstrap("fixture-user", provider_owned=True, view="students"))
+    assert sorted(labels) == ["programs", "students", "studio"]
+    assert result.students == []

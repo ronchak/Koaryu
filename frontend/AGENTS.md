@@ -29,6 +29,7 @@ Use this file for work under `frontend/`. Fall back to the repo root `AGENTS.md`
 - Lint specific files: `cd frontend && npm run lint -- src/path/to/file.tsx`
 - Test: `cd frontend && npm run test`
 - First test setup on a fresh machine: `cd frontend && npx playwright install chromium` for mounted lifecycle tests. Linux CI uses `--with-deps`.
+- Live-mode workflow regressions (synthetic auth/I/O, no external data): `cd frontend && node --experimental-strip-types --test tests/workflow-stabilization-mounted.test.mjs`
 - Preview smoke e2e: `cd frontend && npm run test:e2e:preview-smoke` against a running preview-mode frontend
 - Build: `cd frontend && npm run build`
 - Analyze bundle: `cd frontend && npm run analyze`

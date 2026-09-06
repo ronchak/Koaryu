@@ -65,6 +65,8 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     currentUserId,
     dashboardSummary,
     dashboardSummaryLoaded,
+    dashboardSummaryLoadError,
+    refreshDashboardSummary,
     deleteLead,
     deleteSession,
     deleteStudentPhoto,
@@ -77,6 +79,8 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     importStudents,
     inviteStaff,
     isPreviewMode,
+    businessDate,
+    studioTimezone,
     legalFirstName,
     legalLastName,
     ladderName,
@@ -148,17 +152,21 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
 
   const configValue = useMemo<ConfigStoreContextValue>(() => ({
     isPreviewMode,
+    businessDate,
+    studioTimezone,
     token,
     subscriptionRequired,
     markSubscriptionRequired,
     clearSubscriptionRequired,
     currentRole,
-  }), [clearSubscriptionRequired, currentRole, isPreviewMode, markSubscriptionRequired, subscriptionRequired, token]);
+  }), [businessDate, studioTimezone, clearSubscriptionRequired, currentRole, isPreviewMode, markSubscriptionRequired, subscriptionRequired, token]);
 
   const dashboardValue = useMemo<DashboardStoreContextValue>(() => ({
     dashboardSummary,
     dashboardSummaryLoaded,
-  }), [dashboardSummary, dashboardSummaryLoaded]);
+    dashboardSummaryLoadError,
+    refreshDashboardSummary,
+  }), [dashboardSummary, dashboardSummaryLoaded, dashboardSummaryLoadError, refreshDashboardSummary]);
 
   const studentsValue = useMemo<StudentsStoreContextValue>(() => ({
     studentsLoaded,

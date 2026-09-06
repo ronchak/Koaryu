@@ -1,3 +1,4 @@
+import { canCommitLiveMutation } from "@/lib/store-action-types";
 import { useCallback } from "react";
 
 import { api } from "@/lib/api";
@@ -70,7 +71,7 @@ export function useStoreStudentPhotoActions({
       body,
       liveRequest.token
     );
-    if (!liveRequest.isCurrent()) {
+    if (!canCommitLiveMutation(liveRequest)) {
       return updated;
     }
     commitStudents(
@@ -121,7 +122,7 @@ export function useStoreStudentPhotoActions({
     studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
     const updated = await api.delete<Student>(`/students/${studentId}/photo`, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
+    if (!canCommitLiveMutation(liveRequest)) {
       return updated;
     }
     commitStudents(

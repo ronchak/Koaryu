@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from app.services.studio_business_date import studio_today
 from typing import Optional
 from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
@@ -188,6 +188,11 @@ class LeadService:
             guardian_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{studio_id}:{lead_id}:guardian"))
             link_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{student_id}:{guardian_id}:link"))
 
+        membership_start_date = data.membership_start_date
+        if not membership_start_date:
+            studio = self.supabase.table("studios").select("timezone").eq("id", studio_id).single().execute()
+            membership_start_date = studio_today((studio.data or {}).get("timezone"))[0].isoformat()
+
         result = execute_required_rpc(self.supabase, "convert_lead_to_student_atomic", {
             "p_studio_id": studio_id,
             "p_actor_id": actor_id,
@@ -195,7 +200,7 @@ class LeadService:
             "p_student_id": student_id,
             "p_program_id": program_id,
             "p_status": data.status,
-            "p_membership_start_date": data.membership_start_date or str(date.today()),
+            "p_membership_start_date": membership_start_date,
             "p_guardian_id": guardian_id,
             "p_student_guardian_id": link_id,
         })

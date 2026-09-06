@@ -1,3 +1,5 @@
+import { CommandOutcomeUnknown } from "./command-outcome.ts";
+export { CommandOutcomeUnknown } from "./command-outcome.ts";
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import { serializeJsonRequestBody } from "@/lib/api-body";
 import { applyBrowserStudioHeader } from "@/lib/api-studio-header";
@@ -138,14 +140,24 @@ async function executeApiRequest<T>(
   }
 
   let receivedHeaders = false;
+  let requestId: string | undefined;
+  let dispatched = false;
+  const isCommand = !["GET", "HEAD", "OPTIONS"].includes(init.method ?? "GET");
   try {
+    dispatched = !controller.signal.aborted;
     const response = await fetch(apiUrl(path), {
       ...init,
       signal: controller.signal,
     });
     receivedHeaders = true;
+    const diagnosticId = response.headers.get("x-request-id");
+    if (diagnosticId && /^[a-zA-Z0-9_-]{1,64}$/.test(diagnosticId)) requestId = diagnosticId;
     return await consume(response);
   } catch (error) {
+    // A transport abort, 5xx response, or lost success body cannot prove rollback.
+    if (isCommand && dispatched && (!(error instanceof ApiError) || error.status >= 500)) {
+      throw new CommandOutcomeUnknown(requestId);
+    }
     if (abortReason !== null || (error instanceof Error && error.name === "AbortError")) {
       if (abortReason === "timeout") {
         throw new Error(timeoutMessage);

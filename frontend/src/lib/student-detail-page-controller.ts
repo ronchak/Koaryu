@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { safeStudentsReturn } from "@/lib/student-roster-location";
 import { api } from "@/lib/api";
-import { toLocalDateKey } from "@/lib/date";
 import {
   buildStudentDetailModel,
   validateStudentPhotoFile,
@@ -13,6 +13,7 @@ import type {
   ConfigStoreContextValue,
   ProgramsStoreContextValue,
   StudentsStoreContextValue,
+  StudioStoreContextValue,
 } from "@/lib/store-contexts";
 import { hasStaffPermission } from "@/lib/staff-permissions";
 import type { BeltLadder, Promotion, Student, StudentUpdate } from "@/types";
@@ -24,7 +25,8 @@ type StudentDetailPageControllerOptions = {
     BeltsStoreContextValue,
     "beltLadders" | "loadPromotionHistory" | "promotionHistoryByStudent"
   >;
-  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode" | "token">;
+  studioStore: Pick<StudioStoreContextValue, "identityGeneration">;
+  config: Pick<ConfigStoreContextValue, "businessDate" | "currentRole" | "isPreviewMode" | "token">;
   programsStore: Pick<ProgramsStoreContextValue, "programs">;
   studentsStore: Pick<
     StudentsStoreContextValue,
@@ -40,11 +42,13 @@ type StudentDetailPageControllerOptions = {
 export function useStudentDetailPageController({
   beltStore,
   config,
+  studioStore,
   programsStore,
   studentsStore,
 }: StudentDetailPageControllerOptions) {
   const params = useParams();
   const router = useRouter();
+  const returnTo = safeStudentsReturn(useSearchParams().get("returnTo"));
   const id = params.id as string;
   const { isPreviewMode, token } = config;
   const canManageRoster = hasStaffPermission(config.currentRole, "manage_roster_bulk");
@@ -69,7 +73,16 @@ export function useStudentDetailPageController({
 
   const [showEdit, setShowEdit] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [hydratedStudent, setHydratedStudent] = useState<Student | null>(null);
+  const scope = `${studioStore.identityGeneration}:${id}`;
+  const currentScope = useRef(scope);
+  useEffect(() => { currentScope.current = scope; }, [scope]);
+  const detailRevision = useRef(0);
+  const [hydration, setHydration] = useState<{ scope: string; student: Student } | null>(null);
+  const hydratedStudent = hydration?.scope === scope ? hydration.student : null;
+  const setHydratedStudent = (student: Student) => {
+    if (currentScope.current === scope) setHydration({ scope, student });
+  };
+  const [retryNonce, setRetryNonce] = useState(0);
   const [isLoadingStudent, setIsLoadingStudent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fallbackBeltLadders, setFallbackBeltLadders] = useState<BeltLadder[]>([]);
@@ -107,33 +120,8 @@ export function useStudentDetailPageController({
     const controller = new AbortController();
 
     async function loadStudent() {
-      if (isPreviewMode || !token) {
-        if (mounted) {
-          setHydratedStudent(null);
-          setLoadError(null);
-          setIsLoadingStudent(false);
-        }
-        return;
-      }
-
-      if (listStudent) {
-        if (mounted) {
-          setHydratedStudent(null);
-          setLoadError(null);
-          setIsLoadingStudent(false);
-        }
-        return;
-      }
-
-      if (!studentsLoaded) {
-        if (mounted) {
-          setHydratedStudent(null);
-          setLoadError(null);
-          setIsLoadingStudent(false);
-        }
-        return;
-      }
-
+      if (isPreviewMode || !token) return;
+      const revision = detailRevision.current;
       setIsLoadingStudent(true);
       setLoadError(null);
 
@@ -141,8 +129,8 @@ export function useStudentDetailPageController({
         const result = await api.get<Student>(`/students/${id}`, token, {
           signal: controller.signal,
         });
-        if (mounted) {
-          setHydratedStudent(result);
+        if (mounted && currentScope.current === scope && detailRevision.current === revision) {
+          setHydration({ scope, student: result });
         }
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
@@ -164,7 +152,7 @@ export function useStudentDetailPageController({
       mounted = false;
       controller.abort();
     };
-  }, [id, isPreviewMode, listStudent, studentsLoaded, token]);
+  }, [id, isPreviewMode, retryNonce, scope, token]);
 
   useEffect(() => {
     let mounted = true;
@@ -255,7 +243,8 @@ export function useStudentDetailPageController({
     };
   }, [cachedPromotionHistory, id, isPreviewMode, loadPromotionHistoryForStudent, token]);
 
-  const student = hydratedStudent?.id === id ? hydratedStudent : listStudent;
+  const student = hydratedStudent ?? listStudent;
+  const detailReady = isPreviewMode ? Boolean(student) : Boolean(hydratedStudent);
   const promotionHistory = promotionHistoryState?.studentId === id
     ? promotionHistoryState.items
     : EMPTY_PROMOTION_HISTORY;
@@ -270,14 +259,15 @@ export function useStudentDetailPageController({
             beltLadders,
             promotionHistory,
             student,
-            today: toLocalDateKey(),
+            today: config.businessDate,
           })
         : null,
-    [beltLadders, promotionHistory, student]
+    [beltLadders, config.businessDate, promotionHistory, student]
   );
 
   async function handleEdit(data: StudentUpdate) {
-    if (!student) return;
+    if (!student || !detailReady) return;
+    detailRevision.current += 1;
     setIsSaving(true);
     setActionMessage(null);
     try {
@@ -291,14 +281,14 @@ export function useStudentDetailPageController({
   }
 
   async function handleDeleteStudent() {
-    if (!canManageRoster) return;
+    if (!canManageRoster || !detailReady) return;
 
     setIsDeleting(true);
     setDeleteError(null);
 
     try {
       await deleteStudents([id]);
-      router.push("/students");
+      router.push(returnTo);
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Failed to archive student.");
       setIsDeleting(false);
@@ -306,6 +296,8 @@ export function useStudentDetailPageController({
   }
 
   async function handlePhotoSelected(file: File): Promise<boolean> {
+    if (!canManageRoster || !detailReady) return false;
+    detailRevision.current += 1;
     const validationError = validateStudentPhotoFile(file);
     if (validationError) {
       setPhotoError(validationError);
@@ -339,7 +331,8 @@ export function useStudentDetailPageController({
   }
 
   async function handleDeletePhoto() {
-    if (!canManageRoster) return;
+    detailRevision.current += 1;
+    if (!canManageRoster || !detailReady) return;
 
     setPhotoError(null);
     setActionMessage(null);
@@ -368,9 +361,10 @@ export function useStudentDetailPageController({
       canManageStudentLifecycle,
       deleteError,
       detail,
+      detailReady,
       isDeleting,
       isLoadingBeltData,
-      isLoadingStudent: !student && (!studentsLoaded || isLoadingStudent),
+      isLoadingStudent: !student && !loadError && (!studentsLoaded || isLoadingStudent || !detailReady),
       isPhotoSaving,
       isSaving,
       loadError,
@@ -381,19 +375,20 @@ export function useStudentDetailPageController({
       showDeleteConfirm,
       showEdit,
       student,
-      onBackToStudents: () => router.push("/students"),
+      onBackToStudents: () => router.push(returnTo),
       onCancelDelete: () => {
         setShowDeleteConfirm(false);
         setDeleteError(null);
       },
-      onCloseEdit: () => setShowEdit(false),
+      onCloseEdit: () => { if (!isSaving) setShowEdit(false); },
+      onRetryDetail: () => setRetryNonce((value) => value + 1),
       onDeletePhoto: handleDeletePhoto,
       onDeleteStudent: handleDeleteStudent,
       onDismissActionMessage: () => setActionMessage(null),
       onEdit: handleEdit,
       onPhotoSelected: handlePhotoSelected,
-      onShowDeleteConfirm: () => setShowDeleteConfirm(true),
-      onShowEdit: () => setShowEdit(true),
+      onShowDeleteConfirm: () => { if (detailReady) setShowDeleteConfirm(true); },
+      onShowEdit: () => { if (detailReady) setShowEdit(true); },
     },
   };
 }

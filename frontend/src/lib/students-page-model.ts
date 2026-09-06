@@ -81,7 +81,7 @@ interface StudentRosterEmptyStateInput {
 
 export function formatDate(d?: string | null) {
   if (!d) return "\u2014";
-  return new Date(d).toLocaleDateString("en-US", {
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T12:00:00` : d).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",

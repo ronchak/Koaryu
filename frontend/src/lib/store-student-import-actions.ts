@@ -1,3 +1,4 @@
+import { canCommitLiveMutation, withCurrentLiveAuthRead } from "@/lib/store-action-types";
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 
 import { api } from "@/lib/api";
@@ -110,7 +111,7 @@ export function useStoreStudentImportActions({
           "The connection dropped before Koaryu could confirm the import finished. Wait a moment, then retry with this same file and options so Koaryu can avoid duplicate students.",
       }
     );
-    if (!liveRequest.isCurrent()) {
+    if (!canCommitLiveMutation(liveRequest)) {
       return result;
     }
 
@@ -133,13 +134,15 @@ export function useStoreStudentImportActions({
       refreshWarnings.push(`Import data was saved, but Koaryu could not refresh the Programs list afterward. ${message}`);
     }
 
+    if (!canCommitLiveMutation(liveRequest)) return result;
     const mutationEpoch = studentMutationEpochRef.current;
     const requestSequence = studentRosterRequestSequenceRef.current + 1;
     studentRosterRequestSequenceRef.current = requestSequence;
     const studentsRefresh = await Promise.allSettled([
-      fetchAllStudents(liveRequest.token, { timeoutMs: 30000 }).then((refreshedStudents) => {
+      withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
+        const refreshedStudents = await fetchAllStudents(request.token, { timeoutMs: 30000 });
         if (isStudentRosterSnapshotCurrent({
-          authCurrent: liveRequest.isCurrent(),
+          authCurrent: request.isCurrent() && canCommitLiveMutation(liveRequest),
           currentMutationEpoch: studentMutationEpochRef.current,
           currentRequestSequence: studentRosterRequestSequenceRef.current,
           mutationEpochAtStart: mutationEpoch,
@@ -147,14 +150,14 @@ export function useStoreStudentImportActions({
         })) {
           commitStudents(refreshedStudents);
         }
-      }),
+      }, () => {}),
     ]);
     if (studentsRefresh[0].status === "rejected") {
       const message = studentsRefresh[0].reason instanceof Error
         ? studentsRefresh[0].reason.message
         : "Failed to refresh students after import.";
       if (isStudentRosterSnapshotCurrent({
-        authCurrent: liveRequest.isCurrent(),
+        authCurrent: canCommitLiveMutation(liveRequest),
         currentMutationEpoch: studentMutationEpochRef.current,
         currentRequestSequence: studentRosterRequestSequenceRef.current,
         mutationEpochAtStart: mutationEpoch,
@@ -177,7 +180,7 @@ export function useStoreStudentImportActions({
       }
     }
 
-    if (liveRequest.isCurrent() && shouldRefreshBelts) {
+    if (canCommitLiveMutation(liveRequest) && shouldRefreshBelts) {
       onStudentMutation();
     }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { CommandOutcomeUnknown } from "../../lib/command-outcome.ts";
 import { useCallback, useState, type FormEvent } from "react";
 import type { GuardianCreate, StudentCreate, StudentStatus, StudentUpdate } from "@/types";
 
@@ -250,6 +251,7 @@ export function buildStudentFormSubmitPayload(
 type UseStudentFormStateOptions =
   {
     initialData?: StudentFormInitialData;
+    businessDate?: string;
     includeLifecycleFields?: boolean;
     onSubmit: (data: StudentCreate | StudentUpdate) => Promise<void> | void;
   };
@@ -257,8 +259,11 @@ type UseStudentFormStateOptions =
 export function useStudentFormState(options: UseStudentFormStateOptions) {
   const [tab, setTab] = useState<StudentFormTab>("info");
   const [error, setError] = useState("");
+  const [outcomeUnknown, setOutcomeUnknown] = useState(false);
   const initialData = options.initialData;
-  const [fields, setFields] = useState(() => buildInitialStudentFormFields(initialData));
+  const [fields, setFields] = useState(() => ({ ...buildInitialStudentFormFields(initialData),
+    ...(!initialData && options.businessDate ? { membershipStart: options.businessDate } : {}),
+  }));
 
   const setField = useCallback(<Field extends keyof StudentFormFields>(
     field: Field,
@@ -269,6 +274,7 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (outcomeUnknown) return;
     setError("");
 
     const validation = validateStudentFormFields(fields, {
@@ -285,12 +291,14 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
         includeLifecycleFields: options.includeLifecycleFields,
       }));
     } catch (err: unknown) {
+      if (err instanceof CommandOutcomeUnknown) setOutcomeUnknown(true);
       setError(err instanceof Error ? err.message : "Failed to add student");
     }
   }
 
   return {
     error,
+    outcomeUnknown,
     fields,
     handleSubmit,
     setField,

@@ -1,3 +1,4 @@
+import { canCommitLiveMutation } from "./store-action-types.ts";
 type Ref<T> = { current: T };
 
 type LiveRequest = { token: string; isCurrent: () => boolean };
@@ -59,15 +60,16 @@ export async function deleteStudentsAction<T extends { id: string }>(
   try {
     await options.postArchive(liveRequest.token, normalizedIds);
   } catch (error) {
-    if (liveRequest.isCurrent()) {
+    if (canCommitLiveMutation(liveRequest)) {
       options.onStudentMutation();
       try {
         const mutationEpoch = options.studentMutationEpochRef.current;
         const requestSequence = options.studentRosterRequestSequenceRef.current + 1;
         options.studentRosterRequestSequenceRef.current = requestSequence;
-        const nextStudents = await options.fetchAllStudents(liveRequest.token, { timeoutMs: 30000 });
+        const readRequest = options.beginLiveAuthRequest();
+        const nextStudents = await options.fetchAllStudents(readRequest.token, { timeoutMs: 30000 });
         if (options.isStudentRosterSnapshotCurrent({
-          authCurrent: liveRequest.isCurrent(),
+          authCurrent: readRequest.isCurrent() && canCommitLiveMutation(liveRequest),
           currentMutationEpoch: options.studentMutationEpochRef.current,
           currentRequestSequence: options.studentRosterRequestSequenceRef.current,
           mutationEpochAtStart: mutationEpoch,
@@ -82,7 +84,7 @@ export async function deleteStudentsAction<T extends { id: string }>(
     throw error;
   }
 
-  if (!liveRequest.isCurrent()) return;
+  if (!canCommitLiveMutation(liveRequest)) return;
   const idSet = new Set(normalizedIds);
   options.commitStudents(
     (current) => current.filter((student) => !idSet.has(student.id)),

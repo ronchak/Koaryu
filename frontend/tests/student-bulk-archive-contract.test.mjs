@@ -26,6 +26,6 @@ describe("live student bulk archive seam", () => {
     assert.match(actionSource, /onStudentMutation\(\)/);
     assert.match(actionSource, /fetchAllStudents\(/);
     assert.match(actionSource, /isStudentRosterSnapshotCurrent\(/);
-    assert.match(actionSource, /if \(!liveRequest\.isCurrent\(\)/);
+    assert.match(actionSource, /if \(!canCommitLiveMutation\(liveRequest\)/);
   });
 });

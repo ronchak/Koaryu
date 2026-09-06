@@ -255,8 +255,8 @@ def test_all_request_provider_dependencies_are_wrapped_and_lane_mapping_is_expli
                         and call.args[0].id == "supabase"
                     ), f"{path.name}:{node.name} constructs a service from the dependency"
 
-    assert dependency_count == 140
-    for name in ("get_billing_landing", "get_invoices_page", "get_payments_page"):
+    assert dependency_count == 141
+    for name in ("get_dashboard_workspace", "get_billing_landing", "get_invoices_page", "get_payments_page"):
         assert lane_by_function[name] == "interactive"
     assert wrapped_count == dependency_count
     assert {name for name, lane in lane_by_function.items() if lane == "bulk"} == EXPECTED_BULK_FUNCTIONS

@@ -14,13 +14,12 @@ import { LostLeadsSection } from "@/components/leads/lost-leads-section";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { useLeadsPageController } from "@/lib/leads-page-controller";
-import { todayDateString } from "@/lib/leads-page-model";
 import { useConfigStore, useLeadStore, useProgramStore, useStudioStore } from "@/lib/store";
 import { UserPlus } from "lucide-react";
 import styles from "@/components/leads/leads-ledger.module.css";
 
 export default function LeadsPage() {
-  const { currentRole, isPreviewMode, token } = useConfigStore();
+  const { currentRole, isPreviewMode, token, businessDate } = useConfigStore();
   const { programs, programsLoaded, programsLoadError } = useProgramStore();
   const { staffMembers, staffLoaded, staffLoadError, refreshStaff, identityReady, identityGeneration } = useStudioStore();
   const {
@@ -45,7 +44,7 @@ export default function LeadsPage() {
   useEffect(() => markDashboardReadiness("leads", identityGeneration, {
     useful: usefulReady, complete: completeReady,
   }), [identityGeneration, usefulReady, completeReady]);
-  const today = todayDateString();
+  const today = businessDate;
   const controller = useLeadsPageController({
     addLead,
     baseLeads,

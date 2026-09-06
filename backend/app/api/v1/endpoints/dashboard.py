@@ -1,11 +1,11 @@
 import time
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Response
 from app.core.deps import ProviderDependency, run_supabase_operation
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
-from app.schemas.dashboard_bootstrap import DashboardBootstrapResponse
+from app.schemas.dashboard_bootstrap import DashboardBootstrapResponse, DashboardWorkspaceResponse
 from app.schemas.dashboard_summary import DashboardSummaryResponse
 from app.services.dashboard_bootstrap_service import DashboardBootstrapService
 from app.services.dashboard_summary_service import (
@@ -27,6 +27,22 @@ def _set_private_dashboard_headers(
         response.headers["Server-Timing"] = server_timing
 
 
+@router.get("/workspace", response_model=DashboardWorkspaceResponse)
+async def get_dashboard_workspace(
+    response: Response,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    payload = await run_supabase_operation(
+        supabase,
+        lambda client: DashboardBootstrapService(client).get_workspace_sync(user_id, requested_studio_id),
+        lane="interactive",
+    )
+    _set_private_dashboard_headers(response)
+    return payload
+
+
 @router.get("/bootstrap", response_model=DashboardBootstrapResponse)
 async def get_dashboard_bootstrap(
     response: Response,
@@ -34,6 +50,7 @@ async def get_dashboard_bootstrap(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
+    view: Literal["dashboard", "students", "billing"] = "dashboard",
 ):
     async def _provider_operation(client):
         """Return the critical initial dashboard payload in a single request."""
@@ -43,6 +60,7 @@ async def get_dashboard_bootstrap(
             requested_studio_id,
             provider_owned=True,
             allow_partial=allow_partial,
+            view=view,
         )
     payload, timings = await run_supabase_operation(
         supabase,
@@ -60,6 +78,7 @@ async def get_dashboard_summary(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
+    fresh: bool = False,
 ):
     total_started = time.perf_counter()
     context_started = time.perf_counter()
@@ -77,6 +96,7 @@ async def get_dashboard_summary(
         context,
         timings=timings,
         total_started=total_started,
+        fresh=fresh,
     )
     server_timing = DashboardSummaryService.server_timing_value(timings)
     _set_private_dashboard_headers(response, server_timing)

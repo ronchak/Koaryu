@@ -1,5 +1,10 @@
 "use client";
 
+import type { ApiDashboardWorkspaceResponse } from "@/types/generated/api-contracts";
+import { useReconciledProjectionCommand } from "@/lib/store-projection-reconciliation";
+import { useStudioDay } from "@/lib/use-studio-day";
+import { beginResourceMutation, createResourceScope } from "@/lib/store-resource-scope";
+
 import React, { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -93,7 +98,6 @@ import {
   buildDeferredScheduleDateRange,
   buildSessionUserProfile,
   isStaffProfilesAvailable,
-  isDashboardSummaryForStudio,
   isLiveAuthRequestCurrent,
   parseAuthProfileResponse,
   resolveBootstrapLadders,
@@ -131,10 +135,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
   const [hydrated, setHydrated] = useState(false);
   const [subscriptionRequired, setSubscriptionRequired] = useState(false);
+  const [initialFeaturePending, setInitialFeaturePending] = useState(true);
+  const [studioTimezone, setStudioTimezone] = useState("UTC");
+  const businessDate = useStudioDay(studioTimezone);
+  const businessDateRef = useRef(businessDate);
+  useEffect(() => { businessDateRef.current = businessDate; }, [businessDate]);
   const [identityReady, setIdentityReady] = useState(false);
   const [identityLoadError, setIdentityLoadError] = useState<string | null>(null);
   const [identityGeneration, setIdentityGeneration] = useState(0);
   const authoritativeIdentityRef = useRef<string | null>(null);
+  const authoritativeStudioIdRef = useRef<string | null>(null);
   const identityEpochRef = useRef(0);
   const [initializationAttempt, setInitializationAttempt] = useState(0);
   const retryInitialization = useCallback(() => setInitializationAttempt((value) => value + 1), []);
@@ -143,6 +153,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const authGenerationRef = useRef(0);
   const router = useRouter();
   const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
   const [supabase] = useState(() => createClient());
 
   // ── State ──
@@ -156,8 +168,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [studentsMayBePartial, setStudentsMayBePartial] = useState(false);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [dashboardSummaryLoadError, setDashboardSummaryLoadError] = useState<string | null>(null);
   const [dashboardSummaryLoaded, setDashboardSummaryLoaded] = useState(isPreviewMode);
   const dashboardSummaryRequestSeqRef = useRef(0);
+  const dashboardSummaryFlightRef = useRef<{ sequence: number; promise: Promise<void> } | null>(null);
   const studentsRef = useRef<Student[]>(students);
   const studentsRevisionRef = useRef(0);
   const studentMutationEpochRef = useRef(0);
@@ -182,19 +196,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [leadsLoaded, setLeadsLoaded] = useState(isPreviewMode);
   const [leadsLoadError, setLeadsLoadError] = useState<string | null>(null);
   const leadsRef = useRef<Lead[]>(leads);
-  const leadMutationScopeRef = useRef({ revision: 0, pending: 0 });
-  const beginLeadMutation = useCallback(() => {
-    const scope = leadMutationScopeRef.current;
-    scope.revision += 1;
-    scope.pending += 1;
-    return () => {
-      scope.revision += 1;
-      scope.pending -= 1;
-    };
-  }, []);
+  const leadMutationScopeRef = useRef(createResourceScope());
+  const beginLeadMutation = useCallback(() => beginResourceMutation(leadMutationScopeRef.current), []);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
     isPreviewMode ? MOCK_BELT_LADDERS : []
   );
+  const beltsHydratedRef = useRef(false);
   const [beltLaddersLoadError, setBeltLaddersLoadError] = useState<string | null>(null);
   const [studioLoadError, setStudioLoadError] = useState<string | null>(null);
   const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
@@ -309,6 +316,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const identity = authoritativeIdentityRef.current;
     return {
       token: requestToken,
+      isSameIdentity: () => Boolean(
+        identity && identity === authoritativeIdentityRef.current
+        && identityEpoch === identityEpochRef.current && tokenRef.current
+      ),
       canRetryAfterTokenChange: () => Boolean(
         identity && identity === authoritativeIdentityRef.current
         && identityEpoch === identityEpochRef.current
@@ -323,6 +334,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const refreshDashboardSummary = useCallback((): Promise<void> => {
+    if (isPreviewMode) return Promise.resolve();
+    const existing = dashboardSummaryFlightRef.current;
+    if (existing?.sequence === dashboardSummaryRequestSeqRef.current) return existing.promise;
+    const sequence = ++dashboardSummaryRequestSeqRef.current;
+    const owner = beginLiveAuthRequest();
+    const studioId = authoritativeStudioIdRef.current;
+    const isCurrent = () => sequence === dashboardSummaryRequestSeqRef.current && owner.isSameIdentity();
+    setDashboardSummaryLoadError(null);
+    markPerformance("dashboard.summary_started");
+    const fail = () => {
+      if (isCurrent()) {
+        setDashboardSummaryLoadError("Saved records are retained. Dashboard totals could not be refreshed. Please retry.");
+        setDashboardSummaryLoaded(true);
+      }
+    };
+    const promise = withCurrentLiveAuthRead(() => {
+      const request = beginLiveAuthRequest();
+      return { ...request, canRetryAfterTokenChange: () => isCurrent() && request.canRetryAfterTokenChange() };
+    }, async (request) => {
+      const summary = await api.get<DashboardSummary>("/dashboard/summary?fresh=true", request.token,
+        { timeoutMs: 30000, timeoutMessage: "Dashboard refresh timed out." });
+      if (!isCurrent() || !request.isCurrent()) return;
+      if (summary.auth.studio_id !== studioId) throw new Error("Dashboard scope changed. Please retry.");
+      setDashboardSummary(summary);
+      setDashboardSummaryLoaded(true);
+      markPerformance("dashboard.summary_finished");
+      measurePerformance("dashboard.summary_duration", "dashboard.summary_started", "dashboard.summary_finished");
+    }, fail).catch((error) => { fail(); throw error; }).finally(() => {
+      if (dashboardSummaryFlightRef.current?.sequence === sequence) dashboardSummaryFlightRef.current = null;
+    });
+    dashboardSummaryFlightRef.current = { sequence, promise };
+    return promise;
+  }, [beginLiveAuthRequest, isPreviewMode]);
+
   const reconcileScheduleAttempt = useCallback(async (
     intent: ScheduleRangeRefreshIntent
   ) => {
@@ -330,7 +376,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const coordinator = scheduleCoordinatorRef.current;
     const { startDate, endDate } = resolveScheduleReconciliationRange(
       coordinator,
-      buildDeferredScheduleDateRange()
+      buildDeferredScheduleDateRange(new Date(), businessDateRef.current)
     );
     const generation = coordinator.generation;
     const dataRevision = coordinator.dataRevision;
@@ -574,7 +620,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commitEligibilityRows]);
 
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
-    leadMutationScopeRef.current = { revision: 0, pending: 0 };
+    beltsHydratedRef.current = false;
+    leadMutationScopeRef.current.settle();
+    leadMutationScopeRef.current = createResourceScope();
     applyLiveStudioDataResetRefs({
       staffMembers: staffMembersRef,
       programs: programsRef,
@@ -602,6 +650,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProgramsLoadError(state.programsLoadError);
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
+    setDashboardSummaryLoadError(null);
     setDashboardSummary(state.dashboardSummary);
     setDashboardSummaryLoaded(state.dashboardSummaryLoaded);
     studentsRevisionRef.current += 1;
@@ -639,9 +688,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     dashboardSummaryRequestSeqRef.current += 1;
     authUserIdRef.current = null;
     setCurrentUser(null);
+    setStudioTimezone("UTC");
     setCurrentStudioId(null);
     currentRoleRef.current = null;
     authoritativeIdentityRef.current = null;
+    authoritativeStudioIdRef.current = null;
     setIdentityGeneration((value) => value + 1);
     setIdentityLoadError(null);
     setCurrentRole(null);
@@ -651,6 +702,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [applyLiveStudioDataResetState]);
 
   const commitAuthoritativeAuthProfile = useCallback((authProfile: AuthProfileResponse) => {
+    authoritativeStudioIdRef.current = authProfile.studio_id ?? null;
     const identity = `${authProfile.user.id}:${authProfile.studio_id ?? ""}:${authProfile.role ?? ""}`;
     if (authoritativeIdentityRef.current !== identity) {
       identityEpochRef.current += 1;
@@ -1001,6 +1053,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const studentsRevisionAtStart = studentsRevisionRef.current;
       const leadMutationScope = leadMutationScopeRef.current;
       const leadMutationRevisionAtStart = leadMutationScope.revision;
+      const leadReadSequenceAtStart = ++leadMutationScope.sequence;
       const hadPendingLeadMutation = leadMutationScope.pending > 0;
       const notificationRevision = authNotificationRevision;
       let session = providedSession;
@@ -1056,28 +1109,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       authUserIdRef.current = session.user.id;
       setToken(sessionToken);
       setCurrentUser(buildSessionUserProfile(session.user));
+      setInitialFeaturePending(true);
       setIdentityReady(false);
       setStaffProfilesAvailable(false);
       setIdentityLoadError(null);
       setHydrated(true);
       markPerformance("auth.session_resolved");
+      const summarySequenceAtStart = dashboardSummaryRequestSeqRef.current;
 
+      let workspaceRequest: ReturnType<typeof beginLiveAuthRequest> | null = null;
+      const isInitializationCurrent = () => isCurrentSession()
+        || Boolean(mounted && workspaceRequest?.isSameIdentity());
       try {
-        markPerformance("dashboard.bootstrap_started");
+        markPerformance("workspace.started");
         // Allow the server's 30s interactive budget plus response transfer time.
-        const criticalData = await api.get<BootstrapResponse>("/dashboard/bootstrap?allow_partial=true", sessionToken, {
+        const workspaceData = await api.get<ApiDashboardWorkspaceResponse>("/dashboard/workspace", sessionToken, {
           timeoutMs: 35_000,
           timeoutMessage: "Workspace loading timed out. Please retry.",
         });
-        markPerformance("dashboard.bootstrap_finished");
+        markPerformance("workspace.finished");
         measurePerformance(
-          "dashboard.bootstrap_duration",
-          "dashboard.bootstrap_started",
-          "dashboard.bootstrap_finished"
+          "workspace.duration",
+          "workspace.started",
+          "workspace.finished"
         );
 
-        if (isCurrentSession()) {
-          const authProfile = parseAuthProfileResponse(criticalData.auth);
+        if (isInitializationCurrent()) {
+          const authProfile = parseAuthProfileResponse(workspaceData.auth);
 
           setSubscriptionRequired(false);
           commitAuthoritativeAuthProfile(authProfile);
@@ -1092,13 +1150,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             return;
           }
 
+          workspaceRequest = beginLiveAuthRequest();
+          setStudioTimezone(workspaceData.studio?.timezone ?? "UTC");
+          setStudioNameState(workspaceData.studio?.name ?? "");
+          setStudioLoadError(null);
+          markPerformance("workspace.identity_ready");
+          const initialPath = pathnameRef.current;
+          const view = initialPath.startsWith("/students") ? "students" : initialPath.startsWith("/billing") ? "billing" : "dashboard";
+          if (view === "billing") return;
+          // The protected shell is now usable. Only the route's feature payload
+          // waits on this second request; failures cannot revoke verified identity.
+          let criticalData: BootstrapResponse;
+          markPerformance("dashboard.bootstrap_started");
+          try {
+            criticalData = await withCurrentLiveAuthRead(beginLiveAuthRequest, (request) =>
+              api.get<BootstrapResponse>(`/dashboard/bootstrap?allow_partial=true&view=${view}`, request.token,
+                { timeoutMs: 35000, timeoutMessage: "Studio data loading timed out. Please retry." }), () => {});
+          } catch (error) {
+            if (!isInitializationCurrent()) return;
+            if (isSubscriptionRequiredError(error) || isStaffArchivedError(error)) throw error;
+            setStudentsLoadError("Student roster could not be loaded. Please retry.");
+            setProgramsLoadError("Programs could not be loaded. Please retry.");
+            setLeadsLoadError("Leads could not be loaded. Please retry.");
+            return;
+          }
+          if (!isInitializationCurrent()) return;
+          markPerformance("dashboard.bootstrap_finished");
+          measurePerformance("dashboard.bootstrap_duration", "dashboard.bootstrap_started", "dashboard.bootstrap_finished");
+          const featureAuth = parseAuthProfileResponse(criticalData.auth);
+          if (featureAuth.user.id !== authProfile.user.id || featureAuth.studio_id !== authProfile.studio_id
+            || featureAuth.role !== authProfile.role || featureAuth.membership_status !== "active") {
+            resetLiveStudioState();
+            setIdentityLoadError("Workspace access changed. Please retry.");
+            return;
+          }
           clearPromotionHistoryCache();
           const datasetErrors = criticalData.dataset_errors;
           setStudioNameState(datasetErrors?.studio ? "" : resolveBootstrapStudioName(criticalData));
           setStudioLoadError(datasetErrors?.studio ?? null);
           const bootstrapSummary = criticalData.summary ?? null;
-          setDashboardSummary(bootstrapSummary);
-          setDashboardSummaryLoaded(Boolean(bootstrapSummary));
+          if (dashboardSummaryRequestSeqRef.current === summarySequenceAtStart && bootstrapSummary) {
+            setDashboardSummary(bootstrapSummary);
+            setDashboardSummaryLoaded(true);
+          }
           if (!datasetErrors?.programs) setPrograms(criticalData.programs || []);
           setProgramsUsageLoaded(false);
           setProgramsUsageLoadError(null);
@@ -1116,17 +1210,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               });
             }
           }
-          if (!hadPendingLeadMutation
+          if (view !== "students" && !hadPendingLeadMutation
             && leadMutationScope === leadMutationScopeRef.current
+            && leadMutationScope.sequence === leadReadSequenceAtStart
             && leadMutationScope.revision === leadMutationRevisionAtStart
             && leadMutationScope.pending === 0) {
             if (!datasetErrors?.leads) setLeads(criticalData.leads);
             setLeadsLoaded(!datasetErrors?.leads);
             setLeadsLoadError(datasetErrors?.leads ?? null);
           }
-          if (datasetErrors?.belts) {
+          if (view === "students") {
+            // Belt plans are owned by the detail/training route.
+          } else if (datasetErrors?.belts) {
+            beltsHydratedRef.current = true;
             setBeltLaddersLoadError(datasetErrors.belts);
           } else {
+            beltsHydratedRef.current = true;
             const selectedInitialLadder = applyLadderSelection(
               resolveBootstrapLadders(criticalData),
               criticalData.primary_belt_ladder?.id ?? null
@@ -1134,56 +1233,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             if (!selectedInitialLadder) commitEligibilityRows(null, []);
           }
 
-          if (!bootstrapSummary) {
-            const summaryRequestSeq = dashboardSummaryRequestSeqRef.current + 1;
-            dashboardSummaryRequestSeqRef.current = summaryRequestSeq;
-            const summaryStudioId = authProfile.studio_id;
-            const summaryIdentityEpoch = identityEpochRef.current;
-            const isSummaryOwnerCurrent = () => mounted
-              && identityEpochRef.current === summaryIdentityEpoch
-              && dashboardSummaryRequestSeqRef.current === summaryRequestSeq;
-            const failSummary = (error: unknown) => {
-              if (!isSummaryOwnerCurrent()) return;
-              console.warn("Failed to load dashboard summary", error);
-              setDashboardSummary(null);
-              setDashboardSummaryLoaded(true);
-            };
-
-            markPerformance("dashboard.summary_started");
-            void withCurrentLiveAuthRead(() => {
-              const request = beginLiveAuthRequest();
-              return {
-                ...request,
-                canRetryAfterTokenChange: () => isSummaryOwnerCurrent()
-                  && request.canRetryAfterTokenChange(),
-              };
-            }, async (request) => {
-              try {
-                const summaryRes = await api.get<DashboardSummary>(
-                  "/dashboard/summary",
-                  request.token,
-                  { timeoutMs: 30000, timeoutMessage: "Dashboard summary timed out." }
-                );
-                if (!isSummaryOwnerCurrent() || !request.isCurrent()
-                  || !isDashboardSummaryForStudio(summaryRes, summaryStudioId)) return;
-                setDashboardSummary(summaryRes);
-                setDashboardSummaryLoaded(true);
-                markPerformance("dashboard.summary_finished");
-                measurePerformance(
-                  "dashboard.summary_duration",
-                  "dashboard.summary_started",
-                  "dashboard.summary_finished",
-                  { source: "deferred" }
-                );
-              } catch (error) {
-                if (request.isCurrent()) failSummary(error);
-                throw error;
-              }
-            }, failSummary).catch(() => undefined);
-          }
         }
 
-        if (!isCurrentSession()) return;
+        if (!isInitializationCurrent() || !["/dashboard", "/schedule"].includes(pathnameRef.current)) return;
         markPerformance("schedule.deferred_started");
         void refreshSchedule().then(() => {
           markPerformance("schedule.deferred_finished");
@@ -1197,15 +1249,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
-        if (isCurrentSession() && isStaffArchivedError(error)) {
+        if (isInitializationCurrent() && isStaffArchivedError(error)) {
           const authProfile = await api.get<unknown>(
             "/auth/me",
-            sessionToken,
+            tokenRef.current ?? sessionToken,
             { omitStudioHeader: true }
           )
             .then((response) => parseAuthProfileResponse(response))
             .catch(() => null);
-          if (!isCurrentSession()) {
+          if (!isInitializationCurrent()) {
             return;
           }
           if (authProfile && (authProfile.membership_status !== "active" || !authProfile.studio_id)) {
@@ -1213,15 +1265,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             return;
           }
         }
-        if (isCurrentSession() && isSubscriptionRequiredError(error)) {
+        if (isInitializationCurrent() && isSubscriptionRequiredError(error)) {
           const authProfile = await api.get<unknown>(
             "/auth/me",
-            sessionToken,
+            tokenRef.current ?? sessionToken,
             { omitStudioHeader: true }
           )
             .then((response) => parseAuthProfileResponse(response))
             .catch(() => null);
-          if (!isCurrentSession()) {
+          if (!isInitializationCurrent()) {
             return;
           }
           if (authProfile) {
@@ -1237,13 +1289,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setHydrated(true);
           return;
         }
-        if (isCurrentSession() && /Complete onboarding first|No studio found/i.test(message)) {
+        if (isInitializationCurrent() && /Complete onboarding first|No studio found/i.test(message)) {
           resetLiveStudioState();
           setHydrated(true);
           router.replace("/onboarding");
           return;
         }
-        if (isCurrentSession()) {
+        if (isInitializationCurrent()) {
           const loadError = error instanceof Error
             ? error.message
             : "Initial studio data could not be loaded.";
@@ -1262,6 +1314,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setHydrated(true);
         }
         console.error("Failed to load initial data", error);
+      } finally {
+        if (isInitializationCurrent()) setInitialFeaturePending(false);
       }
     }
 
@@ -1315,8 +1369,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             authUserIdRef.current,
             session.user.id
           );
-          setScheduleLoadError(null);
-          setScheduleStatus("loading");
+          if (scheduleCoordinatorRef.current.requestedRange) {
+            setScheduleLoadError(null);
+            setScheduleStatus("loading");
+          }
           authGenerationRef.current += 1;
           if (preservesScheduleGeneration) {
             scheduleCoordinatorRef.current = refreshScheduleCoordinatorAuthState(
@@ -1329,7 +1385,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         tokenRef.current = session.access_token;
         authUserIdRef.current = session.user.id;
         setToken(session.access_token);
-        if (tokenChanged) {
+        if (tokenChanged && scheduleCoordinatorRef.current.requestedRange) {
           void reconcileSchedule("read").catch((error) => {
             console.error("Failed to reconcile schedule after an auth token change", error);
           });
@@ -1501,7 +1557,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshLeads,
     updateLead,
   } = useStoreLeadActions({
+    businessDateRef,
     beginLeadMutation,
+    leadMutationScopeRef,
     beginLiveAuthRequest,
     beltLaddersRef,
     beltRanksRef,
@@ -1626,41 +1684,102 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     supabase,
   });
 
+  useEffect(() => {
+    if (isPreviewMode || !identityReady || subscriptionRequired || initialFeaturePending) return;
+    const timer = window.setTimeout(() => {
+      if (["/dashboard", "/belt-tracker", "/settings"].includes(pathname) && !beltsHydratedRef.current) {
+        beltsHydratedRef.current = true;
+        void refreshBeltsRef.current?.().catch(() => setBeltLaddersLoadError("Belt plans could not be loaded. Please retry."));
+      }
+      if (pathname === "/dashboard" && scheduleStatus === "idle") void refreshSchedule().catch(() => undefined);
+      if (pathname === "/dashboard") {
+        if (!studentsLoaded && !studentsLoadError) void refreshStudents().catch(() => undefined);
+        if (!leadsLoaded && !leadsLoadError) void refreshLeads().catch(() => undefined);
+      }
+      if (["/dashboard", "/students", "/settings"].includes(pathname) && !programsLoaded && !programsLoadError) {
+        void refreshPrograms({ includeArchived: true }).catch(() => undefined);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [identityReady, initialFeaturePending, isPreviewMode, pathname, subscriptionRequired,
+    studentsLoaded, studentsLoadError, leadsLoaded, leadsLoadError, programsLoaded, programsLoadError,
+    refreshStudents, refreshLeads, refreshPrograms, refreshSchedule, scheduleStatus]);
+
+  // These confirmed business commands affect dashboard facts. Billing commands
+  // live outside this store; dashboard route entry also requests fresh facts.
+  const beginProjectionCommand = useCallback(() => {
+    if (isPreviewMode) return () => {};
+    const request = beginLiveAuthRequest();
+    dashboardSummaryRequestSeqRef.current += 1;
+    return () => {
+      if (request.isSameIdentity()) {
+        dashboardSummaryRequestSeqRef.current += 1;
+        void refreshDashboardSummary().catch(() => undefined);
+      }
+    };
+  }, [beginLiveAuthRequest, isPreviewMode, refreshDashboardSummary]);
+  const reconciledCommands = {
+    addStudent: useReconciledProjectionCommand(addStudent, beginProjectionCommand),
+    updateStudent: useReconciledProjectionCommand(updateStudent, beginProjectionCommand),
+    deleteStudents: useReconciledProjectionCommand(deleteStudents, beginProjectionCommand),
+    bulkUpdateStudentStatus: useReconciledProjectionCommand(bulkUpdateStudentStatus, beginProjectionCommand),
+    importStudents: useReconciledProjectionCommand(importStudents, beginProjectionCommand),
+    addLead: useReconciledProjectionCommand(addLead, beginProjectionCommand),
+    updateLead: useReconciledProjectionCommand(updateLead, beginProjectionCommand),
+    deleteLead: useReconciledProjectionCommand(deleteLead, beginProjectionCommand),
+    convertLeadToStudent: useReconciledProjectionCommand(convertLeadToStudent, beginProjectionCommand),
+    toggleCheckIn: useReconciledProjectionCommand(toggleCheckIn, beginProjectionCommand),
+    promoteStudent: useReconciledProjectionCommand(promoteStudent, beginProjectionCommand),
+    demoteStudent: useReconciledProjectionCommand(demoteStudent, beginProjectionCommand),
+    createProgram: useReconciledProjectionCommand(createProgram, beginProjectionCommand),
+    updateProgram: useReconciledProjectionCommand(updateProgram, beginProjectionCommand),
+    archiveProgram: useReconciledProjectionCommand(archiveProgram, beginProjectionCommand),
+    restoreProgram: useReconciledProjectionCommand(restoreProgram, beginProjectionCommand),
+    addSession: useReconciledProjectionCommand(addSession, beginProjectionCommand),
+    deleteSession: useReconciledProjectionCommand(deleteSession, beginProjectionCommand),
+    addTemplate: useReconciledProjectionCommand(addTemplate, beginProjectionCommand),
+    setBeltRanks: useReconciledProjectionCommand(setBeltRanks, beginProjectionCommand),
+  };
+
   const contextValues = useStoreContextValues({
-    addLead,
-    addSession,
-    addStudent,
-    addTemplate,
+    addLead: reconciledCommands.addLead,
+    addSession: reconciledCommands.addSession,
+    addStudent: reconciledCommands.addStudent,
+    addTemplate: reconciledCommands.addTemplate,
     archiveStaff,
-    archiveProgram,
+    archiveProgram: reconciledCommands.archiveProgram,
     attendance,
     beltLadders,
     beltLaddersLoadError,
     beltRanks,
     bulkAddTagsToStudents,
-    bulkUpdateStudentStatus,
+    bulkUpdateStudentStatus: reconciledCommands.bulkUpdateStudentStatus,
     clearStudioData,
     clearSubscriptionRequired,
-    convertLeadToStudent,
-    createProgram,
+    convertLeadToStudent: reconciledCommands.convertLeadToStudent,
+    createProgram: reconciledCommands.createProgram,
     currentLadderId,
     currentRole,
     currentStudioId,
     currentUserId: activeUserId || "",
     dashboardSummary,
     dashboardSummaryLoaded,
-    deleteLead,
-    deleteSession,
+    dashboardSummaryLoadError,
+    refreshDashboardSummary,
+    deleteLead: reconciledCommands.deleteLead,
+    deleteSession: reconciledCommands.deleteSession,
     deleteStudentPhoto,
-    deleteStudents,
-    demoteStudent,
+    deleteStudents: reconciledCommands.deleteStudents,
+    demoteStudent: reconciledCommands.demoteStudent,
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError,
     eligibilityPendingLadderId,
-    importStudents,
+    importStudents: reconciledCommands.importStudents,
     inviteStaff,
     isPreviewMode,
+    businessDate,
+    studioTimezone,
     ladderName,
     leads,
     leadsLoaded,
@@ -1674,7 +1793,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     programsUsageLoaded,
     programsUsageLoadError,
     programsLoadError,
-    promoteStudent,
+    promoteStudent: reconciledCommands.promoteStudent,
     promotionHistoryCache,
     refreshLeads,
     refreshPrograms,
@@ -1685,12 +1804,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshStudents,
     removeStaff,
     resetDemoData,
-    restoreProgram,
+    restoreProgram: reconciledCommands.restoreProgram,
     scheduleLoadError,
     scheduleStatus,
     scheduleStaffDeletion,
     sessions,
-    setBeltRanks,
+    setBeltRanks: reconciledCommands.setBeltRanks,
     setCurrentLadder,
     setLadderName,
     setStudioName,
@@ -1709,18 +1828,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     subRankTerm,
     subscriptionRequired,
     templates,
-    toggleCheckIn,
+    toggleCheckIn: reconciledCommands.toggleCheckIn,
     token,
     identityGeneration,
     identityReady,
     identityLoadError,
     retryInitialization,
     unarchiveStaff,
-    updateLead,
-    updateProgram,
+    updateLead: reconciledCommands.updateLead,
+    updateProgram: reconciledCommands.updateProgram,
     updateStaffLegalName,
     updateStaffRole,
-    updateStudent,
+    updateStudent: reconciledCommands.updateStudent,
     updateUserLegalName,
     updateUserName,
     uploadStudentPhoto,

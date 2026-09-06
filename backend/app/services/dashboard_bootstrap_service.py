@@ -12,8 +12,10 @@ from app.schemas.belt import BeltLadderResponse, BeltRankResponse
 from app.schemas.dashboard_bootstrap import (
     DashboardBootstrapResponse,
     DashboardBootstrapStudioSummary,
+    DashboardWorkspaceResponse,
 )
 from app.schemas.lead import LeadResponse
+from app.services.studio_business_date import studio_today
 from app.services.program_service import ProgramService
 from app.services.auth_service import AuthService
 from app.services.student_service import StudentService
@@ -130,6 +132,19 @@ class DashboardBootstrapService:
             .execute()
         )
 
+    def get_workspace_sync(self, user_id: str, requested_studio_id: Optional[str] = None):
+        """Authoritative access, subscription, and studio clock without feature reads."""
+        auth = AuthService(self.supabase)._get_user_profile_sync(user_id, requested_studio_id)
+        if not auth.studio_id or auth.membership_status != "active":
+            return DashboardWorkspaceResponse(auth=auth)
+        ensure_platform_subscription_access(self.supabase, auth.studio_id)
+        result = self._fetch_studio_summary(auth.studio_id)
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Studio not found")
+        return DashboardWorkspaceResponse(auth=auth, studio=DashboardBootstrapStudioSummary(
+            **{**result.data, "timezone": studio_today(result.data.get("timezone"))[1]}
+        ))
+
     async def get_dashboard_bootstrap(
         self,
         user_id: str,
@@ -137,6 +152,7 @@ class DashboardBootstrapService:
         *,
         provider_owned: bool = False,
         allow_partial: bool = False,
+        view: str = "dashboard",
     ) -> tuple[DashboardBootstrapResponse, dict[str, float]]:
         total_started = time.perf_counter()
         if provider_owned:
@@ -159,6 +175,8 @@ class DashboardBootstrapService:
         timings: dict[str, float] = {}
 
         async def load_projection(label: str, method_name: str, project: Callable[[Any], Any]):
+            if (view == "billing" and label != "studio") or (view == "students" and label in {"leads", "belts"}):
+                return None
             started = time.perf_counter()
             try:
                 result, (_label, duration_ms) = await asyncio.to_thread(
