@@ -297,13 +297,13 @@ export function useStudentDetailPageController({
 
   async function handlePhotoSelected(file: File): Promise<boolean> {
     if (!canManageRoster || !detailReady) return false;
-    detailRevision.current += 1;
     const validationError = validateStudentPhotoFile(file);
     if (validationError) {
       setPhotoError(validationError);
       return false;
     }
 
+    detailRevision.current += 1;
     const nextPreviewUrl = URL.createObjectURL(file);
     setPhotoPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
@@ -331,8 +331,8 @@ export function useStudentDetailPageController({
   }
 
   async function handleDeletePhoto() {
-    detailRevision.current += 1;
     if (!canManageRoster || !detailReady) return;
+    detailRevision.current += 1;
 
     setPhotoError(null);
     setActionMessage(null);

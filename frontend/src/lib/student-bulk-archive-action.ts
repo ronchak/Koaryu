@@ -85,6 +85,7 @@ export async function deleteStudentsAction<T extends { id: string }>(
   }
 
   if (!canCommitLiveMutation(liveRequest)) return;
+  options.studentMutationEpochRef.current += 1;
   const idSet = new Set(normalizedIds);
   options.commitStudents(
     (current) => current.filter((student) => !idSet.has(student.id)),

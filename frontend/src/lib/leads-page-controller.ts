@@ -139,6 +139,7 @@ export function useLeadsPageController({
   function closeAddLeadModal() {
     if (isAddingLead) return;
     setShowAddLead(false);
+    setAddLeadOutcomeUnknown(false);
     setAddLeadProgramId(null);
   }
 
@@ -483,7 +484,8 @@ export function useLeadsPageController({
     handleStageDragLeave,
     handleStageDragOver,
     handleStageSelection,
-    isAddingLead: isAddingLead || addLeadOutcomeUnknown,
+    isAddingLead,
+    addLeadOutcomeUnknown,
     leadActionError,
     model,
     openAddLeadModal,

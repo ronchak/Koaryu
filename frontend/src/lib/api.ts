@@ -83,6 +83,8 @@ interface RequestRuntimeOptions {
   timeoutMs?: number | null;
   timeoutMessage: string;
   networkErrorMessage: string;
+  commandTimeoutMessage?: string;
+  commandNetworkMessage?: string;
 }
 
 function buildRequestHeaders({
@@ -117,6 +119,8 @@ async function executeApiRequest<T>(
     timeoutMs = API_TIMEOUT_MS,
     timeoutMessage,
     networkErrorMessage,
+    commandTimeoutMessage,
+    commandNetworkMessage,
   }: RequestRuntimeOptions,
   consume: (response: Response) => Promise<T>,
 ): Promise<T> {
@@ -156,7 +160,9 @@ async function executeApiRequest<T>(
   } catch (error) {
     // A transport abort, 5xx response, or lost success body cannot prove rollback.
     if (isCommand && dispatched && (!(error instanceof ApiError) || error.status >= 500)) {
-      throw new CommandOutcomeUnknown(requestId);
+      throw new CommandOutcomeUnknown(requestId, abortReason === "timeout"
+        ? commandTimeoutMessage
+        : !receivedHeaders && abortReason === null ? commandNetworkMessage : undefined);
     }
     if (abortReason !== null || (error instanceof Error && error.name === "AbortError")) {
       if (abortReason === "timeout") {
@@ -318,6 +324,8 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
+      commandTimeoutMessage: options.timeoutMessage,
+      commandNetworkMessage: options.networkErrorMessage,
     },
     async (res) => {
       if (!res.ok) {
@@ -355,6 +363,8 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
+      commandTimeoutMessage: options.timeoutMessage,
+      commandNetworkMessage: options.networkErrorMessage,
     },
     async (res) => {
       if (!res.ok) {
@@ -396,6 +406,8 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
+      commandTimeoutMessage: options.timeoutMessage,
+      commandNetworkMessage: options.networkErrorMessage,
     },
     async (res) => {
       if (!res.ok) {

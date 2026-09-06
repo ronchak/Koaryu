@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ClassFormSubmitPayload } from "@/lib/class-form-model";
+import { toLocalDateKey } from "@/lib/date";
+import type { ClassFormInitialValues, ClassFormSubmitPayload } from "@/lib/class-form-model";
 import {
   beginSessionAttendanceRefresh,
   clearSessionAttendanceRefresh,
@@ -73,6 +74,7 @@ export function useSchedulePageController({
   const [view, setView] = useState<SchedulePageView>(DEFAULT_SCHEDULE_PAGE_VIEW);
   const [programFilter, setProgramFilter] = useState("");
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
+  const [classFormInitialValues, setClassFormInitialValues] = useState<ClassFormInitialValues>();
   const [showAddClass, setShowAddClass] = useState(false);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
   const [createClassError, setCreateClassError] = useState<string | null>(null);
@@ -254,6 +256,9 @@ export function useSchedulePageController({
   }
 
   function openAddClass() {
+    if (!canManageSchedule) return;
+    const selectedDay = toLocalDateKey(currentDate);
+    setClassFormInitialValues({ date: selectedDay, startDate: selectedDay });
     setCreateClassError(null);
     setShowAddClass(true);
   }
@@ -294,6 +299,7 @@ export function useSchedulePageController({
       activeStudents,
       attendanceError,
       canManageSchedule,
+      classFormInitialValues,
       createClassError,
       currentDate,
       deleteError,

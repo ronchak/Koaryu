@@ -111,8 +111,11 @@ export function StudentDetailPageContent({
       ) : null}
       {!detailReady ? (
         <div className="p-6" role={loadError ? "alert" : "status"}>
-          <p>{loadError || "Loading full student details, including guardians and photo…"}</p>
-          {loadError ? <Button onClick={onRetryDetail}>Retry student details</Button> : null}
+          {loadError ? <>
+            <p>{loadError}</p>
+            <Button onClick={onRetryDetail}>Retry student details</Button>
+          </> : <RecordsLoading title="Loading student details"
+            description="Loading guardian, photo, and training details." variant="folio" />}
         </div>
       ) : (
       <div className="flex-1 p-4 sm:p-6 lg:p-8">

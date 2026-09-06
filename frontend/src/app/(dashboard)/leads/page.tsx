@@ -196,6 +196,7 @@ export default function LeadsPage() {
           activeStaff={activeStaff}
           addLeadError={controller.addLeadError}
           isAddingLead={controller.isAddingLead}
+          isOutcomeUnknown={controller.addLeadOutcomeUnknown}
           programById={programById}
           selectedProgramId={controller.addLeadProgramId}
           today={today}

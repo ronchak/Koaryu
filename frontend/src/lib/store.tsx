@@ -334,7 +334,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const refreshDashboardSummary = useCallback((): Promise<void> => {
+  const refreshDashboardSummary = useCallback(async (): Promise<void> => {
     if (isPreviewMode) return Promise.resolve();
     const existing = dashboardSummaryFlightRef.current;
     if (existing?.sequence === dashboardSummaryRequestSeqRef.current) return existing.promise;
@@ -1692,11 +1692,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         void refreshBeltsRef.current?.().catch(() => setBeltLaddersLoadError("Belt plans could not be loaded. Please retry."));
       }
       if (pathname === "/dashboard" && scheduleStatus === "idle") void refreshSchedule().catch(() => undefined);
-      if (pathname === "/dashboard") {
-        if (!studentsLoaded && !studentsLoadError) void refreshStudents().catch(() => undefined);
-        if (!leadsLoaded && !leadsLoadError) void refreshLeads().catch(() => undefined);
+      if (pathname === "/dashboard" && !studentsLoaded && !studentsLoadError) {
+        void refreshStudents().catch(() => undefined);
       }
-      if (["/dashboard", "/students", "/settings"].includes(pathname) && !programsLoaded && !programsLoadError) {
+      if (["/dashboard", "/leads", "/reports"].includes(pathname) && !leadsLoaded && !leadsLoadError) {
+        void refreshLeads().catch(() => undefined);
+      }
+      const needsPrograms = ["/dashboard", "/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
+        || pathname === "/students" || pathname.startsWith("/students/");
+      if (needsPrograms && !programsLoaded && !programsLoadError) {
         void refreshPrograms({ includeArchived: true }).catch(() => undefined);
       }
     }, 0);
@@ -1714,7 +1718,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       if (request.isSameIdentity()) {
         dashboardSummaryRequestSeqRef.current += 1;
-        void refreshDashboardSummary().catch(() => undefined);
+        if (pathnameRef.current === "/dashboard") {
+          void refreshDashboardSummary().catch(() => undefined);
+        }
       }
     };
   }, [beginLiveAuthRequest, isPreviewMode, refreshDashboardSummary]);

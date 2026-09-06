@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadRosterReturn, saveRosterReturn, safeStudentsReturn } from "@/lib/student-roster-location";
+import { consumeRosterReturn, loadRosterReturn, saveRosterReturn, safeStudentsReturn } from "@/lib/student-roster-location";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { StudentRosterBulkPanel } from "@/components/students/student-roster-controls";
 import {
@@ -320,6 +320,7 @@ export function useStudentsPageController({
       const row = document.querySelector(`[data-student-id="${CSS.escape(saved.focusId)}"]`);
       row?.querySelector<HTMLElement>("button[data-open-student]")?.focus({ preventScroll: true });
       document.getElementById("main-content")?.scrollTo({ top: saved.scroll });
+      consumeRosterReturn(saved);
       initialReturnRef.current = null;
     });
     return () => cancelAnimationFrame(frame);
@@ -395,12 +396,15 @@ export function useStudentsPageController({
   }, []);
 
   useEffect(() => {
-    if (incomingRosterHref !== lastRosterHrefRef.current) {
-      // Browser history and same-route links are authoritative, too. Own URL
-      // writes update the marker before Next synchronizes useSearchParams.
+    // Native history changes the address synchronously; Next's searchParams
+    // subscription can lag behind a second keystroke. Compare our write marker
+    // with the actual address so that delayed notifications cannot erase input.
+    if (window.location.pathname !== "/students") return;
+    const browserHref = safeStudentsReturn(`/students${window.location.search}`);
+    if (browserHref !== lastRosterHrefRef.current) {
       const timer = window.setTimeout(() => {
-        const params = new URLSearchParams(incomingRosterHref.split("?")[1]);
-        lastRosterHrefRef.current = incomingRosterHref;
+        const params = new URLSearchParams(browserHref.split("?")[1]);
+        lastRosterHrefRef.current = browserHref;
         setSearch((params.get("q") ?? "").slice(0, 200));
         setStatusFilter(["active", "trialing", "inactive", "paused", "canceled"].includes(params.get("status") ?? "")
           ? params.get("status") as StudentRosterStatusFilter : "");
@@ -412,7 +416,7 @@ export function useStudentsPageController({
       }, 0);
       return () => window.clearTimeout(timer);
     }
-    if (incomingRosterHref !== rosterHref) {
+    if (browserHref !== rosterHref) {
       lastRosterHrefRef.current = rosterHref;
       window.history.replaceState(window.history.state, "", rosterHref);
     }
@@ -576,16 +580,12 @@ export function useStudentsPageController({
   ]);
 
   useEffect(() => {
-    if (!usesDerivedRosterFilters || config.isPreviewMode) {
-      return;
-    }
-
-    if (!studentsLoaded) {
+    if (!usesDerivedRosterFilters || config.isPreviewMode || studentsLoadError) {
       return;
     }
 
     if (
-      !studentsLoadError &&
+      studentsLoaded &&
       !studentsMayBePartial &&
       studentsLastLoadedAt &&
       Date.now() - studentsLastLoadedAt < STUDENTS_BOOTSTRAP_FRESH_MS

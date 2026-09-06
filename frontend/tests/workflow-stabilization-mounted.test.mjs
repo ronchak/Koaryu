@@ -4,7 +4,7 @@ import { chromium } from "@playwright/test";
 import { bundle } from "./helpers/store-browser-harness.mjs";
 
 async function fixturePage(browser, options = {}) {
-  const page = await browser.newPage();
+  const page = await browser.newPage({ timezoneId: options.timezone });
   if (options.now) await page.clock.install({ time: new Date(options.now) });
   await page.route("**/*", route => route.request().url() === "http://fixture.local/"
     ? route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }) : route.abort());
@@ -14,7 +14,12 @@ async function fixturePage(browser, options = {}) {
     f.session = { access_token: "synthetic-a", user: { id: "user-a", email: "a@example.test", legal_first_name: "Synthetic", legal_last_name: "Owner" } };
     f.auth = { user: f.session.user, studio_id: "studio-a", membership_status: "active", role: "admin", staff_profiles_available: true };
     f.student = { id: "student-1", studio_id: "studio-a", legal_first_name: "Ari", legal_last_name: "Lane", status: "active", guardians: [], photo_url: null, programs: [], tags: [] };
-    f.lead = { id: "lead-1", first_name: "Old", last_name: "Lead", status: "new" };
+    f.lead = { id: "lead-1", first_name: "Old", last_name: "Lead", status: "new", stage: "new" };
+    f.navigate = (path, search = "") => {
+      f.pathname = path; f.search = search;
+      history.pushState(null, "", path + search);
+      window.dispatchEvent(new Event("fixture:navigate"));
+    };
     f.supabase = { auth: {
       getSession: async () => ({ data: { session: f.session } }),
       onAuthStateChange: cb => { f.emit = (event, session) => { f.session = session; cb(event, session); }; return { data: { subscription: { unsubscribe() {} } } }; },
@@ -28,23 +33,29 @@ async function fixturePage(browser, options = {}) {
         if (path.startsWith("/schedule/window")) return { sessions: [], attendance: [], templates: [] };
         if (path.startsWith("/programs")) return [];
         if (path.startsWith("/students?")) {
+          if (f.holdRosterRead) return new Promise(resolve => { f.releaseRosterRead = resolve; });
+          if (f.rosterEmpty) return { items: [], total: 0, page_size: 200, page_ordinal: 1, has_next: false, has_previous: false };
           const params = new URL(path, "http://fixture.local").searchParams;
           const ordinal = Number(params.get("cursor")?.replace("page-", "") ?? params.get("page") ?? 1);
           return { items: [f.student], total: 251, page_size: 50, page_ordinal: ordinal, has_next: ordinal < 6,
             next_cursor: `page-${ordinal + 1}`, has_previous: ordinal > 1, previous_cursor: ordinal > 1 ? `page-${ordinal - 1}` : null };
         }
+        if (path === "/leads" && f.autoLeads) return [];
         if (path === "/leads") return new Promise(resolve => f.leadReads.push(resolve));
         if (path.startsWith("/dashboard/summary")) return new Promise((resolve, reject) => f.summaries.push({ resolve, reject }));
         if (path === "/students/student-1") return new Promise((resolve, reject) => f.details.push({ resolve, reject }));
         if (path.includes("promotions") || path.includes("/belts/ladders")) return [];
         throw Error(`Unexpected read ${path}`);
       },
+      post: (path, body) => path.startsWith("/schedule/window")
+        ? Promise.resolve({ sessions: [], attendance: [], templates: [] })
+        : new Promise(resolve => f.writes.push({ path, body, resolve })),
       patch: (path, body) => new Promise(resolve => f.writes.push({ path, body, resolve })),
       delete: path => new Promise(resolve => f.writes.push({ path, resolve })),
     };
   });
   await page.evaluate(({ path, holdFeature, uncached }) => {
-    if (path) fixture.pathname = path;
+    if (path) { fixture.pathname = path; history.replaceState(null, "", path); }
     fixture.holdFeature = holdFeature;
     fixture.uncached = uncached;
   }, { path: options.path, holdFeature: options.holdFeature, uncached: options.uncached });
@@ -267,6 +278,11 @@ test("studio midnight updates day-sensitive context without clearing a form draf
     await page.getByRole("button", { name: "Add student", exact: true }).click();
     await page.getByText("Synthetic save rejection", { exact: true }).waitFor();
     assert.equal(await page.getByLabel("Legal first name", { exact: false }).inputValue(), "Draft");
+    await page.evaluate(() => { fixture.api.post = async () => { throw new fixture.CommandOutcomeUnknown(); }; });
+    await page.getByRole("button", { name: "Add student", exact: true }).click();
+    await page.getByText(/The request may have been saved/).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Add student", exact: true }).isEnabled(), false);
+    assert.equal(await page.getByLabel("Legal first name", { exact: false }).inputValue(), "Draft");
     await page.getByLabel("Legal first name", { exact: false }).press("Escape");
     assert.equal(await page.getByRole("dialog").count(), 0);
     assert.equal(await page.evaluate(() => document.activeElement.textContent), "Open form");
@@ -286,6 +302,128 @@ test("a confirmed old write cannot repopulate protected data after sign-out", as
     await page.evaluate(() => fixture.save);
     assert.deepEqual(await page.evaluate(() => fixture.store.leads), []);
     assert.equal(await page.evaluate(() => fixture.store.currentStudioId), null);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally { await browser.close(); }
+});
+
+
+test("archive settlement prevents a current-token roster read from resurrecting the student", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/students" });
+    await page.waitForFunction(() => fixture.store.studentsLoaded);
+    await page.evaluate(() => { fixture.archive = fixture.store.deleteStudents(["student-1"]); });
+    await page.waitForFunction(() => fixture.writes.length === 1);
+    await page.evaluate(() => fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }));
+    await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+    await page.evaluate(() => { fixture.holdRosterRead = true; fixture.read = fixture.store.refreshStudents(); });
+    await page.waitForFunction(() => fixture.releaseRosterRead);
+    await page.evaluate(() => fixture.writes[0].resolve({ updated: 1 }));
+    await page.evaluate(() => fixture.archive);
+    await page.waitForFunction(() => fixture.store.students.length === 0);
+    await page.evaluate(() => {
+      fixture.holdRosterRead = false; fixture.rosterEmpty = true;
+      fixture.releaseRosterRead({ items: [fixture.student], total: 1, page_size: 200, page_ordinal: 1, has_next: false, has_previous: false });
+    });
+    await page.evaluate(() => fixture.read);
+    assert.deepEqual(await page.evaluate(() => fixture.store.students), []);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally { await browser.close(); }
+});
+
+test("Add class snapshots the selected studio day for both modes and retains an open draft", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true, scheduleForm: true,
+      timezone: "Asia/Tokyo", now: "2026-09-06T06:59:50Z" });
+    await page.evaluate(() => fixture.mountSchedule());
+    await page.waitForFunction(() => fixture.controller);
+    await page.evaluate(() => fixture.controller.onOpenAddClass());
+    await page.getByRole("dialog", { name: "Add class" }).waitFor();
+    const defaults = await page.locator('input[type="date"]').evaluateAll(inputs => inputs.map(input => input.value));
+    assert.ok(defaults.includes("2026-09-05"));
+    assert.ok(!defaults.includes("2026-09-06"));
+    await page.getByRole("button", { name: /One-off session/ }).click();
+    assert.deepEqual(await page.locator('input[type="date"]').evaluateAll(inputs => inputs.map(input => input.value)), ["2026-09-05"]);
+    await page.clock.fastForward(31_000);
+    await page.waitForFunction(() => fixture.store.businessDate === "2026-09-06");
+    assert.deepEqual(await page.locator('input[type="date"]').evaluateAll(inputs => inputs.map(input => input.value)), ["2026-09-05"]);
+    await page.evaluate(() => fixture.controller.onCloseAddClass());
+    await page.evaluate(() => fixture.controller.onJumpToToday());
+    await page.evaluate(() => fixture.controller.onOpenAddClass());
+    assert.equal(await page.evaluate(() => fixture.controller.classFormInitialValues.date), "2026-09-06");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally { await browser.close(); }
+});
+
+
+for (const entry of ["/students", "/billing"]) {
+  for (const destination of ["/leads", "/reports"]) {
+    test(`cold ${entry} then ${destination} loads its previously omitted data`, async () => {
+      const browser = await chromium.launch();
+      try {
+        const page = await fixturePage(browser, { path: entry });
+        if (entry === "/students") await page.waitForFunction(() => fixture.store.studentsLoaded);
+        assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), false);
+        await page.evaluate(path => { fixture.autoLeads = true; fixture.navigate(path); }, destination);
+        await page.waitForFunction(() => fixture.store.leadsLoaded && fixture.store.programsLoaded);
+        assert.ok(await page.evaluate(() => fixture.requests.some(r => r.path === "/leads")));
+        await page.evaluate(() => fixture.root.unmount());
+      } finally { await browser.close(); }
+    });
+  }
+}
+
+test("the fallback roster loads its first complete dataset after a Billing entry", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/billing", rosterController: true, pagedRoster: false });
+    assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), false);
+    await page.evaluate(() => {
+      fixture.rosterEmpty = true;
+      fixture.navigate("/students", "?fullRoster=1"); fixture.mountRoster();
+    });
+    await page.waitForFunction(() => fixture.store.studentsLoaded && fixture.store.programsLoaded);
+    assert.equal(await page.evaluate(() => fixture.store.studentsMayBePartial), false);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally { await browser.close(); }
+});
+
+test("off-dashboard business commands do not fan out into uncached summary reads", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/leads" });
+    await page.waitForFunction(() => fixture.store.leadsLoaded);
+    await page.evaluate(async () => {
+      fixture.api.patch = async () => fixture.lead;
+      for (let i = 0; i < 30; i += 1) await fixture.store.updateLead("lead-1", { notes: `Edit ${i}` });
+    });
+    assert.equal(await page.evaluate(() => fixture.summaries.length), 0);
+    await page.evaluate(() => { fixture.navigate("/dashboard"); fixture.summary = fixture.store.refreshDashboardSummary(); });
+    await page.waitForFunction(() => fixture.summaries.length === 1);
+    await page.evaluate(() => fixture.summaries[0].resolve({ auth: fixture.auth }));
+    await page.evaluate(() => fixture.summary);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally { await browser.close(); }
+});
+
+test("an unknown lead save stays locked until dismissal, then a new form is usable", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/leads", leadController: true });
+    await page.evaluate(() => { fixture.writeAttempts = 0; fixture.api.post = async () => { fixture.writeAttempts += 1; throw new fixture.CommandOutcomeUnknown(); }; });
+    await page.getByRole("button", { name: "New lead", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Add new lead" });
+    await dialog.locator('[name="first_name"]').fill("Synthetic");
+    await dialog.locator('[name="last_name"]').fill("Lead");
+    await dialog.getByRole("button", { name: "Add lead", exact: true }).click();
+    await page.waitForFunction(() => fixture.leadController.addLeadOutcomeUnknown);
+    assert.equal(await dialog.getByRole("button", { name: "Add lead", exact: true }).isEnabled(), false);
+    assert.equal(await page.evaluate(() => fixture.leadController.isAddingLead), false);
+    assert.equal(await page.evaluate(() => fixture.writeAttempts), 1);
+    await dialog.getByRole("button", { name: "Close add lead dialog" }).click();
+    await page.getByRole("button", { name: "New lead", exact: true }).click();
+    assert.equal(await dialog.getByRole("button", { name: "Add lead", exact: true }).isEnabled(), true);
     await page.evaluate(() => fixture.root.unmount());
   } finally { await browser.close(); }
 });

@@ -9,10 +9,10 @@ The owner selected **Core release; keep automations explicitly planned** during 
 | Finding | Revalidation and implemented behavior |
 | --- | --- |
 | F1: lightweight students treated as complete | Confirmed in the current detail controller. Both cached and uncached live students now ensure an independent full detail read. Identity can display immediately; guardians, photo and record actions wait for complete data. Failure offers retry, without claiming the student does not exist. Summary updates cannot replace the hydrated detail. Guardian fields remain read-only. |
-| F2: stale dashboard projections | Confirmed. Explicit exported business-command wrappers invalidate older summary requests and revalidate after settlement. Summary failure retains the saved entity and last known totals, with scoped retry. Dashboard entry covers billing commands outside the shared store. Complete-studio totals still come from the server for a partial roster. |
+| F2: stale dashboard projections | Confirmed. Explicit exported business-command wrappers invalidate older summary requests and revalidate after settlement while Dashboard is active. Other routes defer the summary read until Dashboard entry. Summary failure retains the saved entity and last known totals, with scoped retry. Dashboard entry covers billing commands outside the shared store. Complete-studio totals still come from the server for a partial roster. |
 | F3: lead refresh ordering | Confirmed and reproduced in helper and mounted tests. A bounded resource scope tracks read sequence, mutation revision and pending writes. Reads wait for pending writes and retry invalidated snapshots at most three times. Older GETs and deleted rows cannot overwrite later accepted state. Bootstrap uses the same scope. |
 | F4: token renewal versus identity | Confirmed. Confirmed lead/student writes can commit across credential renewal only while the authoritative user/studio/role epoch remains unchanged. Reads use current credentials when replay is safe. No write is replayed. Roster reset depends on identity, not token. Auth, archive and subscription boundaries remain enforced. |
-| F5: lost roster context | Confirmed. Bounded canonical query parameters retain search, status, program and sort. One session-storage return record retains page, signed cursor history (20 entries), scroll and originating control, scoped to user/studio/role/identity generation, expiring after 30 minutes. Return URLs accept only `/students` and allowed query keys. Existing signed-cursor recovery remains in use. Selection and whole records are deliberately not persisted. |
+| F5: lost roster context | Confirmed. Bounded canonical query parameters retain search, status, program and sort. One session-storage return record retains page, signed cursor history (20 entries), scroll and originating control, scoped to user/studio/role/identity generation, expiring after 30 minutes and consumed after restoration. Return URLs accept only `/students` and allowed query keys. Existing signed-cursor recovery remains in use. Selection and whole records are deliberately not persisted. |
 | F6: competing business dates | Confirmed. Authoritative workspace timezone drives the shared business day, roster and dashboard filters, lead defaults, student-form defaults and schedule date selection/ranges. A 30-second check plus focus/visibility events updates the day without replacing an open form's chosen values. Backend conversion defaults use the same timezone policy as dashboard facts. Browser inspection also reproduced a roster/detail date-display discrepancy, fixed by treating roster membership dates as calendar dates. |
 | F7: ambiguous command failures | Confirmed transport/UI ambiguity; no duplicate production transaction was demonstrated. Aborted/disconnected commands, server 5xx outcomes and lost success bodies produce typed `CommandOutcomeUnknown` rather than generic replay advice. Safe `x-request-id` values are retained when response headers arrived. Student and lead creation forms retain error/draft context and disable repeated submission while outcome is unknown. Known HTTP rejections keep their status; reads keep their existing timeout behavior. |
 | F8: roadmap in primary navigation | Confirmed product-scope mismatch, addressed for the owner's selected Core scope. Primary lead/billing links respect the existing authoritative roles; backend authorization remains the enforcement boundary. |
@@ -32,7 +32,7 @@ No finding was already fixed by the intervening Browserslist patch. The work doe
 
 The existing dashboard cache is process-local, bounded to 128 entries and 15 seconds, with authorization before lookup and role-sensitive keys. The pre-existing invalidation call in `students.py` covers bulk archive. Its process-local nature cannot establish cross-worker read-your-writes.
 
-The new `fresh=true` summary option bypasses both cached facts and older single-flight work **after authorization**, using the normal interactive provider lane. Thus reconciliation does not depend on which worker accepted the command. Ordinary callers retain the bounded cache. Tests exercise a warm cache and a deliberately blocked older flight; no distributed cache, schema change or migration is introduced. A fresh database read reports persisted application facts, not a guarantee that asynchronous provider/webhook work has completed.
+The new `fresh=true` summary option bypasses both cached facts and older single-flight work **after authorization**, using the normal interactive provider lane. Thus reconciliation does not depend on which worker accepted the command. API callers that omit `fresh=true` retain the bounded cache. The frontend deliberately requests fresh facts on Dashboard entry and reconciliation. Tests exercise a warm cache and a deliberately blocked older flight; no distributed cache, schema change or migration is introduced. A fresh database read reports persisted application facts, not a guarantee that asynchronous provider/webhook work has completed.
 
 | Command family | Existing protection retained | Recovery policy in this change |
 | --- | --- | --- |
@@ -61,14 +61,14 @@ No database migration is required. Ship the additive backend endpoints before th
 
 | Command (repository root unless noted) | Result |
 | --- | --- |
-| `cd frontend && npm test` | Exit 0; **846 passed**, 152 suites, zero skipped/failed. Includes mounted production/development lifecycle cases. |
+| `cd frontend && npm test` | Exit 0; **857 passed**, 152 suites, zero skipped/failed. Includes mounted production/development lifecycle cases. |
 | `cd backend && venv/bin/python -m pytest tests` | Exit 0; **1,821 passed**. Ten existing dependency/deprecation/test-key warnings. |
 | `cd frontend && npm run lint` | Exit 0; no warnings/errors. |
 | `cd frontend && npx tsc --noEmit` | Exit 0. |
 | `cd frontend && npm run build` with explicit synthetic loopback values and `NEXT_PUBLIC_PREVIEW_MODE=false` | Exit 0; production compilation, type checking and route generation passed. |
 | `npm run generate:api-types` followed by `npm run check:api-types` | Exit 0; only the new workspace response contract was added. |
-| `cd frontend && KOARYU_E2E_FRONTEND_URL=http://localhost:4010 KOARYU_E2E_DATA_PLANE=disposable-preview npm run test:e2e:core-ui -- --workers=1` | Exit 0; **4 passed**. |
-| `cd frontend && node --experimental-strip-types --test tests/workflow-stabilization-mounted.test.mjs` | Exit 0; **12 passed**. Includes strict development-mode restoration, unknown transport coverage in the separate API suite, and actual mounted form failure/draft/keyboard behavior. |
+| `cd frontend && KOARYU_E2E_FRONTEND_URL=http://localhost:4010 KOARYU_E2E_DATA_PLANE=disposable-preview npm run test:e2e:core-ui -- --workers=1` | Exit 0; **5 passed**. |
+| `cd frontend && node --experimental-strip-types --test tests/workflow-stabilization-mounted.test.mjs` | Exit 0; **21 passed**. Includes strict development-mode restoration, unknown transport coverage in the separate API suite, and actual mounted form failure/draft/keyboard behavior. |
 | `git diff --check` | Exit 0. |
 | `npm run check:performance-regression -- --expected-sha "$(git rev-parse HEAD)"` | Run on the clean task commit; exact SHA and profile metrics are in the accompanying `performance-evidence.json`. |
 
@@ -79,3 +79,21 @@ Local evidence directory:
 It contains matching 1440×1000 desktop and 390×844 mobile before/after screenshots, mobile edit-dialog evidence, final command logs, synthetic startup traces, and the commit-bound performance output. Actual browser Back and the explicit Back button both restored the Maya filter and focused `Open Maya Chen profile`; mobile dialog Escape focused `Edit`; neither inspected viewport had horizontal page overflow.
 
 The initial baseline comparison's Webpack attempt hit an existing pure-selector CSS error. The comparison was rerun successfully using the repository's normal Turbopack path; no baseline source was modified. The temporary baseline checkout and preview servers were removed/stopped afterward. No test unavailability is being counted as a pass.
+
+## PR #147 review follow-up
+
+Codex and an independent `claude -p --model claude-opus-5` review checked the original implementation. Their actionable findings were addressed before merge:
+
+- Archive confirmation now advances the roster mutation epoch, including when credentials renewed during the write. A mounted overlapping-read regression prevents archived rows from reappearing.
+- Restoring profile return context consumes the saved record, so a later unrelated roster visit cannot reuse an old page or cursor.
+- Add class snapshots the selected studio calendar day for both one-off and recurring forms. Crossing midnight leaves an open draft unchanged.
+- Leads, Reports, Schedule, Belt Tracker and student subroutes load omitted program/lead data on entry. The legacy roster fallback can acquire its first complete roster after a Billing entry. The latter problem requires the paged-roster flag to be disabled; ordinary live filters remain server-owned.
+- Business commands refresh summary facts immediately only while Dashboard is active. Other routes invalidate old summary requests and rely on the fresh read at Dashboard entry, avoiding an uncached summary request for every attendance action.
+- Uncertain lead saves block only the current form. Dismissal permits a new form, and uncertainty is separate from an in-progress request. Mounted tests use the real `CommandOutcomeUnknown` class for both lead and student forms.
+- Command-specific timeout/network recovery copy survives the typed unknown outcome, including CSV import's same-key retry instructions. Generic read retry copy is not applied to unknown writes.
+- Cached detail loading uses the existing record skeleton. Summary retry returns a rejected promise rather than throwing synchronously, stale reload instructions were corrected, and rejected photo actions no longer invalidate detail reads.
+- A real Next.js browser test reproduced rapid typing being erased by delayed `useSearchParams` updates. URL synchronization now compares against the browser's synchronous address. The test covers rapid input, filter changes, profile return and a same-route navigation that clears filters.
+
+The remaining low-priority Opus suggestions are deferred for this merge. Preview retains its fixture clock; a null authoritative role keeps navigation closed; workspace metadata failure keeps the retryable access gate closed because the studio clock is unavailable; and focus returns to the matching roster row even when the record was opened from its reading rail. Compatibility with an IANA zone accepted by the server but absent from an older browser's Intl database remains a follow-up. These do not change the current supported live workflows verified here.
+
+The legacy combined-bootstrap adapter remains only for older lifecycle tests. New independent workspace/feature fixtures cover route transitions and authority changes, and the added browser test checks the actual Next.js URL behavior. Reviewer results, final-head CI and thread resolutions are recorded on [PR #147](https://github.com/ronchak/Koaryu/pull/147).

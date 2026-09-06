@@ -100,3 +100,11 @@ test("a definite command rejection retains its status", async () => {
   useServer((_request, response) => { response.writeHead(422, { "content-type": "application/json" }); response.end('{"detail":"Invalid input"}'); });
   await assert.rejects(api.post("/students", {}), error => error instanceof ApiError && error.status === 422);
 });
+
+
+test("idempotent import recovery copy survives an unknown command timeout", async () => {
+  useServer(() => {});
+  const message = "Confirmation was lost. Retry this same file and options with the same import key.";
+  await assert.rejects(api.postForm("/students/import", new FormData(), undefined, { timeoutMs: 40, timeoutMessage: message }),
+    error => error instanceof CommandOutcomeUnknown && error.outcome === "unknown" && error.message === message);
+});

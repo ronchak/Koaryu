@@ -47,3 +47,11 @@ export function loadRosterReturn(scope: string, href: string): RosterReturnState
     return value;
   } catch { return null; }
 }
+
+
+export function consumeRosterReturn(restored: RosterReturnState): void {
+  try {
+    const current = loadRosterReturn(restored.scope, restored.href);
+    if (current?.savedAt === restored.savedAt) sessionStorage.removeItem(STORAGE_KEY);
+  } catch { /* Optional return context must not block navigation. */ }
+}
