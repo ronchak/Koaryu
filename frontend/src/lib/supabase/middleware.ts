@@ -10,10 +10,8 @@ import {
 } from "@/lib/studio-state-cookie";
 import { canAccessBillingRoute, isBillingRoute } from "@/lib/billing-route-access";
 import { ACCOUNT_ARCHIVED_ROUTE, resolveMembershipRoute } from "@/lib/auth-route-model";
-import {
-  parseAuthProfileResponse,
-  type AuthProfileResponse,
-} from "@/lib/store-bootstrap-model";
+import type { AuthProfileResponse } from "@/lib/store-bootstrap-model";
+import { AuthProfileRequestError, requestAuthProfile } from "@/lib/auth-profile-request";
 
 const PUBLIC_STATUS_ROUTES = new Set(["/404", "/500", "/502", "/503", "/504"]);
 
@@ -222,23 +220,11 @@ export async function updateSession(request: NextRequest) {
     }
 
     try {
-      const authMeResponse = await fetch(`${apiBaseUrl}/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        cache: "no-store",
-      });
-
-      if (authMeResponse.status === 401 || authMeResponse.status === 403) {
+      cacheAuthProfile(await requestAuthProfile(apiBaseUrl, session.access_token, request.signal));
+    } catch (error) {
+      if (error instanceof AuthProfileRequestError && (error.status === 401 || error.status === 403)) {
         return redirectTo("/login", { clearStudioState: true });
       }
-
-      if (!authMeResponse.ok) {
-        throw new Error(`/auth/me returned ${authMeResponse.status}`);
-      }
-
-      cacheAuthProfile(parseAuthProfileResponse(await authMeResponse.json()));
-    } catch (error) {
       console.error("Failed to resolve current user's studio in middleware", error);
       return serviceUnavailable();
     }
@@ -279,23 +265,11 @@ export async function updateSession(request: NextRequest) {
       }
 
       try {
-        const authMeResponse = await fetch(`${apiBaseUrl}/auth/me`, {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          cache: "no-store",
-        });
-
-        if (authMeResponse.status === 401 || authMeResponse.status === 403) {
+        cacheAuthProfile(await requestAuthProfile(apiBaseUrl, session.access_token, request.signal));
+      } catch (error) {
+        if (error instanceof AuthProfileRequestError && (error.status === 401 || error.status === 403)) {
           return redirectTo("/login", { clearStudioState: true });
         }
-
-        if (!authMeResponse.ok) {
-          throw new Error(`/auth/me returned ${authMeResponse.status}`);
-        }
-
-        cacheAuthProfile(parseAuthProfileResponse(await authMeResponse.json()));
-      } catch (error) {
         console.error("Failed to resolve billing route authorization", error);
         return serviceUnavailable();
       }
