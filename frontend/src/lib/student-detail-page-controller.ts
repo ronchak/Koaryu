@@ -1,4 +1,5 @@
 "use client";
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -83,6 +84,7 @@ export function useStudentDetailPageController({
     if (currentScope.current === scope) setHydration({ scope, student });
   };
   const [retryNonce, setRetryNonce] = useState(0);
+  useResumeRefresh(() => setRetryNonce(value => value + 1));
   const [isLoadingStudent, setIsLoadingStudent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fallbackBeltLadders, setFallbackBeltLadders] = useState<BeltLadder[]>([]);

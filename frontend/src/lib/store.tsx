@@ -1752,6 +1752,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setStudioTimezone(workspace.studio?.timezone ?? "UTC");
         setStudioLoadError(null);
         syncStoredStudioSessionCookies(profile.user.id, profile.studio_id, profile.membership_status);
+        if (pathnameRef.current === "/belt-tracker") {
+          await refreshBeltsRef.current?.();
+          if (disposed || !request.isSameIdentity()) return;
+          await loadEligibilityForLadder(currentLadderIdRef.current, { force: true });
+        }
         window.dispatchEvent(new Event(APP_DATA_REFRESH_EVENT));
       } catch (error) {
         if (disposed || !request.isSameIdentity()) return;
@@ -1778,7 +1783,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.addEventListener(APP_RESUME_EVENT, onResume);
     return () => { disposed = true; unsubscribe(); window.removeEventListener(APP_RESUME_EVENT, onResume); };
   }, [beginLiveAuthRequest, commitAuthoritativeAuthProfile, identityReady, isPreviewMode,
-    markSubscriptionRequired, resetLiveStudioState, retryInitialization, router]);
+    loadEligibilityForLadder, markSubscriptionRequired, resetLiveStudioState, retryInitialization, router]);
 
   // These confirmed business commands affect dashboard facts. Billing commands
   // live outside this store; dashboard route entry also requests fresh facts.
