@@ -1,4 +1,5 @@
 import { CommandOutcomeUnknown } from "./command-outcome.ts";
+import { beginPendingCommand } from "./pending-commands.ts";
 export { CommandOutcomeUnknown } from "./command-outcome.ts";
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import { serializeJsonRequestBody } from "@/lib/api-body";
@@ -147,6 +148,7 @@ async function executeApiRequest<T>(
   let requestId: string | undefined;
   let dispatched = false;
   const isCommand = !["GET", "HEAD", "OPTIONS"].includes(init.method ?? "GET");
+  const finishCommand = isCommand ? beginPendingCommand() : undefined;
   try {
     dispatched = !controller.signal.aborted;
     const response = await fetch(apiUrl(path), {
@@ -173,6 +175,7 @@ async function executeApiRequest<T>(
     if (receivedHeaders) throw error;
     throw new Error(networkErrorMessage);
   } finally {
+    finishCommand?.();
     if (timeout) {
       clearTimeout(timeout);
     }

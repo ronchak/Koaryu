@@ -63,9 +63,11 @@ function NavigationLinks({ pathname, role }: { pathname: string; role?: string |
           title={item.label}
           className={styles.navLink}
         >
-          <Icon className={styles.navIcon} aria-hidden="true" size={17} strokeWidth={1.8} />
+          <span className={styles.navIconSlot}>
+            <Icon className={styles.navIcon} aria-hidden="true" size={17} strokeWidth={1.8} />
+            <NavigationPending />
+          </span>
           <span className={styles.navLabel}>{item.label}</span>
-          <NavigationPending />
         </Link>
       </li>
     );

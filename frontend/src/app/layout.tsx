@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { WebVitals } from "@/components/web-vitals";
+import { AppResumeGuard } from "@/components/app-resume-guard";
+import { getDeploymentMetadata } from "@/lib/deployment-metadata";
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
 import "./globals.css";
 
@@ -89,6 +91,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col font-sans antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <WebVitals />
+        <AppResumeGuard loaded={getDeploymentMetadata()} />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

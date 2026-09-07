@@ -248,3 +248,11 @@ retain their existing handling. Request cancellation stops recovery.
 The backend shares an in-progress signing-key refresh across authentication
 requests. Followers await completion asynchronously for at most three seconds,
 then verify their own tokens. Expired keys are never reused to grant access.
+
+### Navigation recovery
+
+Temporary auth-provider errors retain the session and offer a retry of the original
+application destination. Returning to an old build offers a refresh without
+replacing drafts, and blocks that refresh while API saves are pending. See
+[the navigation follow-up](../docs/verification/navigation-reliability-followup.md)
+for lifecycle behavior and the release browser checks.
