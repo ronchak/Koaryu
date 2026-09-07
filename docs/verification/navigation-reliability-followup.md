@@ -102,9 +102,19 @@ Verification includes an intentionally held route response, fresh-vs-old summary
 races, bounded telemetry input, multi-stage deadline exhaustion, stalled response
 bodies, completed-response cleanup and workload classifications.
 
+## Auth verification decision
+
+The installed Supabase SDK was tested with a synthetic signed token and a revoked
+session response from its authority. `getClaims()` accepted the still-valid token
+without consulting the authority; the current `getUser()` check rejected it.
+Replacing the page check would therefore change the existing revocation behavior.
+We retain authoritative verification and its bounded outage recovery. Faster
+navigation comes from route caching, intent prefetch and measured locality without
+silently weakening that check. The test uses a generated key and fake transport,
+not a production token. Backend membership and subscription checks remain fresh.
+
 ## Remaining review items
 
-- Evaluate cheaper page identity verification against revocation requirements.
 - Measure function locality.
 - Trial intent prefetch and profile initial production bundles before splitting them.
 

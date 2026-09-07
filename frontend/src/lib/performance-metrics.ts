@@ -1,4 +1,4 @@
-export const METRIC_ROUTES = ["dashboard", "students", "schedule", "billing", "settings", "leads", "reports", "belt-tracker", "public"] as const;
+export const METRIC_ROUTES = ["dashboard", "students", "schedule", "billing", "settings", "leads", "reports", "belt-tracker", "public", "other"] as const;
 export const METRIC_NAMES = ["navigation_commit", "navigation_useful", "navigation_complete", "navigation_failure", "LCP", "INP", "CLS"] as const;
 export type PerformanceMetric = {
   route: typeof METRIC_ROUTES[number];
@@ -10,8 +10,9 @@ export type PerformanceMetric = {
 export type MetricBatch = { version: string; events: PerformanceMetric[] };
 
 export function metricRoute(path: string): PerformanceMetric["route"] {
+  if (path === "/") return "public";
   const route = path.replace(/^\//, "");
-  return METRIC_ROUTES.includes(route as PerformanceMetric["route"]) ? route as PerformanceMetric["route"] : "public";
+  return METRIC_ROUTES.includes(route as PerformanceMetric["route"]) ? route as PerformanceMetric["route"] : "other";
 }
 
 export function parseMetricBatch(value: unknown): MetricBatch | null {

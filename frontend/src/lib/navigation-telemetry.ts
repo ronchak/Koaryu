@@ -62,7 +62,7 @@ export function recordPerformanceMetric(event: PerformanceMetric) {
 export const navigationTimer = createNavigationTimer(recordPerformanceMetric);
 export function startMeasuredNavigation(path: string, navigation: PerformanceMetric["navigation"], started?: number) {
   const route = metricRoute(path);
-  if (route === "public") return;
+  if (route === "public" || route === "other") return;
   navigationTimer.start(route, navigation, started);
   clearTimeout(navigationTimeout);
   navigationTimeout = setTimeout(() => navigationTimer.fail("timeout"), 45_000);

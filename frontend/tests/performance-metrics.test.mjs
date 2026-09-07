@@ -27,7 +27,7 @@ test("navigation timing includes the entire delayed route read and rejects super
 
 test("metrics allow only bounded numeric measurements and fixed route labels", () => {
   assert.deepEqual(parseMetricBatch(batch), batch);
-  assert.equal(metricRoute("/students/private-id?email=private"), "public");
+  assert.equal(metricRoute("/students/private-id?email=private"), "other");
   for (const invalid of [
     { ...batch, email: "private" }, { ...batch, events: [{ ...event, email: "private" }] },
     { ...batch, events: [{ ...event, route: "/students/private" }] },
