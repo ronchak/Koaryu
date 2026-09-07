@@ -9,8 +9,10 @@ import { buildUpstreamProxyRequestHeaders } from "../../../../lib/proxy-request-
 import { buildProxyTargetUrl, UnsafeProxyPathError } from "../../../../lib/proxy-target.ts";
 import { ACTIVE_STUDIO_COOKIE } from "../../../../lib/studio-state-cookie.ts";
 import { fetchProxyUpstream, ProxyUpstreamTimeoutError } from "../../../../lib/proxy-upstream.ts";
+import { proxyRequestTimeout } from "../../../../lib/request-budget.ts";
 
 export const runtime = "nodejs";
+export const maxDuration = 190;
 
 function getBackendApiBase() {
   const rawBackendApiBase = process.env.BACKEND_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
@@ -63,7 +65,7 @@ async function forwardRequest(
       );
     }
 
-    const upstream = await fetchProxyUpstream(targetUrl, init, request.signal);
+    const upstream = await fetchProxyUpstream(targetUrl, init, request.signal, proxyRequestTimeout(`/${path.join("/")}`, request.method));
     const responseHeaders = buildPrivateProxyHeaders(upstream.headers);
 
     return new Response(upstream.body, {

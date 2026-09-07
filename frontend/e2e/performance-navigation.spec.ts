@@ -72,6 +72,18 @@ for (const placement of ["side", "collapsed", "top", "mobile"] as const) {
       await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
       await expect(page.locator('[data-koaryu-navigation-pending="true"]')).toHaveCount(0);
       expect(await link.boundingBox()).toEqual(bounds);
+      await page.waitForFunction(() => performance.getEntriesByName("koaryu.measured.navigation_commit").some(entry => (entry as PerformanceMark).detail?.route === "billing"));
+      const commit = await page.evaluate(() => (performance.getEntriesByName("koaryu.measured.navigation_commit").at(-1) as PerformanceMark).detail);
+      expect(commit.value).toBeGreaterThanOrEqual(150);
+      // Preview Billing has no live landing payload. Schedule has a useful preview state.
+      await page.getByRole("link", { name: "Schedule", exact: true }).filter({ visible: true }).click();
+      await page.waitForFunction(() => performance.getEntriesByName("koaryu.measured.navigation_useful").some(entry => (entry as PerformanceMark).detail?.route === "schedule"));
+      const timings = await page.evaluate(() => ({
+        commit: (performance.getEntriesByName("koaryu.measured.navigation_commit").at(-1) as PerformanceMark)?.detail,
+        useful: (performance.getEntriesByName("koaryu.measured.navigation_useful").at(-1) as PerformanceMark)?.detail,
+      }));
+      expect(timings.commit.route).toBe("schedule");
+      expect(timings.useful.value).toBeGreaterThanOrEqual(timings.commit.value);
       expect(errors).toEqual([]);
     });
   }

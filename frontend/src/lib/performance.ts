@@ -1,4 +1,5 @@
 import type { StudentListQuery } from "./student-list-page";
+import { navigationTimer } from "./navigation-telemetry.ts";
 
 type PerfDetail = Record<string, string | number | boolean | null | undefined>;
 
@@ -53,6 +54,7 @@ export function markPerformance(name: string, detail?: PerfDetail) {
 
   const markName = `${PREFIX}${name}`;
   try {
+    window.performance.clearMarks?.(markName);
     window.performance.mark(markName);
     logPerformance(name, detail);
   } catch {
@@ -77,6 +79,7 @@ export function measurePerformance(name: string, startName: string, endName?: st
       ...detail,
       duration_ms: latest ? Math.round(latest.duration) : null,
     });
+    window.performance.clearMeasures?.(measureName);
   } catch {
     // Missing marks are acceptable during interrupted navigations.
   }
@@ -100,6 +103,10 @@ export function startPerformanceSpan(name: string, detail?: PerfDetail) {
       const mergedDetail = { ...detail, ...finishDetail, span_id: spanId };
       markPerformance(endName, mergedDetail);
       measurePerformance(`${name}.duration`, startName, endName, mergedDetail);
+      if (canUsePerformance()) {
+        window.performance.clearMarks?.(`${PREFIX}${startName}`);
+        window.performance.clearMarks?.(`${PREFIX}${endName}`);
+      }
     },
   };
 }
@@ -111,7 +118,7 @@ export function startStudentPagePerformanceSpan(query: StudentListQuery = {}) {
   });
 }
 
-export const DASHBOARD_PERFORMANCE_ROUTES = ["dashboard", "students", "schedule", "billing", "settings", "leads"] as const;
+export const DASHBOARD_PERFORMANCE_ROUTES = ["dashboard", "students", "schedule", "billing", "settings", "leads", "reports", "belt-tracker"] as const;
 export type DashboardPerformanceRoute = typeof DASHBOARD_PERFORMANCE_ROUTES[number];
 type DashboardReadiness = Partial<Record<"shell" | "identity" | "useful" | "complete" | "legacyComplete", boolean>>;
 let dashboardNavigation: { route: DashboardPerformanceRoute; identityGeneration: number; generation: number; marked: Set<string> } | null = null;
@@ -138,6 +145,7 @@ export function markDashboardReadiness(route: DashboardPerformanceRoute, identit
         if (!readiness[stage] || navigation.marked.has(stage)) continue;
         navigation.marked.add(stage);
         markVisiblePerformance(`koaryu.visible.${stage === "legacyComplete" ? "legacy-complete" : stage}`, route, identityGeneration, navigation.generation);
+        if (stage === "useful" || stage === "complete") navigationTimer.stage(route, stage);
       }
     });
   });
@@ -149,6 +157,13 @@ export function markDashboardReadiness(route: DashboardPerformanceRoute, identit
 
 function markVisiblePerformance(name: string, route: DashboardPerformanceRoute, identityGeneration: number, navigationGeneration: number) {
   try {
+    const previous = window.performance.getEntriesByName?.(name, "mark") ?? [];
+    if (previous.length >= 64) {
+      window.performance.clearMarks(name);
+      for (const entry of previous.slice(-32) as PerformanceMark[]) {
+        window.performance.mark(name, { startTime: entry.startTime, detail: entry.detail });
+      }
+    }
     window.performance.mark(name, { detail: { route, identity_generation: identityGeneration, navigation_generation: navigationGeneration } });
   } catch {
     // Evidence must remain unavailable if marks are unsupported, without breaking UI.

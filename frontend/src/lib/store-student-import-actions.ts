@@ -102,7 +102,7 @@ export function useStoreStudentImportActions({
       formData,
       liveRequest.token,
       {
-        timeoutMs: null,
+        timeoutMs: 190000,
         headers: importKey ? {
           "Idempotency-Key": importKey,
           "X-Import-Key": importKey,
@@ -140,7 +140,7 @@ export function useStoreStudentImportActions({
     studentRosterRequestSequenceRef.current = requestSequence;
     const studentsRefresh = await Promise.allSettled([
       withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
-        const refreshedStudents = await fetchAllStudents(request.token, { timeoutMs: 30000 });
+        const refreshedStudents = await fetchAllStudents(request.token, { timeoutMs: 35000 });
         if (isStudentRosterSnapshotCurrent({
           authCurrent: request.isCurrent() && canCommitLiveMutation(liveRequest),
           currentMutationEpoch: studentMutationEpochRef.current,

@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import time
 from typing import Any, Awaitable, Callable, Literal, Optional, TypeVar
 
 from httpx import TimeoutException
@@ -8,6 +9,7 @@ from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.concurrency import run_in_threadpool
 from app.core.security import JWKSRefreshInFlight, get_user_id_from_token
+from app.core.request_deadline import request_deadline
 from app.db.supabase import (
     DeadlineBoundSupabaseClient,
     create_operational_alert_supabase_client,
@@ -98,7 +100,11 @@ async def run_supabase_operation(
 ) -> ResultT:
     """Run provider work on the owned lane or inline for fake-client overrides."""
     if isinstance(provider, SupabaseProviderRuntime):
-        timeout = asyncio.timeout(provider.operation_wait_timeout(lane))
+        remaining = provider.operation_wait_timeout(lane)
+        deadline = request_deadline.get()
+        if deadline is not None:
+            remaining = min(remaining, max(0.0, deadline - time.monotonic()))
+        timeout = asyncio.timeout(remaining)
         try:
             async with timeout:
                 run = provider.run_bulk if lane == "bulk" else provider.run_interactive

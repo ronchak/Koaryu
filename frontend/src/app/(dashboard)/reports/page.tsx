@@ -1,4 +1,5 @@
 "use client";
+import { markDashboardReadiness } from "@/lib/performance";
 import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -81,7 +82,7 @@ export default function ReportsPage() {
       window.clearTimeout(timer);
     };
   }, [refreshReportSchedule]);
-  const { currentRole } = useStudioStore();
+  const { currentRole, identityReady, identityGeneration } = useStudioStore();
   const {
     attendanceMetrics,
     leadMetrics,
@@ -109,6 +110,11 @@ export default function ReportsPage() {
       refreshReportSchedule(),
     ]);
   }, [refreshLeads, refreshPrograms, refreshReportSchedule]);
+
+  useEffect(() => markDashboardReadiness("reports", identityGeneration, {
+    useful: identityReady && datasetReadiness.status === "ready",
+    complete: identityReady && datasetReadiness.status === "ready",
+  }), [identityReady, identityGeneration, datasetReadiness.status]);
 
   if (datasetReadiness.status === "loading") {
     return (

@@ -216,7 +216,7 @@ export function useStoreStudentRosterActions({
 
       try {
         markPerformance("students.refresh_started");
-        const nextStudents = await fetchAllStudents(request.token, { timeoutMs: 30000 });
+        const nextStudents = await fetchAllStudents(request.token, { timeoutMs: 35000 });
         markPerformance("students.refresh_finished");
         measurePerformance(
           "students.refresh_duration",

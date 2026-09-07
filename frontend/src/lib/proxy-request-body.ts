@@ -3,6 +3,11 @@ import {
   DEFAULT_PROXY_REQUEST_MAX_BYTES,
   STUDENT_PHOTO_PROXY_REQUEST_MAX_BYTES,
 } from "./request-body-limits.ts";
+import { PROXY_BODY_TIMEOUT_MS } from "./request-budget.ts";
+
+export class ProxyRequestBodyTimeoutError extends Error {
+  constructor() { super("Request upload timed out."); this.name = "ProxyRequestBodyTimeoutError"; }
+}
 
 export class ProxyRequestBodyTooLargeError extends Error {
   constructor() {
@@ -19,6 +24,7 @@ export class InvalidProxyContentLengthError extends Error {
 }
 
 export function getProxyRequestBodyError(error: unknown) {
+  if (error instanceof ProxyRequestBodyTimeoutError) return { status: 408, detail: error.message } as const;
   if (error instanceof ProxyRequestBodyTooLargeError) {
     return { status: 413, detail: "Request body is too large." } as const;
   }
@@ -67,8 +73,9 @@ function rejectOversizedDeclaredBody(headers: Headers, maxBytes: number) {
 }
 
 export async function readBoundedProxyRequestBody(
-  request: Pick<Request, "body" | "headers">,
-  maxBytes: number
+  request: Pick<Request, "body" | "headers"> & Partial<Pick<Request, "signal">>,
+  maxBytes: number,
+  timeoutMs = PROXY_BODY_TIMEOUT_MS,
 ) {
   rejectOversizedDeclaredBody(request.headers, maxBytes);
 
@@ -79,30 +86,40 @@ export async function readBoundedProxyRequestBody(
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
+  let expired = false;
+  const cancel = () => { void reader.cancel().catch(() => {}); };
+  const timeout = setTimeout(() => { expired = true; cancel(); }, timeoutMs);
+  request.signal?.addEventListener("abort", cancel, { once: true });
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-
-    totalBytes += value.byteLength;
-    if (totalBytes > maxBytes) {
-      try {
-        await reader.cancel();
-      } catch {
-        // Preserve the deterministic 413 even if the inbound stream cannot cancel cleanly.
+  try {
+    if (request.signal?.aborted) cancel();
+    request.signal?.throwIfAborted();
+    while (true) {
+      const { done, value } = await reader.read();
+      request.signal?.throwIfAborted();
+      if (expired) throw new ProxyRequestBodyTimeoutError();
+      if (done) {
+        break;
       }
-      throw new ProxyRequestBodyTooLargeError();
-    }
-    chunks.push(value);
-  }
 
-  const body = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        cancel();
+        throw new ProxyRequestBodyTooLargeError();
+      }
+      chunks.push(value);
+    }
+
+    const body = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      body.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return body.buffer;
+  } finally {
+    clearTimeout(timeout);
+    request.signal?.removeEventListener("abort", cancel);
+    reader.releaseLock();
   }
-  return body.buffer;
 }

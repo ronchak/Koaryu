@@ -199,7 +199,7 @@ export function useStudentImportPageController({
           formData,
           token,
           {
-            timeoutMs: 30000,
+            timeoutMs: 190000,
             timeoutMessage: "Parsing this CSV is taking longer than expected. Please try again in a moment.",
           }
         );
@@ -280,7 +280,7 @@ export function useStudentImportPageController({
           formData,
           token,
           {
-            timeoutMs: 30000,
+            timeoutMs: 190000,
             timeoutMessage: "Validation is taking longer than expected. Please wait a moment and try again.",
           }
         );

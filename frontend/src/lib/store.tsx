@@ -364,7 +364,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return { ...request, canRetryAfterTokenChange: () => isCurrent() && request.canRetryAfterTokenChange() };
     }, async (request) => {
       const summary = await api.get<DashboardSummary>(fresh ? "/dashboard/summary?fresh=true" : "/dashboard/summary", request.token,
-        { timeoutMs: 30000, timeoutMessage: "Dashboard refresh timed out." });
+        { timeoutMs: 35000, timeoutMessage: "Dashboard refresh timed out." });
       if (!isCurrent() || !request.isCurrent()) return;
       if (summary.auth.studio_id !== studioId) throw new Error("Dashboard scope changed. Please retry.");
       setDashboardSummary(summary);

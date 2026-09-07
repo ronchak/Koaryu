@@ -46,6 +46,12 @@ see [Deployment triggers](#deployment-triggers).
 
 Configuration lives in `frontend/vercel.json`.
 
+The existing frontend also accepts sampled, same-origin performance measurements
+at `/api/performance`. It writes allowlisted numeric metrics and build identities
+to existing Vercel runtime logs. There is no separate telemetry service or database;
+retention follows the current provider plan. No business data or user identifiers
+are included. See `docs/verification/navigation-reliability-followup.md`.
+
 ### Vercel cron jobs
 
 Two scheduled jobs run against the production frontend, which forwards them to

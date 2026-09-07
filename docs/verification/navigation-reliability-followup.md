@@ -65,11 +65,63 @@ state. Access checks still precede backend fact-cache reads.
 Verification includes per-route projection counts, provider row-cap boundaries,
 a resumed open form, changed access scope, and fresh-versus-old summary races.
 
+## Measurement and deadlines
+
+Navigation measurements start at the primary navigation click or history event,
+then record route commit and useful/complete content after a paint opportunity.
+They include time waiting for middleware and the route response. Same-path
+query/hash history changes do not start a pathname navigation timer. Interrupted and
+superseded navigation are separate outcomes. Existing document-relative capture
+marks remain available, with bounded mark history for long-lived tabs.
+
+Ten percent of production page lifetimes send small batches to the same-origin
+`/api/performance` endpoint. Only fixed route/metric labels, bounded numbers,
+outcomes and public build identities are accepted. Raw paths, queries, identities,
+credentials and business records are rejected. The endpoint accepts at most 4 KiB
+and 10 events per batch, bounds body-read time, and limits logging per instance.
+Staging, preview and disposable builds do not collect production samples. The
+collector records its authoritative environment and rollups reject non-production
+records. Collection failure never blocks navigation and is not retried. These measurements
+use existing Vercel runtime logs, subject to the current provider retention; they
+are not a new durable analytics database or a paid subscription. Export rollups
+before those logs expire when longer comparisons are needed.
+
+Run `npm run summarize:performance < private-vercel-log-export.ndjson` to produce
+aggregate p50/p75/p95 measurements grouped by build, route, metric, navigation kind
+and outcome. The report excludes unrelated log content and flags samples below
+100 as insufficient for tail comparisons. Route timing is not field INP; INP,
+LCP and CLS remain separate measurements. Use p75 for Core Web Vitals targets.
+
+The backend now applies one request deadline across auth, provider admission,
+multiple operations, and body transfer: 30 seconds for interactive requests and
+120 seconds for designated bulk operations. The proxy allows 34/125 seconds and
+the browser allows 35/130 seconds for reads. Body-bearing browser requests add
+60 seconds for bounded proxy upload/buffering, giving 95/190 seconds; the proxy
+rejects an unfinished upload before forwarding it and permits 190 seconds of
+function execution. Explicit auth-navigation reads retain their
+short fail-fast budget. Confirmed writes are never replayed because a response
+was lost; incomplete responses preserve the unknown-command outcome. Backend
+logs include only route templates, method, status, timing and release identity.
+Cleanup can finish after a complete response body is delivered.
+
+Verification includes an intentionally held route response, fresh-vs-old summary
+races, bounded telemetry input, multi-stage deadline exhaustion, stalled response
+bodies, completed-response cleanup and workload classifications.
+
+## Auth verification decision
+
+The installed Supabase SDK was tested with a synthetic signed token and a revoked
+session response from its authority. `getClaims()` accepted the still-valid token
+without consulting the authority; the current `getUser()` check rejected it.
+Replacing the page check would therefore change the existing revocation behavior.
+We retain authoritative verification and its bounded outage recovery. Faster
+navigation comes from route caching, intent prefetch and measured locality without
+silently weakening that check. The test uses a generated key and fake transport,
+not a production token. Backend membership and subscription checks remain fresh.
+
 ## Remaining review items
 
-- Record click-to-content latency and retain privacy-safe production metrics.
-- Evaluate cheaper page identity verification against revocation requirements.
-- Align operation deadlines and measure function locality.
+- Measure function locality.
 - Trial intent prefetch and profile initial production bundles before splitting them.
 
 Implementation evidence and completed items must be updated in each follow-up PR.

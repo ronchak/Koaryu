@@ -899,10 +899,10 @@ test("real bootstrap transport survives its server budget and bounds a stalled b
     assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 1);
     assert.equal(await page.evaluate(() => fixture.store.studioName), "Budget studio");
 
-    // The bootstrap override must not change other API consumers' 12s default.
+    // Ordinary reads share the 35s browser budget, outside the 30s server budget.
     await page.evaluate(() => { fixture.leadRead = fixture.store.refreshLeads().catch(error => { fixture.leadError = error.message; }); });
     await page.waitForFunction(() => fixture.requests.length === 2);
-    await page.clock.fastForward(12_001);
+    await page.clock.fastForward(35_001);
     await page.waitForFunction(() => fixture.leadError, null, { timeout: 3000 });
     assert.equal(await page.evaluate(() => fixture.leadError), "Request timed out. Please try again.");
     assert.equal(await page.evaluate(() => fixture.aborts.length), 1);
