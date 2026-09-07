@@ -64,7 +64,7 @@ export interface StoreContextValue {
   dashboardSummary: DashboardSummary | null;
   dashboardSummaryLoaded: boolean;
   dashboardSummaryLoadError: string | null;
-  refreshDashboardSummary: () => Promise<void>;
+  refreshDashboardSummary: (options?: { reason?: "visit" }) => Promise<void>;
 
   students: Student[];
   studentsLoaded: boolean;

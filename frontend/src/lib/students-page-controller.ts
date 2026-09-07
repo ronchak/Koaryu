@@ -1,5 +1,7 @@
 "use client";
 
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { consumeRosterReturn, loadRosterReturn, saveRosterReturn, safeStudentsReturn } from "@/lib/student-roster-location";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -759,6 +761,11 @@ export function useStudentsPageController({
     inactivityScheduleStatus,
     usesDerivedRosterFilters,
   ]);
+  useResumeRefresh(() => Promise.allSettled([
+    reloadVisibleRoster({ recoverEmpty: true }),
+    refreshPrograms({ includeArchived: false }),
+    ...(inactivityThreshold && usesDerivedRosterFilters && !config.isPreviewMode ? [refreshInactivitySchedule()] : []),
+  ]));
 
   async function reloadVisibleRosterAfterMutation(context: string) {
     try {

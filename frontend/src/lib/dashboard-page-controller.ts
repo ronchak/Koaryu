@@ -1,5 +1,7 @@
 "use client";
 
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
+
 import { useCallback, useEffect, useMemo } from "react";
 import { canViewDashboardBilling } from "@/lib/dashboard-billing-summary";
 import {
@@ -188,10 +190,11 @@ export function useDashboardPageController({
     ]);
   }, [currentLadderId, loadEligibilityForLadder, refreshDashboardSummary,
     refreshLeads, refreshPrograms, refreshSchedule, refreshStudents]);
+  useResumeRefresh(retryDashboardDatasets);
 
   useEffect(() => {
     if (!isPreviewMode && isDashboardIdentityReady) {
-      void refreshDashboardSummary().catch(() => undefined);
+      void refreshDashboardSummary({ reason: "visit" }).catch(() => undefined);
     }
   }, [isDashboardIdentityReady, isPreviewMode, refreshDashboardSummary, today]);
 

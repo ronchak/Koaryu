@@ -21,7 +21,11 @@ export function AppResumeGuard({ loaded }: { loaded: AppVersion }) {
         return response.json();
       },
       onCurrent: () => window.dispatchEvent(new Event(APP_RESUME_EVENT)),
-      onUpdate: () => setUpdateAvailable(true),
+      onUpdate: () => {
+        setUpdateAvailable(true);
+        // Access must still be checked, even while this build awaits a user refresh.
+        window.dispatchEvent(new CustomEvent(APP_RESUME_EVENT, { detail: { refreshData: false } }));
+      },
     });
     let hiddenAt: number | null = document.hidden ? Date.now() : null;
     const onPageShow = (event: PageTransitionEvent) => { if (event.persisted) void checker.check(); };

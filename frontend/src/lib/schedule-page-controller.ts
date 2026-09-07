@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
+
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toLocalDateKey } from "@/lib/date";
 import type { ClassFormInitialValues, ClassFormSubmitPayload } from "@/lib/class-form-model";
 import {
@@ -31,7 +33,7 @@ import type { ClassSession } from "@/types";
 
 type SchedulePageControllerOptions = {
   config: Pick<ConfigStoreContextValue, "currentRole" | "businessDate">;
-  programsStore: Pick<ProgramsStoreContextValue, "programs">;
+  programsStore: Pick<ProgramsStoreContextValue, "programs" | "refreshPrograms">;
   scheduleStore: Pick<
     ScheduleStoreContextValue,
     | "addSession"
@@ -58,7 +60,7 @@ export function useSchedulePageController({
 }: SchedulePageControllerOptions) {
   const canManageSchedule = hasStaffPermission(config.currentRole, "manage_schedule");
   const { refreshStudents, students, studentsLoaded, studentsMayBePartial } = studentsStore;
-  const { programs } = programsStore;
+  const { programs, refreshPrograms } = programsStore;
   const {
     attendance,
     sessions,
@@ -73,12 +75,16 @@ export function useSchedulePageController({
   const [currentDate, setCurrentDate] = useState(() => new Date(`${config.businessDate}T12:00:00`));
   const [view, setView] = useState<SchedulePageView>(DEFAULT_SCHEDULE_PAGE_VIEW);
   const [programFilter, setProgramFilter] = useState("");
-  const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
+  const [selectedSessionSnapshot, setSelectedSession] = useState<ClassSession | null>(null);
+  const selectedSession = selectedSessionSnapshot
+    ? sessions.find(session => session.id === selectedSessionSnapshot.id) ?? null : null;
   const [classFormInitialValues, setClassFormInitialValues] = useState<ClassFormInitialValues>();
   const [showAddClass, setShowAddClass] = useState(false);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
   const [createClassError, setCreateClassError] = useState<string | null>(null);
   const [rangeLoadAttempt, setRangeLoadAttempt] = useState(0);
+  const [attendanceRefreshAttempt, setAttendanceRefreshAttempt] = useState(0);
+  const resumedRangeRef = useRef<string | null>(null);
   const [loadedRangeKey, setLoadedRangeKey] = useState<string | null>(null);
   const [refreshingRangeKey, setRefreshingRangeKey] = useState<string | null>(null);
   const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null);
@@ -104,14 +110,30 @@ export function useSchedulePageController({
 
   const visibleRangeKey = `${visibleRange.start}:${visibleRange.end}`;
 
+  useResumeRefresh(() => {
+    resumedRangeRef.current = visibleRangeKey;
+    setRangeLoadAttempt(value => value + 1);
+    setAttendanceRefreshAttempt(value => value + 1);
+    void refreshPrograms({ includeArchived: true }).catch(() => undefined);
+    if (selectedSession) {
+      setIsRefreshingStudentRoster(true);
+      setStudentRosterLoadError(null);
+      void refreshStudents().catch(() => setStudentRosterLoadError("Could not refresh the attendance roster."))
+        .finally(() => setIsRefreshingStudentRoster(false));
+    }
+  });
+
+
   useEffect(() => {
     let cancelled = false;
 
     async function loadRange() {
+      const intent = resumedRangeRef.current === visibleRangeKey ? "read" : "materialize";
+      resumedRangeRef.current = null;
       setScheduleLoadError(null);
       setRefreshingRangeKey(visibleRangeKey);
       try {
-        await refreshScheduleRange(visibleRange.start, visibleRange.end, "materialize");
+        await refreshScheduleRange(visibleRange.start, visibleRange.end, intent);
         if (!cancelled) setLoadedRangeKey(visibleRangeKey);
       } catch (error) {
         if (!cancelled) {
@@ -151,7 +173,7 @@ export function useSchedulePageController({
     return () => {
       current = false;
     };
-  }, [refreshSessionAttendance, selectedSession]);
+  }, [attendanceRefreshAttempt, refreshSessionAttendance, selectedSession]);
 
   const activeStudents = useMemo(
     () => getActiveScheduleStudents(students),

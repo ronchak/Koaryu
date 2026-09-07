@@ -1,5 +1,6 @@
 import { CommandOutcomeUnknown } from "./command-outcome.ts";
 import { beginPendingCommand } from "./pending-commands.ts";
+import { markDashboardFactsChanged } from "./dashboard-freshness.ts";
 export { CommandOutcomeUnknown } from "./command-outcome.ts";
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import { serializeJsonRequestBody } from "@/lib/api-body";
@@ -149,6 +150,9 @@ async function executeApiRequest<T>(
   let dispatched = false;
   const isCommand = !["GET", "HEAD", "OPTIONS"].includes(init.method ?? "GET");
   const finishCommand = isCommand ? beginPendingCommand() : undefined;
+  // Some Billing status GETs reconcile provider state. Treat their facts as changed too.
+  const changesFacts = isCommand || path.startsWith("/billing/");
+  if (changesFacts) markDashboardFactsChanged();
   try {
     dispatched = !controller.signal.aborted;
     const response = await fetch(apiUrl(path), {
@@ -176,6 +180,7 @@ async function executeApiRequest<T>(
     throw new Error(networkErrorMessage);
   } finally {
     finishCommand?.();
+    if (changesFacts) markDashboardFactsChanged();
     if (timeout) {
       clearTimeout(timeout);
     }

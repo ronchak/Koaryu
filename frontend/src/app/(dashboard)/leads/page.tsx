@@ -1,5 +1,7 @@
 "use client";
 
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
+
 import { useEffect } from "react";
 import { markDashboardReadiness } from "@/lib/performance";
 import { LeadLedgerLoading } from "@/components/leads/lead-ledger-loading";
@@ -20,7 +22,7 @@ import styles from "@/components/leads/leads-ledger.module.css";
 
 export default function LeadsPage() {
   const { currentRole, isPreviewMode, token, businessDate } = useConfigStore();
-  const { programs, programsLoaded, programsLoadError } = useProgramStore();
+  const { programs, programsLoaded, programsLoadError, refreshPrograms } = useProgramStore();
   const { staffMembers, staffLoaded, staffLoadError, refreshStaff, identityReady, identityGeneration } = useStudioStore();
   const {
     leads: baseLeads,
@@ -55,6 +57,10 @@ export default function LeadsPage() {
     today,
     token,
     updateLead,
+  });
+  useResumeRefresh(() => {
+    controller.retrySelectedLeadActivities();
+    return Promise.allSettled([refreshLeads(), refreshPrograms({ includeArchived: true }), ...(currentRole === "admin" ? [refreshStaff()] : [])]);
   });
   const {
     activePrograms,

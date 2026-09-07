@@ -20,8 +20,20 @@ from app.services.program_service import ProgramService
 from app.services.auth_service import AuthService
 from app.services.student_service import StudentService
 from app.services.studio_scope import ensure_platform_subscription_access
+from app.services.lead_reads import fetch_lead_rows
 
 logger = logging.getLogger(__name__)
+
+BOOTSTRAP_VIEW_DATASETS = {
+    "dashboard": frozenset({"studio", "programs", "students", "leads", "belts"}),
+    "students": frozenset({"studio", "programs", "students"}),
+    "billing": frozenset({"studio"}),
+    "schedule": frozenset({"studio", "programs"}),
+    "settings": frozenset({"studio", "programs"}),
+    "leads": frozenset({"studio", "programs", "leads"}),
+    "reports": frozenset({"studio", "programs", "leads"}),
+    "training": frozenset({"studio", "programs", "belts"}),
+}
 
 
 class DashboardBootstrapService:
@@ -71,13 +83,7 @@ class DashboardBootstrapService:
         )
 
     def _fetch_leads(self, studio_id: str):
-        return (
-            self.supabase.table("leads")
-            .select("*")
-            .eq("studio_id", studio_id)
-            .order("created_at", desc=True)
-            .execute()
-        )
+        return SimpleNamespace(data=fetch_lead_rows(self.supabase, studio_id))
 
     def _fetch_programs(self, studio_id: str):
         return ProgramService(self.supabase).list_programs_metadata_sync(
@@ -175,7 +181,7 @@ class DashboardBootstrapService:
         timings: dict[str, float] = {}
 
         async def load_projection(label: str, method_name: str, project: Callable[[Any], Any]):
-            if (view == "billing" and label != "studio") or (view == "students" and label in {"leads", "belts"}):
+            if label not in BOOTSTRAP_VIEW_DATASETS[view]:
                 return None
             started = time.perf_counter()
             try:
