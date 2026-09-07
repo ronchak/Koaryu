@@ -8,6 +8,7 @@ import { securityHeadersFromProcessEnv } from "./src/lib/security-headers.ts";
 const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const nextConfig: NextConfig = {
+  deploymentId: process.env.NEXT_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA,
   turbopack: {
     root: workspaceRoot,
   },

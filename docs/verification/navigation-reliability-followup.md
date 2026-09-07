@@ -119,10 +119,29 @@ navigation comes from route caching, intent prefetch and measured locality witho
 silently weakening that check. The test uses a generated key and fake transport,
 not a production token. Backend membership and subscription checks remain fresh.
 
-## Remaining review items
+## Delivery and bundle improvements
 
-- Measure function locality.
-- Trial intent prefetch and profile initial production bundles before splitting them.
+Heavy primary navigation links prefetch after hover or keyboard focus, with a
+shared rate limit and a 30-second per-destination cooldown. Data-saving and 2G
+connections skip this speculation. The prefetch opportunity expires after three
+seconds so a visible link does not keep repeating speculative work. Only route
+resources are prefetched; Billing data and provider reconciliation remain owned
+by the visited page.
+
+The production bundle inspection identified Schedule dialogs as deferrable.
+Class and attendance dialogs now load when opened and have an accessible loading
+status. On matched local production builds with preview disabled, Schedule's
+initial HTML referenced 1,073,195 JavaScript bytes before and 1,048,876 after,
+a reduction of 24,319 bytes. This measures uncompressed referenced assets, not
+network transfer, hydration CPU, or a user-latency percentage. Other routes were
+within 11 bytes in that comparison. Shared framework and auth code were retained.
+
+Vercel Functions are pinned to `pdx1` alongside the Oregon dependencies. Record
+provider readback and routing-probe results with release evidence before claiming
+a hosted improvement. There is no Render plan upgrade. Deployment IDs prefer the
+provider-assigned ID and otherwise use the Git SHA, allowing Next.js to detect
+version mismatches on navigation. This complements the history restoration check;
+it does not replace compatibility with the independently deployed backend.
 
 Implementation evidence and completed items must be updated in each follow-up PR.
 Existing authorization, command-outcome and subscription protections remain

@@ -1,12 +1,17 @@
 "use client";
 
-import { ClassFormModal } from "@/components/schedule/class-form-modal";
+import dynamic from "next/dynamic";
 import { SchedulePageSection } from "@/components/schedule/schedule-page-section";
-import { ScheduleSessionDetailModal } from "@/components/schedule/session-detail-modal";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import type { SchedulePageController } from "@/lib/schedule-page-controller";
 
 type SchedulePageContentProps = SchedulePageController["contentProps"];
+const ClassFormModal = dynamic(() => import("@/components/schedule/class-form-modal").then(module => module.ClassFormModal), {
+  loading: () => <p role="status" className="fixed bottom-4 right-4 z-50 rounded-lg border border-border bg-surface p-4 text-sm">Opening class form…</p>,
+});
+const ScheduleSessionDetailModal = dynamic(() => import("@/components/schedule/session-detail-modal").then(module => module.ScheduleSessionDetailModal), {
+  loading: () => <p role="status" className="fixed bottom-4 right-4 z-50 rounded-lg border border-border bg-surface p-4 text-sm">Opening attendance…</p>,
+});
 
 export function SchedulePageContent({
   actionMessage,
@@ -81,7 +86,7 @@ export function SchedulePageContent({
         onOpenAddClass={onOpenAddClass}
       />
 
-      <ScheduleSessionDetailModal
+      {selectedSession && <ScheduleSessionDetailModal
         canManageSchedule={canManageSchedule}
         open={Boolean(selectedSession)}
         session={selectedSession}
@@ -102,9 +107,9 @@ export function SchedulePageContent({
         onToggleAttendance={onToggleAttendance}
         onDeleteSession={onDeleteSelectedSession}
         onDeleteSeries={onDeleteSelectedSeries}
-      />
+      />}
 
-      <ClassFormModal
+      {showAddClass && <ClassFormModal
         allowRecurring={canManageSchedule}
         open={showAddClass}
         onClose={onCloseAddClass}
@@ -116,7 +121,7 @@ export function SchedulePageContent({
         programs={programs}
         initialValues={classFormInitialValues}
         onSubmit={onCreateClass}
-      />
+      />}
     </OperationsSurface>
   );
 }
