@@ -1,4 +1,6 @@
 "use client";
+import { useEffect } from "react";
+import { markDashboardReadiness } from "@/lib/performance";
 
 import { BeltTrackerDialogs } from "@/components/belt-tracker/belt-tracker-dialogs";
 import { BeltTrackerShell } from "@/components/belt-tracker/belt-tracker-shell";
@@ -8,10 +10,13 @@ import { useBeltTrackerPageController } from "@/lib/belt-tracker-page-controller
 import { useBeltStore, useConfigStore, useProgramStore, useStudioStore } from "@/lib/store";
 
 export default function BeltTrackerPage() {
-  const { beltLaddersLoadError } = useBeltStore();
+  const { beltLaddersLoadError, currentLadderId, eligibilityLadderId, eligibilityPendingLadderId, eligibilityLoadError } = useBeltStore();
   const { programsLoaded, programsLoadError } = useProgramStore();
-  const { retryInitialization } = useStudioStore();
+  const { retryInitialization, identityGeneration, identityReady } = useStudioStore();
   const loadError = beltLaddersLoadError || (!programsLoaded ? programsLoadError : null);
+  const useful = identityReady && programsLoaded && !loadError;
+  const complete = useful && !eligibilityLoadError && (!currentLadderId || (eligibilityLadderId === currentLadderId && !eligibilityPendingLadderId));
+  useEffect(() => markDashboardReadiness("belt-tracker", identityGeneration, { useful, complete }), [identityGeneration, useful, complete]);
   if (loadError || !programsLoaded) {
     return (
       <section role={loadError ? "alert" : "status"} className="p-6">

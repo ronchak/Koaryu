@@ -1,6 +1,7 @@
 import { CommandOutcomeUnknown } from "./command-outcome.ts";
 import { beginPendingCommand } from "./pending-commands.ts";
 import { markDashboardFactsChanged } from "./dashboard-freshness.ts";
+import { apiRequestTimeout } from "./request-budget.ts";
 export { CommandOutcomeUnknown } from "./command-outcome.ts";
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import { serializeJsonRequestBody } from "@/lib/api-body";
@@ -11,7 +12,6 @@ const SERVER_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:800
 const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY === "true";
 const BROWSER_API_BASE =
   USE_API_PROXY ? "/api/proxy" : SERVER_API_BASE;
-const API_TIMEOUT_MS = 12000;
 
 function apiUrl(path: string) {
   return buildApiUrl(path, {
@@ -118,7 +118,7 @@ async function executeApiRequest<T>(
   init: Omit<RequestInit, "signal">,
   {
     signal,
-    timeoutMs = API_TIMEOUT_MS,
+    timeoutMs = apiRequestTimeout(path, init.method),
     timeoutMessage,
     networkErrorMessage,
     commandTimeoutMessage,
@@ -306,7 +306,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     headers: extraHeaders,
     omitStudioHeader = false,
     signal,
-    timeoutMs = API_TIMEOUT_MS,
+    timeoutMs,
     timeoutMessage = "Request timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
@@ -353,7 +353,7 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
     headers: extraHeaders,
     omitStudioHeader = false,
     signal,
-    timeoutMs = API_TIMEOUT_MS,
+    timeoutMs,
     timeoutMessage = "Request timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
@@ -390,7 +390,7 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
     headers: extraHeaders,
     omitStudioHeader = false,
     signal,
-    timeoutMs = API_TIMEOUT_MS,
+    timeoutMs,
     timeoutMessage = "Download timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;

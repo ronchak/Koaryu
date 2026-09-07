@@ -283,7 +283,7 @@ export function useBillingDataController({
     showTabError(cacheKey, "");
     try {
       const account = sync
-        ? await api.post<StudioPaymentAccount>("/billing/connect/sync", {}, token, { timeoutMs: 30000 })
+        ? await api.post<StudioPaymentAccount>("/billing/connect/sync", {}, token, { timeoutMs: 35000 })
         : await api.get<StudioPaymentAccount>("/billing/connect/status", token);
       if (!isCurrentRequest(requestId, requestAccess)) {
         return;

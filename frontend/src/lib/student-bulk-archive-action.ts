@@ -67,7 +67,7 @@ export async function deleteStudentsAction<T extends { id: string }>(
         const requestSequence = options.studentRosterRequestSequenceRef.current + 1;
         options.studentRosterRequestSequenceRef.current = requestSequence;
         const readRequest = options.beginLiveAuthRequest();
-        const nextStudents = await options.fetchAllStudents(readRequest.token, { timeoutMs: 30000 });
+        const nextStudents = await options.fetchAllStudents(readRequest.token, { timeoutMs: 35000 });
         if (options.isStudentRosterSnapshotCurrent({
           authCurrent: readRequest.isCurrent() && canCommitLiveMutation(liveRequest),
           currentMutationEpoch: options.studentMutationEpochRef.current,

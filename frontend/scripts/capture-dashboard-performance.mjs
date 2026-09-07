@@ -23,7 +23,7 @@ const RENDER_RESOURCE_TYPES = new Set(["document", "script", "stylesheet", "imag
 export const WEB_VITALS_STABILIZATION = Object.freeze({ timeout_ms: 10_000, quiet_window_ms: 500 });
 const SAFE_SERVER_TIMING_NAMES = new Set([
   "koaryu_studio", "koaryu_students", "koaryu_leads", "koaryu_belts",
-  "koaryu_programs", "koaryu_total", "koaryu_route_total",
+  "koaryu_programs", "koaryu_total", "koaryu_route_total", "koaryu_request",
   "koaryu_summary_student_rows", "koaryu_summary_student_counts",
   "koaryu_summary_lead_counts", "koaryu_summary_schedule_counts",
   "koaryu_summary_belt_counts", "koaryu_summary_inactivity_counts",

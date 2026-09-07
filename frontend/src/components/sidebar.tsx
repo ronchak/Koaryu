@@ -57,6 +57,7 @@ function NavigationLinks({ pathname, role }: { pathname: string; role?: string |
       <li key={item.href}>
         <Link
           href={item.href}
+          data-koaryu-navigation-link="true"
           prefetch={item.prefetch}
           aria-current={isActive ? "page" : undefined}
           aria-label={item.label}

@@ -9,6 +9,7 @@ import { buildUpstreamProxyRequestHeaders } from "../../../../lib/proxy-request-
 import { buildProxyTargetUrl, UnsafeProxyPathError } from "../../../../lib/proxy-target.ts";
 import { ACTIVE_STUDIO_COOKIE } from "../../../../lib/studio-state-cookie.ts";
 import { fetchProxyUpstream, ProxyUpstreamTimeoutError } from "../../../../lib/proxy-upstream.ts";
+import { proxyRequestTimeout } from "../../../../lib/request-budget.ts";
 
 export const runtime = "nodejs";
 
@@ -63,7 +64,7 @@ async function forwardRequest(
       );
     }
 
-    const upstream = await fetchProxyUpstream(targetUrl, init, request.signal);
+    const upstream = await fetchProxyUpstream(targetUrl, init, request.signal, proxyRequestTimeout(`/${path.join("/")}`, request.method));
     const responseHeaders = buildPrivateProxyHeaders(upstream.headers);
 
     return new Response(upstream.body, {

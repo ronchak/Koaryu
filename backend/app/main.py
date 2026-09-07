@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.error_handlers import register_error_handlers
 from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
+from app.core.request_deadline import RequestDeadlineMiddleware
 from app.core.request_body_limits import RequestBodyLimitMiddleware
 from app.api.v1.endpoints.health import health_live, health_ready
 from app.api.v1.router import router as v1_router
@@ -80,6 +81,9 @@ app.add_middleware(
 )
 
 # CORS
+app.add_middleware(RequestDeadlineMiddleware, api_v1_prefix=settings.API_V1_PREFIX)
+
+# CORS also applies to deadline responses.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(allowed_origins),

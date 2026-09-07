@@ -58,7 +58,7 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
         requestKey = coreCheckoutRequestKeyRef.current;
       }
       const link = await api.post<BillingLinkResponse>(path, body, runtime.token, {
-        timeoutMs: 30000,
+        timeoutMs: 35000,
         headers: requestKey ? { "Idempotency-Key": requestKey } : undefined,
       });
       if (action === "checkout") {
@@ -95,7 +95,7 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
         },
         runtime.token,
         {
-          timeoutMs: 30000,
+          timeoutMs: 35000,
           headers: { "Idempotency-Key": connectOnboardingRequestKeyRef.current },
         },
       );
@@ -106,7 +106,7 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
             "/billing/connect/onboarding-link/acknowledge",
             { receipt },
             runtime.token!,
-            { timeoutMs: 30000 },
+            { timeoutMs: 35000 },
           );
         },
         (url) => window.location.assign(url),

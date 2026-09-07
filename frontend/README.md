@@ -262,3 +262,10 @@ TTL. Explicit refresh and post-command reconciliation remain fresh. Commands in
 this browser or another same-origin tab bypass cached facts for 60 seconds.
 Returning to a current build verifies workspace access before refreshing the
 visible route; drafts remain mounted.
+
+Sampled production navigation timings and Web Vitals use the existing Vercel logs
+through `/api/performance`. The schema accepts fixed route labels and numeric
+measurements only. Use the root `npm run summarize:performance` command with a
+private log export to compare releases. Interactive API deadlines are 30 seconds
+end to end on the backend, 34 at the proxy, and 35 in the browser. Bulk operations
+use 120, 125, and 130 seconds respectively.
