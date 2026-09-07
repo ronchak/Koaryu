@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AlertTriangle, CreditCard, ExternalLink, LogOut, Mail, ShieldCheck, Trash2, UserCircle, Users } from "lucide-react";

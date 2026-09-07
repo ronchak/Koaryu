@@ -3,11 +3,13 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { securityHeadersFromProcessEnv } from "./src/lib/security-headers.ts";
+import { getNavigationDeploymentId } from "./src/lib/deployment-id.ts";
 
 // Keep local resolution and deployment asset paths within the monorepo.
 const workspaceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const nextConfig: NextConfig = {
+  deploymentId: getNavigationDeploymentId(),
   turbopack: {
     root: workspaceRoot,
   },

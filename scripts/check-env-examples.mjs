@@ -10,6 +10,8 @@ const FRONTEND_PLATFORM_KEYS = new Set([
   "VERCEL_ENV",
   "VERCEL_TARGET_ENV",
   "VERCEL_GIT_COMMIT_SHA",
+  "VERCEL_URL",
+  "NEXT_DEPLOYMENT_ID",
 ]);
 
 const backendSecretKeys = [

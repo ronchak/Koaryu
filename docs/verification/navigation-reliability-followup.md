@@ -119,10 +119,32 @@ navigation comes from route caching, intent prefetch and measured locality witho
 silently weakening that check. The test uses a generated key and fake transport,
 not a production token. Backend membership and subscription checks remain fresh.
 
-## Remaining review items
+## Delivery and bundle improvements
 
-- Measure function locality.
-- Trial intent prefetch and profile initial production bundles before splitting them.
+Heavy primary navigation links prefetch after hover or keyboard focus, with a
+shared rate limit and a 30-second per-destination cooldown. Data-saving and 2G
+connections skip this speculation. Prefetch is a one-shot router request; it does not enable repeated viewport
+prefetch or change the Link registration during a click. Dashboard cards and
+other private links use the same policy, closing the background-prefetch bypass. Only route
+resources are prefetched; Billing data and provider reconciliation remain owned
+by the visited page.
+
+The production bundle inspection identified Schedule dialogs as deferrable.
+Class and attendance dialogs now load when opened and have an accessible loading
+status. On matched local production builds with preview disabled, Schedule's
+initial HTML referenced 1,075,219 JavaScript bytes before and 1,050,216 after,
+a reduction of 25,003 bytes. The controlled comparison used candidate
+`ddc8725cde386b68f0dcc60398efc5f5a0b118dc` with only the Schedule content file
+replaced by its eager reference for the baseline. This measures uncompressed referenced assets, not
+network transfer, hydration CPU, or a user-latency percentage. Shared framework and auth code were retained.
+
+Vercel Functions are pinned to `pdx1` alongside the Oregon dependencies. Record
+provider readback and routing-probe results with release evidence before claiming
+a hosted improvement. There is no Render plan upgrade. Deployment IDs prefer the
+provider-assigned ID and otherwise use a 32-character hash of the Git SHA,
+environment and unique deployment URL, allowing Next.js to detect
+version mismatches on navigation. This complements the history restoration check;
+it does not replace compatibility with the independently deployed backend.
 
 Implementation evidence and completed items must be updated in each follow-up PR.
 Existing authorization, command-outcome and subscription protections remain

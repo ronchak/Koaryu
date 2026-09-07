@@ -105,14 +105,15 @@ jobs:
           export NEXT_PUBLIC_PREVIEW_MODE=true
           export VERCEL_ENV=production
           export VERCEL_GIT_COMMIT_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-          npm exec -- next dev --port 4012 > /tmp/koaryu-navigation-preview.log 2>&1 &
+          npm run build
+          npm exec -- next start --port 4012 > /tmp/koaryu-navigation-preview.log 2>&1 &
           navigation_preview_pid=$!
           trap 'kill "$navigation_preview_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 30); do
             if curl --silent --fail http://localhost:4012/api/version > /dev/null; then break; fi
             sleep 1
           done
-          KOARYU_PREVIEW_SMOKE_E2E=true KOARYU_E2E_FRONTEND_URL=http://localhost:4012 npx playwright test e2e/performance-navigation.spec.ts e2e/navigation-recovery.spec.ts --workers=1
+          KOARYU_PREVIEW_SMOKE_E2E=true KOARYU_PREFETCH_PRODUCTION_E2E=true KOARYU_E2E_FRONTEND_URL=http://localhost:4012 npx playwright test e2e/performance-navigation.spec.ts e2e/navigation-recovery.spec.ts e2e/intent-prefetch.spec.ts --workers=1
 
   backend:
     name: Backend tests, contracts, and audit

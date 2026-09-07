@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { IntentPrefetchLink } from "@/components/intent-prefetch-link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
@@ -55,7 +56,7 @@ function NavigationLinks({ pathname, role }: { pathname: string; role?: string |
     const Icon = NAV_ICONS[item.icon] ?? LayoutDashboard;
     return (
       <li key={item.href}>
-        <Link
+        <IntentPrefetchLink
           href={item.href}
           data-koaryu-navigation-link="true"
           prefetch={item.prefetch}
@@ -69,7 +70,7 @@ function NavigationLinks({ pathname, role }: { pathname: string; role?: string |
             <NavigationPending />
           </span>
           <span className={styles.navLabel}>{item.label}</span>
-        </Link>
+        </IntentPrefetchLink>
       </li>
     );
   });

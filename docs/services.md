@@ -44,7 +44,9 @@ see [Deployment triggers](#deployment-triggers).
   — pinned in `backend/app/core/config.py` as the only frontend origin a staging
   backend will accept.
 
-Configuration lives in `frontend/vercel.json`.
+Configuration lives in `frontend/vercel.json`. The candidate pins Vercel Functions
+to Portland (`pdx1`), near the existing Oregon backend and database. Deployment
+readback must confirm the region; Routing Middleware may have separate placement.
 
 The existing frontend also accepts sampled, same-origin performance measurements
 at `/api/performance`. It writes allowlisted numeric metrics and build identities

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { BellRing } from "lucide-react";
 import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
