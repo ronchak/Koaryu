@@ -56,12 +56,42 @@
 }
 
 .navigationPending {
-  flex: 0 0 0.6rem;
-  width: 0.6rem;
-  height: 0.6rem;
-  margin-left: auto;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
   border-radius: 50%;
-  background: currentColor;
+  opacity: 0;
+  animation:
+    navigationPendingReveal 0s 200ms forwards,
+    navigationPendingSpin 800ms linear 200ms infinite;
+}
+
+.navIconSlot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  width: 17px;
+  height: 17px;
+}
+
+/* Replace the icon only for a noticeable wait, without adding a grid item. */
+.navIconSlot:has(.navigationPending) .navIcon {
+  animation: navigationIconHide 0s 200ms forwards;
+}
+
+@keyframes navigationPendingReveal {
+  to { opacity: 1; }
+}
+
+@keyframes navigationIconHide {
+  to { opacity: 0; }
+}
+
+@keyframes navigationPendingSpin {
+  to { transform: rotate(360deg); }
 }
 
 .identityPlaceholder {
@@ -563,6 +593,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .navigationPending {
+    animation: navigationPendingReveal 0s 200ms forwards;
+  }
+
   .shellRoot {
     --product-motion-travel-duration: 0ms;
     --product-motion-open-duration: 0ms;

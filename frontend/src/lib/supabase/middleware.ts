@@ -12,6 +12,8 @@ import { canAccessBillingRoute, isBillingRoute } from "@/lib/billing-route-acces
 import { ACCOUNT_ARCHIVED_ROUTE, resolveMembershipRoute } from "@/lib/auth-route-model";
 import type { AuthProfileResponse } from "@/lib/store-bootstrap-model";
 import { AuthProfileRequestError, requestAuthProfile } from "@/lib/auth-profile-request";
+import { requestAuthUser } from "@/lib/auth-user-request";
+import { navigationRecoveryPath } from "@/lib/navigation-recovery";
 
 const PUBLIC_STATUS_ROUTES = new Set(["/404", "/500", "/502", "/503", "/504"]);
 
@@ -99,16 +101,22 @@ export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
+  const authSignal = AbortSignal.any([request.signal, AbortSignal.timeout(8_000)]);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: (input, init) => fetch(input, {
+        ...init,
+        signal: AbortSignal.any([authSignal, ...(init?.signal ? [init.signal] : [])]),
+      }) },
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet, headers) {
+          if (authSignal.aborted) return;
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
@@ -127,11 +135,6 @@ export async function updateSession(request: NextRequest) {
       },
     }
   );
-
-  // Refresh session — this will call setAll if the session needs refreshing
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
   const isAuthRoute =
     pathname.startsWith("/login")
@@ -167,9 +170,25 @@ export async function updateSession(request: NextRequest) {
   }
 
   function serviceUnavailable() {
-    return redirectTo("/503");
+    const url = request.nextUrl.clone();
+    url.pathname = "/503";
+    url.search = "";
+    url.searchParams.set("returnTo", navigationRecoveryPath(pathname + request.nextUrl.search));
+    const response = NextResponse.redirect(url);
+    copyResponseCookies(supabaseResponse, response);
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    // No raw path, query, identity, or provider error enters this event.
+    console.warn("[koaryu:navigation]", { event: "auth_unavailable" });
+    return response;
   }
 
+  let user;
+  try {
+    user = await requestAuthUser(() => supabase.auth.getUser(), authSignal);
+  } catch {
+    request.signal.throwIfAborted();
+    return serviceUnavailable();
+  }
   if (!user) {
     clearStudioStateCookie(supabaseResponse, request);
     clearActiveStudioCookie(supabaseResponse, request);

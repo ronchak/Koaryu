@@ -7,10 +7,12 @@ import * as studioCookies from '../src/lib/studio-state-cookie.ts';
 import * as billingRoutes from '../src/lib/billing-route-access.ts';
 import * as authProfileRequest from '../src/lib/auth-profile-request.ts';
 import * as authRoutes from '../src/lib/auth-route-model.ts';
+import * as authUserRequest from '../src/lib/auth-user-request.ts';
+import * as navigationRecovery from '../src/lib/navigation-recovery.ts';
 const require = createRequire(import.meta.url);
 const { NextRequest } = require('next/server');
 
-function loadMiddleware(user) {
+function loadMiddleware(user, error = null) {
   const compiled = ts.transpileModule(readFileSync(new URL('../src/lib/supabase/middleware.ts', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -23,10 +25,12 @@ function loadMiddleware(user) {
           'Cache-Control': 'private, no-cache, no-store, must-revalidate, max-age=0', Expires: '0', Pragma: 'no-cache',
         });
         cookies.setAll([{ name: 'session-part-2', value: 'synthetic-second', options: { path: '/' } }], {});
-        return { data: { user } };
+        return { data: { user }, error };
       },
     } }) },
     '@/lib/auth-profile-request': authProfileRequest,
+    '@/lib/auth-user-request': authUserRequest,
+    '@/lib/navigation-recovery': navigationRecovery,
     '@/lib/studio-state-cookie': studioCookies,
     '@/lib/billing-route-access': billingRoutes,
     '@/lib/auth-route-model': authRoutes,
@@ -100,7 +104,7 @@ for (const scenario of [
       request.cookies.set(studioCookies.STUDIO_STATE_COOKIE,
         studioCookies.serializeStudioStateCookie('synthetic-user', true, 'active'));
       const response = await loadMiddleware({ id: 'synthetic-user' })(request);
-      assert.equal(response.headers.get('location'), `https://example.test${scenario.target}`);
+      assert.equal(response.headers.get('location'), `https://example.test${scenario.target}${scenario.target === "/503" ? "?returnTo=%2Fbilling" : ""}`);
       assert.equal(fetch.mock.callCount(), 1);
       assert.equal(response.cookies.get('session-part-1')?.value, 'synthetic-first');
       assert.match(response.headers.get('cache-control'), /private.*no-store/);
@@ -108,5 +112,19 @@ for (const scenario of [
       if (previous === undefined) delete process.env.NEXT_PUBLIC_API_URL;
       else process.env.NEXT_PUBLIC_API_URL = previous;
     }
+  });
+}
+
+for (const failure of [{ name: 'AuthRetryableFetchError', status: 503 }, { name: 'AuthRetryableFetchError', status: 0 }]) {
+  test(`temporary auth failure ${failure.status} preserves studio cookies and recovery destination`, async () => {
+    const request = new NextRequest('https://example.test/schedule?view=week');
+    request.cookies.set(studioCookies.STUDIO_STATE_COOKIE, studioCookies.serializeStudioStateCookie('synthetic-user', true, 'active'));
+    const response = await loadMiddleware(null, failure)(request);
+    const destination = new URL(response.headers.get('location'));
+    assert.equal(destination.pathname, '/503');
+    assert.equal(destination.searchParams.get('returnTo'), '/schedule?view=week');
+    assert.equal(response.cookies.get(studioCookies.STUDIO_STATE_COOKIE), undefined);
+    assert.equal(response.cookies.get(studioCookies.ACTIVE_STUDIO_COOKIE), undefined);
+    assert.match(response.headers.get('cache-control'), /private.*no-store/);
   });
 }
