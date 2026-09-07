@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import {
   AppWindow,
   Bell,

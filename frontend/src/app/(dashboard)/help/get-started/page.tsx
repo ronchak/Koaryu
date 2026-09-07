@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { Award, Calendar, CreditCard, Settings, Users } from "lucide-react";
 import { AccountPageShell, AccountSection } from "@/components/account-page-shell";
 import { Button } from "@/components/ui/button";

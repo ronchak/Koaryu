@@ -1,21 +1,23 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState, type ComponentProps } from "react";
+import { useRouter } from "next/navigation";
+import type { ComponentProps } from "react";
 import { createIntentPrefetchPolicy } from "@/lib/intent-prefetch";
+import { crmLinkPrefetch } from "@/lib/constants";
 
 const allowPrefetch = createIntentPrefetchPolicy();
-export function IntentPrefetchLink({ prefetch, ...props }: ComponentProps<typeof Link>) {
-  const [armed, setArmed] = useState(false);
+export function IntentPrefetchLink({ prefetch: explicitPrefetch, ...props }: ComponentProps<typeof Link>) {
+  const router = useRouter();
+  const href = typeof props.href === "string" ? props.href : props.href.pathname ?? "";
+  const prefetch = explicitPrefetch === undefined ? crmLinkPrefetch(href) : explicitPrefetch;
   const arm = () => {
     const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-    if (prefetch === false && typeof props.href === "string" && allowPrefetch(props.href, connection)) setArmed(true);
+    if (prefetch === false && typeof props.href === "string" && crmLinkPrefetch(props.href) === false
+      && allowPrefetch(props.href, connection)) router.prefetch(props.href);
   };
-  useEffect(() => {
-    if (!armed) return;
-    const timeout = setTimeout(() => setArmed(false), 3_000);
-    return () => clearTimeout(timeout);
-  }, [armed]);
-  return <Link {...props} prefetch={prefetch === false ? (armed ? undefined : false) : prefetch}
+  // Keep Link's registration stable while navigation is pending. Changing its
+  // prefetch prop during a click can detach useLinkStatus from that navigation.
+  return <Link {...props} prefetch={prefetch}
     onMouseEnter={event => { props.onMouseEnter?.(event); arm(); }}
     onFocus={event => { props.onFocus?.(event); arm(); }} />;
 }

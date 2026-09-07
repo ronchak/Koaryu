@@ -123,8 +123,9 @@ not a production token. Backend membership and subscription checks remain fresh.
 
 Heavy primary navigation links prefetch after hover or keyboard focus, with a
 shared rate limit and a 30-second per-destination cooldown. Data-saving and 2G
-connections skip this speculation. The prefetch opportunity expires after three
-seconds so a visible link does not keep repeating speculative work. Only route
+connections skip this speculation. Prefetch is a one-shot router request; it does not enable repeated viewport
+prefetch or change the Link registration during a click. Dashboard cards and
+other private links use the same policy, closing the background-prefetch bypass. Only route
 resources are prefetched; Billing data and provider reconciliation remain owned
 by the visited page.
 

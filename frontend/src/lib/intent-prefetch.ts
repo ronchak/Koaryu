@@ -1,4 +1,4 @@
-export function createIntentPrefetchPolicy(now = Date.now) {
+export function createIntentPrefetchPolicy(now = () => performance.now()) {
   const recent = new Map<string, number>();
   let lastRequest = -Infinity;
   return (href: string, connection?: { saveData?: boolean; effectiveType?: string }) => {

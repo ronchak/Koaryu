@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { ArrowRight } from "lucide-react";
 
 import { crmLinkPrefetch } from "@/lib/constants";
