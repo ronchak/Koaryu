@@ -1,4 +1,5 @@
 import unittest
+import asyncio
 import base64
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
@@ -12,7 +13,8 @@ from jwt import InvalidTokenError as JWTError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
-from app.core.security import _clear_jwks_cache_for_tests, get_user_id_from_token
+from app.core.security import _clear_jwks_cache_for_tests, get_user_id_from_token, JWKSRefreshInFlight
+from app.core.deps import get_current_user_id
 
 
 class FakeResponse:
@@ -417,7 +419,7 @@ class SecurityTokenTest(unittest.TestCase):
 
         self.assertEqual(call_count, 2)
 
-    def test_concurrent_cold_valid_follower_gets_retryable_unavailable(self):
+    def test_concurrent_cold_follower_releases_worker_with_shared_completion(self):
         settings = SimpleNamespace(
             ENVIRONMENT="production",
             SUPABASE_URL="https://project-ref.supabase.co",
@@ -444,12 +446,12 @@ class SecurityTokenTest(unittest.TestCase):
                 leader = executor.submit(get_user_id_from_token, token)
                 self.assertTrue(refresh_started.wait(timeout=1))
                 follower = executor.submit(get_user_id_from_token, token)
-                with self.assertRaises(HTTPException) as context:
+                with self.assertRaises(JWKSRefreshInFlight) as context:
                     follower.result(timeout=0.5)
-                self.assertEqual(context.exception.status_code, 503)
-                self.assertEqual(context.exception.headers, {"Retry-After": "30"})
+                self.assertFalse(context.exception.completion.done())
                 release_refresh.set()
                 self.assertEqual(leader.result(timeout=1), "user_1")
+                self.assertIsNone(context.exception.completion.result(timeout=1))
 
         fetch.assert_called_once()
 
@@ -886,6 +888,117 @@ class SecurityTokenTest(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 401)
         self.assertEqual(context.exception.detail, "Invalid authentication token")
         fallback_get_user.assert_not_called()
+
+
+class SharedAuthRefreshTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        _clear_jwks_cache_for_tests()
+        self.settings = patch("app.core.security.get_settings", return_value=SimpleNamespace(
+            ENVIRONMENT="production", SUPABASE_URL="https://project-ref.supabase.co",
+            SUPABASE_JWT_SECRET="jwt-secret",
+        ))
+        self.settings.start()
+        self.addCleanup(self.settings.stop)
+        self.addCleanup(_clear_jwks_cache_for_tests)
+
+    async def asyncSetUp(self):
+        from anyio import to_thread
+        self.limiter = to_thread.current_default_thread_limiter()
+        self.original_tokens = self.limiter.total_tokens
+        # One worker fetches keys; all eight followers must release the other.
+        self.limiter.total_tokens = 2
+
+    async def asyncTearDown(self):
+        self.limiter.total_tokens = self.original_tokens
+
+    async def exercise_refresh(self, *, expired=False, fail=False, cancel=False, invalid=False):
+        token, key = _make_es256_token()
+        bad_token, _ = _make_es256_token()  # Same kid, different signing key.
+        if expired:
+            with patch("app.core.security.httpx.get", return_value=FakeResponse({"keys": [key]})):
+                self.assertEqual(await get_current_user_id(SimpleNamespace(credentials=token)), "user_1")
+            from app.core import security as module
+            with module._jwks_cache_lock:
+                module._jwks_cache["expires_at"] = 0
+                module._jwks_cache["refresh_allowed_at"] = 0
+        started, release = Event(), Event()
+        def fetch(_url, *, timeout):
+            started.set()
+            if not release.wait(timeout=2):
+                raise RuntimeError("test refresh was not released")
+            if fail:
+                raise RuntimeError("provider unavailable")
+            return FakeResponse({"keys": [key]})
+
+        follower_waiting = asyncio.Event()
+        original_wrap = asyncio.wrap_future
+        def wrap(future):
+            follower_waiting.set()
+            return original_wrap(future)
+
+        with patch("app.core.security.httpx.get", side_effect=fetch) as fetch_mock, patch(
+            "app.core.deps.asyncio.wrap_future", side_effect=wrap,
+        ):
+            leader = asyncio.create_task(get_current_user_id(SimpleNamespace(credentials=token)))
+            self.assertTrue(await asyncio.to_thread(started.wait, 1))
+            followers = [asyncio.create_task(get_current_user_id(SimpleNamespace(
+                credentials=bad_token if invalid else token,
+            ))) for _ in range(8)]
+            try:
+                await asyncio.wait_for(follower_waiting.wait(), 1)
+                self.assertFalse(followers[0].done())
+                if cancel:
+                    followers[0].cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await followers[0]
+                # Follower waiting releases the executor; ordinary worker work runs.
+                from starlette.concurrency import run_in_threadpool
+                self.assertEqual(await asyncio.wait_for(run_in_threadpool(lambda: 42), 1), 42)
+            finally:
+                release.set()
+            results = await asyncio.gather(leader, *followers, return_exceptions=True)
+            fetch_mock.assert_called_once()
+        if fail:
+            for result in results:
+                self.assertIsInstance(result, HTTPException)
+                self.assertEqual(result.status_code, 503)
+        else:
+            self.assertEqual(results[0], "user_1")
+            for index, result in enumerate(results[1:]):
+                if cancel and index == 0:
+                    self.assertIsInstance(result, asyncio.CancelledError)
+                elif invalid:
+                    self.assertIsInstance(result, HTTPException)
+                    self.assertEqual(result.status_code, 401)
+                else:
+                    self.assertEqual(result, "user_1")
+
+    async def test_cold_navigation_burst_shares_one_refresh(self):
+        await self.exercise_refresh()
+
+    async def test_expired_cache_navigation_burst_shares_one_refresh(self):
+        await self.exercise_refresh(expired=True)
+
+    async def test_failed_refresh_rejects_every_waiter(self):
+        await self.exercise_refresh(expired=True, fail=True)
+
+    async def test_cancelled_follower_does_not_cancel_shared_refresh(self):
+        await self.exercise_refresh(cancel=True)
+
+    async def test_followers_still_verify_their_own_signatures(self):
+        await self.exercise_refresh(invalid=True)
+
+    async def test_wait_deadline_does_not_cancel_shared_refresh(self):
+        from concurrent.futures import Future
+        completion = Future()
+        with patch("app.core.deps.AUTHENTICATION_WAIT_TIMEOUT_SECONDS", 0.01), patch(
+            "app.core.deps.get_user_id_from_token", side_effect=JWKSRefreshInFlight(completion),
+        ):
+            with self.assertRaises(HTTPException) as context:
+                await get_current_user_id(SimpleNamespace(credentials="synthetic-token"))
+        self.assertEqual(context.exception.status_code, 503)
+        self.assertFalse(completion.cancelled())
+        completion.set_result(None)
 
 
 if __name__ == "__main__":

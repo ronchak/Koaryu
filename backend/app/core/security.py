@@ -1,4 +1,5 @@
 import time
+from concurrent.futures import Future
 from threading import Lock
 from typing import Any
 
@@ -38,12 +39,21 @@ _jwks_cache: dict[str, Any] = {
     "expires_at": 0.0,
     "refresh_allowed_at": 0.0,
     "refreshing": False,
+    "completion": None,
     "keys": [],
 }
 
 
 class JWKSUnavailableError(Exception):
     """The signing-key provider is temporarily unavailable or refreshing."""
+
+
+class JWKSRefreshInFlight(Exception):
+    """Release the worker so the async request can await the shared refresh."""
+
+    def __init__(self, completion: Future[None]):
+        super().__init__("Supabase JWKS refresh is already in progress")
+        self.completion = completion
 
 
 def _invalid_auth_token_exception() -> HTTPException:
@@ -63,6 +73,7 @@ def _clear_jwks_cache_for_tests() -> None:
                 "expires_at": 0.0,
                 "refresh_allowed_at": 0.0,
                 "refreshing": False,
+                "completion": None,
                 "keys": [],
             }
         )
@@ -75,7 +86,7 @@ def _supabase_jwks_url(issuer: str) -> str:
 def _load_supabase_jwks(jwks_url: str, *, force_refresh: bool = False) -> list[dict[str, Any]]:
     # Claim a cache fill under the lock, but perform network I/O after releasing
     # it. Known cached keys remain readable while one caller refreshes, and
-    # followers fail closed instead of occupying the request threadpool.
+    # followers return a completion signal to the async authentication dependency.
     with _jwks_cache_lock:
         now = time.monotonic()
         if _jwks_cache["url"] != jwks_url:
@@ -85,6 +96,7 @@ def _load_supabase_jwks(jwks_url: str, *, force_refresh: bool = False) -> list[d
                     "expires_at": 0.0,
                     "refresh_allowed_at": 0.0,
                     "refreshing": False,
+                    "completion": None,
                     "keys": [],
                 }
             )
@@ -93,7 +105,7 @@ def _load_supabase_jwks(jwks_url: str, *, force_refresh: bool = False) -> list[d
             return list(_jwks_cache["keys"])
 
         if _jwks_cache["refreshing"]:
-            raise JWKSUnavailableError("Supabase JWKS refresh is already in progress")
+            raise JWKSRefreshInFlight(_jwks_cache["completion"])
 
         # A key miss may justify one early refresh for a legitimate rotation,
         # but random kids must not turn every request into blocking network I/O.
@@ -104,6 +116,8 @@ def _load_supabase_jwks(jwks_url: str, *, force_refresh: bool = False) -> list[d
             raise JWKSUnavailableError("Supabase JWKS refresh is temporarily throttled")
 
         _jwks_cache["refreshing"] = True
+        completion: Future[None] = Future()
+        _jwks_cache["completion"] = completion
         _jwks_cache["refresh_allowed_at"] = (
             now + SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS
         )
@@ -120,27 +134,29 @@ def _load_supabase_jwks(jwks_url: str, *, force_refresh: bool = False) -> list[d
             raise JWKSUnavailableError("Supabase JWKS response is invalid")
     except Exception as exc:
         with _jwks_cache_lock:
-            if _jwks_cache["url"] == jwks_url:
+            if _jwks_cache["completion"] is completion:
                 _jwks_cache["refreshing"] = False
+        completion.set_result(None)
         if isinstance(exc, JWKSUnavailableError):
             raise
         raise JWKSUnavailableError("Supabase JWKS could not be loaded") from exc
 
     with _jwks_cache_lock:
-        if _jwks_cache["url"] != jwks_url:
-            return list(keys)
-        refreshed_at = time.monotonic()
-        _jwks_cache.update(
-            {
-                "expires_at": refreshed_at + SUPABASE_JWKS_CACHE_TTL_SECONDS,
-                "refresh_allowed_at": (
-                    refreshed_at + SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS
-                ),
-                "refreshing": False,
-                "keys": keys,
-            }
-        )
-        return list(keys)
+        if _jwks_cache["completion"] is completion:
+            refreshed_at = time.monotonic()
+            _jwks_cache.update(
+                {
+                    "expires_at": refreshed_at + SUPABASE_JWKS_CACHE_TTL_SECONDS,
+                    "refresh_allowed_at": (
+                        refreshed_at + SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS
+                    ),
+                    "refreshing": False,
+                    "keys": keys,
+                }
+            )
+    # Complete outside the lock: callbacks may immediately recheck the cache.
+    completion.set_result(None)
+    return list(keys)
 
 
 def _jwk_matches_header(key: dict[str, Any], *, kid: str, alg: str) -> bool:

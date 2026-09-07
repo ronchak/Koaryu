@@ -7,7 +7,7 @@ from httpx import TimeoutException
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.concurrency import run_in_threadpool
-from app.core.security import get_user_id_from_token
+from app.core.security import JWKSRefreshInFlight, get_user_id_from_token
 from app.db.supabase import (
     DeadlineBoundSupabaseClient,
     create_operational_alert_supabase_client,
@@ -32,6 +32,7 @@ from supabase import Client
 security = HTTPBearer(auto_error=False)
 ACTIVE_STUDIO_COOKIE = "koaryu-active-studio"
 AUTHENTICATION_REQUIRED_DETAIL = "Invalid authentication token"
+AUTHENTICATION_WAIT_TIMEOUT_SECONDS = 3.0
 OPERATIONAL_ALERT_POSTGREST_TIMEOUT_SECONDS = 1.5
 PROVIDER_CAPACITY_UNAVAILABLE_DETAIL = "Provider capacity is temporarily unavailable."
 PROVIDER_OPERATION_TIMEOUT_DETAIL = "Provider operation timed out."
@@ -64,7 +65,24 @@ async def get_current_user_id(
         raise _authentication_exception()
     # JWKS verification can perform a bounded synchronous provider request on a
     # cold cache or key rotation. Keep that I/O off the ASGI event loop.
-    return await run_in_threadpool(get_user_id_from_token, credentials.credentials)
+    timeout = asyncio.timeout(AUTHENTICATION_WAIT_TIMEOUT_SECONDS)
+    try:
+        async with timeout:
+            while True:
+                try:
+                    return await run_in_threadpool(get_user_id_from_token, credentials.credentials)
+                except JWKSRefreshInFlight as pending:
+                    # A disconnected follower must not cancel the shared refresh.
+                    # Always verify this caller's token again after it completes.
+                    await asyncio.shield(asyncio.wrap_future(pending.completion))
+    except TimeoutError:
+        if not timeout.expired():
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication keys are temporarily unavailable",
+            headers={"Retry-After": "1"},
+        ) from None
 
 
 async def get_supabase(request: Request) -> ProviderDependency:
