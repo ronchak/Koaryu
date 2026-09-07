@@ -268,4 +268,7 @@ through `/api/performance`. The schema accepts fixed route labels and numeric
 measurements only. Use the root `npm run summarize:performance` command with a
 private log export to compare releases. Interactive API deadlines are 30 seconds
 end to end on the backend, 34 at the proxy, and 35 in the browser. Bulk operations
-use 120, 125, and 130 seconds respectively.
+use 120, 125, and 130 seconds respectively for reads. Requests with a body add
+a bounded 60-second proxy upload phase to the browser allowance; CSV import
+and photo uploads use a 190-second browser limit. Staging and preview traffic
+is excluded from production metric collection.
