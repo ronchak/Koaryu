@@ -1,4 +1,5 @@
 "use client";
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useEffect, useRef, useState } from "react";
 import { markDashboardReadiness } from "@/lib/performance";
@@ -16,8 +17,9 @@ import { canAccessSettings } from "./access-policy";
 type StudioDataConfirmAction = "demo-reset" | "clear-data" | null;
 
 export default function SettingsPage() {
-  const { currentRole, identityGeneration, identityReady, staffLoaded, staffLoadError } = useStudioStore();
-  const { programsLoaded, programsUsageLoaded, programsLoadError, programsUsageLoadError } = useProgramStore();
+  const { currentRole, identityGeneration, identityReady, staffLoaded, staffLoadError, refreshStaff } = useStudioStore();
+  const { programsLoaded, programsUsageLoaded, programsLoadError, programsUsageLoadError, refreshPrograms } = useProgramStore();
+  useResumeRefresh(() => currentRole === "admin" ? Promise.allSettled([refreshStaff(), refreshPrograms({ includeArchived: true })]) : undefined);
   const completeReady = identityReady && (!canAccessSettings(currentRole)
     || (staffLoaded && !staffLoadError && programsLoaded && programsUsageLoaded && !programsLoadError && !programsUsageLoadError));
   useEffect(() => markDashboardReadiness("settings", identityGeneration, {

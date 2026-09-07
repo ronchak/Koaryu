@@ -677,7 +677,7 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
             leads: [], belt_ladders: [], primary_belt_ladder: null,
             dataset_errors: fixture.failedDataset ? { [fixture.failedDataset]: `${fixture.failedDataset} projection failed. Please retry.` } : {},
           };
-          if (path === "/dashboard/summary?fresh=true") throw new Error("Summary unavailable");
+          if (path === "/dashboard/summary") throw new Error("Summary unavailable");
           if (path.startsWith("/schedule/window")) return { sessions: [], templates: [], attendance: [] };
           if (path.startsWith("/programs?")) {
             if (fixture.programsRetryFails) throw new Error("Programs retry unavailable");
@@ -698,7 +698,7 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
       assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), failedDataset !== "students");
       assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), failedDataset !== "leads");
       assert.equal(await page.evaluate(() => fixture.store.programsLoaded), failedDataset !== "programs");
-      assert.deepEqual(await page.evaluate(() => fixture.requests.filter(path => !path.startsWith("/schedule/window")).sort()), ["/dashboard/bootstrap?allow_partial=true", "/dashboard/summary?fresh=true"], "a partial response cannot trigger legacy dataset fan-out");
+      assert.deepEqual(await page.evaluate(() => fixture.requests.filter(path => !path.startsWith("/schedule/window")).sort()), ["/dashboard/bootstrap?allow_partial=true", "/dashboard/summary"], "a partial response cannot trigger legacy dataset fan-out");
       if (failedDataset === "students") {
         assert.equal(await page.evaluate(() => fixture.dashboard.widgetViewModels.student_pulse.state), "error");
         assert.equal(await page.evaluate(() => fixture.dashboard.widgetViewModels.student_pulse.metric), undefined, "failed roster is not zero active students");

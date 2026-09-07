@@ -1,4 +1,5 @@
 export const APP_RESUME_EVENT = "koaryu:resume";
+export const APP_DATA_REFRESH_EVENT = "koaryu:data-refresh";
 export const RESUME_STALE_MS = 30_000;
 
 export type AppVersion = { environment: string; commit_sha: string | null };

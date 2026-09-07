@@ -1,5 +1,7 @@
 "use client";
 
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
+
 import { useEffect } from "react";
 import { markDashboardReadiness } from "@/lib/performance";
 import { LeadLedgerLoading } from "@/components/leads/lead-ledger-loading";
@@ -31,6 +33,7 @@ export default function LeadsPage() {
     leadsLoadError,
     refreshLeads,
   } = useLeadStore();
+  useResumeRefresh(() => Promise.allSettled([refreshLeads(), ...(currentRole === "admin" ? [refreshStaff()] : [])]));
   // The existing staff endpoint is admin-only. Other roles must not wait on a
   // dataset they cannot read; admins need it for assignment names and selectors.
   const requiresStaff = currentRole === "admin";

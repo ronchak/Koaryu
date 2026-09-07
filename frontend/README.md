@@ -256,3 +256,9 @@ application destination. Returning to an old build offers a refresh without
 replacing drafts, and blocks that refresh while API saves are pending. See
 [the navigation follow-up](../docs/verification/navigation-reliability-followup.md)
 for lifecycle behavior and the release browser checks.
+
+Ordinary Dashboard revisits may reuse facts for up to the backend cache's 15-second
+TTL. Explicit refresh and post-command reconciliation remain fresh. Commands in
+this browser or another same-origin tab bypass cached facts for 60 seconds.
+Returning to a current build verifies workspace access before refreshing the
+visible route; drafts remain mounted.

@@ -257,7 +257,15 @@ def test_workspace_does_not_load_feature_projections_and_keeps_subscription_enfo
         assert error.value.status_code == 402
 
 
-def test_students_bootstrap_omits_unrelated_lead_and_belt_queries():
+@pytest.mark.parametrize("view,expected", [
+    ("students", ["programs", "students", "studio"]),
+    ("schedule", ["programs", "studio"]),
+    ("settings", ["programs", "studio"]),
+    ("leads", ["leads", "programs", "studio"]),
+    ("reports", ["leads", "programs", "studio"]),
+    ("training", ["belts", "programs", "studio"]),
+])
+def test_bootstrap_omits_unrelated_route_queries(view, expected):
     profile = AuthResponse(user=UserProfile(id="fixture-user", email="fixture@example.test"),
                            staff_profiles_available=True, membership_status="active", studio_id="fixture-studio", role="admin")
     service = DashboardBootstrapService(SimpleNamespace(options=SimpleNamespace(postgrest_client_timeout=10)))
@@ -266,7 +274,7 @@ def test_students_bootstrap_omits_unrelated_lead_and_belt_queries():
         labels.append(label)
         if label == "studio":
             value = SimpleNamespace(data={"id": "fixture-studio", "name": "Fixture", "slug": "fixture", "timezone": "UTC"})
-        elif label == "students":
+        elif label in {"students", "leads", "belts"} and label in expected:
             value = SimpleNamespace(data=[], count=0)
         elif label == "programs":
             value = []
@@ -276,6 +284,6 @@ def test_students_bootstrap_omits_unrelated_lead_and_belt_queries():
     with patch("app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync", return_value=profile), \
          patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"), \
          patch.object(service, "_timed_fetch_with_isolated_client", side_effect=fetch):
-        result, _ = asyncio.run(service.get_dashboard_bootstrap("fixture-user", provider_owned=True, view="students"))
-    assert sorted(labels) == ["programs", "students", "studio"]
+        result, _ = asyncio.run(service.get_dashboard_bootstrap("fixture-user", provider_owned=True, view=view))
+    assert sorted(labels) == expected
     assert result.students == []

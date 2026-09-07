@@ -50,7 +50,7 @@ async def get_dashboard_bootstrap(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
-    view: Literal["dashboard", "students", "billing"] = "dashboard",
+    view: Literal["dashboard", "students", "billing", "schedule", "settings", "leads", "reports", "training"] = "dashboard",
 ):
     async def _provider_operation(client):
         """Return the critical initial dashboard payload in a single request."""

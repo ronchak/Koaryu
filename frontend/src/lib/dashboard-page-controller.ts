@@ -1,5 +1,7 @@
 "use client";
 
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
+
 import { useCallback, useEffect, useMemo } from "react";
 import { canViewDashboardBilling } from "@/lib/dashboard-billing-summary";
 import {
@@ -177,6 +179,8 @@ export function useDashboardPageController({
     markPerformance("dashboard.summary_rendered", { source: "bootstrap" });
   }, [summary]);
 
+  useResumeRefresh(() => refreshDashboardSummary());
+
   const retryDashboardDatasets = useCallback(() => {
     void Promise.allSettled([
       refreshDashboardSummary(),
@@ -191,7 +195,7 @@ export function useDashboardPageController({
 
   useEffect(() => {
     if (!isPreviewMode && isDashboardIdentityReady) {
-      void refreshDashboardSummary().catch(() => undefined);
+      void refreshDashboardSummary({ reason: "visit" }).catch(() => undefined);
     }
   }, [isDashboardIdentityReady, isPreviewMode, refreshDashboardSummary, today]);
 

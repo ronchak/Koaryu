@@ -12,6 +12,7 @@ from app.schemas.lead import (
 from app.services.studio_scope import ensure_staff_user_in_studio
 from app.services.program_service import ProgramService
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
+from app.services.lead_reads import fetch_lead_rows
 
 
 CONVERSION_NAMESPACE = uuid.UUID("27c8322f-a4e4-46d7-bfae-018f6b638858")
@@ -25,18 +26,7 @@ class LeadService:
     async def list_leads(
         self, studio_id: str, stage: Optional[str] = None, source: Optional[str] = None
     ) -> list[LeadResponse]:
-        query = (
-            self.supabase.table("leads")
-            .select("*")
-            .eq("studio_id", studio_id)
-            .order("created_at", desc=True)
-        )
-        if stage:
-            query = query.eq("stage", stage)
-        if source:
-            query = query.eq("source", source)
-        result = query.execute()
-        return [LeadResponse(**r) for r in (result.data or [])]
+        return [LeadResponse(**row) for row in fetch_lead_rows(self.supabase, studio_id, stage, source)]
 
     async def create_lead(
         self, data: LeadCreate, studio_id: str, actor_id: str

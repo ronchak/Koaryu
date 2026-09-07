@@ -427,3 +427,56 @@ test("an unknown lead save stays locked until dismissal, then a new form is usab
     await page.evaluate(() => fixture.root.unmount());
   } finally { await browser.close(); }
 });
+
+for (const path of ["schedule", "settings", "leads", "reports", "belt-tracker"]) {
+  test(`cold ${path} requests only its own bootstrap projection`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: `/${path}` });
+      await page.waitForFunction(() => fixture.requests.some(r => r.path.startsWith("/dashboard/bootstrap")));
+      const expected = path === "belt-tracker" ? "training" : path;
+      assert.equal(await page.evaluate(() => fixture.requests.find(r => r.path.startsWith("/dashboard/bootstrap")).path), `/dashboard/bootstrap?allow_partial=true&view=${expected}`);
+      if (["schedule", "settings", "leads", "reports", "belt-tracker"].includes(path)) {
+        await page.waitForFunction(() => fixture.store.programsLoaded);
+        assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), false);
+      }
+    } finally { await browser.close(); }
+  });
+}
+
+test("same-build resume verifies access before refreshing visible data and retains the mounted form", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/leads", leadController: true });
+    await page.getByRole("button", { name: "New lead" }).click();
+    const input = page.getByRole("textbox").first();
+    await input.fill("Unsaved lead");
+    await page.evaluate(() => { fixture.resumeEvents = 0; window.addEventListener("koaryu:data-refresh", () => fixture.resumeEvents++); window.dispatchEvent(new Event("koaryu:resume")); });
+    await page.waitForFunction(() => fixture.resumeEvents === 1);
+    await expectValue(input, "Unsaved lead");
+    assert.equal(await page.evaluate(() => fixture.requests.filter(r => r.path === "/dashboard/workspace").length), 2);
+    await page.evaluate(() => { fixture.auth = { ...fixture.auth, role: "instructor" }; window.dispatchEvent(new Event("koaryu:resume")); });
+    await page.waitForFunction(() => fixture.store.currentRole === "instructor");
+    assert.equal(await page.evaluate(() => fixture.resumeEvents), 1);
+  } finally { await browser.close(); }
+});
+
+async function expectValue(input, expected) { assert.equal(await input.inputValue(), expected); }
+
+test("explicit refresh supersedes an older cached visit read", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => { fixture.visit = fixture.store.refreshDashboardSummary({ reason: "visit" }); });
+    await page.waitForFunction(() => fixture.summaries.length === 1);
+    assert.equal(await page.evaluate(() => fixture.requests.at(-1).path), "/dashboard/summary");
+    await page.evaluate(() => { fixture.refresh = fixture.store.refreshDashboardSummary(); });
+    await page.waitForFunction(() => fixture.summaries.length === 2);
+    assert.equal(await page.evaluate(() => fixture.requests.at(-1).path), "/dashboard/summary?fresh=true");
+    await page.evaluate(() => fixture.summaries[1].resolve({ auth: fixture.auth, students: { total: 251 } }));
+    await page.evaluate(() => fixture.refresh);
+    await page.evaluate(() => fixture.summaries[0].resolve({ auth: fixture.auth, students: { total: 250 } }));
+    await page.evaluate(() => fixture.visit);
+    assert.equal(await page.evaluate(() => fixture.store.dashboardSummary.students.total), 251);
+  } finally { await browser.close(); }
+});

@@ -1,5 +1,7 @@
 "use client";
 
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { consumeRosterReturn, loadRosterReturn, saveRosterReturn, safeStudentsReturn } from "@/lib/student-roster-location";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -183,6 +185,7 @@ export function useStudentsPageController({
     "idle" | "loading" | "ready" | "error"
   >("idle");
   const [inactivityScheduleError, setInactivityScheduleError] = useState<string | null>(null);
+  useResumeRefresh(() => setPageRequestNonce(value => value + 1));
   const pagedRequestSeqRef = useRef(0);
   const pagedAbortControllerRef = useRef<AbortController | null>(null);
   const pagedQueryKeyRef = useRef("");

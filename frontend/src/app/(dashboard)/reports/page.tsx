@@ -1,4 +1,5 @@
 "use client";
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DatasetReadinessErrorPanel } from "@/components/dataset-readiness-panel";
@@ -66,6 +67,8 @@ export default function ReportsPage() {
       throw error;
     }
   }, [refreshScheduleRange, reportScheduleRange.endDate, reportScheduleRange.startDate]);
+
+  useResumeRefresh(() => Promise.allSettled([refreshReportSchedule(), refreshLeads(), refreshPrograms({ includeArchived: true })]));
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
