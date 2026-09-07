@@ -9,9 +9,9 @@ export function summarizePerformance(lines) {
       if (line.startsWith("{")) line = JSON.parse(line).message ?? "";
       const index = line.indexOf("[koaryu:metrics] ");
       if (index < 0) continue;
-      const { release, ...value } = JSON.parse(line.slice(index + "[koaryu:metrics] ".length));
+      const { environment, release, ...value } = JSON.parse(line.slice(index + "[koaryu:metrics] ".length));
       const batch = parseMetricBatch(value);
-      if (!batch || (release !== null && !/^[0-9a-f]{40}$/.test(release))) continue;
+      if (environment !== "production" || !batch || (release !== null && !/^[0-9a-f]{40}$/.test(release))) continue;
       for (const event of batch.events) {
         const key = JSON.stringify([batch.version, event.route, event.name, event.navigation, event.outcome]);
         if (!groups.has(key) && groups.size >= 1024) continue;

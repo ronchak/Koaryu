@@ -102,7 +102,7 @@ export function useStoreStudentImportActions({
       formData,
       liveRequest.token,
       {
-        timeoutMs: 130000,
+        timeoutMs: 190000,
         headers: importKey ? {
           "Idempotency-Key": importKey,
           "X-Import-Key": importKey,

@@ -12,6 +12,7 @@ import { fetchProxyUpstream, ProxyUpstreamTimeoutError } from "../../../../lib/p
 import { proxyRequestTimeout } from "../../../../lib/request-budget.ts";
 
 export const runtime = "nodejs";
+export const maxDuration = 190;
 
 function getBackendApiBase() {
   const rawBackendApiBase = process.env.BACKEND_API_URL ?? process.env.NEXT_PUBLIC_API_URL;

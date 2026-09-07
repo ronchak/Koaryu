@@ -31,9 +31,13 @@ const events: PerformanceMetric[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let navigationTimeout: ReturnType<typeof setTimeout> | undefined;
 
-export function configurePerformanceCollection(build: string | null) {
+export function productionPerformanceEnabled(environment: string, preview: boolean) {
+  return environment === "production" && !preview;
+}
+export function configurePerformanceCollection(build: string | null, environment: string) {
   version = build;
-  sampled = process.env.NODE_ENV === "production" && Boolean(build) && Math.random() < 0.1;
+  sampled = process.env.NODE_ENV === "production" && productionPerformanceEnabled(environment, process.env.NEXT_PUBLIC_PREVIEW_MODE === "true")
+    && Boolean(build) && Math.random() < 0.1;
 }
 
 export function flushPerformanceMetrics() {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, test } from "node:test";
 
 import {
   CSV_IMPORT_MAX_BYTES,
@@ -128,4 +128,12 @@ describe("bounded proxy request bodies", () => {
       InvalidProxyContentLengthError
     );
   });
+});
+
+
+test("a stalled upload has a bounded pre-dispatch timeout", async () => {
+  let cancelled = false;
+  const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode("partial")); }, cancel() { cancelled = true; } });
+  await assert.rejects(readBoundedProxyRequestBody({ body: stream, headers: new Headers() }, 1024, 20), { name: "ProxyRequestBodyTimeoutError" });
+  assert.equal(cancelled, true);
 });

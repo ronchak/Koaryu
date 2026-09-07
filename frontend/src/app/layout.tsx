@@ -90,7 +90,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col font-sans antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <WebVitals version={getDeploymentMetadata().commit_sha} />
+        <WebVitals version={getDeploymentMetadata().commit_sha} environment={getDeploymentMetadata().environment} />
         <AppResumeGuard loaded={getDeploymentMetadata()} />
         <ThemeProvider>{children}</ThemeProvider>
       </body>

@@ -32,7 +32,10 @@ export async function POST(request: Request) {
     if (expired) return new Response(null, { status: 408, headers });
     const batch = parseMetricBatch(JSON.parse(Buffer.concat(chunks).toString("utf8")));
     if (!batch) return new Response(null, { status: 400, headers });
-    console.info(`[koaryu:metrics] ${JSON.stringify({ release: getDeploymentMetadata().commit_sha, ...batch })}`);
+    const deployment = getDeploymentMetadata();
+    if (deployment.environment === "production" && process.env.NEXT_PUBLIC_PREVIEW_MODE !== "true") {
+      console.info(`[koaryu:metrics] ${JSON.stringify({ environment: deployment.environment, release: deployment.commit_sha, ...batch })}`);
+    }
     return new Response(null, { status: 204, headers });
   } catch {
     return new Response(null, { status: 400, headers });

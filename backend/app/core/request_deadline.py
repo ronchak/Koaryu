@@ -20,6 +20,7 @@ def is_bulk_request(path: str, method: str) -> bool:
             "/schedule/window/materialize", "/schedule/sessions/materialize",
             "/schedule/sessions/generate-week", "/schedule/attendance/bulk",
         }
+        or method == "POST" and re.fullmatch(r"/students/[^/]+/photo", path) is not None
     )
 
 

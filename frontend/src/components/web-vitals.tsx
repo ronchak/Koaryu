@@ -1,7 +1,7 @@
 "use client";
 
 import { useReportWebVitals } from "next/web-vitals";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { configurePerformanceCollection, flushPerformanceMetrics, navigationTimer, recordPerformanceMetric, startMeasuredNavigation, stopMeasuredNavigation } from "@/lib/navigation-telemetry";
 import { metricRoute, type PerformanceMetric } from "@/lib/performance-metrics";
@@ -44,11 +44,12 @@ function reportMetric(metric: WebVitalMetric) {
   });
 }
 
-export function WebVitals({ version }: { version: string | null }) {
+export function WebVitals({ version, environment }: { version: string | null; environment: string }) {
   const pathname = usePathname();
+  const lastPath = useRef(pathname);
   useEffect(() => {
     documentRoute = metricRoute(window.location.pathname);
-    configurePerformanceCollection(version);
+    configurePerformanceCollection(version, environment);
     if (!document.hidden) startMeasuredNavigation(window.location.pathname, "document", 0);
     const onClick = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -57,7 +58,11 @@ export function WebVitals({ version }: { version: string | null }) {
       const url = new URL(anchor.href);
       if (url.origin === window.location.origin && url.pathname !== window.location.pathname) startMeasuredNavigation(url.pathname, "link");
     };
-    const onHistory = () => startMeasuredNavigation(window.location.pathname, "history");
+    const onHistory = () => {
+      const nextPath = window.location.pathname;
+      if (nextPath !== lastPath.current) startMeasuredNavigation(nextPath, "history");
+      lastPath.current = nextPath;
+    };
     const onHide = () => { stopMeasuredNavigation("interrupted"); flushPerformanceMetrics(); };
     const onVisibility = () => { if (document.hidden) { stopMeasuredNavigation("interrupted"); flushPerformanceMetrics(); } };
     document.addEventListener("click", onClick, true);
@@ -71,8 +76,9 @@ export function WebVitals({ version }: { version: string | null }) {
       document.removeEventListener("visibilitychange", onVisibility);
       onHide();
     };
-  }, [version]);
+  }, [version, environment]);
   useEffect(() => {
+    lastPath.current = pathname;
     if (["/503", "/504", "/502", "/login", "/access-denied", "/onboarding", "/account-archived", "/subscription-required"].includes(pathname)) stopMeasuredNavigation("redirect");
     else navigationTimer.stage(metricRoute(pathname), "commit");
   }, [pathname]);

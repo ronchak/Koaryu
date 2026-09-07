@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseMetricBatch, metricRoute } from "../src/lib/performance-metrics.ts";
-import { createNavigationTimer } from "../src/lib/navigation-telemetry.ts";
+import { createNavigationTimer, productionPerformanceEnabled } from "../src/lib/navigation-telemetry.ts";
 import { POST } from "../src/app/api/performance/route.ts";
 import { summarizePerformance } from "../../scripts/summarize-performance.mjs";
 import { apiRequestTimeout, proxyRequestTimeout } from "../src/lib/request-budget.ts";
@@ -44,6 +44,9 @@ function request(body, headers = {}) {
 }
 
 test("collector rejects cross-site, private fields and oversized input before logging", async (t) => {
+  const prior = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = "production";
+  t.after(() => { if (prior === undefined) delete process.env.VERCEL_ENV; else process.env.VERCEL_ENV = prior; });
   const log = t.mock.method(console, "info", () => {});
   assert.equal((await POST(request(JSON.stringify(batch), { Origin: "https://elsewhere.test" }))).status, 403);
   assert.equal((await POST(request(JSON.stringify({ ...batch, token: "private" })))).status, 400);
@@ -55,7 +58,8 @@ test("collector rejects cross-site, private fields and oversized input before lo
 });
 
 test("rollups exclude unrelated logs and distinguish small samples from reliable tail comparisons", () => {
-  const lines = ["unrelated private log", JSON.stringify({ message: `[koaryu:metrics] ${JSON.stringify({ release: batch.version, ...batch })}` })];
+  const lines = ["unrelated private log", JSON.stringify({ message: `[koaryu:metrics] ${JSON.stringify({ environment: "production", release: batch.version, ...batch })}` }),
+    `[koaryu:metrics] ${JSON.stringify({ environment: "staging", release: batch.version, ...batch })}`];
   const result = summarizePerformance(lines);
   assert.equal(result.length, 1); assert.equal(result[0].p95, 123);
   assert.equal(result[0].sufficient_for_tail_comparison, false);
@@ -67,4 +71,11 @@ test("browser and proxy deadlines leave room for the entire server operation", (
     assert.ok(proxyRequestTimeout(path, method) > server);
     assert.ok(apiRequestTimeout(path, method) > proxyRequestTimeout(path, method));
   }
+  assert.ok(apiRequestTimeout("/students/import/execute", "POST") >= 60_000 + proxyRequestTimeout("/students/import/execute", "POST") + 5_000);
+});
+
+test("optimized preview and staging builds cannot be sampled as production traffic", () => {
+  assert.equal(productionPerformanceEnabled("production", false), true);
+  for (const environment of ["staging", "preview", "development", "local"]) assert.equal(productionPerformanceEnabled(environment, false), false);
+  assert.equal(productionPerformanceEnabled("production", true), false);
 });
