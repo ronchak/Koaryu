@@ -1761,7 +1761,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         window.dispatchEvent(new Event(APP_DATA_REFRESH_EVENT));
       } catch (error) {
-        if (disposed || !request.isSameIdentity()) return;
+        if (disposed || !request?.isSameIdentity()) return;
         if (isSubscriptionRequiredError(error)) markSubscriptionRequired();
         else if (error && typeof error === "object" && "status" in error && Number(error.status) === 401) {
           tokenRef.current = null;
