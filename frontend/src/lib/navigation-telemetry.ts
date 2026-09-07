@@ -67,6 +67,10 @@ export const navigationTimer = createNavigationTimer(recordPerformanceMetric);
 export function startMeasuredNavigation(path: string, navigation: PerformanceMetric["navigation"], started?: number) {
   const route = metricRoute(path);
   if (route === "public" || route === "other") return;
+  try {
+    performance.clearMarks("koaryu.navigation.intent");
+    performance.mark("koaryu.navigation.intent", { startTime: started ?? performance.now(), detail: { route, navigation } });
+  } catch { /* Native marks are optional diagnostics. */ }
   navigationTimer.start(route, navigation, started);
   clearTimeout(navigationTimeout);
   navigationTimeout = setTimeout(() => navigationTimer.fail("timeout"), 45_000);

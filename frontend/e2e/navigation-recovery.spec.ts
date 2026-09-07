@@ -28,17 +28,21 @@ check("a restored older build offers refresh while preserving the open form", as
 });
 
 check("same-path history changes do not create a false navigation timeout", async ({ page }) => {
-  await page.clock.install();
-  await page.goto(`${origin}/dashboard`);
-  await expect(page.locator('[data-koaryu-dashboard-data-ready="true"]')).toBeVisible();
-  await page.waitForFunction(() => performance.getEntriesByName("koaryu.measured.navigation_complete").some(entry => (entry as PerformanceMark).detail?.route === "dashboard"));
+  await page.goto(`${origin}/schedule`);
+  await expect(page.getByRole("heading", { name: "Schedule", exact: true })).toBeVisible();
+  await page.waitForFunction(() => performance.getEntriesByName("koaryu.measured.navigation_complete").some(entry => (entry as PerformanceMark).detail?.route === "schedule"));
   const failures = () => page.evaluate(() => performance.getEntriesByName("koaryu.measured.navigation_failure").map(entry => ({ at: entry.startTime, detail: (entry as PerformanceMark).detail })));
   const before = await failures();
+  const intents = () => page.evaluate(() => performance.getEntriesByName("koaryu.navigation.intent").map(entry => ({ at: entry.startTime, detail: (entry as PerformanceMark).detail })));
+  const beforeIntents = await intents();
   const skip = page.getByRole("link", { name: "Skip to main content" });
   await skip.focus(); await skip.press("Enter");
-  await expect(page).toHaveURL(`${origin}/dashboard#main-content`);
+  await expect(page).toHaveURL(`${origin}/schedule#main-content`);
   await page.goBack();
-  await expect(page).toHaveURL(`${origin}/dashboard`);
-  await page.clock.fastForward(46_000);
+  await expect(page).toHaveURL(`${origin}/schedule`);
+  // Playwright's clock replaces native Performance entries, so keep the real
+  // clock and verify that this action never starts a timer in the first place.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(await intents()).toEqual(beforeIntents);
   expect(await failures()).toEqual(before);
 });
