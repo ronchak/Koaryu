@@ -179,8 +179,6 @@ export function useDashboardPageController({
     markPerformance("dashboard.summary_rendered", { source: "bootstrap" });
   }, [summary]);
 
-  useResumeRefresh(() => retryDashboardDatasets());
-
   const retryDashboardDatasets = useCallback(() => {
     void Promise.allSettled([
       refreshDashboardSummary(),
@@ -192,6 +190,7 @@ export function useDashboardPageController({
     ]);
   }, [currentLadderId, loadEligibilityForLadder, refreshDashboardSummary,
     refreshLeads, refreshPrograms, refreshSchedule, refreshStudents]);
+  useResumeRefresh(retryDashboardDatasets);
 
   useEffect(() => {
     if (!isPreviewMode && isDashboardIdentityReady) {

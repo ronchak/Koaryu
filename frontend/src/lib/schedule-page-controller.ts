@@ -106,13 +106,14 @@ export function useSchedulePageController({
     [currentDate, view]
   );
 
+  const visibleRangeKey = `${visibleRange.start}:${visibleRange.end}`;
+
   useResumeRefresh(() => {
     resumedRangeRef.current = visibleRangeKey;
     setRangeLoadAttempt(value => value + 1);
     setAttendanceRefreshAttempt(value => value + 1);
   });
 
-  const visibleRangeKey = `${visibleRange.start}:${visibleRange.end}`;
 
   useEffect(() => {
     let cancelled = false;
