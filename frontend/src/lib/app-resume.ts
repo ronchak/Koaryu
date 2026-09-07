@@ -26,12 +26,12 @@ export function createResumeCheck({ loaded, readVersion, onCurrent, onUpdate, no
       if (disposed) return Promise.resolve();
       if (pending) return pending;
       if (now() - lastCheck < RESUME_STALE_MS) return Promise.resolve();
-      lastCheck = now();
       pending = (async () => {
-        if (!loaded.commit_sha) { if (!disposed) onCurrent(); return; }
+        if (!loaded.commit_sha) { lastCheck = now(); if (!disposed) onCurrent(); return; }
         try {
           const current = await readVersion();
           if (disposed || !validAppVersion(current) || current.environment !== loaded.environment) return;
+          lastCheck = now();
           if (current.commit_sha !== loaded.commit_sha) onUpdate();
           else onCurrent();
         } catch {

@@ -15,7 +15,7 @@ export function AppResumeGuard({ loaded }: { loaded: AppVersion }) {
         const response = await fetch("/api/version", {
           cache: "no-store",
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(4_000)]),
-          credentials: "omit",
+          credentials: "same-origin",
         });
         if (!response.ok) throw new Error("Version check unavailable");
         return response.json();

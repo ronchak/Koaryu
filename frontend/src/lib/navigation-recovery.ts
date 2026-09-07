@@ -11,6 +11,7 @@ export function navigationRecoveryPath(value: unknown): string {
   try {
     const url = new URL(value, "https://recovery.invalid");
     if (url.origin !== "https://recovery.invalid" || !RECOVERY_ROUTES.has(url.pathname.split("/")[1])) return "/dashboard";
+    url.searchParams.delete("_rsc");
     return url.pathname + url.search;
   } catch {
     return "/dashboard";

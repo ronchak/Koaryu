@@ -7,6 +7,7 @@ import { beginPendingCommand, pendingCommands } from "../src/lib/pending-command
 
 test("recovery preserves application filters but rejects external and recursive destinations", () => {
   assert.equal(navigationRecoveryPath("/schedule?view=week&date=2026-09-06"), "/schedule?view=week&date=2026-09-06");
+  assert.equal(navigationRecoveryPath("/billing?tab=plans&_rsc=internal"), "/billing?tab=plans");
   for (const path of ["https://evil.test", "//evil.test", "/\\evil.test", "/%2f%2fevil.test", "/503?returnTo=/503", "/api/proxy", null, ["/billing"], "/schedule\n"]) {
     assert.equal(navigationRecoveryPath(path), "/dashboard");
   }
@@ -62,6 +63,16 @@ test("offline, malformed, other-environment and late version responses cannot re
   let resolve;
   const checker = createResumeCheck({ loaded, readVersion: () => new Promise(r => { resolve = r; }), onCurrent: () => assert.fail(), onUpdate: () => assert.fail() });
   const pending = checker.check(); checker.dispose(); resolve(current); await pending;
+});
+
+test("reconnecting immediately after an offline failure retries without waiting for the throttle", async () => {
+  let reads = 0, refreshed = 0;
+  const checker = createResumeCheck({ loaded, now: () => 1000,
+    readVersion: async () => { if (++reads === 1) throw new Error("Offline"); return current; },
+    onCurrent: () => refreshed++, onUpdate: () => assert.fail(),
+  });
+  await checker.check(); await checker.check();
+  assert.equal(reads, 2); assert.equal(refreshed, 1);
 });
 
 test("reload protection tracks all concurrent commands until each settles", () => {
