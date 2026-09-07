@@ -75,3 +75,11 @@ a resumed open form, changed access scope, and fresh-versus-old summary races.
 Implementation evidence and completed items must be updated in each follow-up PR.
 Existing authorization, command-outcome and subscription protections remain
 acceptance criteria throughout.
+
+Resume reconciliation also refreshes dependent selectors, activity feeds and
+promotion history. Selected sessions follow the current collection and close when
+removed. Independent projection failures do not suppress unrelated refreshes.
+Commands begun during access verification queue a fresh pass after settlement;
+403 clears prior tenant data, and successful subscription recovery leaves the
+blocked state. An older build still revalidates access while awaiting a user
+refresh, without requesting potentially incompatible feature payloads.

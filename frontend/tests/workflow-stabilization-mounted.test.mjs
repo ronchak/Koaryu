@@ -505,3 +505,94 @@ test("Settings does not start a deferred belt read after its metadata projection
     assert.equal(await page.evaluate(() => fixture.requests.some(r => r.path.includes("/belts"))), false);
   } finally { await browser.close(); }
 });
+
+test("resume access denial clears prior studio records", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.waitForFunction(() => fixture.store.students.length > 0);
+    await page.evaluate(() => {
+      const original = fixture.api.get;
+      fixture.api.get = (path, ...args) => path === "/dashboard/workspace"
+        ? Promise.reject(Object.assign(new Error("Studio access revoked"), { status: 403 })) : original(path, ...args);
+      window.dispatchEvent(new Event("koaryu:resume"));
+    });
+    await page.waitForFunction(() => !fixture.store.identityReady && fixture.store.students.length === 0);
+    assert.equal(await page.evaluate(() => document.cookie.includes("koaryu-active-studio=studio-a")), false);
+  } finally { await browser.close(); }
+});
+
+test("resume verification waits again for a command that started during its read", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.resumeReads = 0; fixture.resumeEvents = 0;
+      window.addEventListener("koaryu:data-refresh", () => fixture.resumeEvents++);
+      const original = fixture.api.get;
+      fixture.api.get = (path, ...args) => path === "/dashboard/workspace" && ++fixture.resumeReads === 1
+        ? new Promise(resolve => { fixture.releaseWorkspace = resolve; }) : original(path, ...args);
+      window.dispatchEvent(new Event("koaryu:resume"));
+    });
+    await page.waitForFunction(() => fixture.releaseWorkspace);
+    await page.evaluate(() => { fixture.finishCommand = fixture.beginPendingCommand(); fixture.releaseWorkspace({ auth: fixture.auth }); });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+    assert.equal(await page.evaluate(() => fixture.resumeEvents), 0);
+    await page.evaluate(() => fixture.finishCommand());
+    await page.waitForFunction(() => fixture.resumeEvents === 1);
+    assert.equal(await page.evaluate(() => fixture.resumeReads), 2);
+  } finally { await browser.close(); }
+});
+
+test("resume restores externally renewed subscription access", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => { fixture.store.markSubscriptionRequired(); fixture.navigate("/subscription-required"); });
+    await page.waitForFunction(() => fixture.store.subscriptionRequired);
+    await page.evaluate(() => window.dispatchEvent(new Event("koaryu:resume")));
+    await page.waitForFunction(() => !fixture.store.subscriptionRequired);
+    assert.equal(await page.evaluate(() => fixture.redirects.includes("/dashboard")), true);
+  } finally { await browser.close(); }
+});
+
+test("detail resume continues after an independent belt-read failure", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/students/student-1", detailController: true });
+    await page.evaluate(() => fixture.mountDetail());
+    await page.waitForFunction(() => fixture.details.length === 1);
+    await page.evaluate(() => fixture.details[0].resolve(fixture.student));
+    await page.evaluate(() => {
+      const original = fixture.api.get;
+      fixture.api.get = (path, ...args) => path === "/belts/ladders" ? Promise.reject(new Error("Belt provider unavailable")) : original(path, ...args);
+      window.dispatchEvent(new Event("koaryu:resume"));
+    });
+    await page.waitForFunction(() => fixture.details.length === 2);
+    await page.evaluate(() => fixture.details[1].resolve(fixture.student));
+  } finally { await browser.close(); }
+});
+
+test("resumed schedule updates or closes its selected session and refreshes its roster", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await page.evaluate(() => {
+      fixture.scheduleRow = { id: "session-one", date: fixture.store.businessDate, name: "Before", start_time: "10:00", end_time: "11:00", attendance_count: 0 };
+      const get = fixture.api.get, post = fixture.api.post;
+      const windowData = () => ({ sessions: fixture.scheduleRow ? [fixture.scheduleRow] : [], attendance: [], templates: [] });
+      fixture.api.get = (path, ...args) => path.startsWith("/schedule/window") ? Promise.resolve(windowData())
+        : path.includes("attendance") ? Promise.resolve([])
+        : path.startsWith("/students?") ? Promise.resolve({ items: [fixture.student], total: 1, page_size: 200, page_ordinal: 1, has_next: false }) : get(path, ...args);
+      fixture.api.post = (path, ...args) => path.startsWith("/schedule/window") ? Promise.resolve(windowData()) : post(path, ...args);
+      fixture.mountSchedule();
+    });
+    await page.waitForFunction(() => fixture.controller?.sessions.some(s => s.id === "session-one"));
+    await page.evaluate(() => fixture.controller.onOpenSession(fixture.controller.sessions[0]));
+    await page.waitForFunction(() => fixture.controller.selectedSession?.name === "Before");
+    await page.evaluate(() => { fixture.scheduleRow = { ...fixture.scheduleRow, name: "After" }; fixture.student = { ...fixture.student, legal_first_name: "Renamed" }; window.dispatchEvent(new Event("koaryu:resume")); });
+    await page.waitForFunction(() => fixture.controller.selectedSession?.name === "After" && fixture.controller.activeStudents[0]?.legal_first_name === "Renamed");
+    await page.evaluate(() => { fixture.scheduleRow = null; window.dispatchEvent(new Event("koaryu:resume")); });
+    await page.waitForFunction(() => fixture.controller.selectedSession === null);
+  } finally { await browser.close(); }
+});

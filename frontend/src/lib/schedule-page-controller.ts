@@ -33,7 +33,7 @@ import type { ClassSession } from "@/types";
 
 type SchedulePageControllerOptions = {
   config: Pick<ConfigStoreContextValue, "currentRole" | "businessDate">;
-  programsStore: Pick<ProgramsStoreContextValue, "programs">;
+  programsStore: Pick<ProgramsStoreContextValue, "programs" | "refreshPrograms">;
   scheduleStore: Pick<
     ScheduleStoreContextValue,
     | "addSession"
@@ -60,7 +60,7 @@ export function useSchedulePageController({
 }: SchedulePageControllerOptions) {
   const canManageSchedule = hasStaffPermission(config.currentRole, "manage_schedule");
   const { refreshStudents, students, studentsLoaded, studentsMayBePartial } = studentsStore;
-  const { programs } = programsStore;
+  const { programs, refreshPrograms } = programsStore;
   const {
     attendance,
     sessions,
@@ -75,7 +75,9 @@ export function useSchedulePageController({
   const [currentDate, setCurrentDate] = useState(() => new Date(`${config.businessDate}T12:00:00`));
   const [view, setView] = useState<SchedulePageView>(DEFAULT_SCHEDULE_PAGE_VIEW);
   const [programFilter, setProgramFilter] = useState("");
-  const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
+  const [selectedSessionSnapshot, setSelectedSession] = useState<ClassSession | null>(null);
+  const selectedSession = selectedSessionSnapshot
+    ? sessions.find(session => session.id === selectedSessionSnapshot.id) ?? null : null;
   const [classFormInitialValues, setClassFormInitialValues] = useState<ClassFormInitialValues>();
   const [showAddClass, setShowAddClass] = useState(false);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
@@ -112,6 +114,13 @@ export function useSchedulePageController({
     resumedRangeRef.current = visibleRangeKey;
     setRangeLoadAttempt(value => value + 1);
     setAttendanceRefreshAttempt(value => value + 1);
+    void refreshPrograms({ includeArchived: true }).catch(() => undefined);
+    if (selectedSession) {
+      setIsRefreshingStudentRoster(true);
+      setStudentRosterLoadError(null);
+      void refreshStudents().catch(() => setStudentRosterLoadError("Could not refresh the attendance roster."))
+        .finally(() => setIsRefreshingStudentRoster(false));
+    }
   });
 
 

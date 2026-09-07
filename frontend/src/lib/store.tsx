@@ -1730,6 +1730,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let disposed = false;
     let queued = false;
     let running = false;
+    let refreshDataAllowed = true;
     async function drain() {
       if (disposed || running || !queued || pendingCommands()) return;
       queued = false;
@@ -1744,8 +1745,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (profile.user.id !== authUserIdRef.current || profile.studio_id !== authoritativeStudioIdRef.current
           || profile.role !== currentRoleRef.current || profile.membership_status !== "active") {
           // A changed access scope cannot reuse any of the previous scope's records.
+          clearStoredStudioSessionCookies();
           resetLiveStudioState();
           retryInitialization();
+          return;
+        }
+        if (pendingCommands() || queued) { queued = true; return; }
+        if (subscriptionRequired) {
+          clearSubscriptionRequired();
+          retryInitialization();
+          if (pathnameRef.current === "/subscription-required") router.replace("/dashboard");
           return;
         }
         commitAuthoritativeAuthProfile(profile);
@@ -1753,11 +1762,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setStudioTimezone(workspace.studio?.timezone ?? "UTC");
         setStudioLoadError(null);
         syncStoredStudioSessionCookies(profile.user.id, profile.studio_id, profile.membership_status);
+        if (!refreshDataAllowed) return;
         if (pathnameRef.current === "/belt-tracker"
           || (pathnameRef.current.startsWith("/students/") && pathnameRef.current !== "/students/import")) {
-          await refreshBeltsRef.current?.();
-          if (disposed || !request.isSameIdentity()) return;
-          if (pathnameRef.current === "/belt-tracker") await loadEligibilityForLadder(currentLadderIdRef.current, { force: true });
+          const owner = request;
+          void Promise.resolve(refreshBeltsRef.current?.()).then(async () => {
+            if (disposed || !owner.isSameIdentity()) return;
+            if (pathnameRef.current === "/belt-tracker") await loadEligibilityForLadder(currentLadderIdRef.current, { force: true });
+          }).catch(() => {
+            if (!disposed && owner.isSameIdentity()) setBeltLaddersLoadError("Belt plans could not be refreshed. Please retry.");
+          });
         }
         window.dispatchEvent(new Event(APP_DATA_REFRESH_EVENT));
       } catch (error) {
@@ -1769,7 +1783,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           clearStoredStudioSessionCookies();
           resetLiveStudioState();
           router.replace("/login");
-        } else if (isStaffArchivedError(error)) {
+        } else if (isStaffArchivedError(error) || (error && typeof error === "object" && "status" in error && Number(error.status) === 403)) {
+          clearStoredStudioSessionCookies();
           resetLiveStudioState();
           retryInitialization();
         } else {
@@ -1780,12 +1795,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (queued && !disposed) void drain();
       }
     }
-    const onResume = () => { queued = true; void drain(); };
-    const unsubscribe = subscribePendingCommands(() => { void drain(); });
+    const onResume = (event: Event) => {
+      refreshDataAllowed = !(event instanceof CustomEvent && event.detail?.refreshData === false);
+      queued = true;
+      void drain();
+    };
+    const unsubscribe = subscribePendingCommands(() => { if (running) queued = true; void drain(); });
     window.addEventListener(APP_RESUME_EVENT, onResume);
     return () => { disposed = true; unsubscribe(); window.removeEventListener(APP_RESUME_EVENT, onResume); };
   }, [beginLiveAuthRequest, commitAuthoritativeAuthProfile, identityReady, isPreviewMode,
-    loadEligibilityForLadder, markSubscriptionRequired, resetLiveStudioState, retryInitialization, router]);
+    clearSubscriptionRequired, loadEligibilityForLadder, markSubscriptionRequired,
+    resetLiveStudioState, retryInitialization, router, subscriptionRequired]);
 
   // These confirmed business commands affect dashboard facts. Billing commands
   // live outside this store; dashboard route entry also requests fresh facts.

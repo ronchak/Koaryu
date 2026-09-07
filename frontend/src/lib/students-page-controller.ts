@@ -185,7 +185,6 @@ export function useStudentsPageController({
     "idle" | "loading" | "ready" | "error"
   >("idle");
   const [inactivityScheduleError, setInactivityScheduleError] = useState<string | null>(null);
-  useResumeRefresh(() => setPageRequestNonce(value => value + 1));
   const pagedRequestSeqRef = useRef(0);
   const pagedAbortControllerRef = useRef<AbortController | null>(null);
   const pagedQueryKeyRef = useRef("");
@@ -762,6 +761,11 @@ export function useStudentsPageController({
     inactivityScheduleStatus,
     usesDerivedRosterFilters,
   ]);
+  useResumeRefresh(() => Promise.allSettled([
+    reloadVisibleRoster({ recoverEmpty: true }),
+    refreshPrograms({ includeArchived: false }),
+    ...(inactivityThreshold && usesDerivedRosterFilters && !config.isPreviewMode ? [refreshInactivitySchedule()] : []),
+  ]));
 
   async function reloadVisibleRosterAfterMutation(context: string) {
     try {

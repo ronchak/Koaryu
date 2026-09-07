@@ -1,6 +1,5 @@
 "use client";
 
-import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { api, isSubscriptionRequiredError } from "@/lib/api";
@@ -238,7 +237,6 @@ export function useBillingDataController({
     }
   }, [activeAccessKey, activeTab, clearFinancialData, isCurrentRequest, markTabSettled, onSubscriptionRequired, resetBillingData, showTabError]);
   const refreshBilling = useCallback(() => loadBilling(true), [loadBilling]);
-  useResumeRefresh(() => refreshBilling());
   const ensureBilling = useCallback(() => loadBilling(false), [loadBilling]);
 
   const loadMoreHistory = useCallback(async () => {

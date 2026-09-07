@@ -1,4 +1,5 @@
 "use client";
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { markDashboardReadiness } from "@/lib/performance";
@@ -453,7 +454,7 @@ export function useBillingPageController({
 
   const refreshRequiredBillingDatasets = useCallback(async () => {
     const requests: Promise<unknown>[] = [refreshBilling()];
-    if (activeTab === "plans") {
+    if (["plans", "enrollments", "invoices"].includes(activeTab)) {
       requests.push(refreshPrograms({ includeArchived: false }));
     }
     if (["enrollments", "invoices"].includes(activeTab)) {
@@ -461,6 +462,7 @@ export function useBillingPageController({
     }
     await Promise.allSettled(requests);
   }, [activeTab, refreshBilling, refreshPrograms, refreshStudents]);
+  useResumeRefresh(refreshRequiredBillingDatasets);
 
   useEffect(() => markDashboardReadiness("billing", identityGeneration, {
     useful: Boolean(landing) && !showBillingLoading,
