@@ -1703,7 +1703,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isPreviewMode || !identityReady || subscriptionRequired || initialFeaturePending) return;
     const timer = window.setTimeout(() => {
-      if (["/dashboard", "/belt-tracker", "/settings"].includes(pathname) && !beltsHydratedRef.current) {
+      if (["/dashboard", "/belt-tracker"].includes(pathname) && !beltsHydratedRef.current) {
         beltsHydratedRef.current = true;
         void refreshBeltsRef.current?.().catch(() => setBeltLaddersLoadError("Belt plans could not be loaded. Please retry."));
       }
@@ -1734,11 +1734,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (disposed || running || !queued || pendingCommands()) return;
       queued = false;
       running = true;
-      const request = beginLiveAuthRequest();
+      let request: ReturnType<typeof beginLiveAuthRequest> | null = null;
       try {
+        request = beginLiveAuthRequest();
         const workspace = await withCurrentLiveAuthRead(beginLiveAuthRequest, current =>
           api.get<ApiDashboardWorkspaceResponse>("/dashboard/workspace", current.token, { timeoutMs: 35000 }), () => {});
-        if (disposed || !request.isSameIdentity()) return;
+        if (disposed || !request?.isSameIdentity()) return;
         const profile = parseAuthProfileResponse(workspace.auth);
         if (profile.user.id !== authUserIdRef.current || profile.studio_id !== authoritativeStudioIdRef.current
           || profile.role !== currentRoleRef.current || profile.membership_status !== "active") {
@@ -1752,10 +1753,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setStudioTimezone(workspace.studio?.timezone ?? "UTC");
         setStudioLoadError(null);
         syncStoredStudioSessionCookies(profile.user.id, profile.studio_id, profile.membership_status);
-        if (pathnameRef.current === "/belt-tracker") {
+        if (pathnameRef.current === "/belt-tracker"
+          || (pathnameRef.current.startsWith("/students/") && pathnameRef.current !== "/students/import")) {
           await refreshBeltsRef.current?.();
           if (disposed || !request.isSameIdentity()) return;
-          await loadEligibilityForLadder(currentLadderIdRef.current, { force: true });
+          if (pathnameRef.current === "/belt-tracker") await loadEligibilityForLadder(currentLadderIdRef.current, { force: true });
         }
         window.dispatchEvent(new Event(APP_DATA_REFRESH_EVENT));
       } catch (error) {

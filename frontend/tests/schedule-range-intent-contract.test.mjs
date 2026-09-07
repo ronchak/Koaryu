@@ -38,8 +38,10 @@ describe("schedule range intent contracts", () => {
   it("keeps calendar and attendance workflows explicitly materializing recurring sessions", () => {
     assert.equal(
       scheduleControllerSource.match(/refreshScheduleRange\([\s\S]*?"materialize"\s*\)/g)?.length,
-      2
+      1
     );
+    assert.match(scheduleControllerSource, /resumedRangeRef\.current === visibleRangeKey \? "read" : "materialize"/);
+    assert.match(scheduleControllerSource, /refreshScheduleRange\(visibleRange\.start, visibleRange\.end, intent\)/);
     assert.match(scheduleActionsSource, /await reconcileSchedule\("materialize"\)/);
     assert.match(rangeRefreshSource, /await reconcileSchedule\(intent\)/);
   });

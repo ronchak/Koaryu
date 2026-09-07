@@ -480,3 +480,28 @@ test("explicit refresh supersedes an older cached visit read", async () => {
     assert.equal(await page.evaluate(() => fixture.store.dashboardSummary.students.total), 251);
   } finally { await browser.close(); }
 });
+
+test("resuming a student detail forces a second promotion-history read", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/students/student-1", detailController: true });
+    await page.evaluate(() => fixture.mountDetail());
+    await page.waitForFunction(() => fixture.details.length === 1 && fixture.requests.some(r => r.path.includes("promotions")));
+    await page.evaluate(() => fixture.details[0].resolve(fixture.student));
+    const initial = await page.evaluate(() => fixture.requests.filter(r => r.path.includes("promotions")).length);
+    await page.evaluate(() => window.dispatchEvent(new Event("koaryu:resume")));
+    await page.waitForFunction(before => fixture.requests.filter(r => r.path.includes("promotions")).length > before, initial);
+    await page.waitForFunction(() => fixture.details.length === 2);
+    await page.evaluate(() => fixture.details[1].resolve(fixture.student));
+  } finally { await browser.close(); }
+});
+
+test("Settings does not start a deferred belt read after its metadata projection", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/settings" });
+    await page.waitForFunction(() => fixture.store.programsLoaded);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await page.evaluate(() => fixture.requests.some(r => r.path.includes("/belts"))), false);
+  } finally { await browser.close(); }
+});

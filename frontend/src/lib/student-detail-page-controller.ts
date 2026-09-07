@@ -84,6 +84,7 @@ export function useStudentDetailPageController({
     if (currentScope.current === scope) setHydration({ scope, student });
   };
   const [retryNonce, setRetryNonce] = useState(0);
+  const historyRetryNonceRef = useRef(0);
   useResumeRefresh(() => setRetryNonce(value => value + 1));
   const [isLoadingStudent, setIsLoadingStudent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -214,8 +215,11 @@ export function useStudentDetailPageController({
       setBeltLoadError(null);
 
       try {
+        const force = historyRetryNonceRef.current !== retryNonce;
+        historyRetryNonceRef.current = retryNonce;
         const promotionsResult = await loadPromotionHistoryForStudent(id, {
           signal: controller.signal,
+          force,
         });
 
         if (mounted) {
@@ -243,7 +247,7 @@ export function useStudentDetailPageController({
       mounted = false;
       controller.abort();
     };
-  }, [cachedPromotionHistory, id, isPreviewMode, loadPromotionHistoryForStudent, token]);
+  }, [cachedPromotionHistory, id, isPreviewMode, loadPromotionHistoryForStudent, retryNonce, token]);
 
   const student = hydratedStudent ?? listStudent;
   const detailReady = isPreviewMode ? Boolean(student) : Boolean(hydratedStudent);

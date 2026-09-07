@@ -40,9 +40,11 @@ so later navigation can request it. Changing routes cancels an obsolete bootstra
 
 Lead collections now use scoped keyset reads in pages of 500, verify completeness
 against an exact count, and refuse more than 10,000 rows before downloading the
-collection. A changing collection or exhausted page budget returns an explicit
-error instead of presenting partial rows as complete totals. This retains the
-existing complete-collection API; a larger lead workspace needs a separately
+collection. A changed collection size or exhausted time budget returns an explicit
+error instead of silently accepting the provider row cap. The count verifies row-count completeness, not an atomic database snapshot.
+Like ordinary paginated lists, concurrent edits can span pages; authoritative
+dashboard totals continue to come from the aggregate fact RPC. This retains the
+existing collection API; a larger lead workspace needs a separately
 paginated product flow instead of raising the memory budget.
 
 Same-build resume rechecks the authoritative workspace after in-flight commands

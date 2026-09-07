@@ -179,7 +179,7 @@ export function useDashboardPageController({
     markPerformance("dashboard.summary_rendered", { source: "bootstrap" });
   }, [summary]);
 
-  useResumeRefresh(() => refreshDashboardSummary());
+  useResumeRefresh(() => retryDashboardDatasets());
 
   const retryDashboardDatasets = useCallback(() => {
     void Promise.allSettled([

@@ -39,7 +39,7 @@ class Provider:
         return Query()
 
 
-@pytest.mark.parametrize("count,cap", [(0, 500), (20, 500), (1001, 500), (601, 200)])
+@pytest.mark.parametrize("count,cap", [(0, 500), (20, 500), (1001, 500), (601, 200), (5001, 200)])
 def test_reads_all_rows_even_when_provider_cap_is_smaller_than_requested_page(count, cap):
     client = Provider(count, cap)
     rows = fetch_lead_rows(client, "one", "inquiry", "walk_in")

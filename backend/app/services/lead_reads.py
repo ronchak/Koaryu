@@ -1,4 +1,5 @@
-"""Complete, bounded lead reads without relying on the provider's row cap."""
+"""Bounded live pagination, not a transactional snapshot of the collection."""
+import time
 from fastapi import HTTPException
 
 LEAD_READ_PAGE_SIZE = 500
@@ -9,7 +10,10 @@ def fetch_lead_rows(client, studio_id, stage=None, source=None):
     rows = []
     cursor = None
     total = None
-    for _ in range(MAX_LEAD_READ_ROWS // LEAD_READ_PAGE_SIZE + 1):
+    deadline = time.monotonic() + 25.0
+    while len(rows) <= MAX_LEAD_READ_ROWS:
+        if time.monotonic() >= deadline:
+            raise HTTPException(504, "Lead loading timed out. Please retry.")
         query = client.table("leads")
         query = query.select("*", count="exact") if total is None else query.select("*")
         query = query.eq("studio_id", studio_id).order("id").limit(LEAD_READ_PAGE_SIZE)
@@ -35,6 +39,6 @@ def fetch_lead_rows(client, studio_id, stage=None, source=None):
         if len(rows) == total:
             return sorted(rows, key=lambda row: (row["created_at"], row["id"]), reverse=True)
         if not page or len(rows) > total:
-            raise HTTPException(409, "Leads changed while loading. Please retry.")
+            raise HTTPException(409, "Lead collection size changed while loading. Please retry.")
         cursor = page[-1]["id"]
     raise HTTPException(409, "Leads changed while loading. Please retry.")
