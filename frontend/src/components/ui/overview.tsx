@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import type { ReactNode } from "react";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { crmLinkPrefetch } from "@/lib/constants";

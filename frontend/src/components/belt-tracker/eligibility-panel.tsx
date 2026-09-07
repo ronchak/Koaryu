@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { MartialArtsBelt } from "@/components/icons/martial-arts-belt";
 import { ProgressBar, RankBadge } from "@/components/belt-tracker/rank-visuals";
 import { Button } from "@/components/ui/button";
