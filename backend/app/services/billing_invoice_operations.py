@@ -239,8 +239,7 @@ class BillingInvoiceOperationWorkflow:
                     status_code=503,
                     detail=INVOICE_CREATE_AMBIGUOUS_DETAIL,
                 ) from exc
-            self._audit_created_once(context, invoice)
-            return BillingInvoiceResponse(**invoice)
+            return self._finish_local_invoice(invoice, context, operation, operations)
         if state == "reconciliation_required" or outcome == "reconciliation_required":
             raise HTTPException(status_code=409, detail=INVOICE_CREATE_AMBIGUOUS_DETAIL)
         if state == "provider_request_in_flight" or outcome in {
@@ -261,10 +260,7 @@ class BillingInvoiceOperationWorkflow:
                     exc,
                     INVOICE_CREATE_AMBIGUOUS_DETAIL,
                 )
-            operations.complete(context, operation, result_code="invoice_create_completed")
-            self._audit_created_once(context, invoice)
-            self.owner._recompute_payer_balance(studio_id, payer["id"])
-            return BillingInvoiceResponse(**invoice)
+            return self._finish_local_invoice(invoice, context, operation, operations)
 
         spec = self._invoice_step_plan(
             local_invoice,
@@ -320,10 +316,7 @@ class BillingInvoiceOperationWorkflow:
             result_code="invoice_create_projected",
             result_summary=INVOICE_CREATE_MODE,
         )
-        operations.complete(context, operation, result_code="invoice_create_completed")
-        self._audit_created_once(context, invoice)
-        self.owner._recompute_payer_balance(studio_id, payer["id"])
-        return BillingInvoiceResponse(**invoice)
+        return self._finish_local_invoice(invoice, context, operation, operations)
 
     def _require_future_invoice_due_date(self, due_date: str | None) -> None:
         if due_date is None:
@@ -806,8 +799,14 @@ class BillingInvoiceOperationWorkflow:
                     status_code=503,
                     detail=INVOICE_RETRY_AMBIGUOUS_DETAIL,
                 ) from exc
-            self._audit_retry_once(context, paid)
-            return BillingInvoiceResponse(**paid)
+            return self._finish_local_invoice(paid, context, operation, operations)
+
+        # A certified resource replay can retain another request's lease. Only
+        # SQL's returned owner proves that this request acquired local closeout.
+        if state in {"projected", "provider_succeeded"} and (
+            operation.get("lease_owner") != context.lease_owner
+        ):
+            raise HTTPException(status_code=409, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL)
 
         if state == "projected":
             try:
@@ -821,12 +820,10 @@ class BillingInvoiceOperationWorkflow:
                     exc,
                     INVOICE_RETRY_AMBIGUOUS_DETAIL,
                 )
-            operations.complete(context, operation, result_code="invoice_retry_completed")
-            self._audit_retry_once(context, paid)
-            return BillingInvoiceResponse(**paid)
+            return self._finish_local_invoice(paid, context, operation, operations)
         if state == "provider_succeeded":
             try:
-                paid = self._finish_retry_projection(
+                paid, projected_operation = self._record_retry_projection(
                     invoice, context, operation, operations
                 )
             except Exception as exc:
@@ -838,10 +835,12 @@ class BillingInvoiceOperationWorkflow:
                     exc,
                     INVOICE_RETRY_AMBIGUOUS_DETAIL,
                 )
-            return BillingInvoiceResponse(**paid)
+            return self._finish_local_invoice(
+                paid, context, projected_operation, operations
+            )
         if state == "reconciliation_required" or outcome == "reconciliation_required":
-            paid = self._retry_readback(invoice, context, operation, operations)
-            return BillingInvoiceResponse(**paid)
+            paid, operation = self._retry_readback(invoice, context, operation, operations)
+            return self._finish_local_invoice(paid, context, operation, operations)
         if state == "provider_request_in_flight" or outcome in {
             "busy", "provider_request_in_flight"
         }:
@@ -1047,13 +1046,10 @@ class BillingInvoiceOperationWorkflow:
                 exc,
                 INVOICE_RETRY_AMBIGUOUS_DETAIL,
             )
-        return BillingInvoiceResponse(**self._finish_retry_projection(
-            paid,
-            context,
-            operation,
-            operations,
-            already_projected=True,
-        ))
+        paid, operation = self._record_retry_projection(
+            paid, context, operation, operations, already_projected=True
+        )
+        return self._finish_local_invoice(paid, context, operation, operations)
 
     @staticmethod
     def _retry_base_request_sha256(
@@ -2280,7 +2276,7 @@ class BillingInvoiceOperationWorkflow:
         context: BillingProviderOperationContext,
         operation: dict[str, Any],
         operations: BillingProviderOperationCoordinator,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         try:
             provider = self._read_invoice(invoice)
         except Exception as exc:
@@ -2308,11 +2304,11 @@ class BillingInvoiceOperationWorkflow:
                 exc,
                 INVOICE_RETRY_AMBIGUOUS_DETAIL,
             )
-        return self._finish_retry_projection(
+        return self._record_retry_projection(
             paid, context, operation, operations, already_projected=True
         )
 
-    def _finish_retry_projection(
+    def _record_retry_projection(
         self,
         invoice: dict[str, Any],
         context: BillingProviderOperationContext,
@@ -2320,7 +2316,7 @@ class BillingInvoiceOperationWorkflow:
         operations: BillingProviderOperationCoordinator,
         *,
         already_projected: bool = False,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         paid = invoice
         if not already_projected:
             provider = self._read_invoice(invoice)
@@ -2332,10 +2328,30 @@ class BillingInvoiceOperationWorkflow:
             result_code="invoice_retry_projected",
             result_summary=INVOICE_RETRY_MODE,
         )
-        operations.complete(context, operation, result_code="invoice_retry_completed")
-        self._audit_retry_once(context, paid)
-        self.owner._recompute_payer_balance(context.studio_id, paid.get("payer_id"))
-        return paid
+        return paid, operation
+
+    def _finish_local_invoice(
+        self,
+        invoice: dict[str, Any],
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        operations: BillingProviderOperationCoordinator,
+    ) -> BillingInvoiceResponse:
+        # Old completed rows may predate successful audit/balance work. Repair
+        # those local facts too, without reopening the operation or using Stripe.
+        if context.operation_type == INVOICE_CREATE_OPERATION_TYPE:
+            self._audit_created_once(context, invoice)
+            result_code = "invoice_create_completed"
+        elif context.operation_type == INVOICE_RETRY_OPERATION_TYPE:
+            self._audit_retry_once(context, invoice)
+            result_code = "invoice_retry_completed"
+        else:
+            raise ValueError("Unsupported invoice local closeout")
+        self.owner._recompute_payer_balance(context.studio_id, invoice.get("payer_id"))
+        response = BillingInvoiceResponse(**invoice)
+        if operation.get("state") != "completed":
+            operations.complete(context, operation, result_code=result_code)
+        return response
 
     def _project_paid_invoice(
         self,

@@ -150,6 +150,37 @@ resolved indirectly by removing the duplicated Python transition state machines.
 FSH2-02 remains pending for the frontend promotion/demotion owner. These are source
 corrections, not a claim that the new backend or database has been deployed.
 
+
+PR #161 merged as `9988c6265c04ab6621dda4c468de6d21af143bc4` after all exact-head
+CI checks passed on `9196e0d`. Independent review verified the final commit.
+Automated review completed without findings on the implementation commit; its
+final documentation-only rerun reached the bot usage limit. The guarded merge
+verified production auto-deploy off twice. No migration or production deployment
+occurred. Main's tree equals the reviewed candidate.
+
+Reassessment at `9988c62`: counts remain 26 fixed, one resolved indirectly,
+239 pending and 12 deliberately deferred. The ledger now distinguishes partial
+release-tool/test improvements from the historical-state, older concurrency and
+runbook problems they do not fix. Frontend rank ownership needs its own captured
+command, receipt, history and reconciliation boundary; its investigation is ready.
+
+Next is `codex/remediation-invoice-closeout`, for BB1-07/BT2-01. Reproduced create
+and payment-retry failures leave an operation completed while a stale payer
+balance survives same-key replay. A bounded local closeout correction will finish
+audit/balance work before completion and repair historical completed replay,
+without another provider mutation or changing delinquency definitions. Review
+identified a necessary acquired-lease check for projected retry replays. This
+financial integrity correction takes priority over the larger frontend owner.
+
+The invoice candidate now has one local-closeout owner and passes its focused
+fault/replay suite. Twelve cases fail the unchanged main workflow and pass the
+correction. It also consolidates two duplicate service tests, removes one source-
+name assertion and an unused broken fake hook, and corrects the paid-status check.
+Candidate dispositions are 31 fixed, one resolved indirectly, 234 pending and
+12 intentional deferrals. BB1-07, BT2-01/03/06/07 are addressed; BT2-04 remains
+partial. See [invoice-closeout verification](docs/remediation/invoice-closeout-verification.md).
+Final review, exact-head CI and guarded merge remain required.
+
 ## Deliberate non-goals and deferrals
 
 The ledger records individual reasons for these initial deferrals:

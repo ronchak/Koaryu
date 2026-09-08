@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
-import inspect
 import json
 from datetime import date, datetime, time, timezone
 
@@ -15,6 +14,7 @@ from stripe import CardError as StripeCardError
 
 from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceItemCreate
 from app.services.billing_fees import application_fee_amount
+from app.services.billing_payers import BillingPayerManager
 from app.services.billing_invoice_operations import (
     BillingInvoiceOperationWorkflow,
     INVOICE_CREATE_AMBIGUOUS_DETAIL,
@@ -109,7 +109,6 @@ class _Facade:
             "audit_logs": [],
         })
         self.projection_failures = 0
-        self.balance_recomputes = 0
         self.customer_sync_calls = 0
 
     def _connect_accounts(self):
@@ -192,15 +191,8 @@ class _Facade:
         parsed = date.fromisoformat(value)
         return int(datetime.combine(parsed, time.min, tzinfo=timezone.utc).timestamp())
 
-    def _recompute_payer_balance(self, _studio_id, _payer_id):
-        self.balance_recomputes += 1
-
-    @staticmethod
-    def _definitive_invoice_retry_error(exc):
-        if isinstance(exc, _CardDecline):
-            return 402, "The payment method was declined.", "invoice_payment_declined"
-        return None
-
+    def _recompute_payer_balance(self, studio_id, payer_id):
+        BillingPayerManager(self)._recompute_payer_balance(studio_id, payer_id)
 
 class _Stripe:
     invoices: dict[str, dict] = {}
@@ -613,7 +605,7 @@ def test_create_due_date_freshness_does_not_block_exact_replay_after_midnight():
     )
 
 
-def test_create_registers_real_v28_evidence_and_replays_without_duplicates():
+def test_create_records_step_evidence_and_replays_without_duplicates():
     facade = _Facade()
     manager = _manager(facade)
 
@@ -2386,17 +2378,6 @@ def test_retry_autopay_payer_read_unavailable_releases_and_recovers_same_key(
     assert operation["invoice_retry_preread_released_at"] is None
 
 
-def test_retry_payer_and_consent_reads_share_one_postgrest_availability_allowlist():
-    payer_source = inspect.getsource(
-        BillingInvoiceOperationWorkflow._read_autopay_consent
-    )
-    consent_source = inspect.getsource(
-        BillingInvoiceOperationWorkflow._read_retry_active_payer_consent
-    )
-    assert "_RETRYABLE_POSTGREST_AVAILABILITY_CODES" in payer_source
-    assert "_RETRYABLE_POSTGREST_AVAILABILITY_CODES" in consent_source
-
-
 @pytest.mark.parametrize("fail_on_read", [1, 2, 3])
 @pytest.mark.parametrize("error_code", ["PGRST000", "PGRST001", "PGRST002", "PGRST003"])
 def test_retry_payer_postgrest_availability_releases_at_every_phase_and_recovers(
@@ -3497,11 +3478,18 @@ def test_retry_projected_projection_drift_marks_reconciliation_without_second_pa
     facade = _Facade(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
-    asyncio.run(manager.retry_invoice_payment(
-        invoice["id"], "studio_1", "actor_1", "retry-projected-drift"
-    ))
+    original_complete = facade.supabase._rpc_complete_billing_provider_operation_v1
+    def fail_complete(params):
+        facade.supabase._rpc_complete_billing_provider_operation_v1 = original_complete
+        raise RuntimeError("completion unavailable")
+    facade.supabase._rpc_complete_billing_provider_operation_v1 = fail_complete
+    with pytest.raises(RuntimeError, match="completion unavailable"):
+        asyncio.run(manager.retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-projected-drift"
+        ))
     parent = _operation(facade, "invoice.retry")
-    parent["state"] = "projected"
+    assert parent["state"] == "projected"
+    facade.supabase.advance_billing_provider_clock(seconds=301)
     invoice["status"] = "open"
     invoice["amount_remaining_cents"] = 5000
 
@@ -3779,3 +3767,210 @@ def test_retry_definitive_decline_is_terminal_and_sanitized():
     assert "raw" not in exc.value.detail
     assert _operation(facade, "invoice.retry")["state"] == "definitive_rejected"
     assert "raw" not in repr(_operation(facade, "invoice.retry"))
+
+
+def _local_closeout_case(kind):
+    invoice = _open_invoice() if kind == "retry" else None
+    facade = _Facade(invoice=invoice)
+    if invoice:
+        _seed_retry_provider(invoice)
+    payer = facade.supabase.tables["billing_payers"][0]
+    payer.update(balance_cents=123456, billing_status="past_due")
+    manager = _manager(facade)
+    complete = facade.supabase._rpc_complete_billing_provider_operation_v1
+
+    def checked_completion(params):
+        parent = _operation(facade, "invoice." + kind)
+        assert parent["state"] == "projected"
+        assert params["p_expected_revision"] == parent["revision"]
+        assert params["p_lease_owner"] == parent["lease_owner"]
+        return complete(params)
+
+    facade.supabase._rpc_complete_billing_provider_operation_v1 = checked_completion
+
+    def invoke():
+        if kind == "create":
+            return manager.create_invoice_sync(
+                _create_data(), "studio_1", "actor_1", "local-closeout"
+            )
+        return asyncio.run(manager.retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "local-closeout"
+        ))
+
+    return facade, payer, invoke
+
+
+def _grant_create_closeout_claim(facade):
+    # Script a valid SQL lease-acquisition response. The shared generic fake
+    # does not model create lease transfer; this is not a SQL concurrency test.
+    original = facade.supabase._rpc_claim_billing_provider_operation_v1
+
+    def acquired(params):
+        result = original(params)
+        operation = _operation(facade, "invoice.create")
+        assert operation["state"] == "projected"
+        operation.update(lease_owner=params["p_lease_owner"], revision=operation["revision"] + 1)
+        facade.supabase._rpc_claim_billing_provider_operation_v1 = original
+        return {"outcome": "continued", "operation": dict(operation)}
+
+    facade.supabase._rpc_claim_billing_provider_operation_v1 = acquired
+
+
+def _assert_local_invoice_closeout(facade, payer, kind, *, expected_balance=None):
+    if expected_balance is None:
+        expected_balance = 7400 if kind == "create" else 0
+    assert payer["balance_cents"] == expected_balance
+    assert payer["billing_status"] == ("past_due" if expected_balance else "current")
+    audits = facade.supabase.tables["audit_logs"]
+    assert len(audits) == 1
+    assert audits[0]["actor_id"] == "actor_1"
+    assert audits[0]["action"] == ("billing.invoice_created" if kind == "create" else "billing.invoice_retry_requested")
+    assert audits[0]["entity_id"] == facade.supabase.tables["billing_invoices"][0]["id"]
+    assert audits[0]["metadata"]["operation_id"] == _operation(facade, "invoice." + kind)["id"]
+    assert len(_Stripe.invoice_create_calls) == (1 if kind == "create" else 0)
+    assert len(_Stripe.item_create_calls) == (2 if kind == "create" else 0)
+    assert len(_Stripe.pay_calls) == (1 if kind == "retry" else 0)
+
+
+@pytest.mark.parametrize("kind", ["create", "retry"])
+@pytest.mark.parametrize("failure_stage", ["audit", "balance"])
+def test_invoice_local_closeout_failure_resumes_projected_work_offline(kind, failure_stage):
+    facade, payer, invoke = _local_closeout_case(kind)
+    if failure_stage == "audit":
+        def fail_audit(table, _payloads, _rows):
+            if table == "audit_logs":
+                facade.supabase.before_insert = None
+                raise RuntimeError("local audit outage")
+        facade.supabase.before_insert = fail_audit
+    else:
+        def fail_balance(query, _rows):
+            if query.name == "billing_payers":
+                facade.supabase.on_update_query = None
+                raise RuntimeError("local balance outage")
+        facade.supabase.on_update_query = fail_balance
+    with pytest.raises(RuntimeError, match=f"local {failure_stage} outage"):
+        invoke()
+    assert _operation(facade, "invoice." + kind)["state"] == "projected"
+    assert payer["balance_cents"] == 123456
+    reads = list(_Stripe.retrieve_calls)
+    facade.supabase.advance_billing_provider_clock(seconds=301)
+    if kind == "create":
+        _grant_create_closeout_claim(facade)
+    invoke()
+    assert _Stripe.retrieve_calls == reads
+    assert _operation(facade, "invoice." + kind)["state"] == "completed"
+    _assert_local_invoice_closeout(facade, payer, kind)
+
+
+@pytest.mark.parametrize("kind", ["create", "retry"])
+def test_completed_invoice_replay_repairs_legacy_local_facts_without_reopening(kind):
+    facade, payer, invoke = _local_closeout_case(kind)
+    invoke()
+    parent = _operation(facade, "invoice." + kind)
+    parent["completed_at"] = "2026-08-27T00:01:00Z"
+    terminal = copy.deepcopy(parent)
+    payer.update(balance_cents=123456, billing_status="past_due")
+    facade.supabase.tables["audit_logs"].clear()
+    facade.supabase.tables["billing_invoices"].extend([
+        _open_invoice(id="later", stripe_invoice_id="in_later", amount_remaining_cents=700),
+        _open_invoice(id="foreign", studio_id="studio_other", amount_remaining_cents=9000),
+        _open_invoice(id="other-payer", payer_id="payer_other", amount_remaining_cents=8000),
+    ])
+    other_payer = {"id": "payer_other", "studio_id": "studio_1", "balance_cents": 555}
+    facade.supabase.tables["billing_payers"].append(other_payer)
+    reads = list(_Stripe.retrieve_calls)
+    calls = len(facade.supabase.rpc_calls)
+    invoke()
+    assert parent == terminal
+    assert _Stripe.retrieve_calls == reads
+    assert not any(name == "complete_billing_provider_operation_v1" for name, _ in facade.supabase.rpc_calls[calls:])
+    assert other_payer["balance_cents"] == 555
+    _assert_local_invoice_closeout(facade, payer, kind, expected_balance=8100 if kind == "create" else 700)
+
+
+@pytest.mark.parametrize("kind", ["create", "retry"])
+@pytest.mark.parametrize("committed", [False, True])
+def test_invoice_closeout_survives_failure_before_or_after_completion(kind, committed):
+    facade, payer, invoke = _local_closeout_case(kind)
+    original = facade.supabase._rpc_complete_billing_provider_operation_v1
+
+    def fail_completion(params):
+        facade.supabase._rpc_complete_billing_provider_operation_v1 = original
+        if committed:
+            original(params)
+        raise RuntimeError("completion response unavailable")
+
+    facade.supabase._rpc_complete_billing_provider_operation_v1 = fail_completion
+    with pytest.raises(RuntimeError, match="completion response unavailable"):
+        invoke()
+    parent = _operation(facade, "invoice." + kind)
+    assert parent["state"] == ("completed" if committed else "projected")
+    _assert_local_invoice_closeout(facade, payer, kind)
+    reads = list(_Stripe.retrieve_calls)
+    if not committed:
+        facade.supabase.advance_billing_provider_clock(seconds=301)
+        if kind == "create":
+            _grant_create_closeout_claim(facade)
+    invoke()
+    assert parent["state"] == "completed"
+    assert _Stripe.retrieve_calls == reads
+    _assert_local_invoice_closeout(facade, payer, kind)
+
+
+@pytest.mark.parametrize("saved_state", ["projected", "provider_succeeded"])
+def test_retry_replay_requires_acquired_lease_before_local_or_provider_work(saved_state):
+    facade, payer, invoke = _local_closeout_case("retry")
+    rpc_name = ("_rpc_complete_billing_provider_operation_v1" if saved_state == "projected"
+                else "_rpc_transition_billing_provider_operation_v1")
+    original = getattr(facade.supabase, rpc_name)
+
+    def stop_at_projection(params):
+        if saved_state == "projected" or params["p_to_state"] == "projected":
+            setattr(facade.supabase, rpc_name, original)
+            raise RuntimeError("local response unavailable")
+        return original(params)
+
+    setattr(facade.supabase, rpc_name, stop_at_projection)
+    with pytest.raises(RuntimeError, match="local response unavailable"):
+        invoke()
+    parent = _operation(facade, "invoice.retry")
+    assert parent["state"] == saved_state
+    original_claim = facade.supabase._rpc_claim_billing_provider_operation_resource_v1
+
+    def sql_replay_envelope(params):
+        result = original_claim(params)
+        # Actual V33 same-key alias calls return replay with either a retained
+        # foreign lease or an acquired one. Preserve all certified identity fields.
+        result["outcome"] = "replay"
+        return result
+
+    facade.supabase._rpc_claim_billing_provider_operation_resource_v1 = sql_replay_envelope
+    before = copy.deepcopy(facade.supabase.tables)
+    reads = list(_Stripe.retrieve_calls)
+    calls = len(facade.supabase.rpc_calls)
+    with pytest.raises(HTTPException) as denied:
+        invoke()
+    assert denied.value.status_code == 409
+    assert denied.value.detail == INVOICE_RETRY_AMBIGUOUS_DETAIL
+    assert facade.supabase.tables == before
+    assert _Stripe.retrieve_calls == reads
+    assert not any(name in {"complete_billing_provider_operation_v1", "transition_billing_provider_operation_v1"}
+                   for name, _ in facade.supabase.rpc_calls[calls:])
+    facade.supabase.advance_billing_provider_clock(seconds=301)
+    if saved_state == "provider_succeeded":
+        def fail_local_balance(query, _rows):
+            if query.name == "billing_payers":
+                facade.supabase.on_update_query = None
+                raise RuntimeError("local balance outage after provider recovery")
+        facade.supabase.on_update_query = fail_local_balance
+        with pytest.raises(RuntimeError, match="local balance outage after provider recovery"):
+            invoke()
+        assert parent["state"] == "projected"
+        reads = list(_Stripe.retrieve_calls)
+        facade.supabase.advance_billing_provider_clock(seconds=301)
+        invoke()
+        assert _Stripe.retrieve_calls == reads
+    else:
+        invoke()
+    assert parent["state"] == "completed"
+    _assert_local_invoice_closeout(facade, payer, "retry")
