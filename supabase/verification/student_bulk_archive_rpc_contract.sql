@@ -17,6 +17,7 @@ DECLARE
     v_audits INTEGER;
     v_function_definition TEXT;
     v_is_security_definer BOOLEAN;
+    v_audit_failure_observed BOOLEAN := FALSE;
     v_search_path TEXT[];
 BEGIN
     IF to_regprocedure('public.archive_students_bulk_atomic(uuid,uuid,uuid[])') IS NULL THEN
@@ -201,12 +202,18 @@ BEGIN
     FOR EACH ROW EXECUTE FUNCTION pg_temp.fail_bulk_archive_audit();
     BEGIN
         PERFORM public.archive_students_bulk_atomic(v_studio, v_actor, ARRAY[v_failure]::UUID[]);
-        RAISE EXCEPTION 'Audit failure test unexpectedly succeeded.';
     EXCEPTION WHEN SQLSTATE 'P0001' THEN
-        NULL;
+        IF SQLERRM IS DISTINCT FROM 'forced bulk archive audit failure' THEN
+            RAISE;
+        END IF;
+        v_audit_failure_observed := TRUE;
     END;
     DROP TRIGGER fail_bulk_archive_audit ON public.audit_logs;
-    IF (SELECT deleted_at FROM public.students WHERE id = v_failure) IS NOT NULL THEN
+    IF v_audit_failure_observed IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'Audit failure test unexpectedly succeeded.';
+    END IF;
+    IF (SELECT deleted_at FROM public.students WHERE id = v_failure) IS NOT NULL
+       OR EXISTS (SELECT 1 FROM public.audit_logs WHERE studio_id = v_studio AND entity_id = v_failure) THEN
         RAISE EXCEPTION 'Audit failure did not roll back student archive.';
     END IF;
 END;

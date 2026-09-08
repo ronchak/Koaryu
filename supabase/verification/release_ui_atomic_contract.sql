@@ -63,6 +63,7 @@ DECLARE
     v_student_write RECORD;
     v_compensation_recorded BOOLEAN;
     v_compensation_replayed BOOLEAN;
+    v_comp_rejected BOOLEAN := FALSE;
 BEGIN
     INSERT INTO auth.users (
         id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -272,10 +273,16 @@ BEGIN
     WHERE studio_id = v_studio;
     BEGIN
         UPDATE public.studio_subscriptions SET comped = TRUE WHERE studio_id = v_studio;
-        RAISE EXCEPTION 'Comp grant crossed an accepted but unprojected subscription.';
     EXCEPTION
-        WHEN SQLSTATE 'P0001' THEN NULL;
+        WHEN SQLSTATE 'P0001' THEN
+            IF SQLERRM IS DISTINCT FROM 'Koaryu Core checkout already completed; reconcile the subscription before granting a comp.' THEN
+                RAISE;
+            END IF;
+            v_comp_rejected := TRUE;
     END;
+    IF v_comp_rejected IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'Comp grant crossed an accepted but unprojected subscription.';
+    END IF;
     IF EXISTS (
         SELECT 1 FROM public.studio_subscriptions
         WHERE studio_id = v_studio AND comped IS TRUE

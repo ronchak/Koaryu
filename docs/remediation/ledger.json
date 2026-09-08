@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+  "last_reconciled_main": "46131d470592e735641adff19e3aefd217e64e82",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -36,11 +36,11 @@
       "title": "Database quick-start bypasses the repository\u2019s current target guidance",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-contract-assurance; pending reviewed PR merge. See docs/remediation/contract-assurance-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
+      "verification": "55 operator tests and full 133-migration/50-contract local suite passed. Independent negative controls proved old false greens and correct new failures; worker fixtures ran from zero rows and rolled back. Independent review GREEN LIGHT.",
       "source_paths": [
         "README.md",
         "AGENTS.md",
@@ -725,11 +725,11 @@
       "id": "BB1-01",
       "title": "Successful payment replay changes the payment month",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
+      "disposition": "fixed",
+      "reason": "Merged PR155. Exact financial-fact scope and limits are recorded in docs/remediation/payment-facts-verification.md; no historical backfill or production deployment.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
       "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "backend/app/services/billing_payment_projection.py",
@@ -737,7 +737,9 @@
         "backend/app/services/billing_reconciliation.py",
         "supabase/migrations/20260905022339_billing_landing_aggregates.sql"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        155
+      ]
     },
     {
       "id": "BB1-02",
@@ -775,18 +777,20 @@
       "id": "BB1-04",
       "title": "Zero platform fees are replaced with the default fee",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
+      "disposition": "fixed",
+      "reason": "Merged PR155. Exact financial-fact scope and limits are recorded in docs/remediation/payment-facts-verification.md; no historical backfill or production deployment.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
       "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "backend/app/services/billing_connect_accounts.py",
         "backend/app/services/billing_private_facade.py",
         "supabase/migrations/20260425000024_billing_foundation.sql"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        155
+      ]
     },
     {
       "id": "BB1-05",
@@ -984,17 +988,19 @@
       "id": "BB2-05",
       "title": "Broad reconciliation records uncaptured authorization as collected money",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
+      "disposition": "fixed",
+      "reason": "Merged PR155. Exact financial-fact scope and limits are recorded in docs/remediation/payment-facts-verification.md; no historical backfill or production deployment.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
       "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "backend/app/services/billing_reconciliation.py",
         "backend/app/services/billing_payment_projection.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        155
+      ]
     },
     {
       "id": "BB2-06",
@@ -1160,11 +1166,11 @@
       "title": "Linked contract runner does not enforce the documented production prohibition",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-contract-assurance; pending reviewed PR merge. See docs/remediation/contract-assurance-verification.md.",
       "audit_importance": "high",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
+      "verification": "55 operator tests and full 133-migration/50-contract local suite passed. Independent negative controls proved old false greens and correct new failures; worker fixtures ran from zero rows and rolled back. Independent review GREEN LIGHT.",
       "source_paths": [
         "scripts/run-supabase-sql.sh",
         "docs/operator-tooling.md"
@@ -1614,11 +1620,11 @@
       "id": "BT2-05",
       "title": "Fake financial helpers disagree with the actual zero-fee behavior",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
+      "disposition": "fixed",
+      "reason": "Merged PR155. Exact financial-fact scope and limits are recorded in docs/remediation/payment-facts-verification.md; no historical backfill or production deployment.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
       "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "backend/tests/test_billing_enrollment_activation.py",
@@ -1626,7 +1632,9 @@
         "backend/tests/test_billing_invoice_lifecycle.py",
         "backend/app/services/billing_private_facade.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        155
+      ]
     },
     {
       "id": "BT2-06",
@@ -1680,17 +1688,19 @@
       "id": "BT3-01",
       "title": "Payment cohort and replay tests never connect the original payment date to a second success",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
+      "disposition": "fixed",
+      "reason": "Merged PR155. Exact financial-fact scope and limits are recorded in docs/remediation/payment-facts-verification.md; no historical backfill or production deployment.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
       "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "backend/tests/test_billing_payment_intent_lifecycle.py",
         "backend/tests/test_billing_payments.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        155
+      ]
     },
     {
       "id": "BT3-02",
@@ -2097,7 +2107,7 @@
       "title": "Release guides disagree on the schema and approval needed to deploy",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "The assurance PR corrects the stale staging-inactive statement. Release-version and approval contradictions in the other guides remain pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
@@ -2334,7 +2344,7 @@
       "title": "External-payment tests prove header forwarding but not retry identity ownership",
       "cluster": "financial_command_completion",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Client recovery design is ready. Implementation is held for the product decision on browser retention of the exact unresolved request, including free-text note. Backend audit atomicity and refund refresh remain separate.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
       "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
@@ -2954,17 +2964,19 @@
       "id": "FC1-05",
       "title": "Fee metric displays the whole payment basis while describing a 0.5 percent fee",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
+      "disposition": "fixed",
+      "reason": "Merged PR155. Exact financial-fact scope and limits are recorded in docs/remediation/payment-facts-verification.md; no historical backfill or production deployment.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
       "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "frontend/src/components/billing/billing-reports-tab.tsx",
         "frontend/src/lib/billing-page-model.ts"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        155
+      ]
     },
     {
       "id": "FC1-06",
@@ -3576,7 +3588,7 @@
       "title": "External-payment retry protection disappears on edit or remount",
       "cluster": "financial_command_completion",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Client recovery design is ready. Implementation is held for the product decision on browser retention of the exact unresolved request, including free-text note. Backend audit atomicity and refund refresh remain separate.",
       "audit_importance": "high",
       "evidence_role": "observation",
       "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
@@ -4479,11 +4491,11 @@
       "title": "A comp-protection test catches its own failure and can pass without the guard",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-contract-assurance; pending reviewed PR merge. See docs/remediation/contract-assurance-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
+      "verification": "55 operator tests and full 133-migration/50-contract local suite passed. Independent negative controls proved old false greens and correct new failures; worker fixtures ran from zero rows and rolled back. Independent review GREEN LIGHT.",
       "source_paths": [
         "supabase/verification/release_ui_atomic_contract.sql"
       ],
@@ -4494,7 +4506,7 @@
       "title": "Several semantic assertions silently accept missing or NULL results",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Worker assertions touched by the assurance PR now reject NULL results. Other audited email-usage, dashboard and billing comparisons remain pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
@@ -4547,11 +4559,11 @@
       "title": "The bulk archive audit-failure test can pass when its expected failure never occurs",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-contract-assurance; pending reviewed PR merge. See docs/remediation/contract-assurance-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
+      "verification": "55 operator tests and full 133-migration/50-contract local suite passed. Independent negative controls proved old false greens and correct new failures; worker fixtures ran from zero rows and rolled back. Independent review GREEN LIGHT.",
       "source_paths": [
         "supabase/verification/student_bulk_archive_rpc_contract.sql",
         "supabase/verification/studio_comp_atomic_contract.sql"
@@ -4563,11 +4575,11 @@
       "title": "Student-import worker behavior is optional when the database has no studio",
       "cluster": "import_recovery",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-contract-assurance; pending reviewed PR merge. See docs/remediation/contract-assurance-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
+      "verification": "55 operator tests and full 133-migration/50-contract local suite passed. Independent negative controls proved old false greens and correct new failures; worker fixtures ran from zero rows and rolled back. Independent review GREEN LIGHT.",
       "source_paths": [
         "supabase/verification/worker_claim_rpc_contract.sql",
         "scripts/verify-supabase-contracts-local.sh"

@@ -61,7 +61,8 @@ DECLARE
     v_run_id UUID;
     v_smoke_key TEXT := 'worker-smoke-' || gen_random_uuid()::TEXT;
     v_stale_request_id UUID;
-    v_studio_id UUID;
+    v_studio_id UUID := gen_random_uuid();
+    v_import_owner_id UUID := gen_random_uuid();
     v_updated BOOLEAN;
 BEGIN
     BEGIN
@@ -256,141 +257,143 @@ BEGIN
         RAISE EXCEPTION 'Correct account deletion token should finish request.';
     END IF;
 
-    SELECT id
-      INTO v_studio_id
-      FROM public.studios
-     ORDER BY created_at NULLS LAST, id
-     LIMIT 1;
+    INSERT INTO auth.users (
+        id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+    ) VALUES (
+        v_import_owner_id, 'authenticated', 'authenticated',
+        'worker-import-' || v_import_owner_id::TEXT || '@example.invalid',
+        '{}'::JSONB, '{}'::JSONB, NOW(), NOW()
+    );
+    INSERT INTO public.studios (id, name, slug, owner_id)
+    VALUES (v_studio_id, 'Worker Import Contract', 'worker-import-' || v_studio_id::TEXT, v_import_owner_id);
 
-    IF v_studio_id IS NULL THEN
-        RAISE NOTICE 'Skipping student-import worker RPC behavior smoke because no studio row exists.';
-    ELSE
-        BEGIN
-            PERFORM *
-              FROM public.claim_student_import_run(
-                  v_studio_id,
-                  NULL,
-                  'students_csv_execute',
-                  v_smoke_key,
-                  'hash-1',
-                  '',
-                  45
-              );
-            RAISE EXCEPTION 'Expected blank student import claim token to be rejected.';
-        EXCEPTION WHEN invalid_parameter_value THEN
-            NULL;
-        END;
-
-        SELECT claim_status, run_row
-          INTO v_claim_status, v_event_row
+    BEGIN
+        PERFORM *
           FROM public.claim_student_import_run(
               v_studio_id,
               NULL,
               'students_csv_execute',
               v_smoke_key,
               'hash-1',
-              'student-token-1',
+              '',
               45
           );
+        RAISE EXCEPTION 'Expected blank student import claim token to be rejected.';
+    EXCEPTION WHEN invalid_parameter_value THEN
+        NULL;
+    END;
 
-        IF v_claim_status <> 'claimed' THEN
-            RAISE EXCEPTION 'Expected first student import claim, got %.', v_claim_status;
-        END IF;
-        v_run_id := (v_event_row->>'id')::UUID;
+    SELECT claim_status, run_row
+      INTO v_claim_status, v_event_row
+      FROM public.claim_student_import_run(
+          v_studio_id,
+          NULL,
+          'students_csv_execute',
+          v_smoke_key,
+          'hash-1',
+          'student-token-1',
+          45
+      );
 
-        SELECT updated
-          INTO v_updated
-          FROM public.heartbeat_student_import_run(v_run_id, 'wrong-token');
-
-        IF v_updated THEN
-            RAISE EXCEPTION 'Wrong student import token must not heartbeat run.';
-        END IF;
-
-        SELECT updated
-          INTO v_updated
-          FROM public.heartbeat_student_import_run(v_run_id, 'student-token-1');
-
-        IF NOT v_updated THEN
-            RAISE EXCEPTION 'Correct student import token should heartbeat run.';
-        END IF;
-
-        SELECT claim_status
-          INTO v_claim_status
-          FROM public.claim_student_import_run(
-              v_studio_id,
-              NULL,
-              'students_csv_execute',
-              v_smoke_key,
-              'hash-2',
-              'student-token-2',
-              45
-          );
-
-        IF v_claim_status <> 'hash_mismatch' THEN
-            RAISE EXCEPTION 'Student import hash mismatch should be explicit, got %.', v_claim_status;
-        END IF;
-
-        SELECT claim_status
-          INTO v_claim_status
-          FROM public.claim_student_import_run(
-              v_studio_id,
-              NULL,
-              'students_csv_execute',
-              v_smoke_key,
-              'hash-1',
-              'student-token-2',
-              45
-          );
-
-        IF v_claim_status <> 'already_processing' THEN
-            RAISE EXCEPTION 'Fresh student import claim should stay processing, got %.', v_claim_status;
-        END IF;
-
-        SELECT updated
-          INTO v_updated
-          FROM public.finish_student_import_run(
-              v_run_id,
-              'wrong-token',
-              'completed',
-              '{"imported_count":1}'::JSONB,
-              NULL
-          );
-
-        IF v_updated THEN
-            RAISE EXCEPTION 'Wrong student import token must not finish run.';
-        END IF;
-
-        SELECT updated
-          INTO v_updated
-          FROM public.finish_student_import_run(
-              v_run_id,
-              'student-token-1',
-              'completed',
-              '{"imported_count":1}'::JSONB,
-              NULL
-          );
-
-        IF NOT v_updated THEN
-            RAISE EXCEPTION 'Correct student import token should finish run.';
-        END IF;
-
-        SELECT claim_status
-          INTO v_claim_status
-          FROM public.claim_student_import_run(
-              v_studio_id,
-              NULL,
-              'students_csv_execute',
-              v_smoke_key,
-              'hash-1',
-              'student-token-3',
-              45
-          );
-
-        IF v_claim_status <> 'completed' THEN
-            RAISE EXCEPTION 'Completed student import should be reusable, got %.', v_claim_status;
-        END IF;
+    IF v_claim_status IS DISTINCT FROM 'claimed' THEN
+        RAISE EXCEPTION 'Expected first student import claim, got %.', v_claim_status;
+    END IF;
+    v_run_id := (v_event_row->>'id')::UUID;
+    IF v_run_id IS NULL THEN
+        RAISE EXCEPTION 'Student import claim did not return a run identity.';
     END IF;
 
+    SELECT updated
+      INTO v_updated
+      FROM public.heartbeat_student_import_run(v_run_id, 'wrong-token');
+
+    IF v_updated IS DISTINCT FROM FALSE THEN
+        RAISE EXCEPTION 'Wrong student import token must not heartbeat run.';
+    END IF;
+
+    SELECT updated
+      INTO v_updated
+      FROM public.heartbeat_student_import_run(v_run_id, 'student-token-1');
+
+    IF v_updated IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'Correct student import token should heartbeat run.';
+    END IF;
+
+    SELECT claim_status
+      INTO v_claim_status
+      FROM public.claim_student_import_run(
+          v_studio_id,
+          NULL,
+          'students_csv_execute',
+          v_smoke_key,
+          'hash-2',
+          'student-token-2',
+          45
+      );
+
+    IF v_claim_status IS DISTINCT FROM 'hash_mismatch' THEN
+        RAISE EXCEPTION 'Student import hash mismatch should be explicit, got %.', v_claim_status;
+    END IF;
+
+    SELECT claim_status
+      INTO v_claim_status
+      FROM public.claim_student_import_run(
+          v_studio_id,
+          NULL,
+          'students_csv_execute',
+          v_smoke_key,
+          'hash-1',
+          'student-token-2',
+          45
+      );
+
+    IF v_claim_status IS DISTINCT FROM 'already_processing' THEN
+        RAISE EXCEPTION 'Fresh student import claim should stay processing, got %.', v_claim_status;
+    END IF;
+
+    SELECT updated
+      INTO v_updated
+      FROM public.finish_student_import_run(
+          v_run_id,
+          'wrong-token',
+          'completed',
+          '{"imported_count":1}'::JSONB,
+          NULL
+      );
+
+    IF v_updated IS DISTINCT FROM FALSE THEN
+        RAISE EXCEPTION 'Wrong student import token must not finish run.';
+    END IF;
+
+    SELECT updated
+      INTO v_updated
+      FROM public.finish_student_import_run(
+          v_run_id,
+          'student-token-1',
+          'completed',
+          '{"imported_count":1}'::JSONB,
+          NULL
+      );
+
+    IF v_updated IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'Correct student import token should finish run.';
+    END IF;
+
+    SELECT claim_status
+      INTO v_claim_status
+      FROM public.claim_student_import_run(
+          v_studio_id,
+          NULL,
+          'students_csv_execute',
+          v_smoke_key,
+          'hash-1',
+          'student-token-3',
+          45
+      );
+
+    IF v_claim_status IS DISTINCT FROM 'completed' THEN
+        RAISE EXCEPTION 'Completed student import should be reusable, got %.', v_claim_status;
+    END IF;
     RAISE NOTICE 'Koaryu worker claim RPC contract verification passed.';
 END $$;
 
