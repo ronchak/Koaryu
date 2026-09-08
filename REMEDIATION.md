@@ -77,6 +77,20 @@ External-payment browser recovery is designed but held for the owner's data-rete
 
 Reassessment at `f8af4f4`: remaining nullable SQL assertions, release evidence collectors and attestation tooling still need their own work. Current totals are 16 fixed, 250 pending and 12 deliberate deferrals. The next PR, `codex/remediation-refund-completion`, addresses FSH1-06/FT1-03. Generic Billing refresh both absorbs failures and reloads only the active tab's first page, so it cannot certify an older refunded payment's current balance. The correction will keep payment confirmation, that payment's refreshed state and recovery-key release under explicit ownership. Program/staff read ownership and an ordinary student-membership preservation migration have been independently investigated for subsequent selection. The date-policy and browser-note choices remain pending.
 
+[PR #157](https://github.com/ronchak/Koaryu/pull/157) merged as `50f0f4796f941383d1507b2229ac58e1e3e71427`, after independent review and the final head's complete release gate. FSH1-06 and FT1-03 are fixed. Automated review prompted an explicit no-store response for direct payment reads; its aggregate balance-subtraction suggestion was declined because it would reject valid remounted or concurrent recovery. The explanation is recorded in the resolved review thread and verification document. No production deployment occurred.
+
+Reassessment at `50f0f47`: generic financial commands, external-payment receipts, audit atomicity and other store owners remain open. Current totals are 18 fixed, 248 pending and 12 deliberate deferrals. Next is `codex/remediation-student-memberships`, for ordinary edits that reactivate paused memberships or overwrite per-program dates. One forward database migration will pair the narrow private-writer correction with its affected attestations and old-backend compatibility, plus preview parity and real SQL proof. Existing explicit changed-date behavior remains provisional pending the owner decision. A fresh disposable V38 replay matches the existing manifests. Read-only production health identifies the audited `c5742fe` backend as the current V19 compatibility consumer; the existing V18 rollback path will also remain protected. No production migration or historical membership repair is authorized by this implementation step.
+
+
+The student-membership candidate, [PR #158](https://github.com/ronchak/Koaryu/pull/158), fixes DM2-02 and includes the affected release
+attestations, V19/V18 compatibility and a seeded logical-restore continuation test.
+Its ledger has 19 fixed, 247 pending and 12 deliberate deferrals; completion of the
+PR still requires the final release gate and guarded merge. The independently
+verified behavior and test changes are recorded in
+[student membership verification](docs/remediation/student-membership-verification.md).
+The explicit date-policy choice, rank replay identity, obsolete student write paths
+and unrelated workflow ownership remain separate outstanding work.
+
 ## Deliberate non-goals and deferrals
 
 The ledger records individual reasons for these initial deferrals:

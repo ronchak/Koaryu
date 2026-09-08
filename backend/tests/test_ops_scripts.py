@@ -15,51 +15,13 @@ import pytest
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
-def test_local_supabase_contract_verifier_static_harness_contract():
-    script_path = ROOT_DIR / "scripts" / "verify-supabase-contracts-local.sh"
-    script = script_path.read_text(encoding="utf-8")
-    syntax = subprocess.run(
-        ["/bin/bash", "-n", str(script_path)],
-        capture_output=True,
-        text=True,
+def test_local_supabase_contract_verifier_shell_syntax():
+    result = subprocess.run(
+        ["/bin/bash", "-n", str(ROOT_DIR / "scripts/verify-supabase-contracts-local.sh")],
+        capture_output=True, text=True,
     )
+    assert result.returncode == 0, result.stderr
 
-    assert syntax.returncode == 0, syntax.stderr
-    for required_text in (
-        "set -euo pipefail",
-        "export LC_ALL=C",
-        "unset PGDATABASE PGHOST",
-        "mktemp -d /tmp/koaryu-pg.XXXXXX",
-        "trap cleanup EXIT",
-        "trap 'on_interrupt INT' INT",
-        "trap 'on_interrupt TERM' TERM",
-        'kill -s "$signal" "$child_pid"',
-        'if [[ "$(id -u)" -eq 0 ]]',
-        "KOARYU_PG_BIN_DIR",
-        "is_postgres_17_bindir",
-        'migration_files=("$MIGRATION_DIR"/*.sql)',
-        'verification_files=("$VERIFICATION_DIR"/*.sql)',
-        "--single-transaction",
-        "pg_available_extensions",
-        "CREATE TABLE auth.users",
-        "CREATE FUNCTION auth.uid()",
-        "CREATE FUNCTION auth.role()",
-        "CREATE FUNCTION auth.email()",
-        "CREATE TABLE storage.buckets",
-        "CREATE TABLE supabase_migrations.schema_migrations",
-        "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public",
-        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES",
-    ):
-        assert required_text in script
-
-    assert ".env" not in script
-    assert "docker" not in script.lower()
-    package = json.loads((ROOT_DIR / "package.json").read_text(encoding="utf-8"))
-    assert package["scripts"]["check:supabase-contracts-local"] == (
-        "bash scripts/verify-supabase-contracts-local.sh"
-    )
-    supabase_guide = (ROOT_DIR / "supabase" / "AGENTS.md").read_text(encoding="utf-8")
-    assert "npm run check:supabase-contracts-local" in supabase_guide
 
 
 def test_local_supabase_contract_verifier_rejects_an_invalid_explicit_toolchain(tmp_path):

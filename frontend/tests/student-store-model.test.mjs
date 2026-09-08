@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { buildStudentEditInitialData, getActiveStudentProgramIds } from "../src/lib/student-detail-page-model.ts";
+import { buildInitialStudentFormFields, buildStudentFormSubmitPayload } from "../src/components/students/student-form-state.ts";
 
 import {
   applyAddedTagsToStudents,
@@ -74,6 +76,34 @@ function ladder(id, programId, ranks) {
     created_at: "2026-05-24T00:00:00.000Z",
     updated_at: "2026-05-24T00:00:00.000Z",
   };
+}
+
+function retainedStudent() {
+  return student("student-1", {
+    membership_start_date: "2026-01-10", tags: ["keep"], program_id: "kids", current_belt_rank_id: "kids-blue",
+    program_memberships: [
+      {id:"member-a",studio_id:"mock-studio",student_id:"student-1",program_id:"kids",status:"paused",started_at:"2026-03-05",ended_at:null,current_belt_rank_id:"kids-blue",created_at:"2026-06-15T00:00:00Z"},
+      {id:"member-b",studio_id:"mock-studio",student_id:"student-1",program_id:"nogi",status:"active",started_at:"2026-06-12",ended_at:null,current_belt_rank_id:"nogi-white",created_at:"2026-06-15T00:00:00Z"},
+      {id:"member-c",studio_id:"mock-studio",student_id:"student-1",program_id:"unranked",status:"paused",started_at:null,ended_at:null,current_belt_rank_id:null,created_at:"2026-06-15T00:00:00Z"},
+    ],
+  });
+}
+const retainedPrograms = [program("kids"), program("nogi"), program("unranked"), program("new-program")];
+const retainedOptions = {
+  idFactory: () => { throw new Error("A retained membership must not be recreated."); },
+  now: new Date("2026-09-08T12:00:00Z"),
+  beltLadders: [
+    ladder("unranked-ladder", "unranked", [rank("available-starting-rank", "unranked-ladder", 0)]),
+    ladder("new-ladder", "new-program", [rank("new-white", "new-ladder", 0)]),
+  ],
+};
+const retainedFacts = [
+  ["member-a","kids","paused","2026-03-05",null,"kids-blue","2026-06-15T00:00:00Z"],
+  ["member-b","nogi","active","2026-06-12",null,"nogi-white","2026-06-15T00:00:00Z"],
+  ["member-c","unranked","paused",null,null,null,"2026-06-15T00:00:00Z"],
+];
+function membershipFacts(value) {
+  return value.program_memberships.map(row => [row.id,row.program_id,row.status,row.started_at,row.ended_at,row.current_belt_rank_id,row.created_at]);
 }
 
 describe("student store model", () => {
@@ -232,116 +262,55 @@ describe("student store model", () => {
     );
   });
 
-  it("preserves the membership rank when preview edits keep the same program", () => {
-    const updated = applyPreviewStudentUpdate(
-      student("student-1", {
-        program_id: "kids",
-        current_belt_rank_id: "kids-blue",
-        program_memberships: [
-          {
-            id: "kids-membership",
-            studio_id: "mock-studio",
-            student_id: "student-1",
-            program_id: "kids",
-            status: "paused",
-            started_at: "2026-05-01",
-            current_belt_rank_id: "kids-blue",
-            created_at: "2026-05-01T00:00:00.000Z",
-            updated_at: "2026-05-01T00:00:00.000Z",
-          },
-        ],
-      }),
-      { legal_first_name: "Avery", program_ids: ["kids"] },
-      [program("kids")],
-      {
-        idFactory: () => "unused-membership",
-        now: new Date("2026-05-24T12:00:00.000Z"),
-      }
-    );
-
-    assert.equal(updated.legal_first_name, "Avery");
-    assert.equal(updated.current_belt_rank_id, "kids-blue");
-    assert.equal(updated.program_memberships?.[0]?.id, "kids-membership");
-    assert.equal(updated.program_memberships?.[0]?.status, "active");
-    assert.equal(updated.program_memberships?.[0]?.current_belt_rank_id, "kids-blue");
+  it("preserves retained membership facts through the actual ordinary edit form payload", () => {
+    const original=retainedStudent();
+    const before=structuredClone(original);
+    const initial=buildStudentEditInitialData(original,getActiveStudentProgramIds(original));
+    const fields={...buildInitialStudentFormFields(initial),legalFirst:"Avery"};
+    const payload=buildStudentFormSubmitPayload(fields,initial);
+    assert.equal(payload.membership_start_date,"2026-01-10");
+    assert.deepEqual(payload.program_ids,["kids","nogi","unranked"]);
+    assert.equal(Object.hasOwn(payload,"current_belt_rank_id"),false);
+    assert.equal(Object.hasOwn(payload,"guardians"),false);
+    const updated=applyPreviewStudentUpdate(original,payload,retainedPrograms,retainedOptions);
+    assert.equal(updated.legal_first_name,"Avery");
+    assert.deepEqual(membershipFacts(updated),retainedFacts);
+    assert.deepEqual(updated.tags,["keep"]);
+    assert.deepEqual(original,before,"editing must not mutate the source student");
   });
 
-  it("preserves an intentionally unranked preview membership on unrelated edits", () => {
-    const updated = applyPreviewStudentUpdate(
-      student("student-1", {
-        program_id: "kids",
-        current_belt_rank_id: null,
-        program_memberships: [
-          {
-            id: "kids-membership",
-            studio_id: "mock-studio",
-            student_id: "student-1",
-            program_id: "kids",
-            status: "active",
-            started_at: "2026-05-01",
-            current_belt_rank_id: null,
-            created_at: "2026-05-01T00:00:00.000Z",
-            updated_at: "2026-05-01T00:00:00.000Z",
-          },
-        ],
-      }),
-      { phone: "(555) 123-4567", program_ids: ["kids"] },
-      [program("kids")],
-      {
-        beltLadders: [ladder("kids-ladder", "kids", [rank("kids-white", "kids-ladder", 0)])],
-        idFactory: () => "unused-membership",
-        now: new Date("2026-05-24T12:00:00.000Z"),
-      }
-    );
-
-    assert.equal(updated.current_belt_rank_id, null);
-    assert.equal(updated.program_memberships?.[0]?.id, "kids-membership");
-    assert.equal(updated.program_memberships?.[0]?.current_belt_rank_id, null);
+  it("preserves omitted and unchanged null dates, ranks and paused status while program selection changes", () => {
+    for (const [overallDate, update] of [
+      ["2026-01-10",{phone:"555-0100",program_ids:["kids","nogi","unranked"]}],
+      [null,{program_ids:["kids","nogi","unranked"]}],
+      [null,{membership_start_date:null,program_ids:["kids","nogi","unranked"]}],
+    ]) {
+      const updated=applyPreviewStudentUpdate({...retainedStudent(),membership_start_date:overallDate},update,retainedPrograms,retainedOptions);
+      assert.equal(updated.membership_start_date,overallDate);
+      assert.deepEqual(membershipFacts(updated),retainedFacts);
+    }
+    const reordered=applyPreviewStudentUpdate(retainedStudent(),{program_ids:["nogi","kids","unranked"]},retainedPrograms,retainedOptions);
+    assert.deepEqual(membershipFacts(reordered),[retainedFacts[1],retainedFacts[0],retainedFacts[2]]);
+    assert.equal(reordered.program_id,"nogi");
+    assert.equal(reordered.current_belt_rank_id,"nogi-white");
+    const changed=applyPreviewStudentUpdate(retainedStudent(),{program_ids:["kids","unranked","new-program"]},retainedPrograms,{...retainedOptions,idFactory:()=>"new-membership"});
+    assert.deepEqual(membershipFacts(changed),[retainedFacts[0],retainedFacts[2],["new-membership","new-program","active","2026-01-10",null,"new-white","2026-09-08T12:00:00.000Z"]]);
   });
 
-  it("updates retained membership start dates only when a new date is supplied", () => {
-    const existingStudent = student("student-1", {
-      membership_start_date: "2026-05-01",
-      program_id: "kids",
-      program_memberships: [{
-        id: "kids-membership",
-        studio_id: "mock-studio",
-        student_id: "student-1",
-        program_id: "kids",
-        status: "active",
-        started_at: "2026-05-01",
-        current_belt_rank_id: null,
-        created_at: "2026-05-01T00:00:00.000Z",
-        updated_at: "2026-05-01T00:00:00.000Z",
-      }],
-    });
-    const options = {
-      idFactory: () => "unused-membership",
-      now: new Date("2026-05-24T12:00:00.000Z"),
-    };
-
-    const omitted = applyPreviewStudentUpdate(
-      existingStudent,
-      { program_ids: ["kids"] },
-      [program("kids")],
-      options,
-    );
-    const changed = applyPreviewStudentUpdate(
-      existingStudent,
-      { membership_start_date: "2026-05-10", program_ids: ["kids"] },
-      [program("kids")],
-      options,
-    );
-    const cleared = applyPreviewStudentUpdate(
-      existingStudent,
-      { membership_start_date: null, program_ids: ["kids", "nogi"] },
-      [program("kids"), program("nogi")],
-      { ...options, idFactory: () => "new-nogi-membership" },
-    );
-
-    assert.equal(omitted.program_memberships?.[0]?.started_at, "2026-05-01");
-    assert.equal(changed.program_memberships?.[0]?.started_at, "2026-05-10");
-    assert.equal(cleared.program_memberships?.[0]?.started_at, "2026-05-01");
-    assert.equal(cleared.program_memberships?.[1]?.started_at, null);
+  it("retains explicit joining-date compatibility pending the product policy decision", () => {
+    for (const [update, dates, overallDate] of [
+      [{membership_start_date:"2026-07-01",program_ids:["kids","nogi","unranked"]},["2026-07-01","2026-07-01","2026-07-01"],"2026-07-01"],
+      [{membership_start_date:null,program_ids:["kids","nogi","unranked"]},["2026-03-05","2026-06-12",null],null],
+      [{membership_start_date:"2026-07-01"},["2026-03-05","2026-06-12",null],"2026-07-01"],
+      [{membership_start_date:null},["2026-03-05","2026-06-12",null],null],
+    ]) {
+      const updated=applyPreviewStudentUpdate(retainedStudent(),update,retainedPrograms,retainedOptions);
+      assert.equal(updated.membership_start_date,overallDate);
+      assert.deepEqual(updated.program_memberships.map(row=>row.started_at),dates);
+      assert.deepEqual(updated.program_memberships.map(row=>row.status),["paused","active","paused"]);
+    }
+    const cleared=applyPreviewStudentUpdate(retainedStudent(),{membership_start_date:null,program_ids:["kids","new-program"]},retainedPrograms,{...retainedOptions,idFactory:()=>"new-membership"});
+    assert.equal(cleared.program_memberships[0].started_at,"2026-03-05");
+    assert.equal(cleared.program_memberships[1].started_at,null);
   });
 });

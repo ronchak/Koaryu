@@ -1,5 +1,15 @@
 BEGIN;
 
+CREATE FUNCTION pg_temp.reject_student_write_audit()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.entity_id::TEXT = TG_ARGV[0] THEN
+        RAISE EXCEPTION 'forced student write audit failure' USING ERRCODE = 'P0001';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
 DO $$
 DECLARE
     v_rpc REGPROCEDURE := 'public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)'::REGPROCEDURE;
@@ -9,6 +19,7 @@ DECLARE
     v_other_studio UUID := gen_random_uuid();
     v_program_one UUID := gen_random_uuid();
     v_program_two UUID := gen_random_uuid();
+    v_program_three UUID := gen_random_uuid();
     v_other_program UUID := gen_random_uuid();
     v_ladder_one UUID := gen_random_uuid();
     v_ladder_two UUID := gen_random_uuid();
@@ -23,6 +34,17 @@ DECLARE
     v_other_guardian UUID := gen_random_uuid();
     v_written public.students%ROWTYPE;
     v_count INTEGER;
+    v_member_one UUID;
+    v_member_two UUID;
+    v_member_three UUID;
+    v_case RECORD;
+    v_result RECORD;
+    v_selected_programs UUID[];
+    v_expected JSONB;
+    v_actual JSONB;
+    v_student_before JSONB;
+    v_audit_count INTEGER;
+    v_audit_rejected BOOLEAN := FALSE;
 BEGIN
     IF to_regprocedure('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)') IS NULL THEN
         RAISE EXCEPTION 'Missing public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text).';
@@ -78,6 +100,7 @@ BEGIN
     VALUES
         (v_program_one, v_studio, 'Fundamentals'),
         (v_program_two, v_studio, 'Competition'),
+        (v_program_three, v_studio, 'New Program'),
         (v_other_program, v_other_studio, 'Other Program');
 
     INSERT INTO public.belt_ladders (id, studio_id, name, program_id)
@@ -147,6 +170,116 @@ BEGIN
     ) VALUES
         (v_studio, v_retained_student, v_program_one, 'active', v_rank_one),
         (v_studio, v_retained_student, v_program_two, 'active', v_rank_two);
+
+    SELECT id INTO STRICT v_member_one FROM public.student_program_memberships
+    WHERE student_id = v_retained_student AND program_id = v_program_one;
+    SELECT id INTO STRICT v_member_two FROM public.student_program_memberships
+    WHERE student_id = v_retained_student AND program_id = v_program_two;
+
+    -- Normal forms resend the unchanged overall date and full program list.
+    -- Neither implies a request to reactivate or redate retained memberships.
+    FOR v_case IN SELECT * FROM (VALUES
+        ('omitted', DATE '2026-01-10', '{}'::JSONB, TRUE, FALSE, DATE '2026-01-10', DATE '2026-03-05', NULL::DATE),
+        ('same-date', DATE '2026-01-10', '{"membership_start_date":"2026-01-10"}'::JSONB, TRUE, FALSE, DATE '2026-01-10', DATE '2026-03-05', NULL::DATE),
+        ('omitted-null', NULL::DATE, '{}'::JSONB, TRUE, FALSE, NULL::DATE, DATE '2026-03-05', NULL::DATE),
+        ('same-null', NULL::DATE, '{"membership_start_date":null}'::JSONB, TRUE, FALSE, NULL::DATE, DATE '2026-03-05', NULL::DATE),
+        ('reorder', DATE '2026-01-10', '{}'::JSONB, TRUE, TRUE, DATE '2026-01-10', DATE '2026-03-05', NULL::DATE),
+        -- Keep explicit date-change compatibility until product policy is settled.
+        ('changed-date', DATE '2026-01-10', '{"membership_start_date":"2026-07-01"}'::JSONB, TRUE, FALSE, DATE '2026-07-01', DATE '2026-07-01', DATE '2026-07-01'),
+        ('clear-date', DATE '2026-01-10', '{"membership_start_date":null}'::JSONB, TRUE, FALSE, NULL::DATE, DATE '2026-03-05', NULL::DATE),
+        ('date-without-programs', DATE '2026-01-10', '{"membership_start_date":"2026-07-01"}'::JSONB, FALSE, FALSE, DATE '2026-07-01', DATE '2026-03-05', NULL::DATE),
+        ('clear-without-programs', DATE '2026-01-10', '{"membership_start_date":null}'::JSONB, FALSE, FALSE, NULL::DATE, DATE '2026-03-05', NULL::DATE)
+    ) AS cases(name, initial_date, payload, replace_programs, reorder, student_date, first_date, second_date)
+    LOOP
+        UPDATE public.students SET membership_start_date = v_case.initial_date,
+            program_id = v_program_one, current_belt_rank_id = v_rank_one, tags = ARRAY['keep'], phone = 'original'
+        WHERE id = v_retained_student;
+        UPDATE public.student_program_memberships SET status = 'paused', started_at = DATE '2026-03-05', current_belt_rank_id = v_rank_one
+        WHERE id = v_member_one;
+        UPDATE public.student_program_memberships SET status = 'active', started_at = NULL, current_belt_rank_id = v_rank_two
+        WHERE id = v_member_two;
+        v_selected_programs := CASE WHEN NOT v_case.replace_programs THEN NULL
+            WHEN v_case.reorder THEN ARRAY[v_program_two, v_program_one] ELSE ARRAY[v_program_one, v_program_two] END;
+
+        SELECT * INTO v_result FROM public.write_student_profile_v2_atomic(
+            v_retained_student, v_studio, v_owner,
+            v_case.payload || jsonb_build_object('phone', 'updated') || CASE WHEN v_case.replace_programs
+                THEN jsonb_build_object('status', 'active', 'program_id', v_selected_programs[1]) ELSE '{}'::JSONB END,
+            v_selected_programs, '[]'::JSONB, v_case.replace_programs, 'student.updated'
+        );
+        IF (v_result.result_student->>'id')::UUID IS DISTINCT FROM v_retained_student
+           OR (v_result.result_student->>'membership_start_date')::DATE IS DISTINCT FROM v_case.student_date
+           OR v_result.result_student->>'phone' IS DISTINCT FROM 'updated'
+           OR v_result.result_student->'tags' IS DISTINCT FROM '["keep"]'::JSONB
+           OR (v_result.result_student->>'current_belt_rank_id')::UUID IS DISTINCT FROM
+                (CASE WHEN v_case.reorder THEN v_rank_two ELSE v_rank_one END) THEN
+            RAISE EXCEPTION 'Profile result changed unintended student facts for %.', v_case.name;
+        END IF;
+        v_expected := jsonb_build_object(
+            v_member_one::TEXT, jsonb_build_array(v_program_one, 'paused', v_case.first_date, NULL, v_rank_one),
+            v_member_two::TEXT, jsonb_build_array(v_program_two, 'active', v_case.second_date, NULL, v_rank_two)
+        );
+        SELECT jsonb_object_agg(id::TEXT, jsonb_build_array(program_id, status, started_at, ended_at, current_belt_rank_id))
+        INTO v_actual FROM public.student_program_memberships
+        WHERE student_id = v_retained_student AND studio_id = v_studio;
+        IF v_actual IS DISTINCT FROM v_expected THEN
+            RAISE EXCEPTION 'Retained membership facts changed for %.', v_case.name;
+        END IF;
+        SELECT jsonb_object_agg(item->>'id', jsonb_build_array(item->'program_id', item->'status', item->'started_at', item->'ended_at', item->'current_belt_rank_id'))
+        INTO v_actual FROM jsonb_array_elements(v_result.result_program_memberships) item;
+        IF v_actual IS DISTINCT FROM v_expected THEN
+            RAISE EXCEPTION 'V2 response lost preserved membership facts for %.', v_case.name;
+        END IF;
+    END LOOP;
+
+    -- Ending one program and adding another must preserve the retained program.
+    SELECT * INTO v_result FROM public.write_student_profile_v2_atomic(
+        v_retained_student, v_studio, v_owner, '{}'::JSONB,
+        ARRAY[v_program_one, v_program_three], '[]'::JSONB, TRUE, 'student.updated'
+    );
+    SELECT id INTO STRICT v_member_three FROM public.student_program_memberships
+    WHERE student_id = v_retained_student AND program_id = v_program_three AND ended_at IS NULL;
+    IF v_member_three IN (v_member_one, v_member_two) THEN
+        RAISE EXCEPTION 'New program reused a retained or ended membership identity.';
+    END IF;
+    v_expected := jsonb_build_object(
+        v_member_one::TEXT, jsonb_build_array(v_program_one, 'paused', DATE '2026-03-05', NULL, v_rank_one),
+        v_member_two::TEXT, jsonb_build_array(v_program_two, 'ended', NULL, CURRENT_DATE, NULL),
+        v_member_three::TEXT, jsonb_build_array(v_program_three, 'active', NULL, NULL, NULL)
+    );
+    SELECT jsonb_object_agg(id::TEXT, jsonb_build_array(program_id, status, started_at, ended_at, current_belt_rank_id))
+    INTO v_actual FROM public.student_program_memberships WHERE student_id = v_retained_student AND studio_id = v_studio;
+    IF v_actual IS DISTINCT FROM v_expected THEN
+        RAISE EXCEPTION 'Changing another program lost retained or ended membership facts.';
+    END IF;
+
+    SELECT to_jsonb(student) INTO v_student_before FROM public.students student WHERE id = v_retained_student;
+    SELECT count(*) INTO v_audit_count FROM public.audit_logs WHERE entity_id = v_retained_student;
+    EXECUTE format('CREATE TRIGGER student_write_audit_failure BEFORE INSERT ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_student_write_audit(%L)', v_retained_student::TEXT);
+    BEGIN
+        PERFORM public.write_student_profile_v2_atomic(
+            v_retained_student, v_studio, v_owner, '{"phone":"must-roll-back"}'::JSONB,
+            ARRAY[v_program_one, v_program_two], '[]'::JSONB, TRUE, 'student.updated'
+        );
+    EXCEPTION WHEN SQLSTATE 'P0001' THEN
+        IF SQLERRM IS DISTINCT FROM 'forced student write audit failure' THEN RAISE; END IF;
+        v_audit_rejected := TRUE;
+    END;
+    DROP TRIGGER student_write_audit_failure ON public.audit_logs;
+    IF NOT v_audit_rejected THEN RAISE EXCEPTION 'Student write audit failure was not observed.'; END IF;
+    IF (SELECT to_jsonb(student) FROM public.students student WHERE id = v_retained_student) IS DISTINCT FROM v_student_before
+       OR (SELECT count(*) FROM public.audit_logs WHERE entity_id = v_retained_student) IS DISTINCT FROM v_audit_count THEN
+        RAISE EXCEPTION 'Failed audit did not roll back the student write.';
+    END IF;
+    SELECT jsonb_object_agg(id::TEXT, jsonb_build_array(program_id, status, started_at, ended_at, current_belt_rank_id))
+    INTO v_actual FROM public.student_program_memberships WHERE student_id = v_retained_student AND studio_id = v_studio;
+    IF v_actual IS DISTINCT FROM v_expected THEN RAISE EXCEPTION 'Failed audit did not roll back membership facts.'; END IF;
+
+    -- Keep the independent rank-switch/explicit-clear checks on their original active fixture.
+    DELETE FROM public.student_program_memberships WHERE id = v_member_three;
+    UPDATE public.student_program_memberships SET status = 'active', ended_at = NULL,
+        current_belt_rank_id = CASE WHEN id = v_member_one THEN v_rank_one ELSE v_rank_two END
+    WHERE id IN (v_member_one, v_member_two);
 
     SELECT *
     INTO v_written
