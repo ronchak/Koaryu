@@ -124,7 +124,7 @@ export interface StoreContextValue {
   currentLadderId: string | null;
   setCurrentLadder: (ladderId: string) => Promise<void>;
   loadEligibilityForLadder: (ladderId?: string | null, options?: { force?: boolean }) => Promise<EligibilityEntry[]>;
-  setBeltRanks: (ranks: BeltRank[], options?: { subRankTerm?: string }) => Promise<void>;
+  setBeltRanks: (ranks: BeltRank[], options: { ladderId: string; subRankTerm?: string }) => Promise<void>;
   ladderName: string;
   setLadderName: (name: string) => void;
   subRankTerm: string;

@@ -218,6 +218,20 @@ it cannot hide the newly reconciled range or replay attendance mutations.
 
 ## Workflow resource ownership
 
+Belt Tracker owns each rank-plan draft by ladder ID, including both ranks and the
+sub-rank term. Program switching is blocked while a draft or rank editor is open.
+Saving disables rank edits until the request settles. A rejected save retains the
+draft; a confirmed save with a failed refresh reports that the ranks were saved.
+Credential renewal may settle a confirmed write within the same verified identity,
+but sign-out or a changed workspace cannot restore the old identity's data.
+
+Run the synthetic rank-editor browser regression without an application server,
+credentials or a database:
+
+```bash
+node --experimental-strip-types --test tests/belt-editor-mounted.test.mjs
+```
+
 `/dashboard/workspace` establishes authoritative membership, subscription access and
 studio timezone before feature reads. Student detail always ensures a complete
 record independently of the lightweight roster. Dashboard commands reconcile with
