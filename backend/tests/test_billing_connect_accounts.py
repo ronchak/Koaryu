@@ -132,6 +132,12 @@ class BillingConnectAccountStoreTests(unittest.TestCase):
         self.assertEqual(response.platform_fee_bps, 225)
         self.assertEqual(response.created_at, "2026-01-01T00:00:00+00:00")
 
+        for stored, expected in ((0, 0), (None, 225), (50, 50)):
+            with self.subTest(stored=stored):
+                self.assertEqual(self._store([]).response({
+                    "studio_id": "studio_1", "platform_fee_bps": stored,
+                }).platform_fee_bps, expected)
+
 
 if __name__ == "__main__":
     unittest.main()

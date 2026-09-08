@@ -187,10 +187,15 @@ class BillingReconciliationService:
             expand=["latest_charge", "payment_method"],
         )
         intent = self.billing_service._stripe_object_to_dict(stripe_intent)
+        if intent.get("status") == "requires_capture":
+            raise HTTPException(
+                status_code=409,
+                detail="This payment is authorized but has not been captured. Reconciliation cannot record it as collected.",
+            )
         event_type = "payment_intent.succeeded"
         if intent.get("status") == "processing":
             event_type = "payment_intent.processing"
-        elif intent.get("status") not in {"succeeded", "requires_capture"}:
+        elif intent.get("status") != "succeeded":
             event_type = "payment_intent.payment_failed"
 
         self.billing_service._project_payment_intent(intent, account_id, event_type)

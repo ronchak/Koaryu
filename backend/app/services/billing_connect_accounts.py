@@ -4,6 +4,7 @@ from typing import Any, Optional
 from fastapi import HTTPException
 
 from app.schemas.billing import StudioPaymentAccountResponse
+from app.services.billing_fees import platform_fee_bps
 from app.services.billing_invoice_projection import _object_get, _to_text
 from app.services.billing_webhook_event_state import (
     ACCOUNT_STATUS_ORDER,
@@ -141,7 +142,7 @@ class BillingConnectAccountStore:
             payouts_enabled=bool(row.get("payouts_enabled")),
             details_submitted=bool(row.get("details_submitted")),
             requirements_due=row.get("requirements_due") or [],
-            platform_fee_bps=row.get("platform_fee_bps") or self.settings.BILLING_PLATFORM_FEE_BPS,
+            platform_fee_bps=platform_fee_bps(row.get("platform_fee_bps"), self.settings.BILLING_PLATFORM_FEE_BPS),
             created_at=_to_text(row.get("created_at")),
             updated_at=_to_text(row.get("updated_at")),
         )

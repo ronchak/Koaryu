@@ -55,7 +55,6 @@ type BillingTabContentProps = {
   refundController: BillingRefundController;
   isEnrollmentPayerSelectDisabled: boolean;
   isPreviewMode: boolean;
-  koaryuFeeBasis: number;
   onConnectClick: () => void;
   openInvoiceTotal: number;
   paidRevenue: number;
@@ -105,7 +104,6 @@ export function BillingTabContent(props: BillingTabContentProps) {
     refundController,
     isEnrollmentPayerSelectDisabled,
     isPreviewMode,
-    koaryuFeeBasis,
     onConnectClick,
     openInvoiceTotal,
     paidRevenue,
@@ -279,7 +277,6 @@ export function BillingTabContent(props: BillingTabContentProps) {
         exportJobs={exportJobs}
         isActionLoading={isActionLoading}
         isLoadingAction={isLoadingAction}
-        koaryuFeeBasis={koaryuFeeBasis}
         onExternalAmountChange={onExternalAmountChange}
         onExternalMethodChange={onExternalMethodChange}
         onExternalNoteChange={onExternalNoteChange}

@@ -178,7 +178,6 @@ export function buildBillingPageModel({
     hasStudentBilling: billingLandingAggregates?.has_student_billing ?? billingEnrollments.some(
       (enrollment) => enrollment.status !== "canceled" && enrollment.status !== "ended"
     ),
-    koaryuFeeBasis: Math.max(stripePaymentTotal, 0),
     openInvoiceTotal: billingLandingAggregates?.open_invoice_amount_cents ?? openInvoiceTotal,
     paidRevenue,
     paymentCohortAvailable: isPreviewMode || Boolean(billingPaymentCohortSummary),
