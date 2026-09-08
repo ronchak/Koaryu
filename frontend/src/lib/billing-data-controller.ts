@@ -2,7 +2,8 @@
 
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { api, isSubscriptionRequiredError } from "@/lib/api";
+import { api, ApiError, isSubscriptionRequiredError } from "@/lib/api";
+import { isMatchingRefundPayment, type RefundIdentity, type RefundPaymentRefreshResult } from "@/lib/billing-refund-model";
 import type { BillingLanding, BillingInvoicePage, BillingPaymentPage } from "@/lib/billing-landing";
 import type { BillingTab } from "@/lib/billing-page-state";
 import type {
@@ -22,6 +23,7 @@ import type {
 type UseBillingDataControllerOptions = {
   canManageKoaryuSubscription: boolean;
   identityKey: string | null;
+  identity: RefundIdentity | null;
   activeTab: BillingTab;
   canViewStudioBilling: boolean;
   isPreviewMode: boolean;
@@ -39,6 +41,7 @@ type BillingAccessSnapshot = {
 export function useBillingDataController({
   canManageKoaryuSubscription,
   identityKey,
+  identity,
   activeTab,
   canViewStudioBilling,
   isPreviewMode,
@@ -50,9 +53,11 @@ export function useBillingDataController({
 }: UseBillingDataControllerOptions) {
   const [landing, setLanding] = useState<BillingLanding | null>(null);
   const tokenRef = useRef(token);
+  const activeTabRef = useRef(activeTab);
   const retainedRef = useRef(new Map<string, number>());
   const errorsRef = useRef(new Map<string, string>());
   const dataScopeRef = useRef<string | null>(null);
+  const paymentReadRevisionRef = useRef(0);
   const [platformBilling, setPlatformBilling] = useState<PlatformBillingStatus | null>(null);
   const [billingSystemStatus, setBillingSystemStatus] = useState<BillingSystemStatus | null>(null);
   const [paymentAccount, setPaymentAccount] = useState<StudioPaymentAccount | null>(null);
@@ -96,6 +101,7 @@ export function useBillingDataController({
 
   const shouldSettleWithoutAccess = !token || shouldSettleEarly;
   const clearFinancialData = useCallback(() => {
+    paymentReadRevisionRef.current += 1;
     setPlans([]);
     setPayers([]);
     setSubscriptions([]);
@@ -135,11 +141,12 @@ export function useBillingDataController({
     errorsRef.current.clear();
     setError("");
     latestAccessKeyRef.current = activeAccessKey;
-    return () => { requestSequenceRef.current += 1; };
+    return () => { requestSequenceRef.current += 1; paymentReadRevisionRef.current += 1; };
   }, [activeAccessKey, setError]);
 
   useLayoutEffect(() => {
     requestSequenceRef.current += 1;
+    activeTabRef.current = activeTab;
   }, [activeTab]);
 
   const loadBilling = useCallback(async (force: boolean) => {
@@ -168,6 +175,7 @@ export function useBillingDataController({
     }
     const requestAccess = { accessKey: activeAccessKey };
     const requestId = requestSequenceRef.current += 1;
+    const paymentRevision = paymentReadRevisionRef.current;
     markTabSettled(cacheKey, false);
     showTabError(cacheKey, "");
     try {
@@ -183,7 +191,7 @@ export function useBillingDataController({
         setPlatformBilling(result.platform_status ?? null);
         setBillingSystemStatus(result.system_status ?? null);
         setPaymentAccount(result.system_status?.payment_account ?? result.payment_account ?? null);
-        setPaymentCohortSummary(result.aggregates?.payment_cohort ?? null);
+        if (paymentReadRevisionRef.current === paymentRevision) setPaymentCohortSummary(result.aggregates?.payment_cohort ?? null);
         setLoadedAccessKey(requestAccess.accessKey);
         if (result.financial_access !== "available") {
           clearFinancialData();
@@ -193,7 +201,7 @@ export function useBillingDataController({
           showTabError(cacheKey);
           return;
         }
-        retainedRef.current.set(`${activeAccessKey}:landing`, Date.now());
+        if (paymentReadRevisionRef.current === paymentRevision) retainedRef.current.set(`${activeAccessKey}:landing`, Date.now());
         errorsRef.current.set(`${activeAccessKey}:landing`, result.errors.join(" "));
         showTabError(cacheKey);
       }
@@ -213,10 +221,14 @@ export function useBillingDataController({
         load<BillingInvoicePage>("/billing/invoices/page", (page) => { setInvoices(page.items); setInvoiceCursor(page.next_cursor ?? null); });
       }
       if (activeTab === "reports") {
-        load<BillingPaymentPage>("/billing/payments/page", (page) => { setPayments(page.items); setPaymentCursor(page.next_cursor ?? null); });
+        load<BillingPaymentPage>("/billing/payments/page", (page) => {
+          if (paymentReadRevisionRef.current !== paymentRevision) return;
+          setPayments(page.items); setPaymentCursor(page.next_cursor ?? null);
+        });
       }
       const results = await Promise.allSettled(requests);
       if (!isCurrentRequest(requestId, requestAccess)) return;
+      if (activeTab === "reports" && paymentReadRevisionRef.current !== paymentRevision) return;
       const failure = results.find((result) => result.status === "rejected");
       if (failure?.status === "rejected") throw failure.reason;
       retainedRef.current.set(cacheKey, Date.now());
@@ -229,6 +241,7 @@ export function useBillingDataController({
         onSubscriptionRequired();
         return;
       }
+      if (activeTab === "reports" && paymentReadRevisionRef.current !== paymentRevision) return;
       showTabError(cacheKey, err instanceof Error ? err.message : "Billing could not be loaded.");
     } finally {
       if (isCurrentRequest(requestId, requestAccess)) {
@@ -245,6 +258,7 @@ export function useBillingDataController({
     const operation = Symbol("history-page");
     loadMoreInFlightRef.current = operation;
     const requestId = requestSequenceRef.current;
+    const paymentRevision = paymentReadRevisionRef.current;
     const cacheKey = `${activeAccessKey}:${activeTab}`;
     showTabError(cacheKey, "");
     setIsLoadingMore(true);
@@ -256,7 +270,7 @@ export function useBillingDataController({
           setInvoiceCursor(page.next_cursor ?? null);
         }) : Promise.resolve(),
         activeTab === "reports" && paymentCursor ? api.get<BillingPaymentPage>(`/billing/payments/page?cursor=${encodeURIComponent(paymentCursor)}`, currentToken).then(page => {
-          if (!isCurrentRequest(requestId, { accessKey: activeAccessKey })) return;
+          if (!isCurrentRequest(requestId, { accessKey: activeAccessKey }) || paymentReadRevisionRef.current !== paymentRevision) return;
           setPayments(current => [...current, ...page.items]);
           setPaymentCursor(page.next_cursor ?? null);
         }) : Promise.resolve(),
@@ -264,12 +278,77 @@ export function useBillingDataController({
       const failed = results.find(result => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
     } catch (err) {
-      if (isCurrentRequest(requestId, { accessKey: activeAccessKey })) showTabError(cacheKey, err instanceof Error ? err.message : "Older billing history is unavailable.");
+      if (isCurrentRequest(requestId, { accessKey: activeAccessKey }) && (activeTab !== "reports" || paymentReadRevisionRef.current === paymentRevision)) showTabError(cacheKey, err instanceof Error ? err.message : "Older billing history is unavailable.");
     } finally {
       if (loadMoreInFlightRef.current === operation) loadMoreInFlightRef.current = null;
       if (isCurrentRequest(requestId, { accessKey: activeAccessKey })) setIsLoadingMore(false);
     }
   }, [activeAccessKey, activeTab, invoiceCursor, paymentCursor, isCurrentRequest, showTabError]);
+
+  const identityUserId = identity?.userId;
+  const identityStudioId = identity?.studioId;
+  const refreshPaymentAfterRefund = useCallback(async (original: BillingPayment, expected: RefundIdentity): Promise<RefundPaymentRefreshResult> => {
+    const currentToken = tokenRef.current;
+    if (!activeAccessKey || latestAccessKeyRef.current !== activeAccessKey || !currentToken
+      || identityUserId !== expected.userId || identityStudioId !== expected.studioId) return { status: "superseded" };
+    const invalidatePaymentReads = () => {
+      paymentReadRevisionRef.current += 1;
+      retainedRef.current.delete(`${activeAccessKey}:reports`);
+      retainedRef.current.delete(`${activeAccessKey}:landing`);
+      setPaymentCohortSummary(null);
+    };
+    invalidatePaymentReads();
+    const revision = paymentReadRevisionRef.current;
+    const current = () => latestAccessKeyRef.current === activeAccessKey && paymentReadRevisionRef.current === revision;
+    const loseFinancialAccess = (err: unknown) => {
+      // A denied read invalidates every older financial read, not only payment pages.
+      requestSequenceRef.current += 1;
+      resetBillingData();
+      markTabSettled(`${activeAccessKey}:${activeTabRef.current}`, true);
+      if (isSubscriptionRequiredError(err)) onSubscriptionRequired();
+      else setError("Billing access could not be verified. Reload this page before taking another action.");
+    };
+    try {
+      const path = `/billing/payments/${encodeURIComponent(original.id)}`;
+      let payment: unknown;
+      try {
+        payment = await api.get<unknown>(path, currentToken);
+      } catch (err) {
+        const renewedToken = tokenRef.current;
+        if (!current()) return { status: "superseded" };
+        if (!(err instanceof ApiError) || err.status !== 401 || !renewedToken || renewedToken === currentToken) throw err;
+        payment = await api.get<unknown>(path, renewedToken);
+      }
+      if (!current()) return { status: "superseded" };
+      if (!isMatchingRefundPayment(payment, original, expected)) return { status: "unavailable" };
+      // Reads started before or during this refresh cannot overwrite its confirmed balance.
+      invalidatePaymentReads();
+      setPayments(rows => rows.map(row => row.id === payment.id ? payment : row));
+      const committedRevision = paymentReadRevisionRef.current;
+      const cohortToken = tokenRef.current ?? currentToken;
+      // Cohort totals have their own read; failure cannot undo the target payment proof.
+      void api.get<BillingPaymentCohortSummary>("/billing/payments/current-month-cohort", cohortToken).then(summary => {
+        if (latestAccessKeyRef.current === activeAccessKey && paymentReadRevisionRef.current === committedRevision) setPaymentCohortSummary(summary);
+      }).catch(err => {
+        if (latestAccessKeyRef.current !== activeAccessKey || paymentReadRevisionRef.current !== committedRevision) return;
+        if (isSubscriptionRequiredError(err)) loseFinancialAccess(err);
+        else if (err instanceof ApiError && (err.status === 403 || (err.status === 401 && tokenRef.current === cohortToken))) {
+          loseFinancialAccess(err);
+        }
+      });
+      return { status: "updated", payment };
+    } catch (err) {
+      if (!current()) return { status: "superseded" };
+      if (isSubscriptionRequiredError(err)) {
+        loseFinancialAccess(err); return { status: "access_lost" };
+      }
+      if (err instanceof ApiError && [401, 403].includes(err.status)) {
+        loseFinancialAccess(err);
+        return { status: "access_lost" };
+      }
+      return { status: "unavailable" };
+    }
+  }, [activeAccessKey, identityStudioId, identityUserId, markTabSettled, onSubscriptionRequired, resetBillingData, setError]);
 
   const refreshConnectStatus = useCallback(async ({ sync = false }: { sync?: boolean } = {}) => {
     if (!activeAccessKey || !token) {
@@ -346,6 +425,7 @@ export function useBillingDataController({
     isLoadingMore,
     landing: hasVisibleBillingData ? landing : null,
     refreshBilling,
+    refreshPaymentAfterRefund,
     refreshConnectStatus,
     setExportJobs,
     subscriptions: hasVisibleBillingData ? subscriptions : [],

@@ -128,6 +128,7 @@ export function BillingReportsTab({
           const adjustmentNotice = paymentAdjustmentNotice(payment);
           const refundEligible = isPaymentRefundEligible(payment);
           const refundBlocked = refundController.isPaymentRefundBlocked(payment.id);
+          const refundRecovery = refundController.getPaymentRefundRecovery(payment.id);
           const refundAmount = refundAmounts[payment.id] ?? (payment.refundable_amount_cents / 100).toFixed(2);
           const refundAmountCents = parseRefundAmount(refundAmount, payment.refundable_amount_cents);
           const refundReason = refundReasons[payment.id] ?? "requested_by_customer";
@@ -159,6 +160,18 @@ export function BillingReportsTab({
                   <p className="text-xs font-medium text-warning">
                     This refund needs reconciliation outside Koaryu. Refund retry is disabled for this payment.
                   </p>
+                ) : refundRecovery === "unavailable" ? (
+                  <p className="text-xs font-medium text-warning">The saved refund request could not be read. Reload Billing before taking another action.</p>
+                ) : refundRecovery ? (
+                  <>
+                    <p className="text-xs text-muted">{refundRecovery === "refresh" ? "The refund request is recorded. Refresh its balance before another refund." : "An earlier refund request needs confirmation. Recover its original amount and reason."}</p>
+                    <Button size="sm" disabled={Boolean(refundController.activePaymentId) || isActionLoading} isLoading={refundController.activePaymentId === payment.id}
+                      onClick={() => {
+                        if (refundRecovery === "refresh" || window.confirm("Check the original refund request again? This may finish a refund whose result was not confirmed.")) void refundController.recoverRefund(payment);
+                      }}>
+                      {refundRecovery === "refresh" ? "Refresh payment" : "Retry original refund"}
+                    </Button>
+                  </>
                 ) : refundEligible ? (
                   <>
                     <Input

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "46131d470592e735641adff19e3aefd217e64e82",
+  "last_reconciled_main": "f8af4f4a66316e4d254f901cdeaf6571c4b6949c",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -33,20 +33,22 @@
     },
     {
       "id": "CTA1-02",
-      "title": "Database quick-start bypasses the repository\u2019s current target guidance",
+      "title": "Database quick-start bypasses the repository’s current target guidance",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-contract-assurance; pending reviewed PR merge. See docs/remediation/contract-assurance-verification.md.",
+      "disposition": "fixed",
+      "reason": "PR156 guards the pinned staging destination and repairs false-green or skipped verification. See docs/remediation/contract-assurance-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
+      "verified_against": "f8af4f4a66316e4d254f901cdeaf6571c4b6949c",
       "verification": "55 operator tests and full 133-migration/50-contract local suite passed. Independent negative controls proved old false greens and correct new failures; worker fixtures ran from zero rows and rolled back. Independent review GREEN LIGHT.",
       "source_paths": [
         "README.md",
         "AGENTS.md",
         "scripts/run-supabase-sql.sh"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        156
+      ]
     },
     {
       "id": "CTA1-03",
@@ -1165,17 +1167,19 @@
       "id": "OS1-06",
       "title": "Linked contract runner does not enforce the documented production prohibition",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-contract-assurance; pending reviewed PR merge. See docs/remediation/contract-assurance-verification.md.",
+      "disposition": "fixed",
+      "reason": "PR156 guards the pinned staging destination and repairs false-green or skipped verification. See docs/remediation/contract-assurance-verification.md.",
       "audit_importance": "high",
       "evidence_role": "observation",
-      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
+      "verified_against": "f8af4f4a66316e4d254f901cdeaf6571c4b6949c",
       "verification": "55 operator tests and full 133-migration/50-contract local suite passed. Independent negative controls proved old false greens and correct new failures; worker fixtures ran from zero rows and rolled back. Independent review GREEN LIGHT.",
       "source_paths": [
         "scripts/run-supabase-sql.sh",
         "docs/operator-tooling.md"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        156
+      ]
     },
     {
       "id": "OS1-07",
@@ -2327,11 +2331,11 @@
       "title": "Refund refresh tests substitute the contract that production violates",
       "cluster": "financial_command_completion",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-refund-completion; pending reviewed PR merge. Exact payment refresh owns receipt release and accepted/uncertain recovery. See docs/remediation/refund-completion-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "f8af4f4a66316e4d254f901cdeaf6571c4b6949c",
+      "verification": "Original joined regression failed with zero retained receipts; fixed focused31 and fullfrontend922 passed. Independent access-loss negative control restores stale capability when invalidation is removed. Backendfocused67/81subtests; fullbackend1883 passed with only obsolete count assertion, corrected provider-boundary10passed. APItypes unchanged. Production frontend build with example values and lint passed. Independent implementation review GREEN; final commit binding and exact-head CI required.",
       "source_paths": [
         "frontend/tests/billing-refund-model.test.mjs",
         "frontend/tests/billing-data-mounted.test.mjs",
@@ -3382,7 +3386,7 @@
     },
     {
       "id": "FC3-01",
-      "title": "Roster bulk actions can overlap and close one another\u2019s panels",
+      "title": "Roster bulk actions can overlap and close one another’s panels",
       "cluster": "read_and_mutation_ownership",
       "disposition": "pending",
       "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
@@ -3467,7 +3471,7 @@
     },
     {
       "id": "FC3-06",
-      "title": "Button\u2019s asChild mode advertises props it silently drops",
+      "title": "Button’s asChild mode advertises props it silently drops",
       "cluster": "presentation_and_dead_interfaces",
       "disposition": "pending",
       "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
@@ -3604,11 +3608,11 @@
       "title": "Refund recovery assumes refresh failures reject, but the actual refresh absorbs them",
       "cluster": "financial_command_completion",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-refund-completion; pending reviewed PR merge. Exact payment refresh owns receipt release and accepted/uncertain recovery. See docs/remediation/refund-completion-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "f8af4f4a66316e4d254f901cdeaf6571c4b6949c",
+      "verification": "Original joined regression failed with zero retained receipts; fixed focused31 and fullfrontend922 passed. Independent access-loss negative control restores stale capability when invalidation is removed. Backendfocused67/81subtests; fullbackend1883 passed with only obsolete count assertion, corrected provider-boundary10passed. APItypes unchanged. Production frontend build with example values and lint passed. Independent implementation review GREEN; final commit binding and exact-head CI required.",
       "source_paths": [
         "frontend/src/lib/billing-refund-controller.ts",
         "frontend/src/lib/billing-refund-model.ts",
@@ -4490,16 +4494,18 @@
       "id": "DC1-01",
       "title": "A comp-protection test catches its own failure and can pass without the guard",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-contract-assurance; pending reviewed PR merge. See docs/remediation/contract-assurance-verification.md.",
+      "disposition": "fixed",
+      "reason": "PR156 guards the pinned staging destination and repairs false-green or skipped verification. See docs/remediation/contract-assurance-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
+      "verified_against": "f8af4f4a66316e4d254f901cdeaf6571c4b6949c",
       "verification": "55 operator tests and full 133-migration/50-contract local suite passed. Independent negative controls proved old false greens and correct new failures; worker fixtures ran from zero rows and rolled back. Independent review GREEN LIGHT.",
       "source_paths": [
         "supabase/verification/release_ui_atomic_contract.sql"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        156
+      ]
     },
     {
       "id": "DC1-02",
@@ -4558,33 +4564,37 @@
       "id": "DC2-01",
       "title": "The bulk archive audit-failure test can pass when its expected failure never occurs",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-contract-assurance; pending reviewed PR merge. See docs/remediation/contract-assurance-verification.md.",
+      "disposition": "fixed",
+      "reason": "PR156 guards the pinned staging destination and repairs false-green or skipped verification. See docs/remediation/contract-assurance-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
+      "verified_against": "f8af4f4a66316e4d254f901cdeaf6571c4b6949c",
       "verification": "55 operator tests and full 133-migration/50-contract local suite passed. Independent negative controls proved old false greens and correct new failures; worker fixtures ran from zero rows and rolled back. Independent review GREEN LIGHT.",
       "source_paths": [
         "supabase/verification/student_bulk_archive_rpc_contract.sql",
         "supabase/verification/studio_comp_atomic_contract.sql"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        156
+      ]
     },
     {
       "id": "DC2-02",
       "title": "Student-import worker behavior is optional when the database has no studio",
       "cluster": "import_recovery",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-contract-assurance; pending reviewed PR merge. See docs/remediation/contract-assurance-verification.md.",
+      "disposition": "fixed",
+      "reason": "PR156 guards the pinned staging destination and repairs false-green or skipped verification. See docs/remediation/contract-assurance-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "46131d470592e735641adff19e3aefd217e64e82",
+      "verified_against": "f8af4f4a66316e4d254f901cdeaf6571c4b6949c",
       "verification": "55 operator tests and full 133-migration/50-contract local suite passed. Independent negative controls proved old false greens and correct new failures; worker fixtures ran from zero rows and rolled back. Independent review GREEN LIGHT.",
       "source_paths": [
         "supabase/verification/worker_claim_rpc_contract.sql",
         "scripts/verify-supabase-contracts-local.sh"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        156
+      ]
     },
     {
       "id": "DC2-03",

@@ -120,6 +120,8 @@ export function useBillingPageController({
     isPreviewMode,
     hasKnownRestrictedRole: isLiveRestricted,
   });
+  const billingIdentity = currentUserId && currentStudioId ? { userId: currentUserId, studioId: currentStudioId } : null;
+  const billingIdentityKey = billingIdentity ? `${currentUserId}:${currentStudioId}:${currentRole}:${identityGeneration}` : null;
   const handleSubscriptionRequired = useCallback(() => {
     markSubscriptionRequired();
     router.replace("/subscription-required");
@@ -143,12 +145,14 @@ export function useBillingPageController({
     plans,
     platformBilling,
     refreshBilling,
+    refreshPaymentAfterRefund,
     refreshConnectStatus,
     setExportJobs,
     subscriptions,
   } = useBillingDataController({
     activeTab,
-    identityKey: currentUserId && currentStudioId ? `${currentUserId}:${currentStudioId}:${currentRole}:${identityGeneration}` : null,
+    identityKey: billingIdentityKey,
+    identity: billingIdentity,
     canManageKoaryuSubscription,
     canViewStudioBilling,
     isPreviewMode,
@@ -226,11 +230,10 @@ export function useBillingPageController({
   });
   const refundController = useBillingRefundController({
     enabledWorkflowIds,
-    identity: currentUserId && currentStudioId
-      ? { userId: currentUserId, studioId: currentStudioId }
-      : null,
+    identity: billingIdentity,
+    identityKey: billingIdentityKey,
     isPreviewMode,
-    refreshBilling,
+    refreshPaymentAfterRefund,
     role: currentRole,
     setError,
     setMessage,

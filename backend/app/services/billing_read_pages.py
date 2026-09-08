@@ -8,7 +8,15 @@ from uuid import UUID
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from app.schemas.billing import BillingInvoicePageResponse, BillingPaymentPageResponse
+from app.schemas.billing import BillingInvoicePageResponse, BillingPaymentPageResponse, BillingPaymentResponse
+
+
+def get_billing_payment(client, studio_id: str, payment_id: str) -> BillingPaymentResponse:
+    rows = (client.table("billing_payments").select("*")
+            .eq("studio_id", studio_id).eq("id", payment_id).limit(1).execute().data or [])
+    if not rows:
+        raise HTTPException(404, "Payment not found.")
+    return BillingPaymentResponse.model_validate(rows[0])
 
 
 class _BillingCursor(BaseModel):

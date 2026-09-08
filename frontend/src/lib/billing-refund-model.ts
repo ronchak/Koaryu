@@ -7,12 +7,17 @@ export type RefundReason = NonNullable<ApiBillingRefundCreate["reason"]>;
 
 const STORAGE_PREFIX = "koaryu.billing.payment-refund.v1";
 const memoryAttempts = new Map<string, RefundAttempt>();
-type RefundAttempt = {
+export type RefundAttempt = {
   amountCents: number;
   reason: RefundReason;
   requestKey: string;
   disposition?: "reconciliation_required";
+  acceptedRefundId?: string;
 };
+export type RefundPaymentRefreshResult =
+  | { status: "updated"; payment: BillingPayment }
+  | { status: "unavailable" | "access_lost" | "superseded" };
+export type RefreshPaymentAfterRefund = (payment: BillingPayment, identity: RefundIdentity) => Promise<RefundPaymentRefreshResult>;
 const REFUND_REASONS = new Set<RefundReason>(["duplicate", "fraudulent", "requested_by_customer"]);
 const RECONCILIATION_REQUIRED_DETAIL = "This billing operation requires reconciliation and will not be retried automatically.";
 const REFUND_STORAGE_UNAVAILABLE_DETAIL = "Refunds are unavailable because this browser cannot safely save the request. Enable browser storage and reload this page.";
@@ -44,6 +49,7 @@ function parseStoredAttempt(value: string | null): RefundAttempt | null {
       || !REFUND_REASONS.has(record.reason as RefundReason)
       || !validRequestKey(record.requestKey)
       || (record.disposition !== undefined && record.disposition !== "reconciliation_required")
+      || (record.acceptedRefundId !== undefined && !validRequestKey(record.acceptedRefundId))
     ) return null;
     return record as RefundAttempt;
   } catch {
@@ -116,9 +122,8 @@ export function resolveRefundRequestKey(
     throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
   }
   const existing = parseStoredAttempt(stored);
-  if (stored && !existing) {
+  if (stored !== null && !existing) {
     memoryAttempts.delete(key);
-    try { storage.removeItem(key); } catch {}
     throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
   }
   if (existing) {
@@ -152,23 +157,39 @@ export function resolveRefundRequestKey(
   return attempt.requestKey;
 }
 
-export async function refreshAfterConfirmedRefund(
-  refresh: () => Promise<void>,
-  onRefreshError: () => void,
-) {
-  try {
-    await refresh();
-    return true;
-  } catch {
-    onRefreshError();
-    return false;
+export function readRefundAttempt(identity: RefundIdentity, paymentId: string, storage: RefundStorage | null) {
+  if (!storage) throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
+  const key = storageKey(identity, paymentId);
+  const raw = storage.getItem(key);
+  const attempt = parseStoredAttempt(raw);
+  if ((raw !== null && !attempt) || (raw === null && memoryAttempts.has(key))) {
+    throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
   }
+  return attempt;
 }
 
-export function clearRefundRequestKey(identity: RefundIdentity, paymentId: string, storage: RefundStorage | null) {
+export function markRefundAccepted(identity: RefundIdentity, paymentId: string, requestKey: string, refundId: string, storage: RefundStorage | null) {
+  if (!storage) return false;
+  try {
+    const attempt = readRefundAttempt(identity, paymentId, storage);
+    if (!attempt || attempt.requestKey !== requestKey || !validRequestKey(refundId)) return false;
+    const accepted = { ...attempt, acceptedRefundId: refundId };
+    const key = storageKey(identity, paymentId);
+    storage.setItem(key, JSON.stringify(accepted));
+    const saved = readRefundAttempt(identity, paymentId, storage);
+    if (saved?.requestKey !== requestKey || saved.acceptedRefundId !== refundId
+      || saved.amountCents !== attempt.amountCents || saved.reason !== attempt.reason
+      || saved.disposition !== attempt.disposition) return false;
+    memoryAttempts.set(key, accepted);
+    return true;
+  } catch { return false; }
+}
+
+export function clearRefundRequestKey(identity: RefundIdentity, paymentId: string, storage: RefundStorage | null, expectedRequestKey: string) {
   const key = storageKey(identity, paymentId);
   if (!storage) return false;
   try {
+    if (readRefundAttempt(identity, paymentId, storage)?.requestKey !== expectedRequestKey) return false;
     storage.removeItem(key);
     if (storage.getItem(key) !== null) return false;
     memoryAttempts.delete(key);
@@ -176,6 +197,30 @@ export function clearRefundRequestKey(identity: RefundIdentity, paymentId: strin
   } catch {
     return false;
   }
+}
+
+export function isMatchingRefundResponse(value: unknown, identity: RefundIdentity, paymentId: string, amountCents: number): value is ApiBillingRefundResponse {
+  if (!value || typeof value !== "object") return false;
+  const row = value as ApiBillingRefundResponse;
+  return validRequestKey(row.id) && row.studio_id === identity.studioId && row.payment_id === paymentId
+    && Number.isSafeInteger(row.amount_cents) && row.amount_cents === amountCents && amountCents > 0
+    && ["succeeded", "pending", "requires_action", "failed", "canceled"].includes(row.status)
+    && typeof row.reconciliation_required === "boolean";
+}
+
+export function isMatchingRefundPayment(value: unknown, original: BillingPayment, identity: RefundIdentity): value is BillingPayment {
+  if (!value || typeof value !== "object") return false;
+  const row = value as BillingPayment;
+  const cents = [row.amount_cents, row.gross_paid_amount_cents, row.refunded_amount_cents, row.disputed_amount_cents, row.net_collected_amount_cents, row.refundable_amount_cents];
+  return row.id === original.id && row.studio_id === identity.studioId && original.studio_id === identity.studioId
+    && typeof row.currency === "string" && row.currency === original.currency
+    && (!original.stripe_charge_id || row.stripe_charge_id === original.stripe_charge_id)
+    && (!original.stripe_account_id || row.stripe_account_id === original.stripe_account_id)
+    && ["pending", "processing", "succeeded", "failed", "refunded", "disputed", "externally_recorded"].includes(row.status)
+    && cents.every(amount => Number.isSafeInteger(amount) && amount >= 0)
+    && row.refundable_amount_cents <= row.net_collected_amount_cents
+    && row.net_collected_amount_cents <= row.gross_paid_amount_cents
+    && typeof row.adjustment_reconciliation_required === "boolean";
 }
 
 export function isRefundReconciliationRequiredError(error: unknown) {
