@@ -29,20 +29,20 @@ def exact_preflight_row():
 
 
 class ReleaseSchemaReadinessTest(unittest.TestCase):
-    def test_v38_candidate_constants_are_exact(self):
-        self.assertEqual(EXPECTED_RELEASE_MIGRATION_COUNT, 133)
-        self.assertEqual(EXPECTED_RELEASE_MIGRATION_HEAD, "20260905022339")
+    def test_v39_candidate_constants_are_exact(self):
+        self.assertEqual(EXPECTED_RELEASE_MIGRATION_COUNT, 134)
+        self.assertEqual(EXPECTED_RELEASE_MIGRATION_HEAD, "20260908080420")
         self.assertEqual(
             EXPECTED_RELEASE_MANIFEST_VERSION,
-            "release-db-attestation-v38",
+            "release-db-attestation-v39",
         )
-        self.assertEqual(EXPECTED_RELEASE_PENDING_VERSIONS[-1], "20260905022339")
-        self.assertEqual(len(EXPECTED_RELEASE_PENDING_VERSIONS), 49)
+        self.assertEqual(EXPECTED_RELEASE_PENDING_VERSIONS[-2:], ["20260905022339", "20260908080420"])
+        self.assertEqual(len(EXPECTED_RELEASE_PENDING_VERSIONS), 50)
 
     def test_exact_preflight_is_ready(self):
         validate_release_schema_preflight(exact_preflight_row())
 
-    def test_incomplete_or_malformed_v19_shape_fails_closed(self):
+    def test_incomplete_or_malformed_v20_shape_fails_closed(self):
         rows = (
             {
                 key: value
@@ -59,149 +59,32 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             with self.subTest(row=row), self.assertRaises(ReleaseSchemaNotReadyError):
                 validate_release_schema_preflight(row)
 
-    def test_v12_compatibility_shape_cannot_satisfy_candidate_readiness(self):
-        compatibility_row = {
+    def test_coherent_v38_predecessor_cannot_satisfy_v39_readiness(self):
+        previous = {
             "ready": True,
-            "migration_count": 126,
-            "migration_head": "20260826185651",
+            "migration_count": 133,
+            "migration_head": "20260905022339",
             "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
             "security_failures": [],
-            "manifest_version": "release-db-attestation-v31",
+            "manifest_version": "release-db-attestation-v38",
         }
         with self.assertRaises(ReleaseSchemaNotReadyError):
-            validate_release_schema_preflight(compatibility_row)
+            validate_release_schema_preflight(previous)
 
-    def test_v13_v32_response_cannot_satisfy_candidate_readiness(self):
-        stale_v13_row = {
-            **exact_preflight_row(),
-            "migration_count": 127,
-            "migration_head": "20260830065627",
-            "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
-            "manifest_version": "release-db-attestation-v32",
-        }
-        with self.assertRaises(ReleaseSchemaNotReadyError):
-            validate_release_schema_preflight(stale_v13_row)
-
-    def test_v14_v33_response_cannot_satisfy_candidate_readiness(self):
-        stale_v14_row = {
-            **exact_preflight_row(),
-            "migration_count": 128,
-            "migration_head": "20260830082610",
-            "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
-            "manifest_version": "release-db-attestation-v33",
-        }
-        with self.assertRaises(ReleaseSchemaNotReadyError):
-            validate_release_schema_preflight(stale_v14_row)
-
-    def test_v15_v34_response_cannot_satisfy_candidate_readiness(self):
-        stale_v15_row = {
-            **exact_preflight_row(),
-            "migration_count": 129,
-            "migration_head": "20260830151714",
-            "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
-            "manifest_version": "release-db-attestation-v34",
-        }
-        with self.assertRaises(ReleaseSchemaNotReadyError):
-            validate_release_schema_preflight(stale_v15_row)
-
-    def test_v16_v35_response_cannot_satisfy_candidate_readiness(self):
-        stale = {
-            **exact_preflight_row(),
-            "migration_count": 130,
-            "migration_head": "20260831022021",
-            "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
-            "manifest_version": "release-db-attestation-v35",
-        }
-        with self.assertRaises(ReleaseSchemaNotReadyError):
-            validate_release_schema_preflight(stale)
-
-    def test_v19_requires_exact_v38_pending_list_and_empty_failures(self):
-        wrong_pending = {
-            **exact_preflight_row(),
-            "pending_versions": [
-                *EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
-                "20260830080000",
-            ],
-        }
-        missing_v35 = {
-            **exact_preflight_row(),
-            "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
-        }
-        failed_security = {
-            **exact_preflight_row(),
-            "security_failures": ["function:v35_acl"],
-        }
-        for row in (wrong_pending, missing_v35, failed_security):
-            with self.subTest(row=row), self.assertRaises(
-                ReleaseSchemaNotReadyError
-            ):
-                validate_release_schema_preflight(row)
-
-    def test_every_preflight_mismatch_fails_closed(self):
-        mismatches = [
-            None,
-            {**exact_preflight_row(), "ready": False},
-            {**exact_preflight_row(), "migration_count": 84},
-            {**exact_preflight_row(), "migration_count": 98},
-            {**exact_preflight_row(), "migration_count": 99},
-            {**exact_preflight_row(), "migration_count": 101},
-            {**exact_preflight_row(), "migration_count": 102},
-            {**exact_preflight_row(), "migration_count": 103},
-            {**exact_preflight_row(), "migration_count": 104},
-            {**exact_preflight_row(), "migration_count": 105},
-            {**exact_preflight_row(), "migration_count": 109},
-            {**exact_preflight_row(), "migration_count": 110},
-            {**exact_preflight_row(), "migration_count": 115},
-            {**exact_preflight_row(), "migration_count": 116},
-            {**exact_preflight_row(), "migration_count": 117},
-            {**exact_preflight_row(), "migration_count": 119},
-            {**exact_preflight_row(), "migration_count": 124},
-            {**exact_preflight_row(), "migration_count": 126},
-            {**exact_preflight_row(), "migration_count": 128},
-            {**exact_preflight_row(), "migration_count": 129},
-            {**exact_preflight_row(), "migration_head": "20260801080000"},
-            {**exact_preflight_row(), "migration_head": "20260801105313"},
-            {**exact_preflight_row(), "migration_head": "20260801112153"},
-            {**exact_preflight_row(), "migration_head": "20260801115044"},
-            {**exact_preflight_row(), "migration_head": "20260801123112"},
-            {**exact_preflight_row(), "migration_head": "20260814043325"},
-            {**exact_preflight_row(), "migration_head": "20260814103046"},
-            {**exact_preflight_row(), "migration_head": "20260814105424"},
-            {**exact_preflight_row(), "migration_head": "20260814114500"},
-            {**exact_preflight_row(), "migration_head": "20260814152000"},
-            {**exact_preflight_row(), "migration_head": "20260814213000"},
-            {**exact_preflight_row(), "migration_head": "20260815220402"},
-            {**exact_preflight_row(), "migration_head": "20260822193000"},
-            {**exact_preflight_row(), "migration_head": "20260823193155"},
-            {**exact_preflight_row(), "migration_head": "20260824190500"},
-            {**exact_preflight_row(), "migration_head": "20260825043911"},
-            {**exact_preflight_row(), "migration_head": "20260826185651"},
-            {**exact_preflight_row(), "migration_head": "20260830082610"},
-            {**exact_preflight_row(), "migration_head": "20260830151714"},
-            {**exact_preflight_row(), "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1]},
-            {**exact_preflight_row(), "security_failures": ["table:missing"]},
-            {**exact_preflight_row(), "manifest_version": "stale-manifest"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v3"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v4"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v5"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v6"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v7"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v8"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v9"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v10"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v11"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v12"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v16"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v17"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v22"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v23"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v24"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v25"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v31"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v33"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v34"},
-        ]
-        for row in mismatches:
+    def test_each_independent_preflight_mismatch_fails_closed(self):
+        valid = exact_preflight_row()
+        rows = [None]
+        # Each row changes one field so another mismatch cannot mask a missing check.
+        for field, values in {
+            "ready": [False, "true", None],
+            "migration_count": [133, 135],
+            "migration_head": ["20260905022339", "20990101000000"],
+            "pending_versions": [EXPECTED_RELEASE_PENDING_VERSIONS[:-1], list(reversed(EXPECTED_RELEASE_PENDING_VERSIONS)), [*EXPECTED_RELEASE_PENDING_VERSIONS, "20990101000000"]],
+            "security_failures": [["table:missing"]],
+            "manifest_version": ["release-db-attestation-v38"],
+        }.items():
+            rows.extend({**valid, field: value} for value in values)
+        for row in rows:
             with self.subTest(row=row), self.assertRaises(ReleaseSchemaNotReadyError):
                 validate_release_schema_preflight(row)
 
@@ -220,9 +103,9 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v19", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v20", {})])
 
-    def test_hosted_check_does_not_fallback_on_v19_provider_failure(self):
+    def test_hosted_check_does_not_fallback_on_v20_provider_failure(self):
         calls = []
 
         def rpc(name, params):
@@ -239,9 +122,9 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ), self.assertRaises(PostgrestAPIError):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v19", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v20", {})])
 
-    def test_hosted_check_fails_closed_when_v19_is_missing(self):
+    def test_hosted_check_fails_closed_when_v20_is_missing(self):
         calls = []
 
         def rpc(name, params):
@@ -250,7 +133,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
                 "code": "PGRST202",
                 "message": (
                     "Could not find the function "
-                    "public.koaryu_release_schema_preflight_v19 in the schema cache"
+                    "public.koaryu_release_schema_preflight_v20 in the schema cache"
                 ),
             })
             return SimpleNamespace(execute=lambda: (_ for _ in ()).throw(error))
@@ -261,7 +144,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ), self.assertRaisesRegex(RuntimeError, "Apply the database migrations"):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v19", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v20", {})])
 
     def test_success_cache_rechecks_only_after_ttl(self):
         now = [10.0]

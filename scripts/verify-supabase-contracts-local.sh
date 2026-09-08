@@ -211,8 +211,8 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 133 ]]; then
-  echo "ERROR: Expected the canonical 133-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 134 ]]; then
+  echo "ERROR: Expected the canonical 134-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
 if [[ ${#verification_files[@]} -ne 50 ]]; then
@@ -742,6 +742,12 @@ SQL
     fi
   fi
 
+  if [[ "$migration_filename" == "20260908080420_student_membership_preservation_v39.sql" ]]; then
+    run_interruptible python3 "$ROOT_DIR/scripts/verify-v38-v39-restore-contract.py" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+  fi
+
   echo "[migration $migration_index/$migration_total] RUN $migration_filename"
   if run_interruptible "$PSQL" "${psql_args[@]}" \
     --single-transaction \
@@ -1049,7 +1055,7 @@ student_rank_manifest="$(
 SELECT private.koaryu_release_student_rank_writer_manifest_v13();
 "
 )"
-if [[ "$student_rank_manifest" != "0:27cdc692d92fb49f696521e7ab6f3d0b7717c30a232ba6ce4ba057df9e5b30f7" ]]; then
+if [[ "$student_rank_manifest" != "0:3201f4586df300ab113e7db82b6cead45d3ea3bc1add1ebc473625deaf80a702" ]]; then
   echo "[student-rank manifest] FAIL database-observable writer signal: $student_rank_manifest" >&2
   exit 1
 fi
@@ -1079,7 +1085,7 @@ if [[ "$schedule_window_manifest" != "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed7
 fi
 echo "[schedule-window manifest] PASS read RPC definition and ACL signal"
 
-echo "[V25 readiness] RUN exact final migration and manifest signal"
+echo "[V39 readiness] RUN exact final migration and manifest signal"
 operational_readiness="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
@@ -1091,62 +1097,64 @@ if (
     "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" \
     "$operational_readiness"
 ); then
-  echo "[V25 readiness] PASS exact final migration and manifest signal"
+  echo "[V39 readiness] PASS exact final migration and manifest signal"
 else
   status=$?
-  echo "[V25 readiness] actual=$operational_readiness" >&2
-  echo "[V25 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
+  echo "[V39 readiness] actual=$operational_readiness" >&2
+  echo "[V39 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
   exit "$status"
 fi
 
-echo "[Billing landing V38] RUN exact read definitions and privileges"
-v38_billing_manifest="$({
+echo "[V39 release] RUN exact read definitions and privileges"
+v39_release_manifest="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { V38_BILLING_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V38_BILLING_MANIFEST_SQL);"
+    "import { V39_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V39_RELEASE_MANIFEST_SQL);"
 } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-expected_v38_billing_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V38_BILLING_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V38_BILLING_MANIFEST);")"
-if [[ "$v38_billing_manifest" != "$expected_v38_billing_manifest" ]]; then
-  echo "[Billing landing V38] FAIL exact read definitions and privileges: $v38_billing_manifest" >&2
+expected_v39_release_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V39_RELEASE_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V39_RELEASE_MANIFEST);")"
+if [[ "$v39_release_manifest" != "$expected_v39_release_manifest" ]]; then
+  echo "[V39 release] FAIL exact read definitions and privileges: $v39_release_manifest" >&2
   exit 1
 fi
-echo "[Billing landing V38] PASS exact read definitions and privileges"
+echo "[V39 release] PASS exact read definitions and privileges"
 
-assert_v38_history_index_rejects() {
+assert_history_index_rejects() {
   local label="$1"
   local mutation_sql="$2"
   local result=""
   local raw_manifest=""
+  local v39_ready=""
   local v38_ready=""
   local v37_ready=""
-  echo "[Billing history V38 negative] RUN $label"
+  echo "[Billing history negative] RUN $label"
   result="$({
     printf 'BEGIN;\n%s\n' "$mutation_sql"
     (
       cd "$ROOT_DIR"
       node --input-type=module --eval \
-        "import { V38_BILLING_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V38_BILLING_MANIFEST_SQL);"
+        "import { V39_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V39_RELEASE_MANIFEST_SQL);"
     )
-    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v19();\nSELECT ready FROM public.koaryu_release_schema_preflight_v18();\nROLLBACK;\n'
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v20();\nSELECT ready FROM public.koaryu_release_schema_preflight_v19();\nSELECT ready FROM public.koaryu_release_schema_preflight_v18();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   raw_manifest="$(printf '%s\n' "$result" | sed -n '1p')"
-  v38_ready="$(printf '%s\n' "$result" | sed -n '2p')"
-  v37_ready="$(printf '%s\n' "$result" | sed -n '3p')"
-  if [[ "$raw_manifest" == "$expected_v38_billing_manifest" || "$v38_ready" != "f" || "$v37_ready" != "f" ]]; then
-    echo "[Billing history V38 negative] FAIL $label: $result" >&2
+  v39_ready="$(printf '%s\n' "$result" | sed -n '2p')"
+  v38_ready="$(printf '%s\n' "$result" | sed -n '3p')"
+  v37_ready="$(printf '%s\n' "$result" | sed -n '4p')"
+  if [[ "$raw_manifest" == "$expected_v39_release_manifest" || "$v39_ready" != "f" || "$v38_ready" != "f" || "$v37_ready" != "f" ]]; then
+    echo "[Billing history negative] FAIL $label: $result" >&2
     exit 1
   fi
-  echo "[Billing history V38 negative] PASS $label"
+  echo "[Billing history negative] PASS $label"
 }
 
 for history_dataset in invoices payments; do
   history_index="idx_billing_${history_dataset}_studio_history"
-  assert_v38_history_index_rejects "$history_dataset missing index" \
+  assert_history_index_rejects "$history_dataset missing index" \
     "DROP INDEX public.$history_index;"
-  assert_v38_history_index_rejects "$history_dataset wrong index order" \
+  assert_history_index_rejects "$history_dataset wrong index order" \
     "DROP INDEX public.$history_index; CREATE INDEX $history_index ON public.billing_$history_dataset(studio_id,id DESC,created_at DESC);"
   for index_flag in indisvalid indisready indislive; do
-    assert_v38_history_index_rejects "$history_dataset $index_flag=false" \
+    assert_history_index_rejects "$history_dataset $index_flag=false" \
       "UPDATE pg_catalog.pg_index SET $index_flag=false WHERE indexrelid='public.$history_index'::regclass;"
   done
 done
@@ -1170,6 +1178,29 @@ else
   echo "[catalog] FAIL deterministic raw catalog security fingerprint (exit $status)" >&2
   exit "$status"
 fi
+
+echo "[V39 memberships] RUN final semantic chain and both previous backend contracts"
+while IFS='|' read -r query_export expected_export; do
+  actual="$({
+    cd "$ROOT_DIR"
+    node --input-type=module --eval \
+      "import * as m from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(m[process.argv[1]]);" "$query_export"
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+  expected="$(cd "$ROOT_DIR" && node --input-type=module --eval \
+    "import * as m from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(m[process.argv[1]]);" "$expected_export")"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "[V39 memberships] FAIL $query_export" >&2
+    exit 1
+  fi
+done <<'V39_CHECKS'
+V38_OPERATIONAL_READINESS_SQL|EXPECTED_V38_OPERATIONAL_READINESS
+V37_OPERATIONAL_READINESS_SQL|EXPECTED_V37_OPERATIONAL_READINESS
+V31_EXPECTATION_STATE_SQL|EXPECTED_V39_EXPECTATION_STATE
+V31_RESOURCE_OWNERSHIP_MANIFEST_SQL|EXPECTED_V39_RESOURCE_OWNERSHIP_MANIFEST
+V31_OPERATIONAL_CONTRACT_SQL|EXPECTED_V39_OPERATIONAL_CONTRACT_V31
+V31_OPERATIONAL_MANIFEST_SQL|EXPECTED_V39_OPERATIONAL_MANIFEST_V12
+V39_CHECKS
+echo "[V39 memberships] PASS final semantic chain and both previous backend contracts"
 
 echo "[V37 compatibility] RUN re-pinned V26 singleton expectation"
 v26_expectation_state="$({
