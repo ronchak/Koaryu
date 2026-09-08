@@ -841,7 +841,9 @@
       "source_paths": [
         "backend/app/services/billing_invoice_operations.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        162
+      ]
     },
     {
       "id": "BB1-08",
@@ -1576,7 +1578,9 @@
         "backend/tests/test_billing_invoice_lifecycle.py",
         "backend/tests/test_billing_enrollment_activation.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        162
+      ]
     },
     {
       "id": "BT2-02",
@@ -1608,7 +1612,9 @@
       "source_paths": [
         "backend/tests/test_billing_invoice_lifecycle.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        162
+      ]
     },
     {
       "id": "BT2-04",
@@ -1659,7 +1665,9 @@
       "source_paths": [
         "backend/tests/test_billing_invoice_operations.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        162
+      ]
     },
     {
       "id": "BT2-07",
@@ -1675,7 +1683,9 @@
         "backend/tests/test_billing_invoice_operations.py",
         "backend/app/services/billing_invoice_operations.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        162
+      ]
     },
     {
       "id": "BT2-08",

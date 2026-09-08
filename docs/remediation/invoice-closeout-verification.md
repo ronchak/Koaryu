@@ -1,6 +1,7 @@
 # Invoice local-closeout verification
 
-BB1-07 and supporting BT2-01 describe one incomplete workflow. Invoice creation
+[PR #162](https://github.com/ronchak/Koaryu/pull/162) addresses BB1-07 and supporting
+BT2-01, which describe one incomplete workflow. Invoice creation
 and payment retry could mark the operation completed before audit and payer
 balance work finished. Completed replay repaired the audit but skipped balance.
 The same key could therefore return success while the old balance remained.
@@ -52,9 +53,9 @@ Local evidence:
 - Focused invoice operations/lifecycle suites pass 287 tests and 15 subtests after
   final test refinements. The full backend passed 1,895 tests and 5,447 subtests
   before those test-only refinements and one source-test deletion. API
-  contract generation check passes without generated changes. Independent code
-  review approved the implementation; final test/cross-system review and committed
-  release checks remain required.
+  contract generation check passes without generated changes. Independent plan, code, test and final cross-system review approved commit
+  `fa641b37b3cddca9bf02eaa27d25858a9b3b6618`. Its deterministic performance gate
+  also passed. Exact-head CI and guarded merge remain required.
 
 These are Python orchestration tests using real managers/coordinators and the
 production payer-balance method, with existing provider/RPC doubles. They are not

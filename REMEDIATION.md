@@ -172,7 +172,7 @@ without another provider mutation or changing delinquency definitions. Review
 identified a necessary acquired-lease check for projected retry replays. This
 financial integrity correction takes priority over the larger frontend owner.
 
-The invoice candidate now has one local-closeout owner and passes its focused
+[PR #162](https://github.com/ronchak/Koaryu/pull/162) now has one local-closeout owner and passes its focused
 fault/replay suite. Twelve cases fail the unchanged main workflow and pass the
 correction. It also consolidates two duplicate service tests, removes one source-
 name assertion and an unused broken fake hook, and corrects the paid-status check.
