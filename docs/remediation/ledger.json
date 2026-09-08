@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
+  "last_reconciled_main": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -542,18 +542,20 @@
       "id": "OPS2-01",
       "title": "An unrelated partial student edit clears existing tags",
       "cluster": "student_write_preservation",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-student-tags, pending reviewed PR merge. Omitted tags survive; explicit clears/replacements and creation defaults remain. See docs/remediation/student-tags-verification.md.",
+      "disposition": "fixed",
+      "reason": "Merged PR154 preserves omitted tags and explicitly tests omission, replacement, empty/null clearing and creation defaults. No membership semantics or SQL changes.",
       "audit_importance": "high",
       "evidence_role": "observation",
-      "verified_against": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
+      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
       "verification": "Populated-tag CRUD regression failed on phone-only update before fix; focused10 tests and4subtests passed after fix. Generated API types unchanged. Independent source review GREEN LIGHT.",
       "source_paths": [
         "backend/app/services/student_write_payload.py",
         "backend/app/services/student_crud_actions.py",
         "supabase/migrations/20260613095000_atomic_student_profile_write.sql"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        154
+      ]
     },
     {
       "id": "OPS2-02",
@@ -724,11 +726,11 @@
       "title": "Successful payment replay changes the payment month",
       "cluster": "financial_facts_and_local_edits",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "backend/app/services/billing_payment_projection.py",
         "backend/app/services/billing_webhook_projection.py",
@@ -774,11 +776,11 @@
       "title": "Zero platform fees are replaced with the default fee",
       "cluster": "financial_facts_and_local_edits",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "backend/app/services/billing_connect_accounts.py",
         "backend/app/services/billing_private_facade.py",
@@ -983,11 +985,11 @@
       "title": "Broad reconciliation records uncaptured authorization as collected money",
       "cluster": "financial_facts_and_local_edits",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "backend/app/services/billing_reconciliation.py",
         "backend/app/services/billing_payment_projection.py"
@@ -1613,11 +1615,11 @@
       "title": "Fake financial helpers disagree with the actual zero-fee behavior",
       "cluster": "financial_facts_and_local_edits",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "backend/tests/test_billing_enrollment_activation.py",
         "backend/tests/test_billing_invoice_operations.py",
@@ -1679,11 +1681,11 @@
       "title": "Payment cohort and replay tests never connect the original payment date to a second success",
       "cluster": "financial_facts_and_local_edits",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "backend/tests/test_billing_payment_intent_lifecycle.py",
         "backend/tests/test_billing_payments.py"
@@ -1808,7 +1810,7 @@
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verification": "RSS-unit observation remains. During PR154 verification, the 50k export fixture exceeded its 15-second budget on this Mac on both the candidate and untouched c39e50d baseline. GitHub full backend passed. No export budget change; investigate metric fidelity with this subsystem.",
       "source_paths": [
         "backend/tests/test_report_export_spool.py",
         "backend/tests/performance/dashboard_summary_fixture.py"
@@ -1928,17 +1930,19 @@
       "id": "BT5-01",
       "title": "Student update fixtures cannot expose loss of existing tags",
       "cluster": "student_write_preservation",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-student-tags, pending reviewed PR merge. Omitted tags survive; explicit clears/replacements and creation defaults remain. See docs/remediation/student-tags-verification.md.",
+      "disposition": "fixed",
+      "reason": "Merged PR154 preserves omitted tags and explicitly tests omission, replacement, empty/null clearing and creation defaults. No membership semantics or SQL changes.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
+      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
       "verification": "Populated-tag CRUD regression failed on phone-only update before fix; focused10 tests and4subtests passed after fix. Generated API types unchanged. Independent source review GREEN LIGHT.",
       "source_paths": [
         "backend/tests/test_student_crud_actions.py",
         "backend/app/services/student_write_payload.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        154
+      ]
     },
     {
       "id": "BT5-02",
@@ -2951,11 +2955,11 @@
       "title": "Fee metric displays the whole payment basis while describing a 0.5 percent fee",
       "cluster": "financial_facts_and_local_edits",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-payment-facts; pending reviewed PR merge. See docs/remediation/payment-facts-verification.md for exact scope and remaining financial work.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "4af5c13625b1bfc45998e4a3bb8746deba12004e",
+      "verification": "Independent design and source review GREEN LIGHT. Focused 396 tests and 74 subtests; broader billing/webhook/policy 820 tests and 300 subtests; frontend model9, lint, build and generated API types passed. No SQL or provider mutation.",
       "source_paths": [
         "frontend/src/components/billing/billing-reports-tab.tsx",
         "frontend/src/lib/billing-page-model.ts"

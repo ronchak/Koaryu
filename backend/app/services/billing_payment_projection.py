@@ -92,6 +92,15 @@ def dispute_state_category(status: Any) -> str:
     return "unknown"
 
 
+def _provider_timestamp(value: Any) -> str | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
 class BillingPaymentEventProjector:
     def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
         self.billing_service = billing_service
@@ -147,6 +156,8 @@ class BillingPaymentEventProjector:
         account_id: Optional[str],
         event_type: str,
         event_created: Optional[int] = None,
+        *,
+        collected_at: str | None = None,
     ) -> None:
         metadata = intent.get("metadata") or {}
         customer_id = _stripe_id(intent.get("customer"))
@@ -172,7 +183,11 @@ class BillingPaymentEventProjector:
         charge = self._latest_charge(intent)
         charge_id = _stripe_id(charge)
         connect_account_generation = self._connect_account_generation(account_id, studio_id)
-        amount_cents = int(intent.get("amount_received") or intent.get("amount") or 0)
+        amount_cents = int(
+            intent["amount_received"]
+            if status_value == "succeeded" and intent.get("amount_received") is not None
+            else intent.get("amount") or 0
+        )
         collected_amount_cents = amount_cents if status_value == "succeeded" else 0
         row = {
             "studio_id": studio_id,
@@ -203,7 +218,11 @@ class BillingPaymentEventProjector:
                 if intent.get("application_fee_amount") is not None
                 else (local_invoice or {}).get("application_fee_amount_cents") or 0
             ),
-            "processed_at": datetime.now(timezone.utc).isoformat() if status_value == "succeeded" else None,
+            # Without provider collection evidence, record first-observed success.
+            # Existing timestamps are never restated by later observations.
+            "processed_at": (
+                collected_at or _provider_timestamp(event_created) or datetime.now(timezone.utc).isoformat()
+            ) if status_value == "succeeded" else None,
         }
         if event_created is not None:
             row["last_stripe_event_created"] = event_created
@@ -217,7 +236,43 @@ class BillingPaymentEventProjector:
             .execute()
         )
         if existing.data:
-            existing_payment = existing.data[0]
+            payment = self._update_existing_payment_projection(
+                row, existing.data[0], account_id, status_value, event_created,
+            )
+            if payment is None:
+                return
+        else:
+            result = self.supabase.table("billing_payments").insert(row).execute()
+            if not result.data:
+                raise RuntimeError("Payment projection did not return a persisted payment.")
+            payment = result.data[0]
+        payment = self._link_adjustments_to_payment(payment, account_id)
+        invoice_recomputed = False
+        if local_invoice and status_value in {"succeeded", "failed"}:
+            if not self._record_payment_projection_invoice_metadata(
+                local_invoice,
+                payment,
+                payment_status=status_value,
+                event_created=event_created,
+                studio_id=studio_id,
+                stripe_payment_intent_id=_stripe_id(intent),
+            ):
+                return
+            if local_invoice.get("status") not in PAYMENT_PROJECTION_PRESERVED_INVOICE_STATUSES:
+                self._refresh_invoice_and_payer_from_payment_events(payment)
+                invoice_recomputed = True
+        if payment.get("payer_id") and not invoice_recomputed:
+            self._recompute_payer_balance(studio_id, payment.get("payer_id"))
+
+    def _update_existing_payment_projection(
+        self,
+        incoming: dict[str, Any],
+        existing_payment: dict[str, Any],
+        account_id: str | None,
+        status_value: str,
+        event_created: int | None,
+    ) -> dict[str, Any] | None:
+        for attempt in range(2):
             if is_stale_stripe_event(existing_payment, event_created):
                 return
             if is_same_second_status_regression(
@@ -228,14 +283,18 @@ class BillingPaymentEventProjector:
                 status_order=PAYMENT_STATUS_ORDER,
             ):
                 return
+            row = dict(incoming)
             if existing_payment.get("status") in {"disputed", "refunded"}:
                 row["status"] = existing_payment["status"]
-                row["processed_at"] = existing_payment.get("processed_at") or row.get("processed_at")
             elif existing_payment.get("status") == "succeeded" and status_value in {"processing", "failed"}:
                 row["status"] = "succeeded"
-                row["processed_at"] = existing_payment.get("processed_at") or row.get("processed_at")
                 row["failure_code"] = existing_payment.get("failure_code")
                 row["failure_message"] = existing_payment.get("failure_message")
+            if existing_payment.get("status") in {"succeeded", "disputed", "refunded"} and status_value != "succeeded":
+                row["amount_cents"] = existing_payment["amount_cents"]
+            initialize_timestamp = status_value == "succeeded" and existing_payment.get("processed_at") is None
+            if not initialize_timestamp:
+                row.pop("processed_at")
             self._preserve_established_identity(
                 row,
                 existing_payment,
@@ -274,32 +333,30 @@ class BillingPaymentEventProjector:
                 account_id,
                 net_collected_amount,
             )
-            query = self.supabase.table("billing_payments").update(row).eq("id", existing_payment["id"])
+            query = (
+                self.supabase.table("billing_payments").update(row)
+                .eq("id", existing_payment["id"]).eq("studio_id", incoming["studio_id"])
+            )
             query = add_stripe_event_created_guard(query, event_created)
+            if initialize_timestamp:
+                query = query.is_("processed_at", "null")
             result = query.execute()
-            if not result.data:
+            if result.data:
+                return result.data[0]
+            if not initialize_timestamp or attempt:
                 return
-        else:
-            result = self.supabase.table("billing_payments").insert(row).execute()
-        payment = result.data[0] if result.data else row
-        payment = self._link_adjustments_to_payment(payment, account_id)
-        payment_status = payment.get("status")
-        invoice_recomputed = False
-        if local_invoice and status_value in {"succeeded", "failed"}:
-            if not self._record_payment_projection_invoice_metadata(
-                local_invoice,
-                row,
-                payment_status=status_value,
-                event_created=event_created,
-                studio_id=studio_id,
-                stripe_payment_intent_id=_stripe_id(intent),
-            ):
+            # Another observation may have initialized the timestamp. Re-read its
+            # money/state too, then retry this local projection once. Never retry
+            # an exception or a provider call here, or recreate a deleted row.
+            refreshed = (
+                self.supabase.table("billing_payments").select("*")
+                .eq("id", existing_payment["id"]).eq("studio_id", incoming["studio_id"])
+                .limit(1).execute()
+            )
+            if not refreshed.data:
                 return
-            if local_invoice.get("status") not in PAYMENT_PROJECTION_PRESERVED_INVOICE_STATUSES:
-                self._refresh_invoice_and_payer_from_payment_events(payment)
-                invoice_recomputed = True
-        if payment.get("payer_id") and not invoice_recomputed:
-            self._recompute_payer_balance(studio_id, payment.get("payer_id"))
+            existing_payment = refreshed.data[0]
+        return None
 
     def _record_payment_projection_invoice_metadata(
         self,
@@ -1008,6 +1065,10 @@ class BillingPaymentEventProjector:
             account_id,
             "payment_intent.succeeded",
             event_created,
+            collected_at=(
+                _provider_timestamp(_object_get(invoice.get("status_transitions") or {}, "paid_at"))
+                or local_invoice.get("paid_at")
+            ),
         )
 
     def _find_invoice_by_payment_intent_or_invoice(

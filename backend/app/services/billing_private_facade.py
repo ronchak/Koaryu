@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from fastapi import HTTPException, status
 
 from app.schemas.billing import BillingInvoiceCreate, BillingPlanProgramResponse, BillingPlanResponse
+from app.services.billing_fees import application_fee_amount, application_fee_percent
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
     BillingProviderOperationCoordinator,
@@ -387,11 +388,10 @@ class BillingPrivateFacadeMixin:
         return BillingPlanManager(self, stripe_service_cls=self._billing_stripe_service_cls())._stripe_recurring_for_interval(billing_interval)
 
     def _application_fee_percent(self, account: dict[str, Any]) -> float:
-        return round((account.get("platform_fee_bps") or self.settings.BILLING_PLATFORM_FEE_BPS) / 100, 3)
+        return application_fee_percent(account.get("platform_fee_bps"), self.settings.BILLING_PLATFORM_FEE_BPS)
 
     def _application_fee_amount(self, amount_cents: int, account: dict[str, Any]) -> int:
-        bps = account.get("platform_fee_bps") or self.settings.BILLING_PLATFORM_FEE_BPS
-        return int(round(amount_cents * bps / 10000))
+        return application_fee_amount(amount_cents, account.get("platform_fee_bps"), self.settings.BILLING_PLATFORM_FEE_BPS)
 
     def _payer_autopay_authorized(self, payer: dict[str, Any]) -> bool:
         if (

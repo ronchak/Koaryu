@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.billing_enrollments import BillingEnrollmentManager
+from app.services.billing_fees import application_fee_percent
 from app.services.platform_billing_helpers import build_idempotency_key
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from tests.billing_lifecycle_helpers import _FakeSupabase
@@ -267,7 +268,7 @@ class _Facade:
 
     @staticmethod
     def _application_fee_percent(account):
-        return float(account.get("platform_fee_bps") or 0) / 100
+        return application_fee_percent(account.get("platform_fee_bps"), default_bps=50)
 
     def _payer_autopay_authorized(self, _payer):
         return self.authorized

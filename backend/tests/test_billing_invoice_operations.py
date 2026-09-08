@@ -14,6 +14,7 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 from stripe import CardError as StripeCardError
 
 from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceItemCreate
+from app.services.billing_fees import application_fee_amount
 from app.services.billing_invoice_operations import (
     BillingInvoiceOperationWorkflow,
     INVOICE_CREATE_AMBIGUOUS_DETAIL,
@@ -141,7 +142,7 @@ class _Facade:
 
     @staticmethod
     def _application_fee_amount(amount_cents, account):
-        return int(round(amount_cents * int(account.get("platform_fee_bps") or 0) / 10000))
+        return application_fee_amount(amount_cents, account.get("platform_fee_bps"), default_bps=50)
 
     @staticmethod
     def _idempotency_key(*parts):

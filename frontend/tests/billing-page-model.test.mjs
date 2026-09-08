@@ -244,7 +244,6 @@ describe("billing page model", () => {
     assert.equal(model.currentMonthPaymentCount, 2);
     assert.equal(model.externalPaymentTotal, 2500);
     assert.equal(model.stripePaymentTotal, 10000);
-    assert.equal(model.koaryuFeeBasis, 10000);
     assert.equal(model.openInvoiceTotal, 7000);
     assert.equal(model.failedInvoiceCount, 2);
     assert.equal(model.activeSubscriptionCount, 2);

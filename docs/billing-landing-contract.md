@@ -13,6 +13,18 @@ A denied or unavailable subscription check leaves diagnostic status accessible. 
 
 Counts cover all studio records. Active students are non-deleted roster records with `status = 'active'`. Failed payers means payer billing status `past_due` or `failed`, not invoice count. Invoice balances include draft, open, partially refunded and uncollectible invoices and clamp each remaining balance at zero. Payment totals use the processed-at UTC month and the existing explicit-zero, null, refund and dispute rules.
 
+A payment's established collection timestamp is preserved on later observations.
+For a new or unset timestamp, a paid invoice supplies its payment time when known;
+otherwise a successful payment event supplies its event time. When neither is
+available, the first observed success time is retained as a fallback, not a claim
+of precise capture time. A conditional update prevents concurrent initialization
+from overwriting an established timestamp. Reconciliation refuses an authorization
+still awaiting capture instead of recording it as collected. This changes no
+historical timestamps in bulk and leaves the UTC cohort definition intact.
+
+Stored zero platform fees remain zero. Payment totals are not a fee ledger; the
+Reports tab shows Stripe and external totals without the former duplicate fee card.
+
 Deploy the additive database migration and backend before the frontend. There is no fallback to legacy fan-out on endpoint, authentication, subscription or transport errors. Keep standalone endpoints during the rollback window through the next verified release; a frontend rollback may use them while the additive RPCs remain installed.
 
 Tab reads are retained in the mounted Billing controller for 30 seconds, scoped to user, studio, effective role and identity generation. Token renewal preserves that scope. Tab activation loads its own dependencies. Explicit refresh, successful mutations and Connect return invalidate retained tab data and revalidate landing. Leaving Billing releases its retained data. Financial authorization is checked again by each backend mutation.

@@ -90,10 +90,16 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_application_fee_percent_and_amount_use_platform_bps(self):
         service = self.service()
-        account = {"platform_fee_bps": 50}
-
-        self.assertEqual(service._application_fee_percent(account), 0.5)
-        self.assertEqual(service._application_fee_amount(12900, account), 64)
+        for account, percent, amount in [
+            ({"platform_fee_bps": 50}, 0.5, 64),
+            ({"platform_fee_bps": 0}, 0, 0),
+            ({"platform_fee_bps": None}, 0.5, 64),
+            ({}, 0.5, 64),
+            ({"platform_fee_bps": 100}, 1, 129),
+        ]:
+            with self.subTest(account=account):
+                self.assertEqual(service._application_fee_percent(account), percent)
+                self.assertEqual(service._application_fee_amount(12900, account), amount)
 
     def test_out_of_band_paid_invoice_projects_external_totals_without_fee(self):
         service = self.service()

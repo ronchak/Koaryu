@@ -24,7 +24,6 @@ export function BillingReportsTab({
   exportJobs,
   isActionLoading,
   isLoadingAction,
-  koaryuFeeBasis,
   onExternalAmountChange,
   onExternalMethodChange,
   onExternalNoteChange,
@@ -45,7 +44,6 @@ export function BillingReportsTab({
   exportJobs: ExportJob[];
   isActionLoading: boolean;
   isLoadingAction: (action: string) => boolean;
-  koaryuFeeBasis: number;
   onExternalAmountChange: (value: string) => void;
   onExternalMethodChange: (value: string) => void;
   onExternalNoteChange: (value: string) => void;
@@ -61,10 +59,9 @@ export function BillingReportsTab({
     : "sm:grid-cols-[1fr_auto_auto]";
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Metric label="UTC-month Stripe cohort" value={paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"} hint="Net collected after confirmed refunds and balance-reversing disputes" />
         <Metric label="UTC-month external cohort" value={paymentCohortAvailable ? formatMoney(externalPaymentTotal) : "Unavailable"} hint="External payments processed this UTC month" />
-        <Metric label="UTC-month fee cohort" value={paymentCohortAvailable ? formatMoney(koaryuFeeBasis) : "Unavailable"} hint="0.5% of the Stripe net-collected cohort" />
       </div>
       <p className="text-xs text-muted">
         These figures are the current UTC month payment cohort net of provider-confirmed refunds and
