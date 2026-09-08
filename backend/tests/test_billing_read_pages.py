@@ -80,6 +80,7 @@ def test_exact_payment_read_obeys_existing_billing_access_and_tenant_boundaries(
         if expected != 200:
             assert payment_queries == [], 'access denial must precede reading financial data'
             return
+        assert response.headers['cache-control'] == 'no-store, private'
         assert response.json()['refundable_amount_cents'] == 3750
         assert len(payment_queries) == 1 and payment_queries[0]['limit'] == 1
         assert client.get('/billing/payments/foreign').status_code == 404
