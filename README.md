@@ -130,35 +130,27 @@ uvicorn app.main:app --reload --port 8001
 
 ### Database
 
-Apply the SQL files in `supabase/migrations/` in timestamp order. For a deployment-ready environment, include the current tenant-hardening migrations, especially:
-
-- `20260421000007_harden_tenant_policies.sql`
-- `20260421000008_fix_recursive_staff_roles_policies.sql`
-- `20260613090000_harden_student_import_tenant_conflicts.sql`
-- `20260613093000_atomic_support_ticket_create.sql`
-- `20260613094000_atomic_lead_conversion.sql`
-- `20260613095000_atomic_student_profile_write.sql`
-- `20260613100000_atomic_studio_operational_clear.sql`
-
-If you are using the Supabase SQL Editor instead of the CLI, run every migration file in order rather than only the initial schema.
-
-For linked-project release checks, run:
+For development and SQL review, use the disposable PostgreSQL 17 verifier. It
+replays the complete migration chain and all contracts without Docker, a hosted
+project, credentials or `.env` files:
 
 ```bash
-supabase db lint --linked --fail-on error
-SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh
+npm run check:supabase-contracts-local
 ```
 
-The verification script defaults to the local database. Use
-`SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh` only after
-the migrations are applied to the linked project. The backend now requires the worker-claim RPC migrations
-before webhook, account-deletion, or CSV-import workers can run. The contract
-checks cover account/support controls, belt-ladder sync, support triage,
-direct-client relation privileges, public-routine EXECUTE lockdown,
-worker-claim RPCs, promotion RPCs,
-recurring-session soft delete, student program filtering, atomic student import,
-lead conversion, student profile writes, studio operational clears, and studio
-onboarding. Most behavior checks run inside transactions that roll back.
+When verification needs the assembled local Supabase services, apply unapplied
+migrations with `supabase migration up --local`, then use
+`supabase db lint --local --fail-on error` and
+`SUPABASE_DB_TARGET=local scripts/verify-supabase-contracts.sh` against that
+disposable local stack.
+
+Hosted migrations follow [Cutover Gates](docs/cutover-gates.md), including the
+human-only production apply. Never run contract SQL against production, even
+inside a transaction that rolls back. Linked contracts are only for an explicitly
+intended staging verification after staging has the candidate migrations. The SQL
+runner accepts only the pinned Koaryu staging connection and rejects routing
+overrides. See [Operator Tooling](docs/operator-tooling.md) for connection forms
+and private credential handling.
 
 ## Auth, Onboarding, And Tenant Model
 

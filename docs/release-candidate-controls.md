@@ -26,6 +26,9 @@ This preserves transaction and multi-statement behavior that the Supabase CLI
 prepared-statement query path cannot execute reliably. Local checks resolve the
 disposable database URL through `supabase status`. Intentional linked checks
 must provide a private `SUPABASE_DB_URL`; never print or commit it.
+The shared runner restricts that URL to the pinned staging project on session
+port 5432 with TLS and no routing overrides. Production contract execution is
+prohibited. See `docs/operator-tooling.md` for the accepted connection forms.
 
 Run the static workflow guard locally with:
 

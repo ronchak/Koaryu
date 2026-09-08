@@ -13,6 +13,7 @@ Use this matrix to pick the smallest meaningful checks for a PR. Prefer targeted
 - Run API-contract checks whenever backend response schemas, endpoints, or generated frontend types might change.
 - Use `supabase migration up --local` for migrations not yet applied locally. If a changed migration may already be recorded in local history, first confirm the database is disposable and run `supabase db reset --local` so checks exercise the current file contents rather than a stale applied definition.
 - Do not run linked Supabase commands unless the PR explicitly intends a release inspection and the linked project already has the migrations under review.
+- Linked contract SQL is restricted to the exact Koaryu staging connection by the shared runner. See `docs/operator-tooling.md` for accepted session connection forms; production is never a contract-test target.
 
 ## Matrix
 

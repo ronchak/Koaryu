@@ -67,7 +67,11 @@ Reassessment at that new `main`: FSH1-01, FSH1-02 and FC1-01 are fixed. FSH2-02 
 
 Reassessment at `4af5c13`: membership status/date reset, import completion/retry and minor-age staleness still need their own corrections. No other student finding was closed by the tags fix. Current totals are 5 fixed, 261 pending and 12 deliberate deferrals.
 
-Current PR: `codex/remediation-payment-facts`, from that updated main. It preserves established collection timestamps, initializes an unset timestamp without overwriting a concurrent winner, honors explicit zero fees/received amounts, and refuses to project uncaptured authorizations as collected money. The duplicate fee card and its unused value are removed. Existing UTC payment-cohort and refund-adjustment definitions remain. Independent design and implementation reviews are green; 820 billing/webhook/policy tests and 300 subtests, generated contracts, narrow frontend tests/lint and the production build passed. Publication and exact-head CI remain. This correction requires no database migration, new provider operation or historical backfill. Delinquency and family allocation decisions remain separate. No high-consequence product-integrity risk is intentionally accepted.
+[PR #155](https://github.com/ronchak/Koaryu/pull/155) merged as `46131d470592e735641adff19e3aefd217e64e82`, after independent review, a completed automatic review without findings and the full exact-head gate. It preserves payment timestamps and zero fees/received amounts, refuses uncaptured reconciliation, and removes the duplicate fee card. BB1-01/BT3-01, BB1-04/BT2-05, BB2-05 and FC1-05 are fixed within the recorded scope. No historical backfill or production deployment occurred.
+
+Reassessment at `46131d4`: external-payment request identity, audit atomicity and refund refresh still need distinct fixes. The payment-facts change does not resolve them or all projection races. Current totals are 11 fixed, 255 pending and 12 deliberate deferrals.
+
+External-payment browser recovery is designed but held for the owner's data-retention choice about the original free-text note. While that decision is pending, the next independent PR is `codex/remediation-contract-assurance`, from current main. It restricts linked contract SQL to the pinned staging destination, fixes the comp and bulk-archive false-positive assertions, and gives worker contracts their own fixture. This is prerequisite assurance for later SQL changes, with no business migration or readiness relaxation. The baseline local replay passed 133 migrations and 50 contracts but explicitly skipped import-worker behavior; that observed gap must be closed. No high-consequence product-integrity risk is intentionally accepted.
 
 ## Deliberate non-goals and deferrals
 
@@ -91,6 +95,7 @@ These remain pending, not inferred approvals or accepted risks:
 - BB2-09: shared family invoices need payer-level attribution or an explicit allocation policy. Selecting the first student is not a policy; equal splitting will not be invented.
 - BB2-08: define the supported boundary for reconstructing a provider subscription that has no local group. Coherent provider facts can be derived; incomplete facts must not become monthly USD by default.
 - DOC1-05: verify and choose the outage support receiving address before changing mail/DNS policy. No mailbox provisioning is implied.
+- FSH1-05: choose whether unresolved external-payment requests, including their original notes, may be retained in scoped browser storage until confirmation, or require server-owned recovery. The dependent implementation is held; independent remediation continues.
 
 Prospective code corrections do not authorize historical financial backfills. Moved timestamps, missing actor audits and arbitrary attribution may lack sufficient evidence for truthful reconstruction.
 

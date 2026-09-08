@@ -122,10 +122,29 @@ Use these targets according to their safety boundary:
 | Target | Use |
 | --- | --- |
 | local ephemeral cluster | Default for developing and reviewing contract SQL. |
-| `koaryu-staging` (`nxgsektqsgrtyfhawxbc`) | Cloud verification only when Supabase-specific behavior matters; this project is currently inactive. |
+| `koaryu-staging` (`nxgsektqsgrtyfhawxbc`) | Cloud verification only when Supabase-specific behavior matters, after the candidate migrations are applied. |
 | production (`mimguepumzsgmcaycdsh`) | **Read-only inspection only. Never run contract or migration SQL against it.** |
 
 Contract files create functions and triggers on real tables inside a transaction. Even when a file ends with `ROLLBACK`, it must not be pointed at production. The transaction executes the SQL against the target before rolling it back, and an accidental commit, session loss, or non-transactional statement would cross the production write boundary.
+
+`scripts/run-supabase-sql.sh` defaults to the local Supabase container identified
+by a loopback `supabase status` connection. It ignores an ambient linked URL in
+local mode. Its internal `supabase-sql-target.py` helper restricts linked execution
+to the `postgres` database on port 5432 using either:
+
+- direct host `db.nxgsektqsgrtyfhawxbc.supabase.co`, user `postgres`; or
+- an official `aws-<number>-<region>.pooler.supabase.com` session pooler, user
+  `postgres.nxgsektqsgrtyfhawxbc`.
+
+Supply the password through a privately loaded `SUPABASE_DB_URL`, never a logged
+command or committed file. The helper decodes it into the child environment,
+reconstructs non-secret connection arguments, and clears inherited libpq settings.
+Only `sslmode` and `connect_timeout` URI options are accepted, once each. TLS
+defaults to `require`; `verify-ca` and `verify-full` are also allowed. Connection
+timeout defaults to 10 seconds and accepts 1 through 60. Host/address/service,
+database/user and arbitrary session-option overrides are refused, as are
+transaction-pooler port 6543 and production destinations. These input guards do not
+replace an explicitly intended staging verification or prove its migration state.
 
 Python service-role clients validate both the environment label and the exact
 Supabase target before construction. Production and staging accept only their
@@ -146,8 +165,9 @@ Auth, PostgREST, Storage, and Functions HTTPX clients and exposes no common
 smallest maintainable policy until that dependency boundary changes.
 
 These checks cover the API, shared backend scripts, and the Connect smoke
-helper. Supabase CLI, direct `SUPABASE_DB_URL`, and `psql` operations remain
-outside this Python boundary, so continue resolving their target explicitly.
+helper. The shared SQL runner has the separate staging-only URI guard above.
+Other Supabase CLI and direct `psql` operations remain outside the application
+client boundary, so continue resolving their target explicitly.
 `backend/scripts/comp_studio.py` additionally requires `--expect-project` for
 writes.
 
