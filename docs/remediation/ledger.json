@@ -4156,14 +4156,16 @@
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "50f0f4796f941383d1507b2229ac58e1e3e71427",
-      "verification": "The expanded real V2 SQL regression fails on V38 and passes after correction, including nine date/list cases, add/remove and exact audit rollback. Actual migration rollback, old V19/V18 consumers, corruption negatives and seeded V38 logical restore to V39 passed. Preview20, ops58, rollout68, backend1882/5447subtests, frontend922/build and generated contracts passed. See docs/remediation/student-membership-verification.md; full release gates remain required before merge.",
+      "verification": "The expanded real V2 SQL regression fails on V38 and passes after correction, including nine date/list cases, add/remove and exact audit rollback. Actual migration rollback, old V19/V18 consumers, corruption negatives and seeded V38 logical restore to V39 passed. Preview20, ops58, rollout68, backend1882/5447subtests, frontend922/build and generated contracts passed. See docs/remediation/student-membership-verification.md; full release gates remain required before merge. Full SQL exposed stale selectors in four older contracts; corrected contracts pass on fresh134 replay. Final full-suite rerun and PR158 gates remain required.",
       "source_paths": [
         "supabase/migrations/20260814170000_preserve_retained_student_membership_ranks.sql",
         "supabase/migrations/20260613095000_atomic_student_profile_write.sql",
         "backend/app/services/student_crud_actions.py",
         "frontend/src/components/students/student-form-state.ts"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        158
+      ]
     },
     {
       "id": "DM2-03",
@@ -4520,7 +4522,7 @@
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending. PR158 makes touched V34/V35/V36 readiness/manifest comparisons NULL-safe while updating exact version selection. Other nullable assertions remain pending; this is partial progress.",
       "source_paths": [
         "supabase/verification/email_usage_rpc_contract.sql",
         "supabase/verification/dashboard_summary_facts_contract.sql",

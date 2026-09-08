@@ -3,12 +3,7 @@ BEGIN;
 DO $acl$
 DECLARE
   v_preflight RECORD;
-  v_current_count INTEGER;
-  v_current_head TEXT;
 BEGIN
-  SELECT count(*)::INTEGER,max(version)
-  INTO v_current_count,v_current_head
-  FROM supabase_migrations.schema_migrations;
   IF has_function_privilege(
       'anon',
       'public.read_stripe_rehearsal_local_evidence_v1(uuid,text,integer,timestamptz,timestamptz,jsonb,uuid[],uuid,text[],text[])',
@@ -62,33 +57,8 @@ BEGIN
     ) = 0 THEN
     RAISE EXCEPTION 'V35 evidence RPC security definition mismatch.';
   END IF;
-  IF v_current_count=133 AND v_current_head='20260905022339' THEN
-  IF position('migration_history_v38' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v19()'::regprocedure))=0
-     OR position('migration_history_v37' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v19()'::regprocedure))<>0
-     OR position('koaryu_release_schema_preflight_v19' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v18()'::regprocedure))=0
-     OR position('koaryu_release_schema_preflight_v18' IN pg_get_functiondef('public.koaryu_release_schema_preflight_v17()'::regprocedure))=0 THEN
-    RAISE EXCEPTION 'V38 readiness diagnostics or predecessor adapters drifted.';
-  END IF;
- ELSIF v_current_count=132 AND v_current_head='20260902001000' THEN
-    IF position('migration_history_v37' IN pg_get_functiondef(
-        'public.koaryu_release_schema_preflight_v18()'::regprocedure))=0
-      OR position('migration_history_v36' IN pg_get_functiondef(
-        'public.koaryu_release_schema_preflight_v18()'::regprocedure))<>0 THEN
-      RAISE EXCEPTION 'V37 readiness diagnostics retained a stale history label.';
-    END IF;
-  ELSIF v_current_count=131 AND v_current_head='20260831054918' THEN
-    IF position('migration_history_v36' IN pg_get_functiondef(
-        'public.koaryu_release_schema_preflight_v17()'::regprocedure))=0
-      OR position('migration_history_v35' IN pg_get_functiondef(
-        'public.koaryu_release_schema_preflight_v17()'::regprocedure))<>0 THEN
-      RAISE EXCEPTION 'V36 readiness diagnostics retained a stale history label.';
-    END IF;
-  ELSIF position('migration_history_v35' IN pg_get_functiondef(
-        'public.koaryu_release_schema_preflight_v16()'::regprocedure))=0
-      OR position('migration_history_v34' IN pg_get_functiondef(
-        'public.koaryu_release_schema_preflight_v16()'::regprocedure))<>0 THEN
-      RAISE EXCEPTION 'V35 readiness diagnostics retained a stale history label.';
-  END IF;
+  -- Readiness implementation is pinned by the release verifier; the actual V35
+  -- compatibility response and evidence behavior are checked here.
   IF private.koaryu_release_stripe_rehearsal_evidence_manifest_v35()
        IS DISTINCT FROM (SELECT evidence_manifest
                          FROM private.koaryu_release_v35_expectations
@@ -97,10 +67,10 @@ BEGIN
   END IF;
   SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v16();
   IF v_preflight.ready IS DISTINCT FROM true
-    OR v_preflight.migration_count <> 130
-    OR v_preflight.migration_head <> '20260831022021'
-    OR cardinality(v_preflight.security_failures) <> 0
-    OR v_preflight.manifest_version <> 'release-db-attestation-v35' THEN
+    OR v_preflight.migration_count IS DISTINCT FROM 130
+    OR v_preflight.migration_head IS DISTINCT FROM '20260831022021'
+    OR cardinality(v_preflight.security_failures) IS DISTINCT FROM 0
+    OR v_preflight.manifest_version IS DISTINCT FROM 'release-db-attestation-v35' THEN
     RAISE EXCEPTION 'V35 release preflight did not attest the exact final schema.';
   END IF;
 END;

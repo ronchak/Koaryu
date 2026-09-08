@@ -82,7 +82,7 @@ Reassessment at `f8af4f4`: remaining nullable SQL assertions, release evidence c
 Reassessment at `50f0f47`: generic financial commands, external-payment receipts, audit atomicity and other store owners remain open. Current totals are 18 fixed, 248 pending and 12 deliberate deferrals. Next is `codex/remediation-student-memberships`, for ordinary edits that reactivate paused memberships or overwrite per-program dates. One forward database migration will pair the narrow private-writer correction with its affected attestations and old-backend compatibility, plus preview parity and real SQL proof. Existing explicit changed-date behavior remains provisional pending the owner decision. A fresh disposable V38 replay matches the existing manifests. Read-only production health identifies the audited `c5742fe` backend as the current V19 compatibility consumer; the existing V18 rollback path will also remain protected. No production migration or historical membership repair is authorized by this implementation step.
 
 
-The student-membership candidate fixes DM2-02 and includes the affected release
+The student-membership candidate, [PR #158](https://github.com/ronchak/Koaryu/pull/158), fixes DM2-02 and includes the affected release
 attestations, V19/V18 compatibility and a seeded logical-restore continuation test.
 Its ledger has 19 fixed, 247 pending and 12 deliberate deferrals; completion of the
 PR still requires the final release gate and guarded merge. The independently

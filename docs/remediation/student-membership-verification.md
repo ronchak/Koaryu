@@ -80,6 +80,15 @@ The shell wording test is replaced with syntax validation; real local PostgreSQL
 execution covers the workflow. Three small Python tests reject unapproved restore
 constraints, privilege changes and unsafe targets before repair.
 
+The first complete run exposed four older contract files whose migration-version
+selectors did not recognize V39. Their exact predecessor pins remain; the current
+head selects the independently derived V39 values. Two duplicate readiness-word
+checks were removed from SQL contracts because actual compatibility responses and
+independent body fingerprints already enforce that contract. Touched scalar
+readiness comparisons now reject NULL. All four corrected contracts pass in a
+fresh 134-migration probe. Final full-suite and CI results are recorded in
+[PR #158](https://github.com/ronchak/Koaryu/pull/158).
+
 This verification does not approve a production migration, certify a production
 backup, repair historical membership data or deploy an application. A hosted release
 needs fresh candidate-bound operator evidence and a human-run migration before the
