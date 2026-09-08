@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "342d545ae4edf0d8b1c27ab31736614f296f7c16",
+  "last_reconciled_main": "ec48501163a55481e28bd109c3adee06b49bc79f",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2549,18 +2549,20 @@
       "id": "FT2-04",
       "title": "Staff and program mutations do not receive the concurrency coverage already built for leads",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "Program and staff concurrency gaps now have real mounted behavioral coverage, including renewal, stale reads, reset waiters and Settings cross-command lifetime. Existing meaningful model and initialization tests remain.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "342d545ae4edf0d8b1c27ab31736614f296f7c16",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending. Reverified after PR158: program read/mutation/bootstrap/import/reset ownership remains defective and independent of membership SQL. Next program-only PR will cover that owner; staff and promotion portions remain pending. Program candidate now has one resource owner across writes/reads/bootstrap/import/reset and synchronous program refs. Six production-shaped mounted groups fail unchanged342d545 and pass corrected candidate; separately reproduced workspace-error bypass is fixed. See docs/remediation/program-ownership-verification.md. Remaining staff/promotion scope keeps this entry pending.",
+      "verified_against": "ec48501163a55481e28bd109c3adee06b49bc79f",
+      "verification": "Eight final defect groups fail unchanged ec48501 and three preservation controls pass; all11 groups pass the candidate. Focused85, fullfrontend922, lint and build passed; final direct revoke/unarchive controls also passed. See docs/remediation/staff-ownership-verification.md. Candidate still requires exact-head review/CI and guarded merge.",
       "source_paths": [
         "frontend/tests/store-initialization-mounted.test.mjs",
         "frontend/tests/store-staff-actions.test.mjs",
         "frontend/tests/workflow-stabilization-mounted.test.mjs"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        159
+      ]
     },
     {
       "id": "FT2-05",
@@ -3150,12 +3152,12 @@
       "id": "FC2-03",
       "title": "Staff operations permit concurrency that their pending state cannot represent",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "Staff Settings has one synchronous command owner, disabled competing writes, owned completion and access-generation-scoped drafts. Failures retain drafts/targets; old completions cannot reset new state.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "ec48501163a55481e28bd109c3adee06b49bc79f",
+      "verification": "Eight final defect groups fail unchanged ec48501 and three preservation controls pass; all11 groups pass the candidate. Focused85, fullfrontend922, lint and build passed; final direct revoke/unarchive controls also passed. See docs/remediation/staff-ownership-verification.md. Candidate still requires exact-head review/CI and guarded merge.",
       "source_paths": [
         "frontend/src/components/settings/staff-roles-section.tsx",
         "frontend/src/lib/store-staff-actions.ts"
@@ -3732,28 +3734,30 @@
       "id": "FSH2-01",
       "title": "Program and staff refreshes can overwrite newer changes",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "PR159 fixed program ownership; the staff candidate now guards roster reads against pending/newer writes and access replacement, including self-name writers. Both retained program/staff manifestations are corrected.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "342d545ae4edf0d8b1c27ab31736614f296f7c16",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending. Reverified after PR158: program read/mutation/bootstrap/import/reset ownership remains defective and independent of membership SQL. Next program-only PR will cover that owner; staff and promotion portions remain pending. Program candidate now has one resource owner across writes/reads/bootstrap/import/reset and synchronous program refs. Six production-shaped mounted groups fail unchanged342d545 and pass corrected candidate; separately reproduced workspace-error bypass is fixed. See docs/remediation/program-ownership-verification.md. Remaining staff/promotion scope keeps this entry pending.",
+      "verified_against": "ec48501163a55481e28bd109c3adee06b49bc79f",
+      "verification": "Eight final defect groups fail unchanged ec48501 and three preservation controls pass; all11 groups pass the candidate. Focused85, fullfrontend922, lint and build passed; final direct revoke/unarchive controls also passed. See docs/remediation/staff-ownership-verification.md. Candidate still requires exact-head review/CI and guarded merge.",
       "source_paths": [
         "frontend/src/lib/store-program-actions.ts",
         "frontend/src/lib/store-staff-actions.ts"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        159
+      ]
     },
     {
       "id": "FSH2-02",
       "title": "Several confirmed saves disappear locally when a session token renews",
       "cluster": "read_and_mutation_ownership",
       "disposition": "pending",
-      "reason": "PR153 repaired confirmed belt-save settlement. Staff, program and promotion paths remain pending.",
+      "reason": "PR153 repaired belt-save settlement, PR159 program settlement, and the staff candidate repairs staff/self-legal-name settlement. Promotion/demotion completion and its history/receipt owner remain pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "342d545ae4edf0d8b1c27ab31736614f296f7c16",
-      "verification": "Belt held-save credential-renewal and sign-out cases pass; remaining domain paths not yet remediated. Reverified after PR158: program read/mutation/bootstrap/import/reset ownership remains defective and independent of membership SQL. Next program-only PR will cover that owner; staff and promotion portions remain pending. Program candidate now has one resource owner across writes/reads/bootstrap/import/reset and synchronous program refs. Six production-shaped mounted groups fail unchanged342d545 and pass corrected candidate; separately reproduced workspace-error bypass is fixed. See docs/remediation/program-ownership-verification.md. Remaining staff/promotion scope keeps this entry pending.",
+      "verified_against": "ec48501163a55481e28bd109c3adee06b49bc79f",
+      "verification": "Confirmed belt/program/staff writes survive ordinary token renewal under unchanged access identity. SDK USER_UPDATED deliberately retains authoritative access reset. The current promotion/demotion path still clears its receipt then requires the old token and has coupled history-read/recovery ownership; see the pending rank/replay cluster.",
       "source_paths": [
         "frontend/src/lib/store-program-actions.ts",
         "frontend/src/lib/store-staff-actions.ts",
@@ -3762,7 +3766,8 @@
         "frontend/src/lib/store.tsx"
       ],
       "pull_requests": [
-        153
+        153,
+        159
       ]
     },
     {

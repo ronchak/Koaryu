@@ -52,7 +52,8 @@ import type {
   ClassTemplate, AttendanceRecord,
   EligibilityEntry, Promotion,
   Program,
-  StaffMember, StaffRoleName, DashboardSummary,
+  StaffMember,
+  StaffLegalNameResponse, StaffRoleName, DashboardSummary,
 } from "@/types";
 import {
   MOCK_STUDENTS,
@@ -285,6 +286,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? MOCK_STAFF_MEMBERS : []
   );
   const staffMembersRef = useRef<StaffMember[]>(staffMembers);
+  const staffScopeRef = useRef(createResourceScope());
+  const selfLegalNameRevisionRef = useRef(0);
+  const resetStaffScope = useCallback(() => {
+    staffScopeRef.current.settle();
+    staffScopeRef.current = createResourceScope();
+  }, []);
   const [staffLoaded, setStaffLoaded] = useState(isPreviewMode);
   const [staffLoadError, setStaffLoadError] = useState<string | null>(null);
   const [subRankTerm, setSubRankTermState] = useState(() =>
@@ -638,6 +645,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
     beltsHydratedRef.current = false;
     resetProgramScope();
+    resetStaffScope();
     leadMutationScopeRef.current.settle();
     leadMutationScopeRef.current = createResourceScope();
     applyLiveStudioDataResetRefs({
@@ -697,7 +705,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     identityEpochRef.current += 1;
@@ -718,9 +726,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     applyLiveStudioDataResetState(buildSignedOutStudioResetState());
   }, [applyLiveStudioDataResetState]);
 
-  const commitAuthoritativeAuthProfile = useCallback((authProfile: AuthProfileResponse) => {
+  const commitAuthoritativeAuthProfile = useCallback((
+    authProfile: AuthProfileResponse,
+    legalNameRead?: { revision: number; epoch: number }
+  ) => {
     authoritativeStudioIdRef.current = authProfile.studio_id ?? null;
     const identity = `${authProfile.user.id}:${authProfile.studio_id ?? ""}:${authProfile.role ?? ""}`;
+    const preserveLegalName = legalNameRead !== undefined
+      && legalNameRead.epoch === identityEpochRef.current
+      && legalNameRead.revision < selfLegalNameRevisionRef.current
+      && authoritativeIdentityRef.current === identity
+      && authProfile.membership_status === "active";
     if (authoritativeIdentityRef.current !== identity) {
       identityEpochRef.current += 1;
       authoritativeIdentityRef.current = identity;
@@ -728,7 +744,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     setIdentityLoadError(null);
     currentRoleRef.current = authProfile.role ?? null;
-    setCurrentUser(buildAuthUserProfile(authProfile));
+    setCurrentUser((current) => {
+      const profile = buildAuthUserProfile(authProfile);
+      return preserveLegalName && current?.id === profile.id
+        ? { ...profile, legal_first_name: current.legal_first_name, legal_last_name: current.legal_last_name }
+        : profile;
+    });
     setCurrentStudioId(
       authProfile.membership_status === "active" ? authProfile.studio_id ?? null : null
     );
@@ -1154,6 +1175,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         markPerformance("workspace.started");
         // Allow the server's 30s interactive budget plus response transfer time.
+        const legalNameRead = { revision: selfLegalNameRevisionRef.current, epoch: identityEpochRef.current };
         const workspaceData = await api.get<ApiDashboardWorkspaceResponse>("/dashboard/workspace", sessionToken, {
           timeoutMs: 35_000,
           timeoutMessage: "Workspace loading timed out. Please retry.",
@@ -1169,7 +1191,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const authProfile = parseAuthProfileResponse(workspaceData.auth);
 
           setSubscriptionRequired(false);
-          commitAuthoritativeAuthProfile(authProfile);
+          commitAuthoritativeAuthProfile(authProfile, legalNameRead);
           syncStoredStudioSessionCookies(
             session.user.id,
             authProfile.studio_id,
@@ -1679,6 +1701,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     templatesRef,
   });
 
+  const onStaffLegalNameCommitted = useCallback((response: StaffLegalNameResponse) => {
+    if (response.user_id !== authUserIdRef.current) return;
+    selfLegalNameRevisionRef.current += 1;
+    setCurrentUser((current) => current?.id === response.user_id
+      ? { ...current, legal_first_name: response.legal_first_name, legal_last_name: response.legal_last_name }
+      : current);
+    setStaffProfilesAvailable(true);
+  }, []);
+
+  const revalidateSelfStaffAccess = useCallback(() => {
+    clearStoredStudioSessionCookies();
+    resetLiveStudioState();
+    retryInitialization();
+  }, [resetLiveStudioState, retryInitialization]);
+
   const {
     archiveStaff,
     inviteStaff,
@@ -1697,6 +1734,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setStaffLoaded,
     setStaffMembers,
     staffMembers,
+    staffScopeRef,
+    onLegalNameCommitted: onStaffLegalNameCommitted,
+    revalidateSelfAccess: revalidateSelfStaffAccess,
   });
 
   const {
@@ -1717,7 +1757,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     persistPrograms,
     sessionsRef,
     setCurrentUser,
-    setStaffProfilesAvailable,
+    staffScopeRef,
+    resetStaffScope,
+    updateStaffLegalName,
     setStaffLoadError,
     setStaffLoaded,
     setStaffMembers,
@@ -1765,8 +1807,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       let request: ReturnType<typeof beginLiveAuthRequest> | null = null;
       try {
         request = beginLiveAuthRequest();
-        const workspace = await withCurrentLiveAuthRead(beginLiveAuthRequest, current =>
-          api.get<ApiDashboardWorkspaceResponse>("/dashboard/workspace", current.token, { timeoutMs: 35000 }), () => {});
+        let legalNameRead: { revision: number; epoch: number } | undefined;
+        const workspace = await withCurrentLiveAuthRead(beginLiveAuthRequest, current => {
+          legalNameRead = { revision: selfLegalNameRevisionRef.current, epoch: identityEpochRef.current };
+          return api.get<ApiDashboardWorkspaceResponse>("/dashboard/workspace", current.token, { timeoutMs: 35000 });
+        }, () => {});
         if (disposed || !request?.isSameIdentity()) return;
         const profile = parseAuthProfileResponse(workspace.auth);
         if (profile.user.id !== authUserIdRef.current || profile.studio_id !== authoritativeStudioIdRef.current
@@ -1784,7 +1829,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (pathnameRef.current === "/subscription-required") router.replace("/dashboard");
           return;
         }
-        commitAuthoritativeAuthProfile(profile);
+        commitAuthoritativeAuthProfile(profile, legalNameRead);
         setStudioNameState(workspace.studio?.name ?? "");
         setStudioTimezone(workspace.studio?.timezone ?? "UTC");
         setStudioLoadError(null);
