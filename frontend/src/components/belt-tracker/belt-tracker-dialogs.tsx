@@ -92,6 +92,7 @@ export function BeltTrackerDialogs({
       {addBeltModalOpen && (
         <RankFormModal
           title="Add belt"
+          forceTip={false}
           subRankTerm={subRankTerm}
           onSave={onAddBeltSave}
           onClose={onAddBeltClose}

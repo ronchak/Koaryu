@@ -23,7 +23,13 @@ import type {
   ProgramsStoreContextValue,
 } from "@/lib/store-contexts";
 import { hasStaffPermission } from "@/lib/staff-permissions";
-import type { EligibilityEntry } from "@/types";
+import type { BeltRank, EligibilityEntry } from "@/types";
+
+type RankPlanDraft = {
+  ladderId: string;
+  ranks: BeltRank[];
+  subRankTerm: string;
+};
 
 type BeltTrackerPageControllerOptions = {
   beltStore: BeltsStoreContextValue;
@@ -61,13 +67,13 @@ export function useBeltTrackerPageController({
   const [tab, setTab] = useState<"eligibility" | "ladder">("eligibility");
   const visibleTab = canConfigureBelts ? tab : "eligibility";
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
-  const [draftRanks, setDraftRanks] = useState(beltRanks);
-  const [draftSubRankTerm, setDraftSubRankTerm] = useState(storeSubRankTerm);
+  const [draft, setDraft] = useState<RankPlanDraft | null>(null);
   const [editingTerm, setEditingTerm] = useState(false);
   const [termDraft, setTermDraft] = useState(storeSubRankTerm);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [dirty, setDirty] = useState(false);
+  const dirty = draft !== null;
   const [isSaving, setIsSaving] = useState(false);
+  const saveInFlightRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [ladderError, setLadderError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -113,11 +119,11 @@ export function useBeltTrackerPageController({
     [beltLadders, beltRanks, currentLadderId, programs, selectedProgramId]
   );
 
-  const ladderRanks = dirty ? draftRanks : activeLadderRanks;
+  const ownedDraft = draft?.ladderId === currentLadder?.id ? draft : null;
+  const ladderRanks = ownedDraft?.ranks ?? activeLadderRanks;
   const eligibilityRanks = activeLadderRanks;
-  const subRankTerm = dirty
-    ? draftSubRankTerm
-    : currentLadder?.sub_rank_term || storeSubRankTerm;
+  const subRankTerm = ownedDraft?.subRankTerm
+    ?? (currentLadder?.sub_rank_term || storeSubRankTerm);
   const groups = useMemo(() => groupRanks(ladderRanks), [ladderRanks]);
   const editRank = editRankId ? ladderRanks.find((rank) => rank.id === editRankId) ?? null : null;
   const deleteRank = deleteRankId ? ladderRanks.find((rank) => rank.id === deleteRankId) ?? null : null;
@@ -188,20 +194,30 @@ export function useBeltTrackerPageController({
   }, [currentLadderId, setCurrentLadder]);
 
   const handleSelectProgram = useCallback((nextProgramId: string | null) => {
+    if (dirty || saveInFlightRef.current || isSwitchingLadder || editingTerm
+      || addBeltModal || addTipForGroup !== null || editRankId || deleteRankId) return;
     setSelectedProgramId(nextProgramId);
     const nextLadder = nextProgramId ? ladderByProgramId.get(nextProgramId) : null;
     if (nextLadder && !dirty) {
       void handleSelectLadder(nextLadder.id);
     }
-  }, [dirty, handleSelectLadder, ladderByProgramId]);
+  }, [addBeltModal, addTipForGroup, deleteRankId, dirty, editRankId, editingTerm, handleSelectLadder, isSwitchingLadder, ladderByProgramId]);
 
   const updateRanks = useCallback((updater: (current: typeof ladderRanks) => typeof ladderRanks) => {
+    if (saveInFlightRef.current || !currentLadder || !currentProgramReady || isSwitchingLadder) return;
     setSaveError(null);
     setLadderError(null);
     setActionMessage(null);
-    setDraftRanks((currentDraft) => updater(dirty ? currentDraft : ladderRanks));
-    setDirty(true);
-  }, [dirty, ladderRanks]);
+    setDraft((currentDraft) => {
+      if (currentDraft && currentDraft.ladderId !== currentLadder.id) return currentDraft;
+      const current = currentDraft ?? {
+        ladderId: currentLadder.id,
+        ranks: activeLadderRanks,
+        subRankTerm: currentLadder.sub_rank_term || storeSubRankTerm,
+      };
+      return { ...current, ranks: updater(current.ranks) };
+    });
+  }, [activeLadderRanks, currentLadder, currentProgramReady, isSwitchingLadder, storeSubRankTerm]);
 
   const handleReorderRanks = useCallback((nextRanks: typeof ladderRanks) => {
     updateRanks(() => nextRanks);
@@ -209,7 +225,7 @@ export function useBeltTrackerPageController({
   const rankDrag = useBeltRankDrag({ groups, onReorderRanks: handleReorderRanks });
 
   function handleAddBelt(data: RankFormData) {
-    if (!currentLadder || !currentProgramReady) return;
+    if (saveInFlightRef.current || !currentLadder || !currentProgramReady) return;
     const newRank = buildNewBeltRank({
       data,
       displayOrder: ladderRanks.length,
@@ -220,7 +236,7 @@ export function useBeltTrackerPageController({
   }
 
   function handleAddTip(groupIndex: number, data: RankFormData) {
-    if (!currentLadder || !currentProgramReady) return;
+    if (saveInFlightRef.current || !currentLadder || !currentProgramReady) return;
     const group = groups[groupIndex];
     if (!group) return;
 
@@ -237,13 +253,13 @@ export function useBeltTrackerPageController({
   }
 
   function handleEdit(data: RankFormData) {
-    if (!editRankId) return;
+    if (saveInFlightRef.current || !editRankId) return;
     updateRanks((currentRanks) => updateRankFromForm(currentRanks, editRankId, data));
     setEditRankId(null);
   }
 
   function handleDelete() {
-    if (!deleteRankId) return;
+    if (saveInFlightRef.current || !deleteRankId) return;
     updateRanks((currentRanks) => deleteRankAndFollowingTips(currentRanks, deleteRankId));
     setDeleteRankId(null);
   }
@@ -257,34 +273,37 @@ export function useBeltTrackerPageController({
   }
 
   async function handleSaveRanks() {
+    if (saveInFlightRef.current || !draft || editingTerm || addBeltModal
+      || addTipForGroup !== null || editRankId || deleteRankId) return;
     setSaveError(null);
-    if (!currentLadder || !currentProgramReady) {
+    if (!currentLadder || !currentProgramReady || currentLadder.id !== draft.ladderId || isSwitchingLadder) {
       setSaveError("Program ranks are still loading. Please try again in a moment.");
       return;
     }
+    saveInFlightRef.current = true;
     setIsSaving(true);
     try {
-      await setBeltRanks(ladderRanks, { subRankTerm });
-      setDirty(false);
+      await setBeltRanks(draft.ranks, { ladderId: draft.ladderId, subRankTerm: draft.subRankTerm });
+      setDraft(null);
       setActionMessage("Program ranks saved.");
     } catch (error) {
       console.error("Failed to save belt ranks", error);
       if (error instanceof Error && (error as Error & { committed?: boolean }).committed) {
-        setDirty(false);
+        setDraft(null);
         setActionMessage("Program ranks saved. Refresh needed to show the latest student ranks.");
       } else {
         setSaveError("Could not save ladder changes. Please try again.");
       }
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
   }
 
   function handleDiscardChanges() {
-    setDraftRanks(beltRanks);
-    setDraftSubRankTerm(storeSubRankTerm);
-    setTermDraft(storeSubRankTerm);
-    setDirty(false);
+    if (saveInFlightRef.current) return;
+    setDraft(null);
+    setEditingTerm(false);
     setSaveError(null);
     setLadderError(null);
     setActionMessage(null);
@@ -292,11 +311,20 @@ export function useBeltTrackerPageController({
 
   function handleSubmitSubRankTerm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saveInFlightRef.current || !currentLadder || !currentProgramReady || isSwitchingLadder) return;
     const nextTerm = normalizeSubRankTermDraft(termDraft);
     setSaveError(null);
-    setDraftSubRankTerm(nextTerm);
+    setActionMessage(null);
+    setDraft((currentDraft) => {
+      if (currentDraft && currentDraft.ladderId !== currentLadder.id) return currentDraft;
+      const current = currentDraft ?? {
+        ladderId: currentLadder.id,
+        ranks: activeLadderRanks,
+        subRankTerm: currentLadder.sub_rank_term || storeSubRankTerm,
+      };
+      return nextTerm === current.subRankTerm ? currentDraft : { ...current, subRankTerm: nextTerm };
+    });
     setTermDraft(nextTerm);
-    setDirty(nextTerm !== storeSubRankTerm || dirty);
     setEditingTerm(false);
   }
 
@@ -505,28 +533,29 @@ export function useBeltTrackerPageController({
       isProgramsLoadErrorDismissed: isLoadNoticeDismissed("programs", programsLoadError),
       isSaving,
       ladderError,
-      onAddBelt: () => setAddBeltModal(true),
-      onAddTip: setAddTipForGroup,
+      onAddBelt: () => { if (!saveInFlightRef.current) setAddBeltModal(true); },
+      onAddTip: (index: number) => { if (!saveInFlightRef.current) setAddTipForGroup(index); },
       onBeltDragEnd: rankDrag.onBeltDragEnd,
       onBeltDragOver: rankDrag.onBeltDragOver,
       onBeltDragStart: rankDrag.onBeltDragStart,
       onBeltDrop: rankDrag.onBeltDrop,
-      onDeleteRank: setDeleteRankId,
+      onDeleteRank: (id: string) => { if (!saveInFlightRef.current) setDeleteRankId(id); },
       onDiscardChanges: handleDiscardChanges,
       onDismissLadderError: () => setLadderError(null),
       onDismissProgramsLoadError: () => dismissLoadNotice("programs", programsLoadError),
       onDismissSaveError: () => setSaveError(null),
-      onEditRank: setEditRankId,
+      onEditRank: (id: string) => { if (!saveInFlightRef.current) setEditRankId(id); },
       onMoveBelt: rankDrag.onMoveBelt,
       onMoveTip: rankDrag.onMoveTip,
       onSaveRanks: handleSaveRanks,
       onStartEditingTerm: () => {
+        if (saveInFlightRef.current || !currentProgramReady) return;
         setTermDraft(subRankTerm);
         setEditingTerm(true);
       },
       onStopEditingTerm: () => setEditingTerm(false),
       onSubmitSubRankTerm: handleSubmitSubRankTerm,
-      onTermDraftChange: setTermDraft,
+      onTermDraftChange: (value: string) => { if (!saveInFlightRef.current) setTermDraft(value); },
       onTipDragEnd: rankDrag.onTipDragEnd,
       onTipDragOver: rankDrag.onTipDragOver,
       onTipDragStart: rankDrag.onTipDragStart,
@@ -544,6 +573,7 @@ export function useBeltTrackerPageController({
       beltPrograms,
       canConfigureBelts,
       dirty,
+      isEditing: isSaving || editingTerm || addBeltModal || addTipForGroup !== null || Boolean(editRankId || deleteRankId),
       isSwitchingLadder,
       onDismissActionMessage: () => setActionMessage(null),
       onSelectProgram: handleSelectProgram,

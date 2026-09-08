@@ -48,7 +48,14 @@ export function bundle(mode, { preview = false, pagedRoster = true, layout = fal
       "./dashboard-shell.module.css": `module.exports={};`,
       "lucide-react": `for (const name of ['ArrowUpRight','CheckCircle2','CreditCard','Loader2','ShieldCheck']) exports[name]=()=>null;`,
     } : {}),
-    ...(beltPage ? {
+    ...(beltPage === "editor" ? {
+      "@/components/header": `exports.Header=()=>null;`,
+      "@/components/belt-tracker/eligibility-panel": `exports.EligibilityPanel=()=>null;`,
+      "@/components/icons/martial-arts-belt": `exports.MartialArtsBelt=()=>null;`,
+      "./belt-tracker.module.css": `module.exports={};`,
+      "./sliding-segmented-control.module.css": `module.exports={};`,
+      "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
+    } : beltPage ? {
       "@/components/belt-tracker/belt-tracker-dialogs": `exports.BeltTrackerDialogs=()=>null;`,
       "@/components/belt-tracker/belt-tracker-shell": `exports.BeltTrackerShell=({children})=>children;`,
       "@/components/belt-tracker/eligibility-panel": `exports.EligibilityPanel=()=>null;`,

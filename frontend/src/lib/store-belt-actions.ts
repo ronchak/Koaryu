@@ -36,7 +36,7 @@ import {
 } from "@/lib/rank-transition-operation";
 import { KEYS, localId, save } from "@/lib/store-storage";
 import { MOCK_BELT_LADDER } from "@/lib/mock-data";
-import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
+import { canCommitLiveMutation, type BeginLiveAuthRequest, type StoreRef } from "@/lib/store-action-types";
 import type {
   BeltLadder,
   BeltRank,
@@ -218,14 +218,18 @@ export function useStoreBeltActions({
     throw new Error("Create a program in Settings before configuring ranks.");
   }, [applyLadderSelection, beginLiveAuthRequest, beltLaddersRef, currentLadderIdRef, isPreviewMode, subRankTerm]);
 
-  const setBeltRanks = useCallback(async (ranks: BeltRank[], options?: { subRankTerm?: string }) => {
+  const setBeltRanks = useCallback(async (ranks: BeltRank[], options: { ladderId: string; subRankTerm?: string }) => {
+    const ladder = beltLaddersRef.current.find((candidate) => candidate.id === options.ladderId);
+    if (!ladder || ladder.id !== currentLadderIdRef.current) {
+      throw new Error("The selected program changed. Review its ranks before saving.");
+    }
     if (isPreviewMode) {
       const previousRanks = beltRanksRef.current;
       const nextPreviewLadder = buildPreviewBeltLadderFromRanks(
         beltLaddersRef.current,
         ranks,
         {
-          preferredLadderId: currentLadderIdRef.current,
+          preferredLadderId: ladder.id,
           fallbackLadder: MOCK_BELT_LADDER,
           ladderName,
           subRankTerm,
@@ -249,14 +253,8 @@ export function useStoreBeltActions({
     }
 
     const liveRequest = beginLiveAuthRequest();
-    const desiredSubRankTerm = options?.subRankTerm?.trim() || undefined;
-    const ladder = await ensureCurrentLadder(desiredSubRankTerm);
-    if (!liveRequest.isCurrent()) {
-      return;
-    }
-    const studioId = beltLaddersRef.current.find(
-      (candidate) => candidate.id === ladder.id
-    )?.studio_id;
+    const desiredSubRankTerm = options.subRankTerm?.trim() || undefined;
+    const studioId = ladder.studio_id;
     if (!studioId) {
       throw new Error("The selected belt ladder is not attached to the active studio.");
     }
@@ -291,6 +289,9 @@ export function useStoreBeltActions({
     }
 
     if (!syncedLadder) {
+      if (!canCommitLiveMutation(liveRequest)) {
+        throw new Error("Your workspace changed. Review the rank plan before retrying.");
+      }
       const request = {
         ...syncPayload,
         operation_id: crypto.randomUUID(),
@@ -330,8 +331,8 @@ export function useStoreBeltActions({
       pendingLadderSyncsRef.current.delete(ladder.id);
       clearPendingBeltLadderSync(studioId, ladder.id);
     }
-    if (!liveRequest.isCurrent()) {
-      return;
+    if (!canCommitLiveMutation(liveRequest)) {
+      throw Object.assign(new Error("Program ranks were saved in the previous workspace."), { committed: true });
     }
     const nextLadders = upsertBeltLadder(beltLaddersRef.current, syncedLadder);
     applyLadderSelection(nextLadders, syncedLadder.id);
@@ -352,7 +353,6 @@ export function useStoreBeltActions({
     beltLaddersRef,
     beltRanksRef,
     currentLadderIdRef,
-    ensureCurrentLadder,
     isPreviewMode,
     ladderName,
     loadEligibilityForLadder,

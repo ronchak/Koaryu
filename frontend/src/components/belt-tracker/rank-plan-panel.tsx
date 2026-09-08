@@ -119,7 +119,7 @@ export function RankPlanPanel({
       aria-labelledby="belt-tab-ladder"
       className={`flex-1 overflow-y-auto ${styles.rankPlanWorkspace}`}
     >
-      <div className={styles.rankPlan}>
+      <fieldset disabled={isSaving} className={`m-0 min-w-0 border-0 p-0 ${styles.rankPlan}`}>
         <div className={styles.rankPlanHeader}>
           <div>
             <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
@@ -180,7 +180,7 @@ export function RankPlanPanel({
               <Button
                 variant="primary"
                 size="sm"
-                disabled={isSaving || !currentProgramReady}
+                disabled={isSaving || !currentProgramReady || editingTerm}
                 onClick={onSaveRanks}
               >
                 <Save aria-hidden="true" className="w-3.5 h-3.5" />{isSaving ? "Saving..." : "Save ranks"}
@@ -250,7 +250,7 @@ export function RankPlanPanel({
                   className={`flex items-center gap-3 px-4 py-3 cursor-default select-none ${styles.rankHeader}`}
                 >
                   <span
-                    draggable
+                    draggable={!isSaving && currentProgramReady}
                     data-belt-drag-handle={group.belt.id}
                     aria-hidden="true"
                     title={`Drag ${group.belt.name} to reorder`}
@@ -360,7 +360,7 @@ export function RankPlanPanel({
                           } ${isTipOver ? "bg-accent/10" : "hover:bg-surface-raised/60"}`}
                         >
                           <span
-                            draggable
+                            draggable={!isSaving && currentProgramReady}
                             data-tip-drag-handle={tip.id}
                             aria-hidden="true"
                             title={`Drag ${tip.name} to reorder`}
@@ -473,7 +473,7 @@ export function RankPlanPanel({
             Unsaved changes to rank order.
           </p>
         )}
-      </div>
+      </fieldset>
     </div>
   );
 }

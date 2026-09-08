@@ -16,6 +16,7 @@ type BeltTrackerShellProps = {
   canConfigureBelts: boolean;
   children: ReactNode;
   dirty: boolean;
+  isEditing: boolean;
   isSwitchingLadder: boolean;
   onDismissActionMessage: () => void;
   onSelectProgram: (programId: string | null) => void;
@@ -36,6 +37,7 @@ export function BeltTrackerShell({
   canConfigureBelts,
   children,
   dirty,
+  isEditing,
   isSwitchingLadder,
   onDismissActionMessage,
   onSelectProgram,
@@ -71,7 +73,7 @@ export function BeltTrackerShell({
                   programs={beltPrograms}
                   value={selectedProgramId ?? ""}
                   onChange={onSelectProgram}
-                  disabled={dirty || isSwitchingLadder}
+                  disabled={dirty || isEditing || isSwitchingLadder}
                 />
               </div>
             ) : (
