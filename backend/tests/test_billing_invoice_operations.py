@@ -810,24 +810,30 @@ def test_create_completed_local_identity_drift_is_sanitized_without_provider_ret
     assert len(_Stripe.item_create_calls) == 2
 
 
-def test_create_projected_local_identity_drift_marks_reconciliation():
-    facade = _Facade()
-    manager = _manager(facade)
-    result = manager.create_invoice_sync(
-        _create_data(), "studio_1", "actor_1", "projected-drift-key"
-    )
+@pytest.mark.parametrize("corruption", ["provider_identity", "remaining_balance"])
+def test_create_projected_local_identity_drift_marks_reconciliation(corruption):
+    facade, _payer, invoke = _local_closeout_case("create")
+    original_complete = facade.supabase._rpc_complete_billing_provider_operation_v1
+
+    def fail_complete(params):
+        facade.supabase._rpc_complete_billing_provider_operation_v1 = original_complete
+        raise RuntimeError("completion unavailable")
+
+    facade.supabase._rpc_complete_billing_provider_operation_v1 = fail_complete
+    with pytest.raises(RuntimeError, match="completion unavailable"):
+        invoke()
     parent = _operation(facade, "invoice.create")
-    parent["state"] = "projected"
-    local = facade._get_row_or_404(
-        "billing_invoices", result.id, "studio_1", "Invoice not found."
-    )
-    local["stripe_invoice_id"] = "in_corrupt"
-    facade.supabase.advance_billing_provider_clock(seconds=31)
+    assert parent["state"] == "projected"
+    local = facade.supabase.tables["billing_invoices"][0]
+    if corruption == "provider_identity":
+        local["stripe_invoice_id"] = "in_corrupt"
+    else:
+        local["amount_remaining_cents"] = 0
+    facade.supabase.advance_billing_provider_clock(seconds=301)
+    _grant_create_closeout_claim(facade)
 
     with pytest.raises(HTTPException) as exc:
-        manager.create_invoice_sync(
-            _create_data(), "studio_1", "actor_1", "projected-drift-key"
-        )
+        invoke()
 
     assert exc.value.status_code == 503
     assert parent["state"] == "reconciliation_required"
@@ -3862,10 +3868,28 @@ def test_invoice_local_closeout_failure_resumes_projected_work_offline(kind, fai
     _assert_local_invoice_closeout(facade, payer, kind)
 
 
-@pytest.mark.parametrize("kind", ["create", "retry"])
-def test_completed_invoice_replay_repairs_legacy_local_facts_without_reopening(kind):
+@pytest.mark.parametrize(("kind", "later_status", "remaining", "expected_balance"), [
+    ("create", "draft", 7400, 8100),
+    ("create", "paid", 0, 700),
+    ("create", "void", 0, 700),
+    ("create", "open", 3200, 3900),
+    ("retry", "paid", 0, 700),
+])
+def test_completed_invoice_replay_repairs_legacy_local_facts_without_reopening(
+    kind, later_status, remaining, expected_balance,
+):
     facade, payer, invoke = _local_closeout_case(kind)
     invoke()
+    invoice = facade.supabase.tables["billing_invoices"][0]
+    provider = {
+        **_Stripe.invoices[invoice["stripe_invoice_id"]],
+        "status": later_status,
+        "amount_remaining": remaining,
+        "amount_paid": 0 if later_status == "void" else invoice["amount_due_cents"] - remaining,
+    }
+    progressed_invoice = facade._update_invoice_from_stripe(
+        invoice["id"], "studio_1", provider, "acct_1"
+    )
     parent = _operation(facade, "invoice." + kind)
     parent["completed_at"] = "2026-08-27T00:01:00Z"
     terminal = copy.deepcopy(parent)
@@ -3880,12 +3904,15 @@ def test_completed_invoice_replay_repairs_legacy_local_facts_without_reopening(k
     facade.supabase.tables["billing_payers"].append(other_payer)
     reads = list(_Stripe.retrieve_calls)
     calls = len(facade.supabase.rpc_calls)
-    invoke()
+    response = invoke()
+    assert response.status == later_status
+    assert response.amount_remaining_cents == remaining
+    assert invoice == progressed_invoice
     assert parent == terminal
     assert _Stripe.retrieve_calls == reads
     assert not any(name == "complete_billing_provider_operation_v1" for name, _ in facade.supabase.rpc_calls[calls:])
     assert other_payer["balance_cents"] == 555
-    _assert_local_invoice_closeout(facade, payer, kind, expected_balance=8100 if kind == "create" else 700)
+    _assert_local_invoice_closeout(facade, payer, kind, expected_balance=expected_balance)
 
 
 @pytest.mark.parametrize("kind", ["create", "retry"])

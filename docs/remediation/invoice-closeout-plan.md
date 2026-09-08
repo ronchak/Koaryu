@@ -1,35 +1,36 @@
-# Invoice local-closeout plan
+# Invoice balance repair: amended PR162 plan
 
-This change addresses BB1-07 and supporting BT2-01 from `main` at `9988c6265c04ab6621dda4c468de6d21af143bc4` after PR161 merged. It is independent of the held delinquency, family allocation and external-note decisions. Existing rank frontend ownership remains open. No future PR number is assumed.
+PR162 must remain unmerged until its new repair calls cannot overwrite newer payer balances. The coordinator and independent reviewer reproduced the issue and accepted the review comment on technical merit. The completed-create lifecycle correction is a separate approved stage already implemented locally. External-payment/plan transactions remain subsequent work.
 
-Root reproduced the failure on the unchanged invoice implementation using the real invoice manager and operation coordinator with existing local provider/RPC doubles. An injected payer-balance outage leaves both create and payment retry completed; same-key replay returns success without another balance attempt. The stale sentinel balance remains 123456. Each case made one provider mutation and one audit. This is Python orchestration evidence, not a new PostgreSQL concurrency proof.
+## One balance owner
 
-The implementation boundary is invoice creation and payment-retry local closeout in billing_invoice_operations.py. Preserve all provider claims, durable steps, consent/ownership checks, projection verification, exact actor/account/generation binding and existing balance calculations. Finalize/void and unrelated payment commands remain separate unless verification exposes a necessary shared dependency.
+Add one service-role-only required RPC, provisionally recompute_billing_payer_balance_v1, over existing tables. Use VOLATILE PL/pgSQL with explicit schema names and a fixed search path. Lock exactly the payer matching studio and payer IDs, then issue a separate ordinary MVCC invoice SUM after that lock is acquired, then update only balance_cents/billing_status under the same transaction. Require READ COMMITTED and reject other isolation levels before writes; do not change isolation inside the started call. No invoice, operation or consent row locks. This preserves invoice-to-payer locking used by existing billing claims and avoids the inverse lock edge.
 
-After a valid local invoice projection, finish deterministic audit insertion and the existing payer-balance recomputation before completing a nonterminal operation. Validate the response before marking completion where practical. Use one explicit invoice-closeout owner for these two operation kinds if it reduces repeated sequencing; do not build a workflow abstraction or change the database state machine.
+Keep the current formula exactly: draft/open/uncollectible/partially_refunded; explicit remaining including zero, otherwise nonnegative due-minus-paid with nulls treated as zero; clamp each contribution to zero; sum all matching invoices; empty sum zero; current iff zero else past_due. Use wide intermediate arithmetic, preserving overflow failure on the current integer balance column. Do not add dates, currency allocation or overdue policy. Null payer remains an application no-op; missing scoped payer remains a no-op rather than touching another tenant.
 
-The projected replay path must perform the same local closeout without a provider read or mutation. The completed replay path must also repair audit/balance, because historical completed rows do not prove that either succeeded. It must preserve terminal state/revision and never repeat complete on a completed operation. This necessary repair read is not an invitation to redesign reporting or balance semantics.
+BillingPayerManager becomes a thin required-RPC adapter. All current Python recomputation callers already delegate to it. Remove its split SELECT/calculation/UPDATE; no deployment fallback. The RPC return contract should fit the existing void application helper and make errors propagate, with the exact signature/result type included in readiness. Preserve caller behavior and response schemas.
 
-Separate retry projection verification from local closeout. A failure after projection succeeds must remain a local projected operation, rather than being caught by the existing provider_succeeded broad projection handler and moved to reconciliation_required. Real provider/projection ambiguity continues to use the current reconciliation path. Preserve CAS/lease enforcement on completion; a completion failure leaves the original key available to resume through the normal claim path. No force completion or terminal rewind.
+## Assurance ownership
 
-Review identified a specific existing retry claim behavior: a valid projected or
-provider_succeeded V33 resource replay can retain another unexpired lease and
-return outcome=replay. Moving the busy-outcome check alone is insufficient.
-Before either branch performs local work or provider projection, require the
-returned lease_owner to equal the newly acquired context lease. Otherwise return
-the existing concurrent/ambiguous refusal without side effects. Completed replay
-is exempt. Keep reconciliation_required adoption and true ambiguity behavior
-unchanged; do not apply a blanket condition to a different recovery protocol.
-Add a valid scripted V33 replay envelope for both foreign-lease states, because
-the current shared fake reports busy where this real SQL path reports replay.
-Test normal lease expiry with the existing clock, not forced revision/lease edits.
+Move balance arithmetic assurance to a real SQL contract with explicit expected totals, all statuses/legal null/zero/clamp cases, no-date and future-date preservation, no rows, tenant/payer scope, missing payer, privileges, rollback and overflow. Add deterministic separate-session proof: wait for the exact payer blocker before releasing a transaction that commits paid facts; the later SUM must see that commit. Prove the RPC's MVCC read does not block on an invoice row held by the existing opposite-order owner. Confirm separate payers progress independently. A deliberately stale-snapshot/incorrect-lock variant should fail its intended proof; elapsed time alone is not evidence.
 
-Prove actual persisted payer balance and one original-actor audit after same-key replay, with no second provider mutation. Cover audit and balance outages for create/retry; projected offline resumption; historical completed rows with stale/missing local facts; lost completion response after durable completion; and existing foreign scope/changed request/provider ambiguity controls. Use the production balance method for the focused fixture, not a copied balance algorithm. Keep claims about PostgreSQL isolation with the unchanged SQL contracts.
+Python tests prove call/order/recovery/lease contracts rather than reimplementing SQL totals. Reuse strict named RPC dispatch with one small billing-specific canned/scripted handler. Do not add a SUM algorithm or generic success fallback. Adapt the shared billing lifecycle fake, invoice-operation fake and payer fake. Supply explicit scoped acknowledgements/failures for closeout tests and assert the named RPC ran before completion. Replace the old payer formula unit test with adapter/no-op/error checks, retaining the formula in SQL. Strengthen or remove zero-start balance assertions that would pass a no-op. Keep existing financial, consent, tenant and provider tests.
 
-Assess adjacent tests for duplicated or misleading assertions. Existing happy-path create/retry tests should use actual balance state rather than a never-asserted counter. Consolidate overlapping success/replay coverage into the new focused groups only if the durable step, identity, old-key, consent and provider-call assertions remain. Do not remove distinct financial safety tests to hit a count target. No regression test per changed line.
+## Additive forward release
 
-Focused invoice tests precede the complete backend suite, API contracts and the exact-head release gate. No migration or generated response change is planned. Root owns all edits; an independent reviewer must approve the plan and candidate, with final review bound to the committed head. Main must stay healthy, and no hosted operation is part of this PR.
+Derive the exact next timestamp/version from current merged main and preserve all135 prior migration hashes. The expected new release is136/V41 with fullV22 and a V21 compatibility adapter; V20/V19/V18 bodies should remain unchanged. The new RPC is additive and absent from existing V16/V17/V18 inventories. Existing critical/operational/student manifest values should stay unchanged, but canonical/restored execution must prove that expectation.
 
-Independent plan review gave GREEN LIGHT after verifying the narrow acquired-lease
-guard against the actual SQL claim chain. Implementation starts from the merged
-rank-history main. No migration or hosted action is part of this step.
+Independently attest the new function definition, owner, exact signature/return, volatility, search path and EXECUTE grants in full readiness and raw release evidence. Never classify this write RPC as a STABLE billing read. Preserve historical exports/catalogs, approved canonical-versus-restored differences, exact pending/history tuples and all human-only production gates. Update the local verifier, restore continuation, backend readiness and release-tool fixtures only as required by this new release. Use actual disposable PostgreSQL17; no hosted SQL.
+
+Rehearse actual V40 backup/restore/forward upgrade with retained invoice/payer facts, current formula/replay continuation and old readiness consumers. Keep the existing historical restore proofs. Compare full seeded payer/invoice/operation/audit rows before and immediately after the forward migration, before explicitly invoking repair, to prove there is no backfill. Required drift negatives must invalidate current/compatibility readiness or the independent raw gate as appropriate, then recover the exact baseline after rollback. Reuse existing local tools without adding a new infrastructure framework.
+
+## Rollout and completion limits
+
+The guarantee starts after every serving backend/worker uses the RPC and old split operations have drained. A database-first interval with old Python callers can still overwrite a newer result. Do not add broad triggers or pretend compatibility solves that interval. Balance recomputation remains a follow-up to invoice projection: a crash before requesting it still needs replay/worker repair. This correction serializes competing recomputations; it does not move every invoice mutation into one giant transaction.
+
+After independent review of this plan, implement and review core SQL/proof, then forward attestation/restore integration, then the application adapter/meaningful tests and full candidate checks. Re-review any changed stage. Rewrite PR162 around the final invoice-accounting behavior, read substantive bot feedback, resolve both original threads only after verification, require fresh exact-head CI, and merge through the unchanged guard. No production apply/deployment or automatic historical backfill is authorized by this work.
+
+Independent amended-plan review gave GREEN LIGHT. Current amount_remaining_cents
+is NOT NULL; preserve the old fallback expression but do not disable required
+constraints to manufacture a runtime null case. All fixtures must obey the current
+verified schema.

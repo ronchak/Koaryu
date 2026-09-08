@@ -2266,7 +2266,8 @@ class BillingInvoiceOperationWorkflow:
                 "stripe_invoice_item_id": provider_item_id,
             })
         self._verify_projected_invoice(
-            saved, invoice, context, str(saved["stripe_invoice_id"])
+            saved, invoice, context, str(saved["stripe_invoice_id"]),
+            require_original_balance=operation.get("state") != "completed",
         )
         return saved
 
@@ -2937,6 +2938,8 @@ class BillingInvoiceOperationWorkflow:
         intent: dict[str, Any],
         context: BillingProviderOperationContext,
         provider_invoice_id: str,
+        *,
+        require_original_balance: bool = True,
     ) -> None:
         if (
             projected.get("id") != intent.get("id")
@@ -2948,8 +2951,12 @@ class BillingInvoiceOperationWorkflow:
             != context.connect_account_generation
             or int(projected.get("amount_due_cents") or 0)
             != int(intent.get("amount_due_cents") or 0)
-            or int(projected.get("amount_remaining_cents") or 0)
-            != int(intent.get("amount_due_cents") or 0)
+            # Completed creation proves command identity; later payments and
+            # voiding may legitimately change its remaining balance.
+            or (require_original_balance and (
+                int(projected.get("amount_remaining_cents") or 0)
+                != int(intent.get("amount_due_cents") or 0)
+            ))
         ):
             raise RuntimeError("invoice_create_local_projection_mismatch")
 

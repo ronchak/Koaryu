@@ -176,10 +176,15 @@ financial integrity correction takes priority over the larger frontend owner.
 fault/replay suite. Twelve cases fail the unchanged main workflow and pass the
 correction. It also consolidates two duplicate service tests, removes one source-
 name assertion and an unused broken fake hook, and corrects the paid-status check.
-Candidate dispositions are 31 fixed, one resolved indirectly, 234 pending and
-12 intentional deferrals. BB1-07, BT2-01/03/06/07 are addressed; BT2-04 remains
-partial. See [invoice-closeout verification](docs/remediation/invoice-closeout-verification.md).
-Final review, exact-head CI and guarded merge remain required.
+Three test-maintenance findings, BT2-03/06/07, are addressed; BT2-04 remains
+partial. Automated review then identified a balance-repair race and a completed
+create replay blocked by later invoice progress. Both were reproduced. The latter
+is corrected and independently reviewed. PR162 remains unmerged while a shared
+database balance owner and its forward release proof are prepared. BB1-07/BT2-01
+are pending again. Counts are 29 fixed, one resolved indirectly, 236 pending and
+12 intentional deferrals. Prior passing CI is evidence for the superseded Python-
+only candidate, not approval of this expanded change. See
+[invoice-closeout verification](docs/remediation/invoice-closeout-verification.md).
 
 ## Deliberate non-goals and deferrals
 

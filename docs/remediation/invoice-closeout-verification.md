@@ -1,5 +1,11 @@
 # Invoice local-closeout verification
 
+PR162 remains unmerged. Subsequent automated review found two material gaps in
+the first candidate. The prior review and CI records below do not certify the
+expanded correction. A completed-create lifecycle fix is now reviewed and passes
+291 focused tests plus 15 subtests. Database-owned balance repair and renewed
+release verification remain required.
+
 [PR #162](https://github.com/ronchak/Koaryu/pull/162) addresses BB1-07 and supporting
 BT2-01, which describe one incomplete workflow. Invoice creation
 and payment retry could mark the operation completed before audit and payer
@@ -81,3 +87,28 @@ retention and missing historical external-payment actor evidence remain separate
 open work. This correction changes execution of the existing balance calculation,
 not its business policy. No migration, hosted payment, backfill or deployment is
 part of this change.
+
+## Material review corrections
+
+A controlled interleaving through the current Python managers confirmed P1. A
+completed create replay reads7400, another request pays the invoice and writes0,
+then the replay overwrites the payer with7400. The original audit/provider command
+still occurs only once. All current runtime recomputations share the existing
+BillingPayerManager helper, so one required SQL RPC can become their owner. It
+must lock the scoped payer, then read the invoice sum in a separate statement,
+then update the balance/status. It must take no invoice row locks, preserving the
+existing invoice-to-payer order. The formula and billing-status policy stay the
+same. Real concurrency, formula, privileges and migration/restore proof is needed.
+
+P2 is corrected by omitting only the initial unpaid-balance assertion for a
+completed creation receipt. Request/provider/item/context/original-total checks
+remain, and initial/projected creation stays strict. Paid, zero-remaining void
+and partial-payment replay cases failed before and pass afterward. Projected
+corruption is reached through a failed completion and a valid later claim, not a
+terminal-state rewrite. Other existing fee/consent/account replay restrictions
+remain. This stage's independent approval does not resolve P1.
+
+The concurrency guarantee will apply only after all serving backend writers use
+the new RPC and old split recomputations have drained. Database-first compatibility
+alone cannot serialize an old application's later direct balance update. No broad
+trigger or historical one-time marker will be used to conceal that limit.
