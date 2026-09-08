@@ -111,27 +111,43 @@ the broader findings remain pending for staff and promotion work. Counts remain
 19 fixed, 247 pending and 12 deliberate deferrals. See
 [program ownership verification](docs/remediation/program-ownership-verification.md).
 
-Next proposed branch is `codex/remediation-staff-ownership`: one staff dataset owner
-and one pending command in the staff Settings section, including its current-user
-name writers and authoritative revalidation after a confirmed self-access change.
-An old auth-profile read can also overwrite an acknowledged self legal name; its
-narrow profile-ownership boundary must be resolved in the plan. USER_UPDATED retains
-its access reinitialization, while ordinary TOKEN_REFRESHED may settle confirmed
-writes. Live operational clear/demo preserves staff and must not invalidate unrelated
-staff work. Scheduled deletion remains distinct from pending-invite revocation.
-Existing staff/role/confirmation safeguards and meaningful tests remain. Financial
-recovery choices are still pending and can change the next-step priority.
-
-
-The staff candidate combines the remaining directory owner with one Settings
-command owner and narrow self-profile/access handling. It closes FSH2-01, FT2-04
-and FC2-03 after the program fix, subject to final PR gates. The candidate ledger
-has 22 fixed, 244 pending and 12 deliberate deferrals. Seventeen source-text tests
-were replaced by eleven mounted groups; the full frontend suite passed 922 tests.
+[PR #160](https://github.com/ronchak/Koaryu/pull/160) merged as
+`b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2`. Staff reads, writes and self-profile
+acknowledgements share ownership, and Settings has one pending command. FSH2-01,
+FT2-04 and FC2-03 are fixed. Seventeen source-text tests were replaced by eleven
+mounted groups. Eight groups fail unchanged main at the intended assertions;
+three preserve existing safeguards. All eleven pass the correction, and the full
+frontend suite passed 922 tests. Independent and automated reviews completed on
+the exact head; every release check passed on its first attempt. The guarded
+merge verified production auto-deploy off twice. No deployment occurred.
 See [staff ownership verification](docs/remediation/staff-ownership-verification.md).
-Promotion/demotion still needs its own receipt/history owner. Investigation also
-confirms that a later FK update can rewrite historical rank labels and colors;
-that snapshot correction is a separate next candidate, not a locked roadmap.
+
+Reassessment at `b5ec8ff`: 22 findings are fixed, 244 pending and 12 deliberately
+deferred. FSH2-02 remains pending for promotion/demotion ownership. Rank history
+snapshots and effective-command replay remain defective in the unchanged backend
+and SQL. OPS1-01, BT1-06 and DM2-03 describe one replay responsibility; DM2-01
+shares its immutable history boundary. The next branch is
+`codex/remediation-rank-history`. Its plan must establish one transactional
+transition owner and a fully attested forward migration before implementation.
+It preserves existing permissions, rank rules, old backend interfaces and the
+intentional history-deletion lifecycle. No historical identity will be guessed.
+The separate frontend command owner and unanswered financial/date choices remain
+pending. No unrelated findings were closed by the staff merge.
+
+The [rank-history plan](docs/remediation/rank-history-plan.md) passed independent
+review before implementation. Implementation and independent reviews are complete.
+The candidate passes 135 migrations and 50 SQL contracts, genuine legacy upgrades,
+logical restores, five observed concurrent lock cases, 16 raw metadata negatives,
+the full backend/frontend suites and 130 release-workflow tests. Review exposed
+unobserved FK drift and a permissive pre-apply fingerprint check; both now reject
+their demonstrated counterexamples. Exact-head CI and guarded merge remain required.
+See [rank-history verification](docs/remediation/rank-history-verification.md).
+
+Candidate dispositions are 26 fixed, one resolved indirectly, 239 pending and 12
+intentional deferrals. OPS1-01, BT1-06, DM2-01 and DM2-03 are fixed; OPS1-14 is
+resolved indirectly by removing the duplicated Python transition state machines.
+FSH2-02 remains pending for the frontend promotion/demotion owner. These are source
+corrections, not a claim that the new backend or database has been deployed.
 
 ## Deliberate non-goals and deferrals
 

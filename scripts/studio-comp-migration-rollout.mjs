@@ -49,8 +49,9 @@ export const ROLLOUT = Object.freeze({
   v36MigrationCount: 131,
   v37MigrationCount: 132,
   v38MigrationCount: 133,
-  finalMigrationCount: 134,
-  finalMigrationVersion: "20260908080420",
+  v39MigrationCount: 134,
+  finalMigrationCount: 135,
+  finalMigrationVersion: "20260908133504",
   releasePendingVersions: Object.freeze([
     "20260814043325",
     "20260814103046",
@@ -86,6 +87,7 @@ export const ROLLOUT = Object.freeze({
     "20260902001000",
     "20260905022339",
     "20260908080420",
+    "20260908133504",
   ]),
   finalPendingVersions: Object.freeze([
     "20260727100000",
@@ -138,6 +140,7 @@ export const ROLLOUT = Object.freeze({
     "20260902001000",
     "20260905022339",
     "20260908080420",
+    "20260908133504",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -170,9 +173,34 @@ export const ROLLOUT = Object.freeze({
   ]),
 });
 
-const V38_PENDING_VERSIONS = ROLLOUT.finalPendingVersions.slice(0, -1);
-const V37_PENDING_VERSIONS = V38_PENDING_VERSIONS.slice(0, -1);
-const V36_PENDING_VERSIONS = V37_PENDING_VERSIONS.slice(0, -1);
+// Historical readiness stays fixed when a later forward migration is appended.
+const pendingVersionsThrough = head => ROLLOUT.finalPendingVersions.filter(version => version <= head);
+const V39_PENDING_VERSIONS = pendingVersionsThrough("20260908080420");
+const V38_PENDING_VERSIONS = pendingVersionsThrough("20260905022339");
+const V37_PENDING_VERSIONS = pendingVersionsThrough("20260902001000");
+const V36_PENDING_VERSIONS = pendingVersionsThrough("20260831054918");
+
+// Measured from canonical V40 and an actual V39 logical restore upgraded to V40.
+export const EXPECTED_V40_CATALOG_STATE =
+  "column_acls=252:77ed54c37fb6a77a67823ac6a3c13e100fdfe9a15d417087eaa8335aca7984c4:0;columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;functions=126:fff067180d98ee07c142c3c28796dba5fe81de7b34481f373677afe071070474:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=191:65957dcbf81ee2513bebb4600a68b328b62100fa015b8cb90e9a164f01bb8fe9:0;scoped_indexes=45:1bfef3f53dfb4665e9f438c66cc04baf062234ae4e47a66a1ae9b7c924c47486:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=25:0b972e5cc9be4772e46edfdac6a45d9d6074c433df6cb139232028c9d637d06d:0;tables=22:d3352c35012f5c65edb3cf3b7c5b864f916357d6a11d732199fe30b04034962f:0;triggers=14:03a92971a8b66629aac9892448a2448e6844bfb7edd27c0c5448f17235e270e7:0";
+export const EXPECTED_V40_RESTORED_CATALOG_STATE =
+  "column_acls=252:77ed54c37fb6a77a67823ac6a3c13e100fdfe9a15d417087eaa8335aca7984c4:0;columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;functions=126:fff067180d98ee07c142c3c28796dba5fe81de7b34481f373677afe071070474:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=191:ac1c5b8bd2202b318843d62691fec39501e3b58e2090447f8d7633b43dfdf3da:0;scoped_indexes=45:1bfef3f53dfb4665e9f438c66cc04baf062234ae4e47a66a1ae9b7c924c47486:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=25:0b972e5cc9be4772e46edfdac6a45d9d6074c433df6cb139232028c9d637d06d:0;tables=22:d3352c35012f5c65edb3cf3b7c5b864f916357d6a11d732199fe30b04034962f:0;triggers=14:03a92971a8b66629aac9892448a2448e6844bfb7edd27c0c5448f17235e270e7:0";
+export const EXPECTED_V40_RANK_COMMAND_STATE =
+  "column=6:723ff727be5a3d83ed57437ad93578c1ab510b5194f19771e8d50e0f02552dab|constraint=9:a796c4590d813f780324540248eb98037ab92652eab509f618591fc98c342b04|function=6:85cd5ff1a07651837a24a279225d24d626ff2f7e9f25416d0118f8b6c45f5988|index=1:b9292247347782840a30043f5359ca11dca208506a1e8b180482f64fe805af91|trigger=1:89b274639ccb39ac4cde21f8ec77936a9fe58994bb15cbbcccf3db3f826bcddc";
+export const EXPECTED_V40_EXPECTATION_STATE =
+  "1:220b289851c6a5714091f59560053b1a5a5cf7c4971a431bbc04a6dd85d42802";
+export const EXPECTED_V40_CRITICAL_SURFACE_MANIFEST =
+  "0:ffffe870f71abab5b1def36d5a496d2d5efa508204a773992c6d5fbe7aecae80";
+export const EXPECTED_V40_OPERATIONAL_MANIFEST_V10 =
+  "ec8605a828e82b738ce973627a8018735c28176399b7e9856aa0dd66a04b667a";
+export const EXPECTED_V40_OPERATIONAL_MANIFEST_V11 =
+  "2efb0b2cf73beabfb219dd3642a824714c1b0619c5498ecf195071f929e651f6";
+export const EXPECTED_V40_RESOURCE_OWNERSHIP_MANIFEST =
+  "0:fda64c2e37a0e6efd3c69b1167fc2056fc53b85042ced46d511312c886a961a4";
+export const EXPECTED_V40_OPERATIONAL_CONTRACT_V31 =
+  "0:9f037cc4464637876016f47584d44910a6e175b2358eecb44486779273e75510";
+export const EXPECTED_V40_OPERATIONAL_MANIFEST_V12 =
+  "27cb3807a6ff60653fc0c7423428710a2c01d9254c1e5f59c0e2cb16c37f4d26";
 
 export const EXPECTED_V39_RESOURCE_OWNERSHIP_MANIFEST =
   "0:daf85d2ad59a6853e872eebedbac8b21b960635cd3a7dec6e304cee2a79e465b";
@@ -330,9 +358,12 @@ export const EXPECTED_V37_OPERATIONAL_READINESS =
 export const EXPECTED_V38_OPERATIONAL_READINESS =
   "true|133|20260905022339|" + V38_PENDING_VERSIONS.join(",") +
   "|0||release-db-attestation-v38";
-export const EXPECTED_OPERATIONAL_READINESS =
-  "true|134|20260908080420|" + ROLLOUT.finalPendingVersions.join(",") +
+export const EXPECTED_V39_OPERATIONAL_READINESS =
+  "true|134|20260908080420|" + V39_PENDING_VERSIONS.join(",") +
   "|0||release-db-attestation-v39";
+export const EXPECTED_OPERATIONAL_READINESS =
+  "true|135|20260908133504|" + ROLLOUT.finalPendingVersions.join(",") +
+  "|0||release-db-attestation-v40";
 export const EXPECTED_V36_OPERATIONAL_READINESS =
   "true|131|20260831054918|" + V36_PENDING_VERSIONS.join(",") +
   "|0||release-db-attestation-v36";
@@ -1057,8 +1088,11 @@ from public.koaryu_release_schema_preflight_v18()
 export const V38_OPERATIONAL_READINESS_SQL = V37_OPERATIONAL_READINESS_SQL.replace(
   "koaryu_release_schema_preflight_v18()", "koaryu_release_schema_preflight_v19()",
 );
-export const FINAL_OPERATIONAL_READINESS_SQL = V37_OPERATIONAL_READINESS_SQL.replace(
+export const V39_OPERATIONAL_READINESS_SQL = V37_OPERATIONAL_READINESS_SQL.replace(
   "koaryu_release_schema_preflight_v18()", "koaryu_release_schema_preflight_v20()",
+);
+export const FINAL_OPERATIONAL_READINESS_SQL = V37_OPERATIONAL_READINESS_SQL.replace(
+  "koaryu_release_schema_preflight_v18()", "koaryu_release_schema_preflight_v21()",
 );
 // Raw catalog checks are independent of the readiness functions they attest.
 // Body hashes come from the complete local migration chain on PostgreSQL 17.
@@ -1128,6 +1162,14 @@ export const EXPECTED_V38_BILLING_MANIFEST = releaseManifest(V38_FUNCTIONS);
 export const V38_BILLING_MANIFEST_SQL = releaseManifestSql(V38_FUNCTIONS, "v38_billing_manifest");
 export const EXPECTED_V39_RELEASE_MANIFEST = releaseManifest(V39_FUNCTIONS);
 export const V39_RELEASE_MANIFEST_SQL = releaseManifestSql(V39_FUNCTIONS, "v39_release_manifest");
+const V40_FUNCTIONS = Object.freeze([
+  ...V39_FUNCTIONS.map(row => row[0] === "public.koaryu_release_schema_preflight_v20()"
+    ? [row[0], "19ef1096323290b699fa14e12f7213ab1ae4d9453e434adfc8efd4473cc5d346", ...row.slice(2)] : row),
+  ["public.koaryu_release_schema_preflight_v21()", "3b235c3fa9224d4a5d7d26dd9d957f941e9bcd7d9e1b8ad95271a1951833076e", "plpgsql", true,
+    "search_path=pg_catalog", "TABLE(ready boolean, migration_count integer, migration_head text, pending_versions text[], security_failures text[], manifest_version text)", ""],
+]);
+export const EXPECTED_V40_RELEASE_MANIFEST = releaseManifest(V40_FUNCTIONS);
+export const V40_RELEASE_MANIFEST_SQL = releaseManifestSql(V40_FUNCTIONS, "v40_release_manifest");
 
 export const V36_OPERATIONAL_READINESS_SQL = `
 select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
@@ -2595,6 +2637,81 @@ select string_agg(category || '=' || object_count::text || ':' || state_digest |
 from states
 `;
 
+// Preserve the historical raw inventory; only V40 uses the new V2 adapter path.
+export const V40_CATALOG_STATE_SQL = (() => {
+  const previous = "('private.record_student_rank_transition_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text, uuid)', 'search_path=public, pg_temp', false, true)";
+  if (CATALOG_STATE_SQL.split(previous).length !== 2) {
+    throw new Error("Expected one historical rank-transition catalog row.");
+  }
+  return CATALOG_STATE_SQL.replace(previous, "('private.record_student_rank_transition_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text, uuid)', 'search_path=pg_catalog', false, true)");
+})();
+
+// Independent raw facts for the changed rank owner, including all deletion FKs.
+export const V40_RANK_COMMAND_STATE_SQL = `
+WITH runtime_settings AS MATERIALIZED (
+ SELECT set_config('search_path','pg_catalog',true), set_config('TimeZone','UTC',true)
+), required_functions(signature) AS (VALUES
+ ('private.rank_transition_fingerprint_v1(uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text)'),
+ ('private.record_student_rank_transition_v3(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid,boolean)'),
+ ('public.record_student_rank_transition_v3(uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid)'),
+ ('private.record_student_rank_transition_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid)'),
+ ('public.snapshot_promotion_rank_identity()'),
+ ('private.koaryu_release_critical_surface_manifest_v16()')
+), function_state AS (
+ SELECT 'function' AS category, r.signature AS identity,
+   jsonb_build_array(p.oid IS NOT NULL, pg_get_functiondef(p.oid), pg_get_userbyid(p.proowner),
+     (SELECT jsonb_agg(jsonb_build_array(pg_get_userbyid(a.grantor),
+         CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,
+         a.privilege_type,a.is_grantable) ORDER BY pg_get_userbyid(a.grantor) COLLATE "C",
+          (CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END) COLLATE "C",a.privilege_type)
+      FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a)
+   ) AS facts
+ FROM runtime_settings CROSS JOIN required_functions r LEFT JOIN pg_proc p ON p.oid=to_regprocedure(r.signature)
+), required_columns(name) AS (VALUES
+ ('operation_id'),('transition_kind'),('command_fingerprint'),('command_program_id'),
+ ('command_membership_id'),('command_from_rank_id')
+), column_state AS (
+ SELECT 'column', r.name,
+   jsonb_build_array(a.attnum IS NOT NULL, format_type(a.atttypid,a.atttypmod), a.attnotnull,
+      a.attidentity,a.attgenerated,pg_get_expr(d.adbin,d.adrelid),a.attacl::TEXT)
+ FROM runtime_settings CROSS JOIN required_columns r LEFT JOIN pg_attribute a ON a.attrelid='public.promotions'::REGCLASS
+   AND a.attname=r.name AND a.attnum>0 AND NOT a.attisdropped
+ LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+), constraint_state AS (
+ -- Every FK is observed, including any unexpected FK on immutable command UUIDs.
+ SELECT 'constraint', c.conname::TEXT,
+   jsonb_build_array(c.contype::TEXT,pg_get_constraintdef(c.oid),c.convalidated,c.condeferrable,c.condeferred)
+ FROM runtime_settings CROSS JOIN pg_constraint c WHERE c.conrelid='public.promotions'::REGCLASS
+   AND (c.contype='f' OR c.conname IN ('promotions_command_evidence_check','promotions_transition_kind_check'))
+), trigger_state AS (
+ SELECT 'trigger', 'snapshot_promotion_rank_identity_trigger',
+   jsonb_build_array(t.oid IS NOT NULL,pg_get_triggerdef(t.oid),t.tgenabled::TEXT,t.tgisinternal,
+     n.nspname,p.proname,pg_get_function_identity_arguments(p.oid))
+ FROM runtime_settings CROSS JOIN (VALUES (1)) required(dummy)
+ LEFT JOIN pg_trigger t ON t.tgrelid='public.promotions'::REGCLASS
+   AND t.tgname='snapshot_promotion_rank_identity_trigger'
+ LEFT JOIN pg_proc p ON p.oid=t.tgfoid LEFT JOIN pg_namespace n ON n.oid=p.pronamespace
+), index_state AS (
+ SELECT 'index', 'promotions_studio_operation_once',
+   jsonb_build_array(c.oid IS NOT NULL,pg_get_indexdef(i.indexrelid),pg_get_userbyid(c.relowner),
+      i.indrelid='public.promotions'::REGCLASS,i.indisunique,i.indisvalid,i.indisready,i.indislive)
+ FROM runtime_settings CROSS JOIN (VALUES (1)) required(dummy)
+ LEFT JOIN pg_class c ON c.oid=to_regclass('public.promotions_studio_operation_once')
+ LEFT JOIN pg_index i ON i.indexrelid=c.oid
+), state AS (
+ SELECT * FROM function_state UNION ALL SELECT * FROM column_state
+ UNION ALL SELECT * FROM constraint_state UNION ALL SELECT * FROM trigger_state
+ UNION ALL SELECT * FROM index_state
+), grouped AS (
+ SELECT category, count(*)::TEXT || ':' || encode(extensions.digest(convert_to(
+     string_agg(identity || ':' || facts::TEXT,'|' ORDER BY identity COLLATE "C"),'UTF8'),'sha256'),'hex') AS fingerprint
+ FROM state GROUP BY category
+)
+SELECT string_agg(category || '=' || fingerprint,'|' ORDER BY category COLLATE "C") AS rank_command_state
+FROM grouped;
+`;
+
+
 class RolloutError extends Error {}
 
 function digest(algorithm, value) {
@@ -3355,7 +3472,7 @@ export function parseArguments(argv) {
   }
   if (
     result.expectedProviderFingerprint !== null &&
-    !/^functions=3:[0-9a-f]{32}:0;trigger=1:[0-9a-f]{32}:0;catalog=[a-z0-9_=;:]+;critical_surface=0:[0-9a-f]{64}$/.test(
+    !/^functions=3:[0-9a-f]{32}:0;trigger=1:[0-9a-f]{32}:0;catalog=[a-z0-9_=;:|]+;critical_surface=0:[0-9a-f]{64}$/.test(
       result.expectedProviderFingerprint,
     )
   ) {
@@ -3431,6 +3548,8 @@ export function validateApplyAuthorization(config) {
       "Production apply requires the approved staging --expected-provider-fingerprint.",
     );
   }
+  // Refuse stale or mismatched staging evidence before an irreversible apply.
+  approvedProviderFingerprintVariants(config.expectedProviderFingerprint);
   assertPlainText("--confirmed-restore-window", config.confirmedRestoreWindow);
   assertPlainText("--restore-decision-authority", config.restoreDecisionAuthority);
 }
@@ -3554,6 +3673,7 @@ const PREDECESSOR_MIGRATION_COUNTS = Object.freeze({
   "v36": ROLLOUT.v36MigrationCount,
   "v37": ROLLOUT.v37MigrationCount,
   "v38": ROLLOUT.v38MigrationCount,
+  "v39": ROLLOUT.v39MigrationCount,
 });
 
 function isAcceptedPredecessor(state) {
@@ -3831,6 +3951,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   const v36History=historyAt(ROLLOUT.v36MigrationCount);
   const v37History=historyAt(ROLLOUT.v37MigrationCount);
   const v38History=historyAt(ROLLOUT.v38MigrationCount);
+  const v39History=historyAt(ROLLOUT.v39MigrationCount);
   if (preHistory !== ROLLOUT.preHistory) {
     throw new RolloutError(
       `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
@@ -3898,6 +4019,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     v36History,
     v37History,
     v38History,
+    v39History,
     preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
@@ -4054,6 +4176,9 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     v38TargetHistory: filenames.slice(84,ROLLOUT.v38MigrationCount)
       .map((filename)=>{const separator=filename.indexOf("_");
         return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
+    v39TargetHistory: filenames.slice(84,ROLLOUT.v39MigrationCount)
+      .map((filename)=>{const separator=filename.indexOf("_");
+        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&
@@ -4125,6 +4250,9 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     v37TriggerGuardManifest,
     v38BillingManifest,
     v39ReleaseManifest,
+    v40ReleaseManifest,
+    v40RankCommandState,
+    v39CompatibilityReadiness,
     v38CompatibilityReadiness,
     v37CompatibilityReadiness,
     operationalReadiness,
@@ -4453,16 +4581,39 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
       throw new RolloutError("V36 operational readiness did not match the exact predecessor state.");
     return {state:"v36",providerFingerprint:null};
   }
-  if (history === packet.v37History || history === packet.v38History || history === packet.postHistory) {
+  if (history === packet.v37History || history === packet.v38History || history === packet.v39History || history === packet.postHistory) {
     const isV37 = history === packet.v37History;
     const isV38 = history === packet.v38History;
-    const isPredecessor = isV37 || isV38;
+    const isV39 = history === packet.v39History;
+    const isPredecessor = isV37 || isV38 || isV39;
+    const expected = isV37 || isV38 ? {
+      catalogs: [EXPECTED_V37_CATALOG_STATE, EXPECTED_V37_RESTORED_CATALOG_STATE],
+      v31Expectation: EXPECTED_V37_EXPECTATION_STATE,
+      resource: EXPECTED_V37_RESOURCE_OWNERSHIP_MANIFEST,
+      v31Contract: EXPECTED_V37_OPERATIONAL_CONTRACT_V31,
+      v12: EXPECTED_V37_OPERATIONAL_MANIFEST_V12,
+    } : isV39 ? {
+      catalogs: [EXPECTED_V39_CATALOG_STATE, EXPECTED_V39_RESTORED_CATALOG_STATE],
+      v31Expectation: EXPECTED_V39_EXPECTATION_STATE,
+      resource: EXPECTED_V39_RESOURCE_OWNERSHIP_MANIFEST,
+      v31Contract: EXPECTED_V39_OPERATIONAL_CONTRACT_V31,
+      v12: EXPECTED_V39_OPERATIONAL_MANIFEST_V12,
+    } : {
+      catalogs: [EXPECTED_V40_CATALOG_STATE, EXPECTED_V40_RESTORED_CATALOG_STATE],
+      v31Expectation: EXPECTED_V40_EXPECTATION_STATE,
+      resource: EXPECTED_V40_RESOURCE_OWNERSHIP_MANIFEST,
+      v31Contract: EXPECTED_V40_OPERATIONAL_CONTRACT_V31,
+      v12: EXPECTED_V40_OPERATIONAL_MANIFEST_V12,
+    };
+    const expectedV10 = isPredecessor ? EXPECTED_V37_COMPAT_V29_OPERATIONAL_MANIFEST : EXPECTED_V40_OPERATIONAL_MANIFEST_V10;
+    const expectedV11 = isPredecessor ? EXPECTED_V37_OPERATIONAL_MANIFEST_V11 : EXPECTED_V40_OPERATIONAL_MANIFEST_V11;
+    const expectedCritical = isPredecessor ? EXPECTED_CRITICAL_SURFACE_MANIFEST : EXPECTED_V40_CRITICAL_SURFACE_MANIFEST;
     if (!isPredecessor && !packet.integrationComplete) {
       throw new RolloutError(
         `Candidate does not contain the exact final ${ROLLOUT.finalMigrationCount}-migration sequence; post-state cannot be certified.`,
       );
     }
-    if (targetHistory !== (isV37 ? packet.v37TargetHistory : isV38 ? packet.v38TargetHistory : packet.postTargetHistory) || objectCounts !== "3:1") {
+    if (targetHistory !== (isV37 ? packet.v37TargetHistory : isV38 ? packet.v38TargetHistory : isV39 ? packet.v39TargetHistory : packet.postTargetHistory) || objectCounts !== "3:1") {
       throw new RolloutError("Post-state history does not have the exact expected studio-comp objects.");
     }
     if (!/^3:[0-9a-f]{32}:0$/.test(functionState ?? "")) {
@@ -4471,9 +4622,8 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     if (!/^1:[0-9a-f]{32}:0$/.test(triggerState ?? "")) {
       throw new RolloutError("Trigger definition, binding, enabled state, or metadata column check failed.");
     }
-    if(catalogState!==(isPredecessor ? EXPECTED_V37_CATALOG_STATE : EXPECTED_V39_CATALOG_STATE)&&
-       catalogState!==(isPredecessor ? EXPECTED_V37_RESTORED_CATALOG_STATE : EXPECTED_V39_RESTORED_CATALOG_STATE))
-      throw new RolloutError("V37 raw catalog did not match an exact canonical or restored state.");
+    if (!expected.catalogs.includes(catalogState))
+      throw new RolloutError("Raw catalog did not match this history's exact canonical or restored state.");
     if(v26ExpectationState!==EXPECTED_V37_COMPAT_V26_EXPECTATION_STATE||
        v27ExpectationState!==EXPECTED_V37_COMPAT_V27_EXPECTATION_STATE||
        v28ExpectationState!==EXPECTED_V37_COMPAT_V28_EXPECTATION_STATE||
@@ -4481,17 +4631,17 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
       throw new RolloutError("V37 predecessor expectation states mismatch.");
     if(v29TransitionManifest!==EXPECTED_V34_COMPAT_V29_TRANSITION_MANIFEST||
        v29OperationalContract!==EXPECTED_V37_COMPAT_V29_OPERATIONAL_CONTRACT||
-       v29OperationalManifest!==EXPECTED_V37_COMPAT_V29_OPERATIONAL_MANIFEST)
+       v29OperationalManifest!==expectedV10)
       throw new RolloutError("V37 compatibility V29 manifests mismatch.");
     if(v30ExpectationState!==EXPECTED_V37_COMPAT_V30_EXPECTATION_STATE)
       throw new RolloutError("V37 compatibility V30 expectation mismatch.");
     if(v30ReplayRepairsManifest!==EXPECTED_V37_COMPAT_V30_REPLAY_REPAIRS_MANIFEST||
        v30OperationalContract!==EXPECTED_V37_COMPAT_V30_OPERATIONAL_CONTRACT||
-       v30OperationalManifest!==EXPECTED_V37_OPERATIONAL_MANIFEST_V11||
-       v31ExpectationState!==(isPredecessor ? EXPECTED_V37_EXPECTATION_STATE : EXPECTED_V39_EXPECTATION_STATE)||
-       v31ResourceOwnershipManifest!==(isPredecessor ? EXPECTED_V37_RESOURCE_OWNERSHIP_MANIFEST : EXPECTED_V39_RESOURCE_OWNERSHIP_MANIFEST)||
-       v31OperationalContract!==(isPredecessor ? EXPECTED_V37_OPERATIONAL_CONTRACT_V31 : EXPECTED_V39_OPERATIONAL_CONTRACT_V31)||
-       v31OperationalManifest!==(isPredecessor ? EXPECTED_V37_OPERATIONAL_MANIFEST_V12 : EXPECTED_V39_OPERATIONAL_MANIFEST_V12))
+       v30OperationalManifest!==expectedV11||
+       v31ExpectationState!==expected.v31Expectation||
+       v31ResourceOwnershipManifest!==expected.resource||
+       v31OperationalContract!==expected.v31Contract||
+       v31OperationalManifest!==expected.v12)
       throw new RolloutError("V37 final operational manifests mismatch.");
     if(v35EvidenceManifest!==EXPECTED_V35_EVIDENCE_MANIFEST)
       throw new RolloutError("V35 evidence manifest mismatch.");
@@ -4499,7 +4649,8 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
       throw new RolloutError("V36 recovery manifest mismatch.");
     if(v37TriggerGuardManifest!==EXPECTED_V37_TRIGGER_GUARD_MANIFEST)
       throw new RolloutError("V37 adjustment trigger guard manifest mismatch.");
-    validateCriticalSurfaceManifest(criticalSurfaceManifest);
+    if (criticalSurfaceManifest !== expectedCritical)
+      throw new RolloutError("Critical manifest does not match this migration history.");
     if (isV37) {
       if (operationalReadiness !== EXPECTED_V37_OPERATIONAL_READINESS) {
         throw new RolloutError("V37 operational readiness did not match the exact predecessor state.");
@@ -4516,15 +4667,25 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
       }
       return { state: "v38", providerFingerprint: null };
     }
-    validateOperationalReadiness(operationalReadiness);
     if (v38CompatibilityReadiness !== EXPECTED_V38_OPERATIONAL_READINESS) {
-      throw new RolloutError("V39 compatibility V38 readiness did not match the previous backend contract.");
+      throw new RolloutError("Compatibility V38 readiness did not match the previous backend contract.");
     }
-    if (v39ReleaseManifest !== EXPECTED_V39_RELEASE_MANIFEST) {
-      throw new RolloutError("V39 raw function manifest mismatch.");
+    if (isV39) {
+      if (operationalReadiness !== EXPECTED_V39_OPERATIONAL_READINESS ||
+          v39ReleaseManifest !== EXPECTED_V39_RELEASE_MANIFEST) {
+        throw new RolloutError("V39 predecessor readiness or raw function manifest mismatch.");
+      }
+      return { state: "v39", providerFingerprint: null };
+    }
+    validateOperationalReadiness(operationalReadiness);
+    if (v39CompatibilityReadiness !== EXPECTED_V39_OPERATIONAL_READINESS) {
+      throw new RolloutError("V40 compatibility V39 readiness did not match the previous backend contract.");
+    }
+    if (v40ReleaseManifest !== EXPECTED_V40_RELEASE_MANIFEST || v40RankCommandState !== EXPECTED_V40_RANK_COMMAND_STATE) {
+      throw new RolloutError("V40 raw release or rank command facts mismatch.");
     }
     const providerFingerprint =
-      `functions=${functionState};trigger=${triggerState};catalog=${catalogState};expectation=${v26ExpectationState};v27_expectation=${v27ExpectationState};v28_expectation=${v28ExpectationState};v29_expectation=${v29ExpectationState};v29_transition=${v29TransitionManifest};v29_contract=${v29OperationalContract};v29_manifest=${v29OperationalManifest};v30_expectation=${v30ExpectationState};v30_replay=${v30ReplayRepairsManifest};v30_contract=${v30OperationalContract};v30_manifest=${v30OperationalManifest};v31_compat_v30_manifest=${v30OperationalManifest};v31_expectation=${v31ExpectationState};v31_resource=${v31ResourceOwnershipManifest};v31_contract=${v31OperationalContract};v31_manifest=${v31OperationalManifest};v35_evidence=${v35EvidenceManifest};v36_recovery=${v36RecoveryManifest};v37_trigger_guard=${v37TriggerGuardManifest};v39_release=${v39ReleaseManifest};critical_surface=${criticalSurfaceManifest}`;
+      `functions=${functionState};trigger=${triggerState};catalog=${catalogState};expectation=${v26ExpectationState};v27_expectation=${v27ExpectationState};v28_expectation=${v28ExpectationState};v29_expectation=${v29ExpectationState};v29_transition=${v29TransitionManifest};v29_contract=${v29OperationalContract};v29_manifest=${v29OperationalManifest};v30_expectation=${v30ExpectationState};v30_replay=${v30ReplayRepairsManifest};v30_contract=${v30OperationalContract};v30_manifest=${v30OperationalManifest};v31_compat_v30_manifest=${v30OperationalManifest};v31_expectation=${v31ExpectationState};v31_resource=${v31ResourceOwnershipManifest};v31_contract=${v31OperationalContract};v31_manifest=${v31OperationalManifest};v35_evidence=${v35EvidenceManifest};v36_recovery=${v36RecoveryManifest};v37_trigger_guard=${v37TriggerGuardManifest};v40_release=${v40ReleaseManifest};v40_rank=${v40RankCommandState};critical_surface=${criticalSurfaceManifest}`;
     if (
       expectedProviderFingerprint &&
       !approvedProviderFingerprintVariants(expectedProviderFingerprint).includes(
@@ -4536,7 +4697,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     return { state: "post", providerFingerprint };
   }
   throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, restored-v22-, canonical-v23-, restored-v23-pending-v24-, v24-, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, v33, v34, v35, v36, v37, v38, or post-state.`,
+    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, restored-v22-, canonical-v23-, restored-v23-pending-v24-, v24-, schedule-v25, v25, v26, v27, v28, v29, v30, v31, v32, v33, v34, v35, v36, v37, v38, v39, or post-state.`,
   );
 }
 
@@ -4561,7 +4722,9 @@ export function validateCatalogState(catalogState) {
     catalogState !== EXPECTED_V37_CATALOG_STATE &&
     catalogState !== EXPECTED_V37_RESTORED_CATALOG_STATE &&
     catalogState !== EXPECTED_V39_CATALOG_STATE &&
-    catalogState !== EXPECTED_V39_RESTORED_CATALOG_STATE
+    catalogState !== EXPECTED_V39_RESTORED_CATALOG_STATE &&
+    catalogState !== EXPECTED_V40_CATALOG_STATE &&
+    catalogState !== EXPECTED_V40_RESTORED_CATALOG_STATE
   ) {
     throw new RolloutError(
       `Repository-pinned raw catalog manifest mismatch: ${catalogState}.`,
@@ -4586,26 +4749,23 @@ export function approvedProviderFingerprintVariants(stagingFingerprint) {
     throw new RolloutError("Approved staging provider fingerprint is missing or malformed.");
   }
   const prefixPattern = /^functions=3:[0-9a-f]{32}:0;trigger=1:[0-9a-f]{32}:0;catalog=/;
-  const canonicalCatalog = `catalog=${EXPECTED_V39_CATALOG_STATE}`;
+  const canonicalCatalog = `catalog=${EXPECTED_V40_CATALOG_STATE}`;
   const expectedSuffix =
     `;expectation=${EXPECTED_V37_COMPAT_V26_EXPECTATION_STATE};v27_expectation=${EXPECTED_V37_COMPAT_V27_EXPECTATION_STATE};` +
     `v28_expectation=${EXPECTED_V37_COMPAT_V28_EXPECTATION_STATE};v29_expectation=${EXPECTED_V37_COMPAT_V29_EXPECTATION_STATE};` +
     `v29_transition=${EXPECTED_V34_COMPAT_V29_TRANSITION_MANIFEST};v29_contract=${EXPECTED_V37_COMPAT_V29_OPERATIONAL_CONTRACT};` +
-    `v29_manifest=${EXPECTED_V37_COMPAT_V29_OPERATIONAL_MANIFEST};` +
+    `v29_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V10};` +
     `v30_expectation=${EXPECTED_V37_COMPAT_V30_EXPECTATION_STATE};v30_replay=${EXPECTED_V37_COMPAT_V30_REPLAY_REPAIRS_MANIFEST};` +
-    `v30_contract=${EXPECTED_V37_COMPAT_V30_OPERATIONAL_CONTRACT};v30_manifest=${EXPECTED_V37_OPERATIONAL_MANIFEST_V11};` +
-    `v31_compat_v30_manifest=${EXPECTED_V37_OPERATIONAL_MANIFEST_V11};` +
-    `v31_expectation=${EXPECTED_V39_EXPECTATION_STATE};v31_resource=${EXPECTED_V39_RESOURCE_OWNERSHIP_MANIFEST};` +
-    `v31_contract=${EXPECTED_V39_OPERATIONAL_CONTRACT_V31};v31_manifest=${EXPECTED_V39_OPERATIONAL_MANIFEST_V12};` +
+    `v30_contract=${EXPECTED_V37_COMPAT_V30_OPERATIONAL_CONTRACT};v30_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V11};` +
+    `v31_compat_v30_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V11};` +
+    `v31_expectation=${EXPECTED_V40_EXPECTATION_STATE};v31_resource=${EXPECTED_V40_RESOURCE_OWNERSHIP_MANIFEST};` +
+    `v31_contract=${EXPECTED_V40_OPERATIONAL_CONTRACT_V31};v31_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V12};` +
     `v35_evidence=${EXPECTED_V35_EVIDENCE_MANIFEST};v36_recovery=${EXPECTED_V36_RECOVERY_MANIFEST};` +
     `v37_trigger_guard=${EXPECTED_V37_TRIGGER_GUARD_MANIFEST};` +
-    `v39_release=${EXPECTED_V39_RELEASE_MANIFEST};` +
-    `critical_surface=${EXPECTED_CRITICAL_SURFACE_MANIFEST}`;
-  if (
-    !prefixPattern.test(stagingFingerprint) ||
-    !stagingFingerprint.endsWith(expectedSuffix) ||
-    !stagingFingerprint.includes(canonicalCatalog)
-  ) {
+    `v40_release=${EXPECTED_V40_RELEASE_MANIFEST};v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};` +
+    `critical_surface=${EXPECTED_V40_CRITICAL_SURFACE_MANIFEST}`;
+  const prefix = prefixPattern.exec(stagingFingerprint)?.[0];
+  if (!prefix || stagingFingerprint !== `${prefix}${EXPECTED_V40_CATALOG_STATE}${expectedSuffix}`) {
     throw new RolloutError(
       "Approved provider fingerprint is not the exact canonical staging evidence shape.",
     );
@@ -4614,7 +4774,7 @@ export function approvedProviderFingerprintVariants(stagingFingerprint) {
     stagingFingerprint,
     stagingFingerprint.replace(
       canonicalCatalog,
-      `catalog=${EXPECTED_V39_RESTORED_CATALOG_STATE}`,
+      `catalog=${EXPECTED_V40_RESTORED_CATALOG_STATE}`,
     ),
   ];
 }
@@ -4830,13 +4990,16 @@ export function readRemoteState(
       v37TriggerGuardManifest: null,
       v38BillingManifest: null,
       v39ReleaseManifest: null,
+      v40ReleaseManifest: null,
+      v40RankCommandState: null,
+      v39CompatibilityReadiness: null,
       v38CompatibilityReadiness: null,
       v37CompatibilityReadiness: null,
       operationalReadiness: null,
       writerReturnContractState: null,
     };
     if (
-      (snapshot.history === packet.v36History || snapshot.history === packet.v37History || snapshot.history === packet.v38History || snapshot.history === packet.postHistory) &&
+      (snapshot.history === packet.v36History || snapshot.history === packet.v37History || snapshot.history === packet.v38History || snapshot.history === packet.v39History || snapshot.history === packet.postHistory) &&
       snapshot.objectCounts === "3:1"
     ) {
       snapshot.functionState = query(
@@ -4853,7 +5016,7 @@ export function readRemoteState(
       );
       snapshot.catalogState = query(
         sourceRoot,
-        CATALOG_STATE_SQL,
+        snapshot.history === packet.postHistory ? V40_CATALOG_STATE_SQL : CATALOG_STATE_SQL,
         "catalog_state",
         env,
       );
@@ -4863,7 +5026,7 @@ export function readRemoteState(
       snapshot.v36RecoveryManifest = query(
         sourceRoot,V36_RECOVERY_MANIFEST_SQL,"v36_recovery_manifest",env,
       );
-      if (snapshot.history === packet.v37History || snapshot.history === packet.v38History || snapshot.history === packet.postHistory) {
+      if (snapshot.history === packet.v37History || snapshot.history === packet.v38History || snapshot.history === packet.v39History || snapshot.history === packet.postHistory) {
         snapshot.v37TriggerGuardManifest = query(
           sourceRoot,
           V37_TRIGGER_GUARD_MANIFEST_SQL,
@@ -4874,11 +5037,18 @@ export function readRemoteState(
       if (snapshot.history === packet.v38History) {
         snapshot.v38BillingManifest = query(sourceRoot, V38_BILLING_MANIFEST_SQL, "v38_billing_manifest", env);
       }
-      if (snapshot.history === packet.postHistory) {
+      if (snapshot.history === packet.v39History) {
         snapshot.v39ReleaseManifest = query(sourceRoot, V39_RELEASE_MANIFEST_SQL, "v39_release_manifest", env);
+      }
+      if (snapshot.history === packet.postHistory) {
+        snapshot.v40ReleaseManifest = query(sourceRoot, V40_RELEASE_MANIFEST_SQL, "v40_release_manifest", env);
+        snapshot.v40RankCommandState = query(sourceRoot, V40_RANK_COMMAND_STATE_SQL, "rank_command_state", env);
+        snapshot.v39CompatibilityReadiness = query(sourceRoot, V39_OPERATIONAL_READINESS_SQL.replace("as operational_readiness", "as v39_compatibility_readiness"), "v39_compatibility_readiness", env);
+      }
+      if (snapshot.history === packet.v39History || snapshot.history === packet.postHistory) {
         snapshot.v38CompatibilityReadiness = query(sourceRoot, V38_OPERATIONAL_READINESS_SQL.replace("as operational_readiness", "as v38_compatibility_readiness"), "v38_compatibility_readiness", env);
       }
-      if (snapshot.history === packet.v38History || snapshot.history === packet.postHistory) {
+      if (snapshot.history === packet.v38History || snapshot.history === packet.v39History || snapshot.history === packet.postHistory) {
         snapshot.v37CompatibilityReadiness = query(sourceRoot, V37_OPERATIONAL_READINESS_SQL.replace("as operational_readiness", "as v37_compatibility_readiness"), "v37_compatibility_readiness", env);
       }
       snapshot.criticalSurfaceManifest = query(
@@ -5036,13 +5206,15 @@ export function readRemoteState(
         snapshot.history === packet.v35History ||
         snapshot.history === packet.v36History ||
         snapshot.history === packet.v37History || snapshot.history === packet.v38History ||
-        snapshot.history === packet.postHistory
+        snapshot.history === packet.v39History || snapshot.history === packet.postHistory
       )
     ) {
       snapshot.operationalReadiness = query(
         sourceRoot,
         snapshot.history === packet.postHistory
           ? FINAL_OPERATIONAL_READINESS_SQL
+          : snapshot.history === packet.v39History
+            ? V39_OPERATIONAL_READINESS_SQL
           : snapshot.history === packet.v38History
             ? V38_OPERATIONAL_READINESS_SQL
           : snapshot.history === packet.v37History

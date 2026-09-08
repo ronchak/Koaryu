@@ -211,8 +211,8 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 134 ]]; then
-  echo "ERROR: Expected the canonical 134-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 135 ]]; then
+  echo "ERROR: Expected the canonical 135-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
 if [[ ${#verification_files[@]} -ne 50 ]]; then
@@ -748,6 +748,12 @@ SQL
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
+  if [[ "$migration_filename" == "20260908133504_rank_history_command_ownership_v40.sql" ]]; then
+    run_interruptible python3 "$ROOT_DIR/scripts/verify-v39-v40-restore-contract.py" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+  fi
+
   echo "[migration $migration_index/$migration_total] RUN $migration_filename"
   if run_interruptible "$PSQL" "${psql_args[@]}" \
     --single-transaction \
@@ -1061,17 +1067,7 @@ if [[ "$student_rank_manifest" != "0:3201f4586df300ab113e7db82b6cead45d3ea3bc1ad
 fi
 echo "[student-rank manifest] PASS database-observable writer signal"
 
-echo "[critical-surface manifest] RUN archive, checkout, and promotion identity signal"
-critical_surface_manifest="$(
-  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
-SELECT private.koaryu_release_critical_surface_manifest_v18();
-"
-)"
-if [[ "$critical_surface_manifest" != "0:31bec59b620eaa151c33cae2da08f533087e888216017247329e7cc517d98a0d" ]]; then
-  echo "[critical-surface manifest] FAIL archive, checkout, and promotion identity signal: $critical_surface_manifest" >&2
-  exit 1
-fi
-echo "[critical-surface manifest] PASS archive, checkout, and promotion identity signal"
+
 
 echo "[schedule-window manifest] RUN read RPC definition and ACL signal"
 schedule_window_manifest="$(
@@ -1085,7 +1081,7 @@ if [[ "$schedule_window_manifest" != "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed7
 fi
 echo "[schedule-window manifest] PASS read RPC definition and ACL signal"
 
-echo "[V39 readiness] RUN exact final migration and manifest signal"
+echo "[V40 readiness] RUN exact final migration and manifest signal"
 operational_readiness="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
@@ -1097,32 +1093,33 @@ if (
     "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" \
     "$operational_readiness"
 ); then
-  echo "[V39 readiness] PASS exact final migration and manifest signal"
+  echo "[V40 readiness] PASS exact final migration and manifest signal"
 else
   status=$?
-  echo "[V39 readiness] actual=$operational_readiness" >&2
-  echo "[V39 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
+  echo "[V40 readiness] actual=$operational_readiness" >&2
+  echo "[V40 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
   exit "$status"
 fi
 
-echo "[V39 release] RUN exact read definitions and privileges"
-v39_release_manifest="$({
+echo "[V40 release] RUN exact read definitions and privileges"
+v40_release_manifest="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { V39_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V39_RELEASE_MANIFEST_SQL);"
+    "import { V40_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V40_RELEASE_MANIFEST_SQL);"
 } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-expected_v39_release_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V39_RELEASE_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V39_RELEASE_MANIFEST);")"
-if [[ "$v39_release_manifest" != "$expected_v39_release_manifest" ]]; then
-  echo "[V39 release] FAIL exact read definitions and privileges: $v39_release_manifest" >&2
+expected_v40_release_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V40_RELEASE_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V40_RELEASE_MANIFEST);")"
+if [[ "$v40_release_manifest" != "$expected_v40_release_manifest" ]]; then
+  echo "[V40 release] FAIL exact read definitions and privileges: $v40_release_manifest" >&2
   exit 1
 fi
-echo "[V39 release] PASS exact read definitions and privileges"
+echo "[V40 release] PASS exact read definitions and privileges"
 
 assert_history_index_rejects() {
   local label="$1"
   local mutation_sql="$2"
   local result=""
   local raw_manifest=""
+  local v40_ready=""
   local v39_ready=""
   local v38_ready=""
   local v37_ready=""
@@ -1132,15 +1129,16 @@ assert_history_index_rejects() {
     (
       cd "$ROOT_DIR"
       node --input-type=module --eval \
-        "import { V39_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V39_RELEASE_MANIFEST_SQL);"
+        "import { V40_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V40_RELEASE_MANIFEST_SQL);"
     )
-    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v20();\nSELECT ready FROM public.koaryu_release_schema_preflight_v19();\nSELECT ready FROM public.koaryu_release_schema_preflight_v18();\nROLLBACK;\n'
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v21();\nSELECT ready FROM public.koaryu_release_schema_preflight_v20();\nSELECT ready FROM public.koaryu_release_schema_preflight_v19();\nSELECT ready FROM public.koaryu_release_schema_preflight_v18();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   raw_manifest="$(printf '%s\n' "$result" | sed -n '1p')"
-  v39_ready="$(printf '%s\n' "$result" | sed -n '2p')"
-  v38_ready="$(printf '%s\n' "$result" | sed -n '3p')"
-  v37_ready="$(printf '%s\n' "$result" | sed -n '4p')"
-  if [[ "$raw_manifest" == "$expected_v39_release_manifest" || "$v39_ready" != "f" || "$v38_ready" != "f" || "$v37_ready" != "f" ]]; then
+  v40_ready="$(printf '%s\n' "$result" | sed -n '2p')"
+  v39_ready="$(printf '%s\n' "$result" | sed -n '3p')"
+  v38_ready="$(printf '%s\n' "$result" | sed -n '4p')"
+  v37_ready="$(printf '%s\n' "$result" | sed -n '5p')"
+  if [[ "$raw_manifest" == "$expected_v40_release_manifest" || "$v40_ready" != "f" || "$v39_ready" != "f" || "$v38_ready" != "f" || "$v37_ready" != "f" ]]; then
     echo "[Billing history negative] FAIL $label: $result" >&2
     exit 1
   fi
@@ -1163,7 +1161,7 @@ echo "[catalog] RUN deterministic raw catalog security fingerprint"
 catalog_state="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
+    "import { V40_CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V40_CATALOG_STATE_SQL);"
 } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
 if (
   cd "$ROOT_DIR"
@@ -1179,7 +1177,7 @@ else
   exit "$status"
 fi
 
-echo "[V39 memberships] RUN final semantic chain and both previous backend contracts"
+echo "[V40 semantics] RUN final semantic chain and retained backend contracts"
 while IFS='|' read -r query_export expected_export; do
   actual="$({
     cd "$ROOT_DIR"
@@ -1189,18 +1187,90 @@ while IFS='|' read -r query_export expected_export; do
   expected="$(cd "$ROOT_DIR" && node --input-type=module --eval \
     "import * as m from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(m[process.argv[1]]);" "$expected_export")"
   if [[ "$actual" != "$expected" ]]; then
-    echo "[V39 memberships] FAIL $query_export" >&2
+    echo "[V40 semantics] FAIL $query_export" >&2
     exit 1
   fi
-done <<'V39_CHECKS'
+done <<'V40_CHECKS'
+CRITICAL_SURFACE_MANIFEST_SQL|EXPECTED_V40_CRITICAL_SURFACE_MANIFEST
+V39_OPERATIONAL_READINESS_SQL|EXPECTED_V39_OPERATIONAL_READINESS
+V40_RANK_COMMAND_STATE_SQL|EXPECTED_V40_RANK_COMMAND_STATE
 V38_OPERATIONAL_READINESS_SQL|EXPECTED_V38_OPERATIONAL_READINESS
 V37_OPERATIONAL_READINESS_SQL|EXPECTED_V37_OPERATIONAL_READINESS
-V31_EXPECTATION_STATE_SQL|EXPECTED_V39_EXPECTATION_STATE
-V31_RESOURCE_OWNERSHIP_MANIFEST_SQL|EXPECTED_V39_RESOURCE_OWNERSHIP_MANIFEST
-V31_OPERATIONAL_CONTRACT_SQL|EXPECTED_V39_OPERATIONAL_CONTRACT_V31
-V31_OPERATIONAL_MANIFEST_SQL|EXPECTED_V39_OPERATIONAL_MANIFEST_V12
-V39_CHECKS
-echo "[V39 memberships] PASS final semantic chain and both previous backend contracts"
+V31_EXPECTATION_STATE_SQL|EXPECTED_V40_EXPECTATION_STATE
+V31_RESOURCE_OWNERSHIP_MANIFEST_SQL|EXPECTED_V40_RESOURCE_OWNERSHIP_MANIFEST
+V31_OPERATIONAL_CONTRACT_SQL|EXPECTED_V40_OPERATIONAL_CONTRACT_V31
+V31_OPERATIONAL_MANIFEST_SQL|EXPECTED_V40_OPERATIONAL_MANIFEST_V12
+V40_CHECKS
+echo "[V40 semantics] PASS final semantic chain and retained backend contracts"
+
+# Read the same independently pinned catalog facts after each isolated drift.
+expected_rank_command_state="$(cd "$ROOT_DIR" && node --input-type=module --eval \
+  "import { EXPECTED_V40_RANK_COMMAND_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V40_RANK_COMMAND_STATE);")"
+assert_rank_raw_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local raw=""
+  echo "[rank raw negative] RUN $label"
+  raw="$({
+    printf 'BEGIN;\n%s\n' "$mutation_sql"
+    (
+      cd "$ROOT_DIR"
+      node --input-type=module --eval \
+        "import { V40_RANK_COMMAND_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V40_RANK_COMMAND_STATE_SQL);"
+    )
+    printf '\nROLLBACK;\n'
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  if [[ "$raw" != column=6:* || "$raw" == *$'\n'* || "$raw" == "$expected_rank_command_state" ]]; then
+    echo "[rank raw negative] FAIL $label: $raw" >&2
+    exit 1
+  fi
+  echo "[rank raw negative] PASS $label"
+}
+rank_rpc='public.record_student_rank_transition_v3(uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid)'
+rank_hash='private.rank_transition_fingerprint_v1(uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text)'
+assert_rank_raw_rejects "missing command RPC" "DROP FUNCTION $rank_rpc;"
+assert_rank_raw_rejects "browser command execution" "GRANT EXECUTE ON FUNCTION $rank_rpc TO authenticated;"
+assert_rank_raw_rejects "missing service execution" "REVOKE EXECUTE ON FUNCTION $rank_rpc FROM service_role;"
+assert_rank_raw_rejects "fingerprint body drift" \
+  "UPDATE pg_proc SET prosrc=prosrc||chr(10)||'-- injected drift' WHERE oid='$rank_hash'::regprocedure;"
+assert_rank_raw_rejects "fingerprint volatility drift" "ALTER FUNCTION $rank_hash STABLE;"
+assert_rank_raw_rejects "command search path drift" "ALTER FUNCTION $rank_rpc SET search_path=public;"
+assert_rank_raw_rejects "receipt default drift" "ALTER TABLE public.promotions ALTER COLUMN command_program_id SET DEFAULT gen_random_uuid();"
+assert_rank_raw_rejects "receipt nullability drift" "ALTER TABLE public.promotions ALTER COLUMN command_program_id SET NOT NULL;"
+assert_rank_raw_rejects "immutable receipt FK" \
+  "ALTER TABLE public.promotions ADD CONSTRAINT unexpected_command_fk FOREIGN KEY(command_from_rank_id) REFERENCES public.belt_ranks(id) ON DELETE SET NULL;"
+assert_rank_raw_rejects "missing actor cleanup FK" "ALTER TABLE public.promotions DROP CONSTRAINT promotions_promoted_by_fkey;"
+assert_rank_raw_rejects "weakened receipt CHECK" \
+  "ALTER TABLE public.promotions DROP CONSTRAINT promotions_command_evidence_check, ADD CONSTRAINT promotions_command_evidence_check CHECK(true);"
+rank_unvalidated_check="$(cat <<'SQL'
+DO $check$
+DECLARE definition TEXT;
+BEGIN
+  SELECT pg_get_constraintdef(oid) INTO definition FROM pg_constraint
+  WHERE conrelid='public.promotions'::regclass AND conname='promotions_command_evidence_check' AND convalidated;
+  IF definition IS NULL THEN RAISE EXCEPTION 'Expected the validated receipt CHECK before mutation'; END IF;
+  ALTER TABLE public.promotions DROP CONSTRAINT promotions_command_evidence_check;
+  EXECUTE 'ALTER TABLE public.promotions ADD CONSTRAINT promotions_command_evidence_check ' || definition || ' NOT VALID';
+END;
+$check$;
+SQL
+)"
+assert_rank_raw_rejects "unvalidated receipt CHECK" "$rank_unvalidated_check"
+assert_rank_raw_rejects "disabled history trigger" \
+  "ALTER TABLE public.promotions DISABLE TRIGGER snapshot_promotion_rank_identity_trigger;"
+for rank_index_flag in indisvalid indisready indislive; do
+  assert_rank_raw_rejects "operation index $rank_index_flag=false" \
+    "UPDATE pg_index SET $rank_index_flag=false WHERE indexrelid='public.promotions_studio_operation_once'::regclass;"
+done
+rank_state_after_negatives="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { V40_RANK_COMMAND_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V40_RANK_COMMAND_STATE_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+if [[ "$rank_state_after_negatives" != "$expected_rank_command_state" ]]; then
+  echo "[rank raw negative] FAIL mutations did not roll back to the exact baseline" >&2
+  exit 1
+fi
 
 echo "[V37 compatibility] RUN re-pinned V26 singleton expectation"
 v26_expectation_state="$({
@@ -1311,7 +1381,7 @@ assert_attestation_rejects() {
     (
       cd "$ROOT_DIR"
       node --input-type=module --eval \
-        "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
+        "import { V40_CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V40_CATALOG_STATE_SQL);"
     )
     printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v12();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
@@ -1401,7 +1471,7 @@ assert_v27_compat_v26_release_rejects() {
     (
       cd "$ROOT_DIR"
       node --input-type=module --eval \
-        "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
+        "import { V40_CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V40_CATALOG_STATE_SQL);"
     )
     printf ';\n'
     (
@@ -1634,9 +1704,9 @@ assert_attestation_rejects \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_student_rank_writer_manifest_v13()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
-  "V16 helper self-body drift (external authority only)" \
+  "V16 helper self-body drift (current definition pin)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_critical_surface_manifest_v16()'::regprocedure;" \
-  "t"
+  "f"
 assert_preflight_rejects \
   "dashboard RPC service-role grant drift" \
   "REVOKE EXECUTE ON FUNCTION public.dashboard_summary_facts(uuid, text, text, date, text) FROM service_role;"
@@ -1821,6 +1891,9 @@ else
   echo "[concurrency] FAIL Connect identity mapping/exclusion invariant (exit $status)" >&2
   exit "$status"
 fi
+
+echo "[concurrency] RUN rank transition replay and commit ordering"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-rank-transition-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
 echo "[concurrency] RUN student profile/rank-plan lock ordering"
 if run_interruptible bash \

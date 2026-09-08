@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "ec48501163a55481e28bd109c3adee06b49bc79f",
+  "last_reconciled_main": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -322,12 +322,12 @@
       "id": "OPS1-01",
       "title": "Rank-transition replay accepts a different request under the same operation ID",
       "cluster": "rank_history_and_replay",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "One transactional SQL owner validates the effective command before returning a prior receipt. Changed actor, target, notes, kind or explicit context conflicts instead of reporting the earlier operation as success.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
+      "verification": "Candidate implementation and independent reviews complete; 135 migrations/50 contracts, real legacy upgrade and logical restores, five observed lock races, 16 raw drift negatives, full backend/frontend suites and 130 release-workflow tests pass. See docs/remediation/rank-history-verification.md. Exact-head CI and guarded merge remain required; no hosted apply or deployment.",
       "source_paths": [
         "backend/app/services/belt_promotions.py"
       ],
@@ -529,12 +529,12 @@
       "id": "OPS1-14",
       "title": "Promotion and demotion duplicate their full identity-resolution sequence",
       "cluster": "rank_history_and_replay",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "resolved_indirectly",
+      "reason": "Establishing one transactional rank-command owner removed the duplicated Python promotion/demotion identity, context and adjacency state machines and their unused delegate.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
+      "verification": "Candidate implementation and independent reviews complete; 135 migrations/50 contracts, real legacy upgrade and logical restores, five observed lock races, 16 raw drift negatives, full backend/frontend suites and 130 release-workflow tests pass. See docs/remediation/rank-history-verification.md. Exact-head CI and guarded merge remain required; no hosted apply or deployment.",
       "source_paths": [
         "backend/app/services/belt_promotions.py"
       ],
@@ -1496,12 +1496,12 @@
       "id": "BT1-06",
       "title": "Rank replay tests miss changed requests within the same transition kind",
       "cluster": "rank_history_and_replay",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "Replaced permissive replay tests and copied SQL algorithms with narrow API adapter/error tests, actual PostgreSQL changed-command and legacy cases, and deterministic two-session concurrency proof.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
+      "verification": "Candidate implementation and independent reviews complete; 135 migrations/50 contracts, real legacy upgrade and logical restores, five observed lock races, 16 raw drift negatives, full backend/frontend suites and 130 release-workflow tests pass. See docs/remediation/rank-history-verification.md. Exact-head CI and guarded merge remain required; no hosted apply or deployment.",
       "source_paths": [
         "backend/tests/test_belt_service.py"
       ],
@@ -3753,10 +3753,10 @@
       "title": "Several confirmed saves disappear locally when a session token renews",
       "cluster": "read_and_mutation_ownership",
       "disposition": "pending",
-      "reason": "PR153 repaired belt-save settlement, PR159 program settlement, and the staff candidate repairs staff/self-legal-name settlement. Promotion/demotion completion and its history/receipt owner remain pending.",
+      "reason": "PR153 repaired belt-save settlement, PR159 program settlement and PR160 staff/self-legal-name settlement. Rank SQL now validates command identity, but promotion/demotion client completion and its history/receipt owner remain pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "ec48501163a55481e28bd109c3adee06b49bc79f",
+      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
       "verification": "Confirmed belt/program/staff writes survive ordinary token renewal under unchanged access identity. SDK USER_UPDATED deliberately retains authoritative access reset. The current promotion/demotion path still clears its receipt then requires the old token and has coupled history-read/recovery ownership; see the pending rank/replay cluster.",
       "source_paths": [
         "frontend/src/lib/store-program-actions.ts",
@@ -3767,7 +3767,8 @@
       ],
       "pull_requests": [
         153,
-        159
+        159,
+        160
       ]
     },
     {
@@ -4140,12 +4141,12 @@
       "id": "DM2-01",
       "title": "Unrelated promotion updates can rewrite historical belt names",
       "cluster": "rank_history_and_replay",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "History updates retain the original four rank-name/color snapshots, including after renaming and actual actor or single-rank FK nulling.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
+      "verification": "Candidate implementation and independent reviews complete; 135 migrations/50 contracts, real legacy upgrade and logical restores, five observed lock races, 16 raw drift negatives, full backend/frontend suites and 130 release-workflow tests pass. See docs/remediation/rank-history-verification.md. Exact-head CI and guarded merge remain required; no hosted apply or deployment.",
       "source_paths": [
         "supabase/migrations/20260814170000_preserve_retained_student_membership_ranks.sql",
         "supabase/migrations/20260520041120_harden_account_deletion_user_fks.sql"
@@ -4176,12 +4177,12 @@
       "id": "DM2-03",
       "title": "Database rank-transition replay identity depends on fields that deletion changes",
       "cluster": "rank_history_and_replay",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "New receipts retain immutable versioned command evidence independent of nullable history relationships. Genuine legacy receipts use conservative intact identity and, where required, complete transaction-audit proof. Intentional history deletion still deletes receipts.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
+      "verification": "Candidate implementation and independent reviews complete; 135 migrations/50 contracts, real legacy upgrade and logical restores, five observed lock races, 16 raw drift negatives, full backend/frontend suites and 130 release-workflow tests pass. See docs/remediation/rank-history-verification.md. Exact-head CI and guarded merge remain required; no hosted apply or deployment.",
       "source_paths": [
         "supabase/migrations/20260814213000_lock_core_trial_decision_to_reservation.sql",
         "supabase/migrations/20260814170000_preserve_retained_student_membership_ranks.sql",

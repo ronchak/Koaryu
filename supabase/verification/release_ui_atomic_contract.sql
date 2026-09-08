@@ -16,7 +16,8 @@ BEGIN
         'public.accept_core_checkout_subscription_atomic(uuid,uuid,bigint,text,text,bigint)',
         'public.set_studio_comp_v2_atomic(uuid,boolean,text,uuid,text,boolean)',
         'public.sync_belt_ladder_ranks_v2(uuid,uuid,uuid,uuid,text,jsonb)',
-        'public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)'
+        'public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)',
+        'public.record_student_rank_transition_v3(uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid)'
     ] LOOP
         v_rpc := to_regprocedure(v_signature);
         IF v_rpc IS NULL THEN
@@ -47,6 +48,8 @@ DECLARE
     v_yellow UUID := gen_random_uuid();
     v_black UUID := gen_random_uuid();
     v_promotion UUID := gen_random_uuid();
+    v_reverse_history UUID := gen_random_uuid();
+    v_history_actor UUID := gen_random_uuid();
     v_checkout RECORD;
     v_publish RECORD;
     v_second_checkout RECORD;
@@ -223,7 +226,39 @@ BEGIN
             (SELECT row_to_json(promotion) FROM public.promotions promotion WHERE id = v_promotion),
             EXISTS(SELECT 1 FROM public.belt_ranks WHERE id = v_yellow);
     END IF;
-    DELETE FROM public.belt_ranks WHERE id IN (v_white, v_yellow);
+    INSERT INTO auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+    VALUES (v_history_actor, 'authenticated', 'authenticated',
+        'rank-history-' || replace(v_history_actor::TEXT, '-', '') || '@example.invalid', '{}', '{}', now(), now());
+    INSERT INTO public.promotions (
+        id, studio_id, student_id, from_rank_id, to_rank_id, promoted_by, notes
+    ) VALUES (v_reverse_history, v_studio, v_student, v_yellow, v_white, v_history_actor, 'Reverse snapshot contract');
+    UPDATE public.belt_ranks SET name = 'Renamed ' || name, color_hex = '#123456'
+    WHERE id IN (v_white, v_yellow);
+    UPDATE public.promotions SET notes = 'Unrelated metadata update' WHERE id = v_promotion;
+    DELETE FROM auth.users WHERE id = v_history_actor;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.promotions WHERE id = v_promotion
+          AND from_rank_name_snapshot = 'White Belt' AND from_rank_color_snapshot = '#FFFFFF'
+          AND to_rank_name_snapshot = 'Yellow Belt' AND to_rank_color_snapshot = '#FFFF00'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM public.promotions WHERE id = v_reverse_history AND promoted_by IS NULL
+          AND from_rank_name_snapshot = 'Yellow Belt' AND from_rank_color_snapshot = '#FFFF00'
+          AND to_rank_name_snapshot = 'White Belt' AND to_rank_color_snapshot = '#FFFFFF'
+    ) THEN RAISE EXCEPTION 'Metadata or actor deletion rewrote promotion-time rank facts.'; END IF;
+
+    DELETE FROM public.belt_ranks WHERE id = v_white;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.promotions WHERE id = v_promotion
+          AND from_rank_id IS NULL AND to_rank_id = v_yellow
+          AND from_rank_name_snapshot = 'White Belt' AND from_rank_color_snapshot = '#FFFFFF'
+          AND to_rank_name_snapshot = 'Yellow Belt' AND to_rank_color_snapshot = '#FFFF00'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM public.promotions WHERE id = v_reverse_history
+          AND from_rank_id = v_yellow AND to_rank_id IS NULL
+          AND from_rank_name_snapshot = 'Yellow Belt' AND from_rank_color_snapshot = '#FFFF00'
+          AND to_rank_name_snapshot = 'White Belt' AND to_rank_color_snapshot = '#FFFFFF'
+    ) THEN RAISE EXCEPTION 'Deleting one rank rewrote the surviving side of promotion history.'; END IF;
+    DELETE FROM public.belt_ranks WHERE id = v_yellow;
     IF NOT EXISTS (
         SELECT 1 FROM public.promotions
         WHERE id = v_promotion
@@ -561,32 +596,32 @@ BEGIN
     SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
     SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
     IF (v_current_count=131 AND v_current_head='20260831054918')
-       OR ((v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339') OR (v_current_count=134 AND v_current_head='20260908080420')) THEN
+       OR ((v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339') OR (v_current_count=134 AND v_current_head='20260908080420') OR (v_current_count=135 AND v_current_head='20260908133504')) THEN
         IF v_v7.ready IS DISTINCT FROM false
-           OR v_v7.migration_count<>126
-           OR v_v7.migration_head<>'20260826185651'
+           OR v_v7.migration_count IS DISTINCT FROM 126
+           OR v_v7.migration_head IS DISTINCT FROM '20260826185651'
            OR v_v7.security_failures
               IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
-           OR v_v7.manifest_version<>'release-db-attestation-v26'
+           OR v_v7.manifest_version IS DISTINCT FROM 'release-db-attestation-v26'
            OR v_v6.ready IS DISTINCT FROM false
-           OR v_v6.migration_count<>126
-           OR v_v6.migration_head<>'20260826185651'
+           OR v_v6.migration_count IS DISTINCT FROM 126
+           OR v_v6.migration_head IS DISTINCT FROM '20260826185651'
            OR v_v6.security_failures
               IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
-           OR v_v6.manifest_version<>'release-db-attestation-v25'
+           OR v_v6.manifest_version IS DISTINCT FROM 'release-db-attestation-v25'
            OR v_v5.ready IS DISTINCT FROM false
-           OR v_v5.migration_count<>126
-           OR v_v5.migration_head<>'20260826185651'
+           OR v_v5.migration_count IS DISTINCT FROM 126
+           OR v_v5.migration_head IS DISTINCT FROM '20260826185651'
            OR v_v5.security_failures
               IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
-           OR v_v5.manifest_version<>'release-db-attestation-v25'
+           OR v_v5.manifest_version IS DISTINCT FROM 'release-db-attestation-v25'
            OR v_v4.ready IS DISTINCT FROM false
-           OR v_v4.migration_count<>126
-           OR v_v4.migration_head<>'20260826185651'
+           OR v_v4.migration_count IS DISTINCT FROM 126
+           OR v_v4.migration_head IS DISTINCT FROM '20260826185651'
            OR v_v4.security_failures
               IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
-           OR v_v4.manifest_version<>'release-db-attestation-v24' THEN
-            RAISE EXCEPTION 'V36/V37 obsolete-readiness classification drifted: v7=%, v6=%, v5=%, v4=%',
+           OR v_v4.manifest_version IS DISTINCT FROM 'release-db-attestation-v24' THEN
+            RAISE EXCEPTION 'Obsolete readiness classification drifted: v7=%, v6=%, v5=%, v4=%',
                 row_to_json(v_v7), row_to_json(v_v6), row_to_json(v_v5), row_to_json(v_v4);
         END IF;
     ELSIF v_v7.ready IS DISTINCT FROM true

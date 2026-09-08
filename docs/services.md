@@ -147,14 +147,14 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The current candidate's `/health/ready` calls `koaryu_release_schema_preflight_v20`
-and serves only at 134/head `20260908080420` with `release-db-attestation-v39`. It fails
-closed at every other migration state. That is deliberate, and it is why a
-backend deployed ahead of its migration will sit unhealthy rather than serve.
-This describes the candidate contract, not a new hosted-state verification.
-V39 preserves the V38-shaped V19 response and the V37-shaped V18 response only
-when V20 proves the complete V39 state, allowing the database-first cutover.
-Merging the candidate does not apply that migration or deploy the backend.
+The current candidate's `/health/ready` calls `koaryu_release_schema_preflight_v21`
+and serves only at 135/head `20260908133504` with `release-db-attestation-v40`. It
+fails closed at every other migration state, so a backend deployed before its
+migration remains unhealthy. This describes the candidate contract, not a new
+hosted-state verification. V40 preserves the V39/V38/V37 responses through
+V20/V19/V18 only when full V21 proves the new state. Existing rank RPC signatures
+remain compatible during the database-first cutover. Merging does not apply the
+migration or deploy either application.
 
 ## Supabase — database, auth, storage
 

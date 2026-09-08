@@ -489,9 +489,3 @@ class BeltService:
         self, data: DemoteStudent, studio_id: str, actor_id: str
     ) -> PromotionResponse:
         return await BeltPromotionRecorder(self.supabase).demote_student(data, studio_id, actor_id)
-
-    def _record_promotion_atomic(self, promo: dict[str, Any], *, student_program_id: Optional[str]) -> dict[str, Any]:
-        return BeltPromotionRecorder(self.supabase)._record_promotion_atomic(
-            promo,
-            student_program_id=student_program_id,
-        )
