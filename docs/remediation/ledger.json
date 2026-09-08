@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "50f0f4796f941383d1507b2229ac58e1e3e71427",
+  "last_reconciled_main": "342d545ae4edf0d8b1c27ab31736614f296f7c16",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2553,8 +2553,8 @@
       "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "342d545ae4edf0d8b1c27ab31736614f296f7c16",
+      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending. Reverified after PR158: program read/mutation/bootstrap/import/reset ownership remains defective and independent of membership SQL. Next program-only PR will cover that owner; staff and promotion portions remain pending. Program candidate now has one resource owner across writes/reads/bootstrap/import/reset and synchronous program refs. Six production-shaped mounted groups fail unchanged342d545 and pass corrected candidate; separately reproduced workspace-error bypass is fixed. See docs/remediation/program-ownership-verification.md. Remaining staff/promotion scope keeps this entry pending.",
       "source_paths": [
         "frontend/tests/store-initialization-mounted.test.mjs",
         "frontend/tests/store-staff-actions.test.mjs",
@@ -3736,8 +3736,8 @@
       "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "342d545ae4edf0d8b1c27ab31736614f296f7c16",
+      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending. Reverified after PR158: program read/mutation/bootstrap/import/reset ownership remains defective and independent of membership SQL. Next program-only PR will cover that owner; staff and promotion portions remain pending. Program candidate now has one resource owner across writes/reads/bootstrap/import/reset and synchronous program refs. Six production-shaped mounted groups fail unchanged342d545 and pass corrected candidate; separately reproduced workspace-error bypass is fixed. See docs/remediation/program-ownership-verification.md. Remaining staff/promotion scope keeps this entry pending.",
       "source_paths": [
         "frontend/src/lib/store-program-actions.ts",
         "frontend/src/lib/store-staff-actions.ts"
@@ -3752,8 +3752,8 @@
       "reason": "PR153 repaired confirmed belt-save settlement. Staff, program and promotion paths remain pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
-      "verification": "Belt held-save credential-renewal and sign-out cases pass; remaining domain paths not yet remediated.",
+      "verified_against": "342d545ae4edf0d8b1c27ab31736614f296f7c16",
+      "verification": "Belt held-save credential-renewal and sign-out cases pass; remaining domain paths not yet remediated. Reverified after PR158: program read/mutation/bootstrap/import/reset ownership remains defective and independent of membership SQL. Next program-only PR will cover that owner; staff and promotion portions remain pending. Program candidate now has one resource owner across writes/reads/bootstrap/import/reset and synchronous program refs. Six production-shaped mounted groups fail unchanged342d545 and pass corrected candidate; separately reproduced workspace-error bypass is fixed. See docs/remediation/program-ownership-verification.md. Remaining staff/promotion scope keeps this entry pending.",
       "source_paths": [
         "frontend/src/lib/store-program-actions.ts",
         "frontend/src/lib/store-staff-actions.ts",
@@ -4155,8 +4155,8 @@
       "reason": "V39 preserves retained paused/active status and exact per-program dates during ordinary profile edits, with matching preview behavior. Existing explicit changed-date behavior remains unchanged pending the separate product policy decision; no historical backfill.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "50f0f4796f941383d1507b2229ac58e1e3e71427",
-      "verification": "The expanded real V2 SQL regression fails on V38 and passes after correction, including nine date/list cases, add/remove and exact audit rollback. Actual migration rollback, old V19/V18 consumers, corruption negatives and seeded V38 logical restore to V39 passed. Preview20, ops58, rollout68, backend1882/5447subtests, frontend922/build and generated contracts passed. See docs/remediation/student-membership-verification.md; full release gates remain required before merge. Full SQL exposed stale selectors in four older contracts; corrected contracts pass on fresh134 replay. Final full-suite rerun and PR158 gates remain required.",
+      "verified_against": "342d545ae4edf0d8b1c27ab31736614f296f7c16",
+      "verification": "PR158 merged after independent and automated review on c656f3c and all exact-head CI. Full local134-migration/50-contract suite, restores and concurrency passed; original133migrationbytes unchanged. Backend1882/5447subtests and frontend922/build passed. Main tree equals reviewed head. See docs/remediation/student-membership-verification.md and PR158. No hosted migration or backfill.",
       "source_paths": [
         "supabase/migrations/20260814170000_preserve_retained_student_membership_ranks.sql",
         "supabase/migrations/20260613095000_atomic_student_profile_write.sql",
