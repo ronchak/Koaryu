@@ -233,6 +233,7 @@ class StudentCrudActionsTest(unittest.TestCase):
         ))
 
         self.assertEqual(student["legal_first_name"], "Aiko")
+        self.assertEqual(student["tags"], [])
         self.assertEqual([name for name, _params in supabase.rpc_calls], ["write_student_profile_v2_atomic"])
         params = supabase.rpc_calls[0][1]
         self.assertTrue(params["p_replace_programs"])
@@ -337,6 +338,38 @@ class StudentCrudActionsTest(unittest.TestCase):
 
         self.assertEqual(committed["preferred_name"], "Aiko")
         self.assertIsNone(committed["photo_url"])
+
+    def test_partial_update_preserves_or_explicitly_replaces_existing_tags(self):
+        for fields, expected_tags in [
+            ({"phone": "555-0100"}, ["competition", "family"]),
+            ({"tags": ["advanced"]}, ["advanced"]),
+            ({"tags": []}, []),
+            ({"tags": None}, []),
+        ]:
+            with self.subTest(fields=fields):
+                supabase = FakeStudentWriteSupabase({
+                    "programs": [],
+                    "students": [{
+                        "id": "student-1", "studio_id": "studio-1",
+                        "legal_first_name": "Aiko", "legal_last_name": "Tanaka",
+                        "status": "active", "tags": ["competition", "family"],
+                        "created_at": "2026-05-20T00:00:00+00:00",
+                        "updated_at": "2026-05-20T00:00:00+00:00",
+                    }],
+                    "student_program_memberships": [], "guardians": [],
+                    "student_guardians": [], "audit_logs": [],
+                })
+                result = asyncio.run(build_actions(supabase).update_student(
+                    "student-1", StudentUpdate(**fields), "studio-1", "actor-1",
+                ))
+                self.assertEqual(result["tags"], expected_tags)
+                self.assertEqual(supabase.tables["students"][0]["tags"], expected_tags)
+                self.assertEqual(len(supabase.rpc_calls), 1)
+                params = supabase.rpc_calls[0][1]
+                self.assertFalse(params["p_replace_programs"])
+                if "tags" not in fields:
+                    self.assertNotIn("tags", params["p_student"])
+                    self.assertEqual(result["phone"], "555-0100")
 
     def test_create_response_uses_trigger_updated_primary_membership_rank(self):
         supabase = FakeStudentWriteSupabase({

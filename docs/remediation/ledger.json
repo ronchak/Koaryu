@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
+  "last_reconciled_main": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -543,11 +543,11 @@
       "title": "An unrelated partial student edit clears existing tags",
       "cluster": "student_write_preservation",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-student-tags, pending reviewed PR merge. Omitted tags survive; explicit clears/replacements and creation defaults remain. See docs/remediation/student-tags-verification.md.",
       "audit_importance": "high",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
+      "verification": "Populated-tag CRUD regression failed on phone-only update before fix; focused10 tests and4subtests passed after fix. Generated API types unchanged. Independent source review GREEN LIGHT.",
       "source_paths": [
         "backend/app/services/student_write_payload.py",
         "backend/app/services/student_crud_actions.py",
@@ -1929,11 +1929,11 @@
       "title": "Student update fixtures cannot expose loss of existing tags",
       "cluster": "student_write_preservation",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Implemented on codex/remediation-student-tags, pending reviewed PR merge. Omitted tags survive; explicit clears/replacements and creation defaults remain. See docs/remediation/student-tags-verification.md.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
+      "verification": "Populated-tag CRUD regression failed on phone-only update before fix; focused10 tests and4subtests passed after fix. Generated API types unchanged. Independent source review GREEN LIGHT.",
       "source_paths": [
         "backend/tests/test_student_crud_actions.py",
         "backend/app/services/student_write_payload.py"
@@ -2276,7 +2276,7 @@
       "title": "The live belt browser test no longer follows the current product flow",
       "cluster": "belt_draft_ownership",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "PR153 adds composed synthetic rank-editor proof, including repeat-save rank IDs. The original opt-in live test is unchanged and remains pending repair or retirement.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
@@ -2287,14 +2287,16 @@
         "frontend/src/components/belt-tracker/belt-tracker-shell.tsx",
         "frontend/src/components/belt-tracker/rank-plan-panel.tsx"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        153
+      ]
     },
     {
       "id": "FT1-02",
       "title": "The belt preservation test never edits an existing persisted rank",
       "cluster": "belt_draft_ownership",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "PR153 adds composed synthetic rank-editor proof, including repeat-save rank IDs. The original opt-in live test is unchanged and remains pending repair or retirement.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
@@ -2302,7 +2304,9 @@
       "source_paths": [
         "frontend/e2e/atomic-belt-ladder.spec.ts"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        153
+      ]
     },
     {
       "id": "FT1-03",
@@ -2878,11 +2882,11 @@
       "id": "FC1-01",
       "title": "Add Belt accepts a stripe choice and then creates a full belt",
       "cluster": "belt_draft_ownership",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-belt-drafts; pending reviewed PR merge. See docs/remediation/belt-draft-verification.md.",
+      "disposition": "fixed",
+      "reason": "Merged in PR153. Ladder-owned draft, explicit save target and protected save lifetime; Add Belt uses full-belt type. Source fix only; no production deployment.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
+      "verified_against": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
       "verification": "Real mounted editor regression reproduced cross-ladder empty-rank submission before fix; focused42 and fullfrontend917 passed after fix. Independent source review GREEN LIGHT.",
       "source_paths": [
         "frontend/src/components/belt-tracker/belt-tracker-dialogs.tsx",
@@ -2890,7 +2894,9 @@
         "frontend/src/lib/belt-tracker-page-model.ts",
         "frontend/src/lib/belt-tracker-page-controller.ts"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        153
+      ]
     },
     {
       "id": "FC1-02",
@@ -3494,32 +3500,36 @@
       "id": "FSH1-01",
       "title": "Belt drafts mix fields from different ladders after a clean program switch",
       "cluster": "belt_draft_ownership",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-belt-drafts; pending reviewed PR merge. See docs/remediation/belt-draft-verification.md.",
+      "disposition": "fixed",
+      "reason": "Merged in PR153. Ladder-owned draft, explicit save target and protected save lifetime; Add Belt uses full-belt type. Source fix only; no production deployment.",
       "audit_importance": "high",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
+      "verified_against": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
       "verification": "Real mounted editor regression reproduced cross-ladder empty-rank submission before fix; focused42 and fullfrontend917 passed after fix. Independent source review GREEN LIGHT.",
       "source_paths": [
         "frontend/src/lib/belt-tracker-page-controller.ts"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        153
+      ]
     },
     {
       "id": "FSH1-02",
       "title": "Edits made while belt ranks save can be silently discarded",
       "cluster": "belt_draft_ownership",
-      "disposition": "pending",
-      "reason": "Implemented on codex/remediation-belt-drafts; pending reviewed PR merge. See docs/remediation/belt-draft-verification.md.",
+      "disposition": "fixed",
+      "reason": "Merged in PR153. Ladder-owned draft, explicit save target and protected save lifetime; Add Belt uses full-belt type. Source fix only; no production deployment.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
+      "verified_against": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
       "verification": "Real mounted editor regression reproduced cross-ladder empty-rank submission before fix; focused42 and fullfrontend917 passed after fix. Independent source review GREEN LIGHT.",
       "source_paths": [
         "frontend/src/lib/belt-tracker-page-controller.ts",
         "frontend/src/components/belt-tracker/rank-plan-panel.tsx"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        153
+      ]
     },
     {
       "id": "FSH1-03",
@@ -3715,10 +3725,10 @@
       "title": "Several confirmed saves disappear locally when a session token renews",
       "cluster": "read_and_mutation_ownership",
       "disposition": "pending",
-      "reason": "Belt-save confirmed settlement repaired in first PR candidate. Staff, program and promotion paths still pending; do not close the whole observation.",
+      "reason": "PR153 repaired confirmed belt-save settlement. Staff, program and promotion paths remain pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
+      "verified_against": "c39e50d59a1bac9d7785c925cd4500cfa192852f",
       "verification": "Belt held-save credential-renewal and sign-out cases pass; remaining domain paths not yet remediated.",
       "source_paths": [
         "frontend/src/lib/store-program-actions.ts",
@@ -3727,7 +3737,9 @@
         "frontend/src/lib/store-action-types.ts",
         "frontend/src/lib/store.tsx"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        153
+      ]
     },
     {
       "id": "FSH2-03",

@@ -13,8 +13,8 @@ def is_minor_from_date_of_birth(date_of_birth: Optional[date]) -> bool:
     return age < 18
 
 
-def prepare_student_write_payload(payload: dict, *, set_default_is_minor: bool) -> dict:
-    if payload.get("tags") is None:
+def prepare_student_write_payload(payload: dict, *, for_creation: bool) -> dict:
+    if payload.get("tags") is None and (for_creation or "tags" in payload):
         payload["tags"] = []
 
     date_of_birth = payload.get("date_of_birth")
@@ -24,7 +24,7 @@ def prepare_student_write_payload(payload: dict, *, set_default_is_minor: bool) 
     if date_of_birth:
         payload["is_minor"] = is_minor_from_date_of_birth(date_of_birth)
         payload["date_of_birth"] = str(date_of_birth)
-    elif set_default_is_minor:
+    elif for_creation:
         payload["is_minor"] = False
 
     if payload.get("membership_start_date"):

@@ -83,8 +83,8 @@ class StudentService:
 
     # ---- Helpers ----
 
-    def _prepare_student_write(self, payload: dict, *, set_default_is_minor: bool) -> dict:
-        return prepare_student_write_payload(payload, set_default_is_minor=set_default_is_minor)
+    def _prepare_student_write(self, payload: dict, *, for_creation: bool) -> dict:
+        return prepare_student_write_payload(payload, for_creation=for_creation)
 
     def rows_to_responses(
         self,
