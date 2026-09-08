@@ -33,7 +33,7 @@ interface UseStoreStudentImportActionsOptions {
   persistStudents: (next: Student[]) => void;
   programsRef: StoreRef<Program[]>;
   refreshBeltsRef: StoreRef<((preferredLadderId?: string | null) => Promise<void>) | null>;
-  refreshPrograms: (options?: { includeArchived?: boolean }) => Promise<Program[]>;
+  refreshPrograms: (options?: { includeArchived?: boolean; force?: boolean }) => Promise<Program[]>;
   setStudentsLoadError: Dispatch<SetStateAction<string | null>>;
   studentMutationEpochRef: StoreRef<number>;
   studentRosterRequestSequenceRef: StoreRef<number>;
@@ -125,7 +125,7 @@ export function useStoreStudentImportActions({
     const refreshWarnings: string[] = [];
 
     const programsRefresh = await Promise.allSettled([
-      refreshPrograms({ includeArchived: true }),
+      refreshPrograms({ includeArchived: true, force: true }),
     ]);
     if (programsRefresh[0].status === "rejected") {
       const message = programsRefresh[0].reason instanceof Error

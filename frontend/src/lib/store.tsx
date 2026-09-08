@@ -185,7 +185,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const studentMutationEpochRef = useRef(0);
   const studentRosterRequestSequenceRef = useRef(0);
   const previewStudentPhotoUrlsRef = useRef<Record<string, string>>({});
-  const [programs, setPrograms] = useState<Program[]>(() =>
+  const [programs, setProgramRows] = useState<Program[]>(() =>
     isPreviewMode ? MOCK_PROGRAMS : []
   );
   const [programsLoaded, setProgramsLoadedState] = useState(isPreviewMode);
@@ -196,6 +196,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
   const [programsLoadError, setProgramsLoadError] = useState<string | null>(null);
   const programsRef = useRef<Program[]>(programs);
+  const programScopeRef = useRef(createResourceScope());
+  const resetProgramScope = useCallback(() => {
+    programScopeRef.current.settle();
+    programScopeRef.current = createResourceScope();
+  }, []);
+  const setPrograms = useCallback((next: Program[]) => {
+    programsRef.current = next;
+    setProgramRows(next);
+  }, []);
   const [programsUsageLoaded, setProgramsUsageLoaded] = useState(isPreviewMode);
   const [programsUsageLoadError, setProgramsUsageLoadError] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[]>(() =>
@@ -594,8 +603,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useSyncedRefValue(leadsRef, leads);
 
-  useSyncedRefValue(programsRef, programs);
-
   useSyncedRefValue(beltLaddersRef, beltLadders);
 
   useSyncedRefValue(beltRanksRef, beltRanks);
@@ -630,6 +637,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
     beltsHydratedRef.current = false;
+    resetProgramScope();
     leadMutationScopeRef.current.settle();
     leadMutationScopeRef.current = createResourceScope();
     applyLiveStudioDataResetRefs({
@@ -689,7 +697,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [setProgramsLoaded, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     identityEpochRef.current += 1;
@@ -799,6 +807,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [hydrated, pathname, router, subscriptionRequired]);
 
   const applyDemoResetResponse = useCallback((data: DemoResetResponse) => {
+    resetProgramScope();
+    setProgramsUsageLoaded(false);
+    setProgramsUsageLoadError(null);
     dashboardSummaryRequestSeqRef.current += 1;
     destructivelyResetScheduleCoordinator(true);
     setStudioNameState(data.studio_name);
@@ -824,9 +835,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessions(data.sessions.sort(compareSessions));
     setAttendance(data.attendance);
     clearPromotionHistoryCache();
-  }, [setProgramsLoaded, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
 
   const applyClearedStudioData = useCallback((studioNameValue?: string) => {
+    resetProgramScope();
+    setProgramsUsageLoaded(false);
+    setProgramsUsageLoadError(null);
     dashboardSummaryRequestSeqRef.current += 1;
     destructivelyResetScheduleCoordinator(true);
     if (studioNameValue) {
@@ -857,7 +871,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setAttendance([]);
     clearEligibilityState();
     clearPromotionHistoryCache();
-  }, [setProgramsLoaded,
+  }, [setPrograms, setProgramsLoaded, resetProgramScope,
     clearEligibilityState,
     clearPromotionHistoryCache,
     commitStudents,
@@ -939,7 +953,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
+  }, [setPrograms, setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
 
   const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
     return buildPreviewEligibilityForLadder({
@@ -1060,6 +1074,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     async function initializeLive(providedSession?: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]) {
       const studentsRevisionAtStart = studentsRevisionRef.current;
+      const programScope = programScopeRef.current;
+      const programRevisionAtStart = programScope.revision;
+      const programSequenceAtStart = ++programScope.sequence;
+      const hadPendingProgramMutation = programScope.pending > 0;
+      const ownsProgramBootstrap = () => !hadPendingProgramMutation
+        && programScopeRef.current === programScope
+        && programScope.sequence === programSequenceAtStart
+        && programScope.revision === programRevisionAtStart && programScope.pending === 0;
       const leadMutationScope = leadMutationScopeRef.current;
       const leadMutationRevisionAtStart = leadMutationScope.revision;
       const leadReadSequenceAtStart = ++leadMutationScope.sequence;
@@ -1183,7 +1205,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             if (!isInitializationCurrent()) return;
             if (isSubscriptionRequiredError(error) || isStaffArchivedError(error)) throw error;
             if (includedDatasets.has("students")) setStudentsLoadError("Student roster could not be loaded. Please retry.");
-            setProgramsLoadError("Programs could not be loaded. Please retry.");
+            if (ownsProgramBootstrap()) setProgramsLoadError("Programs could not be loaded. Please retry.");
             if (includedDatasets.has("leads")) setLeadsLoadError("Leads could not be loaded. Please retry.");
             return;
           } finally {
@@ -1208,11 +1230,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             setDashboardSummary(bootstrapSummary);
             setDashboardSummaryLoaded(true);
           }
-          if (!datasetErrors?.programs) setPrograms(criticalData.programs || []);
-          setProgramsUsageLoaded(false);
-          setProgramsUsageLoadError(null);
-          setProgramsLoaded(!datasetErrors?.programs);
-          setProgramsLoadError(datasetErrors?.programs ?? null);
+          if (ownsProgramBootstrap()) {
+            if (!datasetErrors?.programs) setPrograms(criticalData.programs || []);
+            setProgramsUsageLoaded(false);
+            setProgramsUsageLoadError(null);
+            setProgramsLoaded(!datasetErrors?.programs);
+            setProgramsLoadError(datasetErrors?.programs ?? null);
+          }
           if (includedDatasets.has("students") && studentsRevisionRef.current === studentsRevisionAtStart) {
             if (datasetErrors?.students) {
               setStudentsLoaded(false);
@@ -1318,8 +1342,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setStaffProfilesAvailable(false);
           setIdentityLoadError(loadError);
           setStudentsLoadError(loadError);
-          setProgramsLoaded(false);
-          setProgramsLoadError(loadError);
+          if (ownsProgramBootstrap()) {
+            setProgramsLoaded(false);
+            setProgramsLoadError(loadError);
+          }
           setLeadsLoaded(false);
           setLeadsLoadError(loadError);
           setDashboardSummary(null);
@@ -1421,7 +1447,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       bootstrapRequestRef.current?.controller.abort();
       authListener?.subscription.unsubscribe();
     };
-  }, [setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
+  }, [setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1436,7 +1462,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProgramsLoaded(true);
     setProgramsLoadError(null);
     if (isPreviewMode) save(KEYS.programs, sorted);
-  }, [setProgramsLoaded, isPreviewMode]);
+  }, [setPrograms, setProgramsLoaded, isPreviewMode]);
 
   const persistLeads = useCallback((next: Lead[]) => {
     setLeads(next);
@@ -1457,6 +1483,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode,
     persistPrograms,
     programsRef,
+    programScopeRef,
     programsLoadedRef,
     refreshBeltsRef,
     setProgramsLoadError,

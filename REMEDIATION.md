@@ -82,14 +82,30 @@ Reassessment at `f8af4f4`: remaining nullable SQL assertions, release evidence c
 Reassessment at `50f0f47`: generic financial commands, external-payment receipts, audit atomicity and other store owners remain open. Current totals are 18 fixed, 248 pending and 12 deliberate deferrals. Next is `codex/remediation-student-memberships`, for ordinary edits that reactivate paused memberships or overwrite per-program dates. One forward database migration will pair the narrow private-writer correction with its affected attestations and old-backend compatibility, plus preview parity and real SQL proof. Existing explicit changed-date behavior remains provisional pending the owner decision. A fresh disposable V38 replay matches the existing manifests. Read-only production health identifies the audited `c5742fe` backend as the current V19 compatibility consumer; the existing V18 rollback path will also remain protected. No production migration or historical membership repair is authorized by this implementation step.
 
 
-The student-membership candidate, [PR #158](https://github.com/ronchak/Koaryu/pull/158), fixes DM2-02 and includes the affected release
-attestations, V19/V18 compatibility and a seeded logical-restore continuation test.
-Its ledger has 19 fixed, 247 pending and 12 deliberate deferrals; completion of the
-PR still requires the final release gate and guarded merge. The independently
-verified behavior and test changes are recorded in
+[PR #158](https://github.com/ronchak/Koaryu/pull/158) merged as
+`342d545ae4edf0d8b1c27ab31736614f296f7c16`. DM2-02 is fixed. Independent review
+and automated review completed on the final commit, all exact-head CI passed, and
+the full local suite verified 134 migrations, 50 contracts, restored business-data
+continuation and concurrency. The initially failing older version selectors were
+corrected without changing historical pins. The guarded merge read production
+Render auto-deploy off twice. No production migration, deployment or backfill occurred.
+
+Reassessment at `342d545`: the ledger has 19 fixed, 247 pending and 12 deliberate
+deferrals. The explicit date-policy choice, rank replay identity, obsolete student
+write paths and other workflow owners remain open. The V39 correction does not
+resolve them. Verification is recorded in
 [student membership verification](docs/remediation/student-membership-verification.md).
-The explicit date-policy choice, rank replay identity, obsolete student write paths
-and unrelated workflow ownership remain separate outstanding work.
+
+Next is `codex/remediation-program-ownership`. Program reads can overwrite an
+acknowledged archive, bootstrap can overwrite a newer program result, and ordinary
+token renewal can hide a successful write. CSV import can reuse a read begun before
+it created programs. The same owner must also cover successful reset/clear and
+synchronous updates to the canonical program reference. Staff has separate
+current-user/profile behavior and will be addressed independently. This PR can make
+partial progress on FSH2-01/02 and FT2-04; their remaining staff/promotion portions
+must stay pending. No regression test will be deleted solely to reduce a count.
+External-payment recovery remains higher consequence if its pending storage-policy
+decision is resolved before the next change is selected.
 
 ## Deliberate non-goals and deferrals
 

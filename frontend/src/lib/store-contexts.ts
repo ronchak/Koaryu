@@ -104,7 +104,7 @@ export interface StoreContextValue {
   programsUsageLoaded: boolean;
   programsUsageLoadError: string | null;
   programsLoadError: string | null;
-  refreshPrograms: (options?: { includeArchived?: boolean }) => Promise<Program[]>;
+  refreshPrograms: (options?: { includeArchived?: boolean; force?: boolean }) => Promise<Program[]>;
   createProgram: (data: ProgramCreate) => Promise<Program>;
   updateProgram: (id: string, data: ProgramUpdate) => Promise<Program>;
   archiveProgram: (id: string) => Promise<Program>;
