@@ -227,7 +227,7 @@ class StudentImportExecutor:
                 str(row["row_number"]),
             )
             mapped["studio_id"] = studio_id
-            mapped = prepare_student_write_payload(mapped, set_default_is_minor=True)
+            mapped = prepare_student_write_payload(mapped, for_creation=True)
 
             try:
                 self._import_student_row_atomic(

@@ -56,7 +56,7 @@ class StudentCrudActions:
         student_dict["id"] = student_id
         student_dict["program_id"] = program_ids[0]
         student_dict["studio_id"] = studio_id
-        student_dict = self.prepare_student_write(student_dict, set_default_is_minor=True)
+        student_dict = self.prepare_student_write(student_dict, for_creation=True)
 
         result = execute_required_rpc(self.supabase, "write_student_profile_v2_atomic", {
             "p_student_id": student_id,
@@ -110,7 +110,7 @@ class StudentCrudActions:
             "Program not found",
         )
 
-        update_dict = self.prepare_student_write(update_dict, set_default_is_minor=False)
+        update_dict = self.prepare_student_write(update_dict, for_creation=False)
         try:
             result = execute_required_rpc(self.supabase, "write_student_profile_v2_atomic", {
                 "p_student_id": student_id,

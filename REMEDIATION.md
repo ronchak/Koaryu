@@ -59,7 +59,11 @@ The ledger is introduced in this first PR so subsequent merged changes can updat
 
 After every merge, fetch `main`, record the merged PR and SHA, inspect the changed contracts, and reassess every affected outstanding finding. Reopen an entry if new evidence invalidates its closure. Choose only the next coherent PR; the original map cannot override current source or test evidence.
 
-Current completed PRs: none. Current implementation: first PR passed focused and full frontend tests and independent source review; publication and exact-head CI remain. The initial ledger has 266 pending entries and 12 deliberate deferrals. Entries stay pending until the reviewed change merges. No high-consequence product-integrity risk is intentionally accepted.
+Completed: [PR #153](https://github.com/ronchak/Koaryu/pull/153), merged as `c39e50d59a1bac9d7785c925cd4500cfa192852f`. Independent review and the exact-head Release candidate gate passed. Production Render auto-deploy was read back off twice by the guarded merge script. Vercel's tracked `main` deployment rule remains false; the normal PR preview built successfully. No production deployment occurred.
+
+Reassessment at that new `main`: FSH1-01, FSH1-02 and FC1-01 are fixed. FSH2-02 is only partly addressed; staff, program and promotion settlement remain. FT1-01/02 remain pending because their original live test is unchanged. Eligibility loading and duplicate refresh findings still apply. No unrelated cluster was closed by this merge. Current totals are 3 fixed, 263 pending and 12 deliberate deferrals.
+
+Next PR: `codex/remediation-student-tags`, branched from `c39e50d`. Preserve omitted tags in partial updates, retaining explicit empty/null clearing and creation defaults. The existing SQL already preserves omitted tags; no migration, membership reset change or generic partial-update rewrite belongs in this PR. Baseline CRUD/import tests pass, 9 tests. The regression will seed populated tags and exercise the real request-preparation and CRUD boundary. No high-consequence product-integrity risk is intentionally accepted.
 
 ## Deliberate non-goals and deferrals
 
