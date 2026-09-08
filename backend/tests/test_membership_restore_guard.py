@@ -13,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/verify-v38-v39-restore-contract.py"
-spec = importlib.util.spec_from_file_location("membership_restore_guard", SCRIPT)
+spec = importlib.util.spec_from_file_location("local_postgres_verification", ROOT / "scripts/local_postgres_verification.py")
 guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guard)
 
@@ -85,8 +85,12 @@ def test_restore_helper_refuses_remote_or_unowned_targets_before_invoking_tools(
         ("/tmp/koaryu-pg.example/socket", "6543", "/tmp/koaryu-pg.example"),
         (str(tmp_path / "socket"), "5432", str(tmp_path)),
     ]:
-        result = subprocess.run([sys.executable, str(SCRIPT), *([str(executable)] * 4),
-                                 socket, port, temporary, str(ROOT)], capture_output=True, text=True)
-        assert result.returncode != 0
-        assert "Expected the local verifier" in result.stderr or "Unexpected local socket or port" in result.stderr
+        for script, arguments in [
+            (SCRIPT, [str(executable)] * 4 + [socket, port, temporary, str(ROOT)]),
+            (ROOT / "scripts/verify-v39-v40-restore-contract.py", [str(executable)] * 4 + [socket, port, temporary, str(ROOT)]),
+            (ROOT / "scripts/verify-rank-transition-concurrency.py", [str(executable), socket, port]),
+        ]:
+            result = subprocess.run([sys.executable, str(script), *arguments], capture_output=True, text=True)
+            assert result.returncode != 0
+            assert "Expected the local verifier" in result.stderr or "Unexpected local socket or port" in result.stderr
     assert not sentinel.exists()

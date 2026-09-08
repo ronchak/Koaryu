@@ -40,31 +40,37 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-V38 is the accepted predecessor at 133/head `20260905022339`. The candidate
-finishes at 134/head `20260908080420`, readiness V20, and
-`release-db-attestation-v39`. These are candidate requirements, not a claim about
-the current hosted database state. The guarded rollout tool accepts V38 only when
-its history, readiness, raw definitions and catalog all match, then derives this
-exact one-file remainder:
+V39 is the latest accepted predecessor at 134/head `20260908080420`. The
+candidate finishes at 135/head `20260908133504`, readiness V21, and
+`release-db-attestation-v40`. These are candidate requirements, not a claim about
+the current hosted database. The tool accepts V39 only after its exact history,
+readiness, raw definitions and catalog match, then selects one remaining file:
 
-- `20260908080420_student_membership_preservation_v39.sql`
+- `20260908133504_rank_history_command_ownership_v40.sql`
 
-V39 preserves paused statuses and per-program joining dates when an ordinary
-student profile edit resends the same program list and overall joining date.
-It replaces the private writer and its affected attestations, with no historical
-membership backfill. Explicit changed-date behavior remains unchanged pending a
-separate product decision.
+V38 remains an accepted predecessor. Its remainder includes the V39 membership
+correction before V40. V39 preserves paused statuses and per-program joining dates
+during ordinary profile edits. Explicit changed-date behavior remains unchanged
+pending a separate product decision; there is no historical membership backfill.
 
-The local verifier dumps a synthetic V38 database, restores it into a new local
-database, checks the exact known PostgreSQL 17 CHECK/default-ACL representation
-differences, and applies V39. It verifies business-row preservation, a subsequent
-profile edit, and both old backend readiness contracts. This is a local contract
-proof, not production backup evidence. The operator's backup/restore helper and
-release mappings must be updated and verified for the actual candidate before an
-authorized hosted rollout. Old V38 approval records and mappings are not reusable.
+V40 preserves promotion-time rank names/colors and records immutable evidence for
+new rank commands. One database transaction owns context resolution, replay and
+rank mutation. Existing public promotion/demotion interfaces remain available.
+Old receipts with insufficient required identity conflict instead of reporting
+success without proof. Intentional history deletion keeps its existing lifecycle.
+The old backend's permissive API shortcut disappears only when the new backend is
+deployed; applying the database migration alone does not replace that application.
+
+The local verifier executes both V38-to-V39 and V39-to-V40 logical restore tests.
+Each uses a real synthetic dump and a new local restore database, accepts only the
+reviewed PostgreSQL 17 CHECK/default-ACL representation differences, and verifies
+business-data preservation and old/new caller continuation. These are local
+contract proofs, not production backup evidence. The operator's backup helper and
+release/image mappings must be updated and verified for the actual candidate
+before an authorized hosted rollout. Old V38 approvals and mappings are not reusable.
 
 Exact V31 through V37 remain state-bound forward-recovery points. They may
-resume only their immutable suffix through V39; hybrid histories, catalogs or
+resume only their immutable suffix through V40; hybrid histories, catalogs or
 readiness results are refused. A predecessor before V38 also needs the historical
 billing-index migration. Its ordinary index builds hold write locks that can delay
 billing and webhook writes until that transaction finishes. Plan that write pause
@@ -72,11 +78,11 @@ for a separately authorized rollout; its hosted duration has not been measured.
 
 Migration 119 keeps `koaryu_release_schema_preflight_v4` returning the historical
 V24 shape. The Payments chain preserves the schedule-shaped V5 response and owns
-V6 through V20. V39 replaces V19 with a compatibility response only after V20
-proves the exact V39 state. V18 continues through V19, preserving the V37 rollback
-consumer as well. The candidate backend reads V20 and serves only at exact 134/V39;
-older deployed backends retain their corresponding compatibility response during
-the database-first cutover.
+V6 through V21. V40 adds the full V21 contract and makes V20 return its V39
+compatibility tuple only after V21 proves the complete new state. V19 and V18
+continue through that chain, preserving the V38 and V37 consumers. The candidate
+backend reads V21 and serves only at exact 135/V40. Older deployed backends retain
+their corresponding response during the database-first cutover.
 The temporary V22 and
 V23 application bridges were removed after production hosted readback. The
 rollout tool retains exact historical `restored-v22`, `canonical-v23`, and
@@ -87,37 +93,22 @@ The operational manifest string is **not** echoed in the response body. A runboo
 look for it is wrong. `"status": "ready"` *is* the proof the attestation matched.
 
 If migration 113 commits and migration 114 does not, stop. No approved
-application is eligible to serve at that V20 head. During the historical V24 release,
+application is eligible to serve at that partially migrated history. During the historical V24 release,
 the prior `709239` application required V16 and that release candidate required V24.
-The current candidate requires V39. Older V2 consumers from
+The current candidate requires V40. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
 Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
-post-110 rollback set. A database still at exact 110 must classify
-`state=staff-identity` and use its state-bound token to dry-run:
-`20260816012723_archive_staff_access_and_readiness.sql`,
-`20260820012533_dashboard_fact_rpc.sql`,
-`20260820025759_roster_read_rpc.sql`,
-`20260820060216_atomic_bulk_student_archive.sql`,
-`20260822193000_revoke_client_read_access.sql`,
-`20260823193155_revoke_public_function_execute.sql`, and
-`20260824190500_attest_verified_restore_manifest.sql`,
-`20260825042838_schedule_window_read_rpc.sql`,
-`20260825043911_attest_schedule_window_release.sql`, and the ten Payments
-migrations from `20260826030234_live_billing_reconciliation_v3.sql` through
-`20260830151714_invoice_retry_closeout_contract_v34.sql`, followed by
-`20260831022021_stripe_rehearsal_evidence_rpc_v35.sql` and
-`20260831054918_payer_setup_recovery_v36.sql`,
-`20260902001000_fix_billing_adjustment_trigger_table_guards.sql`,
-`20260905022339_billing_landing_aggregates.sql`, and
-`20260908080420_student_membership_preservation_v39.sql`. If a future approved
-disaster recovery explicitly returns production to the proved restored V22
-snapshot, it must classify exact `state=restored-v22` and dry-run only
-migrations 116 through 134. These are hypothetical forward-recovery cases, not
-the current live state. In either case, only the authorized operator runs the
-production apply gate, and candidate promotion remains blocked until migration 134
-produces exact V39 readiness and the final raw catalog/provider fingerprint.
+post-110 rollback set. A database still at exact 110 must classify `state=staff-identity` and use its
+state-bound inspection token. The tool must select migrations 111 through 135 in
+their immutable order. A separately approved disaster recovery to the proved
+restored V22 snapshot must classify exact `state=restored-v22` and select only
+migrations 116 through 135. Use the generated remaining-file list and its source
+manifest; do not maintain a second manual list. These are hypothetical recovery
+cases, not the current live state. Only the authorized operator runs production
+apply. Candidate promotion remains blocked until migration 135 produces exact
+V40 readiness and the final raw catalog/provider fingerprint.
 
 The V33 retry-hash capture stays enabled throughout the database-first rolling
 deploy. Do not call `finalize_billing_invoice_retry_hash_capture_v33` during the
@@ -143,9 +134,13 @@ before starting, and record *why* on each thread if the finding is being deferre
 
 **Run the rollout tool from the exact candidate implementation.** For an unmerged
 release, invoke the tool from that candidate's worktree and pass its exact 40-character head.
-The tool creates a detached worktree at that SHA and verifies the 134-file sequence and
+The tool creates a detached worktree at that SHA and verifies the 135-file sequence and
 source hashes there. Do not run an older `main` copy of the tool and do not merge the PR
 to obtain the rollout script.
+
+Production apply also validates the supplied staging fingerprint against the
+current complete canonical tuple before any database apply. A merely well-formed
+fingerprint from an older candidate cannot pass that check.
 
 **Staging apply needs more than `--approve-staging-apply`.** It also requires
 `--confirm-project <ref>` and an exact PR #138 issue-comment URL. The tool reads that

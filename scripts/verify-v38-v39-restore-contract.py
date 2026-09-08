@@ -12,31 +12,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import signal
-import stat
-import subprocess
 import sys
 
+from local_postgres_verification import ACL_SQL, CONSTRAINT_SQL, PAIR_PATH, LocalPostgres, normalization_plan, require
+
 MIGRATION = "20260908080420_student_membership_preservation_v39.sql"
-PAIR_PATH = Path(__file__).with_name("v38-restore-constraint-pairs.json")
-CONSTRAINT_SQL = """
-SET search_path=pg_catalog;
-SELECT jsonb_object_agg(n.nspname||'.'||c.relname||'.'||k.conname,
- jsonb_build_object('type',k.contype::text,'validated',k.convalidated,
- 'local',k.conislocal,'inheritance',k.coninhcount,'no_inherit',k.connoinherit,
- 'definition',pg_get_constraintdef(k.oid),'hash',md5(pg_get_constraintdef(k.oid))))
-FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid
-JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','private');
-"""
-ACL_SQL = """
-SELECT jsonb_object_agg(n.nspname||'.'||c.relname,jsonb_build_object(
- 'kind',c.relkind::text,'owner',pg_get_userbyid(c.relowner),
- 'acl',coalesce(c.relacl::text,'NULL'),
- 'default',acldefault((CASE WHEN c.relkind='S' THEN 'S' ELSE 'r' END)::"char",c.relowner)::text))
-FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-WHERE n.nspname IN ('public','private') AND c.relkind IN ('r','p','v','m','S');
-"""
 STUDENT = "39000000-0000-4000-8000-000000000003"
 STUDIO = "39000000-0000-4000-8000-000000000002"
 OWNER = "39000000-0000-4000-8000-000000000001"
@@ -77,93 +58,18 @@ SELECT to_jsonb(r) FROM public.write_student_profile_v2_atomic('{STUDENT}','{STU
 """
 
 
-def require(condition, message):
-    if not condition:
-        raise RuntimeError(message)
-
-
-def quoted_identity(identity):
-    parts = identity.split(".")
-    require(all(re.fullmatch(r"[a-z_][a-z0-9_]*", p) for p in parts), "Unsafe catalog identity")
-    return ".".join(f'"{p}"' for p in parts)
-
-
-def normalization_plan(source, restored, source_acls, restored_acls, pairs):
-    """Validate the complete difference set before returning any repair SQL."""
-    require(source.keys() == restored.keys(), "Restore constraint identities differ")
-    drift = {key for key in source if source[key] != restored[key]}
-    require(drift == pairs.keys(), "Restore constraint drift is not the exact approved set")
-    expected = dict(source)
-    statements = []
-    for identity in sorted(drift):
-        old, new, pair = source[identity], restored[identity], pairs[identity]
-        require(pair["identity"] == identity, "Restore pair identity mismatch")
-        require(old["type"] == "c" and old["validated"] is True and old["local"] is True
-                and old["inheritance"] == 0 and old["no_inherit"] is False,
-                f"Unsupported CHECK metadata: {identity}")
-        require(old["hash"] == pair["source_hash"] and old["definition"] == pair["source_definition"]
-                and new == {**old, "hash": pair["restored_hash"], "definition": pair["restored_definition"]},
-                f"Unapproved CHECK change: {identity}")
-        if pair["replay_definition"] is None:
-            expected[identity] = new
-        else:
-            schema, table, constraint = identity.split(".")
-            statements.append(f"ALTER TABLE {quoted_identity(schema+'.'+table)} DROP CONSTRAINT {quoted_identity(constraint)}, "
-                              f"ADD CONSTRAINT {quoted_identity(constraint)} {pair['replay_definition']};")
-    require(len(statements) == 6, "Expected exactly six billing CHECK replays")
-    require(source_acls.keys() == restored_acls.keys(), "Restore relation identities differ")
-    for identity in sorted(source_acls):
-        old, new = source_acls[identity], restored_acls[identity]
-        if old == new:
-            continue
-        require(old["owner"] == "postgres" and old["acl"] == old["default"]
-                and new == {**old, "acl": "NULL"}, f"Unapproved ACL change: {identity}")
-        kind = "SEQUENCE" if old["kind"] == "S" else "TABLE"
-        statements.append(f"REVOKE ALL ON {kind} {quoted_identity(identity)} FROM PUBLIC;")
-    return statements, expected
-
-
-def validate_local_paths(socket, port, temporary):
-    require(re.fullmatch(r"/tmp/koaryu-pg\.[A-Za-z0-9]+", str(temporary)) is not None,
-            "Expected the local verifier's disposable directory")
-    require(socket == temporary / "socket" and port == "5432", "Unexpected local socket or port")
-    require(not temporary.is_symlink() and not socket.is_symlink(), "Symlinked local target refused")
-    require(stat.S_ISSOCK((socket / f".s.PGSQL.{port}").stat().st_mode), "Expected a live Unix socket")
-    require((temporary / "data/postmaster.pid").is_file(), "Local verifier postmaster is missing")
-
-
 def main(arguments):
     require(len(arguments) == 8, "Expected pg_dump pg_restore createdb psql socket port temp-dir repository-root")
     pg_dump, pg_restore, createdb, psql, socket_arg, port, temporary_arg, root_arg = arguments
     socket, temporary, root = Path(socket_arg), Path(temporary_arg), Path(root_arg).resolve()
-    validate_local_paths(socket, port, temporary)
-    env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
-    env["LC_ALL"] = "C"
-
-    def run(command, text=None):
-        result = subprocess.run(command, input=text, text=True, capture_output=True, env=env, timeout=120)
-        require(result.returncode == 0, f"Local restore command failed: {result.stderr[-3000:]}")
-        return result.stdout.strip()
-
-    connection = [f"--host={socket}", f"--port={port}", "--username=postgres", "--no-password"]
-
-    def sql(database, statement):
-        return run([psql, *connection, f"--dbname={database}", "--no-psqlrc", "--set=ON_ERROR_STOP=1",
-                    "--quiet", "--tuples-only", "--no-align"], statement)
-
-    versions = {Path(binary).name: run([binary, "--version"]) for binary in (pg_dump, pg_restore, createdb, psql)}
-    require(all(re.search(r"\(PostgreSQL\) 17\.", version) for version in versions.values()), "PostgreSQL 17 tools required")
-    target = json.loads(sql("postgres", "SELECT jsonb_build_object('data',current_setting('data_directory'),"
-                           "'database',current_database(),'version',current_setting('server_version_num'),"
-                           "'listen',current_setting('listen_addresses'),'address',inet_server_addr());"))
-    require(Path(target["data"]).resolve() == (temporary / "data").resolve() and target["database"] == "postgres"
-            and target["version"].startswith("17") and target["listen"] == "" and target["address"] is None,
-            "Connected server is not the caller's isolated PostgreSQL 17 cluster")
+    local = LocalPostgres(psql, socket, port, temporary)
+    run, sql, connection = local.run, local.sql, local.connection
+    versions = local.require_pg17(pg_dump, pg_restore, createdb, psql)
     exports = ["CATALOG_STATE_SQL", "V31_EXPECTATION_STATE_SQL", "V38_OPERATIONAL_READINESS_SQL",
-               "FINAL_OPERATIONAL_READINESS_SQL", "V37_OPERATIONAL_READINESS_SQL", "V38_BILLING_MANIFEST_SQL",
+               "V39_OPERATIONAL_READINESS_SQL", "V37_OPERATIONAL_READINESS_SQL", "V38_BILLING_MANIFEST_SQL",
                "V39_RELEASE_MANIFEST_SQL", "EXPECTED_V37_CATALOG_STATE", "EXPECTED_V37_RESTORED_CATALOG_STATE",
                "EXPECTED_V39_RESTORED_CATALOG_STATE", "EXPECTED_V39_EXPECTATION_STATE",
-               "EXPECTED_V38_OPERATIONAL_READINESS", "EXPECTED_OPERATIONAL_READINESS",
+               "EXPECTED_V38_OPERATIONAL_READINESS", "EXPECTED_V39_OPERATIONAL_READINESS",
                "EXPECTED_V37_OPERATIONAL_READINESS", "EXPECTED_V38_BILLING_MANIFEST", "EXPECTED_V39_RELEASE_MANIFEST"]
     module = (root / "scripts/studio-comp-migration-rollout.mjs").as_uri()
     pinned = json.loads(run(["node", "--input-type=module", "--eval",
@@ -184,7 +90,9 @@ def main(arguments):
     migration = root / "supabase/migrations" / MIGRATION
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 134 and list(hashes)[-1] == MIGRATION, "Unexpected migration inventory")
+    require(len(hashes) == 135 and list(hashes)[133:] == [MIGRATION,
+            "20260908133504_rank_history_command_ownership_v40.sql"],
+            "Unexpected V39 historical prefix or current migration suffix")
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
     try:
@@ -221,7 +129,7 @@ def main(arguments):
         require(json.loads(sql(restored, SNAPSHOT_SQL)) == before, "V39 migration rewrote business rows")
         outcomes = {}
         for query, expected in [
-            ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
+            ("V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS"),
             ("V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS"),
             ("V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS"),
             ("CATALOG_STATE_SQL", "EXPECTED_V39_RESTORED_CATALOG_STATE"),
@@ -246,7 +154,7 @@ def main(arguments):
         require(all(hashlib.sha256((root / 'supabase/migrations' / name).read_bytes()).hexdigest() == digest
                     for name, digest in hashes.items()), "Migration inputs changed during verification")
         evidence = {"migrations": hashes, "dump_sha256": dump_hash,
-                    "helper_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                    "helper_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "local_tools_sha256": hashlib.sha256(Path(__file__).with_name("local_postgres_verification.py").read_bytes()).hexdigest(),
                     "mapping_sha256": hashlib.sha256(mapping_bytes).hexdigest(), "tools": versions,
                     "queries": pinned, "outcomes": outcomes,
                     "business_before_sha256": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
