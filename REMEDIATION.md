@@ -134,6 +134,7 @@ intentional history-deletion lifecycle. No historical identity will be guessed.
 The separate frontend command owner and unanswered financial/date choices remain
 pending. No unrelated findings were closed by the staff merge.
 
+[PR #161](https://github.com/ronchak/Koaryu/pull/161) implements the rank-history correction.
 The [rank-history plan](docs/remediation/rank-history-plan.md) passed independent
 review before implementation. Implementation and independent reviews are complete.
 The candidate passes 135 migrations and 50 SQL contracts, genuine legacy upgrades,

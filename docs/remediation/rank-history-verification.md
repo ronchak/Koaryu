@@ -1,6 +1,6 @@
 # Rank history and replay verification
 
-The rank-history candidate addresses OPS1-01, BT1-06 and DM2-03 together. The API
+[PR #161](https://github.com/ronchak/Koaryu/pull/161) addresses OPS1-01, BT1-06 and DM2-03 together. The API
 previously returned a receipt after checking only its operation ID and kind. Six
 changed-command variants reproduced that false success on main. Copying the old
 SQL comparison into Python would not fix the problem because history's foreign
@@ -93,3 +93,10 @@ Independent plan, business SQL, forward migration, adapter, local tooling and
 restore and final cross-system reviews have completed. Exact-head CI and guarded
 merge are still required. Local restore evidence is not production backup evidence;
 operator release/image mappings must be prepared for the actual authorized rollout.
+
+The final diff check reports one deliberate inherited whitespace-only line in the
+new V21 function body, copied exactly from V20. Independent review verified its
+provenance and the committed source hashes. Preserving it keeps the reviewed
+function definition and derived attestations unchanged. No whitespace rules or
+required CI gates were weakened. The committed implementation also passes the
+deterministic performance regression gate.

@@ -331,7 +331,9 @@
       "source_paths": [
         "backend/app/services/belt_promotions.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        161
+      ]
     },
     {
       "id": "OPS1-02",
@@ -538,7 +540,9 @@
       "source_paths": [
         "backend/app/services/belt_promotions.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        161
+      ]
     },
     {
       "id": "OPS2-01",
@@ -1505,7 +1509,9 @@
       "source_paths": [
         "backend/tests/test_belt_service.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        161
+      ]
     },
     {
       "id": "BT1-07",
@@ -4151,7 +4157,9 @@
         "supabase/migrations/20260814170000_preserve_retained_student_membership_ranks.sql",
         "supabase/migrations/20260520041120_harden_account_deletion_user_fks.sql"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        161
+      ]
     },
     {
       "id": "DM2-02",
@@ -4189,7 +4197,9 @@
         "supabase/migrations/20260520041120_harden_account_deletion_user_fks.sql",
         "backend/app/services/belt_promotions.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        161
+      ]
     },
     {
       "id": "DM2-04",
