@@ -250,6 +250,17 @@ Run deterministic live-mode workflow checks without any external data plane:
 node --experimental-strip-types --test tests/workflow-stabilization-mounted.test.mjs
 ```
 
+## Refund recovery
+
+When the server enables `payment.refund` for an administrator, Billing keeps the
+original refund receipt until the exact payment's current balance is verified.
+An accepted request whose read fails offers **Refresh payment**, which performs
+only a read and remains available at zero refundable balance. An unconfirmed
+request offers **Retry original refund**, using its original amount and reason.
+Changing a form cannot turn that unresolved request into a new refund. Generic
+tab refresh and cohort totals are not proof that the refunded payment is fresh.
+See [refund completion verification](../docs/remediation/refund-completion-verification.md).
+
 ## Navigation authentication recovery
 
 Navigation checks `/auth/me` when studio state needs refreshing and for billing

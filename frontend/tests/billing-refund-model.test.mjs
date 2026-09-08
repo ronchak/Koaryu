@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
 
 import {
   canShowPaymentRefund,
@@ -14,13 +11,11 @@ import {
   markRefundReconciliationRequired,
   parseRefundAmount,
   postPaymentRefund,
-  refreshAfterConfirmedRefund,
   resolveRefundRequestKey,
   safeBrowserRefundStorage,
 } from "../src/lib/billing-refund-model.ts";
 import { isTerminalBillingIdempotencyError } from "../src/lib/billing-idempotency-lifecycle.ts";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const payment = {
   id: "payment-1",
   stripe_charge_id: "redacted-provider-id",
@@ -73,7 +68,7 @@ describe("billing payment refunds", () => {
       () => resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", createKey, storage),
       /unresolved earlier attempt/,
     );
-    assert.equal(clearRefundRequestKey(identity, payment.id, storage), true);
+    assert.equal(clearRefundRequestKey(identity, payment.id, storage, first), true);
     assert.notEqual(resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", createKey, storage), first);
   });
 
@@ -205,7 +200,7 @@ describe("billing payment refunds", () => {
       setItem: storage.setItem,
       removeItem() { throw new Error("blocked"); },
     };
-    assert.equal(clearRefundRequestKey(identity, payment.id, refusingStorage), false);
+    assert.equal(clearRefundRequestKey(identity, payment.id, refusingStorage, first), false);
     assert.equal(
       resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "must-not-run", storage),
       first,
@@ -214,7 +209,7 @@ describe("billing payment refunds", () => {
       () => resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", () => "must-not-run", storage),
       /unresolved earlier attempt/,
     );
-    assert.equal(clearRefundRequestKey(identity, payment.id, storage), true);
+    assert.equal(clearRefundRequestKey(identity, payment.id, storage, first), true);
     assert.equal(
       resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", () => "removal-key-2", storage),
       "removal-key-2",
@@ -226,7 +221,7 @@ describe("billing payment refunds", () => {
     const storage = memoryStorage();
     resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "noop-key", storage);
     const noOpStorage = { ...storage, removeItem() {} };
-    assert.equal(clearRefundRequestKey(identity, payment.id, noOpStorage), false);
+    assert.equal(clearRefundRequestKey(identity, payment.id, noOpStorage, "noop-key"), false);
     assert.equal(
       resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "must-not-run", storage),
       "noop-key",
@@ -296,7 +291,7 @@ describe("billing payment refunds", () => {
       { status: 409 },
     );
     assert.equal(isTerminalBillingIdempotencyError(terminal), true);
-    assert.equal(clearRefundRequestKey(identity, payment.id, storage), true);
+    assert.equal(clearRefundRequestKey(identity, payment.id, storage, first), true);
     const corrected = resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", () => "terminal-key-2", storage);
     assert.notEqual(corrected, first);
   });
@@ -320,56 +315,4 @@ describe("billing payment refunds", () => {
     ]]);
   });
 
-  it("keeps confirmed mutation success distinct from a later refresh failure", async () => {
-    let refreshError = false;
-    const refreshed = await refreshAfterConfirmedRefund(
-      async () => { throw new Error("read failed"); },
-      () => { refreshError = true; },
-    );
-    assert.equal(refreshed, false);
-    assert.equal(refreshError, true);
-  });
-
-  it("clears a confirmed refund key only after authoritative refresh succeeds", () => {
-    const source = fs.readFileSync(path.join(root, "src/lib/billing-refund-controller.ts"), "utf8");
-    const postIndex = source.indexOf("await postPaymentRefund");
-    const refreshIndex = source.indexOf("const refreshed = await refreshAfterConfirmedRefund", postIndex);
-    const clearIndex = source.indexOf("clearRefundRequestKey(identity, payment.id, storage)", refreshIndex);
-    assert.ok(postIndex >= 0 && refreshIndex > postIndex && clearIndex > refreshIndex);
-    assert.match(source.slice(refreshIndex, clearIndex + 180), /if \(refreshed && !clearRefundRequestKey[\s\S]*saved recovery state could not be cleared/);
-  });
-
-  it("makes controller removal failures explicit after success and definitive rejection", () => {
-    const source = fs.readFileSync(path.join(root, "src/lib/billing-refund-controller.ts"), "utf8");
-    assert.match(source, /refund succeeded, but its saved recovery state could not be cleared/i);
-    assert.match(source, /refund was rejected, but its saved request state could not be cleared/i);
-    assert.match(source, /if \(!clearRefundRequestKey\(identity, payment\.id, storage\)\)/);
-  });
-
-  it("keeps provider IDs out of the rendered payment UI", () => {
-    const source = fs.readFileSync(path.join(root, "src/components/billing/billing-reports-tab.tsx"), "utf8");
-    assert.doesNotMatch(source, /stripe_(?:charge|payment_intent|account)_id\s*[}<]/);
-    assert.match(source, /window\.confirm/);
-    assert.match(source, /refundController\.canRefundPayments/);
-    assert.match(source, /refundAmountCents !== null && window\.confirm/);
-    assert.match(source, /refundController\.isPaymentRefundBlocked\(payment\.id\)/);
-    assert.match(source, /!refundController\.refundActionReady && !refundController\.refundStorageReady/);
-    assert.match(source, /!refundController\.refundActionReady/);
-    assert.match(source, /Checking refund status\.\.\./);
-    assert.match(source, /Refunds are unavailable because this browser cannot safely save the request\. Enable browser storage and reload this page\./);
-    assert.match(source, /This refund needs reconciliation outside Koaryu\. Refund retry is disabled for this payment\./);
-    assert.match(source, /sm:grid-cols-\[1fr_auto_auto\]/);
-  });
-
-  it("gates refund actions until the hydration-safe storage snapshot is ready", () => {
-    const source = fs.readFileSync(path.join(root, "src/lib/billing-refund-controller.ts"), "utf8");
-    assert.match(source, /useSyncExternalStore/);
-    assert.match(source, /\(\) => true,\s*\(\) => false/);
-    assert.match(source, /refundStorageAvailable = refundStorageReady && refundStorage !== null/);
-    assert.match(source, /refundActionReady = isPreviewMode \|\| refundStorageAvailable/);
-    assert.match(source, /if \(isPreviewMode \|\| !identity \|\| !refundStorageAvailable\) return false/);
-    assert.match(source, /if \(!refundStorageAvailable\) \{/);
-    assert.ok(source.indexOf('setMessage("Preview mode does not send refunds.")') < source.indexOf("if (!refundStorageAvailable) {"));
-    assert.doesNotMatch(source, /resolveRefundRequestKey\([\s\S]*?storage:\s*null/);
-  });
 });

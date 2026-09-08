@@ -1129,6 +1129,23 @@ async def get_current_month_payment_cohort_summary(
     )
 
 
+@router.get("/payments/{payment_id}", response_model=BillingPaymentResponse)
+async def get_payment(
+    payment_id: str,
+    response: Response,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    from app.services.billing_read_pages import get_billing_payment
+
+    response.headers["Cache-Control"] = "no-store, private"
+    def _provider_operation(client):
+        studio_id = _manager_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        return get_billing_payment(client, studio_id, payment_id)
+    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+
+
 @router.post("/payments/external", response_model=BillingPaymentResponse, status_code=201)
 async def record_external_payment(
     data: ExternalPaymentCreate,

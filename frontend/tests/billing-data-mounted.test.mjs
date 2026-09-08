@@ -11,15 +11,16 @@ import { chromium } from "@playwright/test";
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-function bundle({ realApi = false } = {}) {
+function bundle({ realApi = false, refunds = false } = {}) {
   const modules = [];
   const ids = new Map();
   const stubs = {
     "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
-    "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
+    "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=window.fixture.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
     "@/lib/performance": `exports.markPerformance=()=>{};exports.measurePerformance=()=>{};`,
   };
+  if (refunds) stubs["lucide-react"] = `module.exports=new Proxy({},{get:()=>()=>null});`;
   if (realApi) delete stubs["@/lib/api"];
   function add(specifier, parent = resolve(frontend, "entry.js")) {
     let key = specifier;
@@ -46,7 +47,11 @@ function bundle({ realApi = false } = {}) {
   const react = add("react");
   const dom = add("react-dom/client");
   const controller = add("@/lib/billing-data-controller");
-  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});function Observer(){const state=useBillingDataController(window.fixture.options);window.fixture.state=state;React.useLayoutEffect(()=>{window.fixture.commits.push({tab:window.fixture.options.activeTab,settled:state.hasBillingLoadSettled,loading:state.isLoading,requestCount:window.fixture.requests.length});});React.useEffect(()=>{void state.ensureBilling();},[state.ensureBilling]);return React.createElement('output',null,JSON.stringify({landing:state.landing,plans:state.plans,payers:state.payers}));}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(Observer));window.fixture.render();})();`;
+  const refund = refunds ? add("@/lib/billing-refund-controller") : null;
+  const reports = refunds ? add("@/components/billing/billing-reports-tab") : null;
+  const refundObserver = refunds ? `const refunds=require(${refund}).useBillingRefundController({...window.fixture.refundOptions,refreshBilling:state.refreshBilling,refreshPaymentAfterRefund:state.refreshPaymentAfterRefund});window.fixture.refunds=refunds;` : "";
+  const rendered = refunds ? `React.createElement(require(${reports}).BillingReportsTab,{billingPayers:[],billingPayments:state.payments,refundController:refunds,canManageRoutineBilling:false,externalAmount:'',externalMethod:'',externalNote:'',externalPayerId:'',externalPaymentTotal:0,exportJobs:[],isActionLoading:false,isLoadingAction:()=>false,onExternalAmountChange:()=>{},onExternalMethodChange:()=>{},onExternalNoteChange:()=>{},onExternalPayerChange:()=>{},onRecordExternalPayment:()=>{},paymentCohortAvailable:true,stripePaymentTotal:0})` : `React.createElement('output',null,JSON.stringify({landing:state.landing,plans:state.plans,payers:state.payers}))`;
+  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});function Observer(){const state=useBillingDataController(window.fixture.options);window.fixture.state=state;${refundObserver}React.useLayoutEffect(()=>{window.fixture.commits.push({tab:window.fixture.options.activeTab,settled:state.hasBillingLoadSettled,loading:state.isLoading,requestCount:window.fixture.requests.length});});React.useEffect(()=>{void state.ensureBilling();},[state.ensureBilling]);return ${rendered};}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(Observer));window.fixture.render();})();`;
 }
 
 async function mountBillingFixture(browser) {
@@ -75,6 +80,362 @@ async function mountBillingFixture(browser) {
   await page.waitForFunction(()=>fixture.state?.hasBillingLoadSettled);
   return page;
 }
+
+async function mountRefundFixture(browser) {
+  const page = await browser.newPage();
+  await page.route("http://localhost:4173/", route => route.fulfill({contentType:"text/html", body:'<div id="root"></div>'}));
+  await page.goto("http://localhost:4173/");
+  await page.evaluate(() => {
+    const f = window.fixture = {requests:[], commits:[], error:"", message:"", posts:[], waiters:[]};
+    f.options = {activeTab:"reports",identityKey:"admin:studio:admin:1",identity:{userId:"admin",studioId:"studio"},canManageKoaryuSubscription:true,canViewStudioBilling:true,isPreviewMode:false,shouldSettleEarly:false,token:"token-a",onSubscriptionRequired:()=>{f.denied=true;},setError:value=>{f.error=value;},setMessage:value=>{f.message=value;}};
+    f.refundOptions = {enabledWorkflowIds:new Set(["payment.refund"]),identity:{userId:"admin",studioId:"studio"},identityKey:f.options.identityKey,isPreviewMode:false,role:"admin",token:"token-a",setError:f.options.setError,setMessage:f.options.setMessage};
+    f.payment = {id:"payment-1",studio_id:"studio",payer_id:"payer-1",stripe_charge_id:"charge-1",stripe_account_id:"account-1",status:"succeeded",amount_cents:5000,gross_paid_amount_cents:5000,refunded_amount_cents:0,disputed_amount_cents:0,net_collected_amount_cents:5000,refundable_amount_cents:5000,adjustment_reconciliation_required:false,currency:"usd",created_at:"2026-09-01T00:00:00Z",updated_at:"2026-09-01T00:00:00Z",payment_method_type:"Test card"};
+    f.api = {
+      get:async (path,token) => {
+        f.requests.push({path,token});
+        const snapshot = path === "/billing/landing" ? {financial_access:"available",errors:[],system_status:{workflow_capabilities:[{workflow_id:"payment.refund",enabled:true}]},aggregates:{payment_cohort:{payment_count:1}}}
+          : path === "/billing/payers" ? []
+          : path === "/billing/plans" ? [{id:"plan-1",studio_id:"studio",name:"Monthly",amount_cents:5000,currency:"usd",billing_interval:"month",interval_count:1}]
+          : path === "/billing/payments/current-month-cohort" ? {payment_count:1,net_amount_cents:f.payment.net_collected_amount_cents}
+          : path === "/billing/payments/page" ? {items:structuredClone((f.pageRows ?? [f.payment]).map(row=>row.id===f.payment.id ? f.payment : row)),next_cursor:f.more ? "older" : null,complete:!f.more}
+          : path === "/billing/payments/page?cursor=older" ? {items:structuredClone((f.historyRows ?? []).map(row=>row.id===f.payment.id ? f.payment : row)),next_cursor:null,complete:true}
+          : path === `/billing/payments/${f.payment.id}` ? structuredClone(f.targetOverride ?? f.payment)
+          : null;
+        if (path === f.heldGet) await new Promise(resolve=>f.waiters.push({path,resolve}));
+        if (path === `/billing/payments/${f.payment.id}` && f.targetStatus && (!f.deniedToken || f.deniedToken === token)) throw new f.ApiError("Target access denied",f.targetStatus);
+        if (path.startsWith("/billing/payments/") && f.failPayments) throw new Error("Payment read failed");
+        if (snapshot) return snapshot;
+        throw new Error(`Unexpected read ${path}`);
+      },
+      post:async (path,body,token,options) => {
+        f.posts.push({path,body,token,options});
+        if (f.holdBeforeCommit) await new Promise(resolve=>f.waiters.push({path:"refund-commit",resolve}));
+        if (!f.refundResponse) {
+          f.payment = {...f.payment,refunded_amount_cents:body.amount_cents,net_collected_amount_cents:5000-body.amount_cents,refundable_amount_cents:5000-body.amount_cents};
+          f.refundResponse = {id:"refund-1",studio_id:f.payment.studio_id,payment_id:f.payment.id,amount_cents:body.amount_cents,status:"succeeded",reconciliation_required:false,created_at:"2026-09-08T00:00:00Z"};
+        }
+        const response=structuredClone(f.refundResponse);
+        if (f.heldPost) await new Promise(resolve=>f.waiters.push({path,resolve}));
+        f.failPayments = f.failAfterPost ?? true;
+        if (f.postStatus) throw new f.ApiError("Original request not confirmed",f.postStatus);
+        return response;
+      },
+    };
+    f.receipts = () => Object.entries(localStorage).filter(([key])=>key.startsWith("koaryu.billing.payment-refund.v1"));
+    window.confirm = message => { f.confirmations=(f.confirmations ?? []).concat(message); return !f.cancelConfirm; };
+  });
+  await page.addScriptTag({content:bundle({refunds:true})});
+  await page.waitForFunction(()=>fixture.state?.payments.length===1 && fixture.refunds?.refundActionReady);
+  return page;
+}
+
+test("confirmed refund retains its receipt when the real payment loader fails, then recovers with only a read", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const page=await mountRefundFixture(browser);
+    await page.evaluate(()=>fixture.refunds.refundPayment(fixture.state.payments[0],"12.50","requested_by_customer"));
+    assert.equal(await page.evaluate(()=>fixture.posts.length),1);
+    assert.match(await page.evaluate(()=>fixture.message),/Refund (submitted|accepted)/);
+    assert.equal(await page.evaluate(()=>fixture.receipts().length),1,"failed payment refresh must retain the original refund request");
+    const key=await page.evaluate(()=>JSON.parse(fixture.receipts()[0][1]).requestKey);
+    assert.equal(key,await page.evaluate(()=>fixture.posts[0].options.headers["Idempotency-Key"]));
+    assert.equal(await page.evaluate(()=>fixture.state.payments[0].refundable_amount_cents),5000);
+    await page.evaluate(()=>{fixture.failPayments=false;});
+    await page.getByRole("button",{name:"Refresh payment",exact:true}).click();
+    await page.waitForFunction(()=>fixture.receipts().length===0);
+    assert.equal(await page.evaluate(()=>fixture.posts.length),1,"confirmed recovery must not submit another refund");
+    assert.equal(await page.evaluate(()=>fixture.state.payments[0].refundable_amount_cents),3750);
+    assert.ok(await page.evaluate(()=>fixture.requests.some(r=>r.path==="/billing/payments/payment-1")));
+    assert.match(await page.locator("body").innerText(),/Refundable \$37\.50/);
+  } finally {await browser.close();}
+});
+
+test("refund target refresh preserves older pages and rejects held first-page and history snapshots", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    for (const held of ["/billing/payments/page", "/billing/payments/page?cursor=older"]) {
+      const page=await mountRefundFixture(browser);
+      await page.evaluate(()=>{
+        fixture.pageRows=[{...fixture.payment,id:"newer-payment",payment_method_type:"Newer card"}];
+        fixture.historyRows=[fixture.payment]; fixture.more=true;
+        return fixture.state.refreshBilling();
+      });
+      await page.evaluate(()=>fixture.state.loadMoreHistory());
+      assert.deepEqual(await page.evaluate(()=>fixture.state.payments.map(p=>p.id)),["newer-payment","payment-1"]);
+      if (held.includes("?")) {
+        await page.evaluate(()=>{fixture.holdBeforeCommit=true;fixture.failAfterPost=false;fixture.pendingRefund=fixture.refunds.refundPayment(fixture.state.payments[1],"12.50","requested_by_customer");});
+        await page.waitForFunction(()=>fixture.waiters.some(w=>w.path==="refund-commit"));
+        await page.evaluate(()=>fixture.state.refreshBilling());
+      }
+      await page.evaluate(held=>{
+        fixture.heldGet=held; fixture.failAfterPost=false;
+        fixture.staleRead=held.includes("?") ? fixture.state.loadMoreHistory() : fixture.state.refreshBilling();
+      },held);
+      await page.waitForFunction(held=>fixture.waiters.some(w=>w.path===held),held);
+      if (held.includes("?")) {
+        await page.evaluate(()=>{fixture.waiters.find(w=>w.path==="refund-commit").resolve();return fixture.pendingRefund;});
+      } else {
+        await page.evaluate(()=>fixture.refunds.refundPayment(fixture.state.payments.find(p=>p.id==="payment-1"),"12.50","requested_by_customer"));
+      }
+      assert.equal(await page.evaluate(()=>fixture.receipts().length),0);
+      await page.evaluate(()=>{fixture.heldGet=null;fixture.waiters.splice(0).forEach(w=>w.resolve());return fixture.staleRead;});
+      assert.equal(await page.evaluate(()=>fixture.state.payments.find(p=>p.id==="payment-1")?.refundable_amount_cents),held.includes("?") ? undefined : 3750);
+      assert.equal(await page.evaluate(()=>fixture.state.isLoading || fixture.state.isLoadingMore),false);
+      const before=await page.evaluate(()=>fixture.requests.length);
+      await page.evaluate(()=>fixture.state.ensureBilling());
+      assert.ok(await page.evaluate(n=>fixture.requests.slice(n).some(r=>r.path==="/billing/payments/page"),before),"discarded page must not become retained fresh data");
+      assert.equal(await page.evaluate(()=>fixture.posts.length),1);
+      await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test("refund completion uses renewed credentials but drops old identity, capability and unmounted settlements", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const renewed=await mountRefundFixture(browser);
+    await renewed.evaluate(()=>{fixture.failAfterPost=false;fixture.heldGet="/billing/payments/payment-1";fixture.pendingRefund=fixture.refunds.refundPayment(fixture.payment,"12.50","requested_by_customer");});
+    await renewed.waitForFunction(()=>fixture.waiters.length===1);
+    await renewed.evaluate(()=>{fixture.options={...fixture.options,token:"renewed"};fixture.refundOptions={...fixture.refundOptions,token:"renewed"};fixture.targetStatus=401;fixture.deniedToken="token-a";fixture.render();});
+    await renewed.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+    await renewed.evaluate(()=>{fixture.heldGet=null;fixture.waiters.splice(0).forEach(w=>w.resolve());return fixture.pendingRefund;});
+    assert.equal(await renewed.evaluate(()=>fixture.receipts().length),0);
+    assert.deepEqual(await renewed.evaluate(()=>fixture.requests.filter(r=>r.path==="/billing/payments/payment-1").map(r=>r.token)),["token-a","renewed"]);
+    assert.equal(await renewed.evaluate(()=>fixture.posts.length),1,"only the rejected read may replay after token renewal");
+    await renewed.close();
+
+    const postRenewal=await mountRefundFixture(browser);
+    await postRenewal.evaluate(()=>{fixture.failAfterPost=false;fixture.heldPost=true;fixture.pendingRefund=fixture.refunds.refundPayment(fixture.payment,"12.50","requested_by_customer");});
+    await postRenewal.waitForFunction(()=>fixture.waiters.length===1);
+    await postRenewal.evaluate(()=>{fixture.options={...fixture.options,token:"renewed"};fixture.refundOptions={...fixture.refundOptions,token:"renewed"};fixture.render();});
+    await postRenewal.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+    await postRenewal.evaluate(()=>{fixture.waiters[0].resolve();return fixture.pendingRefund;});
+    assert.equal(await postRenewal.evaluate(()=>fixture.receipts().length),0);
+    assert.equal(await postRenewal.evaluate(()=>fixture.requests.find(r=>r.path==="/billing/payments/payment-1").token),"renewed");
+    await postRenewal.close();
+
+    for (const change of ["signout","other-studio","role","capability","unmount"]) {
+      const page=await mountRefundFixture(browser);
+      await page.evaluate(()=>{fixture.failAfterPost=false;fixture.heldGet="/billing/payments/payment-1";fixture.pendingRefund=fixture.refunds.refundPayment(fixture.payment,"12.50","requested_by_customer");});
+      await page.waitForFunction(()=>fixture.waiters.length===1);
+      assert.match(await page.evaluate(()=>fixture.message),/Refund submitted/);
+      await page.evaluate(change=>{
+        if (change==="unmount") {fixture.root.unmount();return;}
+        if (change==="capability") fixture.refundOptions={...fixture.refundOptions,enabledWorkflowIds:new Set()};
+        else {
+          const identity=change==="signout" ? null : {userId:"replacement",studioId:change==="other-studio" ? "other" : "studio"};
+          const key=identity ? `${identity.userId}:${identity.studioId}:instructor:2` : null;
+          fixture.options={...fixture.options,identity,identityKey:key,token:identity?"replacement-token":null,canViewStudioBilling:false};
+          fixture.refundOptions={...fixture.refundOptions,identity,identityKey:key,role:"instructor",token:fixture.options.token};
+        }
+        fixture.render();
+      },change);
+      await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+      if (change!=="unmount") assert.equal(await page.evaluate(()=>fixture.message),"",`${change} must remove the old refund's message`);
+      await page.evaluate(()=>{fixture.heldGet=null;fixture.waiters.splice(0).forEach(w=>w.resolve());return fixture.pendingRefund;});
+      assert.equal(await page.evaluate(()=>fixture.receipts().length),1,`${change} retains original recovery state`);
+      if (!["unmount","capability"].includes(change)) assert.deepEqual(await page.evaluate(()=>fixture.state.payments),[]);
+      assert.equal(await page.evaluate(()=>fixture.posts.length),1);
+      await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test("an old refund's finally cannot release the replacement identity's pending operation", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const page=await mountRefundFixture(browser);
+    await page.evaluate(()=>{fixture.failAfterPost=false;fixture.heldPost=true;fixture.oldRefund=fixture.refunds.refundPayment(fixture.payment,"12.50","requested_by_customer");});
+    await page.waitForFunction(()=>fixture.waiters.length===1);
+    await page.evaluate(()=>{
+      const identity={userId:"new-admin",studioId:"new-studio"};
+      fixture.options={...fixture.options,identity,identityKey:"new-admin:new-studio:admin:2",token:"new-token"};
+      fixture.refundOptions={...fixture.refundOptions,identity,identityKey:fixture.options.identityKey,token:"new-token"};
+      fixture.payment={...fixture.payment,id:"payment-2",studio_id:"new-studio",stripe_charge_id:"charge-2",refunded_amount_cents:0,net_collected_amount_cents:5000,refundable_amount_cents:5000};
+      fixture.refundResponse=null;fixture.render();
+    });
+    await page.waitForFunction(()=>fixture.state.payments[0]?.id==="payment-2");
+    await page.evaluate(()=>{fixture.newRefund=fixture.refunds.refundPayment(fixture.state.payments[0],"10.00","requested_by_customer");});
+    await page.waitForFunction(()=>fixture.waiters.length===2);
+    await page.evaluate(()=>{fixture.waiters[0].resolve();return fixture.oldRefund;});
+    assert.equal(await page.evaluate(()=>fixture.refunds.activePaymentId),"payment-2");
+    assert.equal(await page.evaluate(()=>fixture.message),"");
+    await page.evaluate(()=>{fixture.waiters[1].resolve();return fixture.newRefund;});
+    assert.equal(await page.evaluate(()=>fixture.refunds.activePaymentId),null);
+    assert.equal(await page.evaluate(()=>fixture.receipts().length),1,"only the unresolved old identity's receipt remains");
+    assert.equal(await page.evaluate(()=>fixture.posts.length),2);
+  } finally {await browser.close();}
+});
+
+test("accepted refund recovery survives remount at zero balance without another provider command", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const page=await mountRefundFixture(browser);
+    await page.evaluate(()=>fixture.refunds.refundPayment(fixture.payment,"50.00","requested_by_customer"));
+    assert.equal(await page.evaluate(()=>fixture.receipts().length),1);
+    await page.evaluate(()=>{fixture.root.unmount();fixture.failPayments=false;});
+    await page.addScriptTag({content:bundle({refunds:true})});
+    await page.waitForFunction(()=>fixture.state.payments[0]?.refundable_amount_cents===0);
+    await page.getByRole("button",{name:"Refresh payment",exact:true}).click();
+    await page.waitForFunction(()=>fixture.receipts().length===0);
+    assert.equal(await page.evaluate(()=>fixture.posts.length),1);
+    assert.equal(await page.getByRole("button",{name:"Issue refund",exact:true}).count(),0);
+  } finally {await browser.close();}
+});
+
+test("unverified refund or target results retain the exact receipt, and current access denial clears financial data", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    for (const fault of ["refund-studio","refund-amount","refund-missing","target-studio","target-id","target-balance",404,401,403,402]) {
+      const page=await mountRefundFixture(browser);
+      await page.evaluate(fault=>{
+        fixture.failAfterPost=false;
+        if (String(fault).startsWith("refund")) {
+          fixture.refundResponse={id:"refund-1",studio_id:"studio",payment_id:"payment-1",amount_cents:1250,status:"succeeded",reconciliation_required:false};
+          if (fault==="refund-studio") fixture.refundResponse.studio_id="other";
+          if (fault==="refund-amount") fixture.refundResponse.amount_cents=5000;
+          if (fault==="refund-missing") delete fixture.refundResponse.payment_id;
+        }
+        if (String(fault).startsWith("target")) {
+          fixture.targetOverride={...fixture.payment};
+          if (fault==="target-studio") fixture.targetOverride.studio_id="other";
+          if (fault==="target-id") fixture.targetOverride.id="another-payment";
+          if (fault==="target-balance") delete fixture.targetOverride.refundable_amount_cents;
+        }
+        if (typeof fault==="number") fixture.targetStatus=fault;
+        return fixture.refunds.refundPayment(fixture.payment,"12.50","requested_by_customer");
+      },fault);
+      assert.equal(await page.evaluate(()=>fixture.receipts().length),1,String(fault));
+      assert.equal(await page.evaluate(()=>JSON.parse(fixture.receipts()[0][1]).requestKey),await page.evaluate(()=>fixture.posts[0].options.headers["Idempotency-Key"]));
+      if ([401,402,403].includes(fault)) assert.deepEqual(await page.evaluate(()=>fixture.state.payments),[]);
+      if (String(fault).startsWith("refund")) assert.equal(await page.evaluate(()=>fixture.message),"");
+      await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test("refund storage failures recover the original command or only its balance, including zero remaining balance", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    for (const failure of ["marker","removal"]) {
+      const page=await mountRefundFixture(browser);
+      await page.evaluate(failure=>{
+        fixture.failAfterPost=false;
+        fixture.originalSet=Storage.prototype.setItem;fixture.originalRemove=Storage.prototype.removeItem;
+        if (failure==="marker") Storage.prototype.setItem=function(key,value){if (value.includes("acceptedRefundId")) throw new Error("storage full");fixture.originalSet.call(this,key,value);};
+        else Storage.prototype.removeItem=function(){};
+        return fixture.refunds.refundPayment(fixture.payment,"50.00","requested_by_customer");
+      },failure);
+      const original=await page.evaluate(()=>JSON.parse(fixture.receipts()[0][1]));
+      assert.equal(Boolean(original.acceptedRefundId),failure==="removal");
+      assert.match(await page.evaluate(()=>fixture.error),failure==="marker" ? /could not be saved/ : /could not be cleared/);
+      await page.evaluate(()=>{Storage.prototype.setItem=fixture.originalSet;Storage.prototype.removeItem=fixture.originalRemove;fixture.root.unmount();});
+      await page.addScriptTag({content:bundle({refunds:true})});
+      await page.waitForFunction(()=>fixture.state.payments[0]?.refundable_amount_cents===0);
+      await page.getByRole("button",{name:failure==="marker" ? "Retry original refund" : "Refresh payment",exact:true}).click();
+      await page.waitForFunction(()=>fixture.receipts().length===0);
+      const posts=await page.evaluate(()=>fixture.posts);
+      assert.equal(posts.length,failure==="marker" ? 2 : 1);
+      assert.ok(posts.every(post=>post.options.headers["Idempotency-Key"]===original.requestKey && post.body.amount_cents===5000));
+      await page.close();
+    }
+
+    const page=await mountRefundFixture(browser);
+    await page.evaluate(()=>{fixture.postStatus=503;return fixture.refunds.refundPayment(fixture.payment,"50.00","requested_by_customer");});
+    const key=await page.evaluate(()=>JSON.parse(fixture.receipts()[0][1]).requestKey);
+    await page.evaluate(()=>{fixture.postStatus=401;fixture.failPayments=false;return fixture.refunds.recoverRefund(fixture.payment);});
+    assert.equal(await page.evaluate(()=>JSON.parse(fixture.receipts()[0][1]).requestKey),key,"a rejection of a replay does not disprove the earlier accepted request");
+    await page.evaluate(()=>{fixture.postStatus=null;fixture.failAfterPost=false;return fixture.refunds.recoverRefund(fixture.payment);});
+    assert.equal(await page.evaluate(()=>fixture.receipts().length),0);
+    assert.ok(await page.evaluate(()=>fixture.posts.every(p=>p.options.headers["Idempotency-Key"]===fixture.posts[0].options.headers["Idempotency-Key"])));
+  } finally {await browser.close();}
+});
+
+test("refund completion preserves a newer receipt and settles through tab changes without stranding other reads", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const page=await mountRefundFixture(browser);
+    await page.evaluate(()=>{fixture.failAfterPost=false;fixture.heldGet="/billing/payments/payment-1";fixture.pendingRefund=fixture.refunds.refundPayment(fixture.payment,"12.50","requested_by_customer");});
+    await page.waitForFunction(()=>fixture.waiters.length===1);
+    await page.evaluate(()=>{
+      const [key,raw]=fixture.receipts()[0];localStorage.setItem(key,JSON.stringify({...JSON.parse(raw),requestKey:"newer-request"}));
+      fixture.options={...fixture.options,activeTab:"plans"};fixture.heldGet="/billing/plans";fixture.render();
+    });
+    await page.waitForFunction(()=>fixture.waiters.length===2);
+    await page.evaluate(()=>{fixture.waiters.find(w=>w.path==="/billing/payments/payment-1").resolve();return fixture.pendingRefund;});
+    assert.equal(await page.evaluate(()=>JSON.parse(fixture.receipts()[0][1]).requestKey),"newer-request");
+    await page.evaluate(()=>{fixture.heldGet=null;fixture.waiters.find(w=>w.path==="/billing/plans").resolve();});
+    await page.waitForFunction(()=>fixture.state.hasBillingLoadSettled);
+    assert.equal(await page.evaluate(()=>fixture.state.isLoading),false);
+    assert.equal(await page.evaluate(()=>fixture.options.activeTab),"plans");
+  } finally {await browser.close();}
+});
+
+test("known target access loss prevents older landing and unrelated tab reads from restoring financial access", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    for (const held of ["/billing/landing","/billing/plans"]) {
+      const page=await mountRefundFixture(browser);
+      await page.evaluate(()=>{fixture.failAfterPost=false;fixture.heldPost=true;fixture.pendingRefund=fixture.refunds.refundPayment(fixture.state.payments[0],"12.50","requested_by_customer");});
+      await page.waitForFunction(()=>fixture.waiters.length===1);
+      await page.evaluate(held=>{
+        fixture.heldGet=held;
+        if (held==="/billing/plans") {fixture.options={...fixture.options,activeTab:"plans"};fixture.render();}
+        else fixture.staleRead=fixture.state.refreshBilling();
+      },held);
+      await page.waitForFunction(held=>fixture.waiters.some(w=>w.path===held),held);
+      await page.evaluate(()=>{fixture.targetStatus=403;fixture.waiters.find(w=>w.path.endsWith("/refund")).resolve();return fixture.pendingRefund;});
+      assert.equal(await page.evaluate(()=>fixture.state.isLoading),false);
+      assert.equal(await page.evaluate(()=>fixture.state.landing),null);
+      await page.evaluate(held=>{fixture.heldGet=null;fixture.waiters.find(w=>w.path===held).resolve();return fixture.staleRead;},held);
+      await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+      assert.deepEqual(await page.evaluate(()=>[fixture.state.landing,fixture.state.billingSystemStatus,fixture.state.plans,fixture.state.payments,fixture.state.isLoading]),[null,null,[],[],false]);
+      assert.equal(await page.evaluate(()=>fixture.receipts().length),1);
+      await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test("real refund controls enforce confirmation, access, preview, storage and reconciliation gates", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const page=await mountRefundFixture(browser);
+    assert.doesNotMatch(await page.locator("body").innerText(),/charge-1|account-1/);
+    await page.getByLabel("Refund amount",{exact:true}).fill("12.50");
+    await page.evaluate(()=>{fixture.cancelConfirm=true;});
+    await page.getByRole("button",{name:"Issue refund",exact:true}).click();
+    assert.equal(await page.evaluate(()=>fixture.posts.length),0);
+    for (const gate of ["role","capability","preview","storage"]) {
+      await page.evaluate(gate=>{
+        fixture.refundOptions={...fixture.refundOptions,role:gate==="role"?"instructor":"admin",enabledWorkflowIds:new Set(gate==="capability"?[]:["payment.refund"]),isPreviewMode:gate==="preview"};
+        if (gate==="storage") Object.defineProperty(window,"localStorage",{get(){throw new Error("storage blocked");}});
+        fixture.render();
+      },gate);
+      await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+      await page.evaluate(()=>fixture.refunds.refundPayment(fixture.payment,"12.50","requested_by_customer"));
+      assert.equal(await page.evaluate(()=>fixture.posts.length),0,gate);
+    }
+    await page.close();
+
+    for (const status of ["failed","canceled","pending","requires_action","reconciliation"]) {
+      const payment=await mountRefundFixture(browser);
+      await payment.evaluate(status=>{
+        fixture.failAfterPost=false;
+        fixture.refundResponse={id:"refund-1",studio_id:"studio",payment_id:"payment-1",amount_cents:1250,status:status==="reconciliation"?"pending":status,reconciliation_required:status==="reconciliation"};
+        if (["pending","requires_action"].includes(status)) fixture.payment.refundable_amount_cents=3750;
+        return fixture.refunds.refundPayment(fixture.payment,"12.50","requested_by_customer");
+      },status);
+      if (status==="reconciliation") {
+        assert.equal(await payment.evaluate(()=>fixture.receipts().length),1);
+        assert.equal(await payment.getByRole("button",{name:/Issue refund|Retry original refund|Refresh payment/}).count(),0);
+      } else {
+        assert.equal(await payment.evaluate(()=>fixture.receipts().length),0);
+        assert.match(await payment.evaluate(()=>fixture.message),status==="failed" ? /refund failed/ : status==="canceled" ? /refund was canceled/ : /Refund submitted/);
+      }
+      await payment.close();
+    }
+  } finally {await browser.close();}
+});
 
 test("Billing landing waits for its server budget and body but still bounds stalled requests", async () => {
  const browser=await chromium.launch({headless:true});
