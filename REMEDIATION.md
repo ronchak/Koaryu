@@ -96,16 +96,42 @@ write paths and other workflow owners remain open. The V39 correction does not
 resolve them. Verification is recorded in
 [student membership verification](docs/remediation/student-membership-verification.md).
 
-Next is `codex/remediation-program-ownership`. Program reads can overwrite an
-acknowledged archive, bootstrap can overwrite a newer program result, and ordinary
-token renewal can hide a successful write. CSV import can reuse a read begun before
-it created programs. The same owner must also cover successful reset/clear and
-synchronous updates to the canonical program reference. Staff has separate
-current-user/profile behavior and will be addressed independently. This PR can make
-partial progress on FSH2-01/02 and FT2-04; their remaining staff/promotion portions
-must stay pending. No regression test will be deleted solely to reduce a count.
-External-payment recovery remains higher consequence if its pending storage-policy
-decision is resolved before the next change is selected.
+[PR #159](https://github.com/ronchak/Koaryu/pull/159) merged as
+`ec48501163a55481e28bd109c3adee06b49bc79f`. Program reads, confirmed writes,
+bootstrap, import reconciliation and data replacement now share ownership. Six
+mounted groups fail unchanged main and pass the correction; the full frontend
+suite passed 928 tests. Independent and automated reviews completed on the exact
+head, and every release check passed. One unchanged 150-millisecond billing
+runtime test failed the first CI attempt; its 15-test suite passed locally and the
+failed job passed one rerun without changing deadlines, assertions or backend code.
+The guarded merge again verified production auto-deploy off. No deployment occurred.
+
+Reassessment at `ec48501`: program portions of FSH2-01/02 and FT2-04 are corrected;
+the broader findings remain pending for staff and promotion work. Counts remain
+19 fixed, 247 pending and 12 deliberate deferrals. See
+[program ownership verification](docs/remediation/program-ownership-verification.md).
+
+Next proposed branch is `codex/remediation-staff-ownership`: one staff dataset owner
+and one pending command in the staff Settings section, including its current-user
+name writers and authoritative revalidation after a confirmed self-access change.
+An old auth-profile read can also overwrite an acknowledged self legal name; its
+narrow profile-ownership boundary must be resolved in the plan. USER_UPDATED retains
+its access reinitialization, while ordinary TOKEN_REFRESHED may settle confirmed
+writes. Live operational clear/demo preserves staff and must not invalidate unrelated
+staff work. Scheduled deletion remains distinct from pending-invite revocation.
+Existing staff/role/confirmation safeguards and meaningful tests remain. Financial
+recovery choices are still pending and can change the next-step priority.
+
+
+The staff candidate combines the remaining directory owner with one Settings
+command owner and narrow self-profile/access handling. It closes FSH2-01, FT2-04
+and FC2-03 after the program fix, subject to final PR gates. The candidate ledger
+has 22 fixed, 244 pending and 12 deliberate deferrals. Seventeen source-text tests
+were replaced by eleven mounted groups; the full frontend suite passed 922 tests.
+See [staff ownership verification](docs/remediation/staff-ownership-verification.md).
+Promotion/demotion still needs its own receipt/history owner. Investigation also
+confirms that a later FK update can rewrite historical rank labels and colors;
+that snapshot correction is a separate next candidate, not a locked roadmap.
 
 ## Deliberate non-goals and deferrals
 

@@ -16,7 +16,8 @@ import {
   sortStaffMembers,
   upsertStaffMember,
 } from "@/lib/staff-store-model";
-import { withCurrentLiveAuthRead, type BeginLiveAuthRequest } from "@/lib/store-action-types";
+import { canCommitLiveMutation, type BeginLiveAuthRequest, type StoreRef } from "@/lib/store-action-types";
+import { beginResourceMutation, type ResourceScope } from "@/lib/store-resource-scope";
 import type {
   StaffInviteCreate,
   StaffDeletionRequestResponse,
@@ -35,6 +36,9 @@ interface UseStoreStaffActionsOptions {
   setStaffLoaded: Dispatch<SetStateAction<boolean>>;
   setStaffMembers: Dispatch<SetStateAction<StaffMember[]>>;
   staffMembers: StaffMember[];
+  staffScopeRef: StoreRef<ResourceScope>;
+  onLegalNameCommitted: (response: StaffLegalNameResponse) => void;
+  revalidateSelfAccess: () => void;
 }
 
 export function useStoreStaffActions({
@@ -46,6 +50,9 @@ export function useStoreStaffActions({
   setStaffLoaded,
   setStaffMembers,
   staffMembers,
+  staffScopeRef,
+  onLegalNameCommitted,
+  revalidateSelfAccess,
 }: UseStoreStaffActionsOptions) {
   const refreshStaff = useCallback(async (includeArchived = false): Promise<StaffMember[]> => {
     if (isPreviewMode) {
@@ -56,34 +63,63 @@ export function useStoreStaffActions({
       return sorted;
     }
 
-    return withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
+    const owner = beginLiveAuthRequest();
+    const scope = staffScopeRef.current;
+    const sequence = ++scope.sequence;
+    const ownsRead = () => staffScopeRef.current === scope && scope.sequence === sequence
+      && canCommitLiveMutation(owner);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (!ownsRead()) return [];
+      if (scope.pending) await scope.settled;
+      if (!ownsRead()) return [];
+      const request = beginLiveAuthRequest();
+      const revision = scope.revision;
       try {
         const result = await api.get<StaffMember[]>(buildStaffListPath(includeArchived), request.token);
         const sorted = sortStaffMembers(result, activeUserId);
-        if (!request.isCurrent()) {
-          return sorted;
-        }
+        if (!ownsRead()) return sorted;
+        if (request.canRetryAfterTokenChange?.()) continue;
+        if (!request.isCurrent()) return sorted;
+        if (scope.pending || revision !== scope.revision) continue;
         setStaffMembers(sorted);
         setStaffLoaded(true);
         setStaffLoadError(null);
         return sorted;
       } catch (error) {
-        const rawMessage = error instanceof Error ? error.message : "";
-        const message =
-          rawMessage && rawMessage !== "Internal Server Error"
-            ? rawMessage
-            : "Staff could not be loaded. Please try again.";
-        if (request.isCurrent()) {
+        if (ownsRead() && request.canRetryAfterTokenChange?.()) continue;
+        if (ownsRead() && request.isCurrent()) {
+          if (scope.pending || revision !== scope.revision) continue;
+          const rawMessage = error instanceof Error ? error.message : "";
           setStaffLoaded(true);
-          setStaffLoadError(message);
+          setStaffLoadError(rawMessage && rawMessage !== "Internal Server Error"
+            ? rawMessage : "Staff could not be loaded. Please try again.");
         }
         throw error;
       }
-    }, (error) => {
+    }
+    const error = new Error("Staff changed while loading. Refresh to see the latest roster.");
+    if (ownsRead()) {
       setStaffLoaded(true);
       setStaffLoadError(error.message);
-    });
-  }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setStaffLoadError, setStaffLoaded, setStaffMembers, staffMembers]);
+    }
+    throw error;
+  }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setStaffLoadError, setStaffLoaded, setStaffMembers, staffMembers, staffScopeRef]);
+
+  const runStaffMutation = useCallback(async <Result,>(
+    send: (token: string) => Promise<Result>,
+    commit: (result: Result) => void
+  ): Promise<Result> => {
+    const request = beginLiveAuthRequest();
+    const scope = staffScopeRef.current;
+    const finish = beginResourceMutation(scope);
+    try {
+      const result = await send(request.token);
+      if (staffScopeRef.current === scope && canCommitLiveMutation(request)) commit(result);
+      return result;
+    } finally {
+      finish();
+    }
+  }, [beginLiveAuthRequest, staffScopeRef]);
 
   const inviteStaff = useCallback(async (data: StaffInviteCreate): Promise<StaffMember> => {
     const payload = normalizeStaffInvite(data);
@@ -98,19 +134,15 @@ export function useStoreStaffActions({
       return previewMember;
     }
 
-    const liveRequest = beginLiveAuthRequest();
-
-    const result = await api.post<StaffMember>("/staff/invitations", payload, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return result;
-    }
-    setStaffMembers((current) =>
-      upsertStaffMember(current, result, activeUserId)
+    return runStaffMutation(
+      (token) => api.post<StaffMember>("/staff/invitations", payload, token),
+      (result) => {
+        setStaffMembers((current) => upsertStaffMember(current, result, activeUserId));
+        setStaffLoaded(true);
+        setStaffLoadError(null);
+      }
     );
-    setStaffLoaded(true);
-    setStaffLoadError(null);
-    return result;
-  }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setStaffLoadError, setStaffLoaded, setStaffMembers]);
+  }, [activeUserId, runStaffMutation, isPreviewMode, setStaffLoadError, setStaffLoaded, setStaffMembers]);
 
   const updateStaffLegalName = useCallback(async (
     userId: string,
@@ -142,19 +174,14 @@ export function useStoreStaffActions({
       };
     }
 
-    const liveRequest = beginLiveAuthRequest();
-    const response = await api.patch<StaffLegalNameResponse>(
-      `/staff/${userId}/legal-name`,
-      payload,
-      liveRequest.token
+    return runStaffMutation(
+      (token) => api.patch<StaffLegalNameResponse>(`/staff/${userId}/legal-name`, payload, token),
+      (response) => {
+        setStaffMembers((current) => mergeStaffLegalNameResponse(current, response).members);
+        onLegalNameCommitted(response);
+      }
     );
-    if (!liveRequest.isCurrent()) {
-      return response;
-    }
-
-    setStaffMembers((current) => mergeStaffLegalNameResponse(current, response).members);
-    return response;
-  }, [beginLiveAuthRequest, isPreviewMode, setStaffMembers, staffMembers]);
+  }, [runStaffMutation, onLegalNameCommitted, isPreviewMode, setStaffMembers, staffMembers]);
 
   const updateStaffRole = useCallback(async (
     id: string,
@@ -170,17 +197,14 @@ export function useStoreStaffActions({
       return previewUpdate.updated;
     }
 
-    const liveRequest = beginLiveAuthRequest();
-
-    const result = await api.patch<StaffMember>(`/staff/${id}`, { role }, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return result;
-    }
-    setStaffMembers((current) =>
-      sortStaffMembers(current.map((member) => (member.id === id ? result : member)), activeUserId)
+    return runStaffMutation(
+      (token) => api.patch<StaffMember>(`/staff/${id}`, { role }, token),
+      (result) => {
+        setStaffMembers((current) => sortStaffMembers(current.map((member) => member.id === id ? result : member), activeUserId));
+        if (result.user_id === activeUserId) revalidateSelfAccess();
+      }
     );
-    return result;
-  }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setStaffMembers, staffMembers]);
+  }, [activeUserId, runStaffMutation, revalidateSelfAccess, isPreviewMode, setStaffMembers, staffMembers]);
 
   const archiveStaff = useCallback(async (id: string): Promise<StaffMember> => {
     const previewError = getStaffLifecyclePreviewError(staffMembers, id, "archive", {
@@ -199,14 +223,14 @@ export function useStoreStaffActions({
       return previewUpdate.updated;
     }
 
-    const liveRequest = beginLiveAuthRequest();
-    const result = await api.post<StaffMember>(`/staff/${id}/archive`, {}, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return result;
-    }
-    setStaffMembers((current) => upsertStaffMember(current, result, activeUserId));
-    return result;
-  }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setStaffMembers, staffMembers]);
+    return runStaffMutation(
+      (token) => api.post<StaffMember>(`/staff/${id}/archive`, {}, token),
+      (result) => {
+        setStaffMembers((current) => upsertStaffMember(current, result, activeUserId));
+        if (result.user_id === activeUserId) revalidateSelfAccess();
+      }
+    );
+  }, [activeUserId, runStaffMutation, revalidateSelfAccess, isPreviewMode, setStaffMembers, staffMembers]);
 
   const unarchiveStaff = useCallback(async (id: string): Promise<StaffMember> => {
     const previewError = getStaffLifecyclePreviewError(staffMembers, id, "unarchive", {
@@ -225,14 +249,14 @@ export function useStoreStaffActions({
       return previewUpdate.updated;
     }
 
-    const liveRequest = beginLiveAuthRequest();
-    const result = await api.post<StaffMember>(`/staff/${id}/unarchive`, {}, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return result;
-    }
-    setStaffMembers((current) => upsertStaffMember(current, result, activeUserId));
-    return result;
-  }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setStaffMembers, staffMembers]);
+    return runStaffMutation(
+      (token) => api.post<StaffMember>(`/staff/${id}/unarchive`, {}, token),
+      (result) => {
+        setStaffMembers((current) => upsertStaffMember(current, result, activeUserId));
+        if (result.user_id === activeUserId) revalidateSelfAccess();
+      }
+    );
+  }, [activeUserId, runStaffMutation, revalidateSelfAccess, isPreviewMode, setStaffMembers, staffMembers]);
 
   const scheduleStaffDeletion = useCallback(async (
     id: string,
@@ -270,14 +294,11 @@ export function useStoreStaffActions({
       return;
     }
 
-    const liveRequest = beginLiveAuthRequest();
-
-    await api.delete(`/staff/${id}`, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return;
-    }
-    setStaffMembers((current) => current.filter((member) => member.id !== id));
-  }, [beginLiveAuthRequest, isPreviewMode, setStaffMembers, staffMembers]);
+    await runStaffMutation(
+      (token) => api.delete(`/staff/${id}`, token),
+      () => setStaffMembers((current) => current.filter((member) => member.id !== id))
+    );
+  }, [runStaffMutation, isPreviewMode, setStaffMembers, staffMembers]);
 
   return {
     archiveStaff,

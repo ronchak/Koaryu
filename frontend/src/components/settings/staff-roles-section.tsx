@@ -24,6 +24,11 @@ type PendingLifecycleAction = {
   action: "archive" | "unarchive" | "delete";
 } | null;
 
+type StaffCommand = {
+  kind: "invite" | "role" | "remove" | "legal" | "archive" | "unarchive" | "delete";
+  id: string;
+};
+
 const ROLE_LABELS: Record<StaffRoleName, string> = {
   admin: "Admin",
   instructor: "Instructor",
@@ -122,6 +127,7 @@ interface StaffRowProps {
   member: StaffMember;
   currentUserId: string;
   canManageStaff: boolean;
+  isCommandPending: boolean;
   staffProfilesAvailable: boolean;
   isLastActiveAdmin: boolean;
   pendingRoleId: string | null;
@@ -149,6 +155,7 @@ function StaffRow({
   member,
   currentUserId,
   canManageStaff,
+  isCommandPending,
   staffProfilesAvailable,
   isLastActiveAdmin,
   pendingRoleId,
@@ -184,6 +191,7 @@ function StaffRow({
   return (
     <div
       data-staff-status={member.status}
+      aria-busy={isRolePending || isRemovePending || isLifecyclePending || isLegalNamePending}
       className={`grid gap-3 p-3 md:min-h-14 md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center md:px-3 md:py-1 ${
         isArchived ? "bg-warning/[0.06]" : ""
       }`}
@@ -203,7 +211,7 @@ function StaffRow({
                 onChange={(event) => onLegalNameFirstChange(event.target.value)}
                 autoComplete="given-name"
                 required
-                disabled={isLegalNamePending}
+                disabled={isCommandPending}
               />
               <Input
                 label="Legal last name"
@@ -211,7 +219,7 @@ function StaffRow({
                 onChange={(event) => onLegalNameLastChange(event.target.value)}
                 autoComplete="family-name"
                 required
-                disabled={isLegalNamePending}
+                disabled={isCommandPending}
               />
             </div>
             <p aria-live="polite" className="min-h-4 text-xs text-danger">{legalNameError}</p>
@@ -221,7 +229,7 @@ function StaffRow({
                 variant="ghost"
                 size="sm"
                 onClick={onLegalNameCancel}
-                disabled={isLegalNamePending}
+                disabled={isCommandPending}
               >
                 Cancel
               </Button>
@@ -230,7 +238,7 @@ function StaffRow({
                 variant="primary"
                 size="sm"
                 isLoading={isLegalNamePending}
-                disabled={!legalNameCanSubmit}
+                disabled={isCommandPending || !legalNameCanSubmit}
               >
                 {isLegalNamePending ? "Saving..." : "Save legal name"}
               </Button>
@@ -244,7 +252,7 @@ function StaffRow({
         {canManageStaff && !isArchived ? (
           <select
             value={member.role}
-            disabled={isRolePending || isLastActiveAdmin}
+            disabled={isCommandPending || isLastActiveAdmin}
             onChange={(event) => onRoleChange(member, event.target.value as StaffRoleName)}
             className="w-full rounded-[10px] border border-border bg-surface-raised px-2 py-1.5 text-xs text-text-primary disabled:opacity-50"
           >
@@ -279,7 +287,7 @@ function StaffRow({
               variant="ghost"
               size="sm"
               onClick={() => onEditLegalName(member)}
-              disabled={pendingLegalNameUserId !== null}
+              disabled={isCommandPending}
               title="Edit legal name"
             >
               <Pencil className="w-3.5 h-3.5" />
@@ -292,7 +300,7 @@ function StaffRow({
               variant="ghost"
               size="sm"
               onClick={() => onRemove(member)}
-              disabled={isRemovePending || isLifecyclePending}
+              disabled={isCommandPending}
               className="justify-start md:justify-center text-danger hover:text-danger"
               title="Revoke invitation"
             >
@@ -306,11 +314,11 @@ function StaffRow({
                 variant="secondary"
                 size="sm"
                 onClick={() => onUnarchive(member)}
-                disabled={isLifecyclePending}
+                disabled={isCommandPending}
                 title="Restore studio access"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                {pendingLifecycle?.action === "unarchive" ? "Restoring..." : "Unarchive"}
+                {isLifecyclePending && pendingLifecycle?.action === "unarchive" ? "Restoring..." : "Unarchive"}
               </Button>
               {hasUserId ? (
                 <Button
@@ -318,12 +326,12 @@ function StaffRow({
                   variant="danger"
                   size="sm"
                   onClick={() => onScheduleDeletion(member)}
-                  disabled={isLifecyclePending}
+                  disabled={isCommandPending}
                   className="justify-start md:justify-center"
                   title="Schedule permanent deletion"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  {pendingLifecycle?.action === "delete" ? "Scheduling..." : "Delete"}
+                  {isLifecyclePending && pendingLifecycle?.action === "delete" ? "Scheduling..." : "Delete"}
                 </Button>
               ) : (
                 <span className="text-xs text-muted" role="status">
@@ -337,12 +345,12 @@ function StaffRow({
               variant="ghost"
               size="sm"
               onClick={() => onArchive(member)}
-              disabled={isLifecyclePending || isLastActiveAdmin}
+              disabled={isCommandPending || isLastActiveAdmin}
               className="justify-start md:justify-center text-warning hover:text-warning"
               title={isLastActiveAdmin ? "At least one active admin must remain." : "Revoke access and preserve the staff row"}
             >
               <Archive className="w-3.5 h-3.5" />
-              {pendingLifecycle?.action === "archive" ? "Archiving..." : "Archive"}
+              {isLifecyclePending && pendingLifecycle?.action === "archive" ? "Archiving..." : "Archive"}
             </Button>
           )}
         </div>
@@ -352,6 +360,11 @@ function StaffRow({
 }
 
 export function StaffRolesSection() {
+  const { identityGeneration } = useStudioStore();
+  return <StaffRolesEditor key={identityGeneration} />;
+}
+
+function StaffRolesEditor() {
   const { isPreviewMode } = useConfigStore();
   const {
     currentRole,
@@ -377,10 +390,6 @@ export function StaffRolesSection() {
   const [inviteLegalFirstName, setInviteLegalFirstName] = useState("");
   const [inviteLegalLastName, setInviteLegalLastName] = useState("");
   const [inviteRole, setInviteRole] = useState<StaffRoleName>("instructor");
-  const [inviteInFlight, setInviteInFlight] = useState(false);
-  const [pendingRoleId, setPendingRoleId] = useState<string | null>(null);
-  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
-  const [pendingLifecycle, setPendingLifecycle] = useState<PendingLifecycleAction>(null);
   const [message, setMessage] = useState("");
   const [actionError, setActionError] = useState("");
   const [dismissedStaffLoadError, setDismissedStaffLoadError] = useState("");
@@ -394,9 +403,51 @@ export function StaffRolesSection() {
   const [legalNameTarget, setLegalNameTarget] = useState<StaffMember | null>(null);
   const [legalFirstName, setLegalFirstName] = useState("");
   const [legalLastName, setLegalLastName] = useState("");
-  const [pendingLegalNameUserId, setPendingLegalNameUserId] = useState<string | null>(null);
   const [legalNameError, setLegalNameError] = useState("");
   const staffRefreshInFlightRef = useRef<Promise<void> | null>(null);
+  const [pendingCommand, setPendingCommand] = useState<StaffCommand | null>(null);
+  const commandRef = useRef<StaffCommand | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      commandRef.current = null;
+    };
+  }, []);
+  const isCommandPending = pendingCommand !== null;
+  const inviteInFlight = pendingCommand?.kind === "invite";
+  const pendingRoleId = pendingCommand?.kind === "role" ? pendingCommand.id : null;
+  const pendingRemoveId = pendingCommand?.kind === "remove" ? pendingCommand.id : null;
+  const pendingLegalNameUserId = pendingCommand?.kind === "legal" ? pendingCommand.id : null;
+  const pendingLifecycle: PendingLifecycleAction = pendingCommand
+    && (pendingCommand.kind === "archive" || pendingCommand.kind === "unarchive" || pendingCommand.kind === "delete")
+    ? { id: pendingCommand.id, action: pendingCommand.kind } : null;
+
+  async function runCommand<Result>(
+    kind: StaffCommand["kind"], id: string,
+    work: () => Promise<Result>,
+    onSuccess: (result: Result) => void,
+    onError: (error: unknown) => void
+  ) {
+    if (!mountedRef.current || commandRef.current) return;
+    const command = { kind, id };
+    commandRef.current = command;
+    setPendingCommand(command);
+    const owns = () => mountedRef.current && commandRef.current === command;
+    try {
+      const result = await work();
+      if (owns()) onSuccess(result);
+    } catch (error) {
+      if (owns()) onError(error);
+    } finally {
+      if (owns()) {
+        commandRef.current = null;
+        setPendingCommand(null);
+      }
+    }
+  }
+
 
   const canManageStaff = currentRole === "admin";
   const visibleStaffMembers = filterStaffMembersForDisplay(staffMembers, showArchived);
@@ -425,7 +476,7 @@ export function StaffRolesSection() {
     const request = refreshStaff(includeArchived)
       .then(() => undefined)
       .finally(() => {
-        if (staffRefreshInFlightRef.current === request) {
+        if (mountedRef.current && staffRefreshInFlightRef.current === request) {
           staffRefreshInFlightRef.current = null;
           setIsStaffRefreshPending(false);
         }
@@ -442,18 +493,19 @@ export function StaffRolesSection() {
   }, [canManageStaff, refreshRoster, staffLoaded]);
 
   async function handleRefresh() {
+    if (commandRef.current || !mountedRef.current) return;
     setMessage("");
     setActionError("");
     setShowArchived(false);
     try {
       await refreshRoster(false);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Staff could not be loaded.");
+      if (mountedRef.current) setActionError(error instanceof Error ? error.message : "Staff could not be loaded.");
     }
   }
 
   async function handleArchivedToggle(event: React.ChangeEvent<HTMLInputElement>) {
-    if (isStaffRefreshPending) return;
+    if (isStaffRefreshPending || commandRef.current || !mountedRef.current) return;
 
     const nextShowArchived = event.target.checked;
     const previousShowArchived = showArchived;
@@ -463,13 +515,16 @@ export function StaffRolesSection() {
     try {
       await refreshRoster(nextShowArchived);
     } catch (error) {
-      setShowArchived(previousShowArchived);
-      setActionError(error instanceof Error ? error.message : "Staff could not be loaded.");
+      if (mountedRef.current) {
+        setShowArchived(previousShowArchived);
+        setActionError(error instanceof Error ? error.message : "Staff could not be loaded.");
+      }
     }
   }
 
   async function handleInvite(event: React.FormEvent) {
     event.preventDefault();
+    if (commandRef.current) return;
     const email = inviteEmail.trim().toLowerCase();
     const fullName = normalizeLegalName(inviteFullName);
     const normalizedInviteLegalName = normalizeLegalNameDraft({
@@ -500,118 +555,74 @@ export function StaffRolesSection() {
       return;
     }
 
-    setInviteInFlight(true);
-    try {
-      await inviteStaff({
-        email,
-        role: inviteRole,
-        full_name: fullName,
-        legal_first_name: normalizedInviteLegalName.firstName,
-        legal_last_name: normalizedInviteLegalName.lastName,
-      });
+    await runCommand("invite", "", () => inviteStaff({
+      email, role: inviteRole, full_name: fullName,
+      legal_first_name: normalizedInviteLegalName.firstName,
+      legal_last_name: normalizedInviteLegalName.lastName,
+    }), () => {
       setInviteEmail("");
       setInviteFullName("");
       setInviteLegalFirstName("");
       setInviteLegalLastName("");
-      setMessage(
-        isPreviewMode
-          ? `Preview staff added for ${email}.`
-          : `Invite sent to ${email}.`
-      );
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Failed to send invite.");
-    } finally {
-      setInviteInFlight(false);
-    }
+      setMessage(isPreviewMode ? `Preview staff added for ${email}.` : `Invite sent to ${email}.`);
+    }, (error) => setActionError(error instanceof Error ? error.message : "Failed to send invite."));
   }
 
   async function handleRoleChange(member: StaffMember, role: StaffRoleName) {
-    if (member.role === role) return;
+    if (commandRef.current || member.role === role) return;
     setMessage("");
     setActionError("");
-    setPendingRoleId(member.id);
-    try {
-      await updateStaffRole(member.id, role);
-      setMessage(`${member.email} is now ${ROLE_LABELS[role]}.`);
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Failed to update role.");
-    } finally {
-      setPendingRoleId(null);
-    }
+    await runCommand("role", member.id, () => updateStaffRole(member.id, role),
+      () => setMessage(`${member.email} is now ${ROLE_LABELS[role]}.`),
+      (error) => setActionError(error instanceof Error ? error.message : "Failed to update role."));
   }
 
   async function runRemove(member: StaffMember) {
-    if (member.status !== "pending") return;
+    if (commandRef.current || member.status !== "pending") return;
     setMessage("");
     setActionError("");
-    setPendingRemoveId(member.id);
-    try {
-      await removeStaff(member.id);
+    await runCommand("remove", member.id, () => removeStaff(member.id), () => {
       setMessage(`Invite revoked for ${getDisplayedStaffIdentity(member)}.`);
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Failed to remove staff member.");
-    } finally {
-      setPendingRemoveId(null);
       setRemoveTarget(null);
-    }
+    }, (error) => setActionError(error instanceof Error ? error.message : "Failed to remove staff member."));
   }
 
   function handleRemove(member: StaffMember) {
-    if (member.status !== "pending") return;
+    if (commandRef.current || member.status !== "pending") return;
+    setActionError("");
     setRemoveTarget(member);
   }
 
   async function runArchive(member: StaffMember) {
+    if (commandRef.current) return;
     setMessage("");
     setActionError("");
-    setPendingLifecycle({ id: member.id, action: "archive" });
-    try {
-      await archiveStaff(member.id);
-      setMessage(
-        `${getDisplayedStaffIdentity(member)} was archived. Studio access was revoked immediately; the staff row was preserved and can be restored.`
-      );
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Failed to archive staff member.");
-    } finally {
-      setPendingLifecycle(null);
+    await runCommand("archive", member.id, () => archiveStaff(member.id), () => {
+      setMessage(`${getDisplayedStaffIdentity(member)} was archived. Studio access was revoked immediately; the staff row was preserved and can be restored.`);
       setArchiveTarget(null);
-    }
+    }, (error) => setActionError(error instanceof Error ? error.message : "Failed to archive staff member."));
   }
 
   function handleArchive(member: StaffMember) {
-    if (member.status !== "active") return;
+    if (commandRef.current || member.status !== "active") return;
     setMessage("");
     setActionError("");
     setArchiveTarget(member);
   }
 
   async function handleUnarchive(member: StaffMember) {
-    if (member.status !== "archived") return;
-
+    if (commandRef.current || member.status !== "archived") return;
     setMessage("");
     setActionError("");
-    setPendingLifecycle({ id: member.id, action: "unarchive" });
-    try {
-      const unarchivedMember = await unarchiveStaff(member.id);
-      setMessage(
-        unarchivedMember.status === "active"
-          ? `${getDisplayedStaffIdentity(member)} was unarchived and studio access is restored.`
-          : `${getDisplayedStaffIdentity(member)} was unarchived but the membership remains pending.`
-      );
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Failed to unarchive staff member.");
-    } finally {
-      setPendingLifecycle(null);
-    }
+    await runCommand("unarchive", member.id, () => unarchiveStaff(member.id), (unarchivedMember) => {
+      setMessage(unarchivedMember.status === "active"
+        ? `${getDisplayedStaffIdentity(member)} was unarchived and studio access is restored.`
+        : `${getDisplayedStaffIdentity(member)} was unarchived but the membership remains pending.`);
+    }, (error) => setActionError(error instanceof Error ? error.message : "Failed to unarchive staff member."));
   }
 
   function handleScheduleDeletion(member: StaffMember) {
-    if (
-      member.status !== "archived"
-      || member.user_id === null
-      || member.user_id === undefined
-    ) return;
-
+    if (commandRef.current || member.status !== "archived" || member.user_id == null) return;
     setMessage("");
     setActionError("");
     setDeletionError("");
@@ -620,7 +631,7 @@ export function StaffRolesSection() {
   }
 
   function closeDeletionModal(force = false) {
-    if (!force && pendingLifecycle?.action === "delete") return;
+    if (!force && commandRef.current) return;
     setDeleteTarget(null);
     setDeletionConfirmationInput("");
     setDeletionError("");
@@ -628,37 +639,22 @@ export function StaffRolesSection() {
 
   async function runScheduleDeletion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!deleteTarget || pendingLifecycle?.action === "delete") return;
-
+    if (commandRef.current || !deleteTarget) return;
     if (!deletionCanSubmit) {
       setDeletionError(`Type ${deletionIdentity} exactly to confirm deletion.`);
       return;
     }
-
     setDeletionError("");
     setMessage("");
     setActionError("");
-    setPendingLifecycle({ id: deleteTarget.id, action: "delete" });
-    try {
-      const response = await scheduleStaffDeletion(
-        deleteTarget.id,
-        deletionConfirmationInput
-      );
-      setMessage(
-        `Permanent account/profile deletion for ${deletionIdentity} is scheduled for ${formatDateTime(response.scheduled_for)} through the existing 30-day lifecycle. It is not immediate: the archived membership/profile remains until the existing worker completes the scheduled deletion; frozen audit history remains retained.`
-      );
+    await runCommand("delete", deleteTarget.id, () => scheduleStaffDeletion(deleteTarget.id, deletionConfirmationInput), (response) => {
+      setMessage(`Permanent account/profile deletion for ${deletionIdentity} is scheduled for ${formatDateTime(response.scheduled_for)} through the existing 30-day lifecycle. It is not immediate: the archived membership/profile remains until the existing worker completes the scheduled deletion; frozen audit history remains retained.`);
       closeDeletionModal(true);
-    } catch (error) {
-      setDeletionError(
-        error instanceof Error ? error.message : "Failed to schedule staff deletion."
-      );
-    } finally {
-      setPendingLifecycle(null);
-    }
+    }, (error) => setDeletionError(error instanceof Error ? error.message : "Failed to schedule staff deletion."));
   }
 
   function handleEditLegalName(member: StaffMember) {
-    if (member.user_id === null || member.user_id === undefined) return;
+    if (commandRef.current || member.user_id == null) return;
     setMessage("");
     setLegalNameError("");
     setLegalNameTarget(member);
@@ -667,49 +663,36 @@ export function StaffRolesSection() {
   }
 
   function handleCancelLegalNameEdit() {
-    if (pendingLegalNameUserId !== null) return;
+    if (commandRef.current) return;
     setLegalNameTarget(null);
     setLegalNameError("");
   }
 
   async function handleLegalNameSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pendingLegalNameUserId !== null) return;
-
+    if (commandRef.current) return;
     const target = legalNameTarget;
-    if (!target || target.user_id === null || target.user_id === undefined) return;
-
+    const userId = target?.user_id;
+    if (!target || userId == null) return;
     if (!legalNameCanSubmit) {
       setLegalNameError("Enter both legal first and last names.");
       return;
     }
-
     setMessage("");
     setActionError("");
     setLegalNameError("");
-    setPendingLegalNameUserId(target.user_id);
-
-    try {
-      if (target.user_id === currentUserId) {
-        await updateUserLegalName(
-          normalizedLegalNameDraft.firstName,
-          normalizedLegalNameDraft.lastName
-        );
+    await runCommand("legal", userId, async () => {
+      if (userId === currentUserId) {
+        await updateUserLegalName(normalizedLegalNameDraft.firstName, normalizedLegalNameDraft.lastName);
       } else {
-        await updateStaffLegalName(
-          target.user_id,
-          normalizedLegalNameDraft.firstName,
-          normalizedLegalNameDraft.lastName
-        );
+        await updateStaffLegalName(userId, normalizedLegalNameDraft.firstName, normalizedLegalNameDraft.lastName);
       }
+    }, () => {
       setLegalNameTarget(null);
       setMessage(`Legal name updated for ${target.email}.`);
-    } catch (error) {
-      setLegalNameError(error instanceof Error ? error.message : "Failed to update legal name.");
-    } finally {
-      setPendingLegalNameUserId(null);
-    }
+    }, (error) => setLegalNameError(error instanceof Error ? error.message : "Failed to update legal name."));
   }
+
 
   if (!canManageStaff) {
     return (
@@ -754,7 +737,7 @@ export function StaffRolesSection() {
               type="checkbox"
               checked={showArchived}
               onChange={(event) => void handleArchivedToggle(event)}
-              disabled={isStaffRefreshPending}
+              disabled={isStaffRefreshPending || isCommandPending}
               aria-label="Show archived staff"
               className="accent-[var(--accent)] cursor-pointer disabled:cursor-not-allowed"
             />
@@ -766,7 +749,7 @@ export function StaffRolesSection() {
             variant="ghost"
             size="sm"
             onClick={() => void handleRefresh()}
-            disabled={isStaffRefreshPending}
+            disabled={isStaffRefreshPending || isCommandPending}
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Refresh
@@ -781,7 +764,7 @@ export function StaffRolesSection() {
           value={inviteEmail}
           onChange={(event) => setInviteEmail(event.target.value)}
           placeholder="instructor@example.com"
-          disabled={inviteInFlight}
+          disabled={isCommandPending}
           required
         />
         <Input
@@ -789,7 +772,7 @@ export function StaffRolesSection() {
           value={inviteFullName}
           onChange={(event) => setInviteFullName(event.target.value)}
           placeholder="Their display name"
-          disabled={inviteInFlight}
+          disabled={isCommandPending}
           required
         />
         <Input
@@ -798,7 +781,7 @@ export function StaffRolesSection() {
           onChange={(event) => setInviteLegalFirstName(event.target.value)}
           placeholder="Legal first name"
           autoComplete="given-name"
-          disabled={inviteInFlight}
+          disabled={isCommandPending}
           required
         />
         <Input
@@ -807,7 +790,7 @@ export function StaffRolesSection() {
           onChange={(event) => setInviteLegalLastName(event.target.value)}
           placeholder="Legal last name"
           autoComplete="family-name"
-          disabled={inviteInFlight}
+          disabled={isCommandPending}
           required
         />
         <div className="flex flex-col gap-1.5">
@@ -818,7 +801,7 @@ export function StaffRolesSection() {
             id="staff-role"
             value={inviteRole}
             onChange={(event) => setInviteRole(event.target.value as StaffRoleName)}
-            disabled={inviteInFlight}
+            disabled={isCommandPending}
             className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary disabled:opacity-50"
           >
             {ROLE_OPTIONS.map((role) => (
@@ -828,7 +811,7 @@ export function StaffRolesSection() {
             ))}
           </select>
         </div>
-        <Button type="submit" variant="primary" size="md" isLoading={inviteInFlight}>
+        <Button type="submit" variant="primary" size="md" isLoading={inviteInFlight} disabled={isCommandPending}>
           <MailPlus className="w-3.5 h-3.5" />
           {inviteInFlight ? "Sending..." : "Send invite"}
         </Button>
@@ -845,7 +828,7 @@ export function StaffRolesSection() {
               {message}
             </DismissibleNotice>
           )}
-          {actionError && (
+          {actionError && !removeTarget && !archiveTarget && (
             <DismissibleNotice
               tone="danger"
               onDismiss={() => setActionError("")}
@@ -889,6 +872,7 @@ export function StaffRolesSection() {
               member={member}
               currentUserId={currentUserId}
               canManageStaff={canManageStaff}
+              isCommandPending={isCommandPending}
               staffProfilesAvailable={staffProfilesAvailable}
               isLastActiveAdmin={isLastActiveAdmin(staffMembers, member)}
               pendingRoleId={pendingRoleId}
@@ -920,7 +904,7 @@ export function StaffRolesSection() {
         role="alertdialog"
         ariaLabelledBy="staff-remove-title"
         ariaDescribedBy="staff-remove-description"
-        onBackdropClick={() => setRemoveTarget(null)}
+        onBackdropClick={() => { if (!commandRef.current) setRemoveTarget(null); }}
         panelClassName="w-[min(92vw,28rem)] rounded-[18px] bg-surface p-4"
       >
         <div className="flex items-start gap-3">
@@ -936,8 +920,10 @@ export function StaffRolesSection() {
             </p>
           </div>
         </div>
+        {actionError ? <p role="alert" className="mt-3 text-xs text-danger">{actionError}</p> : null}
+
         <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={() => setRemoveTarget(null)}>
+          <Button type="button" variant="ghost" size="sm" disabled={isCommandPending} onClick={() => { if (!commandRef.current) setRemoveTarget(null); }}>
             Cancel
           </Button>
           <Button
@@ -945,6 +931,7 @@ export function StaffRolesSection() {
             variant="danger"
             size="sm"
             isLoading={pendingRemoveId === removeTarget.id}
+            disabled={isCommandPending}
             onClick={() => void runRemove(removeTarget)}
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -959,7 +946,7 @@ export function StaffRolesSection() {
         ariaLabelledBy="staff-archive-title"
         ariaDescribedBy="staff-archive-description"
         onBackdropClick={() => {
-          if (pendingLifecycle?.action !== "archive") {
+          if (!commandRef.current) {
             setArchiveTarget(null);
           }
         }}
@@ -978,13 +965,15 @@ export function StaffRolesSection() {
             </p>
           </div>
         </div>
+        {actionError ? <p role="alert" className="mt-3 text-xs text-danger">{actionError}</p> : null}
+
         <div className="mt-5 flex justify-end gap-2">
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => setArchiveTarget(null)}
-            disabled={pendingLifecycle?.action === "archive"}
+            onClick={() => { if (!commandRef.current) setArchiveTarget(null); }}
+            disabled={isCommandPending}
           >
             Cancel
           </Button>
@@ -993,6 +982,7 @@ export function StaffRolesSection() {
             variant="danger"
             size="sm"
             isLoading={pendingLifecycle?.action === "archive"}
+            disabled={isCommandPending}
             onClick={() => void runArchive(archiveTarget)}
           >
             <Archive className="h-3.5 w-3.5" />
@@ -1042,7 +1032,7 @@ export function StaffRolesSection() {
               }}
               autoComplete="off"
               spellCheck={false}
-              disabled={pendingLifecycle?.action === "delete"}
+              disabled={isCommandPending}
               error={deletionError}
             />
           </div>
@@ -1053,7 +1043,7 @@ export function StaffRolesSection() {
               variant="ghost"
               size="sm"
               onClick={() => closeDeletionModal()}
-              disabled={pendingLifecycle?.action === "delete"}
+              disabled={isCommandPending}
             >
               Cancel
             </Button>
@@ -1062,7 +1052,7 @@ export function StaffRolesSection() {
               variant="danger"
               size="sm"
               isLoading={pendingLifecycle?.action === "delete"}
-              disabled={!deletionCanSubmit}
+              disabled={isCommandPending || !deletionCanSubmit}
             >
               <Trash2 className="h-3.5 w-3.5" />
               {pendingLifecycle?.action === "delete" ? "Scheduling..." : "Schedule deletion"}
