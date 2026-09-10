@@ -7,6 +7,8 @@ import { renderCompatibility } from "./release-attestation/sql.mjs";
 import { renderPreflight } from "./release-attestation/preflight.mjs";
 import { renderRankReceiptManifest, renderRankReturnManifest } from "./release-attestation/manifests.mjs";
 import manifestSchema from "./release-attestation/manifest-schema.json" with { type: "json" };
+import { renderChainedShellRestore, renderV24Restore, renderV27Restore } from "./release-attestation/restore-shell.mjs";
+import restoreCases from "./release-attestation/restore-cases.json" with { type: "json" };
 
 const migrations = fileURLToPath(new URL("../supabase/migrations/", import.meta.url));
 const filenames = fs.readdirSync(migrations).filter(name => name.endsWith(".sql"));
@@ -79,5 +81,19 @@ test("shared rank manifests reproduce all five historical statements", () => {
       ? renderRankReturnManifest({ ...artifact, functions: manifestSchema.functionSets[artifact.functionSet] })
       : renderRankReceiptManifest(artifact);
     assert.equal(generated, committedStatement(artifact.path.split("/").at(-1), artifact.signature), artifact.path);
+  }
+});
+
+test("historical restore scripts reproduce complete bytes independently of directory order", () => {
+  const cases = [
+    ["scripts/verify-v24-v25-restore-contract.sh", renderV24Restore],
+    ["scripts/verify-v26-v27-restore-contract.sh", renderV27Restore],
+    ...Object.entries(restoreCases).map(([id, specification]) => [specification.file,
+      (names, history) => renderChainedShellRestore(id, specification, names, history)]),
+  ];
+  for (const [file, render] of cases) {
+    const expected = fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    assert.equal(render(filenames, versions), expected, file);
+    assert.equal(render([...filenames].reverse(), versions), expected, file);
   }
 });

@@ -285,16 +285,20 @@ export function render_rank_command_manifest_v40_definition(check) {
  ) THEN v_failures:=array_append(v_failures,${sqlLiteral(check.id)}); END IF;`;
 }
 
-export function render_payer_balance_rpc_v41(check) {
+export function render_function_contract(check) {
+  if (typeof check.securityDefiner !== "boolean" || typeof check.returnsSet !== "boolean"
+      || !["i", "s", "v"].includes(check.volatility) || !check.configuration?.length) {
+    throw new Error(`Incomplete function contract: ${check.id}`);
+  }
   return `    IF (SELECT count(*) FROM pg_catalog.pg_proc p
         JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname=${sqlLiteral(check.namespace)} AND p.proname=${sqlLiteral(check.functionName)}) <> 1
        OR NOT EXISTS (
         SELECT 1 FROM pg_catalog.pg_proc p
         WHERE p.oid=pg_catalog.to_regprocedure(${sqlLiteral(check.signature)})
-          AND p.proowner='postgres'::REGROLE AND p.prosecdef AND p.provolatile='v'
-          AND p.prorettype='void'::REGTYPE AND NOT p.proretset
-          AND p.proconfig=ARRAY['search_path=""']::TEXT[]
+          AND p.proowner='postgres'::REGROLE AND ${check.securityDefiner ? "" : "NOT "}p.prosecdef AND p.provolatile=${sqlLiteral(check.volatility)}
+          AND p.prorettype=${sqlLiteral(check.returnType)}::REGTYPE AND ${check.returnsSet ? "" : "NOT "}p.proretset
+          AND p.proconfig=ARRAY[${check.configuration.map(sqlLiteral).join(",")}]::TEXT[]
           AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
               = ${sqlLiteral(check.expected)}
           AND (SELECT jsonb_agg(jsonb_build_array(

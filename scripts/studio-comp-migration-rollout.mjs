@@ -8,6 +8,12 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { CURRENT_RELEASE, RELEASE_STATES, readinessTuple, releaseState } from "./release-attestation/states.mjs";
+import { MIGRATION_VERSIONS } from "./release-attestation/generated-history.mjs";
+
+const STATES = Object.freeze(Object.fromEntries(
+  Object.keys(RELEASE_STATES).map(id => [id, releaseState(id, MIGRATION_VERSIONS)]),
+));
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -19,132 +25,42 @@ export const ROLLOUT = Object.freeze({
   cliVersion: "2.95.4",
   stagingRef: "nxgsektqsgrtyfhawxbc",
   productionRef: "mimguepumzsgmcaycdsh",
-  baselineMigrationCount: 100,
+  baselineMigrationCount: STATES["v7"].count,
   preHistory: "100:359058cc127e57a47e429f6271453acf",
-  intermediateMigrationCount: 101,
-  recoveryMigrationCount: 102,
-  convergenceMigrationCount: 103,
-  attestedMigrationCount: 104,
-  returnAttestedMigrationCount: 105,
-  retainedMigrationCount: 106,
-  criticalMigrationCount: 107,
-  columnAttestedMigrationCount: 108,
-  trialLockedMigrationCount: 109,
-  staffIdentityMigrationCount: 110,
-  restoredV22MigrationCount: 115,
-  canonicalV23MigrationCount: 116,
-  v24MigrationCount: 117,
-  scheduleV25MigrationCount: 119,
-  v25MigrationCount: 120,
-  v26MigrationCount: 121,
-  v27MigrationCount: 122,
-  v28MigrationCount: 123,
-  v29MigrationCount: 124,
-  v30MigrationCount: 125,
-  v31MigrationCount: 126,
-  v32MigrationCount: 127,
-  v33MigrationCount: 128,
-  v34MigrationCount: 129,
-  v35MigrationCount: 130,
-  v36MigrationCount: 131,
-  v37MigrationCount: 132,
-  v38MigrationCount: 133,
-  v39MigrationCount: 134,
-  v40MigrationCount: 135,
-  finalMigrationCount: 136,
-  finalMigrationVersion: "20260908183744",
-  releasePendingVersions: Object.freeze([
-    "20260814043325",
-    "20260814103046",
-    "20260814105424",
-    "20260814114500",
-    "20260814152000",
-    "20260814170000",
-    "20260814183000",
-    "20260814200000",
-    "20260814213000",
-    "20260815220402",
-    "20260816012723",
-    "20260820012533",
-    "20260820025759",
-    "20260820060216",
-    "20260822193000",
-    "20260823193155",
-    "20260824190500",
-    "20260825042838",
-    "20260825043911",
-    "20260826030234",
-    "20260826030249",
-    "20260826051527",
-    "20260826073728",
-    "20260826102840",
-    "20260826155911",
-    "20260826185651",
-    "20260830065627",
-    "20260830082610",
-    "20260830151714",
-    "20260831022021",
-    "20260831054918",
-    "20260902001000",
-    "20260905022339",
-    "20260908080420",
-    "20260908133504",
-    "20260908183744",
-  ]),
-  finalPendingVersions: Object.freeze([
-    "20260727100000",
-    "20260727110000",
-    "20260801050957",
-    "20260801060000",
-    "20260801070000",
-    "20260801080000",
-    "20260801090000",
-    "20260801091000",
-    "20260801092000",
-    "20260801093000",
-    "20260801094000",
-    "20260801105313",
-    "20260801112153",
-    "20260801115044",
-    "20260801123112",
-    "20260801131844",
-    "20260814043325",
-    "20260814103046",
-    "20260814105424",
-    "20260814114500",
-    "20260814152000",
-    "20260814170000",
-    "20260814183000",
-    "20260814200000",
-    "20260814213000",
-    "20260815220402",
-    "20260816012723",
-    "20260820012533",
-    "20260820025759",
-    "20260820060216",
-    "20260822193000",
-    "20260823193155",
-    "20260824190500",
-    "20260825042838",
-    "20260825043911",
-    "20260826030234",
-    "20260826030249",
-    "20260826051527",
-    "20260826073728",
-    "20260826102840",
-    "20260826155911",
-    "20260826185651",
-    "20260830065627",
-    "20260830082610",
-    "20260830151714",
-    "20260831022021",
-    "20260831054918",
-    "20260902001000",
-    "20260905022339",
-    "20260908080420",
-    "20260908133504",
-    "20260908183744",
-  ]),
+  intermediateMigrationCount: STATES["v8"].count,
+  recoveryMigrationCount: STATES["v9"].count,
+  convergenceMigrationCount: STATES["v10"].count,
+  attestedMigrationCount: STATES["v11"].count,
+  returnAttestedMigrationCount: STATES["v12"].count,
+  retainedMigrationCount: STATES["v13"].count,
+  criticalMigrationCount: STATES["v14"].count,
+  columnAttestedMigrationCount: STATES["v15"].count,
+  trialLockedMigrationCount: STATES["v16"].count,
+  staffIdentityMigrationCount: STATES["v17"].count,
+  restoredV22MigrationCount: STATES["v22"].count,
+  canonicalV23MigrationCount: STATES["v23"].count,
+  v24MigrationCount: STATES["v24"].count,
+  scheduleV25MigrationCount: STATES["schedule-v25"].count,
+  v25MigrationCount: STATES["v25"].count,
+  v26MigrationCount: STATES["v26"].count,
+  v27MigrationCount: STATES["v27"].count,
+  v28MigrationCount: STATES["v28"].count,
+  v29MigrationCount: STATES["v29"].count,
+  v30MigrationCount: STATES["v30"].count,
+  v31MigrationCount: STATES["v31"].count,
+  v32MigrationCount: STATES["v32"].count,
+  v33MigrationCount: STATES["v33"].count,
+  v34MigrationCount: STATES["v34"].count,
+  v35MigrationCount: STATES["v35"].count,
+  v36MigrationCount: STATES["v36"].count,
+  v37MigrationCount: STATES["v37"].count,
+  v38MigrationCount: STATES["v38"].count,
+  v39MigrationCount: STATES["v39"].count,
+  v40MigrationCount: STATES["v40"].count,
+  finalMigrationCount: STATES[CURRENT_RELEASE].count,
+  finalMigrationVersion: STATES[CURRENT_RELEASE].head,
+  releasePendingVersions: Object.freeze(STATES[CURRENT_RELEASE].history.filter(version => version > STATES.v7.head)),
+  finalPendingVersions: STATES[CURRENT_RELEASE].pending,
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
     "a615bdfc9755b6c3e611e9f8829fdaf387b4f981",
@@ -175,14 +91,6 @@ export const ROLLOUT = Object.freeze({
     }),
   ]),
 });
-
-// Historical readiness stays fixed when a later forward migration is appended.
-const pendingVersionsThrough = head => ROLLOUT.finalPendingVersions.filter(version => version <= head);
-const V40_PENDING_VERSIONS = pendingVersionsThrough("20260908133504");
-const V39_PENDING_VERSIONS = pendingVersionsThrough("20260908080420");
-const V38_PENDING_VERSIONS = pendingVersionsThrough("20260905022339");
-const V37_PENDING_VERSIONS = pendingVersionsThrough("20260902001000");
-const V36_PENDING_VERSIONS = pendingVersionsThrough("20260831054918");
 
 // Measured from canonical V40 and an actual V39 logical restore upgraded to V40.
 export const EXPECTED_V40_CATALOG_STATE =
@@ -332,10 +240,7 @@ export const EXPECTED_V37_OPERATIONAL_CONTRACT_V31 =
 export const EXPECTED_V37_OPERATIONAL_MANIFEST_V12 =
   "ba219b8a319d416680ab268ba09c8dad109d4d73db0bfdadedf31318bead365d";
 
-export const EXPECTED_SCHEDULE_V25_OPERATIONAL_READINESS =
-  "true|119|20260825043911|" +
-  V36_PENDING_VERSIONS.slice(0, -12).join(",") +
-  "|0||release-db-attestation-v25";
+export const EXPECTED_SCHEDULE_V25_OPERATIONAL_READINESS = readinessTuple(STATES["schedule-v25"]);
 export const EXPECTED_SCHEDULE_WINDOW_MANIFEST =
   "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7";
 export const EXPECTED_SCHEDULE_V25_CATALOG_STATE =
@@ -352,98 +257,42 @@ export const EXPECTED_SCHEDULE_V25_CATALOG_STATE =
   "tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;" +
   "triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0";
 
-export const EXPECTED_V34_OPERATIONAL_READINESS =
-  "true|129|20260830151714|" +
-  V36_PENDING_VERSIONS.slice(0, -2).join(",") +
-  "|0||release-db-attestation-v34";
-export const EXPECTED_V37_OPERATIONAL_READINESS =
-  "true|132|20260902001000|" + V37_PENDING_VERSIONS.join(",") +
-  "|0||release-db-attestation-v37";
-export const EXPECTED_V38_OPERATIONAL_READINESS =
-  "true|133|20260905022339|" + V38_PENDING_VERSIONS.join(",") +
-  "|0||release-db-attestation-v38";
-export const EXPECTED_V39_OPERATIONAL_READINESS =
-  "true|134|20260908080420|" + V39_PENDING_VERSIONS.join(",") +
-  "|0||release-db-attestation-v39";
-export const EXPECTED_V40_OPERATIONAL_READINESS =
-  "true|135|20260908133504|" + V40_PENDING_VERSIONS.join(",") +
-  "|0||release-db-attestation-v40";
-export const EXPECTED_OPERATIONAL_READINESS =
-  "true|136|20260908183744|" + ROLLOUT.finalPendingVersions.join(",") +
-  "|0||release-db-attestation-v41";
-export const EXPECTED_V36_OPERATIONAL_READINESS =
-  "true|131|20260831054918|" + V36_PENDING_VERSIONS.join(",") +
-  "|0||release-db-attestation-v36";
-export const EXPECTED_V35_OPERATIONAL_READINESS =
-  "true|130|20260831022021|" +
-  V36_PENDING_VERSIONS.slice(0, -1).join(",") +
-  "|0||release-db-attestation-v35";
+export const EXPECTED_V34_OPERATIONAL_READINESS = readinessTuple(STATES["v34"]);
+export const EXPECTED_V37_OPERATIONAL_READINESS = readinessTuple(STATES["v37"]);
+export const EXPECTED_V38_OPERATIONAL_READINESS = readinessTuple(STATES["v38"]);
+export const EXPECTED_V39_OPERATIONAL_READINESS = readinessTuple(STATES["v39"]);
+export const EXPECTED_V40_OPERATIONAL_READINESS = readinessTuple(STATES["v40"]);
+export const EXPECTED_OPERATIONAL_READINESS = readinessTuple(STATES[CURRENT_RELEASE]);
+export const EXPECTED_V36_OPERATIONAL_READINESS = readinessTuple(STATES["v36"]);
+export const EXPECTED_V35_OPERATIONAL_READINESS = readinessTuple(STATES["v35"]);
 export const EXPECTED_V36_RECOVERY_MANIFEST =
   "0:455520fff5182b12b23368da1afe60e133a01b78913fada73e8a708b94ae8dbb";
 export const EXPECTED_V35_EVIDENCE_MANIFEST =
   "0:ab51017e560d5447369f72f9db4d7872012c59a91e9f385a7fc39e162ae1d45d";
-export const EXPECTED_V32_OPERATIONAL_READINESS =
-  "true|127|20260830065627|" +
-  V36_PENDING_VERSIONS.slice(0, -4).join(",") +
-  "|0||release-db-attestation-v32";
-export const EXPECTED_V33_OPERATIONAL_READINESS =
-  "true|128|20260830082610|" +
-  V36_PENDING_VERSIONS.slice(0, -3).join(",") +
-  "|0||release-db-attestation-v33";
-export const EXPECTED_V31_OPERATIONAL_READINESS =
-  "true|126|20260826185651|" +
-  V36_PENDING_VERSIONS.slice(0, -5).join(",") +
-  "|0||release-db-attestation-v31";
+export const EXPECTED_V32_OPERATIONAL_READINESS = readinessTuple(STATES["v32"]);
+export const EXPECTED_V33_OPERATIONAL_READINESS = readinessTuple(STATES["v33"]);
+export const EXPECTED_V31_OPERATIONAL_READINESS = readinessTuple(STATES["v31"]);
 
-export const EXPECTED_V30_OPERATIONAL_READINESS =
-  "true|125|20260826155911|" +
-  V36_PENDING_VERSIONS.slice(0, -6).join(",") +
-  "|0||release-db-attestation-v30";
+export const EXPECTED_V30_OPERATIONAL_READINESS = readinessTuple(STATES["v30"]);
 
-export const EXPECTED_V29_OPERATIONAL_READINESS =
-  "true|124|20260826102840|" +
-  V36_PENDING_VERSIONS.slice(0, -7).join(",") +
-  "|0||release-db-attestation-v29";
+export const EXPECTED_V29_OPERATIONAL_READINESS = readinessTuple(STATES["v29"]);
 
-export const EXPECTED_V28_OPERATIONAL_READINESS =
-  "true|123|20260826073728|" +
-  V36_PENDING_VERSIONS.slice(0, -8).join(",") +
-  "|0||release-db-attestation-v28";
+export const EXPECTED_V28_OPERATIONAL_READINESS = readinessTuple(STATES["v28"]);
 
-export const EXPECTED_V27_OPERATIONAL_READINESS =
-  "true|122|20260826051527|" +
-  V36_PENDING_VERSIONS.slice(0, -9).join(",") +
-  "|0||release-db-attestation-v27";
+export const EXPECTED_V27_OPERATIONAL_READINESS = readinessTuple(STATES["v27"]);
 
-export const EXPECTED_V26_OPERATIONAL_READINESS =
-  "true|121|20260826030249|" +
-  V36_PENDING_VERSIONS.slice(0, -10).join(",") +
-  "|0||release-db-attestation-v26";
+export const EXPECTED_V26_OPERATIONAL_READINESS = readinessTuple(STATES["v26"]);
 
-export const EXPECTED_V25_OPERATIONAL_READINESS =
-  "true|120|20260826030234|" +
-  V36_PENDING_VERSIONS.slice(0, -11).join(",") +
-  "|0||release-db-attestation-v25";
+export const EXPECTED_V25_OPERATIONAL_READINESS = readinessTuple(STATES["v25"]);
 
-export const EXPECTED_V24_OPERATIONAL_READINESS =
-  "true|117|20260824190500|" +
-  V36_PENDING_VERSIONS.slice(0, -14).join(",") +
-  "|0||release-db-attestation-v24";
+export const EXPECTED_V24_OPERATIONAL_READINESS = readinessTuple(STATES["v24"]);
 
-export const EXPECTED_RESTORED_V22_OPERATIONAL_READINESS =
-  "true|115|20260822193000|" +
-  V36_PENDING_VERSIONS.slice(0, -16).join(",") +
-  "|0||release-db-attestation-v22";
+export const EXPECTED_RESTORED_V22_OPERATIONAL_READINESS = readinessTuple(STATES["v22"]);
 
-export const EXPECTED_CANONICAL_V23_OPERATIONAL_READINESS =
-  "true|116|20260823193155|" +
-  V36_PENDING_VERSIONS.slice(0, -15).join(",") +
-  "|0||release-db-attestation-v23";
+export const EXPECTED_CANONICAL_V23_OPERATIONAL_READINESS = readinessTuple(STATES["v23"]);
 
 export const EXPECTED_RESTORED_V23_PENDING_V24_OPERATIONAL_READINESS =
-  "false|116|20260823193155|" +
-  V36_PENDING_VERSIONS.slice(0, -15).join(",") +
-  "|1|operational_semantic_acl_manifest_v7|release-db-attestation-v23";
+  readinessTuple(STATES.v23, ["operational_semantic_acl_manifest_v7"]);
 
 // Generated by the final migration against the actual PostgreSQL catalog and
 // pinned to the exact zero-invalid-count archive authorization state.
@@ -454,68 +303,27 @@ export const EXPECTED_V27_CRITICAL_SURFACE_MANIFEST =
 export const EXPECTED_V26_CRITICAL_SURFACE_MANIFEST =
   "0:02e96ca8d2f4fe2117c2ab314fdab0ef079bac0a7c502c0cfcf2c3376529d620";
 
-export const EXPECTED_TRIAL_LOCKED_OPERATIONAL_READINESS =
-  `true|${ROLLOUT.trialLockedMigrationCount}|20260814213000|` +
-  ROLLOUT.finalPendingVersions.slice(
-    0,
-    ROLLOUT.finalPendingVersions.length -
-      (ROLLOUT.finalMigrationCount - ROLLOUT.trialLockedMigrationCount),
-  ).join(",") +
-  "|0||release-db-attestation-v16";
+export const EXPECTED_TRIAL_LOCKED_OPERATIONAL_READINESS = readinessTuple(STATES["v16"]);
 
-export const EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS =
-  `true|${ROLLOUT.staffIdentityMigrationCount}|20260815220402|` +
-  ROLLOUT.finalPendingVersions.slice(
-    0,
-    -(ROLLOUT.finalMigrationCount - ROLLOUT.staffIdentityMigrationCount),
-  ).join(",") +
-  "|0||release-db-attestation-v17";
+export const EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS = readinessTuple(STATES["v17"]);
 
-export const EXPECTED_RETURN_ATTESTED_OPERATIONAL_READINESS =
-  "true|105|20260814152000|" +
-  V36_PENDING_VERSIONS.slice(0, -16).join(",") +
-  "|0||release-db-attestation-v12";
+export const EXPECTED_RETURN_ATTESTED_OPERATIONAL_READINESS = readinessTuple(STATES["v12"]);
 
-export const EXPECTED_RETAINED_OPERATIONAL_READINESS =
-  "true|106|20260814170000|" +
-  V36_PENDING_VERSIONS.slice(0, -15).join(",") +
-  "|0||release-db-attestation-v13";
+export const EXPECTED_RETAINED_OPERATIONAL_READINESS = readinessTuple(STATES["v13"]);
 
-export const EXPECTED_CRITICAL_OPERATIONAL_READINESS =
-  "true|107|20260814183000|" +
-  V36_PENDING_VERSIONS.slice(0, -14).join(",") +
-  "|0||release-db-attestation-v14";
+export const EXPECTED_CRITICAL_OPERATIONAL_READINESS = readinessTuple(STATES["v14"]);
 
-export const EXPECTED_COLUMN_ATTESTED_OPERATIONAL_READINESS =
-  "true|108|20260814200000|" +
-  V36_PENDING_VERSIONS.slice(0, -13).join(",") +
-  "|0||release-db-attestation-v15";
+export const EXPECTED_COLUMN_ATTESTED_OPERATIONAL_READINESS = readinessTuple(STATES["v15"]);
 
-export const EXPECTED_ATTESTED_OPERATIONAL_READINESS =
-  "true|104|20260814114500|" +
-  V36_PENDING_VERSIONS.slice(0, -17).join(",") +
-  "|0||release-db-attestation-v11";
+export const EXPECTED_ATTESTED_OPERATIONAL_READINESS = readinessTuple(STATES["v11"]);
 
-export const EXPECTED_RECOVERY_OPERATIONAL_READINESS = Object.freeze([
-  "true|102|20260814103046|" +
-  V36_PENDING_VERSIONS.slice(0, -19).join(",") +
-  "|0||release-db-attestation-v9",
-]);
+export const EXPECTED_RECOVERY_OPERATIONAL_READINESS = Object.freeze([readinessTuple(STATES["v9"])]);
 
-export const EXPECTED_CONVERGENCE_OPERATIONAL_READINESS =
-  "true|103|20260814105424|" +
-  V36_PENDING_VERSIONS.slice(0, -18).join(",") +
-  "|0||release-db-attestation-v10";
+export const EXPECTED_CONVERGENCE_OPERATIONAL_READINESS = readinessTuple(STATES["v10"]);
 
-export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS =
-  "true|101|20260814043325|" +
-  V36_PENDING_VERSIONS.slice(0, -20).join(",") +
-  "|0||release-db-attestation-v8";
+export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS = readinessTuple(STATES["v8"]);
 
-export const EXPECTED_PRE_OPERATIONAL_READINESS =
-  "true|100|20260801131844|" +
-  V36_PENDING_VERSIONS.slice(0, -21).join(",") +
-  "|0||release-db-attestation-v7";
+export const EXPECTED_PRE_OPERATIONAL_READINESS = readinessTuple(STATES["v7"]);
 
 export const EXPECTED_CATALOG_STATE =
   "column_acls=207:3aaaef1edbaee272791f8562946c774eba3d4623fdea1389b28576e15eff6ba7:0;" +
@@ -746,7 +554,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V39 operational readiness did not match the exact release state.");
+    throw new RolloutError("Current release operational readiness did not match the exact release state.");
   }
   return value;
 }

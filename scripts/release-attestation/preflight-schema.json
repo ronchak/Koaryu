@@ -374,7 +374,7 @@
       "expected": "7fb0ba103de76167982cc96f0698d7516418ababb0892dc70d5c85e1d83efc0f"
     },
     "payer_balance_rpc_v41": {
-      "kind": "payer_balance_rpc_v41",
+      "kind": "function_contract",
       "namespace": "public",
       "functionName": "recompute_billing_payer_balance_v1",
       "signature": "public.recompute_billing_payer_balance_v1(uuid,uuid)",
@@ -392,6 +392,13 @@
           "EXECUTE",
           false
         ]
+      ],
+      "securityDefiner": true,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "void",
+      "configuration": [
+        "search_path=\"\""
       ]
     }
   },
