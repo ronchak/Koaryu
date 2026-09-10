@@ -11,15 +11,15 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 60 |
+| Fixed | 65 |
 | Resolved indirectly | 2 |
-| Pending | 203 |
+| Pending | 198 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Total | 278 |
 
-Pending work is split between 140 Astra and 63 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
+Pending work is split between 140 Astra and 58 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -33,8 +33,9 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 1. The normalized ledger and Sol recipes merged in PR164. The release-attestation generator merged in PR167 as `5d88823`, with the supported-Node correction in PR168. V42 and V43 use its declared-state generation without changing historical migration bytes.
 2. [PR170](https://github.com/ronchak/Koaryu/pull/170), merged as `d9d2766`, completes independent program dates for profile edits after full local verification, fresh review and exact-head CI. [PR171](https://github.com/ronchak/Koaryu/pull/171) closes eight backend maintenance findings and removes ten named tests; see [verification](docs/remediation/backend-maintenance-verification.md).
-3. [PR172](https://github.com/ronchak/Koaryu/pull/172), merged as `08b1e77`, closes four external-payment recovery findings. Final head `50d7402` passed all eleven release checks and fresh independent review; the guarded merge verified production auto-deploy off. See [verification](docs/remediation/external-payment-recovery-verification.md). [PR174](https://github.com/ronchak/Koaryu/pull/174) separately corrects the export fixture measurement defect exposed during CI; see [verification](docs/remediation/export-test-metrics-verification.md).
-4. Reassess the remaining financial corrections on that main. The settled USD rule still needs new tuition-command guards that preserve confirmed historical recovery; overdue status must be evaluated on reads to handle date rollover; shared-family attribution and unknown provider facts remain separate projector work. Import recovery remains high priority because a failed-run retry can overwrite later staff edits on earlier successful rows. OPS2-05 owns that scenario. Lock-order and due-worker findings remain pending. Sol batch10 is ready in [draft PR173](https://github.com/ronchak/Koaryu/pull/173), with independent review and a deterministic studio-date case. Rebase it after the export test correction so subsequent CI uses the corrected fixture.
+3. [PR172](https://github.com/ronchak/Koaryu/pull/172), merged as `08b1e77`, closes four external-payment recovery findings. Final head `50d7402` passed all eleven release checks and fresh independent review; the guarded merge verified production auto-deploy off. See [verification](docs/remediation/external-payment-recovery-verification.md). [PR174](https://github.com/ronchak/Koaryu/pull/174), merged as `648e27c`, separately corrects the export fixture measurement defect exposed during CI; see [verification](docs/remediation/export-test-metrics-verification.md).
+4. Reassess the remaining financial corrections on that main. The settled USD rule still needs new tuition-command guards that preserve confirmed historical recovery; overdue status must be evaluated on reads to handle date rollover; shared-family attribution and unknown provider facts remain separate projector work. Import recovery remains high priority because a failed-run retry can overwrite later staff edits on earlier successful rows. OPS2-05 owns that scenario. Lock-order and due-worker findings remain pending. [PR173](https://github.com/ronchak/Koaryu/pull/173) consolidates schedule entries and layouts, uses the studio date and replaces copied interaction tests. It is rebased onto the export correction; see [verification](docs/remediation/schedule-rendering-verification.md).
+5. Current verification favors local plan transaction ownership as the next Astra change: shipped UI creation can persist the plan before a link/audit failure, while the supported update API can partly persist or demote an unchanged active plan. Group ACS1-02, BB2-02, BB2-03 and BT3-05. Apply the settled USD rule to new local financial definitions there; provider-command guards, mixed-currency/overdue readers and recovered attribution stay separate. Do not add a recovery resolver merely to avoid harmless operation bookkeeping.
 
 This is a rolling next-step plan. Each merge changes the evidence for subsequent work. Recheck affected pending findings, close only what is actually resolved, and discard future work made unnecessary by the new implementation.
 

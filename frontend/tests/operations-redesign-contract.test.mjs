@@ -2,6 +2,91 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { chromium } from "@playwright/test";
+import { bundle } from "./helpers/store-browser-harness.mjs";
+
+const operationsComponents = bundle("production", { operationsComponents: true });
+
+function program(id, name, color = "#38BDF8") {
+  return {
+    id,
+    name,
+    studio_id: "studio-1",
+    sort_order: 0,
+    is_system: false,
+    color_hex: color,
+    description: null,
+    archived_at: null,
+    usage: {
+      student_count: 0,
+      active_student_count: 0,
+      class_count: 0,
+      active_class_count: 0,
+      lead_count: 0,
+      belt_ladder_count: 0,
+    },
+  };
+}
+
+function session(id, date, startTime, endTime, templateId = null, programId = "program-1") {
+  return {
+    id,
+    date,
+    start_time: startTime,
+    end_time: endTime,
+    template_id: templateId,
+    program_id: programId,
+    name: id,
+    capacity: 10,
+    attendance_count: 3,
+    status: "scheduled",
+  };
+}
+
+function template(id, dayOfWeek, startTime, endTime, programId = "program-1") {
+  return {
+    id,
+    day_of_week: dayOfWeek,
+    start_time: startTime,
+    end_time: endTime,
+    program_id: programId,
+    name: id,
+    is_active: true,
+    start_date: "2026-01-01",
+    end_date: null,
+  };
+}
+
+async function componentPage(browser, viewport = { width: 1040, height: 900 }) {
+  const page = await browser.newPage({ viewport });
+  await page.setContent('<style>html,body{width:100%;margin:0}*{box-sizing:border-box}.relative{position:relative}.absolute{position:absolute}.grid{display:grid}.inset-x-0{left:0;right:0}.surface{width:100%}[data-time-canvas-day]{width:100%}</style><main class="surface" id="root"></main>');
+  await page.evaluate(() => {
+    window.fixture = {
+      opened: [],
+      submitted: [],
+      studioStore: { currentRole: "admin", identityGeneration: 1 },
+    };
+  });
+  await page.addScriptTag({ content: operationsComponents });
+  return page;
+}
+
+function scheduleProps(overrides = {}) {
+  return {
+    businessDate: "2026-09-08",
+    canManageSchedule: true,
+    currentDate: new Date("2026-09-07T12:00:00"),
+    view: "week",
+    programFilter: "",
+    sessions: [],
+    templates: [],
+    programs: [program("program-1", "Adult Karate"), program("program-2", "Kids Karate")],
+    scheduleLoadError: null,
+    hasLoadedRange: true,
+    isRefreshingRange: false,
+    actionMessage: null,
+    ...overrides,
+  };
+}
 
 function source(path) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -84,312 +169,225 @@ describe("operations surface route coverage", () => {
 });
 
 describe("operations behavior proof", () => {
-  it("makes schedule time, overlap, internal overflow, and immediate attendance commit truth explicit", () => {
-    const schedule = source("src/components/schedule/schedule-page-section.tsx");
+  it("keeps immediate attendance commit copy explicit", () => {
     const attendance = source("src/components/schedule/session-detail-modal.tsx");
-    assert.match(schedule, /data-schedule-time-canvas="week"/);
-    assert.match(schedule, /data-schedule-time-canvas="day"/);
-    assert.match(schedule, /data-schedule-day-sheet="true"/);
-    assert.match(schedule, /data-schedule-register="visible-range"/);
-    assert.match(schedule, /<SlidingSegmentedControl[\s\S]*ariaLabel="Schedule view"[\s\S]*onChange=\{onViewChange\}/);
-    assert.match(schedule, /style=\{\{ top, height,[\s\S]{0,200}?data-time-canvas-block="template"/);
-    assert.match(schedule, /const targetHeight = Math\.max\(44, height\)/);
-    assert.match(schedule, /const targetTop = Math\.max\(0, top - \(targetHeight - height\) \/ 2\)/);
-    assert.match(schedule, /const sessionWidth = `max\(44px, calc\(\$\{laneWidth\}% - 4px\)\)`/);
-    assert.match(schedule, /const sessionLeft = `min\(calc\(\$\{left\}% \+ 2px\), calc\(100% - \$\{sessionWidth\} - 2px\)\)`/);
-    assert.match(schedule, /top: targetTop,[\s\S]{0,80}?height: targetHeight,[\s\S]{0,300}?data-time-canvas-block="session"/);
-    assert.match(schedule, /style=\{\{ height, top: top - targetTop \}\}/);
-    assert.match(schedule, /event\.detail === 0/);
-    assert.match(schedule, /function isPointWithinTimeCanvasFootprint/);
-    assert.match(schedule, /clientY >= footprint\.top[\s\S]*clientY < footprint\.bottom[\s\S]*clientX >= footprint\.left[\s\S]*clientX < footprint\.right/);
-    assert.equal((schedule.match(/data-time-canvas-visible=/g) || []).length, 2);
-    assert.match(schedule, /document\.elementsFromPoint\(event\.clientX, event\.clientY\)\.find/);
-    assert.match(schedule, /Boolean\(canvas\?\.contains\(element\)\)/);
-    assert.match(schedule, /element\.getBoundingClientRect\(\)/);
-    assert.match(schedule, /if \(visibleBlock\) \{[\s\S]*if \(visibleBlock\.item\.session\) onOpenSession\(visibleBlock\.item\.session\);[\s\S]*return;[\s\S]*\}[\s\S]*onOpenSession\(session\);/);
-    assert.match(schedule, /data-overlap=\{block\.overlaps/);
-    assert.match(schedule, /data-schedule-scroll-owner="internal"/);
-    assert.match(schedule, /role="region"/);
     assert.match(attendance, /Saved as marked\. Each row saves immediately\./);
     assert.match(attendance, /Saving \$\{pendingAttendanceStudentIds\.size\}/);
     assert.match(attendance, /rolled back/);
     assert.match(attendance, /data-attendance-commit-state/);
   });
 
-  it("routes enlarged session targets by actual session and template footprints", () => {
-    const pixelsPerHour = 72;
-    const canvasWidth = (1040 - 72) / 7;
-    const footprint = (block) => {
-      const blockCanvasWidth = block.canvasWidth || canvasWidth;
-      const laneWidth = blockCanvasWidth / block.laneCount;
-      const calculatedLeft = laneWidth * block.lane + 2;
-      const calculatedWidth = laneWidth - 4;
-      const width = block.kind === "session" ? Math.max(44, calculatedWidth) : calculatedWidth;
-      const localLeft = block.kind === "session"
-        ? Math.min(calculatedLeft, blockCanvasWidth - width - 2)
-        : calculatedLeft;
-      const left = (block.dayOffset || 0) + localLeft;
-      return {
-        left,
-        right: left + width,
-        top: (block.startMinute / 60) * pixelsPerHour,
-        bottom: (block.endMinute / 60) * pixelsPerHour,
-      };
-    };
-    const blockAt = (blocks, x, y) => [...blocks].reverse().find((block) => {
-      const rect = footprint(block);
-      return y >= rect.top && y < rect.bottom && x >= rect.left && x < rect.right;
-    });
-    const resolvedAction = (blocks, x, y, fallbackId) => {
-      const visibleBlock = blockAt(blocks, x, y);
-      if (visibleBlock) return visibleBlock.kind === "session" ? visibleBlock.id : null;
-      return fallbackId;
-    };
-    const concurrentThenSingle = [
-      { id: "left", kind: "session", startMinute: 0, endMinute: 30, lane: 0, laneCount: 3 },
-      { id: "middle", kind: "session", startMinute: 0, endMinute: 30, lane: 1, laneCount: 3 },
-      { id: "right", kind: "session", startMinute: 0, endMinute: 30, lane: 2, laneCount: 3 },
-      { id: "single", kind: "session", startMinute: 30, endMinute: 60, lane: 0, laneCount: 1 },
-    ];
-    const singleThenConcurrent = [
-      { id: "single", kind: "session", startMinute: 0, endMinute: 30, lane: 0, laneCount: 1 },
-      { id: "left", kind: "session", startMinute: 30, endMinute: 60, lane: 0, laneCount: 3 },
-      { id: "middle", kind: "session", startMinute: 30, endMinute: 60, lane: 1, laneCount: 3 },
-      { id: "right", kind: "session", startMinute: 30, endMinute: 60, lane: 2, laneCount: 3 },
-    ];
-    const threeLaneEdgeAndTailPoints = [2.5, 45.5, 94.5, 135.5];
-    const singleEdgePoints = [2.5, 45.5, 94.5, 135.5];
-
-    assert.deepEqual(threeLaneEdgeAndTailPoints.map((x) => resolvedAction(concurrentThenSingle, x, 35, "fallback")), ["left", "left", "right", "right"]);
-    assert.equal(resolvedAction(concurrentThenSingle, 137.5, 35, "fallback"), "fallback");
-    assert.deepEqual(singleEdgePoints.map((x) => resolvedAction(concurrentThenSingle, x, 37, "fallback")), ["single", "single", "single", "single"]);
-    assert.equal(resolvedAction(concurrentThenSingle, 137.5, 37, "fallback"), "fallback");
-    assert.deepEqual(singleEdgePoints.map((x) => resolvedAction(singleThenConcurrent, x, 35, "fallback")), ["single", "single", "single", "single"]);
-    assert.deepEqual(threeLaneEdgeAndTailPoints.map((x) => resolvedAction(singleThenConcurrent, x, 37, "fallback")), ["left", "left", "right", "right"]);
-    assert.equal(resolvedAction(singleThenConcurrent, 137.5, 37, "fallback"), "fallback");
-    assert.equal(resolvedAction(singleThenConcurrent, 137.5, 35, "fallback"), "fallback");
-
-    const templateThenSession = [
-      { id: "template", kind: "template", startMinute: 0, endMinute: 15, lane: 0, laneCount: 1 },
-      { id: "session", kind: "session", startMinute: 15, endMinute: 30, lane: 0, laneCount: 1 },
-    ];
-    const sessionThenTemplate = [
-      { id: "session", kind: "session", startMinute: 0, endMinute: 15, lane: 0, laneCount: 1 },
-      { id: "template", kind: "template", startMinute: 15, endMinute: 30, lane: 0, laneCount: 1 },
-    ];
-    assert.equal(resolvedAction(templateThenSession, 40, 17, "session"), null);
-    assert.equal(resolvedAction(templateThenSession, 40, 19, "fallback"), "session");
-    assert.equal(resolvedAction(sessionThenTemplate, 40, 17, "fallback"), "session");
-    assert.equal(resolvedAction(sessionThenTemplate, 40, 19, "session"), null);
-
-    const fourLaneSessions = [
-      { id: "lane-0", kind: "session", startMinute: 0, endMinute: 30, lane: 0, laneCount: 4 },
-      { id: "lane-1", kind: "session", startMinute: 0, endMinute: 30, lane: 1, laneCount: 4 },
-      { id: "lane-2", kind: "session", startMinute: 0, endMinute: 30, lane: 2, laneCount: 4 },
-      { id: "lane-3", kind: "session", startMinute: 0, endMinute: 30, lane: 3, laneCount: 4 },
-    ];
-    assert.deepEqual(
-      [3, 40, 74, 108, 135].map((x) => resolvedAction(fourLaneSessions, x, 12, "fallback")),
-      ["lane-0", "lane-1", "lane-2", "lane-3", "lane-3"]
-    );
-
-    const sessionUnderTemplate = [
-      { id: "session", kind: "session", startMinute: 0, endMinute: 30, lane: 0, laneCount: 4 },
-      { id: "template", kind: "template", startMinute: 0, endMinute: 30, lane: 1, laneCount: 4 },
-    ];
-    const templateUnderSession = [
-      { id: "template", kind: "template", startMinute: 0, endMinute: 30, lane: 1, laneCount: 4 },
-      { id: "session", kind: "session", startMinute: 0, endMinute: 30, lane: 0, laneCount: 4 },
-    ];
-    assert.equal(resolvedAction(sessionUnderTemplate, 40, 12, "fallback"), null);
-    assert.equal(resolvedAction(templateUnderSession, 40, 12, "fallback"), "session");
-
-    const firstDay = fourLaneSessions.map((block) => ({ ...block, id: `first-${block.id}`, dayOffset: 0 }));
-    const secondDay = fourLaneSessions.map((block) => ({ ...block, id: `second-${block.id}`, dayOffset: canvasWidth }));
-    const adjacentDays = [...firstDay, ...secondDay];
-    for (const block of adjacentDays) {
-      const rect = footprint(block);
-      assert.ok(rect.right - rect.left >= 44);
-      assert.ok(rect.left >= block.dayOffset + 2);
-      assert.ok(rect.right <= block.dayOffset + canvasWidth - 2);
-    }
-    assert.equal(resolvedAction(adjacentDays, 92.5, 12, "fallback"), "first-lane-3");
-    assert.equal(resolvedAction(adjacentDays, 135.5, 12, "fallback"), "first-lane-3");
-    assert.equal(resolvedAction(adjacentDays, canvasWidth + 2.5, 12, "fallback"), "second-lane-0");
-    assert.equal(resolvedAction(adjacentDays, canvasWidth + 45.5, 12, "fallback"), "second-lane-1");
-    for (const x of [canvasWidth - 1, canvasWidth, canvasWidth + 1]) {
-      assert.equal(resolvedAction(adjacentDays, x, 12, "fallback"), "fallback");
-    }
-    for (let x = 0; x < canvasWidth * 2; x += 0.5) {
-      const owner = blockAt(adjacentDays, x, 12);
-      if (owner) assert.equal(resolvedAction(adjacentDays, x, 12, "fallback"), owner.id);
-    }
-
-    const weekWidthForPeak = (peakLaneCount) => Math.max(1040, 72 + 7 * peakLaneCount * 48);
-    assert.equal(weekWidthForPeak(1), 1040);
-    assert.equal(weekWidthForPeak(2), 1040);
-    assert.equal(weekWidthForPeak(6), 2088);
-
-    const crowdedDayWidth = (weekWidthForPeak(6) - 72) / 7;
-    const crowdedFirstDay = Array.from({ length: 6 }, (_, lane) => ({
-      id: `crowded-first-${lane}`,
-      kind: "session",
-      startMinute: 0,
-      endMinute: 30,
-      lane,
-      laneCount: 6,
-      canvasWidth: crowdedDayWidth,
-      dayOffset: 0,
-    }));
-    const crowdedSecondDay = crowdedFirstDay.map((block) => ({
-      ...block,
-      id: block.id.replace("first", "second"),
-      dayOffset: crowdedDayWidth,
-    }));
-    const crowdedAdjacentDays = [...crowdedFirstDay, ...crowdedSecondDay];
-    const firstDayRects = crowdedFirstDay.map(footprint);
-
-    firstDayRects.forEach((rect, lane) => {
-      assert.equal(rect.right - rect.left, 44);
-      assert.ok(rect.left >= 2);
-      assert.ok(rect.right <= crowdedDayWidth - 2);
-      assert.equal(
-        resolvedAction(crowdedAdjacentDays, (rect.left + rect.right) / 2, 12, "fallback"),
-        `crowded-first-${lane}`
-      );
-      if (lane > 0) assert.ok(firstDayRects[lane - 1].right <= rect.left);
-    });
-
-    const lastFirstRect = firstDayRects.at(-1);
-    const firstSecondRect = footprint(crowdedSecondDay[0]);
-    assert.ok(lastFirstRect.right < crowdedDayWidth);
-    assert.ok(firstSecondRect.left > crowdedDayWidth);
-    for (const x of [crowdedDayWidth - 1, crowdedDayWidth, crowdedDayWidth + 1]) {
-      assert.equal(resolvedAction(crowdedAdjacentDays, x, 12, "fallback"), "fallback");
-    }
-    crowdedSecondDay.forEach((block) => {
-      const rect = footprint(block);
-      assert.equal(
-        resolvedAction(crowdedAdjacentDays, (rect.left + rect.right) / 2, 12, "fallback"),
-        block.id
-      );
-    });
-  });
-
-  it("renders ordinary and crowded Week print geometry without horizontal clipping", async () => {
-    const schedule = source("src/components/schedule/schedule-page-section.tsx");
-    const printStyle = schedule.match(/<style>\{`([\s\S]*?\[data-schedule-print-week[\s\S]*?)`\}<\/style>/)?.[1];
-    assert.ok(printStyle, "component-owned schedule print CSS must be extractable");
-    assert.match(schedule, /data-schedule-screen-week="true"/);
-    assert.match(schedule, /data-schedule-print-week="true"/);
-    assert.match(schedule, /data-schedule-print-day=\{key\}/);
-    assert.match(schedule, /data-schedule-print-entry=\{entry\.kind\}/);
-    assert.match(schedule, /layoutScheduleTimeItems\(entriesByDate\[key\] \|\| \[\]\)\.map\(\(block\) => block\.item\)/);
-
+  it("routes enlarged targets through the mounted schedule handler", async () => {
     const browser = await chromium.launch({ headless: true });
     try {
-      const page = await browser.newPage({ viewport: { width: 816, height: 1056 } });
-      const inspectWeek = async ({ entriesPerDay, screenWidth }) => {
-        const days = Array.from({ length: 7 }, (_, day) => {
-          const entries = Array.from({ length: entriesPerDay }, (_, entry) => `
-            <article data-schedule-print-entry="session">
-              <span>${8 + entry}:00 AM–${8 + entry}:30 AM</span>
-              <strong>Session ${day + 1}.${entry + 1} with a deliberately long recoverable title</strong>
-              <span>Adult Karate Program</span>
-            </article>
-          `).join("");
-          return `
-            <section data-schedule-print-day="day-${day + 1}">
-              <header data-schedule-print-day-header="true"><strong>Day ${day + 1}</strong></header>
-              ${entries}
-            </section>
-          `;
-        }).join("");
+      const page = await componentPage(browser);
+      const sessions = [
+        session("left", "2026-09-07", "06:00", "06:15"),
+        session("right", "2026-09-07", "06:00", "06:15"),
+        session("tail", "2026-09-07", "06:15", "06:30"),
+        session("next-day", "2026-09-08", "06:00", "06:15"),
+      ];
+      const templates = [template("missing-slot", 1, "06:15", "06:30")];
+      await page.evaluate((props) => fixture.renderSchedule(props), scheduleProps({ sessions, templates }));
+      await page.locator('[data-schedule-time-canvas="week"]').waitFor();
 
-        await page.setContent(`
-          <style>html, body { width: 100%; margin: 0; } ${printStyle}</style>
-          <div data-schedule-screen-week="true" style="width: 100%; overflow-x: auto;">
-            <div data-schedule-time-canvas="week" style="min-width: ${screenWidth}px; height: 120px;"></div>
-          </div>
-          <section data-schedule-print-week="true">${days}</section>
-        `);
+      const targetSizes = await page.locator('[data-time-canvas-block="session"]').evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const rect = button.getBoundingClientRect();
+          return { width: rect.width, height: rect.height, overlap: button.dataset.overlap };
+        })
+      );
+      assert.equal(targetSizes.every(({ width, height }) => width >= 44 && height >= 44), true);
+      assert.equal(targetSizes.slice(0, 3).every(({ overlap }) => overlap === "true"), true);
 
+      await page.getByRole("button", { name: "Open left at 6:00 AM" }).press("Enter");
+      assert.deepEqual(await page.evaluate(() => fixture.opened), ["left"]);
+
+      await page.evaluate(() => {
+        const fallback = document.querySelector('button[aria-label="Open left at 6:00 AM"]');
+        const visible = document.querySelector('[data-time-canvas-visible="session:tail"]');
+        const rect = visible.getBoundingClientRect();
+        fallback.dispatchEvent(new MouseEvent("click", {
+          bubbles: true,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + 2,
+          detail: 1,
+        }));
+      });
+      assert.deepEqual(await page.evaluate(() => fixture.opened), ["left", "tail"]);
+
+      await page.evaluate(() => {
+        const fallback = document.querySelector('button[aria-label="Open tail at 6:15 AM"]');
+        const visible = document.querySelector('[data-time-canvas-visible="template:missing-slot"]');
+        const rect = visible.getBoundingClientRect();
+        fallback.dispatchEvent(new MouseEvent("click", {
+          bubbles: true,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + 2,
+          detail: 1,
+        }));
+      });
+      assert.deepEqual(await page.evaluate(() => fixture.opened), ["left", "tail"]);
+
+      const adjacent = await page.locator('[data-time-canvas-visible="session:next-day"]').boundingBox();
+      await page.evaluate(({ x, y }) => {
+        const fallback = document.querySelector('button[aria-label="Open left at 6:00 AM"]');
+        fallback.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: x, clientY: y, detail: 1 }));
+      }, { x: adjacent.x + 2, y: adjacent.y + 2 });
+      assert.deepEqual(await page.evaluate(() => fixture.opened), ["left", "tail", "left"]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("renders recurring gaps and the studio business date consistently in every calendar view", async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await componentPage(browser, { width: 1280, height: 900 });
+      await page.clock.setFixedTime(new Date("2026-09-06T12:00:00Z"));
+      const generated = session("generated-slot", "2026-09-07", "09:00", "10:00", "generated-template");
+      const recurring = [
+        template("generated-template", 1, "09:00", "10:00"),
+        template("missing-slot", 1, "10:00", "11:00"),
+        template("filtered-slot", 1, "11:00", "12:00", "program-2"),
+      ];
+
+      for (const view of ["month", "week", "day"]) {
+        await page.evaluate((props) => fixture.renderSchedule(props), scheduleProps({
+          currentDate: "2026-09-07T12:00:00",
+          programFilter: "program-1",
+          sessions: [generated],
+          templates: recurring,
+          view,
+        }));
+        if (view === "month") {
+          const day = page.locator('[data-month-schedule-day="2026-09-07"]');
+          await day.waitFor();
+          assert.equal(await day.locator("text=generated-slot").count(), 1);
+          assert.equal(await day.locator("text=missing-slot").count(), 1);
+          assert.equal(await day.locator("text=filtered-slot").count(), 0);
+          assert.match(await day.textContent(), /3\/10/);
+        } else {
+          const canvas = page.locator(`[data-schedule-time-canvas="${view}"]`);
+          await canvas.waitFor();
+          assert.equal(await canvas.locator('[data-time-canvas-visible="session:generated-slot"]').count(), 1);
+          assert.equal(await canvas.locator('[data-time-canvas-visible="template:missing-slot"]').count(), 1);
+          assert.equal(await canvas.locator('[data-time-canvas-visible="template:filtered-slot"]').count(), 0);
+        }
+      }
+
+      await page.evaluate((props) => fixture.renderSchedule(props), scheduleProps({
+        currentDate: "2026-09-07T12:00:00",
+        sessions: [],
+        templates: [recurring[1]],
+        view: "day",
+      }));
+      await page.locator('[data-schedule-time-canvas="day"]').waitFor();
+      assert.equal(await page.getByText("No sessions scheduled for this day.").count(), 0);
+
+      await page.evaluate((props) => fixture.renderSchedule(props), scheduleProps({
+        currentDate: "2026-09-08T12:00:00",
+        sessions: [],
+        templates: recurring,
+        view: "day",
+      }));
+      await page.getByText("No sessions scheduled for this day.").waitFor();
+      assert.equal(await page.locator('[data-time-canvas-block]').count(), 0);
+
+      await page.evaluate((props) => fixture.renderSchedule(props), scheduleProps({
+        currentDate: "2026-09-07T12:00:00",
+        view: "week",
+      }));
+      await page.locator('[data-schedule-time-canvas="week"]').waitFor();
+      assert.equal(await page.locator('[aria-current="date"]').textContent(), "Tue8");
+
+      await page.evaluate((props) => fixture.renderSchedule(props), scheduleProps({
+        currentDate: "2026-09-07T12:00:00",
+        view: "month",
+      }));
+      await page.locator('[data-month-schedule-day="2026-09-08"]').waitFor();
+      assert.equal(await page.locator('[data-month-day-today="true"]').getAttribute("data-month-schedule-day"), "2026-09-08");
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("renders mounted ordinary and crowded Week print geometry without horizontal clipping", async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await componentPage(browser, { width: 816, height: 1056 });
+      const dates = ["2026-09-06", "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-12"];
+      for (const entriesPerDay of [1, 7]) {
+        const sessions = dates.flatMap((date, day) =>
+          Array.from({ length: entriesPerDay }, (_, entry) =>
+            session(`session-${day + 1}-${entry + 1}`, date, "08:00", "08:30")
+          )
+        );
         await page.emulateMedia({ media: "screen" });
-        const screenGeometry = await page.evaluate(() => {
-          const owner = document.querySelector('[data-schedule-screen-week="true"]');
-          const printWeek = document.querySelector('[data-schedule-print-week="true"]');
-          return {
-            ownerDisplay: getComputedStyle(owner).display,
-            ownerClientWidth: owner.clientWidth,
-            ownerScrollWidth: owner.scrollWidth,
-            printDisplay: getComputedStyle(printWeek).display,
-          };
-        });
+        await page.evaluate((props) => fixture.renderSchedule(props), scheduleProps({
+          currentDate: "2026-09-07T12:00:00",
+          sessions,
+          view: "week",
+        }));
+        const owner = page.locator('[data-schedule-screen-week="true"]');
+        await owner.waitFor();
+        const expectedScreenWidth = Math.max(1040, 72 + 7 * entriesPerDay * 48);
+        const screenGeometry = await owner.evaluate((element) => ({
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+          printDisplay: getComputedStyle(document.querySelector('[data-schedule-print-week="true"]')).display,
+          peakLanes: Number(document.querySelector('[data-schedule-time-canvas="week"]').dataset.scheduleWeekPeakLanes),
+        }));
+        assert.equal(screenGeometry.clientWidth, 816);
+        assert.ok(screenGeometry.scrollWidth >= expectedScreenWidth);
+        assert.ok(screenGeometry.scrollWidth <= expectedScreenWidth + 16);
+        assert.equal(screenGeometry.printDisplay, "none");
+        assert.equal(screenGeometry.peakLanes, entriesPerDay);
 
         await page.emulateMedia({ media: "print" });
-        const printGeometry = await page.evaluate(() => {
+        const printGeometry = await page.locator('[data-schedule-print-week="true"]').evaluate((grid) => {
           const owner = document.querySelector('[data-schedule-screen-week="true"]');
-          const grid = document.querySelector('[data-schedule-print-week="true"]');
           const dayElements = [...grid.querySelectorAll("[data-schedule-print-day]")];
           const entryElements = [...grid.querySelectorAll("[data-schedule-print-entry]")];
-          const headerElements = [...grid.querySelectorAll("[data-schedule-print-day-header]")];
           const gridRect = grid.getBoundingClientRect();
           const dayRects = dayElements.map((day) => day.getBoundingClientRect());
-          const headerRects = headerElements.map((header) => header.getBoundingClientRect());
-          const entriesInsideDays = dayElements.every((day) => {
-            const dayRect = day.getBoundingClientRect();
-            return [...day.querySelectorAll("[data-schedule-print-entry]")].every((entry) => {
-              const entryRect = entry.getBoundingClientRect();
-              return (
-                entryRect.left >= dayRect.left &&
-                entryRect.right <= dayRect.right &&
-                entry.scrollWidth <= entry.clientWidth &&
-                entry.scrollHeight <= entry.clientHeight &&
-                entryRect.height > 0
-              );
-            });
-          });
           return {
             ownerDisplay: getComputedStyle(owner).display,
             gridDisplay: getComputedStyle(grid).display,
-            gridColumnCount: getComputedStyle(grid).gridTemplateColumns.split(" ").length,
-            gridLeft: gridRect.left,
-            gridRight: gridRect.right,
-            viewportWidth: document.documentElement.clientWidth,
-            documentScrollWidth: document.documentElement.scrollWidth,
-            dayCount: dayRects.length,
+            gridColumns: getComputedStyle(grid).gridTemplateColumns.split(" ").length,
+            gridContained: gridRect.left >= 0 && gridRect.right <= document.documentElement.clientWidth,
+            dayCount: dayElements.length,
             entryCount: entryElements.length,
             dayTopSpread: Math.max(...dayRects.map((rect) => rect.top)) - Math.min(...dayRects.map((rect) => rect.top)),
-            dayWidthSpread: Math.max(...dayRects.map((rect) => rect.width)) - Math.min(...dayRects.map((rect) => rect.width)),
-            headerTopSpread: Math.max(...headerRects.map((rect) => rect.top)) - Math.min(...headerRects.map((rect) => rect.top)),
-            entriesInsideDays,
+            dayWidthsAligned: Math.max(...dayRects.map((rect) => rect.width)) - Math.min(...dayRects.map((rect) => rect.width)) <= 1,
+            entriesContained: dayElements.every((day) => {
+              const dayRect = day.getBoundingClientRect();
+              return [...day.querySelectorAll("[data-schedule-print-entry]")].every((entry) => {
+                const rect = entry.getBoundingClientRect();
+                return rect.left >= dayRect.left && rect.right <= dayRect.right && rect.height > 0;
+              });
+            }),
+            firstDayOrder: [...dayElements[0].querySelectorAll("[data-schedule-print-entry] strong")]
+              .map((element) => element.textContent),
+            documentWidth: document.documentElement.clientWidth,
+            scrollWidth: document.documentElement.scrollWidth,
           };
         });
-
-        return { printGeometry, screenGeometry };
-      };
-
-      for (const scenario of [
-        { entriesPerDay: 1, screenWidth: 1040 },
-        { entriesPerDay: 7, screenWidth: 72 + 7 * 7 * 48 },
-      ]) {
-        const { printGeometry, screenGeometry } = await inspectWeek(scenario);
-        assert.notEqual(screenGeometry.ownerDisplay, "none");
-        assert.equal(screenGeometry.printDisplay, "none");
-        assert.equal(screenGeometry.ownerClientWidth, 816);
-        assert.equal(screenGeometry.ownerScrollWidth, scenario.screenWidth);
-        assert.equal(printGeometry.ownerDisplay, "none");
-        assert.equal(printGeometry.gridDisplay, "grid");
-        assert.equal(printGeometry.gridColumnCount, 7);
-        assert.equal(printGeometry.dayCount, 7);
-        assert.equal(printGeometry.entryCount, 7 * scenario.entriesPerDay);
-        assert.equal(printGeometry.dayTopSpread, 0);
-        assert.ok(printGeometry.dayWidthSpread <= 1);
-        assert.equal(printGeometry.headerTopSpread, 0);
-        assert.ok(printGeometry.gridLeft >= 0);
-        assert.ok(printGeometry.gridRight <= printGeometry.viewportWidth);
-        assert.equal(printGeometry.documentScrollWidth, printGeometry.viewportWidth);
-        assert.equal(printGeometry.entriesInsideDays, true);
+        const expectedOrder = Array.from({ length: entriesPerDay }, (_, index) => `session-1-${index + 1}`);
+        assert.deepEqual(printGeometry, {
+          ownerDisplay: "none",
+          gridDisplay: "grid",
+          gridColumns: 7,
+          gridContained: true,
+          dayCount: 7,
+          entryCount: 7 * entriesPerDay,
+          dayTopSpread: 0,
+          dayWidthsAligned: true,
+          entriesContained: true,
+          firstDayOrder: expectedOrder,
+          documentWidth: 816,
+          scrollWidth: 816,
+        });
       }
     } finally {
       await browser.close();
@@ -523,254 +521,137 @@ describe("operations behavior proof", () => {
     }
   });
 
-  it("contains Program controls at 390px and flattens Month print in both themes", async () => {
-    const programs = source("src/components/settings/programs-section.tsx");
-    const month = source("src/components/schedule/month-schedule-view.tsx");
+  it("submits the mounted Program form and prints the mounted Month calendar in both themes", async () => {
     const css = source("src/components/operations/operations-surface.module.css");
     const browserCss = css.replaceAll(":global(", ":is(");
-    assert.match(programs, /data-program-form="true"/);
-    assert.equal((programs.match(/data-program-input=/g) || []).length, 2);
-    assert.match(programs, /data-program-color-actions="true"/);
-    assert.match(programs, /data-program-swatch=\{swatch\}/);
-    assert.match(programs, /data-program-submit="true"/);
-    assert.match(programs, /onSubmit=\{handleSubmit\}/);
-    assert.match(programs, /onClick=\{\(\) => setColor\(swatch\)\}/);
-    assert.match(css, /grid-template-columns: repeat\(6, 44px\)/);
-    assert.match(css, /\[data-program-submit="true"\][\s\S]*?grid-column: 1 \/ -1;[\s\S]*?width: 100%;/);
-    assert.match(css, /\[data-month-schedule-view\][\s\S]*?overflow: visible !important;[\s\S]*?border-radius: 0 !important;[\s\S]*?background: #fff !important;[\s\S]*?box-shadow: none !important;/);
-    assert.match(month, /data-month-schedule-day=\{day\.dateKey\}/);
-    assert.match(month, /data-month-day-scope=\{day\.inCurrentMonth \? "in-month" : "out-of-month"\}/);
-    assert.match(month, /data-month-day-today=\{isToday \? "true" : "false"\}/);
-    assert.match(month, /data-month-day-selected=\{isSelected \? "true" : "false"\}/);
-    assert.match(month, /data-month-day-selected=[\s\S]{0,500}?transition-colors/);
-    assert.match(css, /\[data-month-schedule-view\] \[data-month-schedule-day\][\s\S]*?border-color: #777 !important;[\s\S]*?background: #fff !important;[\s\S]*?box-shadow: none !important;/);
-    assert.match(css, /\[data-month-schedule-view\] \[data-month-schedule-day\][\s\S]*?transition: none !important;/);
-    assert.match(css, /\[data-month-schedule-view\] \[data-month-schedule-day\] \*[\s\S]*?background-color: transparent !important;[\s\S]*?color: #000 !important;/);
-
     const browser = await chromium.launch({ headless: true });
     try {
-      const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-      for (const actionLabel of ["Create", "Save"]) {
-        const swatches = ["#38BDF8", "#F59E0B", "#EF4444", "#22C55E", "#A855F7", "#94A3B8"]
-          .map((swatch, index) =>
-            '<button type="button" data-program-swatch="' + swatch + '" aria-label="Use ' + swatch +
-            '" aria-pressed="' + (index === 0 ? "true" : "false") +
-            '" onclick="this.dataset.clicked = \'true\'" style="background:' + swatch + '"></button>'
-          )
-          .join("");
-        await page.setContent(
-          '<style>html, body { width: 100%; margin: 0; } ' + browserCss + '</style>' +
-          '<main class="surface" data-operations-page="settings" style="box-sizing:border-box;width:390px;padding:32px">' +
-            '<form data-program-form="true" onsubmit="event.preventDefault(); this.dataset.submitted = \'true\'">' +
-              '<div><label>Program name<input data-program-input="name"></label></div>' +
-              '<div><label>Description<input data-program-input="description"></label></div>' +
-              '<div data-program-color-field="true"><span>Color</span>' +
-                '<div data-program-color-actions="true">' + swatches +
-                  '<button type="submit" data-program-submit="true"><span data-program-action-label>' + actionLabel + '</span></button>' +
-                '</div>' +
-              '</div>' +
-            '</form>' +
-          '</main>'
-        );
-        await page.emulateMedia({ media: "screen" });
-        await page.locator('[data-program-input="name"]').fill("Adult Karate");
-        await page.locator('[data-program-input="description"]').fill("Evening program");
-        for (const swatch of await page.locator("[data-program-swatch]").all()) await swatch.click();
-        await page.locator('[data-program-submit="true"]').click();
+      const page = await componentPage(browser, { width: 390, height: 844 });
+      await page.addStyleTag({
+        content: browserCss + `
+          #root { padding: 32px; }
+          [data-program-input], [data-program-submit="true"] { min-height: 44px; }
+          [data-month-schedule-view] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+          [data-month-schedule-day] { min-width: 0; border: 1px solid rgb(120, 120, 120); overflow: hidden; }
+        `,
+      });
+      await page.evaluate(() => {
+        document.getElementById("root").dataset.operationsPage = "settings";
+        fixture.programStore = {
+          programs: [],
+          programsLoaded: true,
+          programsUsageLoaded: true,
+          programsUsageLoadError: null,
+          programsLoadError: null,
+          refreshPrograms: async () => {},
+          createProgram: async (payload) => fixture.submitted.push({ action: "create", payload }),
+          updateProgram: async (id, payload) => fixture.submitted.push({ action: "update", id, payload }),
+          archiveProgram: async () => {},
+          restoreProgram: async () => {},
+        };
+        fixture.renderPrograms();
+      });
+      await page.locator('[data-program-form="true"]').waitFor();
+      await page.locator('[data-program-input="name"]').fill("  Adult Karate  ");
+      await page.locator('[data-program-input="description"]').fill(" Evening program ");
+      await page.getByRole("button", { name: "Use #A855F7" }).click();
+      await page.locator('[data-program-submit="true"]').click();
+      await page.waitForFunction(() => fixture.submitted.length === 1);
+      assert.deepEqual(await page.evaluate(() => fixture.submitted[0]), {
+        action: "create",
+        payload: {
+          name: "Adult Karate",
+          description: "Evening program",
+          color_hex: "#A855F7",
+          sort_order: 0,
+        },
+      });
 
-        const geometry = await page.evaluate(() => {
-          const form = document.querySelector('[data-program-form="true"]');
-          const formRect = form.getBoundingClientRect();
-          const inputs = [...form.querySelectorAll("[data-program-input]")];
-          const swatches = [...form.querySelectorAll("[data-program-swatch]")];
-          const action = form.querySelector('[data-program-submit="true"]');
-          const actionLabelElement = action.querySelector("[data-program-action-label]");
-          const controls = [...inputs, ...swatches, action];
-          const contained = controls.every((control) => {
+      const formGeometry = await page.locator('[data-program-form="true"]').evaluate((form) => {
+        const formRect = form.getBoundingClientRect();
+        const controls = [...form.querySelectorAll("input, button")];
+        return {
+          contained: controls.every((control) => {
             const rect = control.getBoundingClientRect();
-            return (
-              rect.left >= formRect.left &&
-              rect.right <= formRect.right &&
-              rect.top >= formRect.top &&
-              rect.bottom <= formRect.bottom &&
-              rect.width >= 44 &&
-              rect.height >= 44
-            );
-          });
-          const actionRect = action.getBoundingClientRect();
-          const labelRect = actionLabelElement.getBoundingClientRect();
-          return {
-            actionLabel: actionLabelElement.textContent,
-            actionLabelContained: (
-              labelRect.left >= actionRect.left &&
-              labelRect.right <= actionRect.right &&
-              labelRect.top >= actionRect.top &&
-              labelRect.bottom <= actionRect.bottom
-            ),
-            actionSubmitted: form.dataset.submitted,
-            allSwatchesClicked: swatches.every((swatch) => swatch.dataset.clicked === "true"),
-            contained,
-            documentClientWidth: document.documentElement.clientWidth,
-            documentScrollWidth: document.documentElement.scrollWidth,
-            inputCount: inputs.length,
-            swatchCount: swatches.length,
-          };
-        });
-        assert.equal(geometry.actionLabel, actionLabel);
-        assert.equal(geometry.actionLabelContained, true);
-        assert.equal(geometry.actionSubmitted, "true");
-        assert.equal(geometry.allSwatchesClicked, true);
-        assert.equal(geometry.contained, true);
-        assert.equal(geometry.inputCount, 2);
-        assert.equal(geometry.swatchCount, 6);
-        assert.equal(geometry.documentScrollWidth, geometry.documentClientWidth);
-      }
+            return rect.left >= formRect.left && rect.right <= formRect.right;
+          }),
+          swatches: controls
+            .filter((control) => control.hasAttribute("data-program-swatch"))
+            .every((control) => {
+              const rect = control.getBoundingClientRect();
+              return rect.width >= 44 && rect.height >= 44;
+            }),
+          documentWidth: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+        };
+      });
+      assert.equal(formGeometry.contained, true);
+      assert.equal(formGeometry.swatches, true);
+      assert.equal(formGeometry.documentWidth, 390);
+      assert.equal(formGeometry.scrollWidth, 390);
 
       await page.setViewportSize({ width: 816, height: 1056 });
       for (const theme of ["light", "dark"]) {
         await page.emulateMedia({ media: "screen" });
-        const paper = theme === "light" ? "rgb(250, 250, 250)" : "rgb(30, 30, 30)";
-        const ground = theme === "light" ? "rgb(238, 238, 238)" : "rgb(18, 18, 18)";
-        const todaySurface = theme === "light" ? "rgb(235, 243, 255)" : "rgb(38, 46, 60)";
-        const screenText = theme === "light" ? "rgb(17, 17, 17)" : "rgb(238, 238, 238)";
-        const monthCells = [
-          { scope: "in-month", today: "false", selected: "false", label: "In month", background: paper, shadow: "none" },
-          { scope: "out-of-month", today: "false", selected: "false", label: "Out of month", background: ground, shadow: "none" },
-          { scope: "in-month", today: "true", selected: "false", label: "Today", background: todaySurface, shadow: "none" },
-          { scope: "in-month", today: "false", selected: "true", label: "Selected", background: paper, shadow: "inset 0 0 0 1px rgb(45, 92, 160)" },
-        ].map((cell, index) =>
-          '<div data-month-schedule-day="2026-08-' + (index + 1) + '" data-month-day-scope="' + cell.scope +
-            '" data-month-day-today="' + cell.today + '" data-month-day-selected="' + cell.selected +
-            '" style="box-sizing:border-box;min-width:0;border:1px solid rgb(120,120,120);background:' +
-            cell.background + ';color:' + screenText + ';box-shadow:' + cell.shadow +
-            ';overflow:hidden;padding:12px;transition-property:color,background-color,border-color;' +
-            'transition-duration:150ms;transition-timing-function:ease">' +
-            '<span data-month-day-copy style="display:block;overflow-wrap:anywhere">' +
-              cell.label + ' calendar cell with retained printable text and borders.' +
-            '</span>' +
-          '</div>'
-        ).join("");
-        await page.setContent(
-          '<style>html, body { width: 100%; margin: 0; } ' + browserCss + '</style>' +
-          '<div data-theme="' + theme + '" data-koaryu-dashboard-shell="true" ' +
-            'style="--product-paper:' + paper + ';--product-shadow-card:0 8px 24px rgba(0,0,0,.24);' +
-            '--product-ground:' + paper + ';--product-ink:' + (theme === "light" ? "#111" : "#eee") + '">' +
-            '<main class="surface" data-operations-page="schedule">' +
-              '<div data-month-schedule-view="true" style="box-sizing:border-box;width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden">' +
-                monthCells +
-              '</div>' +
-            '</main>' +
-          '</div>'
-        );
-        const screenMaterial = await page.locator("[data-month-schedule-view]").evaluate((month) => {
-          const style = getComputedStyle(month);
-          return {
-            background: style.backgroundColor,
-            borderRadius: style.borderRadius,
-            boxShadow: style.boxShadow,
-            cells: [...month.querySelectorAll("[data-month-schedule-day]")].map((cell) => {
-              const cellStyle = getComputedStyle(cell);
-              return {
-                background: cellStyle.backgroundColor,
-                boxShadow: cellStyle.boxShadow,
-                overflow: cellStyle.overflow,
-                scope: cell.dataset.monthDayScope,
-                selected: cell.dataset.monthDaySelected,
-                today: cell.dataset.monthDayToday,
-                transitionDuration: cellStyle.transitionDuration,
-                transitionProperty: cellStyle.transitionProperty,
-              };
-            }),
-          };
+        await page.evaluate(({ props, theme }) => {
+          const root = document.getElementById("root");
+          root.dataset.operationsPage = "schedule";
+          root.dataset.theme = theme;
+          root.style.setProperty("--product-paper", theme === "light" ? "#fafafa" : "#1e1e1e");
+          root.style.setProperty("--product-shadow-card", "0 8px 24px rgba(0,0,0,.24)");
+          fixture.renderSchedule(props);
+        }, {
+          props: scheduleProps({
+            businessDate: "2026-09-08",
+            currentDate: "2026-09-07T12:00:00",
+            sessions: [session("print-session", "2026-09-07", "09:00", "10:00")],
+            templates: [template("print-placeholder", 1, "10:00", "11:00")],
+            view: "month",
+          }),
+          theme,
         });
-        assert.equal(screenMaterial.background, paper);
-        assert.equal(screenMaterial.borderRadius, "14px");
-        assert.notEqual(screenMaterial.boxShadow, "none");
-        assert.deepEqual(screenMaterial.cells.map((cell) => cell.scope), ["in-month", "out-of-month", "in-month", "in-month"]);
-        assert.deepEqual(screenMaterial.cells.map((cell) => cell.today), ["false", "false", "true", "false"]);
-        assert.deepEqual(screenMaterial.cells.map((cell) => cell.selected), ["false", "false", "false", "true"]);
-        assert.notEqual(screenMaterial.cells[0].background, screenMaterial.cells[1].background);
-        assert.notEqual(screenMaterial.cells[0].background, screenMaterial.cells[2].background);
-        assert.equal(screenMaterial.cells[3].boxShadow === "none", false);
-        assert.equal(screenMaterial.cells.every((cell) => cell.overflow === "hidden"), true);
-        assert.equal(screenMaterial.cells.every((cell) => cell.transitionProperty.includes("background-color")), true);
-        assert.equal(screenMaterial.cells.every((cell) => cell.transitionDuration === "0.15s"), true);
+        const month = page.locator("[data-month-schedule-view]");
+        await month.waitFor();
+        assert.equal(await month.locator("[data-month-schedule-day]").count(), 42);
+        assert.equal(await month.locator('[data-month-day-scope="in-month"]').count(), 30);
+        assert.equal(await month.locator('[data-month-day-scope="out-of-month"]').count(), 12);
+        assert.equal(await month.locator('[data-month-day-today="true"]').getAttribute("data-month-schedule-day"), "2026-09-08");
+        assert.equal(await month.locator('[data-month-day-selected="true"]').getAttribute("data-month-schedule-day"), "2026-09-07");
 
         await page.emulateMedia({ media: "print" });
-        const printMaterial = await page.locator("[data-month-schedule-view]").evaluate((month) => {
-          const style = getComputedStyle(month);
-          const monthRect = month.getBoundingClientRect();
-          const cells = [...month.querySelectorAll("[data-month-schedule-day]")].map((cell) => {
-            const cellStyle = getComputedStyle(cell);
-            const cellRect = cell.getBoundingClientRect();
-            const copy = cell.querySelector("[data-month-day-copy]");
-            const copyStyle = getComputedStyle(copy);
-            const copyRect = copy.getBoundingClientRect();
-            return {
-              background: cellStyle.backgroundColor,
-              borderColor: cellStyle.borderTopColor,
-              borderStyle: cellStyle.borderTopStyle,
-              borderWidth: cellStyle.borderTopWidth,
-              boxShadow: cellStyle.boxShadow,
-              color: cellStyle.color,
-              contentContained: (
-                copyRect.left >= cellRect.left &&
-                copyRect.right <= cellRect.right &&
-                copyRect.top >= cellRect.top &&
-                copyRect.bottom <= cellRect.bottom &&
-                cell.scrollWidth <= cell.clientWidth &&
-                cell.scrollHeight <= cell.clientHeight
-              ),
-              copyColor: copyStyle.color,
-              insideMonth: cellRect.left >= monthRect.left && cellRect.right <= monthRect.right,
-              overflow: cellStyle.overflow,
-              radius: cellStyle.borderRadius,
-              scope: cell.dataset.monthDayScope,
-              selected: cell.dataset.monthDaySelected,
-              today: cell.dataset.monthDayToday,
-              transitionDuration: cellStyle.transitionDuration,
-              transitionProperty: cellStyle.transitionProperty,
-            };
-          });
+        const printGeometry = await month.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          const cells = [...element.querySelectorAll("[data-month-schedule-day]")];
           return {
             background: style.backgroundColor,
-            borderRadius: style.borderRadius,
-            boxShadow: style.boxShadow,
-            color: style.color,
-            cells,
-            documentClientWidth: document.documentElement.clientWidth,
-            documentScrollWidth: document.documentElement.scrollWidth,
-            monthLeft: monthRect.left,
-            monthRight: monthRect.right,
+            radius: style.borderRadius,
+            shadow: style.boxShadow,
             overflow: style.overflow,
+            contained: rect.left >= 0 && rect.right <= document.documentElement.clientWidth,
+            cellsWhite: cells.every((cell) => getComputedStyle(cell).backgroundColor === "rgb(255, 255, 255)"),
+            cellsFlat: cells.every((cell) => {
+              const cellStyle = getComputedStyle(cell);
+              return cellStyle.borderTopColor === "rgb(119, 119, 119)"
+                && cellStyle.borderRadius === "0px"
+                && cellStyle.boxShadow === "none"
+                && cellStyle.overflow === "visible";
+            }),
+            documentWidth: document.documentElement.clientWidth,
+            scrollWidth: document.documentElement.scrollWidth,
           };
         });
-        assert.equal(printMaterial.background, "rgb(255, 255, 255)");
-        assert.equal(printMaterial.borderRadius, "0px");
-        assert.equal(printMaterial.boxShadow, "none");
-        assert.equal(printMaterial.color, "rgb(0, 0, 0)");
-        assert.equal(printMaterial.overflow, "visible");
-        assert.equal(printMaterial.cells.length, 4);
-        for (const cell of printMaterial.cells) {
-          assert.equal(cell.background, "rgb(255, 255, 255)");
-          assert.equal(cell.borderColor, "rgb(119, 119, 119)");
-          assert.equal(cell.borderStyle, "solid");
-          assert.equal(cell.borderWidth, "1px");
-          assert.equal(cell.boxShadow, "none");
-          assert.equal(cell.color, "rgb(0, 0, 0)");
-          assert.equal(cell.copyColor, "rgb(0, 0, 0)");
-          assert.equal(cell.contentContained, true);
-          assert.equal(cell.insideMonth, true);
-          assert.equal(cell.overflow, "visible");
-          assert.equal(cell.radius, "0px");
-          assert.equal(cell.transitionDuration, "0s");
-          assert.equal(cell.transitionProperty, "none");
-        }
-        assert.ok(printMaterial.monthLeft >= 0);
-        assert.ok(printMaterial.monthRight <= printMaterial.documentClientWidth);
-        assert.equal(printMaterial.documentClientWidth, 816);
-        assert.equal(printMaterial.documentScrollWidth, 816);
-        assert.equal(printMaterial.documentScrollWidth, printMaterial.documentClientWidth);
+        assert.deepEqual(printGeometry, {
+          background: "rgb(255, 255, 255)",
+          radius: "0px",
+          shadow: "none",
+          overflow: "visible",
+          contained: true,
+          cellsWhite: true,
+          cellsFlat: true,
+          documentWidth: 816,
+          scrollWidth: 816,
+        });
       }
     } finally {
       await browser.close();

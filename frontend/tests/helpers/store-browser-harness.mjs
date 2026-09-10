@@ -7,7 +7,7 @@ import ts from "typescript";
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-export function bundle(mode, { preview = false, pagedRoster = true, layout = false, leadsPage = false, leadController = false, programsSection = false, staffSection = false, subscriptionPage = false, scheduleController = false, scheduleForm = false, dashboardController = false, beltPage = false, realApi = false, detailController = false, rosterController = false, studentForm = false, legacyBootstrapFixture = false } = {}) {
+export function bundle(mode, { preview = false, pagedRoster = true, layout = false, leadsPage = false, leadController = false, programsSection = false, staffSection = false, subscriptionPage = false, scheduleController = false, scheduleForm = false, dashboardController = false, beltPage = false, realApi = false, detailController = false, rosterController = false, studentForm = false, legacyBootstrapFixture = false, operationsComponents = false } = {}) {
   if (!["production", "development"].includes(mode) || typeof preview !== "boolean") throw new Error("Unsupported fixture environment");
   const modules = [];
   const ids = new Map();
@@ -16,6 +16,11 @@ export function bundle(mode, { preview = false, pagedRoster = true, layout = fal
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=ApiError; exports.CommandOutcomeUnknown=require("@/lib/command-outcome").CommandOutcomeUnknown;window.fixture.CommandOutcomeUnknown=exports.CommandOutcomeUnknown;exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
     "@/lib/performance": `exports.markPerformance=name=>{window.fixture.marks?.push(name);window.fixture.timingMarks?.push({name,atMs:performance.now()});};exports.measurePerformance=()=>{};exports.startStudentPagePerformanceSpan=()=>({finish(){}});exports.markDashboardReadiness=(route,generation,state)=>{window.fixture.readiness?.push(state);return ()=>{};};`,
+    ...(operationsComponents ? {
+      "@/lib/store": `exports.useStudioStore=()=>window.fixture.studioStore;exports.useProgramStore=()=>window.fixture.programStore;`,
+      "./sliding-segmented-control.module.css": `module.exports={};`,
+      "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
+    } : {}),
     ...(scheduleForm ? {
       "@/components/schedule/schedule-page-section": `exports.SchedulePageSection=()=>null;`,
       "@/components/schedule/session-detail-modal": `exports.ScheduleSessionDetailModal=()=>null;`,
@@ -102,6 +107,13 @@ export function bundle(mode, { preview = false, pagedRoster = true, layout = fal
     source = source.replace(/require\(["']([^"']+)["']\)/g, (_, dependency) => `require(${add(dependency, key)})`);
     modules[id] = `function(module,exports,require){${source}\n}`;
     return id;
+  }
+  if (operationsComponents) {
+    const react = add("react");
+    const dom = add("react-dom/client");
+    const schedule = add("@/components/schedule/schedule-page-section");
+    const programs = add("@/components/settings/programs-section");
+    return `(()=>{const process={env:{NODE_ENV:"production"}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const root=require(${dom}).createRoot(document.getElementById('root'));const SchedulePageSection=require(${schedule}).SchedulePageSection;const ProgramsSection=require(${programs}).ProgramsSection;const noop=()=>{};window.fixture.renderSchedule=props=>root.render(React.createElement(SchedulePageSection,{onRetryRange:noop,onNavigate:noop,onJumpToToday:noop,onViewChange:noop,onProgramFilterChange:noop,onDismissScheduleLoadError:noop,onDismissActionMessage:noop,onSelectDate:noop,onOpenAddClass:noop,...props,currentDate:new Date(props.currentDate),onOpenSession:session=>window.fixture.opened.push(session.id)}));window.fixture.renderPrograms=()=>root.render(React.createElement(ProgramsSection));})();`;
   }
   const react = add("react");
   const dom = add("react-dom/client");

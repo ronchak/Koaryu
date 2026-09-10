@@ -17,6 +17,7 @@ export function SchedulePageContent({
   actionMessage,
   activeStudents,
   attendanceError,
+  businessDate,
   canManageSchedule,
   classFormInitialValues,
   createClassError,
@@ -63,6 +64,7 @@ export function SchedulePageContent({
   return (
     <OperationsSurface page="schedule">
       <SchedulePageSection
+        businessDate={businessDate}
         canManageSchedule={canManageSchedule}
         currentDate={currentDate}
         view={view}

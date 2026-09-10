@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "08b1e77f593b0f01dcbf038c5ab58001ea3289fb",
+  "last_reconciled_main": "648e27cfe668ff35b50a1e20ece1487aca78673e",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -6457,21 +6457,32 @@
       "id": "FT2-02",
       "title": "Calendar interaction tests execute a duplicate hit-testing algorithm",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "The overlap assertions still execute test-local geometry and routing functions. Production uses DOM hit testing, so these examples cannot detect a broken production click handler.",
+      "disposition": "fixed",
+      "reason": "Copied test-local footprint, hit-testing and routing algorithms are removed. Mounted production schedule handlers now receive measured event coordinates and their actual onOpenSession outcomes are checked, including keyboard and adjacent-day behavior.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "8c3fdf0dd0bdf1109f1989c9b5105e8bc065fc38",
       "source_paths": [
         "frontend/tests/operations-redesign-contract.test.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        173
+      ],
       "track": "Sol",
       "root_cause": "operations-fixture-duplication",
       "collapse_with": [
         "FT2-03"
       ],
-      "current_evidence": [
+      "next_change": "No remaining scoped change. Keep mutation/date authority and the documented fixture proof limits intact.",
+      "validation_plan": "Cover adjacent days, enlarged short-session targets, overlapping sessions, template footprints and keyboard activation.",
+      "scope_constraints": [
+        "Accessible target sizes",
+        "Production routing semantics",
+        "Useful print/CSS checks"
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "delegated_batch": "docs/remediation/delegated/10-schedule-rendering-and-operations-tests.md",
+      "normalization_evidence": [
         {
           "path": "frontend/tests/operations-redesign-contract.test.mjs",
           "line": 122,
@@ -6483,35 +6494,45 @@
           "observation": "The real handler resolves visible blocks using elementsFromPoint and DOM rectangles."
         }
       ],
-      "next_change": "Reuse the overlap scenarios in a mounted schedule fixture that clicks actual targets and observes onOpenSession; remove the copied routing algorithm.",
-      "validation_plan": "Cover adjacent days, enlarged short-session targets, overlapping sessions, template footprints and keyboard activation.",
-      "scope_constraints": [
-        "Accessible target sizes",
-        "Production routing semantics",
-        "Useful print/CSS checks"
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/10-schedule-rendering-and-operations-tests.md"
+      "verification": "See schedule-rendering-verification.md. Worker full frontend914/lint/TypeScript passed; independent reviewer19focused and6existing shared-helper tests passed. Fixed-clock case and root rebase checks passed; final-head review/CI govern merge.",
+      "current_evidence": [
+        {
+          "path": "frontend/tests/operations-redesign-contract.test.mjs",
+          "line": 180,
+          "observation": "Copied test-local footprint, hit-testing and routing algorithms are removed. Mounted production schedule handlers now receive measured event coordinates and their actual onOpenSession outcomes are checked, including keyboard and adjacent-day behavior."
+        }
+      ]
     },
     {
       "id": "FT2-03",
       "title": "Operations browser fixtures duplicate markup and replace business callbacks",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "Literal program and calendar markup still duplicates React output. These remain useful CSS isolation checks, but dataset-only callbacks provide no form behavior evidence.",
+      "disposition": "fixed",
+      "reason": "Program and calendar fixtures now mount actual components, controls and form handlers through the existing browser fixture. Selected-color submissions reach a recording store, with scoped 390px and print checks. The remaining manually constructed header CSS fixture is not presented as application behavior.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "8c3fdf0dd0bdf1109f1989c9b5105e8bc065fc38",
       "source_paths": [
         "frontend/tests/operations-redesign-contract.test.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        173
+      ],
       "track": "Sol",
       "root_cause": "operations-fixture-duplication",
       "collapse_with": [
         "FT2-02"
       ],
-      "current_evidence": [
+      "next_change": "No remaining scoped change. Keep mutation/date authority and the documented fixture proof limits intact.",
+      "validation_plan": "Check 390px form containment, selected-color payload and current screen/print geometry in both themes.",
+      "scope_constraints": [
+        "Valid CSS isolation coverage",
+        "Print-specific presentation",
+        "Program business rules"
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "delegated_batch": "docs/remediation/delegated/10-schedule-rendering-and-operations-tests.md",
+      "normalization_evidence": [
         {
           "path": "frontend/tests/operations-redesign-contract.test.mjs",
           "line": 554,
@@ -6528,15 +6549,14 @@
           "observation": "The actual form uses handleSubmit and stateful color selection."
         }
       ],
-      "next_change": "Render actual program/calendar components in the existing browser fixture, retaining geometry assertions; observe the real form's submitted payload through mocked store actions.",
-      "validation_plan": "Check 390px form containment, selected-color payload and current screen/print geometry in both themes.",
-      "scope_constraints": [
-        "Valid CSS isolation coverage",
-        "Print-specific presentation",
-        "Program business rules"
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/10-schedule-rendering-and-operations-tests.md"
+      "verification": "See schedule-rendering-verification.md. Worker full frontend914/lint/TypeScript passed; independent reviewer19focused and6existing shared-helper tests passed. Fixed-clock case and root rebase checks passed; final-head review/CI govern merge.",
+      "current_evidence": [
+        {
+          "path": "frontend/tests/operations-redesign-contract.test.mjs",
+          "line": 524,
+          "observation": "Program and calendar fixtures now mount actual components, controls and form handlers through the existing browser fixture. Selected-color submissions reach a recording store, with scoped 390px and print checks. The remaining manually constructed header CSS fixture is not presented as application behavior."
+        }
+      ]
     },
     {
       "id": "FT2-04",
@@ -8090,20 +8110,32 @@
       "id": "FC2-01",
       "title": "Recurring schedule gaps disappear when changing calendar views",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "Month explicitly enables missing-template placeholders. Week only adds them on entirely session-free dates, and day view hides even those behind its session-only empty state.",
+      "disposition": "fixed",
+      "reason": "The existing per-date recurring-entry builder now owns month, week and day. Generated sessions no longer hide other missing occurrences, and the day empty state uses actual visible entries.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "8c3fdf0dd0bdf1109f1989c9b5105e8bc065fc38",
       "source_paths": [
         "frontend/src/components/schedule/schedule-page-section.tsx",
         "frontend/src/lib/schedule-calendar.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        173
+      ],
       "track": "Sol",
       "root_cause": "calendar-entry-selection-divergence",
       "collapse_with": [],
-      "current_evidence": [
+      "next_change": "No remaining scoped change. Keep mutation/date authority and the documented fixture proof limits intact.",
+      "validation_plan": "Compare month/week/day with one generated and one missing occurrence, then with placeholders only and with no applicable entries.",
+      "scope_constraints": [
+        "Placeholder/session distinction",
+        "Attendance records",
+        "Template applicability semantics",
+        "Program filtering"
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "delegated_batch": "docs/remediation/delegated/10-schedule-rendering-and-operations-tests.md",
+      "normalization_evidence": [
         {
           "path": "frontend/src/components/schedule/schedule-page-section.tsx",
           "line": 197,
@@ -8120,16 +8152,14 @@
           "observation": "Day empty state checks sessions rather than prepared entries."
         }
       ],
-      "next_change": "Use the existing per-date entry builder across all views and base day empty state on the resulting entries.",
-      "validation_plan": "Compare month/week/day with one generated and one missing occurrence, then with placeholders only and with no applicable entries.",
-      "scope_constraints": [
-        "Placeholder/session distinction",
-        "Attendance records",
-        "Template applicability semantics",
-        "Program filtering"
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/10-schedule-rendering-and-operations-tests.md"
+      "verification": "See schedule-rendering-verification.md. Worker full frontend914/lint/TypeScript passed; independent reviewer19focused and6existing shared-helper tests passed. Fixed-clock case and root rebase checks passed; final-head review/CI govern merge.",
+      "current_evidence": [
+        {
+          "path": "frontend/src/components/schedule/schedule-page-section.tsx",
+          "line": 163,
+          "observation": "The existing per-date recurring-entry builder now owns month, week and day. Generated sessions no longer hide other missing occurrences, and the day empty state uses actual visible entries."
+        }
+      ]
     },
     {
       "id": "FC2-02",
@@ -8321,24 +8351,31 @@
       "id": "FC2-06",
       "title": "Schedule Today highlighting disagrees with the studio date used by navigation",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "Schedule navigation uses businessDate, but day/week and month highlighting still use the browser date.",
+      "disposition": "fixed",
+      "reason": "Schedule display receives the same studio businessDate used by navigation. Week Today and month today use it; the mounted test freezes the browser on a different date.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "8c3fdf0dd0bdf1109f1989c9b5105e8bc065fc38",
+      "verification": "See schedule-rendering-verification.md. Worker full frontend914/lint/TypeScript passed; independent reviewer19focused and6existing shared-helper tests passed. Fixed-clock case and root rebase checks passed; final-head review/CI govern merge.",
       "source_paths": [
         "frontend/src/components/schedule/schedule-page-section.tsx",
         "frontend/src/lib/schedule-page-controller.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        173
+      ],
       "track": "Sol",
       "root_cause": "studio_calendar_ownership",
       "collapse_with": [
         "OPS1-10",
         "FSH2-06"
       ],
-      "current_evidence": [
+      "next_change": "No remaining scoped change. Keep mutation/date authority and the documented fixture proof limits intact.",
+      "validation_plan": "Render with browser/studio dates differing and confirm Today navigation and every view highlight the same date.",
+      "scope_constraints": "Keep session wall-clock times, schedule mutations, permissions and existing range-loading behavior unchanged.",
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "delegated_batch": "docs/remediation/delegated/10-schedule-rendering-and-operations-tests.md",
+      "normalization_evidence": [
         {
           "path": "frontend/src/lib/schedule-page-controller.ts",
           "line": 191,
@@ -8355,11 +8392,13 @@
           "observation": "Month view separately receives today={new Date()}."
         }
       ],
-      "next_change": "Pass businessDate through the section props and use it for all Today comparisons and the month-view date.",
-      "validation_plan": "Render with browser/studio dates differing and confirm Today navigation and every view highlight the same date.",
-      "scope_constraints": "Keep session wall-clock times, schedule mutations, permissions and existing range-loading behavior unchanged.",
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/10-schedule-rendering-and-operations-tests.md"
+      "current_evidence": [
+        {
+          "path": "frontend/src/components/schedule/schedule-page-section.tsx",
+          "line": 495,
+          "observation": "Schedule display receives the same studio businessDate used by navigation. Week Today and month today use it; the mounted test freezes the browser on a different date."
+        }
+      ]
     },
     {
       "id": "FC2-07",
@@ -8784,19 +8823,30 @@
       "id": "FC2-17",
       "title": "Schedule computes identical lane layouts repeatedly",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "The same date entries are laid out separately for width calculation, screen rendering and print. This is useful small cleanup without measured performance evidence.",
+      "disposition": "fixed",
+      "reason": "One memoized layout per date supplies lane width, screen rendering and print order. The layout algorithm and click handler remain unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "8c3fdf0dd0bdf1109f1989c9b5105e8bc065fc38",
       "source_paths": [
         "frontend/src/components/schedule/schedule-page-section.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        173
+      ],
       "track": "Sol",
       "root_cause": "repeated-calendar-layout",
       "collapse_with": [],
-      "current_evidence": [
+      "next_change": "No remaining scoped change. Keep mutation/date authority and the documented fixture proof limits intact.",
+      "validation_plan": "Confirm unchanged overlap lanes, minimum widths and print entry ordering with existing fixtures.",
+      "scope_constraints": [
+        "Layout algorithm semantics",
+        "Distinct screen and print presentations",
+        "Accessible target sizes"
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "delegated_batch": "docs/remediation/delegated/10-schedule-rendering-and-operations-tests.md",
+      "normalization_evidence": [
         {
           "path": "frontend/src/components/schedule/schedule-page-section.tsx",
           "line": 224,
@@ -8813,15 +8863,14 @@
           "observation": "Print recomputes the same layout to obtain ordered entries."
         }
       ],
-      "next_change": "Memoize layouts by date from entriesByDate and reuse them for width, screen and print.",
-      "validation_plan": "Confirm unchanged overlap lanes, minimum widths and print entry ordering with existing fixtures.",
-      "scope_constraints": [
-        "Layout algorithm semantics",
-        "Distinct screen and print presentations",
-        "Accessible target sizes"
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/10-schedule-rendering-and-operations-tests.md"
+      "verification": "See schedule-rendering-verification.md. Worker full frontend914/lint/TypeScript passed; independent reviewer19focused and6existing shared-helper tests passed. Fixed-clock case and root rebase checks passed; final-head review/CI govern merge.",
+      "current_evidence": [
+        {
+          "path": "frontend/src/components/schedule/schedule-page-section.tsx",
+          "line": 184,
+          "observation": "One memoized layout per date supplies lane width, screen rendering and print order. The layout algorithm and click handler remain unchanged."
+        }
+      ]
     },
     {
       "id": "FC3-01",
@@ -12342,15 +12391,15 @@
     }
   },
   "current_counts": {
-    "pending": 203,
-    "fixed": 60,
+    "pending": 198,
+    "fixed": 65,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 63,
+    "Sol": 58,
     "Astra": 140
   }
 }
