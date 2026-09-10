@@ -274,7 +274,8 @@ DECLARE
     studio UUID := gen_random_uuid(); actor UUID := gen_random_uuid(); run_id UUID; legacy_id UUID;
     candidate RECORD; finished RECORD; saved JSONB; original JSONB;
     program_id UUID := gen_random_uuid(); ladder_id UUID := gen_random_uuid(); rank_id UUID := gen_random_uuid();
-    program_result JSONB; belt_result JSONB; ranks JSONB;
+    program_result JSONB; belt_result JSONB; rank_result JSONB; unscoped_result JSONB; ranks JSONB;
+    foreign_studio UUID := gen_random_uuid(); foreign_program UUID := gen_random_uuid();
     result JSONB := '{"total_rows":1,"valid_rows":0,"error_rows":1,"imported_count":0,"non_critical_errors":[]}'::JSONB;
     rejected BOOLEAN;
 BEGIN
@@ -318,11 +319,37 @@ BEGIN
     END IF;
     ranks := jsonb_build_array(jsonb_build_object('key','white','id',rank_id,'name','White','color_hex','#ffffff'));
     belt_result := public.prepare_student_import_belts_v1(studio,run_id,'token',program_id,ladder_id,ranks,TRUE);
+    rank_result := public.bind_student_import_rank_v1(studio,run_id,'token',program_id,'selected white',rank_id);
+    IF rank_result->>'rank_id' IS DISTINCT FROM rank_id::TEXT
+       OR rank_result->>'context_program_id' IS DISTINCT FROM program_id::TEXT
+       OR rank_result->'created' IS DISTINCT FROM 'false'::JSONB THEN
+        RAISE EXCEPTION 'Existing rank selection did not bind the original identity';
+    END IF;
+    INSERT INTO public.studios(id,name,slug,owner_id) VALUES(foreign_studio,'Foreign import',foreign_studio::TEXT,actor);
+    INSERT INTO public.programs(id,studio_id,name) VALUES(foreign_program,foreign_studio,'Foreign program');
+    rejected := FALSE;
+    BEGIN PERFORM public.bind_student_import_rank_v1(foreign_studio,run_id,'token',foreign_program,'foreign',rank_id);
+    EXCEPTION WHEN OTHERS THEN rejected := SQLERRM LIKE '%claim is no longer active%'; END;
+    IF NOT rejected THEN RAISE EXCEPTION 'Foreign studio selected an import rank'; END IF;
+    rejected := FALSE;
+    BEGIN PERFORM public.bind_student_import_rank_v1(studio,run_id,'token',foreign_program,'foreign',rank_id);
+    EXCEPTION WHEN foreign_key_violation THEN rejected := TRUE; END;
+    IF NOT rejected THEN RAISE EXCEPTION 'Foreign program selected an import rank'; END IF;
+    UPDATE public.belt_ladders SET program_id=NULL WHERE id=ladder_id;
+    unscoped_result := public.bind_student_import_rank_v1(studio,run_id,'token',program_id,'unscoped',rank_id);
+    IF unscoped_result->'program_id' IS DISTINCT FROM 'null'::JSONB
+       OR unscoped_result->>'context_program_id' IS DISTINCT FROM program_id::TEXT
+       OR NOT EXISTS(SELECT 1 FROM public.belt_ladders l WHERE l.id=ladder_id AND l.program_id IS NULL)
+       OR (SELECT count(*) FROM public.audit_logs WHERE studio_id=studio) IS DISTINCT FROM 2 THEN
+        RAISE EXCEPTION 'Selecting an unscoped rank repaired configuration or emitted an audit';
+    END IF;
+    UPDATE public.belt_ladders SET program_id=(program_result->>'program_id')::UUID WHERE id=ladder_id;
     UPDATE public.programs SET name='Staff program',archived_at=now() WHERE id=program_id;
     UPDATE public.belt_ladders SET name='Staff ladder',sub_rank_term='Keep' WHERE id=ladder_id;
     UPDATE public.belt_ranks SET name='Staff rank',display_order=9,min_classes=42 WHERE id=rank_id;
     IF public.prepare_student_import_program_v1(studio,run_id,'token','owned',program_id,'Owned program',ladder_id,FALSE) IS DISTINCT FROM program_result
        OR public.prepare_student_import_belts_v1(studio,run_id,'token',program_id,ladder_id,ranks,FALSE) IS DISTINCT FROM belt_result
+       OR public.bind_student_import_rank_v1(studio,run_id,'token',program_id,'selected white',rank_id) IS DISTINCT FROM rank_result
        OR NOT EXISTS(SELECT 1 FROM public.programs WHERE id=program_id AND name='Staff program' AND archived_at IS NOT NULL)
        OR NOT EXISTS(SELECT 1 FROM public.belt_ladders WHERE id=ladder_id AND name='Staff ladder' AND sub_rank_term='Keep')
        OR NOT EXISTS(SELECT 1 FROM public.belt_ranks WHERE id=rank_id AND name='Staff rank' AND display_order=9 AND min_classes=42) THEN
@@ -332,6 +359,7 @@ BEGIN
     DELETE FROM public.programs WHERE id=program_id;
     IF public.prepare_student_import_program_v1(studio,run_id,'token','owned',program_id,'Owned program',ladder_id,FALSE) IS DISTINCT FROM program_result
        OR public.prepare_student_import_belts_v1(studio,run_id,'token',program_id,ladder_id,ranks,FALSE) IS DISTINCT FROM belt_result
+       OR public.bind_student_import_rank_v1(studio,run_id,'token',program_id,'selected white',rank_id) IS DISTINCT FROM rank_result
        OR EXISTS(SELECT 1 FROM public.programs WHERE id=program_id)
        OR EXISTS(SELECT 1 FROM public.belt_ladders WHERE id=ladder_id)
        OR EXISTS(SELECT 1 FROM public.belt_ranks WHERE id=rank_id)
@@ -341,7 +369,7 @@ BEGIN
     PERFORM public.finish_student_import_run(run_id,'token','failed',NULL,'Retryable interruption');
     SELECT * INTO candidate FROM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','modern','hash','retry',45);
     IF candidate.claim_status IS DISTINCT FROM 'claimed' OR (candidate.run_row->>'id')::UUID IS DISTINCT FROM run_id
-       OR jsonb_array_length(candidate.run_row->'receipts') IS DISTINCT FROM 4 THEN
+       OR jsonb_array_length(candidate.run_row->'receipts') IS DISTINCT FROM 6 THEN
         RAISE EXCEPTION 'Failed-run recovery lost its setup receipt or run identity';
     END IF;
     UPDATE public.student_import_runs SET processing_started_at=now()-INTERVAL '1 hour' WHERE id=run_id;

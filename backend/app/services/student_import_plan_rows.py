@@ -75,7 +75,7 @@ def resolve_belt_rank_reference(
         rank_id = confirmed["rank_id"]
         current = belt_rank_lookup["rank_meta"].get(rank_id)
         if (current is None or current.get("ladder_id") != confirmed["ladder_id"]
-                or current.get("program_id") != resolved_program_id):
+                or current.get("program_id") != confirmed["program_id"]):
             return None, "unavailable", "The belt confirmed by this import is no longer available in its program. Reconcile the saved setup before importing this row."
         return rank_id, None, None
     if raw_program_value and not resolved_program_id:

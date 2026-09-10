@@ -60,53 +60,66 @@ def finish(params):
 
 def test_unknown_row_failure_retries_same_key_and_preloads_original_outcomes():
     db = ScriptedImportDb()
+    db.tables["programs"][0]["name"] = "Unassigned"
+    ladder, rank = "55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666"
+    db.tables["belt_ladders"] = [{"id": ladder, "studio_id": STUDIO, "program_id": OTHER, "name": "BJJ"}]
+    db.tables["belt_ranks"] = [{"id": rank, "studio_id": STUDIO, "ladder_id": ladder, "name": "Green"}]
     rows = [
-        {"First": "Ava", "Last": "Nguyen", "Program": "Karate", "Status": "current", "Belt": "Azure"},
-        {"First": "Mina", "Last": "Nguyen", "Program": "BJJ"},
+        {"First": "Ava", "Last": "Nguyen", "Status": "current", "Belt": "Azure"},
+        {"First": "Mina", "Last": "Nguyen", "Program": "BJJ", "Belt": "Green"},
+        {"First": "Sam", "Last": "Nguyen", "Program": "BJJ", "Belt": "Green"},
         {"Last": "Invalid", "Program": "Do not create"},
     ]
-    karate, bjj = selected_program(PROGRAM, "Karate"), selected_program(OTHER, "BJJ")
+    unassigned, bjj = selected_program(PROGRAM, "Unassigned"), selected_program(OTHER, "BJJ")
+    rank_binding = {"rank_id": rank, "name": "Green", "ladder_id": ladder, "ladder_name": "BJJ",
+                    "program_id": OTHER, "context_program_id": OTHER, "created": False, "warning": None}
     db.responses = [("claim_student_import_run_v2", claim()),
-                    ("prepare_student_import_program_v1", karate), ("prepare_student_import_program_v1", bjj),
-                    ("import_student_row_atomic", row_success),
+                    ("prepare_student_import_program_v1", unassigned), ("prepare_student_import_program_v1", bjj),
+                    ("bind_student_import_rank_v1", rank_binding),
+                    ("import_student_row_atomic", row_success), ("import_student_row_atomic", row_success),
                     ("import_student_row_atomic", RuntimeError("private_database_failure")),
                     ("finish_student_import_run", [{"updated": True}])]
     with pytest.raises(HTTPException) as error:
-        db.execute_import(rows, create_missing_programs=True)
+        db.execute_import(rows, create_missing_programs=True, create_missing_belts=True)
     assert error.value.status_code == 500 and error.value.detail["code"] == "STUDENT_IMPORT_FAILED"
     assert "private_database_failure" not in str(error.value.detail)
     assert db.calls[-1][1]["p_status"] == "failed" and db.calls[-1][1]["p_result_json"] is None
     bindings = [params for name, params in db.calls if name == "prepare_student_import_program_v1"]
-    assert [(p["p_key"], p["p_program_id"], p["p_create_program"], p["p_ladder_id"]) for p in bindings] == [
-        ("karate", PROGRAM, False, None), ("bjj", OTHER, False, None),
+    assert [(p["p_key"], p["p_create_program"], p["p_unassigned"]) for p in bindings] == [
+        ("__unassigned__", True, True), ("bjj", False, False),
     ]
-    first_row = next(params for name, params in db.calls if name == "import_student_row_atomic")
-    assert first_row["p_row_number"] == 2 and first_row["p_program_ids"] == [PROGRAM]
-    assert first_row["p_student"]["notes"] == "Imported current belt (unresolved): Azure"
-    receipt = {"kind": "student", "key": "2", "result": {
-        "student_id": first_row["p_student"]["id"], "guardian_imported": False,
-        "outcome": first_row["p_student"]["_import_outcome"],
-    }}
-    # Changed reference data must not revalidate or rewrite the already committed row.
+    assert bindings[1]["p_program_id"] == OTHER and bindings[1]["p_ladder_id"] is None
+    first_writes = [params for name, params in db.calls if name == "import_student_row_atomic"]
+    assert first_writes[0]["p_row_number"] == 2 and first_writes[0]["p_program_ids"] == [PROGRAM]
+    assert first_writes[0]["p_student"]["notes"] == "Imported current belt (unresolved): Azure"
+    receipts = [{"kind": "student", "key": str(row["p_row_number"]), "result": {
+        "student_id": row["p_student"]["id"], "guardian_imported": False,
+        "outcome": row["p_student"]["_import_outcome"],
+    }} for row in first_writes[:2]]
+    receipts.extend([
+        {"kind": "program", "key": "__unassigned__", "result": unassigned},
+        {"kind": "program", "key": "bjj", "result": bjj},
+        {"kind": "rank", "key": f"{OTHER}:green", "result": rank_binding},
+    ])
+    # Completed rows and selected identities survive later configuration edits.
     db.tables["programs"][0].update(name="Renamed", archived_at="2026-09-10")
     db.tables["programs"][1]["name"] = "Renamed BJJ"
-    db.responses = [("claim_student_import_run_v2", claim([
-                        receipt, {"kind": "program", "key": "karate", "result": karate},
-                        {"kind": "program", "key": "bjj", "result": bjj},
-                    ])),
+    db.tables["belt_ranks"][0]["name"] = "Jade"
+    db.responses = [("claim_student_import_run_v2", claim(receipts)),
                     ("import_student_row_atomic", row_success), ("finish_student_import_run", finish)]
-    result = db.execute_import(rows, create_missing_programs=True)
-    assert result.imported_count == 2 and result.error_rows == 1
+    result = db.execute_import(rows, create_missing_programs=True, create_missing_belts=True)
+    assert result.imported_count == 3 and result.error_rows == 1
     assert result.normalized_status_count == 1 and result.imported_without_belt_count == 1
     assert result.execution_status == "completed_with_warnings" and result.non_critical_errors == ["Frozen audit warning"]
     writes = [params for name, params in db.calls if name == "import_student_row_atomic"]
-    assert [params["p_row_number"] for params in writes] == [2, 3, 3]
-    assert writes[1]["p_student"]["id"] == writes[2]["p_student"]["id"]
-    assert writes[2]["p_program_ids"] == [OTHER] and result.created_programs == []
+    assert [params["p_row_number"] for params in writes] == [2, 3, 4, 4]
+    assert writes[2]["p_student"]["id"] == writes[3]["p_student"]["id"]
+    assert writes[3]["p_program_ids"] == [OTHER] and writes[3]["p_student"]["current_belt_rank_id"] == rank
+    assert result.created_programs == [] and result.created_belts == []
     claims = [params for name, params in db.calls if name == "claim_student_import_run_v2"]
     assert claims[0]["p_request_hash"] == claims[1]["p_request_hash"]
     assert all(params["p_idempotency_key"] == "same-key" for params in claims)
-    assert writes[2]["p_processing_token"] == claims[1]["p_processing_token"]
+    assert writes[3]["p_processing_token"] == claims[1]["p_processing_token"]
     assert sum(query["table"] == "programs" for query in db.query_log) == 2
     assert all(not query["insert"] and not query["update"] and not query["upsert"] for query in db.query_log)
     assert not db.responses
@@ -135,7 +148,7 @@ def test_setup_batches_requested_belts_and_excludes_rejected_rows():
         assert [rank["key"] for rank in params["p_ranks"]] == ["white", "blue"]
         assert all(rank["existing_id"] is None for rank in params["p_ranks"])
         return {"ladder": {"ladder_id": params["p_ladder_id"], "name": "BJJ", "created": True}, "ranks": [
-            {"rank_id": rank["id"], "name": rank["name"], "ladder_id": params["p_ladder_id"], "ladder_name": "BJJ", "created": True}
+            {"rank_id": rank["id"], "name": rank["name"], "ladder_id": params["p_ladder_id"], "ladder_name": "BJJ", "program_id": OTHER, "context_program_id": OTHER, "created": True}
             for rank in params["p_ranks"]
         ]}
     db.responses = [("claim_student_import_run_v2", claim()),

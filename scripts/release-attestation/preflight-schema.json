@@ -714,7 +714,7 @@
       "namespace": "public",
       "functionName": "prepare_student_import_belts_v1",
       "signature": "public.prepare_student_import_belts_v1(uuid,uuid,text,uuid,uuid,jsonb,boolean)",
-      "expected": "c8b3740ccd70301f7eb96ac614805df3defd3d83ac4874f501c605acc564dd22",
+      "expected": "7b61469ec2de918d7f79effa3a52c590b3eef9416c2ba716f1b6d9cfc91669bb",
       "acl": [
         [
           "postgres",
@@ -961,6 +961,34 @@
       "failures": [
         "import_rank_manifest_definition_v45"
       ]
+    },
+    "import_public_bind_student_import_rank_v1_v45": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "bind_student_import_rank_v1",
+      "signature": "public.bind_student_import_rank_v1(uuid,uuid,text,uuid,text,uuid)",
+      "expected": "e428fbeb91f8457bf717917bd93685531188d49d25b003eb2bd6ab7f184f2e68",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "jsonb",
+      "configuration": [
+        "search_path=pg_catalog"
+      ]
     }
   },
   "states": {
@@ -1077,6 +1105,7 @@
         "import_public_claim_student_import_run_v2_v45",
         "import_public_finish_student_import_run_v45",
         "import_public_import_student_row_atomic_v45",
+        "import_public_bind_student_import_rank_v1_v45",
         "import_public_prepare_student_import_belts_v1_v45",
         "import_public_prepare_student_import_program_v1_v45",
         "import_receipts_v45",

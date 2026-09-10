@@ -60,6 +60,26 @@ class StudentImportSetupWriter:
             key = normalize_header(reference) if reference else "__unassigned__"
             row["resolved_program_id"] = programs[key]["program_id"]
 
+        confirmed_ranks = receipts.setdefault("rank", {})
+        for row in unfinished:
+            if not row.get("resolved_belt_rank_id"):
+                continue
+            rank_key = normalize_header(row["data"]["current_belt_rank_id"])
+            key = f"{row['resolved_program_id']}:{rank_key}"
+            if key not in confirmed_ranks:
+                result = first_rpc_row(execute_required_rpc(self.supabase, "bind_student_import_rank_v1", {
+                    "p_studio_id": studio_id,
+                    "p_import_run_id": import_run_id,
+                    "p_processing_token": processing_token,
+                    "p_program_id": row["resolved_program_id"],
+                    "p_key": rank_key,
+                    "p_rank_id": row["resolved_belt_rank_id"],
+                }))
+                if not result or not result.get("rank_id"):
+                    raise RuntimeError("Import rank selection returned no confirmed identity")
+                confirmed_ranks[key] = result
+            row["resolved_belt_rank_id"] = confirmed_ranks[key]["rank_id"]
+
         pending_belts = [row for row in unfinished if row.get("pending_belt_name")]
         if not pending_belts:
             return
@@ -68,7 +88,6 @@ class StudentImportSetupWriter:
         for row in pending_belts:
             by_program[row["resolved_program_id"]].append(row)
         confirmed_ladders = receipts.setdefault("ladder", {})
-        confirmed_ranks = receipts.setdefault("rank", {})
         default_ladders = {value["program_id"]: value["ladder_id"] for value in programs.values() if value.get("ladder_id")}
         for program_id, rows in by_program.items():
             current_ladders = lookup["ladders_by_program"].get(program_id, [])
@@ -116,10 +135,10 @@ class StudentImportSetupWriter:
                 raise RuntimeError("Import belt setup returned incomplete outcomes")
             confirmed_ladders[program_id] = result["ladder"]
             for request, rank in zip(ordered, result["ranks"], strict=True):
-                confirmed_ranks[f"{ladder_id}:{request['key']}"] = rank
+                confirmed_ranks[f"{program_id}:{request['key']}"] = rank
             for row in rows:
                 if row["is_valid"]:
-                    key = f"{ladder_id}:{normalize_header(row['pending_belt_name'])}"
+                    key = f"{program_id}:{normalize_header(row['pending_belt_name'])}"
                     row["resolved_belt_rank_id"] = confirmed_ranks[key]["rank_id"]
 
     @staticmethod

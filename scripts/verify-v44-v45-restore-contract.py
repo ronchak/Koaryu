@@ -120,7 +120,7 @@ def main(arguments):
         check(database, "V44_CLEAR_STATE_SQL", "EXPECTED_V44_CLEAR_STATE")
         require(local.sql(database, "SELECT count(*)=139 AND max(version)='20260910135133' FROM supabase_migrations.schema_migrations;") == "t",
                 "Restore requires the actual V44 history")
-        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v26()') IS NULL AND to_regprocedure('public.claim_student_import_run_v2(uuid,uuid,text,text,text,text,integer)') IS NULL AND to_regprocedure('public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean,boolean)') IS NULL AND to_regprocedure('public.prepare_student_import_belts_v1(uuid,uuid,text,uuid,uuid,jsonb,boolean)') IS NULL;") == "t",
+        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v26()') IS NULL AND to_regprocedure('public.claim_student_import_run_v2(uuid,uuid,text,text,text,text,integer)') IS NULL AND to_regprocedure('public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean,boolean)') IS NULL AND to_regprocedure('public.prepare_student_import_belts_v1(uuid,uuid,text,uuid,uuid,jsonb,boolean)') IS NULL AND to_regprocedure('public.bind_student_import_rank_v1(uuid,uuid,text,uuid,text,uuid)') IS NULL;") == "t",
                 "Restore predecessor already contains V45 functions")
 
     predecessor("postgres")

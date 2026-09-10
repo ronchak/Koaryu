@@ -879,7 +879,8 @@
       "absentFunctions": [
         "public.claim_student_import_run_v2(uuid,uuid,text,text,text,text,integer)",
         "public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean,boolean)",
-        "public.prepare_student_import_belts_v1(uuid,uuid,text,uuid,uuid,jsonb,boolean)"
+        "public.prepare_student_import_belts_v1(uuid,uuid,text,uuid,uuid,jsonb,boolean)",
+        "public.bind_student_import_rank_v1(uuid,uuid,text,uuid,text,uuid)"
       ],
       "semanticManifests": [
         "private.koaryu_release_critical_surface_manifest_v16()",

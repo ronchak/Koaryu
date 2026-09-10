@@ -1,6 +1,6 @@
 # Import retry ownership verification
 
-PR178 remains a draft. Its first independent review found a missing existing-program binding; that correction is now being verified. OPS2-04, OPS2-05, OPS2-06, OPS2-07 and BT5-02 remain pending until the final change is reviewed and merged. PROGRAM-IMPORT-01 records the separate unanswered product choice for a program-specific belt supplied without Program.
+PR178 remains a draft. Its first independent review found a missing existing-program binding. The reviewer approved that correction at `216f23a`; root then reproduced the equivalent existing-rank gap and extended the same receipt boundary. That extension awaits review. OPS2-04, OPS2-05, OPS2-06, OPS2-07 and BT5-02 remain pending until the final change is reviewed and merged. PROGRAM-IMPORT-01 records the separate unanswered product choice for a program-specific belt supplied without Program.
 
 ## Result under review
 
@@ -20,7 +20,7 @@ The V44-to-V45 restore proof preserves existing students, independent program da
 
 The maintained SQL contracts cover edited/deleted replay, first-rank preservation, actual foreign student and guardian collisions, receipt-failure rollback, setup replay and finalization warnings. A separate disposable proof confirmed that the real clear RPC cascades owned receipts while direct service-role receipt deletion remains forbidden and foreign records stay unchanged.
 
-The student-writer concurrency runner retains five rank cases and adds eight import cases: clear/import in both orders, Auth deletion/import in both orders, first-rank setup against the rank-plan student's lock, and end-of-write progress for row/program/belt commands. All 13 targeted cases passed with observed blocking before settlement. Auth deletion here means actual SQL foreign-key cascades, not a GoTrue API test.
+The student-writer concurrency runner retains five rank cases and adds ten import cases: clear/import in both orders, Auth deletion/import in both orders, first-rank setup against the rank-plan student's lock, selection versus the rank-plan writer in both orders, and end-of-write progress for row/program/belt commands. All 15 targeted cases passed with observed blocking before settlement. Auth deletion here means actual SQL foreign-key cascades, not a GoTrue API test.
 
 ## Test maintenance
 
@@ -28,17 +28,17 @@ The import Python tests shrink from 1,129 to 870 lines. The copied claim state m
 
 Three frontend live-import source assertions are replaced by a real StoreProvider test. It confirms a saved import, fails belt refresh before that path can refresh eligibility, then observes the separate eligibility refresh. The fixture defaults were corrected to preserve the older mounted tests. All 40 tests in the two affected files passed. A private negative control removed the live invalidation callback, caused the new test to fail, and restored the original runtime bytes. The one preview sequence guard and unrelated bulk/lead guards remain.
 
-Release-tool tests keep their 66 cases by extending existing predecessor and corruption matrices. They caught a missing V44 predecessor entry in the runtime; that entry is fixed and all 66 passed. Across the changed Python, frontend, SQL, release-tool and concurrency tests plus the new restore fixtures, authored test and local-verifier code shrinks by 65 lines. Generated restore files grow by 265 lines, so those combined repository files grow by 200 lines; the maintained authoring surface is smaller. The generated V45 restore artifact is additional derived output, not another hand-maintained restore implementation. All ten historical restore scripts reproduce their original bytes.
+Release-tool tests keep their 66 cases by extending existing predecessor and corruption matrices. They caught a missing V44 predecessor entry in the runtime; that entry is fixed and all 66 passed. Across the changed Python, frontend, SQL, release-tool and concurrency tests plus the new restore fixtures, authored test and local-verifier code shrinks by 159 lines. Generated restore files grow by 265 lines, so those combined repository files grow by 106 lines; the maintained authoring surface is smaller. The generated V45 restore artifact is additional derived output, not another hand-maintained restore implementation. All ten historical restore scripts reproduce their original bytes.
 
 ## Current check status
 
 - Actual V45 migration, retained readiness and focused SQL contracts: passed.
-- Targeted student-writer concurrency: 13 passed.
+- Targeted student-writer concurrency: 15 passed, including existing-rank selection versus the real rank-plan writer in both orders.
 - V44-to-V45 restore: passed; full-suite evidence is being refreshed with final maintained contracts.
 - Backend: the earlier full run passed 1,886 tests. After V45 metadata changes, one obsolete test-runner filename failed; its targeted guard checks now pass. The final run after dead-code removal passed all 1,886 tests.
 - Frontend affected files: 40 passed, with the missing-callback negative control detected.
 - Release tool: 66 passed. Generator: eight groups and historical reproduction passed.
-- Full local database suite: the first assembled run reached final checks and exposed a stale prior-version rank-manifest literal, which was corrected. The next run passed all migrations, restores and contracts and was stopped during negative checks after independent review identified the program-binding correction. The corrected candidate requires a complete run and follow-up review before merge.
+- Full local database suite: the first assembled run reached final checks and exposed a stale prior-version rank-manifest literal, which was corrected. The next run passed all 140 migrations and the restore checks, then was stopped during negative checks after independent review identified the program-binding correction. Neither run reached the 52-file contract loop; the earlier claim that those contracts passed was incorrect. The corrected candidate requires a complete run and follow-up review before merge.
 
 Early failures were retained as evidence: one draft SQL edit removed a guardian-block terminator and was corrected; a restore declaration incorrectly classified changed import manifests as unchanged; private test directories and unconfirmed Auth fixtures were corrected without weakening target or last-admin guards. These were not production failures. One generated whitespace-only line remains byte-identical to the inherited renderer format.
 
@@ -47,3 +47,7 @@ No production migration, deployment, financial backfill, provider change, mail o
 ## Independent review correction
 
 The fresh Astra reviewer reproduced a retry splitting remaining students into a newly created program after the original existing program was renamed. Root independently reproduced it with the real executor and scripted server responses. Every selected program reference now gets an immutable receipt, including existing programs and imports that create no belts. SQL selection uses an explicit ID and refuses missing, archived or foreign targets instead of falling back to a matching name. The existing two-attempt regression now checks a renamed program and fails against the prior writer. The revised RPC and assembled migration passed their focused SQL contracts; final restore, full-suite and reviewer confirmation are pending.
+
+Root reproduced rank renaming causing a retry to create a replacement rank. Existing selections now receive immutable rank receipts before student writes. The composed executor test preserves both program and rank identity across partial recovery. Service-role SQL covers edited/deleted replay, studio/program refusal and unscoped-ladder preservation. All 1,886 backend tests and 5,471 subtests passed after this extension. The assembled migration and 15 real two-session cases passed.
+
+CI at `216f23a` also exposed stale V34/V36 contract release matrices that stopped at V44. Those duplicate operational checks are consolidated under the pinned generated preflight; payment behavior and authorization checks remain. This is a test-authoring defect, not evidence of a successful full database run.

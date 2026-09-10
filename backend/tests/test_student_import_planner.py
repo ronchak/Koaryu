@@ -148,7 +148,8 @@ def test_archived_and_confirmed_setup_targets_are_not_recreated():
     receipts = {
         "program": {"bjj": {"program_id": program_id}},
         "ladder": {program_id: {"ladder_id": ladder_id}},
-        "rank": {f"{ladder_id}:green": {"rank_id": rank_id, "ladder_id": ladder_id}},
+        "rank": {f"{program_id}:green": {"rank_id": rank_id, "ladder_id": ladder_id,
+                                         "program_id": program_id, "context_program_id": program_id}},
     }
     mapping = {"First": "legal_first_name", "Last": "legal_last_name", "Program": "program_id", "Belt": "current_belt_rank_id"}
     raw = {"First": "Ava", "Last": "Nguyen", "Program": "BJJ", "Belt": "Green"}

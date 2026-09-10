@@ -157,14 +157,14 @@ class StudentImportPlanner:
         program_lookup = self.build_program_lookup(studio_id, receipts.get("program")) if studio_id and unfinished else None
         belt_rank_lookup = self.build_belt_rank_lookup(studio_id) if studio_id and unfinished else None
         if belt_rank_lookup is not None:
-            ladder_programs = {
-                receipt["ladder_id"]: program_id
-                for program_id, receipt in receipts.get("ladder", {}).items()
-            }
             belt_rank_lookup["confirmed_ranks"] = {
-                (ladder_programs[receipt["ladder_id"]], key.split(":", 1)[1]): receipt
+                (receipt["context_program_id"], key.split(":", 1)[1]): receipt
                 for key, receipt in receipts.get("rank", {}).items()
             }
+            unassigned = receipts.get("program", {}).get("__unassigned__", {}).get("program_id")
+            for key, receipt in receipts.get("rank", {}).items():
+                if receipt["context_program_id"] == unassigned:
+                    belt_rank_lookup["confirmed_ranks"][(None, key.split(":", 1)[1])] = receipt
 
         planned_rows: list[dict[str, Any]] = []
         for i, raw_row in enumerate(rows, start=2):

@@ -721,6 +721,7 @@ REVOKE ALL ON FUNCTION public.prepare_student_import_program_v1(UUID, UUID, TEXT
 GRANT EXECUTE ON FUNCTION public.prepare_student_import_program_v1(UUID, UUID, TEXT, TEXT, UUID, TEXT, UUID, BOOLEAN, BOOLEAN)
     TO service_role;
 
+-- Private development prototype. One requested ladder and its ordered missing ranks.
 CREATE FUNCTION public.prepare_student_import_belts_v1(
     p_studio_id UUID, p_import_run_id UUID, p_processing_token TEXT,
     p_program_id UUID, p_ladder_id UUID, p_ranks JSONB, p_create_ladder BOOLEAN DEFAULT FALSE
@@ -762,12 +763,12 @@ BEGIN
         SELECT 1 FROM jsonb_array_elements(p_ranks) request
         WHERE NOT EXISTS (SELECT 1 FROM private.student_import_receipts receipt
             WHERE receipt.import_run_id = p_import_run_id AND receipt.kind = 'rank'
-              AND receipt.key = p_ladder_id::TEXT || ':' || (request->>'key'))
+              AND receipt.key = p_program_id::TEXT || ':' || (request->>'key'))
     ) THEN
         SELECT jsonb_agg(receipt.result_json ORDER BY request.ordinality) INTO v_results
         FROM jsonb_array_elements(p_ranks) WITH ORDINALITY request(value, ordinality)
         JOIN private.student_import_receipts receipt ON receipt.import_run_id = p_import_run_id
-            AND receipt.kind = 'rank' AND receipt.key = p_ladder_id::TEXT || ':' || (request.value->>'key');
+            AND receipt.kind = 'rank' AND receipt.key = p_program_id::TEXT || ':' || (request.value->>'key');
         RETURN jsonb_build_object('ladder', v_ladder_receipt, 'ranks', v_results);
     END IF;
 
@@ -815,7 +816,7 @@ BEGIN
            OR NULLIF(btrim(v_request->>'name'), '') IS NULL OR NULLIF(v_request->>'id', '') IS NULL THEN
             RAISE EXCEPTION 'Import rank details are incomplete.' USING ERRCODE = '22023';
         END IF;
-        v_key := p_ladder_id::TEXT || ':' || (v_request->>'key');
+        v_key := p_program_id::TEXT || ':' || (v_request->>'key');
         SELECT result_json INTO v_receipt FROM private.student_import_receipts
         WHERE import_run_id = p_import_run_id AND kind = 'rank' AND key = v_key;
         IF FOUND THEN
@@ -849,7 +850,8 @@ BEGIN
             END;
         END IF;
         v_receipt := jsonb_build_object('rank_id', v_rank.id, 'name', v_rank.name,
-            'ladder_id', p_ladder_id, 'ladder_name', v_ladder.name, 'created', v_rank_created, 'warning', v_warning);
+            'ladder_id', p_ladder_id, 'ladder_name', v_ladder.name, 'program_id', p_program_id,
+            'context_program_id', p_program_id, 'created', v_rank_created, 'warning', v_warning);
         INSERT INTO private.student_import_receipts(import_run_id, kind, key, result_json)
         VALUES (p_import_run_id, 'rank', v_key, v_receipt);
     END LOOP;
@@ -874,7 +876,7 @@ BEGIN
     SELECT jsonb_agg(receipt.result_json ORDER BY request.ordinality) INTO v_results
     FROM jsonb_array_elements(p_ranks) WITH ORDINALITY request(value, ordinality)
     JOIN private.student_import_receipts receipt ON receipt.import_run_id = p_import_run_id
-        AND receipt.kind = 'rank' AND receipt.key = p_ladder_id::TEXT || ':' || (request.value->>'key');
+        AND receipt.kind = 'rank' AND receipt.key = p_program_id::TEXT || ':' || (request.value->>'key');
     RETURN jsonb_build_object('ladder', v_ladder_receipt, 'ranks', v_results);
 END;
 $$;
@@ -882,6 +884,60 @@ ALTER FUNCTION public.prepare_student_import_belts_v1(UUID, UUID, TEXT, UUID, UU
 REVOKE ALL ON FUNCTION public.prepare_student_import_belts_v1(UUID, UUID, TEXT, UUID, UUID, JSONB, BOOLEAN)
     FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.prepare_student_import_belts_v1(UUID, UUID, TEXT, UUID, UUID, JSONB, BOOLEAN) TO service_role;
+
+CREATE FUNCTION public.bind_student_import_rank_v1(
+    p_studio_id UUID, p_import_run_id UUID, p_processing_token TEXT,
+    p_program_id UUID, p_key TEXT, p_rank_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path = pg_catalog AS $$
+DECLARE
+    v_run public.student_import_runs%ROWTYPE;
+    v_ladder public.belt_ladders%ROWTYPE;
+    v_rank public.belt_ranks%ROWTYPE;
+    v_ladder_id UUID;
+    v_result JSONB;
+    v_key TEXT := p_program_id::TEXT || ':' || p_key;
+BEGIN
+    v_run := private.lock_student_import_run(p_studio_id, p_import_run_id, p_processing_token);
+    IF NOT v_run.receipts_enabled OR p_program_id IS NULL OR p_rank_id IS NULL
+       OR p_key IS NULL OR btrim(p_key) = '' THEN
+        RAISE EXCEPTION 'An owned import rank selection is required.' USING ERRCODE = '22023';
+    END IF;
+    SELECT result_json INTO v_result FROM private.student_import_receipts
+    WHERE import_run_id = p_import_run_id AND kind = 'rank' AND key = v_key;
+    IF FOUND THEN RETURN v_result; END IF;
+    PERFORM 1 FROM public.programs WHERE id = p_program_id AND studio_id = p_studio_id AND archived_at IS NULL;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'The selected import program is unavailable.' USING ERRCODE = '23503';
+    END IF;
+    SELECT ladder_id INTO v_ladder_id FROM public.belt_ranks WHERE id = p_rank_id AND studio_id = p_studio_id;
+    -- Read-only selection takes no student lock and follows the rank writer's
+    -- ladder-before-rank order. It never attaches an unscoped ladder.
+    SELECT * INTO v_ladder FROM public.belt_ladders
+    WHERE id = v_ladder_id AND studio_id = p_studio_id FOR SHARE;
+    IF NOT FOUND OR (v_ladder.program_id IS NOT NULL AND v_ladder.program_id <> p_program_id) THEN
+        RAISE EXCEPTION 'The selected import rank is unavailable in this program.' USING ERRCODE = '23503';
+    END IF;
+    SELECT * INTO v_rank FROM public.belt_ranks
+    WHERE id = p_rank_id AND studio_id = p_studio_id AND ladder_id = v_ladder_id FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'The selected import rank is unavailable in this program.' USING ERRCODE = '23503';
+    END IF;
+    v_result := jsonb_build_object('rank_id', v_rank.id, 'name', v_rank.name,
+        'ladder_id', v_ladder.id, 'ladder_name', v_ladder.name,
+        'program_id', v_ladder.program_id, 'context_program_id', p_program_id,
+        'created', FALSE, 'warning', NULL);
+    INSERT INTO private.student_import_receipts(import_run_id, kind, key, result_json)
+    VALUES (p_import_run_id, 'rank', v_key, v_result);
+    UPDATE public.student_import_runs SET processing_started_at = clock_timestamp() WHERE id = p_import_run_id;
+    RETURN v_result;
+END;
+$$;
+ALTER FUNCTION public.bind_student_import_rank_v1(UUID, UUID, TEXT, UUID, TEXT, UUID) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.bind_student_import_rank_v1(UUID, UUID, TEXT, UUID, TEXT, UUID)
+    FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.bind_student_import_rank_v1(UUID, UUID, TEXT, UUID, TEXT, UUID) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.finish_student_import_run(
     p_import_run_id UUID, p_processing_token TEXT, p_status TEXT,
@@ -1763,6 +1819,27 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_catalog.pg_proc p
         JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname='bind_student_import_rank_v1') <> 1
+       OR NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_proc p
+        WHERE p.oid=pg_catalog.to_regprocedure('public.bind_student_import_rank_v1(uuid,uuid,text,uuid,text,uuid)')
+          AND p.proowner='postgres'::REGROLE AND NOT p.prosecdef AND p.provolatile='v'
+          AND p.prorettype='jsonb'::REGTYPE AND NOT p.proretset
+          AND p.proconfig=ARRAY['search_path=pg_catalog']::TEXT[]
+          AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
+              = 'e428fbeb91f8457bf717917bd93685531188d49d25b003eb2bd6ab7f184f2e68'
+          AND (SELECT jsonb_agg(jsonb_build_array(
+                CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
+                pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)
+                ORDER BY CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END COLLATE "C",
+                         a.privilege_type,a.is_grantable)
+               FROM pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a)
+              = '[ ["postgres","postgres","EXECUTE",false], ["service_role","postgres","EXECUTE",false] ]'::JSONB
+       ) THEN
+        v_failures:=array_append(v_failures,'import_public_bind_student_import_rank_v1_v45');
+    END IF;
+    IF (SELECT count(*) FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='prepare_student_import_belts_v1') <> 1
        OR NOT EXISTS (
         SELECT 1 FROM pg_catalog.pg_proc p
@@ -1771,7 +1848,7 @@ BEGIN
           AND p.prorettype='jsonb'::REGTYPE AND NOT p.proretset
           AND p.proconfig=ARRAY['search_path=pg_catalog']::TEXT[]
           AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
-              = 'c8b3740ccd70301f7eb96ac614805df3defd3d83ac4874f501c605acc564dd22'
+              = '7b61469ec2de918d7f79effa3a52c590b3eef9416c2ba716f1b6d9cfc91669bb'
           AND (SELECT jsonb_agg(jsonb_build_array(
                 CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
                 pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)

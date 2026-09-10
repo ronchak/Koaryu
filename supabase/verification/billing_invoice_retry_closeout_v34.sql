@@ -3,14 +3,7 @@ BEGIN;
 DO $$
 DECLARE
   v_ready RECORD;
-  v_current_count INTEGER;
-  v_current_head TEXT;
-  v_v31_expectation_state TEXT;
-  v_expected_v31_expectation_state TEXT;
 BEGIN
-  SELECT count(*)::INTEGER,max(version)
-    INTO v_current_count,v_current_head
-  FROM supabase_migrations.schema_migrations;
   SELECT * INTO v_ready FROM public.koaryu_release_schema_preflight_v15();
   IF v_ready.ready IS DISTINCT FROM true
      OR v_ready.migration_count IS DISTINCT FROM 129
@@ -23,57 +16,7 @@ BEGIN
       IS DISTINCT FROM '0:d054ae0cf5ce43ce2c241ca628e0724b5239bd696c323ba9c817b8bd21ee0eec' THEN
     RAISE EXCEPTION 'V34 closeout manifest mismatch.';
   END IF;
-  IF (v_current_count,v_current_head) IN ((132,'20260902001000'), (133,'20260905022339'), (134,'20260908080420'), (135,'20260908133504'), (136,'20260908183744'), (137,'20260910084231'), (138,'20260910093958'), (139,'20260910135133')) THEN
-    IF private.koaryu_release_operational_contract_v29()
-        IS DISTINCT FROM '0:32706cfae7047b70ee6b563048ffafa91d945bc824939e3000fa01631a459ecb'
-       OR private.koaryu_release_operational_manifest_v10()
-        IS DISTINCT FROM (CASE WHEN (v_current_count,v_current_head) IN ((135,'20260908133504'), (136,'20260908183744'), (137,'20260910084231'), (138,'20260910093958'), (139,'20260910135133')) THEN 'ec8605a828e82b738ce973627a8018735c28176399b7e9856aa0dd66a04b667a' ELSE 'e81893193bc199a3911d83ce0546d6458fdc4e63d34c05a1a8dd121da8087012' END)
-       OR private.koaryu_release_payments_replay_repairs_manifest_v30()
-        IS DISTINCT FROM '0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98' THEN
-      RAISE EXCEPTION 'V37 current compatibility manifests mismatch.';
-    END IF;
-  ELSIF v_current_count=131 AND v_current_head='20260831054918' THEN
-    IF private.koaryu_release_operational_contract_v29()
-        IS DISTINCT FROM '0:1abbf21f66bcd927d0c1adf1f16255f4d4eebd030b0685f6dd3a2891d5afb5b9'
-       OR private.koaryu_release_operational_manifest_v10()
-        IS DISTINCT FROM '4f6e364fe37e1325f47e098a810daacc53175b68cb01ed5bda74103f567805c5'
-       OR private.koaryu_release_payments_replay_repairs_manifest_v30()
-        IS DISTINCT FROM '0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98' THEN
-      RAISE EXCEPTION 'V36 current compatibility manifests mismatch.';
-    END IF;
-  ELSIF private.koaryu_release_operational_contract_v29()
-        IS DISTINCT FROM '0:5d022e3d25e3c09fd56cc80fd26ed8e6233b5ce881ddcc60b6b8593d8801190a'
-       OR private.koaryu_release_operational_manifest_v10()
-        IS DISTINCT FROM 'a1f100a662af004ba6683ae15f0f9834493013131142612721a5b6d410971a3f'
-       OR private.koaryu_release_payments_replay_repairs_manifest_v30()
-        IS DISTINCT FROM '0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98' THEN
-      RAISE EXCEPTION 'V34 legacy compatibility manifests mismatch.';
-  END IF;
-  SELECT count(*)::TEXT||':'||encode(extensions.digest(convert_to(
-        COALESCE(string_agg(expectation_key||':'||expected_sha256,'|'
-          ORDER BY expectation_key COLLATE "C"),''),'UTF8'),'sha256'),'hex')
-    INTO v_v31_expectation_state
-  FROM private.koaryu_release_v31_expectations;
-  v_expected_v31_expectation_state:=CASE
-      WHEN (v_current_count,v_current_head) IN ((137,'20260910084231'), (138,'20260910093958'), (139,'20260910135133')) THEN '1:9f8cfdaa076ac36d3d1b827e4c50e17c8a9796150dac84ef3b2f62360893bd18'
-    WHEN (v_current_count,v_current_head) IN ((135,'20260908133504'), (136,'20260908183744'), (137,'20260910084231'), (138,'20260910093958'), (139,'20260910135133')) THEN '1:220b289851c6a5714091f59560053b1a5a5cf7c4971a431bbc04a6dd85d42802'
-    WHEN v_current_count=134 AND v_current_head='20260908080420'
-         THEN '1:54e7ddd1b3979a6b764a14345c629293e24976d707ef8a8fbf2b3ab5c7a47693'
-    WHEN (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339')
-         THEN '1:95f3c8d7693b10b867a8e2a322bc0c40a04a444db18c0a8137f27198260776f5'
-    WHEN v_current_count=131 AND v_current_head='20260831054918'
-         THEN '1:3d764f9527b71e81235d6ae5dbc62047149958b39b741d63e6600f3d78a4a587'
-    ELSE '1:98b3c2abb6dbe454ea0b9d84d3bdd31769f47b4fe72af9a5dcd5df476a62e443'
-  END;
-  IF v_v31_expectation_state IS DISTINCT FROM v_expected_v31_expectation_state THEN
-    RAISE EXCEPTION 'V34 V31 compatibility expectation state mismatch.';
-  END IF;
-  IF position('requires_action' IN pg_get_functiondef(
-       'private.recompute_billing_payment_adjustment_totals(uuid)'::regprocedure))=0
-     OR position('requires_action' IN pg_get_functiondef(
-       'private.enforce_billing_payment_refundable_amount_v31()'::regprocedure))=0 THEN
-    RAISE EXCEPTION 'V34 refund reservation does not cover requires_action.';
-  END IF;
+  -- Generated pinned readiness owns operational-version compatibility checks.
   IF has_function_privilege('anon',
        'public.claim_billing_invoice_closeout_operation_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)','EXECUTE')
      OR has_function_privilege('authenticated',

@@ -242,6 +242,25 @@ COMMIT;""")
                 'Concurrent first-rank setup did not converge')
         results.append({'case': 'first_rank_import_vs_rank_plan_student_lock', 'blocking': blocking, 'outcome': 'passed'})
 
+        selected_id = sql(f"SELECT id FROM public.belt_ranks WHERE ladder_id='{f['ladder']}';")
+        for selection_first in (False, True):
+            key = f"selected_{int(selection_first)}"
+            selection = f"SELECT public.bind_student_import_rank_v1('{f['studio']}','{f['run']}','token','{f['program']}','{key}','{selected_id}');"
+            plan = json.dumps([{'id': selected_id, 'name': key, 'color_hex': '#ffffff', 'min_classes': 0, 'min_months': 0, 'requires_approval': False, 'is_tip': False}])
+            rank_write = f"SELECT id FROM public.sync_belt_ladder_ranks_v2('{f['ladder']}','{f['studio']}','{f['actor']}','{uuid4()}','Stripe','{plan}');"
+            first = session(f'rank_selection_a_{key}', selection if selection_first else rank_write, hold=True)
+            await_result(first, receipt=False)
+            second = session(f'rank_selection_b_{key}', rank_write if selection_first else selection)
+            blocking = observed_blocker(first, second, False)
+            first['process'].stdin.write('COMMIT;\n'); first['process'].stdin.close()
+            require(finish(first)[0] == 0, 'Rank selection holder failed')
+            code, lines, errors = finish(second)
+            require(code == 0, f'Rank selection and rank-plan writer did not settle: {errors}')
+            require(sql(f"SELECT result_json->>'rank_id' FROM private.student_import_receipts WHERE import_run_id='{f['run']}' AND kind='rank' AND key='{f['program']}:{key}';") == selected_id
+                    and sql(f"SELECT name FROM public.belt_ranks WHERE id='{selected_id}';") == key,
+                    'Selected rank identity or the staff rename was lost')
+            results.append({'case': 'selection_before_rank_plan' if selection_first else 'rank_plan_before_selection', 'blocking': blocking, 'outcome': 'passed'})
+
         # A delay inside the actual write makes a start-time-only heartbeat stale.
         sql("""CREATE FUNCTION public.test_import_delay() RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN IF current_setting('koaryu.test_import_delay',TRUE)='on' THEN PERFORM pg_sleep(1.3); END IF; RETURN NEW; END; $$;
