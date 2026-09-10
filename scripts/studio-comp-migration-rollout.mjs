@@ -10,6 +10,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { CURRENT_RELEASE, RELEASE_STATES, readinessTuple, releaseState } from "./release-attestation/states.mjs";
 import { MIGRATION_VERSIONS } from "./release-attestation/generated-history.mjs";
+import { RELEASE_READINESS } from "./release-attestation/generated-readiness.mjs";
+export * from "./release-attestation/generated-readiness.mjs";
 
 const STATES = Object.freeze(Object.fromEntries(
   Object.keys(RELEASE_STATES).map(id => [id, releaseState(id, MIGRATION_VERSIONS)]),
@@ -893,25 +895,11 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
 from public.koaryu_release_schema_preflight_v4()
 `;
 
-export const V37_OPERATIONAL_READINESS_SQL = `
-select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
-       array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
-       coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
-  as operational_readiness
-from public.koaryu_release_schema_preflight_v18()
-`;
-export const V38_OPERATIONAL_READINESS_SQL = V37_OPERATIONAL_READINESS_SQL.replace(
-  "koaryu_release_schema_preflight_v18()", "koaryu_release_schema_preflight_v19()",
-);
-export const V39_OPERATIONAL_READINESS_SQL = V37_OPERATIONAL_READINESS_SQL.replace(
-  "koaryu_release_schema_preflight_v18()", "koaryu_release_schema_preflight_v20()",
-);
-export const V40_OPERATIONAL_READINESS_SQL = V37_OPERATIONAL_READINESS_SQL.replace(
-  "koaryu_release_schema_preflight_v18()", "koaryu_release_schema_preflight_v21()",
-);
-export const FINAL_OPERATIONAL_READINESS_SQL = V37_OPERATIONAL_READINESS_SQL.replace(
-  "koaryu_release_schema_preflight_v18()", "koaryu_release_schema_preflight_v22()",
-);
+export const V37_OPERATIONAL_READINESS_SQL = RELEASE_READINESS.v37.query;
+export const V38_OPERATIONAL_READINESS_SQL = RELEASE_READINESS.v38.query;
+export const V39_OPERATIONAL_READINESS_SQL = RELEASE_READINESS.v39.query;
+export const V40_OPERATIONAL_READINESS_SQL = RELEASE_READINESS.v40.query;
+export const FINAL_OPERATIONAL_READINESS_SQL = RELEASE_READINESS[CURRENT_RELEASE].query;
 // Raw catalog checks are independent of the readiness functions they attest.
 // Body hashes come from the complete local migration chain on PostgreSQL 17.
 const V38_FUNCTIONS = Object.freeze([
@@ -3596,217 +3584,44 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     }
   }
 
-  const orderedHistory = filenames
-    .map((filename) => {
-      const separator = filename.indexOf("_");
-      return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-    })
-    .join("|");
-  const preHistory = `${ROLLOUT.baselineMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.baselineMigrationCount)
-    .map((filename) => {
-      const separator = filename.indexOf("_");
-      return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-    })
-    .join("|"),
-  )}`;
-  const postHistory = `${filenames.length}:${digest("md5", orderedHistory)}`;
-  const intermediateHistory = `${ROLLOUT.intermediateMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.intermediateMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const recoveryHistory = `${ROLLOUT.recoveryMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.recoveryMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const convergenceHistory = `${ROLLOUT.convergenceMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.convergenceMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const attestedHistory = `${ROLLOUT.attestedMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.attestedMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const returnAttestedHistory = `${ROLLOUT.returnAttestedMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.returnAttestedMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const retainedHistory = `${ROLLOUT.retainedMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.retainedMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const criticalHistory = `${ROLLOUT.criticalMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.criticalMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const columnAttestedHistory = `${ROLLOUT.columnAttestedMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.columnAttestedMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const trialLockedHistory = `${ROLLOUT.trialLockedMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.trialLockedMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const staffIdentityHistory = `${ROLLOUT.staffIdentityMigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.staffIdentityMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const restoredV22History = `${ROLLOUT.restoredV22MigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.restoredV22MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const canonicalV23History = `${ROLLOUT.canonicalV23MigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.canonicalV23MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const v24History = `${ROLLOUT.v24MigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.v24MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const scheduleV25History = `${ROLLOUT.scheduleV25MigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.scheduleV25MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const v25History = `${ROLLOUT.v25MigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.v25MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const v26History = `${ROLLOUT.v26MigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.v26MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const v27History = `${ROLLOUT.v27MigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.v27MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const v28History = `${ROLLOUT.v28MigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.v28MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const v29History = `${ROLLOUT.v29MigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.v29MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const v30History = `${ROLLOUT.v30MigrationCount}:${digest(
-    "md5",
-    filenames.slice(0, ROLLOUT.v30MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-  )}`;
-  const historyAt = (count) => `${count}:${digest("md5", filenames.slice(0,count)
-    .map((filename) => {
-      const separator=filename.indexOf("_");
-      return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;
-    }).join("|"))}`;
-  const v31History=historyAt(ROLLOUT.v31MigrationCount);
-  const v32History=historyAt(ROLLOUT.v32MigrationCount);
-  const v33History=historyAt(ROLLOUT.v33MigrationCount);
-  const v34History=historyAt(ROLLOUT.v34MigrationCount);
-  const v35History=historyAt(ROLLOUT.v35MigrationCount);
-  const v36History=historyAt(ROLLOUT.v36MigrationCount);
-  const v37History=historyAt(ROLLOUT.v37MigrationCount);
-  const v38History=historyAt(ROLLOUT.v38MigrationCount);
-  const v39History=historyAt(ROLLOUT.v39MigrationCount);
-  const v40History=historyAt(ROLLOUT.v40MigrationCount);
+  const historyEntries = filenames.map(filename => {
+    const separator = filename.indexOf("_");
+    return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+  });
+  const historyAt = count => `${count}:${digest("md5", historyEntries.slice(0, count).join("|"))}`;
+  const targetAt = count => historyEntries.slice(84, count).join("|");
+  const preHistory = historyAt(ROLLOUT.baselineMigrationCount);
+  const postHistory = historyAt(filenames.length);
+  const intermediateHistory = historyAt(ROLLOUT.intermediateMigrationCount);
+  const recoveryHistory = historyAt(ROLLOUT.recoveryMigrationCount);
+  const convergenceHistory = historyAt(ROLLOUT.convergenceMigrationCount);
+  const attestedHistory = historyAt(ROLLOUT.attestedMigrationCount);
+  const returnAttestedHistory = historyAt(ROLLOUT.returnAttestedMigrationCount);
+  const retainedHistory = historyAt(ROLLOUT.retainedMigrationCount);
+  const criticalHistory = historyAt(ROLLOUT.criticalMigrationCount);
+  const columnAttestedHistory = historyAt(ROLLOUT.columnAttestedMigrationCount);
+  const trialLockedHistory = historyAt(ROLLOUT.trialLockedMigrationCount);
+  const staffIdentityHistory = historyAt(ROLLOUT.staffIdentityMigrationCount);
+  const restoredV22History = historyAt(ROLLOUT.restoredV22MigrationCount);
+  const canonicalV23History = historyAt(ROLLOUT.canonicalV23MigrationCount);
+  const v24History = historyAt(ROLLOUT.v24MigrationCount);
+  const scheduleV25History = historyAt(ROLLOUT.scheduleV25MigrationCount);
+  const v25History = historyAt(ROLLOUT.v25MigrationCount);
+  const v26History = historyAt(ROLLOUT.v26MigrationCount);
+  const v27History = historyAt(ROLLOUT.v27MigrationCount);
+  const v28History = historyAt(ROLLOUT.v28MigrationCount);
+  const v29History = historyAt(ROLLOUT.v29MigrationCount);
+  const v30History = historyAt(ROLLOUT.v30MigrationCount);
+  const v31History = historyAt(ROLLOUT.v31MigrationCount);
+  const v32History = historyAt(ROLLOUT.v32MigrationCount);
+  const v33History = historyAt(ROLLOUT.v33MigrationCount);
+  const v34History = historyAt(ROLLOUT.v34MigrationCount);
+  const v35History = historyAt(ROLLOUT.v35MigrationCount);
+  const v36History = historyAt(ROLLOUT.v36MigrationCount);
+  const v37History = historyAt(ROLLOUT.v37MigrationCount);
+  const v38History = historyAt(ROLLOUT.v38MigrationCount);
+  const v39History = historyAt(ROLLOUT.v39MigrationCount);
+  const v40History = historyAt(ROLLOUT.v40MigrationCount);
   if (preHistory !== ROLLOUT.preHistory) {
     throw new RolloutError(
       `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
@@ -3876,168 +3691,38 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     v38History,
     v39History,
     v40History,
-    preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    postTargetHistory: filenames.slice(84)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    intermediateTargetHistory: filenames.slice(84, ROLLOUT.intermediateMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    recoveryTargetHistory: filenames.slice(84, ROLLOUT.recoveryMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    convergenceTargetHistory: filenames.slice(84, ROLLOUT.convergenceMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    attestedTargetHistory: filenames.slice(84, ROLLOUT.attestedMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    returnAttestedTargetHistory: filenames.slice(84, ROLLOUT.returnAttestedMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    retainedTargetHistory: filenames.slice(84, ROLLOUT.retainedMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    criticalTargetHistory: filenames.slice(84, ROLLOUT.criticalMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    columnAttestedTargetHistory: filenames.slice(84, ROLLOUT.columnAttestedMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    trialLockedTargetHistory: filenames.slice(84, ROLLOUT.trialLockedMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    staffIdentityTargetHistory: filenames.slice(84, ROLLOUT.staffIdentityMigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    restoredV22TargetHistory: filenames.slice(84, ROLLOUT.restoredV22MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    canonicalV23TargetHistory: filenames.slice(84, ROLLOUT.canonicalV23MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    v24TargetHistory: filenames.slice(84, ROLLOUT.v24MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    scheduleV25TargetHistory: filenames.slice(84, ROLLOUT.scheduleV25MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    v25TargetHistory: filenames.slice(84, ROLLOUT.v25MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    v26TargetHistory: filenames.slice(84, ROLLOUT.v26MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    v27TargetHistory: filenames.slice(84, ROLLOUT.v27MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    v28TargetHistory: filenames.slice(84, ROLLOUT.v28MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    v29TargetHistory: filenames.slice(84, ROLLOUT.v29MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    v30TargetHistory: filenames.slice(84, ROLLOUT.v30MigrationCount)
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    v31TargetHistory: filenames.slice(84,ROLLOUT.v31MigrationCount)
-      .map((filename)=>{const separator=filename.indexOf("_");
-        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
-    v32TargetHistory: filenames.slice(84,ROLLOUT.v32MigrationCount)
-      .map((filename)=>{const separator=filename.indexOf("_");
-        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
-    v33TargetHistory: filenames.slice(84,ROLLOUT.v33MigrationCount)
-      .map((filename)=>{const separator=filename.indexOf("_");
-        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
-    v34TargetHistory: filenames.slice(84,ROLLOUT.v34MigrationCount)
-      .map((filename)=>{const separator=filename.indexOf("_");
-        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
-    v35TargetHistory: filenames.slice(84,ROLLOUT.v35MigrationCount)
-      .map((filename)=>{const separator=filename.indexOf("_");
-        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
-    v36TargetHistory: filenames.slice(84,ROLLOUT.v36MigrationCount)
-      .map((filename)=>{const separator=filename.indexOf("_");
-        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
-    v37TargetHistory: filenames.slice(84,ROLLOUT.v37MigrationCount)
-      .map((filename)=>{const separator=filename.indexOf("_");
-        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
-    v38TargetHistory: filenames.slice(84,ROLLOUT.v38MigrationCount)
-      .map((filename)=>{const separator=filename.indexOf("_");
-        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
-    v39TargetHistory: filenames.slice(84,ROLLOUT.v39MigrationCount)
-      .map((filename)=>{const separator=filename.indexOf("_");
-        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
-    v40TargetHistory: filenames.slice(84,ROLLOUT.v40MigrationCount)
-      .map((filename)=>{const separator=filename.indexOf("_");
-        return `${filename.slice(0,separator)}:${filename.slice(separator+1,-4)}`;}).join("|"),
+    preTargetHistory: targetAt(ROLLOUT.baselineMigrationCount),
+    postTargetHistory: targetAt(filenames.length),
+    intermediateTargetHistory: targetAt(ROLLOUT.intermediateMigrationCount),
+    recoveryTargetHistory: targetAt(ROLLOUT.recoveryMigrationCount),
+    convergenceTargetHistory: targetAt(ROLLOUT.convergenceMigrationCount),
+    attestedTargetHistory: targetAt(ROLLOUT.attestedMigrationCount),
+    returnAttestedTargetHistory: targetAt(ROLLOUT.returnAttestedMigrationCount),
+    retainedTargetHistory: targetAt(ROLLOUT.retainedMigrationCount),
+    criticalTargetHistory: targetAt(ROLLOUT.criticalMigrationCount),
+    columnAttestedTargetHistory: targetAt(ROLLOUT.columnAttestedMigrationCount),
+    trialLockedTargetHistory: targetAt(ROLLOUT.trialLockedMigrationCount),
+    staffIdentityTargetHistory: targetAt(ROLLOUT.staffIdentityMigrationCount),
+    restoredV22TargetHistory: targetAt(ROLLOUT.restoredV22MigrationCount),
+    canonicalV23TargetHistory: targetAt(ROLLOUT.canonicalV23MigrationCount),
+    v24TargetHistory: targetAt(ROLLOUT.v24MigrationCount),
+    scheduleV25TargetHistory: targetAt(ROLLOUT.scheduleV25MigrationCount),
+    v25TargetHistory: targetAt(ROLLOUT.v25MigrationCount),
+    v26TargetHistory: targetAt(ROLLOUT.v26MigrationCount),
+    v27TargetHistory: targetAt(ROLLOUT.v27MigrationCount),
+    v28TargetHistory: targetAt(ROLLOUT.v28MigrationCount),
+    v29TargetHistory: targetAt(ROLLOUT.v29MigrationCount),
+    v30TargetHistory: targetAt(ROLLOUT.v30MigrationCount),
+    v31TargetHistory: targetAt(ROLLOUT.v31MigrationCount),
+    v32TargetHistory: targetAt(ROLLOUT.v32MigrationCount),
+    v33TargetHistory: targetAt(ROLLOUT.v33MigrationCount),
+    v34TargetHistory: targetAt(ROLLOUT.v34MigrationCount),
+    v35TargetHistory: targetAt(ROLLOUT.v35MigrationCount),
+    v36TargetHistory: targetAt(ROLLOUT.v36MigrationCount),
+    v37TargetHistory: targetAt(ROLLOUT.v37MigrationCount),
+    v38TargetHistory: targetAt(ROLLOUT.v38MigrationCount),
+    v39TargetHistory: targetAt(ROLLOUT.v39MigrationCount),
+    v40TargetHistory: targetAt(ROLLOUT.v40MigrationCount),
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&

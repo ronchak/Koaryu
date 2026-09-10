@@ -33,7 +33,7 @@ The ten committed restore scripts total 2,855 lines. V30-to-V31 has 1,353 lines 
 
 For each covered migration span, render the complete statement and compare bytes. Reassemble a temporary full migration with untouched non-generated sections to confirm the file comparison, but report only actual generated spans as generated coverage. Hash every historical migration before/after to prove no mutation.
 
-For historical dynamic authoring, compare committed DO statements and installed definitions at the selected historical states on disposable PostgreSQL 17. Check complete function contracts, ACLs and existing raw/semantic readiness. A final V41-only replay does not establish overwritten predecessor definitions.
+Historical dynamic DO authoring remains an immutable input, not a new generator template. The full disposable PostgreSQL 17 replay exercises the original historical migrations and restore boundaries, including their function, ACL and raw/semantic contracts. Generated-statement coverage is reported separately from this unchanged history.
 
 Generate all ten historical script outputs and compare complete bytes, modes and trailing newlines. Any runner replacement requires a second behavioral equivalence proof; matching a new wrapper's output label is insufficient. Preserve owned-database cleanup, predecessor refusal, negative drift checks, retained rows and continuation results. Record helper/source hash changes honestly; dump or evidence JSON bytes are not expected to be identical across executions.
 

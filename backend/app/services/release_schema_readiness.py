@@ -7,65 +7,15 @@ from typing import Any
 
 from app.db.supabase import close_supabase_client, create_supabase_client
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
+from app.services.generated_release_readiness import (
+    EXPECTED_RELEASE_MANIFEST_VERSION,
+    EXPECTED_RELEASE_MIGRATION_COUNT,
+    EXPECTED_RELEASE_MIGRATION_HEAD,
+    EXPECTED_RELEASE_PENDING_VERSIONS,
+    RELEASE_PREFLIGHT_RPC,
+)
 
 
-EXPECTED_RELEASE_MIGRATION_COUNT = 136
-EXPECTED_RELEASE_MIGRATION_HEAD = "20260908183744"
-EXPECTED_RELEASE_MANIFEST_VERSION = "release-db-attestation-v41"
-EXPECTED_RELEASE_PENDING_VERSIONS = [
-    "20260727100000",
-    "20260727110000",
-    "20260801050957",
-    "20260801060000",
-    "20260801070000",
-    "20260801080000",
-    "20260801090000",
-    "20260801091000",
-    "20260801092000",
-    "20260801093000",
-    "20260801094000",
-    "20260801105313",
-    "20260801112153",
-    "20260801115044",
-    "20260801123112",
-    "20260801131844",
-    "20260814043325",
-    "20260814103046",
-    "20260814105424",
-    "20260814114500",
-    "20260814152000",
-    "20260814170000",
-    "20260814183000",
-    "20260814200000",
-    "20260814213000",
-    "20260815220402",
-    "20260816012723",
-    "20260820012533",
-    "20260820025759",
-    "20260820060216",
-    "20260822193000",
-    "20260823193155",
-    "20260824190500",
-    "20260825042838",
-    "20260825043911",
-    "20260826030234",
-    "20260826030249",
-    "20260826051527",
-    "20260826073728",
-    "20260826102840",
-    "20260826155911",
-    "20260826185651",
-    "20260830065627",
-    "20260830082610",
-    "20260830151714",
-    "20260831022021",
-    "20260831054918",
-    "20260902001000",
-    "20260905022339",
-    "20260908080420",
-    "20260908133504",
-    "20260908183744",
-]
 HOSTED_READINESS_SUCCESS_TTL_SECONDS = 30.0
 
 # Kept as a patchable factory symbol for existing readiness tests. It is an
@@ -144,7 +94,7 @@ def assert_hosted_release_schema_ready() -> None:
     try:
         result = execute_required_rpc(
             client,
-            "koaryu_release_schema_preflight_v22",
+            RELEASE_PREFLIGHT_RPC,
             {},
         )
         validate_release_schema_preflight(first_rpc_row(result))

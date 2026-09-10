@@ -72,3 +72,7 @@ The local backend runs on `http://127.0.0.1:8001`.
 - Repo overview: `README.md`
 - Render deployment runbook: `docs/render-backend-deployment.md`
 - Support triage runbook: `docs/support-triage.md`
+
+## Release readiness metadata
+
+`app/services/generated_release_readiness.py` is generated from the shared release declarations. Update the declaration and regenerate with the repository-root release-attestation tool; do not hand-edit its version, pending list or RPC name. Run `npm run check:release-attestation` and the focused readiness tests. See `scripts/release-attestation/README.md`.

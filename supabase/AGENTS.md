@@ -56,3 +56,7 @@ Use this file for work under `supabase/`. Fall back to the repo root `AGENTS.md`
 - Support/privacy rules: `docs/support-triage.md`
 - Backend deployment and release checks: `docs/render-backend-deployment.md`
 - Repo overview: `README.md`
+
+## Attestation authoring
+
+Use the shared declarations and `npm run generate:release-attestation -- --output-dir /absolute/empty/directory` for repeated preflight/manifest and restore-check code. Read `scripts/release-attestation/README.md` from the repository root. Historical migration files remain immutable; business SQL and expected canonical/restored facts still require review. `npm run check:release-attestation` is part of candidate verification and does not execute SQL.

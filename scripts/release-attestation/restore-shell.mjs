@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { releaseState } from "./states.mjs";
 
 const sourceArgs = '${source_args[@]}';
@@ -325,4 +326,190 @@ export function renderChainedShellRestore(id, specification, filenames, versions
   };
   blocks.push(`echo "PASS: ${messages[id]}"`);
   return blocks.join("\n\n") + "\n";
+}
+
+function expandedCommand(prefix, arguments_) {
+  return prefix + " \\\n" + arguments_.map(argument => `  ${argument}`).join(" \\\n");
+}
+
+function expandedRead(variable, query, { variableQuery = false, trim = true } = {}) {
+  const quoted = variableQuery ? `"$${query}"` : query.includes("'") ? doubleQuoted(query) : `'${query}'`;
+  return String.raw`${variable}="$(
+  "$psql_bin" "${restoredArgs}" --tuples-only --no-align \
+    --command=${quoted}
+)"` + (trim ? "\n" + trimRead(variable) : "");
+}
+
+function trimRead(variable) {
+  return String.raw`${variable}="$(printf '%s' "$${variable}" | tr -d '\r\n')"`;
+}
+
+function expandedImport(variable, exportedName) {
+  return String.raw`${variable}="$(
+  cd "$repository_root"
+  node --input-type=module --eval \
+    "import { ${exportedName} } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(${exportedName});"
+)"`;
+}
+
+export function renderV26Restore(filenames, versions) {
+  const state = releaseState("v26", versions);
+  const filename = filenames.find(name => name.startsWith(`${state.head}_`));
+  const name = filename.slice(15, -4);
+  const connection = ['--host="$socket_dir"', '--port="$pg_port"', "--username=postgres"];
+  const queryFlags = ["--no-password", "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--quiet"];
+  const array = (name, database) => `${name}=(\n${[...connection, database, ...queryFlags].map(flag => `  ${flag}`).join("\n")}\n)`;
+  const blocks = [
+    shellHeader("scripts/verify-v25-v26-restore-contract.sh")
+      + '\nrestored_database="koaryu_v26_restore_contract"\ndump_path="$temp_dir/v25-before-v26.dump"',
+    array("source_args", "--dbname=postgres") + "\n" + array("restored_args", '--dbname="$restored_database"'),
+    String.raw`cleanup() {
+  "$psql_bin" "${sourceArgs}" \
+    --command="DROP DATABASE IF EXISTS $restored_database WITH (FORCE);" \
+    >/dev/null 2>&1 || true
+}
+trap cleanup EXIT HUP INT TERM`,
+    "cleanup",
+    expandedCommand('"$pg_dump_bin"', [...connection, "--dbname=postgres", "--no-password", "--format=custom", '--file="$dump_path"']),
+    expandedCommand('"$createdb_bin"', [...connection, "--no-password", "--owner=postgres", "--template=template0", '"$restored_database"']),
+    String.raw`"$psql_bin" "${restoredArgs}" \
+  --command='ALTER DATABASE koaryu_v26_restore_contract SET search_path TO "$user", public, extensions;'`,
+    expandedCommand('"$pg_restore_bin"', [...connection, '--dbname="$restored_database"', "--no-password", "--exit-on-error", '"$dump_path"']),
+    expandedCommand(`"$psql_bin" "${restoredArgs}"`, ["--single-transaction", `--file="$repository_root/supabase/migrations/${filename}"`,
+      `--command="INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('${state.head}', '${name}');"`]),
+    expandedRead("restored_operational_manifest", "SELECT private.koaryu_release_operational_manifest_v7();"),
+    expandedImport("catalog_sql", "CATALOG_STATE_SQL") + "\n"
+      + expandedRead("restored_catalog_state", "catalog_sql", { variableQuery: true }),
+    expandedImport("expectation_sql", "V26_EXPECTATION_STATE_SQL") + "\n"
+      + expandedRead("restored_expectation_state", "expectation_sql", { variableQuery: true }),
+    String.raw`restored_readiness="$(
+  "$psql_bin" "${restoredArgs}" --tuples-only --no-align <<'SQL'
+SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
+       array_to_string(pending_versions, ',') || '|' ||
+       cardinality(security_failures)::TEXT || '|' ||
+       COALESCE(array_to_string(security_failures, ','), '') || '|' ||
+       manifest_version
+FROM ${state.preflight};
+SQL
+)"` + "\n" + trimRead("restored_readiness"),
+    expandedRead("restored_operational_contract", "SELECT private.koaryu_release_operational_contract_v26();", { trim: false }) + "\n"
+      + expandedRead("restored_expected_contract", "SELECT '0:' || expected_sha256 FROM private.koaryu_release_v26_expectations WHERE expectation_key = 'operational_contract_v26';", { trim: false }) + "\n"
+      + trimRead("restored_operational_contract") + "\n" + trimRead("restored_expected_contract"),
+    ["OPERATIONAL_MANIFEST", "CATALOG_STATE", "EXPECTATION_STATE", "READINESS", "OPERATIONAL_CONTRACT"]
+      .map(label => `echo "RESTORED_V26_${label}=$restored_${label.toLowerCase()}"`).join("\n"),
+    shellAssert("restored_operational_contract", "$restored_expected_contract", "Restored V26 operational contract did not match its private expectation row."),
+    shellNodeValidators([
+      "validateCatalogState", "validateOperationalManifest", "validateV26OperationalReadiness", "validateV26ExpectationState",
+    ], [
+      ["validateOperationalManifest", "restored_operational_manifest"],
+      ["validateCatalogState", "restored_catalog_state"],
+      ["validateV26ExpectationState", "restored_expectation_state"],
+      ["validateV26OperationalReadiness", "restored_readiness"],
+    ]),
+    `echo "PASS: V25 dump/restore then migration ${state.count} produced the exact accepted V26 post-state."`,
+  ];
+  return blocks.join("\n\n") + "\n";
+}
+
+function restoreFixture(name, values = {}) {
+  const source = fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
+  return source.replace(/@@([A-Z_]+)@@/g, (_, key) => {
+    if (!Object.hasOwn(values, key)) throw new Error(`Missing fixture value ${key} in ${name}`);
+    return values[key];
+  }).replace(/\n$/, "");
+}
+
+export function renderV31Restore(filenames, versions, {
+  continuation = "", scriptName = "scripts/verify-v30-v31-restore-contract.sh", guardLocal = false,
+} = {}) {
+  const source = releaseState("v26", versions);
+  const predecessor = releaseState("v30", versions);
+  const target = releaseState("v31", versions);
+  const filename = filenames.find(name => name.startsWith(`${target.head}_`));
+  const values = {
+    MIGRATION_FILE: filename,
+    MIGRATION_VERSION: target.head,
+    MIGRATION_NAME: filename.slice(15, -4),
+    CURRENT_PREFLIGHT: target.preflight,
+    PREVIOUS_PREFLIGHT: predecessor.preflight,
+    CURRENT_READINESS: readinessExpected(target, "diagnostic"),
+    PREVIOUS_READINESS: readinessExpected(predecessor, "diagnostic"),
+  };
+  const readHelper = String.raw`read_restored() {
+  "$psql_bin" "${restoredArgs}" --tuples-only --no-align --command="$1" | tr -d '\r\n'
+}`;
+  const negativeHelper = String.raw`assert_restored_preflight_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local actual_ready=""
+
+  actual_ready="$(read_restored "BEGIN; $mutation_sql SELECT ready::TEXT FROM ${target.preflight}; ROLLBACK;")"
+  if [[ "$actual_ready" != "false" ]]; then
+    echo "Restored V31 preflight accepted $label." >&2
+    exit 1
+  fi
+}`;
+  const sqlBlock = name => String.raw`"$psql_bin" "${restoredArgs}" <<'SQL'
+${restoreFixture(name, values)}
+SQL`;
+  const blocks = [
+    shellHeader(scriptName)
+      + '\nrestored_database="koaryu_v31_restore_contract"\ndump_path="$temp_dir/v26-before-v27.dump"\n' + shellConnections(),
+    ...(guardLocal ? [String.raw`# Match the existing Python restore tools: reject routing overrides and verify
+# the caller's disposable Unix-socket PostgreSQL 17 before any mutation.
+while IFS= read -r pg_variable; do unset "$pg_variable"; done < <(compgen -A variable PG)
+python3 - "$psql_bin" "$socket_dir" "$pg_port" "$temp_dir" "$repository_root" "$pg_dump_bin" "$pg_restore_bin" "$createdb_bin" <<'PY'
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[5]) / "scripts"))
+from local_postgres_verification import LocalPostgres
+local = LocalPostgres(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
+local.require_pg17(sys.argv[1], *sys.argv[6:9])
+PY`] : []),
+    shellCleanup(), readHelper, negativeHelper, requireV26Dump(),
+    shellRestoreExisting("koaryu_v31_restore_contract"), shellApplyHelper(),
+    applyBetween(source, predecessor, filenames),
+    shellRead("restored_predecessor", readinessSql(predecessor, "diagnostic"), { helper: "read_restored" }) + "\n"
+      + shellAssert("restored_predecessor", readinessExpected(predecessor, "diagnostic"), "Restored V30 predecessor readiness drifted: $restored_predecessor"),
+    sqlBlock("v31-seed.sql"), restoreFixture("v31-upgrade-overlap.sh", values),
+    restoreFixture("v31-business-state.sh", values), sqlBlock("v31-continuation.sql"),
+    restoreFixture("v31-attestation-negatives.sh", values),
+    ...(continuation ? [continuation] : []),
+    continuation
+      ? 'echo "PASS: V31 business proof and declared V32-through-V37 restored continuation completed."'
+      : `echo "PASS: V30 dump/restore predecessor plus migration ${target.count} produced the exact V31 contract."`,
+  ];
+  return blocks.join("\n\n") + "\n";
+}
+
+export function renderV37Continuation(filenames, versions) {
+  const blocks = [];
+  for (const id of ["v32", "v33", "v34", "v35", "v36", "v37"]) {
+    const state = releaseState(id, versions);
+    blocks.push(shellDirectMigration(state, filenames) + " >/dev/null");
+    if (id === "v32" || id === "v33") continue;
+    const label = id.toUpperCase();
+    blocks.push(String.raw`actual_catalog="$(read_restored "$catalog_sql")"
+expected_catalog="$(cd "$repository_root" && node --input-type=module --eval "import { EXPECTED_${label}_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_${label}_RESTORED_CATALOG_STATE);")"
+echo "RESTORED_${label}_CATALOG_STATE=$actual_catalog"`);
+    blocks.push(shellAssert("actual_catalog", "$expected_catalog", `Restored ${label} catalog mismatch: $actual_catalog`));
+    if (id !== "v34") {
+      blocks.push(shellRead("actual_readiness", readinessSql(state, "diagnostic"), { helper: "read_restored" })
+        + `\necho "RESTORED_${label}_READINESS=$actual_readiness"\n`
+        + shellAssert("actual_readiness", readinessExpected(state, "diagnostic"), `Restored ${label} readiness mismatch: $actual_readiness`));
+    }
+  }
+  blocks.push(shellRead("trigger_guard", "SELECT private.koaryu_release_adjustment_trigger_guard_manifest_v37();", { helper: "read_restored" }));
+  blocks.push(String.raw`expected_trigger_guard="$(cd "$repository_root" && node --input-type=module --eval "import { EXPECTED_V37_TRIGGER_GUARD_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V37_TRIGGER_GUARD_MANIFEST);")"
+echo "RESTORED_V37_TRIGGER_GUARD=$trigger_guard"`);
+  blocks.push(shellAssert("trigger_guard", "$expected_trigger_guard", "Restored V37 adjustment trigger guard mismatch: $trigger_guard"));
+  return blocks.join("\n\n");
+}
+
+export function renderExtendedV31Restore(filenames, versions) {
+  return renderV31Restore(filenames, versions, {
+    scriptName: "scripts/verify-v30-v37-restore-contract.sh",
+    continuation: renderV37Continuation(filenames, versions),
+    guardLocal: true,
+  });
 }

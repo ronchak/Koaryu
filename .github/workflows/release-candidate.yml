@@ -40,6 +40,9 @@ jobs:
       - name: Verify candidate workflow coverage
         run: npm run check:release-workflow
 
+      - name: Verify generated release attestations
+        run: npm run check:release-attestation
+
       - name: Test exact-SHA deployed-release verifier
         run: node --test scripts/verify-deployed-release.test.mjs
 
