@@ -7,94 +7,51 @@ import importlib.util
 import json
 import tempfile
 from pathlib import Path
-import re
 import unittest
 from unittest import mock
 from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location("collector", ROOT / "scripts" / "collect-stripe-provider-rehearsal-evidence.py")
+SPEC = importlib.util.spec_from_file_location(
+    "collector",
+    ROOT / "scripts" / "collect-stripe-provider-rehearsal-evidence.py",
+)
 assert SPEC and SPEC.loader
 C = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(C)
-READINESS = {"status":"ready","environment":"staging","commit_sha":"a" * 40,"configured_stripe_mode":"test"}
+READINESS = {
+    "status": "ready",
+    "environment": "staging",
+    "commit_sha": "a" * 40,
+    "configured_stripe_mode": "test",
+}
 
 
 class FakeResponse:
-    def __init__(self, data): self.data = data
-
-
-class FakeQuery:
-    def __init__(self, rows, ranges=None, on_execute=None, table_name=None, selections=None): self.rows, self.filters, self.bounds, self.ranges, self.columns, self.maximum, self.on_execute, self.table_name, self.selections = rows, [], None, ranges, None, None, on_execute, table_name, selections
-    def select(self, columns="*"):
-        if self.selections is not None: self.selections.append((self.table_name, columns))
-        self.columns = None if columns == "*" else [column.strip() for column in columns.split(",")]
-        return self
-    def in_(self, key, values): self.filters.append(("in", key, set(values))); return self
-    def eq(self, key, value): self.filters.append(("eq", key, value)); return self
-    def gte(self, key, value): self.filters.append(("gte", key, value)); return self
-    def lte(self, key, value): self.filters.append(("lte", key, value)); return self
-    def order(self, key): self.filters.append(("order", key, None)); return self
-    def or_(self, expression):
-        match = re.fullmatch(r"created_at\.gt\.(.*),and\(created_at\.eq\.(.*),live_billing_ingest_sequence\.gt\.(\d+)\)", expression)
-        if not match or match.group(1) != match.group(2): raise AssertionError("unexpected keyset expression")
-        cursor = (match.group(1), int(match.group(3)))
-        self.filters.append(("keyset", "created_at", cursor))
-        if self.ranges is not None: self.ranges.append(("keyset", cursor))
-        return self
-    @property
-    def not_(self): return self
-    def is_(self, key, value):
-        if value != "null": raise AssertionError("unexpected not-is predicate")
-        self.filters.append(("not_null", key, None)); return self
-    def limit(self, count): self.maximum = count; return self
-    def range(self, start, end):
-        self.bounds = (start, end)
-        if self.ranges is not None: self.ranges.append((start, end))
-        return self
-    def execute(self):
-        rows = self.rows
-        for operation, key, value in self.filters:
-            if operation == "in": rows = [row for row in rows if row.get(key) in value]
-            elif operation == "eq": rows = [row for row in rows if row.get(key) == value]
-            elif operation == "gte": rows = [row for row in rows if str(row.get(key) or "") >= value]
-            elif operation == "lte": rows = [row for row in rows if str(row.get(key) or "") <= value]
-            elif operation == "not_null": rows = [row for row in rows if row.get(key) is not None]
-            elif operation == "keyset": rows = [row for row in rows if (str(row.get("created_at") or ""), row.get("live_billing_ingest_sequence")) > value]
-        order_keys = [key for operation, key, _ in self.filters if operation == "order"]
-        if order_keys: rows = sorted(rows, key=lambda row: tuple(row.get(key) for key in order_keys))
-        if self.bounds: rows = rows[self.bounds[0]:self.bounds[1] + 1]
-        if self.maximum is not None: rows = rows[:self.maximum]
-        if self.columns is not None:
-            projected = []
-            for row in rows:
-                output = {}
-                for expression in self.columns:
-                    alias, source = expression.split(":", 1) if ":" in expression else (expression, expression)
-                    if "->>" in source:
-                        column, key = source.split("->>", 1); value = (row.get(column) or {}).get(key)
-                        value = None if value is None else str(value)
-                    elif "->" in source:
-                        column, key = source.split("->", 1); value = (row.get(column) or {}).get(key)
-                    else: value = row.get(source)
-                    output[alias] = value
-                projected.append(output)
-            rows = projected
-        if self.on_execute is not None: self.on_execute(self, rows)
-        return FakeResponse(copy.deepcopy(rows))
+    def __init__(self, data):
+        self.data = data
 
 
 class FakeRpcQuery:
-    def __init__(self, client): self.client = client
+    def __init__(self, client):
+        self.client = client
+
     def execute(self):
-        if self.client.error is not None: raise self.client.error
+        if self.client.error is not None:
+            raise self.client.error
         return FakeResponse(copy.deepcopy(self.client.envelope))
 
 
 class FakeSupabase:
-    def __init__(self, envelope, error=None): self.envelope, self.error, self.calls = envelope, error, []
-    def table(self, _name): raise AssertionError("direct table access forbidden")
+    def __init__(self, envelope, error=None):
+        self.envelope = envelope
+        self.error = error
+        self.calls = []
+
+    def table(self, _name):
+        raise AssertionError("direct table access forbidden")
+
     def rpc(self, name, params):
         self.calls.append((name, copy.deepcopy(params)))
         return FakeRpcQuery(self)
@@ -102,8 +59,18 @@ class FakeSupabase:
 
 class FakeStripe:
     def __init__(self, objects):
-        self.objects, self.calls = objects, []
-        def owner(name): return SimpleNamespace(retrieve=lambda identifier, **kwargs: self.retrieve(name, identifier, kwargs))
+        self.objects = objects
+        self.calls = []
+
+        def owner(name):
+            return SimpleNamespace(
+                retrieve=lambda identifier, **kwargs: self.retrieve(
+                    name,
+                    identifier,
+                    kwargs,
+                )
+            )
+
         for name in ("Account", "Customer", "SetupIntent", "Product", "Price", "Subscription", "SubscriptionItem", "SubscriptionSchedule", "Invoice", "PaymentIntent", "Charge", "Refund", "Dispute", "Event"):
             setattr(self, name, owner(name))
         self.checkout = SimpleNamespace(Session=owner("checkout.Session"))
@@ -111,7 +78,8 @@ class FakeStripe:
     def retrieve(self, owner, identifier, kwargs):
         self.calls.append((owner, identifier, kwargs))
         row = copy.deepcopy(self.objects[identifier])
-        if row.pop("last_payment_error_present", False): row["last_payment_error"] = {"code":"declined"}
+        if row.pop("last_payment_error_present", False):
+            row["last_payment_error"] = {"code": "declined"}
         return row
 
 

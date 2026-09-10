@@ -2,6 +2,8 @@
 
 IDs: `OPS2-10`, `BT5-03`, `BT1-05`, `BT1-09`, `BT2-08`, `BT4-02`, `BT5-04`, `BT5-08`
 
+Implementation: PR171; see [verification](../backend-maintenance-verification.md).
+
 Prerequisites: none. Astra retains ownership of all financial, tenant, authorization, provider, concurrency, and atomic-write behavior. This batch may delete only proven dead interfaces and simplify test ownership without changing scenarios.
 
 ## Change

@@ -1,32 +1,16 @@
 from __future__ import annotations
 
-from tests.fakes.billing_reads import BillingReadRpcMixin
-
-import asyncio
 import hashlib
 import json
 import unittest
-from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from fastapi import HTTPException
-
-from app.schemas.billing import (
-    BillingInvoiceCreate,
-    BillingPayerAutopaySetupRequest,
-    BillingReconcileRequest,
-    BillingInvoiceResponse,
-    ExternalPaymentCreate,
-    StudentBillingEnrollmentCreate,
-    StudentBillingEnrollmentResponse,
-    StudentBillingEnrollmentUpdate,
-)
+from app.schemas.billing import BillingInvoiceCreate
 from app.services.billing_service import BillingService
-from app.services.stripe_service import StripeService
-from app.services.stripe_service import _StripeV2RequestError
-from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
-from tests.fakes.supabase import RpcBackedSupabase
 from tests.fakes.billing_balance import BillingBalanceRpcMixin
+from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
+from tests.fakes.billing_reads import BillingReadRpcMixin
+from tests.fakes.supabase import RpcBackedSupabase
 
 
 class _FakeSupabase(BillingBalanceRpcMixin, BillingReadRpcMixin, BillingProviderOperationRpcMixin, RpcBackedSupabase):

@@ -1,33 +1,24 @@
 from __future__ import annotations
 
-from tests.billing_lifecycle_helpers import (
+import asyncio
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+
+from fastapi import HTTPException
+
+from app.schemas.billing import (
     BillingInvoiceCreate,
     BillingInvoiceResponse,
-    BillingPayerAutopaySetupRequest,
-    BillingPaymentsLifecycleTestBase,
-    BillingReconcileRequest,
     ExternalPaymentCreate,
-    BillingService,
-    HTTPException,
-    StripeService,
     StudentBillingEnrollmentCreate,
     StudentBillingEnrollmentResponse,
-    StudentBillingEnrollmentUpdate,
-    _FakeBillingSettings,
-    _FakeStripe,
+)
+from tests.billing_lifecycle_helpers import (
+    BillingPaymentsLifecycleTestBase,
     _FakeStripeService,
-    _FakeStripeWithMismatchedAccount,
     _FakeSupabase,
-    _StripeV2RequestError,
-    _test_invoice_request_hash,
-    asyncio,
-    datetime,
-    patch,
-    timedelta,
-    timezone,
 )
 from stripe import CardError as StripeCardError, IdempotencyError as StripeIdempotencyError
-from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_payment_projection import BillingPaymentEventProjector
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
