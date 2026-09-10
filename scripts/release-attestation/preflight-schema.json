@@ -484,6 +484,483 @@
       "configuration": [
         "search_path=public, pg_temp"
       ]
+    },
+    "import_private_claim_student_import_run_owned_v45": {
+      "kind": "function_contract",
+      "namespace": "private",
+      "functionName": "claim_student_import_run_owned",
+      "signature": "private.claim_student_import_run_owned(uuid,uuid,text,text,text,text,boolean,integer)",
+      "expected": "34c8fbfd2e843be56034d686c2d90911c6c3938ca5e71da1616ea092a6edcddc",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": true,
+      "volatility": "v",
+      "returnType": "record",
+      "configuration": [
+        "search_path=pg_catalog"
+      ]
+    },
+    "import_private_import_student_row_atomic_v45": {
+      "kind": "function_contract",
+      "namespace": "private",
+      "functionName": "import_student_row_atomic",
+      "signature": "private.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[])",
+      "expected": "8a735334eb60047f7dfd06490949b9286cc693eb1fd7990900aa58d8d8c9b661",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": true,
+      "volatility": "v",
+      "returnType": "record",
+      "configuration": [
+        "search_path=public, pg_temp"
+      ]
+    },
+    "import_private_lock_student_import_actor_v45": {
+      "kind": "function_contract",
+      "namespace": "private",
+      "functionName": "lock_student_import_actor",
+      "signature": "private.lock_student_import_actor(uuid)",
+      "expected": "d04e6d08b7fd24eca4a46eddf8fbcaaeeef80d65431e55de5562a198ac09c331",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": true,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "boolean",
+      "configuration": [
+        "search_path=pg_catalog"
+      ]
+    },
+    "import_private_lock_student_import_run_v45": {
+      "kind": "function_contract",
+      "namespace": "private",
+      "functionName": "lock_student_import_run",
+      "signature": "private.lock_student_import_run(uuid,uuid,text)",
+      "expected": "95ea7bdd011af07a17f77120ab7227dd540a1e612b79e03f305f9f5c591002af",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "public.student_import_runs",
+      "configuration": [
+        "search_path=pg_catalog"
+      ]
+    },
+    "import_public_claim_student_import_run_v45": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "claim_student_import_run",
+      "signature": "public.claim_student_import_run(uuid,uuid,text,text,text,text,integer)",
+      "expected": "187d0eb3385fc7958efc0dedc1e2a39a61224b59596f4611339b6eb7da1c159d",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": true,
+      "volatility": "v",
+      "returnType": "record",
+      "configuration": [
+        "search_path=public, pg_temp"
+      ]
+    },
+    "import_public_claim_student_import_run_v2_v45": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "claim_student_import_run_v2",
+      "signature": "public.claim_student_import_run_v2(uuid,uuid,text,text,text,text,integer)",
+      "expected": "91c5c8919bd1ddfc2b9bfa82ca9cced577a94974e7854a17fc3156540216add2",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": true,
+      "volatility": "v",
+      "returnType": "record",
+      "configuration": [
+        "search_path=pg_catalog"
+      ]
+    },
+    "import_public_finish_student_import_run_v45": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "finish_student_import_run",
+      "signature": "public.finish_student_import_run(uuid,text,text,jsonb,text)",
+      "expected": "8f40eed2f27ce892b08a673121247a34e8eaf342e0fb9953b6c873945e16b032",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": true,
+      "volatility": "v",
+      "returnType": "record",
+      "configuration": [
+        "search_path=public, pg_temp"
+      ]
+    },
+    "import_public_import_student_row_atomic_v45": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "import_student_row_atomic",
+      "signature": "public.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[])",
+      "expected": "6d9d129040e0f3cb831cbb883c56ee6c8bf4c4b18aff59eb55c0ccf862ae2bd9",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": true,
+      "volatility": "v",
+      "returnType": "record",
+      "configuration": [
+        "search_path=pg_catalog, public, private"
+      ]
+    },
+    "import_public_prepare_student_import_belts_v1_v45": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "prepare_student_import_belts_v1",
+      "signature": "public.prepare_student_import_belts_v1(uuid,uuid,text,uuid,uuid,jsonb,boolean)",
+      "expected": "c8b3740ccd70301f7eb96ac614805df3defd3d83ac4874f501c605acc564dd22",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "jsonb",
+      "configuration": [
+        "search_path=pg_catalog"
+      ]
+    },
+    "import_public_prepare_student_import_program_v1_v45": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "prepare_student_import_program_v1",
+      "signature": "public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean)",
+      "expected": "ef0cd81057e6919e1e8c660d1e41061494d0ebfe1eaec1b8be14becbb8536ee1",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "jsonb",
+      "configuration": [
+        "search_path=pg_catalog"
+      ]
+    },
+    "import_receipts_v45": {
+      "kind": "import_receipts_v45",
+      "receiptState": {
+        "owner": "postgres",
+        "rls": false,
+        "force_rls": false,
+        "columns": [
+          [
+            "import_run_id",
+            "uuid",
+            true,
+            null,
+            "",
+            "",
+            true
+          ],
+          [
+            "kind",
+            "text",
+            true,
+            null,
+            "",
+            "",
+            true
+          ],
+          [
+            "key",
+            "text",
+            true,
+            null,
+            "",
+            "",
+            true
+          ],
+          [
+            "result_json",
+            "jsonb",
+            true,
+            null,
+            "",
+            "",
+            true
+          ],
+          [
+            "created_at",
+            "timestamp with time zone",
+            true,
+            "now()",
+            "",
+            "",
+            true
+          ]
+        ],
+        "acl": [
+          [
+            "postgres",
+            "postgres",
+            "DELETE",
+            false
+          ],
+          [
+            "postgres",
+            "postgres",
+            "INSERT",
+            false
+          ],
+          [
+            "postgres",
+            "postgres",
+            "MAINTAIN",
+            false
+          ],
+          [
+            "postgres",
+            "postgres",
+            "REFERENCES",
+            false
+          ],
+          [
+            "postgres",
+            "postgres",
+            "SELECT",
+            false
+          ],
+          [
+            "postgres",
+            "postgres",
+            "TRIGGER",
+            false
+          ],
+          [
+            "postgres",
+            "postgres",
+            "TRUNCATE",
+            false
+          ],
+          [
+            "postgres",
+            "postgres",
+            "UPDATE",
+            false
+          ],
+          [
+            "service_role",
+            "postgres",
+            "INSERT",
+            false
+          ],
+          [
+            "service_role",
+            "postgres",
+            "SELECT",
+            false
+          ]
+        ],
+        "constraints": [
+          [
+            "student_import_receipts_import_run_id_fkey",
+            "f",
+            true,
+            false,
+            false,
+            "FOREIGN KEY (import_run_id) REFERENCES public.student_import_runs(id) ON DELETE CASCADE"
+          ],
+          [
+            "student_import_receipts_key_check",
+            "c",
+            true,
+            false,
+            false,
+            "CHECK (((char_length(key) >= 1) AND (char_length(key) <= 512)))"
+          ],
+          [
+            "student_import_receipts_kind_check",
+            "c",
+            true,
+            false,
+            false,
+            "CHECK ((kind = ANY (ARRAY['student'::text, 'program'::text, 'ladder'::text, 'rank'::text])))"
+          ],
+          [
+            "student_import_receipts_pkey",
+            "p",
+            true,
+            false,
+            false,
+            "PRIMARY KEY (import_run_id, kind, key)"
+          ],
+          [
+            "student_import_receipts_result_json_check",
+            "c",
+            true,
+            false,
+            false,
+            "CHECK ((jsonb_typeof(result_json) = 'object'::text))"
+          ]
+        ],
+        "indexes": [
+          [
+            "student_import_receipts_pkey",
+            true,
+            true,
+            true,
+            true,
+            "CREATE UNIQUE INDEX student_import_receipts_pkey ON private.student_import_receipts USING btree (import_run_id, kind, key)"
+          ]
+        ],
+        "no_policies": true,
+        "no_user_triggers": true
+      },
+      "runFlag": [
+        "boolean",
+        true,
+        "false",
+        "",
+        "",
+        true
+      ]
+    },
+    "import_rank_manifest_v45": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_student_rank_writer_manifest_v13()",
+      "expected": "0:4653774cb7fcf2f85c70dcb9284ee01d25051ebf4552520a0fa95eb929cafb9f",
+      "comparison": "IS DISTINCT FROM",
+      "failures": [
+        "import_rank_manifest_v45"
+      ]
+    },
+    "import_rank_manifest_definition_v45": {
+      "kind": "function-hash",
+      "signature": "private.koaryu_release_student_rank_writer_manifest_v13()",
+      "expected": "7a1d1b52edfbda7d2ac942516bb0d2224af757a9d1278996d6225e8b94956578",
+      "hashSource": "definition",
+      "failures": [
+        "import_rank_manifest_definition_v45"
+      ]
     }
   },
   "states": {
@@ -579,6 +1056,32 @@
       "append": [
         "local_plan_rpc_v44",
         "local_plan_clear_coordination_v44"
+      ]
+    },
+    "v45": {
+      "extends": "v44",
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:6fe8a2762952180fd877930242b10095484066158c3f37a132c7d75bbf685d01"
+        },
+        "operational_manifest_v12": {
+          "expected": "7d54757a9d0899bd1e54cb6f27a49e2a648c28f72a8d59cf30cd7938844abc75"
+        }
+      },
+      "append": [
+        "import_private_claim_student_import_run_owned_v45",
+        "import_private_import_student_row_atomic_v45",
+        "import_private_lock_student_import_actor_v45",
+        "import_private_lock_student_import_run_v45",
+        "import_public_claim_student_import_run_v45",
+        "import_public_claim_student_import_run_v2_v45",
+        "import_public_finish_student_import_run_v45",
+        "import_public_import_student_row_atomic_v45",
+        "import_public_prepare_student_import_belts_v1_v45",
+        "import_public_prepare_student_import_program_v1_v45",
+        "import_receipts_v45",
+        "import_rank_manifest_v45",
+        "import_rank_manifest_definition_v45"
       ]
     }
   }

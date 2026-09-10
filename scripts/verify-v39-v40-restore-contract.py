@@ -244,12 +244,13 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 139 and list(hashes)[-6:] == [
+    require(len(hashes) == 140 and list(hashes)[-7:] == [
         "20260908080420_student_membership_preservation_v39.sql", MIGRATION,
         "20260908183744_serialize_billing_payer_balance_v41.sql",
         "20260910084231_independent_program_joining_dates_v42.sql",
         "20260910093958_external_payment_command_ownership_v43.sql",
-        "20260910135133_local_plan_write_ownership_v44.sql"], "Unexpected migration inventory")
+        "20260910135133_local_plan_write_ownership_v44.sql",
+        "20260910185031_student_import_retry_ownership_v45.sql"], "Unexpected migration inventory")
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
     source, restored = f"koaryu_v40_source_{os.getpid()}", f"koaryu_v40_restore_{os.getpid()}"

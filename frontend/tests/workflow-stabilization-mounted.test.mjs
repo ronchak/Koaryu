@@ -10,7 +10,7 @@ async function fixturePage(browser, options = {}) {
     ? route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }) : route.abort());
   await page.goto("http://fixture.local/");
   await page.evaluate(() => {
-    const f = window.fixture = { identityObservations: [], marks: [], timingMarks: [], observations: [], requests: [], leadReads: [], writes: [], summaries: [], details: [] };
+    const f = window.fixture = { identityObservations: [], marks: [], timingMarks: [], observations: [], requests: [], events: [], leadReads: [], writes: [], summaries: [], details: [], importSubmissions: [] };
     f.session = { access_token: "synthetic-a", user: { id: "user-a", email: "a@example.test", legal_first_name: "Synthetic", legal_last_name: "Owner" } };
     f.auth = { user: f.session.user, studio_id: "studio-a", membership_status: "active", role: "admin", staff_profiles_available: true };
     f.student = { id: "student-1", studio_id: "studio-a", legal_first_name: "Ari", legal_last_name: "Lane", status: "active", guardians: [], photo_url: null, programs: [], tags: [] };
@@ -27,6 +27,7 @@ async function fixturePage(browser, options = {}) {
     f.api = {
       get: async (path, token) => {
         f.requests.push({ path, token, atMs: performance.now() });
+        f.events.push(path);
         if (path === "/dashboard/workspace") return { auth: f.auth, studio: { name: "Synthetic Studio", timezone: "America/Los_Angeles" } };
         if (path.startsWith("/dashboard/bootstrap") && f.holdFeature) return new Promise(resolve => { f.featureWaiters ??= []; f.featureWaiters.push(resolve); f.releaseFeature = resolve; });
         if (path.startsWith("/dashboard/bootstrap")) return { auth: f.auth, studio_name: "Synthetic Studio", students: f.uncached ? [] : [f.student], students_may_be_partial: true, leads: [f.lead], programs: [], belt_ladders: [], primary_belt_ladder: null, summary: { auth: f.auth, students: { total: 250 } } };
@@ -44,12 +45,25 @@ async function fixturePage(browser, options = {}) {
         if (path === "/leads") return new Promise(resolve => f.leadReads.push(resolve));
         if (path.startsWith("/dashboard/summary")) return new Promise((resolve, reject) => f.summaries.push({ resolve, reject }));
         if (path === "/students/student-1") return new Promise((resolve, reject) => f.details.push({ resolve, reject }));
-        if (path.includes("promotions") || path.includes("/belts/ladders")) return [];
+        if (path === "/belts/ladders") {
+          if (f.failBeltRefresh) throw Error("Synthetic belt refresh failure");
+          return f.ladder ? [f.ladder] : [];
+        }
+        if (path.startsWith("/belts/eligibility?")) {
+          f.eligibilityReads = (f.eligibilityReads ?? 0) + 1;
+          return f.useNewEligibility ? [{ student_id: "student-new", eligible: true }] : [{ student_id: "student-old", eligible: false }];
+        }
+        if (path.includes("promotions")) return [];
         throw Error(`Unexpected read ${path}`);
       },
       post: (path, body) => path.startsWith("/schedule/window")
         ? Promise.resolve({ sessions: [], attendance: [], templates: [] })
         : new Promise(resolve => f.writes.push({ path, body, resolve })),
+      postForm: async (path, body, token) => {
+        f.events.push(path);
+        f.importSubmissions.push({ path, token, importKey: body.get("idempotency_key") });
+        return { total_rows: 1, valid_rows: 1, error_rows: 0, non_critical_errors: [], imported_count: 1, reused_result: false, created_programs: [], created_ladders: [], created_belts: [], warnings: [], execution_status: "completed" };
+      },
       patch: (path, body) => new Promise(resolve => f.writes.push({ path, body, resolve })),
       delete: path => new Promise(resolve => f.writes.push({ path, resolve })),
     };
@@ -63,6 +77,50 @@ async function fixturePage(browser, options = {}) {
   await page.waitForFunction(() => fixture.store?.identityReady);
   return page;
 }
+
+test("confirmed live import refreshes selected-ladder eligibility after belt refresh fails", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.ladder = { id: "ladder-1", name: "Synthetic Ladder", sub_rank_term: "Stripe", ranks: [] };
+      fixture.prime = fixture.store.setCurrentLadder("ladder-1");
+    });
+    await page.waitForFunction(() => fixture.store.eligibilityLadderId === "ladder-1");
+    await page.evaluate(() => fixture.prime);
+    assert.deepEqual(await page.evaluate(() => fixture.store.eligibility), [
+      { student_id: "student-old", eligible: false },
+    ]);
+
+    await page.evaluate(() => {
+      fixture.failBeltRefresh = true;
+      fixture.useNewEligibility = true;
+      fixture.events = [];
+      fixture.import = fixture.store.importStudents(
+        new File(["First Name,Last Name\nNew,Student"], "students.csv", { type: "text/csv" }),
+        [{ "First Name": "New", "Last Name": "Student" }],
+        { "First Name": "legal_first_name", "Last Name": "legal_last_name" },
+        { status_alias_mode: "normalize" },
+        { importKey: "stable-import-key" },
+      );
+    });
+    await page.waitForFunction(() => fixture.store.eligibility[0]?.student_id === "student-new");
+    const result = await page.evaluate(() => fixture.import);
+    assert.equal(result.imported_count, 1);
+    assert.equal(result.execution_status, "completed_with_warnings");
+    assert.match(result.non_critical_errors.at(-1), /Synthetic belt refresh failure/);
+    assert.equal(await page.evaluate(() => fixture.store.eligibilityLadderId), "ladder-1");
+    assert.equal(await page.evaluate(() => fixture.eligibilityReads), 2);
+    assert.deepEqual(await page.evaluate(() => fixture.events.filter(path => path.startsWith("/belts"))), [
+      "/belts/ladders",
+      "/belts/eligibility?ladder_id=ladder-1",
+    ]);
+    assert.deepEqual(await page.evaluate(() => fixture.importSubmissions), [
+      { path: "/students/import/execute", token: "synthetic-a", importKey: "stable-import-key" },
+    ]);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally { await browser.close(); }
+});
 
 test("mounted lead actions preserve confirmed edits through token renewal, old GETs, and deletion", async () => {
   const browser = await chromium.launch();

@@ -133,6 +133,16 @@
       "parent": "private.koaryu_release_student_rank_writer_manifest_v11()",
       "expectedParent": "0:055e856b82b43d1f62bc4e910bf58eae2de10272ebe22164d124e7f39598e54b",
       "format": "catalog"
+    },
+    {
+      "kind": "rank-return",
+      "path": "supabase/migrations/20260910185031_student_import_retry_ownership_v45.sql",
+      "signature": "private.koaryu_release_student_rank_writer_manifest_v13()",
+      "functionSet": "student-writer-returns",
+      "parent": "private.koaryu_release_student_rank_writer_manifest_v11()",
+      "expectedParent": "0:e29841da46e9502abc6504261ac0182e21f8709e9c80ce31f376c0e0c7efe167",
+      "format": "catalog",
+      "sourceSha256": "983b48948dcfcd4d6a078434f13725483b913b59525c5a0bbadd60a32f4e6773"
     }
   ]
 }

@@ -1526,7 +1526,9 @@
         "backend/app/services/student_program_memberships.py",
         "backend/app/services/program_service.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        178
+      ],
       "track": "Astra",
       "root_cause": "import-archive-preflight-mismatch",
       "collapse_with": [
@@ -1549,7 +1551,7 @@
           "observation": "Archived programs raise PROGRAM_INACTIVE."
         }
       ],
-      "next_change": "Carry archived state into program resolution and report a row error for archived IDs/names. Do not reinterpret an archived match as missing setup. Handle concurrent archival within row execution while retaining SQL validation.",
+      "next_change": "Complete PR178: resolve the recorded CSV product choice, finish full verification and fresh review, then reassess closure after merge.",
       "validation_plan": "Planner cases for archived ID/name with setup enabled; composed execution with an earlier committed row and subsequent archival.",
       "scope_constraints": [
         "Write-time tenant/archive checks",
@@ -1572,7 +1574,9 @@
         "backend/app/services/student_import_executor.py",
         "backend/app/services/student_import_runs.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        178
+      ],
       "track": "Astra",
       "root_cause": "terminal-cache-for-retryable-rows",
       "collapse_with": [
@@ -1615,7 +1619,7 @@
           "observation": "The effective private import writer copies a non-null imported overall date into retained membership started_at. A staff program-date edit between failed-run attempts is therefore overwritten."
         }
       ],
-      "next_change": "Add run/row receipts committed atomically with successful writes, distinguish retryable execution failures from invalid input, and resume eligible unfinished rows under the same identity. Expose that bounded retry through the existing import flow.",
+      "next_change": "Complete PR178: resolve the recorded CSV product choice, finish full verification and fresh review, then reassess closure after merge.",
       "validation_plan": "Composed mixed-success import followed by same-key retry; include committed-write/lost-response, stale claim and successful rows edited by staff between attempts. The retry must preserve those later profile, program-date, paused-status and rank edits while resuming only unfinished rows.",
       "scope_constraints": [
         "Existing import identities",
@@ -1639,7 +1643,9 @@
         "backend/app/services/student_import_setup_writer.py",
         "backend/app/services/student_import_plan_rows.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        178
+      ],
       "track": "Astra",
       "root_cause": "setup-ignores-row-eligibility",
       "collapse_with": [
@@ -1662,7 +1668,7 @@
           "observation": "Planner separately marks rows invalid when any error remains."
         }
       ],
-      "next_change": "Collect setup requests only from rows eligible under selected setup options, rechecking eligibility between setup stages. Preserve shared setup needed by valid rows.",
+      "next_change": "Complete PR178: resolve the recorded CSV product choice, finish full verification and fresh review, then reassess closure after merge.",
       "validation_plan": "Mixed valid/invalid rows requesting unique and shared programs/belts; rejected-only names must cause no setup writes.",
       "scope_constraints": [
         "Authorized setup options",
@@ -1686,7 +1692,9 @@
         "backend/app/services/student_program_memberships.py",
         "backend/app/services/student_import_setup_writer.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        178
+      ],
       "track": "Astra",
       "root_cause": "repeated-import-program-reads",
       "collapse_with": [],
@@ -1712,7 +1720,7 @@
           "observation": "Import implementation independently validates tenant ownership and archival at write time."
         }
       ],
-      "next_change": "Resolve distinct programs and the unassigned fallback once per request. Update the setup lookup from confirmed creates, retaining conflict refreshes and authoritative SQL checks.",
+      "next_change": "Complete PR178: resolve the recorded CSV product choice, finish full verification and fresh review, then reassess closure after merge.",
       "validation_plan": "Assert program-read count scales with distinct programs; retain cross-tenant and concurrent-archive rejection cases.",
       "scope_constraints": [
         "Atomic SQL validation",
@@ -5103,7 +5111,9 @@
         "backend/tests/test_student_import_planner.py",
         "backend/tests/test_student_import_setup_writer.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        178
+      ],
       "track": "Astra",
       "root_cause": "missing-composed-import-coverage",
       "collapse_with": [
@@ -5133,7 +5143,7 @@
           "observation": "Program-creation fixture omits row eligibility entirely."
         }
       ],
-      "next_change": "Add composed executor tests with durable fake run/row state alongside OPS2-04/05/06 fixes, covering replay, archived inputs and rejected-row setup.",
+      "next_change": "Complete PR178: resolve the recorded CSV product choice, finish full verification and fresh review, then reassess closure after merge.",
       "validation_plan": "Demonstrate each regression fails on current behavior and passes through the full executor after its owning fix.",
       "scope_constraints": [
         "Independent SQL atomicity/concurrency coverage",

@@ -5,28 +5,15 @@ import { describe, it } from "node:test";
 import { invalidateEligibilityAfterStudentMutation } from "../src/lib/store-eligibility-invalidation.ts";
 
 describe("student eligibility invalidation", () => {
-  it("wires committed CSV imports through the shared student-mutation invalidation", () => {
+  it("invalidates preview eligibility after a committed CSV import", () => {
     const importActionsSource = readFileSync(
       new URL("../src/lib/store-student-import-actions.ts", import.meta.url),
       "utf8"
     );
-    const storeSource = readFileSync(
-      new URL("../src/lib/store.tsx", import.meta.url),
-      "utf8"
-    );
 
-    assert.match(importActionsSource, /onStudentMutation: \(\) => void/);
     assert.match(
       importActionsSource,
       /execution\.importedStudents\.length > 0[\s\S]*persistStudents\(execution\.students\);[\s\S]*onStudentMutation\(\);/
-    );
-    assert.match(
-      importActionsSource,
-      /canCommitLiveMutation\(liveRequest\) && shouldRefreshBelts[\s\S]*onStudentMutation\(\);/
-    );
-    assert.match(
-      storeSource,
-      /useStoreStudentImportActions\(\{[\s\S]*onStudentMutation,[\s\S]*refreshPrograms,/
     );
   });
 

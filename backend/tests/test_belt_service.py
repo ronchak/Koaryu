@@ -1,6 +1,5 @@
 import asyncio
 import unittest
-from unittest.mock import patch
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -115,6 +114,7 @@ class BeltServiceTest(unittest.TestCase):
             "programs": [{
                 "id": PROGRAM_ID,
                 "studio_id": STUDIO_ID,
+                "name": "Program with no ladder",
                 "is_system": False,
                 "archived_at": None,
             }],
@@ -122,11 +122,8 @@ class BeltServiceTest(unittest.TestCase):
         })
         service = BeltService(supabase)
 
-        with patch(
-            "app.services.belt_service.ProgramService.ensure_program_ladders",
-            side_effect=AssertionError("repair write"),
-        ):
-            ladders = asyncio.run(service.list_ladders(STUDIO_ID))
+        ladders = asyncio.run(service.list_ladders(STUDIO_ID))
+        self.assertTrue(all(q["insert"] is None and q["upsert"] is None and q["update"] is None and not q["delete"] for q in supabase.query_log))
 
         self.assertEqual(ladders, [])
 
