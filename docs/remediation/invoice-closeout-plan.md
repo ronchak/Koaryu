@@ -1,4 +1,7 @@
 # Invoice balance repair: amended PR162 plan
+Status: completed in PR162, merged as `66e8240a5d4ed3a21af74e60ee6aa8574cd9c703`.
+The plan below records the reviewed boundary; final evidence is in
+[invoice-closeout verification](invoice-closeout-verification.md).
 
 PR162 must remain unmerged until its new repair calls cannot overwrite newer payer balances. The coordinator and independent reviewer reproduced the issue and accepted the review comment on technical merit. The completed-create lifecycle correction is a separate approved stage already implemented locally. External-payment/plan transactions remain subsequent work.
 

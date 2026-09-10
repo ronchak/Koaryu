@@ -81,6 +81,8 @@ Routine billing currently means only viewing existing billing state, attaching a
 
 Signed-in users should use `/help/contact`; if the application route is unavailable, email `support@koaryu.app`. Include the studio name, affected page, approximate time, staff role, steps taken, expected result, and a non-sensitive screenshot when useful. For billing issues, include the payer name and visible invoice identifier, but never send passwords, card data, API keys, webhook secrets, or raw production exports.
 
+**Pending owner action (DOC1-05).** The owner has not provided a dedicated support address, so do not treat the documented fallback address as a working inbox, change mail or DNS, or provision a mailbox. After the owner provides an address, an approved operator must verify actual external receipt and reply before updating the application fallback, Help, and operations references to that exact address. If its receiving domain has null MX, a separately approved mail operator must reconcile that only if the domain will receive support mail. Preserve appropriate SPF, DKIM, DMARC, and privacy controls, and keep the application support form.
+
 The owner is the current incident and provider-alert recipient; email is preferred. Provider-native Vercel, Render, Supabase, and Stripe alerts are the primary signal. Any Codex or scheduled digest is supplemental and is not the sole real-time monitor. After every deployment, confirm the expected provider email alert path once and record the result.
 
 ## Recovery posture

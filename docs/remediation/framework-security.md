@@ -37,9 +37,10 @@ production build passes. Fresh independent source review approves the dependency
 and test deltas. Final review bound 1fd893f; exact-head CI passed. The guarded merge read
 production auto-deploy off twice. No production deployment was performed.
 
-The invoice/V41 changes are preserved on their separate branch. This newly found
-release blocker is tracked as PROGRAM-SECURITY-01 outside the 278 imported audit
-observations. No audit observation is closed by inference from this update.
+The invoice/V41 changes subsequently merged independently in PR162. This release
+blocker is tracked as PROGRAM-SECURITY-01 outside the 278 imported audit
+observations. Individual normalization verified CTA1-08 resolved indirectly by
+the runtime/lint alignment; broader fixture duplication FT1-07 remains pending.
 
 Verification caught two test-only issues. Removed the two Node-baseline tests that
 match documentation/configuration wording and require npm's unstable lockfile

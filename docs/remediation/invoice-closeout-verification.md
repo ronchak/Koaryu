@@ -123,4 +123,9 @@ resolved that independent gate failure and merged as 6901f71. PR162 now starts
 from that patched main. Its invoice/V41 production code, tests and SQL/helper
 inputs are byte-identical to the reviewed 0eeed52 candidate; the patched frontend
 is inherited unchanged. Tracking records were reconciled separately. Fresh review
-binding and exact-head CI on the rebased candidate remain required.
+binding approved final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d`.
+All eleven release checks passed in run 34426426887, and API contracts passed
+in run 34426426905. All three substantive review threads were resolved. The
+guarded merge read production Render auto-deploy off twice and merged PR162
+as `66e8240a5d4ed3a21af74e60ee6aa8574cd9c703`. Main matched the reviewed
+candidate tree. No production operation occurred.
