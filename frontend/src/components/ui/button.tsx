@@ -2,9 +2,12 @@ import {
   cloneElement,
   forwardRef,
   isValidElement,
+  type AriaAttributes,
   type ButtonHTMLAttributes,
+  type ForwardedRef,
   type MouseEvent,
   type ReactElement,
+  type Ref,
 } from "react";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost" | "outline";
@@ -49,8 +52,21 @@ type ChildElement = ReactElement<{
   className?: string;
   onClick?: (event: MouseEvent<HTMLElement>) => void;
   tabIndex?: number;
-  "aria-disabled"?: boolean;
+  "aria-disabled"?: AriaAttributes["aria-disabled"];
+  ref?: Ref<HTMLElement>;
 }>;
+
+function setRef<T>(ref: Ref<T> | undefined, value: T | null): (() => void) | undefined {
+  if (typeof ref === "function") {
+    const cleanup = ref(value);
+    return typeof cleanup === "function" ? cleanup : () => ref(null);
+  } else if (ref) {
+    ref.current = value;
+    return () => {
+      ref.current = null;
+    };
+  }
+}
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
@@ -62,6 +78,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       className = "",
       disabled,
       children,
+      onClick,
       ...props
     },
     ref
@@ -75,12 +92,26 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
     if (asChild && isValidElement(children)) {
       const child = children as ChildElement;
-      const shouldHandleClick = disabled || isLoading || child.props.onClick || props.onClick;
+      const shouldHandleClick = disabled || isLoading || child.props.onClick || onClick;
       const childProps: Partial<ChildElement["props"]> = {
+        ...props,
         className: `${composedClassName} ${child.props.className ?? ""}`,
-        "aria-disabled": disabled || isLoading || child.props["aria-disabled"],
-        tabIndex: disabled || isLoading ? -1 : child.props.tabIndex,
+        "aria-disabled": disabled || isLoading
+          ? true
+          : props["aria-disabled"] ?? child.props["aria-disabled"],
+        tabIndex: disabled || isLoading ? -1 : props.tabIndex ?? child.props.tabIndex,
       };
+
+      if (child.props.ref || ref) {
+        childProps.ref = (node: HTMLElement | null) => {
+          const childCleanup = setRef(child.props.ref, node);
+          const wrapperCleanup = setRef(ref as ForwardedRef<HTMLElement>, node);
+          return () => {
+            childCleanup?.();
+            wrapperCleanup?.();
+          };
+        };
+      }
 
       if (shouldHandleClick) {
         childProps.onClick = (event: MouseEvent<HTMLElement>) => {
@@ -89,7 +120,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
             return;
           }
           child.props.onClick?.(event);
-          props.onClick?.(event as unknown as MouseEvent<HTMLButtonElement>);
+          onClick?.(event as unknown as MouseEvent<HTMLButtonElement>);
         };
       }
 
@@ -101,6 +132,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || isLoading}
         className={composedClassName}
+        onClick={onClick}
         {...props}
       >
         {isLoading && (

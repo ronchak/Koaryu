@@ -18,18 +18,12 @@ import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { useConfigStore } from "@/lib/store";
 import { clearStoredStudioSessionCookies } from "@/lib/store-session-cookies";
+import { formatRoleLabel } from "@/lib/role-label";
 import { useStudioStore } from "@/lib/store";
 import type { AccountDeletionRequest, Studio } from "@/types";
 
 type AccountConfirmAction = "schedule-deletion" | "transfer-ownership" | null;
 const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
-
-function roleLabel(role?: string | null) {
-  if (role === "admin") return "Admin";
-  if (role === "instructor") return "Instructor";
-  if (role === "front_desk") return "Front desk";
-  return "Member";
-}
 
 export default function AccountSettingsPage() {
   const { token } = useConfigStore();
@@ -204,7 +198,7 @@ export default function AccountSettingsPage() {
         <AccountInfoRow label="Current studio" value={studioName || "Not selected"} />
         <AccountInfoRow
           label="Current role"
-          value={roleLabel(currentRole)}
+          value={formatRoleLabel(currentRole)}
           detail="Role changes are managed by studio admins from staff settings."
         />
       </AccountSection>

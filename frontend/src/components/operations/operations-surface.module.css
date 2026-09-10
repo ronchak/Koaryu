@@ -98,10 +98,6 @@
   box-shadow: var(--product-shadow-lifted, 0 24px 60px rgb(0 0 0 / 22%)) !important;
 }
 
-.internalOverflow {
-  overflow-x: clip;
-}
-
 .index {
   margin: 16px 16px 0;
   border-radius: 14px;

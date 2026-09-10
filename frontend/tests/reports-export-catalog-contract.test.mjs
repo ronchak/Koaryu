@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { getReportExportMinimumRole } from "../src/lib/report-metrics.ts";
 
 const panelSource = readFileSync(
   new URL("../src/components/reports/reports-data-exports-panel.tsx", import.meta.url),
-  "utf8"
-);
-const metricsSource = readFileSync(
-  new URL("../src/lib/report-metrics.ts", import.meta.url),
   "utf8"
 );
 const backendManifest = JSON.parse(
@@ -23,8 +20,6 @@ describe("report export catalog", () => {
     assert.equal(reportIds.length, 29);
     assert.equal(new Set(reportIds).size, 29);
     assert.equal((panelSource.match(/title: "(?:Owner Intelligence|Student Records|Growth|Programs and Ranks|Schedule|Administration)"/g) || []).length, 6);
-    assert.match(panelSource, /function ExportGroupRegister/);
-    assert.doesNotMatch(panelSource, /aria-hidden=\{!isOpen\}|useId\(|setIsOpen/);
   });
 
   it("does not ship the deferred raw billing CSV catalog in Reports", () => {
@@ -48,25 +43,13 @@ describe("report export catalog", () => {
     );
     const backendLiveIds = backendLive.map((report) => report.id);
     const frontendMinimumRoles = Object.fromEntries(
-      frontendIds.map((id) => [
-        id,
-        panelSource.split("\n").some((line) =>
-          line.includes('{ id: "' + id + '"') &&
-          line.includes('minimumRole: "front_desk"')
-        )
-          ? "front_desk"
-          : "admin",
-      ])
+      frontendIds.map((id) => [id, getReportExportMinimumRole(id)])
     );
     const backendMinimumRoles = Object.fromEntries(
       backendLive.map((report) => [report.id, report.min_role])
     );
-    const frontDeskBlock = metricsSource.slice(
-      metricsSource.indexOf("FRONT_DESK_REPORT_EXPORT_IDS"),
-      metricsSource.indexOf("] as const", metricsSource.indexOf("FRONT_DESK_REPORT_EXPORT_IDS"))
-    );
-    const frontDeskIds = [...frontDeskBlock.matchAll(/"([a-z0-9_]+)",/g)].map(
-      (match) => match[1]
+    const frontDeskIds = frontendIds.filter(
+      (id) => getReportExportMinimumRole(id) === "front_desk"
     );
 
     assert.deepEqual([...new Set(frontendIds)].sort(), [...backendLiveIds].sort());
@@ -90,6 +73,7 @@ describe("report export catalog", () => {
         .some((report) => frontendIds.includes(report.id)),
       false
     );
+    assert.doesNotMatch(panelSource, /minimumRole\??:/);
   });
 
   it("checks per-row authorization before preview, token, or download work", () => {

@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useTheme, type ThemePreference } from "@/components/theme-provider";
 import { crmLinkPrefetch } from "@/lib/constants";
+import { formatRoleLabel } from "@/lib/role-label";
 import { useConfigStore } from "@/lib/store";
 import type { PlatformBillingStatus } from "@/types";
 import styles from "./account-menu.module.css";
@@ -76,13 +77,6 @@ const personalizationItems: MenuLinkItem[] = [
   { href: "/account/notifications", label: "Notifications", icon: Bell },
   { href: "/account/data", label: "Data and export", icon: LayoutList },
 ];
-
-function roleLabel(role?: string | null): string {
-  if (role === "admin") return "Admin";
-  if (role === "instructor") return "Instructor";
-  if (role === "front_desk") return "Front desk";
-  return "Member";
-}
 
 function avatarLetter(name?: string, email?: string): string {
   return (name || email || "K").trim().charAt(0).toUpperCase() || "K";
@@ -140,7 +134,7 @@ export function AccountMenu({
   const displayName = userName || studioName || "Koaryu account";
   const displayEmail = userEmail || "Account settings";
   const letter = avatarLetter(displayName, userEmail);
-  const accountRole = roleLabel(role);
+  const accountRole = formatRoleLabel(role);
   const canViewSubscription = currentRole === "admin";
   const effectivePlatformBilling = useAccountMenuBillingStatus({
     canViewSubscription,

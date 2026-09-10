@@ -61,7 +61,7 @@ export function SchedulePageContent({
   onViewChange,
 }: SchedulePageContentProps) {
   return (
-    <OperationsSurface page="schedule" allowInternalOverflow>
+    <OperationsSurface page="schedule">
       <SchedulePageSection
         canManageSchedule={canManageSchedule}
         currentDate={currentDate}
