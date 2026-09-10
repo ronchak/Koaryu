@@ -338,7 +338,9 @@
 }
 
 @media (max-width: 820px) {
-  .rosterToolbar { position: static; }
+  .rosterToolbar { position: static; grid-template-columns: 1fr; }
+  .rosterFilterGroup,
+  .mobileSortControl { grid-column: 1 / -1; }
   .rosterViewport { padding: 0.85rem 0.85rem 0; }
   .rosterWorkbench { display: flex; flex-direction: column; }
   .rosterLedger { width: 100%; }

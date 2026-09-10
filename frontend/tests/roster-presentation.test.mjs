@@ -37,9 +37,9 @@ describe("roster presentation behavior", () => {
   after(async () => { await browser?.close(); });
 
   it("uses one luminance rule for light, dark, short, and malformed rank colors", () => {
-    for (const color of ["#FFFFFF", "#EAB308", "#fff"]) {
+    for (const color of ["#FFFFFF", "#EAB308", "#767676", "#fff"]) {
       assert.equal(prefersDarkRankText(color), true, color);
-      assert.equal(getRankColorTreatment(color).color, "#211b12", color);
+      assert.equal(getRankColorTreatment(color).color, "#000000", color);
     }
     for (const color of ["#111111", "malformed"]) {
       assert.equal(prefersDarkRankText(color), false, color);
@@ -49,7 +49,7 @@ describe("roster presentation behavior", () => {
 
   it("mounts mobile sort, responsive quick view, keyboard, open, selection, and both tip badges", async () => {
     const page = await browser.newPage({ viewport: { width: 820, height: 900 } });
-    await page.setContent(`<style>${rosterStyles}</style><main id="root"></main>`);
+    await page.setContent(`<style>*{box-sizing:border-box}.px-4{padding-left:1rem;padding-right:1rem}${rosterStyles}</style><main id="root"></main>`);
     await page.evaluate(() => { window.fixture = { opened: [], selected: [], sorts: [] }; });
     await page.addScriptTag({ content: presentationBundle });
     await page.evaluate((props) => window.fixture.renderRoster(props), rosterProps());
@@ -75,7 +75,24 @@ describe("roster presentation behavior", () => {
       opened: ["student-b"], selected: ["student-b"],
     });
 
+    await page.setViewportSize({ width: 601, height: 900 });
+    await page.locator(".rosterToolbar").evaluate((toolbar) => { toolbar.style.width = "521px"; });
+    const overlaps = await page.locator(".rosterToolbar").evaluate((toolbar) => {
+      const controls = [...toolbar.querySelectorAll("input, select, button")].filter((control) => {
+        const style = getComputedStyle(control);
+        return style.display !== "none" && style.visibility !== "hidden";
+      });
+      return controls.flatMap((control, index) => controls.slice(index + 1).flatMap((other) => {
+        const a = control.getBoundingClientRect();
+        const b = other.getBoundingClientRect();
+        const intersects = a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+        return intersects ? [[control.getAttribute("aria-label") ?? control.tagName, other.getAttribute("aria-label") ?? other.tagName]] : [];
+      }));
+    });
+    assert.deepEqual(overlaps, []);
+
     await page.setViewportSize({ width: 1400, height: 900 });
+    await page.locator(".rosterToolbar").evaluate((toolbar) => { toolbar.style.width = "auto"; });
     assert.equal(await sort.isVisible(), false);
     assert.equal(await page.locator("thead").isVisible(), true);
     await page.locator('[data-student-id="student-a"]').hover();
@@ -86,7 +103,7 @@ describe("roster presentation behavior", () => {
     const badges = page.locator("#root > div > span");
     assert.equal(await badges.count(), 2);
     for (const badge of await badges.all()) {
-      assert.equal(await badge.evaluate((node) => getComputedStyle(node).color), "rgb(33, 27, 18)");
+      assert.equal(await badge.evaluate((node) => getComputedStyle(node).color), "rgb(0, 0, 0)");
       assert.equal(await badge.locator('span[style*="rgb(34, 197, 94)"]').count(), 1);
     }
   });

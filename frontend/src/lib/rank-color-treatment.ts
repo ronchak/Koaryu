@@ -22,6 +22,6 @@ export function getRankColorTreatment(color: string): CSSProperties {
   return {
     backgroundColor: color,
     border: useDarkText ? "1px solid rgb(46 39 28 / 24%)" : "1px solid transparent",
-    color: useDarkText ? "#211b12" : "#ffffff",
+    color: useDarkText ? "#000000" : "#ffffff",
   };
 }
