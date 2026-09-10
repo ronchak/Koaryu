@@ -1,7 +1,7 @@
 # Koaryu remediation program
 
 Owner: the coordinating remediation task. Started September 7, 2026.
-Current normalization base: `66e8240a5d4ed3a21af74e60ee6aa8574cd9c703`, after PR162.
+Original normalization base: `66e8240a5d4ed3a21af74e60ee6aa8574cd9c703`, after PR162.
 
 Koaryu's working architecture and safeguards stay. This program corrects verified product defects and removes accidental complexity through bounded, independently reviewed PRs. It does not promise to implement every audit recommendation.
 
@@ -11,23 +11,25 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 31 |
+| Fixed | 36 |
 | Resolved indirectly | 2 |
-| Pending | 232 |
+| Pending | 227 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Total | 278 |
 
-Pending work is split between 149 Astra and 83 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
+Pending work is split between 149 Astra and 78 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. Those entries do not inflate the original 278.
+
+The marketing scene cleanup removes the unused parallel model, duplicate cloud generator and ineffective hero props. Five scoped observations are fixed; the four touched test files shrink by326 lines and seven cases. See [verification](docs/remediation/marketing-scene-verification.md). Broader test cleanup remains pending.
 
 PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` received fresh independent review and all eleven release checks passed. The full disposable database verification passed 136 migrations and 51 contracts, including payer-balance concurrency and restore continuation. No production migration, deployment or backfill occurred.
 
 ## Next work
 
-1. Merge this corrected ledger, normalized map and Sol recipes after fresh review and the exact candidate gate.
+1. The corrected ledger, map and Sol recipes merged in [PR164](https://github.com/ronchak/Koaryu/pull/164) as `0f86853` after fresh review and the full exact-head gate.
 2. Build the release-attestation generator. Declare schema state once, generate repeated preflight/manifest bodies and restore-check plumbing, and prove old attested output byte-identical. Keep the already-merged V41 unchanged. Release-specific business continuation fixtures remain explicit where schema cannot describe their behavior.
 3. Reassess current main after that merge. Select the next integrity correction using the normalized dependencies, including independent program dates, payment recovery/facts, lock-order defects and due-worker progress. Sol can execute ready low-risk batches with coordinator integration.
 

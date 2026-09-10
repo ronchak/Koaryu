@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+  "last_reconciled_main": "0f8685347d19579c6784b804bc420a777afabadc",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -6047,11 +6047,11 @@
       "id": "FT1-06",
       "title": "Tests protect dead interfaces and a parallel scene model",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "The dead-prop and unused scene-model preservation tests still exist. This supporting evidence shares the graphics cleanup root cause, but grouping it does not resolve the unimplemented cleanup.",
+      "disposition": "fixed",
+      "reason": "Removed tests of the unused phase/stop model and ineffective hero props. Actual scene rendering now checks local unique references, representative layers and finite output, while useful geometry and existing interaction coverage remain. Broader source-test cleanup is still pending under FT1-11.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "309df2bc5ea14b348fb2e128525c159525d0efba",
       "source_paths": [
         "frontend/tests/marketing-public-pages.test.mjs",
         "frontend/tests/marketing-journey-scene.test.mjs",
@@ -6067,22 +6067,12 @@
       ],
       "current_evidence": [
         {
-          "path": "frontend/tests/marketing-public-pages.test.mjs",
-          "line": 36,
-          "observation": "The test requires two props that MarketingHero does not consume."
-        },
-        {
           "path": "frontend/tests/marketing-journey-scene.test.mjs",
-          "line": 60,
-          "observation": "Tests call sceneProgressModel, which the renderer does not call."
-        },
-        {
-          "path": "frontend/tests/marketing-journey-scene.test.mjs",
-          "line": 197,
-          "observation": "A source-regex assertion requires the exact makeIds(useId()) expression."
+          "line": 81,
+          "observation": "Removed tests of the unused phase/stop model and ineffective hero props. Actual scene rendering now checks local unique references, representative layers and finite output, while useful geometry and existing interaction coverage remain. Broader source-test cleanup is still pending under FT1-11."
         }
       ],
-      "next_change": "No separate change. Replace these assertions as part of FC2-10 and FC2-12, while retaining useful geometry and accessibility checks.",
+      "next_change": "None for the scoped finding; retain the documented rendering and interaction checks.",
       "validation_plan": "Run the two focused marketing test files after their owning production contracts are corrected.",
       "scope_constraints": [
         "approved geometry baselines without product direction",
@@ -6090,7 +6080,8 @@
         "decorative SVG accessibility attributes"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md"
+      "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
+      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
     },
     {
       "id": "FT1-07",
@@ -8354,11 +8345,11 @@
       "id": "FC2-09",
       "title": "Fresh SVG ID objects defeat memoization during every animation frame",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "The renderer still creates a new IDs object each render and rebuilds static far-ridge paths inside the render loop.",
+      "disposition": "fixed",
+      "reason": "Scene IDs now retain one object for the stable React ID, and far-ridge path strings are evaluated at module initialization. Complete rendered SVG matches the base across22 representative size/progress cases; no frame-rate claim is made.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "309df2bc5ea14b348fb2e128525c159525d0efba",
       "source_paths": [
         "frontend/src/components/marketing/journey/journey-scene.tsx"
       ],
@@ -8369,21 +8360,11 @@
       "current_evidence": [
         {
           "path": "frontend/src/components/marketing/journey/journey-scene.tsx",
-          "line": 1073,
-          "observation": "makeIds(useId()) returns a fresh object on every render."
-        },
-        {
-          "path": "frontend/src/components/marketing/journey/journey-scene.tsx",
-          "line": 264,
-          "observation": "SceneDefs is memoized but receives the unstable ids object."
-        },
-        {
-          "path": "frontend/src/components/marketing/journey/journey-scene.tsx",
-          "line": 840,
-          "observation": "FAR_RIDGES calls closedRidgePath during rendering."
+          "line": 200,
+          "observation": "Scene IDs now retain one object for the stable React ID, and far-ridge path strings are evaluated at module initialization. Complete rendered SVG matches the base across22 representative size/progress cases; no frame-rate claim is made."
         }
       ],
-      "next_change": "Memoize the IDs object for the stable React ID and precompute far-ridge path strings at module scope.",
+      "next_change": "None for the scoped finding; retain the documented rendering and interaction checks.",
       "validation_plan": "Focused renderer test should confirm unique IDs across instances, stable IDs across rerenders, and unchanged far-ridge path output.",
       "scope_constraints": [
         "scene timing",
@@ -8392,17 +8373,18 @@
         "instance-unique SVG IDs"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md"
+      "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
+      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
     },
     {
       "id": "FC2-10",
       "title": "Scene tests exercise a parallel progress model the renderer never uses",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "sceneProgressModel, phaseProgress, and JOURNEY_SCENE_STOPS remain test-facing projections while production rendering computes phase easing independently.",
+      "disposition": "fixed",
+      "reason": "Removed the unused parallel sceneProgressModel/phaseProgress model, its types and the test-only JOURNEY_SCENE_STOPS export. Its sole landing-content import is gone. The working renderer formulas remain unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "309df2bc5ea14b348fb2e128525c159525d0efba",
       "source_paths": [
         "frontend/src/components/marketing/journey/scene-model.ts",
         "frontend/src/components/marketing/journey/journey-scene.tsx",
@@ -8417,21 +8399,11 @@
       "current_evidence": [
         {
           "path": "frontend/src/components/marketing/journey/scene-model.ts",
-          "line": 108,
-          "observation": "sceneProgressModel builds named eased phases."
-        },
-        {
-          "path": "frontend/src/components/marketing/journey/journey-scene.tsx",
-          "line": 650,
-          "observation": "The renderer independently calculates arrival, portal, and through progress."
-        },
-        {
-          "path": "frontend/tests/marketing-journey-scene.test.mjs",
-          "line": 60,
-          "observation": "Tests exercise the unused sceneProgressModel rather than renderer calculations."
+          "line": 75,
+          "observation": "Removed the unused parallel sceneProgressModel/phaseProgress model, its types and the test-only JOURNEY_SCENE_STOPS export. Its sole landing-content import is gone. The working renderer formulas remain unchanged."
         }
       ],
-      "next_change": "Remove sceneProgressModel/phaseProgress and related exports only when current reference search proves they are test-only. Keep the working renderer formulas and all renderer-consumed geometry/data; do not add a new phase abstraction merely to unit-test it.",
+      "next_change": "None for the scoped finding; retain the documented rendering and interaction checks.",
       "validation_plan": "Remove shadow-model/source-expression tests and retain real geometry/content checks. Inspect representative actual renderer progress states and instance IDs; no copied parallel progress algorithm.",
       "scope_constraints": [
         "approved phase boundaries without product direction",
@@ -8439,17 +8411,18 @@
         "landing chapter content"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md"
+      "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
+      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
     },
     {
       "id": "FC2-11",
       "title": "Cloud geometry contains an exact duplicated path generator",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "The same seeded makeCloudPath algorithm remains duplicated in the renderer and scene model.",
+      "disposition": "fixed",
+      "reason": "Both existing cloud collections use one exported makeCloudPath implementation with their original seeds. The duplicate generator was removed without merging the distinct collections.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "309df2bc5ea14b348fb2e128525c159525d0efba",
       "source_paths": [
         "frontend/src/components/marketing/journey/journey-scene.tsx",
         "frontend/src/components/marketing/journey/scene-model.ts"
@@ -8460,17 +8433,12 @@
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "frontend/src/components/marketing/journey/journey-scene.tsx",
-          "line": 193,
-          "observation": "A local makeCloudPath generates mountain wisps."
-        },
-        {
           "path": "frontend/src/components/marketing/journey/scene-model.ts",
-          "line": 265,
-          "observation": "An identical private makeCloudPath generates the cloud catalog."
+          "line": 204,
+          "observation": "Both existing cloud collections use one exported makeCloudPath implementation with their original seeds. The duplicate generator was removed without merging the distinct collections."
         }
       ],
-      "next_change": "Export the pure generator from scene-model and reuse it for MOUNTAIN_WISPS without merging the distinct cloud collections.",
+      "next_change": "None for the scoped finding; retain the documented rendering and interaction checks.",
       "validation_plan": "Compare generated path strings for fixed seeds before and after consolidation, then run the focused scene test.",
       "scope_constraints": [
         "cloud collections",
@@ -8478,17 +8446,18 @@
         "geometry output"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md"
+      "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
+      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
     },
     {
       "id": "FC2-12",
       "title": "Marketing tests lock in public props that have no effect",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "sceneLabel and sceneFocus are still accepted and passed by callers but MarketingHero neither destructures nor renders them.",
+      "disposition": "fixed",
+      "reason": "Removed ineffective sceneLabel/sceneFocus props and all three caller sites. Their declaration-presence assertions were deleted; the hero content and rendered behavior remain unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "309df2bc5ea14b348fb2e128525c159525d0efba",
       "source_paths": [
         "frontend/src/components/marketing/public-pages.tsx",
         "frontend/tests/marketing-public-pages.test.mjs"
@@ -8503,20 +8472,10 @@
         {
           "path": "frontend/src/components/marketing/public-pages.tsx",
           "line": 138,
-          "observation": "MarketingHero destructures its functional props but not sceneLabel or sceneFocus."
-        },
-        {
-          "path": "frontend/src/components/marketing/public-pages.tsx",
-          "line": 152,
-          "observation": "The two inert props remain in the declared contract."
-        },
-        {
-          "path": "frontend/tests/marketing-public-pages.test.mjs",
-          "line": 36,
-          "observation": "The test explicitly requires both dead declarations."
+          "observation": "Removed ineffective sceneLabel/sceneFocus props and all three caller sites. Their declaration-presence assertions were deleted; the hero content and rendered behavior remain unchanged."
         }
       ],
-      "next_change": "Remove both props from the contract and all callers, then delete their declaration-presence assertions.",
+      "next_change": "None for the scoped finding; retain the documented rendering and interaction checks.",
       "validation_plan": "Reference search plus the focused marketing public-pages test after replacing dead-prop assertions with rendered-contract checks.",
       "scope_constraints": [
         "marketing copy",
@@ -8524,7 +8483,8 @@
         "server-rendered page structure"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md"
+      "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
+      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
     },
     {
       "id": "FC2-13",
@@ -12236,5 +12196,17 @@
       "Sol": 83,
       "Astra": 149
     }
+  },
+  "current_counts": {
+    "pending": 227,
+    "fixed": 36,
+    "rejected_after_verification": 1,
+    "deferred_intentionally": 11,
+    "resolved_indirectly": 2,
+    "deferred_pending_owner_action": 1
+  },
+  "current_pending_tracks": {
+    "Sol": 78,
+    "Astra": 149
   }
 }
