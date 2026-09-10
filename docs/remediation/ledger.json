@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "84ac2a877fdd4ee5bc31d74ea013bbb87a16d973",
+  "last_reconciled_main": "8c961326b5669fdfeeb0d019d8e883ff4202d336",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -7252,19 +7252,21 @@
       "id": "FR1-12",
       "title": "Sign-out and role-label policies are copied across account routes",
       "cluster": "access_and_recovery",
-      "disposition": "pending",
-      "reason": "Retain the small role-label cleanup. Sign-out handlers currently share cookie cleanup and have deliberate routing/message differences; duplication alone does not justify consolidating auth ownership.",
+      "disposition": "fixed",
+      "reason": "The three identical account role labels use one formatter. Distinct sign-out and access behavior remains unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No hosted activity or new runtime tests in this normalization.",
+      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
+      "verification": "PR169: focused 40-test suite, TypeScript, lint and 62-page build pass. Mounted Button/ref and storage-failure theme behavior; direct legal HTML and metadata inspection. See shared-ui-verification.md.",
       "source_paths": [
         "frontend/src/app/(dashboard)/layout.tsx",
         "frontend/src/app/account-archived/page.tsx",
         "frontend/src/app/(dashboard)/account/settings/page.tsx",
         "frontend/src/app/(dashboard)/account/page.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        169
+      ],
       "track": "Sol",
       "root_cause": "duplicated_role_presentation",
       "collapse_with": [],
@@ -7357,18 +7359,20 @@
       "id": "FR1-14",
       "title": "Identical 404 views and legal layouts create avoidable presentation duplication",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "The two 404 entries remain exact presentation copies, and Privacy and Terms still duplicate the same legal-document renderer.",
+      "disposition": "fixed",
+      "reason": "Both 404 entries use one view; Privacy and Terms use one narrow renderer with their original content, metadata and labels.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
       "source_paths": [
         "frontend/src/app/not-found.tsx",
         "frontend/src/app/(errors)/404/page.tsx",
         "frontend/src/app/privacy/page.tsx",
         "frontend/src/app/terms/page.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        169
+      ],
       "track": "Sol",
       "root_cause": "duplicated_route_presentation",
       "collapse_with": [],
@@ -7398,7 +7402,8 @@
         "support-address decision"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/09-shared-route-and-ui-contracts.md"
+      "delegated_batch": "docs/remediation/delegated/09-shared-route-and-ui-contracts.md",
+      "verification": "PR169: focused 40-test suite, TypeScript, lint and 62-page build pass. Mounted Button/ref and storage-failure theme behavior; direct legal HTML and metadata inspection. See shared-ui-verification.md."
     },
     {
       "id": "FC1-01",
@@ -8594,16 +8599,18 @@
       "id": "FC2-15",
       "title": "Report exports duplicate existing presentation helpers and role metadata",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "The export panel still duplicates two presentation helpers and stores minimumRole metadata that authorization and UI ignore in favor of report-metrics.",
+      "disposition": "fixed",
+      "reason": "Removed the unused export minimumRole field and duplicate presentation helpers. Report role checks still use the existing authoritative metrics helper.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
       "source_paths": [
         "frontend/src/components/reports/reports-data-exports-panel.tsx",
         "frontend/src/components/reports/reports-page-sections.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        169
+      ],
       "track": "Sol",
       "root_cause": "duplicate_report_presentation_and_role_metadata",
       "collapse_with": [],
@@ -8634,22 +8641,25 @@
         "report catalog IDs"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/09-shared-route-and-ui-contracts.md"
+      "delegated_batch": "docs/remediation/delegated/09-shared-route-and-ui-contracts.md",
+      "verification": "PR169: focused 40-test suite, TypeScript, lint and 62-page build pass. Mounted Button/ref and storage-failure theme behavior; direct legal HTML and metadata inspection. See shared-ui-verification.md."
     },
     {
       "id": "FC2-16",
       "title": "Operations overflow option currently changes nothing",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "allowInternalOverflow still adds only overflow-x: clip, which the base surface already applies.",
+      "disposition": "fixed",
+      "reason": "Removed the redundant overflow prop and class; the base surface retains the same horizontal clipping.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
       "source_paths": [
         "frontend/src/components/operations/operations-surface.tsx",
         "frontend/src/components/operations/operations-surface.module.css"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        169
+      ],
       "track": "Sol",
       "root_cause": "dead_operations_overflow_option",
       "collapse_with": [],
@@ -8678,7 +8688,8 @@
         "responsive schedule layout"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/09-shared-route-and-ui-contracts.md"
+      "delegated_batch": "docs/remediation/delegated/09-shared-route-and-ui-contracts.md",
+      "verification": "PR169: focused 40-test suite, TypeScript, lint and 62-page build pass. Mounted Button/ref and storage-failure theme behavior; direct legal HTML and metadata inspection. See shared-ui-verification.md."
     },
     {
       "id": "FC2-17",
@@ -8961,15 +8972,17 @@
       "id": "FC3-06",
       "title": "Button\u2019s asChild mode advertises props it silently drops",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "Button still advertises native button attributes and a forwarded ref in asChild mode but clones only a small subset; current callers do not eliminate the latent contract mismatch.",
+      "disposition": "fixed",
+      "reason": "asChild forwards native attributes and composed refs, including React 19 cleanup, while preserving child-then-wrapper clicks and disabled navigation blocking.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
       "source_paths": [
         "frontend/src/components/ui/button.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        169
+      ],
       "track": "Sol",
       "root_cause": "dishonest_button_aschild_contract",
       "collapse_with": [],
@@ -8998,21 +9011,24 @@
         "button variants and sizing without need"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/09-shared-route-and-ui-contracts.md"
+      "delegated_batch": "docs/remediation/delegated/09-shared-route-and-ui-contracts.md",
+      "verification": "PR169: focused 40-test suite, TypeScript, lint and 62-page build pass. Mounted Button/ref and storage-failure theme behavior; direct legal HTML and metadata inspection. See shared-ui-verification.md."
     },
     {
       "id": "FC3-07",
       "title": "System theme stops following the operating system when persistence is unavailable",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "When localStorage writes fail, System applies in memory, but later OS changes reread storage and fall back to Light instead of consulting current state.",
+      "disposition": "fixed",
+      "reason": "System theme media changes consult the current in-memory preference even when browser storage fails.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
       "source_paths": [
         "frontend/src/components/theme-provider.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        169
+      ],
       "track": "Sol",
       "root_cause": "theme_listener_uses_storage_as_runtime_state",
       "collapse_with": [],
@@ -9041,7 +9057,8 @@
         "navigation placement persistence"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/09-shared-route-and-ui-contracts.md"
+      "delegated_batch": "docs/remediation/delegated/09-shared-route-and-ui-contracts.md",
+      "verification": "PR169: focused 40-test suite, TypeScript, lint and 62-page build pass. Mounted Button/ref and storage-failure theme behavior; direct legal HTML and metadata inspection. See shared-ui-verification.md."
     },
     {
       "id": "FC3-08",
@@ -12215,15 +12232,15 @@
     }
   },
   "current_counts": {
-    "pending": 223,
-    "fixed": 40,
+    "pending": 217,
+    "fixed": 46,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 78,
+    "Sol": 72,
     "Astra": 145
   }
 }
