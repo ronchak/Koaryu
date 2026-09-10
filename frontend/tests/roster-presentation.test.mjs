@@ -57,6 +57,8 @@ describe("roster presentation behavior", () => {
     const sort = page.getByLabel("Sort students by");
     await sort.waitFor();
     assert.equal(await sort.isVisible(), true);
+    assert.equal(await page.locator("thead").isVisible(), false);
+    assert.equal(await page.locator("aside").isVisible(), false);
     await sort.selectOption("status");
     await page.evaluate((props) => window.fixture.renderRoster(props), { ...rosterProps(), sortKey: "status" });
     await page.getByRole("button", { name: "Sort descending" }).click();
@@ -74,7 +76,10 @@ describe("roster presentation behavior", () => {
     });
 
     await page.setViewportSize({ width: 1400, height: 900 });
+    assert.equal(await sort.isVisible(), false);
+    assert.equal(await page.locator("thead").isVisible(), true);
     await page.locator('[data-student-id="student-a"]').hover();
+    assert.equal(await page.locator("aside").isVisible(), true);
     assert.match(await page.locator("aside").textContent(), /Ada Student/);
 
     await page.evaluate(() => window.fixture.renderBadges());

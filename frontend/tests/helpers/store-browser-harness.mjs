@@ -23,7 +23,7 @@ export function bundle(mode, { preview = false, pagedRoster = true, layout = fal
     } : {}),
     ...(rosterPresentation ? {
       "next/dynamic": `exports.__esModule=true;exports.default=()=>()=>null;`,
-      "./student-records.module.css": `module.exports=new Proxy({},{get:(_target,name)=>String(name)});`,
+      "./student-records.module.css": `exports.__esModule=true;exports.default=new Proxy({},{get:(_target,name)=>String(name)});`,
       "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
     } : {}),
     ...(scheduleForm ? {
