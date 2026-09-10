@@ -13,15 +13,19 @@ const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 function mountBundle(entry, fixtureSource) {
   const modules = [];
   const ids = new Map();
+  const stubs = {
+    "next/link": `const React=require("react");const Link=({prefetch,...props})=>React.createElement("a",props);exports.__esModule=true;exports.default=Link;`,
+  };
 
   function add(request, importer = frontend) {
+    if (stubs[request] && ids.has(request)) return ids.get(request);
     const path = request.startsWith("@/")
       ? resolve(frontend, "src", request.slice(2))
       : request.startsWith(".")
         ? resolve(dirname(importer), request)
         : require.resolve(request, { paths: [frontend] });
     const candidates = [path, `${path}.ts`, `${path}.tsx`, `${path}.js`];
-    const key = candidates.find((candidate) => {
+    const key = stubs[request] ? request : candidates.find((candidate) => {
       try {
         readFileSync(candidate);
         return true;
@@ -34,8 +38,10 @@ function mountBundle(entry, fixtureSource) {
     const id = modules.length;
     ids.set(key, id);
     modules.push("");
-    let source = readFileSync(key, "utf8");
-    if (/\.[cm]?[jt]sx?$/.test(key)) {
+    let source = stubs[key] ?? readFileSync(key, "utf8");
+    if (key.endsWith(".css")) {
+      source = `module.exports=new Proxy({},{get:(_target,name)=>String(name)});`;
+    } else if (/\.[cm]?[jt]sx?$/.test(key)) {
       source = ts.transpileModule(source, {
         fileName: key,
         compilerOptions: {
@@ -116,6 +122,11 @@ test("Button asChild forwards attributes and ref while composing click handlers"
       history.replaceState(null, "", location.pathname);
       window.fixture.render(true);
     });
+    await page.waitForFunction(() => document.querySelector("a")?.getAttribute("aria-disabled") === "true");
+    assert.deepEqual(await page.evaluate(() => ({
+      childCleanups: window.fixture.childCleanups,
+      wrapperCleanups: window.fixture.wrapperCleanups,
+    })), { childCleanups: 0, wrapperCleanups: 0 });
     await link.click({ force: true });
     assert.deepEqual(await page.evaluate(() => ({
       childClicks: window.fixture.childClicks,
@@ -132,13 +143,48 @@ test("Button asChild forwards attributes and ref while composing click handlers"
       wrapperCleanups: window.fixture.wrapperCleanups,
       childObjectTag: window.fixture.childObject.current?.tagName,
       legacyRefCalls: window.fixture.legacyRefCalls,
-    })), { childCleanups: 2, wrapperCleanups: 2, childObjectTag: "A", legacyRefCalls: ["A"] });
+    })), { childCleanups: 1, wrapperCleanups: 1, childObjectTag: "A", legacyRefCalls: ["A"] });
     await page.evaluate(() => window.fixture.clearRefs());
     await page.getByText("Cleared").waitFor();
     assert.deepEqual(await page.evaluate(() => ({
       childObject: window.fixture.childObject.current,
       legacyRefCalls: window.fixture.legacyRefCalls,
     })), { childObject: null, legacyRefCalls: ["A", null] });
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Privacy and Terms render complete legal document behavior", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const contract of [
+      { route: "privacy", navigation: "Privacy policy sections", document: "Privacy policy", sections: 7 },
+      { route: "terms", navigation: "Terms of service sections", document: "Terms of service", sections: 6 },
+    ]) {
+      const page = await openFixture(browser);
+      await page.addScriptTag({ content: mountBundle(`@/app/${contract.route}/page`, `
+        createRoot(document.getElementById('root')).render(React.createElement(Subject.default));
+      `) });
+      const article = page.getByRole("article", { name: contract.document });
+      await article.waitFor();
+      assert.equal(await page.getByRole("heading", { level: 1 }).count(), 1);
+      assert.equal(await page.locator('time[datetime="2026-05-19"]').count(), 1);
+      const links = page.getByRole("navigation", { name: contract.navigation }).getByRole("link");
+      assert.equal(await links.count(), contract.sections);
+      for (let index = 0; index < contract.sections; index += 1) {
+        const link = links.nth(index);
+        const target = await link.getAttribute("href");
+        assert.ok(target?.startsWith("#"));
+        assert.equal(
+          await page.locator(target).getByRole("heading", { level: 2 }).textContent(),
+          await link.textContent()
+        );
+      }
+      assert.ok(await article.locator("section p").count() >= contract.sections);
+      assert.ok((await article.locator("aside").textContent())?.trim());
+      await page.close();
+    }
   } finally {
     await browser.close();
   }

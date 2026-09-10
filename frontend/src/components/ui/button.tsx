@@ -2,6 +2,7 @@ import {
   cloneElement,
   forwardRef,
   isValidElement,
+  useMemo,
   type AriaAttributes,
   type ButtonHTMLAttributes,
   type ForwardedRef,
@@ -89,9 +90,22 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ${sizeStyles[size]}
       ${className}
     `;
+    const child = isValidElement(children) ? children as ChildElement : null;
+    const childRef = child?.props.ref;
+    const composedRef = useMemo(() => {
+      if (!childRef && !ref) return undefined;
 
-    if (asChild && isValidElement(children)) {
-      const child = children as ChildElement;
+      return (node: HTMLElement | null) => {
+        const childCleanup = setRef(childRef, node);
+        const wrapperCleanup = setRef(ref as ForwardedRef<HTMLElement>, node);
+        return () => {
+          childCleanup?.();
+          wrapperCleanup?.();
+        };
+      };
+    }, [childRef, ref]);
+
+    if (asChild && child) {
       const shouldHandleClick = disabled || isLoading || child.props.onClick || onClick;
       const childProps: Partial<ChildElement["props"]> = {
         ...props,
@@ -102,15 +116,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         tabIndex: disabled || isLoading ? -1 : props.tabIndex ?? child.props.tabIndex,
       };
 
-      if (child.props.ref || ref) {
-        childProps.ref = (node: HTMLElement | null) => {
-          const childCleanup = setRef(child.props.ref, node);
-          const wrapperCleanup = setRef(ref as ForwardedRef<HTMLElement>, node);
-          return () => {
-            childCleanup?.();
-            wrapperCleanup?.();
-          };
-        };
+      if (composedRef) {
+        childProps.ref = composedRef;
       }
 
       if (shouldHandleClick) {

@@ -27,7 +27,7 @@ The ledger separately records the authorized release-attestation generator, a ne
 
 PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` received fresh independent review and all eleven release checks passed. The full disposable database verification passed 136 migrations and 51 contracts, including payer-balance concurrency and restore continuation. No production migration, deployment or backfill occurred.
 
-[PR169](https://github.com/ronchak/Koaryu/pull/169) closes six shared UI findings. Its candidate combines identical views, removes dead options and fixes Button and System theme behavior. The associated tests shrink by 24 lines and one case; [verification](docs/remediation/shared-ui-verification.md) records scope and limits. [PR168](https://github.com/ronchak/Koaryu/pull/168), merged as `8c96132`, corrected the generator permission flag across supported Node releases.
+[PR169](https://github.com/ronchak/Koaryu/pull/169) closes six shared UI findings. Its candidate combines identical views, removes dead options and fixes Button and System theme behavior. The associated tests shrink by 6 lines and one case; [verification](docs/remediation/shared-ui-verification.md) records scope and limits. [PR168](https://github.com/ronchak/Koaryu/pull/168), merged as `8c96132`, corrected the generator permission flag across supported Node releases.
 
 ## Next work
 

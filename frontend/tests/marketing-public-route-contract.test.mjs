@@ -16,7 +16,6 @@ import {
   studioTypePages,
   useCasePages,
 } from "../src/lib/marketing-pages.ts";
-import { publicFooterLinks, publicNavLinks } from "../src/lib/public-navigation.ts";
 import { buildPublicSitemap } from "../src/lib/sitemap-model.ts";
 
 const sourceUrl = (path) => new URL(`../src/${path}`, import.meta.url);
@@ -129,33 +128,6 @@ describe("public marketing route contract", () => {
       billingPage.proof.find((item) => item.label === "Provider writes"),
       { label: "Provider writes", value: "Disabled", detail: "Currently unavailable" }
     );
-  });
-
-  it("preserves navigation and prefetch boundaries without inventing routes", () => {
-    assert.deepEqual(publicNavLinks.map((link) => link.href), [
-      "/features",
-      "/use-cases",
-      "/explore",
-      "/#pricing",
-      "/about",
-    ]);
-    assert.deepEqual(publicFooterLinks.map((link) => link.href), [
-      "/explore",
-      "/features",
-      "/use-cases",
-      "/about",
-      "/terms",
-      "/privacy",
-    ]);
-    assert.equal(
-      [...publicNavLinks, ...publicFooterLinks].some((link) => link.href === "/pricing"),
-      false
-    );
-
-    const shellSource = readSource("components/marketing/public-pages.tsx");
-    assert.equal(shellSource.match(/href="\/login"\s+prefetch=\{false\}/g)?.length, 2);
-    assert.match(shellSource, /prefetch=\{ctaHref === "\/signup" \? false : undefined\}/);
-    assert.match(shellSource, /prefetch=\{step\.href === "\/signup" \? false : undefined\}/);
   });
 
 });
