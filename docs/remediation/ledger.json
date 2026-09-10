@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "a2f0057dfd6bb0c74a14da77aae5528d9bf2c2b3",
+  "last_reconciled_main": "ddacde14e3c0a43ae8faa0536a732b9b5ece59ed",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -6375,7 +6375,7 @@
       "title": "Source-shape checks create broad refactoring constraints beyond their behavior",
       "cluster": "test_and_adapter_maintenance",
       "disposition": "pending",
-      "reason": "The cited suites still enforce local variable names, source ordering, exact JSX counts, and specific expression syntax. Some source checks protect legitimate boundaries, but many workflow claims remain tied to implementation spelling.",
+      "reason": "Selected suites have been reduced in PR165, PR172, PR173, PR176 and PR177. The records workspace file now retains only five narrow policies, while other cited suites still contain incidental source-name, order, JSX and expression checks. This umbrella remains pending.",
       "audit_importance": "low",
       "evidence_role": "observation",
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6385,7 +6385,13 @@
         "frontend/tests/appearance-navigation-contract.test.mjs",
         "frontend/tests/legal-name-ui-contract.test.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165,
+        172,
+        173,
+        176,
+        177
+      ],
       "track": "Sol",
       "root_cause": "behavior_claims_encoded_as_source_shape",
       "collapse_with": [],
@@ -6415,7 +6421,15 @@
         "broad deletion of source checks without replacement"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/07-frontend-test-fixtures-and-claims.md"
+      "delegated_batch": "docs/remediation/delegated/07-frontend-test-fixtures-and-claims.md",
+      "partial_progress": [
+        {
+          "pull_request": 177,
+          "verified_against": "abf674545b6229981179ba4e4464ad0653c51eb2",
+          "path": "frontend/tests/records-workspace-contract.test.mjs",
+          "observation": "261 to83 lines, twelve tofive cases and136 to30 assertions; no new fixture or production change. Retained guards cover recovery UI, inspector focus return, inactive-assignee status, assigned-staff submission, label display mode and icon-only CSV reset naming without pinning decorative copy."
+        }
+      ]
     },
     {
       "id": "FT1-12",
