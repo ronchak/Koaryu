@@ -46,3 +46,5 @@ left here still inspect source or CSS. They prove only the named forbidden-contr
 accessibility policies; they do not claim mounted interaction, geometry, route
 readiness, or complete mutation coverage. Later owning UI work may replace a retained
 policy with behavior coverage without adding a parallel test framework.
+
+A fresh independent Astra reviewer checked the immutable patch in a separate read-only CLI task because native reviewer creation had reached its limit. It identified missing inspector ref/opener wiring and inactive-status presentation guards; those three guards are retained. Root then removed the decorative separator requirement while independently verifying that removing the dynamic status still fails the guard. Root passed all five final policy cases; the reviewer also passed them after the correction. Final-head review binding and CI remain required before guarded merge.
