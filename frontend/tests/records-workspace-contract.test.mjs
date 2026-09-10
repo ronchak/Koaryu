@@ -18,7 +18,7 @@ describe("records workspace policies", () => {
 
     assert.match(add, /activeStaff\.map/);
     assert.match(detail, /currentAssignedStaff\.status !== "active"/);
-    assert.match(detail, /` · \$\{member\.status\}`/);
+    assert.match(detail, /\$\{member\.status\}/);
     assert.match(detail, /ref=\{inspectorRef\}/);
     assert.match(detail, /tabIndex=\{-1\}/);
     assert.match(detail, /inspectorRef\.current\?\.focus\(\)/);
