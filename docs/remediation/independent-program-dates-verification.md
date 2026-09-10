@@ -1,6 +1,6 @@
 # Independent program joining dates
 
-V42 completes DM2-02 for student profile edits. Changing or clearing the overall joining date preserves every retained program's joining date, including unknown dates. New memberships keep their existing creation default. The preview model follows the same rule. Explicit program editing, rank restoration, paused status, tenant checks, lock order, guardian writes and audit rollback remain intact. No historical business rows are rewritten.
+PR170/V42 completes DM2-02 for student profile edits. Changing or clearing the overall joining date preserves every retained program's joining date, including unknown dates. New memberships keep their existing creation default. The preview model follows the same rule. Explicit program editing, rank restoration, paused status, tenant checks, lock order, guardian writes and audit rollback remain intact. No historical business rows are rewritten.
 
 The migration replaces only the private profile writer's date-propagation logic. The release generator supplies V23 full readiness, V22 compatibility, the updated V13 rank-return manifest and the V41-to-V42 restore checker. Application readiness and release inspection advance together to 137 migrations, head `20260910084231`, manifest `release-db-attestation-v42` and 53 pending-history versions. Exact V41 remains a predecessor; V22 through V18 preserve the existing application contracts.
 
@@ -21,3 +21,5 @@ The old preview/SQL assertions that required overall-to-program date propagation
 OPS2-05 remains pending. Reclaiming a failed import run can repeat previously committed rows and overwrite staff edits made between attempts. Its acceptance criteria now cover program dates as well as other saved fields. A date-only import patch would leave the broader retry defect intact. Lead conversion's marker and deterministic student commit together; investigation found no equivalent ordinary replay path.
 
 These are disposable local proofs. They are not hosted-state verification or production backup evidence. No production migration, deployment or backfill is authorized. Fresh independent review and exact-head release CI are required before merge.
+
+The source correction was reviewed independently at `73d7a53` and rebased without conflict onto PR169 main `e4ab4fc`. The final review and CI bind the actual PR head; earlier checks are not approval of a later candidate.

@@ -11,15 +11,15 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 46 |
+| Fixed | 47 |
 | Resolved indirectly | 2 |
-| Pending | 217 |
+| Pending | 216 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Total | 278 |
 
-Pending work is split between 145 Astra and 72 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
+Pending work is split between 144 Astra and 72 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -27,13 +27,13 @@ The ledger separately records the authorized release-attestation generator, a ne
 
 PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` received fresh independent review and all eleven release checks passed. The full disposable database verification passed 136 migrations and 51 contracts, including payer-balance concurrency and restore continuation. No production migration, deployment or backfill occurred.
 
-[PR169](https://github.com/ronchak/Koaryu/pull/169) closes six shared UI findings. Its candidate combines identical views, removes dead options and fixes Button and System theme behavior. The associated tests shrink by 6 lines and one case; [verification](docs/remediation/shared-ui-verification.md) records scope and limits. [PR168](https://github.com/ronchak/Koaryu/pull/168), merged as `8c96132`, corrected the generator permission flag across supported Node releases.
+[PR169](https://github.com/ronchak/Koaryu/pull/169), merged as `e4ab4fc`, closes six shared UI findings. It combines identical views, removes dead options and fixes Button and System theme behavior. The associated tests shrink by 6 lines and one case; [verification](docs/remediation/shared-ui-verification.md) records scope and limits. [PR168](https://github.com/ronchak/Koaryu/pull/168), merged as `8c96132`, corrected the generator permission flag across supported Node releases.
 
 ## Next work
 
-1. The corrected ledger, map and Sol recipes merged in [PR164](https://github.com/ronchak/Koaryu/pull/164) as `0f86853` after fresh review and the full exact-head gate.
-2. The release-attestation generator is implemented and awaiting its final PR review/CI. It reproduces eleven historical statements and all ten restore scripts, derives application readiness metadata, and runs the V31-through-V37 restore continuation once. Historical migrations and explicit business fixtures remain intact. See [verification](docs/remediation/release-attestation-verification.md).
-3. Reassess current main after that merge. Select the next integrity correction using the normalized dependencies, including independent program dates, payment recovery/facts, lock-order defects and due-worker progress. Sol can execute ready low-risk batches with coordinator integration.
+1. The normalized ledger and Sol recipes merged in PR164. The release-attestation generator merged in PR167 as `5d88823`, with the supported-Node correction in PR168. V42 now uses its declared-state generation without changing historical migration bytes.
+2. [PR170](https://github.com/ronchak/Koaryu/pull/170) completes independent program dates for profile edits. Its full local verification is green; fresh final-head review and release CI govern merge. See [verification](docs/remediation/independent-program-dates-verification.md).
+3. Reassess the next payment-integrity change on that main: unresolved external-payment command retention and atomic original-actor audit completion share one retry boundary. Import recovery also remains high priority after verification found successful rows can overwrite later staff edits on a failed-run retry. OPS2-05 now explicitly owns that scenario; no new duplicate ticket was created. Financial facts, lock-order defects and due-worker progress remain pending. Sol can continue ready low-risk batches in isolated worktrees.
 
 This is a rolling next-step plan. Each merge changes the evidence for subsequent work. Recheck affected pending findings, close only what is actually resolved, and discard future work made unnecessary by the new implementation.
 

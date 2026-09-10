@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "8c961326b5669fdfeeb0d019d8e883ff4202d336",
+  "last_reconciled_main": "e4ab4fce14de9d4e4a68c2c43e98a800f1a80acc",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -7271,7 +7271,7 @@
       "reason": "The three identical account role labels use one formatter. Distinct sign-out and access behavior remains unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
+      "verified_against": "e4ab4fce14de9d4e4a68c2c43e98a800f1a80acc",
       "verification": "PR169: focused 40-test suite, TypeScript, lint and 62-page build pass. Mounted Button/ref and storage-failure theme behavior; direct legal HTML and metadata inspection. See shared-ui-verification.md.",
       "source_paths": [
         "frontend/src/app/(dashboard)/layout.tsx",
@@ -7307,7 +7307,7 @@
           "observation": "Archived sign-out uses replace, whereas dashboard sign-out uses push."
         }
       ],
-      "next_change": "Extract only the identical role-label formatter and reuse it at the three presentation callers. No sign-out refactor is needed for this finding.",
+      "next_change": "None; retain the shared UI behavior verified by merged PR169.",
       "validation_plan": "Confirm unchanged labels for all three roles and unknown/null values; targeted lint when implemented.",
       "scope_constraints": [
         "Sign-out scope, auth calls, cookie cleanup, navigation history, and route-local error/loading behavior."
@@ -7378,7 +7378,7 @@
       "reason": "Both 404 entries use one view; Privacy and Terms use one narrow renderer with their original content, metadata and labels.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
+      "verified_against": "e4ab4fce14de9d4e4a68c2c43e98a800f1a80acc",
       "source_paths": [
         "frontend/src/app/not-found.tsx",
         "frontend/src/app/(errors)/404/page.tsx",
@@ -7408,7 +7408,7 @@
           "observation": "Its navigation, section loop, and notice structure matches Terms at line 83."
         }
       ],
-      "next_change": "Extract one 404 view and one narrow legal-document renderer. Keep each required route entry and page-specific content, labels, metadata, and notices.",
+      "next_change": "None; retain the shared UI behavior verified by merged PR169.",
       "validation_plan": "Render /404, an unknown route, /privacy, and /terms; compare headings, navigation targets, labels, and actions.",
       "scope_constraints": [
         "route entry files",
@@ -8618,7 +8618,7 @@
       "reason": "Removed the unused export minimumRole field and duplicate presentation helpers. Report role checks still use the existing authoritative metrics helper.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
+      "verified_against": "e4ab4fce14de9d4e4a68c2c43e98a800f1a80acc",
       "source_paths": [
         "frontend/src/components/reports/reports-data-exports-panel.tsx",
         "frontend/src/components/reports/reports-page-sections.tsx"
@@ -8646,7 +8646,7 @@
           "observation": "PanelHeader and StatBadge match the export-local helpers at lines 104 and 112."
         }
       ],
-      "next_change": "Remove only unused ExportReport.minimumRole values and reuse PanelHeader and StatBadge. Keep report-metrics as the authorization authority.",
+      "next_change": "None; retain the shared UI behavior verified by merged PR169.",
       "validation_plan": "Focused export-catalog and role-gate tests for admin, front desk, instructor, and null roles, plus a rendered header comparison.",
       "scope_constraints": [
         "canRunReportExport",
@@ -8667,7 +8667,7 @@
       "reason": "Removed the redundant overflow prop and class; the base surface retains the same horizontal clipping.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
+      "verified_against": "e4ab4fce14de9d4e4a68c2c43e98a800f1a80acc",
       "source_paths": [
         "frontend/src/components/operations/operations-surface.tsx",
         "frontend/src/components/operations/operations-surface.module.css"
@@ -8695,7 +8695,7 @@
           "observation": "internalOverflow repeats the identical declaration."
         }
       ],
-      "next_change": "Remove the prop, redundant class, and schedule callers unless a distinct overflow behavior can be stated and tested.",
+      "next_change": "None; retain the shared UI behavior verified by merged PR169.",
       "validation_plan": "Reference search and responsive schedule-page visual check for horizontal clipping.",
       "scope_constraints": [
         "schedule canvas behavior",
@@ -8991,7 +8991,7 @@
       "reason": "asChild forwards native attributes and composed refs, including React 19 cleanup, while preserving child-then-wrapper clicks and disabled navigation blocking.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
+      "verified_against": "e4ab4fce14de9d4e4a68c2c43e98a800f1a80acc",
       "source_paths": [
         "frontend/src/components/ui/button.tsx"
       ],
@@ -9018,7 +9018,7 @@
           "observation": "The forwarded ref and remaining props are not composed into the child."
         }
       ],
-      "next_change": "Repair or narrow the existing asChild contract after checking current callers. Forward advertised common DOM attributes/ref and compose supported handlers without changing disabled behavior. Do not add a polymorphic component framework or a new Slot dependency.",
+      "next_change": "None; retain the shared UI behavior verified by merged PR169.",
       "validation_plan": "Focused component test with a link child covering ref, aria-label, title, data attribute, disabled behavior, and both click handlers.",
       "scope_constraints": [
         "current link navigation",
@@ -9037,7 +9037,7 @@
       "reason": "System theme media changes consult the current in-memory preference even when browser storage fails.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b",
+      "verified_against": "e4ab4fce14de9d4e4a68c2c43e98a800f1a80acc",
       "source_paths": [
         "frontend/src/components/theme-provider.tsx"
       ],
@@ -9064,7 +9064,7 @@
           "observation": "A storage read failure returns the Light default."
         }
       ],
-      "next_change": "Have the media listener read current in-memory preference through an effect dependency or synchronized ref; retain storage only for persistence and cross-tab events.",
+      "next_change": "None; retain the shared UI behavior verified by merged PR169.",
       "validation_plan": "Mounted test with localStorage get and set throwing: select System, dispatch light and dark media changes, and confirm state and document theme follow both.",
       "scope_constraints": [
         "default theme",
@@ -10818,11 +10818,11 @@
       "id": "DM2-02",
       "title": "Ordinary profile edits can reactivate paused program memberships and reset their start dates",
       "cluster": "student_write_preservation",
-      "disposition": "pending",
-      "reason": "PR158/V39 fixes ordinary-edit status/date preservation. A changed overall joining date still rewrites retained program dates, contrary to the settled owner decision.",
+      "disposition": "fixed",
+      "reason": "V39 preserves paused status and dates during ordinary edits; PR170/V42 also preserves every retained program date when the overall joining date changes or clears. Preview behavior matches. Import-run replay remains a separate pending OPS2-05 responsibility.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b9ed0c3458354318efbd3ad776620122eca45079",
       "source_paths": [
         "supabase/migrations/20260814170000_preserve_retained_student_membership_ranks.sql",
         "supabase/migrations/20260613095000_atomic_student_profile_write.sql",
@@ -10830,7 +10830,8 @@
         "frontend/src/components/students/student-form-state.ts"
       ],
       "pull_requests": [
-        158
+        158,
+        170
       ],
       "implementation_verification": "PR158 merged after independent and automated review on c656f3c and all exact-head CI. Full local134-migration/50-contract suite, restores and concurrency passed; original133migrationbytes unchanged. Backend1882/5447subtests and frontend922/build passed. Main tree equals reviewed head. See docs/remediation/student-membership-verification.md and PR158. No hosted migration or backfill.",
       "track": "Astra",
@@ -10858,7 +10859,7 @@
           "observation": "Contract explicitly preserves changed-date compatibility pending a policy decision that is now settled."
         }
       ],
-      "next_change": "Prepare a forward migration preserving retained program started_at unconditionally during profile edits; match preview behavior and replace obsolete compatibility assertions. Keep explicit per-program date edits independent.",
+      "next_change": "None for profile edits. Preserve the date, status, rank and rollback contracts; resolve import recovery under OPS2-05.",
       "validation_plan": "Cover changed/cleared/omitted overall dates with and without program IDs, distinct/null program dates and paused memberships; retain explicit membership-date editing checks and required local migration contracts.",
       "scope_constraints": [
         "Historical migrations or data backfills",
@@ -10867,7 +10868,8 @@
         "Rank preservation",
         "Existing enrollment-date semantics beyond the settled decision"
       ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verification": "Full disposable PostgreSQL 17 suite passed137 migrations/51 contracts, actual V41 logical restore plus canonical continuation through both public profile APIs, and all concurrency/negative controls. Generator, workflow, readiness, target guards, preview, TypeScript and lint passed. See independent-program-dates-verification.md."
     },
     {
       "id": "DM2-03",
@@ -12247,8 +12249,8 @@
     }
   },
   "current_counts": {
-    "pending": 217,
-    "fixed": 46,
+    "pending": 216,
+    "fixed": 47,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
@@ -12256,6 +12258,6 @@
   },
   "current_pending_tracks": {
     "Sol": 72,
-    "Astra": 145
+    "Astra": 144
   }
 }
