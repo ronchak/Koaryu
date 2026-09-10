@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "cb897e2d35a8a75c71c5c1fec1a0b3907eb0ba1e",
+  "last_reconciled_main": "08b1e77f593b0f01dcbf038c5ab58001ea3289fb",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -4670,34 +4670,48 @@
       "id": "BT4-01",
       "title": "Export memory regression check uses the wrong RSS units on Linux",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The export test still compares raw ru_maxrss delta to a byte ceiling. On Linux the unit and lifetime-peak scope make this an ineffective memory guard.",
+      "disposition": "fixed",
+      "reason": "PR174 removes the platform-dependent process-lifetime RSS delta gate. The export fixture retains a scoped Python-allocation ceiling plus spool/output/row/query checks. Instrumented wall time is diagnostic; existing deterministic tests retain exact 15-second acceptance, 16-second rejection and spool cleanup.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "5edbc3d866c96894a3aba1ac7d176116d4c2d59c",
+      "verification": "Worker and fresh independent reviewer each passed all 15 export tests. The implementation diff is byte-identical after rebase onto PR172 main. See export-test-metrics-verification.md; final-head review and CI govern merge.",
       "source_paths": [
         "backend/tests/test_report_export_spool.py",
         "backend/tests/performance/dashboard_summary_fixture.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        174
+      ],
       "track": "Sol",
       "root_cause": "performance_measurement_contract",
       "collapse_with": [
         "BT1-07"
       ],
-      "current_evidence": [
+      "next_change": "No remaining export RSS claim. Dashboard fixture-process memory scope remains separately pending under BT1-07.",
+      "validation_plan": "Verify Linux/macOS units for any retained RSS metric and that the claimed gate can actually fail; avoid measuring inherited peaks as endpoint memory.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "delegated_batch": "docs/remediation/delegated/06-performance-evidence-maintenance.md",
+      "normalization_evidence": [
         {
           "path": "backend/tests/test_report_export_spool.py",
           "line": 740,
           "observation": "Raw high-water values are subtracted and compared to512*1024*1024 without the normalization already used by the dashboard helper."
         }
       ],
-      "next_change": "Remove the misleading delta gate or replace it with an honestly scoped normalized measurement; retain spool/output, independent Python-allocation and row/query guards.",
-      "validation_plan": "Verify Linux/macOS units for any retained RSS metric and that the claimed gate can actually fail; avoid measuring inherited peaks as endpoint memory.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/06-performance-evidence-maintenance.md"
+      "current_evidence": [
+        {
+          "path": "backend/tests/test_report_export_spool.py",
+          "line": 723,
+          "observation": "Scale/allocation fixture uses an injected clock, retains per-operation Python allocation and output contracts, and stops tracing in finally."
+        },
+        {
+          "path": "backend/tests/test_report_export_spool.py",
+          "line": 218,
+          "observation": "Separate deadline/cleanup test uses controlled 15-second and 16-second cases; production elapsed limit is unchanged."
+        }
+      ]
     },
     {
       "id": "BT4-02",
@@ -12328,15 +12342,15 @@
     }
   },
   "current_counts": {
-    "pending": 204,
-    "fixed": 59,
+    "pending": 203,
+    "fixed": 60,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 64,
+    "Sol": 63,
     "Astra": 140
   }
 }
