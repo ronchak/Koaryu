@@ -23,3 +23,10 @@ The seven associated source and contract-test files total 2,215 lines before cha
 ## Recorded result
 
 The seven baseline files now total 2,245 lines, up 30 lines after removing seven existing assertions, six roster assertions and one badge assertion. The contract file is eight lines shorter and remains at 12 cases. The two badge sources fell from 153 to 131 lines. The 27-line color helper replaces their duplicated decisions, leaving the color implementation five lines larger overall and shared by all existing callers. The focused browser test adds two cases and 93 lines, while the shared browser harness adds 13 lines. Test and harness code therefore increases by 98 net lines. The narrow run covers 27 cases in total. One browser case checks mobile sort key and direction callbacks plus hidden table header and rail at 820px, hidden mobile sort plus visible table header and rail at 1400px, narrow pointer behavior, keyboard focus, selection, row opening, wide pointer behavior, and both yellow tip badges. It loads the actual roster CSS, but it does not load the complete app or global CSS. It does not profile roster rendering or exhaust every browser and input device.
+
+## Verification
+
+- The corrected focused run passed all 27 cases after `npm ci` installed worktree-local dependencies.
+- The full frontend suite passed 918 tests in 144 suites before the final CSS-fixture correction. No product source changed afterward.
+- The normal `npm run build` Turbopack pipeline passed with `.env.example` explicitly sourced and worktree-local dependencies. No hosted environment or deployment was used.
+- Private logs are under `/Users/openclaw/Koaryu Remediation/2026-09-07/roster-presentation/`.
