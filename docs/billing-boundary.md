@@ -19,6 +19,7 @@ limited to:
 2. Admin and Front Desk attaching an **external-only local billing record** to a student.
 3. Admin and Front Desk recording a **payer-level external payment**.
 4. Admin and Front Desk reconciling an existing Stripe-linked invoice through a provider read.
+5. Admin creating or updating a **local billing plan definition** without a provider call.
 
 Stripe Connect setup, provider-backed enrollment lifecycle, hosted-invoice mutation,
 autopay changes, refunds, voids, provider plan or payer synchronization, and exports
@@ -45,6 +46,7 @@ Readiness terms used below:
 | Capability | Admin | Front Desk | Instructor | Product disposition |
 | --- | --- | --- | --- | --- |
 | View billing summaries, plans, payers, enrollments, invoices, and payments | Yes | Yes | No | `READ-ONLY LIVE` |
+| Create or update a local billing plan definition | Yes | No | No | Supported Admin API, `LOCAL-ONLY`; create UI exists, no shipped edit UI |
 | Attach an external-only billing record to a student | Yes | Yes | No | Supported routine, `LOCAL-ONLY` |
 | Record a payer-level external payment | Yes | Yes | No | Supported routine, `LOCAL-ONLY` |
 | Reconcile an existing Stripe-linked invoice | Yes | Yes | No | Supported routine, `READ-ONLY LIVE` |
@@ -97,7 +99,9 @@ A field the resolver cannot read is treated as a denial, and every denial must b
 | Stripe dashboard | `POST /billing/connect/dashboard-link` | Admin | Creates Stripe login link and audit | Non-preview control disabled; live `FAIL-CLOSED` |
 | Reconnect Stripe | `POST /billing/connect/reset` | Admin | Locally clears the account association and audits | Removed from UI; hidden dangerous action |
 | Tuition plan list | `GET /billing/plans` | Admin / Front Desk | Local read | Supported read |
-| Create or sync plan | Plan mutation endpoints | Admin | Local writes; may create or update Stripe product/price; audit | Removed from UI; hidden, live `FAIL-CLOSED` |
+| Create local plan | `POST /billing/plans` | Admin | Atomic local plan, program links, original-actor audit, and committed snapshot; no Stripe call | Supported, `LOCAL-ONLY`; create UI exists |
+| Update local plan | `PATCH /billing/plans/{plan_id}` | Admin | Same atomic local write; no Stripe call | Supported Admin API; no shipped edit UI |
+| Sync plan to provider | `POST /billing/plans/{plan_id}/sync` | Admin | May create or update Stripe product/price and local projection | Hidden, live `FAIL-CLOSED` |
 | Family payer list | `GET /billing/payers` | Admin / Front Desk | Local read | Supported read |
 | Create or sync payer | Payer mutation endpoints | Admin | Local write; may create/update Stripe customer; audit | Removed from UI; hidden, live `FAIL-CLOSED` |
 | Autopay setup or disable | Payer autopay endpoints | Admin | Stripe setup/session or subscription rewiring plus local writes | Removed from UI; hidden, live `FAIL-CLOSED` |
@@ -136,8 +140,8 @@ A field the resolver cannot read is treated as a denial, and every denial must b
 | Endpoint | Role | Effects | Disposition |
 | --- | --- | --- | --- |
 | `GET /billing/plans` | Admin / Front Desk | Local read | Supported read |
-| `POST /billing/plans` | Admin | Local insert; may create Stripe product/price; audit | Hidden/unsupported |
-| `PATCH /billing/plans/{plan_id}` | Admin | Local update; may replace provider price/product data; audit | Hidden/unsupported |
+| `POST /billing/plans` | Admin | Atomic local plan, links, original-actor audit, and committed snapshot; no provider mutation | Supported `LOCAL-ONLY`; create UI exists |
+| `PATCH /billing/plans/{plan_id}` | Admin | Same atomic local write; no provider mutation | Supported API; no shipped edit UI |
 | `POST /billing/plans/{plan_id}/archive` | Admin | Local archive and audit | Hidden Admin-only |
 | `POST /billing/plans/{plan_id}/sync` | Admin | Stripe product/price mutation, local projection, audit | Hidden; live `FAIL-CLOSED` |
 | `GET /billing/payers` | Admin / Front Desk | Local read | Supported read |
@@ -201,6 +205,23 @@ Webhook routes read the raw request body, enforce the request-size limit, verify
 
 ## Supported transition contracts
 
+### Local billing plan definition
+
+Admin plan creation and `PATCH /billing/plans/{plan_id}` use
+`write_billing_plan_v1`. One transaction owns the allowlisted scalar changes,
+deduplicated same-studio program links, original-actor audit, and committed response
+snapshot. Program omission retains links, an empty list clears them, and a supplied
+list replaces them. A true no-op changes no status, timestamp, link, or audit row.
+Required fields reject explicit null; omitted fields stay unchanged and nullable text
+may be cleared.
+
+New definitions and financial changes to amount, currency, interval, signup fee, or
+trial days require USD. Existing non-USD records may receive an identical save or
+nonfinancial maintenance without reinterpretation or backfill. Program-only changes
+preserve price readiness. Provider sync, support for new currencies, and aggregate
+currency policy remain separate work. The create UI exists; no shipped edit-plan UI
+calls the supported Admin PATCH API.
+
 ### 1. External-only student billing attachment
 
 | Contract field | Value |
@@ -262,7 +283,7 @@ new pending-attempt storage contract.
 | Recovery | Retry the read; use broad Admin reconciliation only as a bounded support action |
 | Live policy | Supported because the provider operation is read-only |
 
-The domain write and audit insert are not one database transaction. After an ambiguous response, operators refresh before retrying. External-payment replay is key-safe; external-enrollment uniqueness exposes an existing assignment as `409`; invoice reconciliation is convergent.
+Local plan writes and external-payment writes commit their domain record and original-actor audit in one database transaction. Other local workflows may still split domain and audit writes. After an ambiguous response, operators refresh before retrying. External-payment replay is key-safe; external-enrollment uniqueness exposes an existing assignment as `409`; invoice reconciliation is convergent.
 
 ## State-truth, webhook, and audit rules
 

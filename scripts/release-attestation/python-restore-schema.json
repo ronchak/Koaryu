@@ -128,6 +128,27 @@
       "state": "v43",
       "query": "V43_EXTERNAL_PAYMENT_STATE_SQL",
       "expected": "EXPECTED_V43_EXTERNAL_PAYMENT_STATE"
+    },
+    "readiness-v44": {
+      "kind": "readiness",
+      "state": "v44",
+      "finalAlias": true
+    },
+    "release-v44": {
+      "kind": "release",
+      "state": "v44"
+    },
+    "local-plan-v44": {
+      "kind": "export",
+      "state": "v44",
+      "query": "V44_LOCAL_PLAN_STATE_SQL",
+      "expected": "EXPECTED_V44_LOCAL_PLAN_STATE"
+    },
+    "plan-clear-v44": {
+      "kind": "export",
+      "state": "v44",
+      "query": "V44_CLEAR_STATE_SQL",
+      "expected": "EXPECTED_V44_CLEAR_STATE"
     }
   },
   "cases": {
@@ -549,6 +570,145 @@
       "passLines": [
         "[restored V43] PASS actual V42 backup/restore, exact normalization, no historical repair, ",
         "original-actor payment/audit ownership, legacy replay and balance continuation on canonical/restored copies"
+      ]
+    },
+    "v44": {
+      "format": "forward",
+      "docstring": "Prove V43 restore and V44 local-plan transaction/no-op continuation without historical backfill.",
+      "exports": [
+        [
+          "readiness-v42.query",
+          "readiness-v42.expected"
+        ],
+        [
+          "catalog-v42.query",
+          "catalog-v42.expected",
+          "catalog-v42.restored"
+        ],
+        [
+          "release-v42.query",
+          "release-v42.expected"
+        ],
+        [
+          "rank-v40.query",
+          "rank-v40.expected"
+        ],
+        [
+          "payer-v41.query",
+          "payer-v41.expected"
+        ],
+        [
+          "readiness-v43.query",
+          "readiness-v43.expected"
+        ],
+        [
+          "readiness-v41.query",
+          "readiness-v41.expected"
+        ],
+        [
+          "readiness-v40.query",
+          "readiness-v40.expected"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v39.expected"
+        ],
+        [
+          "readiness-v38.query",
+          "readiness-v38.expected"
+        ],
+        [
+          "readiness-v37.query",
+          "readiness-v37.expected"
+        ],
+        [
+          "release-v43.query",
+          "release-v43.expected"
+        ],
+        [
+          "external-payment-v43.query",
+          "external-payment-v43.expected"
+        ],
+        [
+          "expectation-v42.query",
+          "expectation-v42.expected"
+        ],
+        [
+          "resource-v42.query",
+          "resource-v42.expected"
+        ],
+        [
+          "contract-v42.query",
+          "contract-v42.expected"
+        ],
+        [
+          "operational-v42.query",
+          "operational-v42.expected"
+        ],
+        [
+          "readiness-v44.query",
+          "readiness-v44.expected"
+        ],
+        [
+          "release-v44.query",
+          "release-v44.expected"
+        ],
+        [
+          "local-plan-v44.query",
+          "local-plan-v44.expected"
+        ],
+        [
+          "plan-clear-v44.query",
+          "plan-clear-v44.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v43",
+        "catalog-v42",
+        "release-v43",
+        "rank-v40",
+        "payer-v41",
+        "external-payment-v43"
+      ],
+      "checks": [
+        "readiness-v44",
+        "readiness-v43",
+        "readiness-v42",
+        "readiness-v41",
+        "readiness-v40",
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "catalog-v42",
+        "rank-v40",
+        "payer-v41",
+        "external-payment-v43",
+        "expectation-v42",
+        "resource-v42",
+        "contract-v42",
+        "operational-v42",
+        "release-v44",
+        "local-plan-v44",
+        "plan-clear-v44"
+      ],
+      "absentFunctions": [
+        "public.write_billing_plan_v1(uuid,uuid,uuid,jsonb,uuid[])"
+      ],
+      "semanticManifests": [
+        "private.koaryu_release_critical_surface_manifest_v16()",
+        "private.koaryu_release_critical_surface_manifest_v17()",
+        "private.koaryu_release_critical_surface_manifest_v18()",
+        "private.koaryu_release_operational_manifest_v10()",
+        "private.koaryu_release_operational_manifest_v11()",
+        "private.koaryu_release_student_rank_writer_manifest_v11()",
+        "private.koaryu_release_student_rank_writer_manifest_v13()",
+        "private.koaryu_release_resource_ownership_manifest_v31()",
+        "private.koaryu_release_operational_contract_v31()",
+        "private.koaryu_release_operational_manifest_v12()"
+      ],
+      "passLines": [
+        "[restored V44] PASS actual V43 backup/restore, no historical backfill, ",
+        "local plan/audit ownership, no-op preservation, old/new callers and guarded clear on canonical/restored copies"
       ]
     }
   }
