@@ -1,0 +1,128 @@
+{
+  "functionSets": {
+    "student-writer-returns": [
+      {
+        "signature": "public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)",
+        "result": "students"
+      },
+      {
+        "signature": "private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)",
+        "result": "students"
+      },
+      {
+        "signature": "public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])",
+        "result": "TABLE(student_id uuid, guardian_imported boolean)"
+      },
+      {
+        "signature": "private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])",
+        "result": "TABLE(student_id uuid, guardian_imported boolean)"
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "kind": "rank-return",
+      "path": "supabase/migrations/20260814152000_attest_student_rank_writer_return_contracts.sql",
+      "signature": "private.koaryu_release_student_rank_writer_manifest_v12()",
+      "sourceSha256": "4d95eff411b64fe39b59ee525a27c3d7f6b87ee8b5d204f263c44540de512707",
+      "functionSet": "student-writer-returns",
+      "parent": "private.koaryu_release_student_rank_writer_manifest_v11()",
+      "expectedParent": "0:2d9f05f4064da0a2855c2b916e8d4bb7785927db131a037ba6ae9716a40ddb60",
+      "format": "authored"
+    },
+    {
+      "kind": "rank-return",
+      "path": "supabase/migrations/20260814170000_preserve_retained_student_membership_ranks.sql",
+      "signature": "private.koaryu_release_student_rank_writer_manifest_v13()",
+      "sourceSha256": "90a0874fcf0a55e108b41d25c6ca0e990d6a00014b84e2d0ae143c3736fe0b7a",
+      "functionSet": "student-writer-returns",
+      "parent": "private.koaryu_release_student_rank_writer_manifest_v11()",
+      "expectedParent": "0:f124f39ae1bbdc05aef61ad965b757cfd0fae56cf3a21369ad701ea4b94d23b4",
+      "format": "authored"
+    },
+    {
+      "kind": "rank-return",
+      "path": "supabase/migrations/20260908080420_student_membership_preservation_v39.sql",
+      "signature": "private.koaryu_release_student_rank_writer_manifest_v13()",
+      "sourceSha256": "5a57313b909ec6f80215b323dcc546ee057d4849e3038e555a40b957674b6f96",
+      "functionSet": "student-writer-returns",
+      "parent": "private.koaryu_release_student_rank_writer_manifest_v11()",
+      "expectedParent": "0:ba8bf9c6e32248c80d8621c29e4d9c062bb99bbc8e69da1533765a05931a26a9",
+      "format": "catalog"
+    },
+    {
+      "kind": "rank-receipt",
+      "path": "supabase/migrations/20260814213000_lock_core_trial_decision_to_reservation.sql",
+      "signature": "private.koaryu_release_critical_surface_manifest_v16()",
+      "sourceSha256": "c7740372461c1896b7e1faf884a65db04ce54e3f4fd826a5b48bbac85b132ed5",
+      "parent": "private.koaryu_release_critical_surface_manifest_v15()",
+      "functions": [
+        "public.reserve_core_checkout_v2_atomic(uuid)",
+        "public.set_studio_comp_v2_atomic(uuid,boolean,text,uuid,text,boolean)",
+        "public.sync_belt_ladder_ranks_v2(uuid,uuid,uuid,uuid,text,jsonb)",
+        "public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)",
+        "public.record_core_checkout_compensation_required_atomic(uuid,text,text,bigint,text,boolean)",
+        "private.record_student_rank_transition_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid)",
+        "public.record_student_promotion(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text)",
+        "public.record_student_demotion(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text)",
+        "public.record_student_promotion_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid)",
+        "public.record_student_demotion_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid)",
+        "public.koaryu_release_schema_preflight_v2()"
+      ],
+      "columns": [
+        "operation_id",
+        "transition_kind"
+      ],
+      "indexes": [
+        "promotions_studio_operation_once"
+      ],
+      "constraints": [
+        "promotions_transition_kind_check"
+      ],
+      "includeDefaults": false,
+      "includeForeignKeys": false,
+      "format": "authored"
+    },
+    {
+      "kind": "rank-receipt",
+      "path": "supabase/migrations/20260908133504_rank_history_command_ownership_v40.sql",
+      "signature": "private.koaryu_release_critical_surface_manifest_v16()",
+      "sourceSha256": "1342c0ea2d7edd63aa00bf184e381cb873034bc70ffde54e51b9362096fcc870",
+      "parent": "private.koaryu_release_critical_surface_manifest_v15()",
+      "functions": [
+        "public.reserve_core_checkout_v2_atomic(uuid)",
+        "public.set_studio_comp_v2_atomic(uuid,boolean,text,uuid,text,boolean)",
+        "public.sync_belt_ladder_ranks_v2(uuid,uuid,uuid,uuid,text,jsonb)",
+        "public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)",
+        "public.record_core_checkout_compensation_required_atomic(uuid,text,text,bigint,text,boolean)",
+        "private.record_student_rank_transition_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid)",
+        "private.rank_transition_fingerprint_v1(uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text)",
+        "private.record_student_rank_transition_v3(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid,boolean)",
+        "public.record_student_rank_transition_v3(uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid)",
+        "public.record_student_promotion(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text)",
+        "public.record_student_demotion(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text)",
+        "public.record_student_promotion_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid)",
+        "public.record_student_demotion_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid)",
+        "public.koaryu_release_schema_preflight_v2()"
+      ],
+      "columns": [
+        "operation_id",
+        "transition_kind",
+        "command_fingerprint",
+        "command_program_id",
+        "command_membership_id",
+        "command_from_rank_id"
+      ],
+      "indexes": [
+        "promotions_studio_operation_once"
+      ],
+      "constraints": [
+        "promotions_transition_kind_check",
+        "promotions_command_evidence_check"
+      ],
+      "includeDefaults": true,
+      "includeForeignKeys": true,
+      "format": "catalog"
+    }
+  ]
+}

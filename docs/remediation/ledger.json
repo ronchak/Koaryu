@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "0f8685347d19579c6784b804bc420a777afabadc",
+  "last_reconciled_main": "9785f13c77ebd1ffb55c31185a1ca5c055ab9e41",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -6058,7 +6058,9 @@
         "frontend/src/components/marketing/public-pages.tsx",
         "frontend/src/components/marketing/journey/scene-model.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165
+      ],
       "track": "Sol",
       "root_cause": "marketing_tests_target_nonproduction_contracts",
       "collapse_with": [
@@ -6081,7 +6083,7 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
-      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
+      "implementation_verification": "PR165 merged as9785f13 after fresh exact-head review and all release checks.37 targeted and914 full frontend tests passed; lint/tsc passed. Coordinator compared complete SVG bytes in22 cases with unchanged base. Four test files shrank326 lines and7 cases. See marketing-scene-verification.md."
     },
     {
       "id": "FT1-07",
@@ -8353,7 +8355,9 @@
       "source_paths": [
         "frontend/src/components/marketing/journey/journey-scene.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165
+      ],
       "track": "Sol",
       "root_cause": "unstable_static_scene_inputs",
       "collapse_with": [],
@@ -8374,7 +8378,7 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
-      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
+      "implementation_verification": "PR165 merged as9785f13 after fresh exact-head review and all release checks.37 targeted and914 full frontend tests passed; lint/tsc passed. Coordinator compared complete SVG bytes in22 cases with unchanged base. Four test files shrank326 lines and7 cases. See marketing-scene-verification.md."
     },
     {
       "id": "FC2-10",
@@ -8390,7 +8394,9 @@
         "frontend/src/components/marketing/journey/journey-scene.tsx",
         "frontend/tests/marketing-journey-scene.test.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165
+      ],
       "track": "Sol",
       "root_cause": "parallel_scene_progress_model",
       "collapse_with": [
@@ -8412,7 +8418,7 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
-      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
+      "implementation_verification": "PR165 merged as9785f13 after fresh exact-head review and all release checks.37 targeted and914 full frontend tests passed; lint/tsc passed. Coordinator compared complete SVG bytes in22 cases with unchanged base. Four test files shrank326 lines and7 cases. See marketing-scene-verification.md."
     },
     {
       "id": "FC2-11",
@@ -8427,7 +8433,9 @@
         "frontend/src/components/marketing/journey/journey-scene.tsx",
         "frontend/src/components/marketing/journey/scene-model.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165
+      ],
       "track": "Sol",
       "root_cause": "duplicated_cloud_path_generator",
       "collapse_with": [],
@@ -8447,7 +8455,7 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
-      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
+      "implementation_verification": "PR165 merged as9785f13 after fresh exact-head review and all release checks.37 targeted and914 full frontend tests passed; lint/tsc passed. Coordinator compared complete SVG bytes in22 cases with unchanged base. Four test files shrank326 lines and7 cases. See marketing-scene-verification.md."
     },
     {
       "id": "FC2-12",
@@ -8462,7 +8470,9 @@
         "frontend/src/components/marketing/public-pages.tsx",
         "frontend/tests/marketing-public-pages.test.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165
+      ],
       "track": "Sol",
       "root_cause": "dead_marketing_hero_props",
       "collapse_with": [
@@ -8484,7 +8494,7 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
-      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
+      "implementation_verification": "PR165 merged as9785f13 after fresh exact-head review and all release checks.37 targeted and914 full frontend tests passed; lint/tsc passed. Coordinator compared complete SVG bytes in22 cases with unchanged base. Four test files shrank326 lines and7 cases. See marketing-scene-verification.md."
     },
     {
       "id": "FC2-13",
@@ -12020,7 +12030,7 @@
       "root_cause": "release_attestation_authority",
       "disposition": "pending",
       "reason": "Ten per-release restore scripts contain2855 lines, and preflight/manifest bodies are copied or text-edited across migrations. The separately repeated release constants already contain a demonstrated ten-version historical pending-list drift. The owner explicitly authorizes a generator to remove this accidental authoring complexity.",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9785f13c77ebd1ffb55c31185a1ca5c055ab9e41",
       "source_paths": [
         "supabase/migrations",
         "scripts/studio-comp-migration-rollout.mjs",
