@@ -833,11 +833,11 @@
       "title": "Invoice closeout marks completion before its last required local work",
       "cluster": "financial_command_completion",
       "disposition": "fixed",
-      "reason": "PR162 gives create/retry one local closeout owner: audit, required payer-balance RPC and response validation precede completion; completed replay repairs local facts without another provider mutation. V41 locks the scoped payer before a separate current invoice SUM, removing the stale split-update race.",
+      "reason": "PR162 gives create/retry one local closeout owner: audit, required payer-balance RPC and response validation precede completion; completed replay repairs local facts without another provider mutation. V41 locks the scoped payer before a separate current invoice SUM, removing the stale split-update race. Saved projected and completed create receipts permit later invoice progress while initial projection stays strict; the exact prior workflow fails the reused paid/void recovery cases.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
-      "verification": "Candidate against main9988c62: full backend 1898 tests plus5450 subtests; focused369 plus86; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
+      "verification": "Candidate against main9988c62: final full backend 1897 tests plus5450 subtests; focused invoice290 plus15; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
       "source_paths": [
         "backend/app/services/billing_invoice_operations.py"
       ],
@@ -1568,11 +1568,11 @@
       "title": "Invoice recovery tests omit failure after completion but before balance refresh",
       "cluster": "financial_command_completion",
       "disposition": "fixed",
-      "reason": "PR162 gives create/retry one local closeout owner: audit, required payer-balance RPC and response validation precede completion; completed replay repairs local facts without another provider mutation. V41 locks the scoped payer before a separate current invoice SUM, removing the stale split-update race.",
+      "reason": "PR162 gives create/retry one local closeout owner: audit, required payer-balance RPC and response validation precede completion; completed replay repairs local facts without another provider mutation. V41 locks the scoped payer before a separate current invoice SUM, removing the stale split-update race. Saved projected and completed create receipts permit later invoice progress while initial projection stays strict; the exact prior workflow fails the reused paid/void recovery cases.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
       "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
-      "verification": "Candidate against main9988c62: full backend 1898 tests plus5450 subtests; focused369 plus86; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
+      "verification": "Candidate against main9988c62: final full backend 1897 tests plus5450 subtests; focused invoice290 plus15; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
       "source_paths": [
         "backend/tests/test_billing_invoice_operations.py",
         "backend/tests/test_billing_invoice_lifecycle.py",
@@ -1608,7 +1608,7 @@
       "audit_importance": "low",
       "evidence_role": "observation",
       "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
-      "verification": "Candidate against main9988c62: full backend 1898 tests plus5450 subtests; focused369 plus86; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
+      "verification": "Candidate against main9988c62: final full backend 1897 tests plus5450 subtests; focused invoice290 plus15; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
       "source_paths": [
         "backend/tests/test_billing_invoice_lifecycle.py"
       ],
@@ -1661,7 +1661,7 @@
       "audit_importance": "low",
       "evidence_role": "observation",
       "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
-      "verification": "Candidate against main9988c62: full backend 1898 tests plus5450 subtests; focused369 plus86; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
+      "verification": "Candidate against main9988c62: final full backend 1897 tests plus5450 subtests; focused invoice290 plus15; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
       "source_paths": [
         "backend/tests/test_billing_invoice_operations.py"
       ],
@@ -1678,7 +1678,7 @@
       "audit_importance": "low",
       "evidence_role": "observation",
       "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
-      "verification": "Candidate against main9988c62: full backend 1898 tests plus5450 subtests; focused369 plus86; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
+      "verification": "Candidate against main9988c62: final full backend 1897 tests plus5450 subtests; focused invoice290 plus15; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
       "source_paths": [
         "backend/tests/test_billing_invoice_operations.py",
         "backend/app/services/billing_invoice_operations.py"

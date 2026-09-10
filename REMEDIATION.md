@@ -173,10 +173,10 @@ identified a necessary acquired-lease check for projected retry replays. This
 financial integrity correction takes priority over the larger frontend owner.
 
 [PR #162](https://github.com/ronchak/Koaryu/pull/162) has one local-closeout owner
-and one database command for current payer-balance recomputation. The two material
-initial review comments were reproduced and corrected: concurrent replay can no
+and one database command for current payer-balance recomputation. Material
+review comments were reproduced and corrected: concurrent replay can no
 longer overwrite a newer balance through the old split read/update, and completed
-creation remains replayable after later payment or voiding. All 135 historical
+creation and saved projected closeout remain replayable after later payment or voiding. All 135 historical
 migrations remain byte-identical; V41 is additive and preserves the existing formula.
 
 The complete local runner passes 136 migrations, 51 SQL contracts, real restores,

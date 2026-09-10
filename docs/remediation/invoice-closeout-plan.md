@@ -34,3 +34,15 @@ Independent amended-plan review gave GREEN LIGHT. Current amount_remaining_cents
 is NOT NULL; preserve the old fallback expression but do not disable required
 constraints to manufacture a runtime null case. All fixtures must obey the current
 verified schema.
+
+## Projected replay correction
+
+Subsequent review reproduced ordinary provider progress while a create operation
+remains projected after audit/balance failure. Creation uses a generic operation
+claim, so independent finalization/void commands and webhook projection can advance
+the invoice before local replay. The saved projected receipt already follows strict
+initial projection validation. Both projected and completed loads must verify the
+original command/provider/item identity without requiring the original unpaid
+balance. Fresh `_project_invoice_results` remains strict. Reuse the existing local
+failure cases with later paid/void progress; remove the test that incorrectly calls
+that progress corruption. No SQL or financial-definition change is needed.

@@ -16,9 +16,16 @@ changing its terminal revision.
 Retry projection returns the current operation revision. Later audit or balance
 errors remain local failures; genuine provider ambiguity retains reconciliation.
 A projected/provider-succeeded retry replay must hold the lease returned by SQL
-before doing work. Completed creation replay permits subsequent payment or voiding
+before doing work. Saved projected or completed creation replay permits subsequent payment or voiding
 without dropping the request, provider, item, account, generation or original-total
-checks. Initial and projected creation still require the original unpaid balance.
+checks. First-time creation projection still requires the original unpaid balance.
+
+A subsequent review identified the same lifecycle issue for projected receipts.
+An audit/balance failure leaves creation projected, while independent invoice
+commands or webhooks can legitimately advance it. Requiring the original unpaid
+balance on that replay falsely sent it to reconciliation. The existing paid/void
+failure cases reproduce this against commit `e673344`; saved-projection replay now
+permits that progress. Initial projection and all identity checks stay strict.
 
 The initial implementation's balance repair had a real race: one replay read 7,400,
 a concurrent payment wrote 0, and the replay overwrote it with 7,400. V41 replaces the
@@ -67,8 +74,8 @@ no historical financial backfill or new provider operation.
   explicit EXECUTE ACL entries. Ten isolated function/privilege/overload mutations must fail
   both raw evidence and all five readiness consumers, then restore the exact
   baseline after rollback.
-- The full backend passed 1,898 tests plus 5,450 subtests. Focused adapter/readiness
-  verification passed 369 plus 86 subtests; expanded local-target refusal checks
+- The final full backend passed 1,897 tests plus 5,450 subtests. Focused invoice
+  verification passed 290 plus 15 subtests; expanded local-target refusal checks
   passed 3 tests. The permanent restore, SQL and concurrency entrypoints passed on
   disposable PostgreSQL 17. The complete integrated runner passed all 136 migrations and 51 contracts,
   retained restores, attestation negatives and concurrency checks. Release-workflow
@@ -76,7 +83,9 @@ no historical financial backfill or new provider operation.
 
 Two duplicate service retry tests were consolidated, one source-name allowlist
 and an unused broken fake hook were removed, and paid-response assertions were
-corrected. The old Python balance-algorithm test was replaced by a scoped adapter
+corrected. The incorrect projected-balance-corruption case was removed, and existing
+audit/balance failure cases now include later paid/void progress without adding
+cases. The old Python balance-algorithm test was replaced by a scoped adapter
 contract; SQL owns the arithmetic. Three low-level refund/dispute cases correctly
 assert that those helpers leave payer state unchanged rather than pretending they
 perform recomputation. A release-tool source-text test was removed: the retained

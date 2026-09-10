@@ -2267,7 +2267,7 @@ class BillingInvoiceOperationWorkflow:
             })
         self._verify_projected_invoice(
             saved, invoice, context, str(saved["stripe_invoice_id"]),
-            require_original_balance=operation.get("state") != "completed",
+            require_original_balance=False,
         )
         return saved
 
@@ -2951,8 +2951,8 @@ class BillingInvoiceOperationWorkflow:
             != context.connect_account_generation
             or int(projected.get("amount_due_cents") or 0)
             != int(intent.get("amount_due_cents") or 0)
-            # Completed creation proves command identity; later payments and
-            # voiding may legitimately change its remaining balance.
+            # Replay of a certified projection checks command identity; later
+            # payments and voiding may change its remaining balance.
             or (require_original_balance and (
                 int(projected.get("amount_remaining_cents") or 0)
                 != int(intent.get("amount_due_cents") or 0)

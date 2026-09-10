@@ -811,8 +811,7 @@ def test_create_completed_local_identity_drift_is_sanitized_without_provider_ret
     assert len(_Stripe.item_create_calls) == 2
 
 
-@pytest.mark.parametrize("corruption", ["provider_identity", "remaining_balance"])
-def test_create_projected_local_identity_drift_marks_reconciliation(corruption):
+def test_create_projected_local_identity_drift_marks_reconciliation():
     facade, _payer, invoke = _local_closeout_case("create")
     original_complete = facade.supabase._rpc_complete_billing_provider_operation_v1
 
@@ -826,10 +825,7 @@ def test_create_projected_local_identity_drift_marks_reconciliation(corruption):
     parent = _operation(facade, "invoice.create")
     assert parent["state"] == "projected"
     local = facade.supabase.tables["billing_invoices"][0]
-    if corruption == "provider_identity":
-        local["stripe_invoice_id"] = "in_corrupt"
-    else:
-        local["amount_remaining_cents"] = 0
+    local["stripe_invoice_id"] = "in_corrupt"
     facade.supabase.advance_billing_provider_clock(seconds=301)
     _grant_create_closeout_claim(facade)
 
@@ -3876,6 +3872,18 @@ def test_invoice_local_closeout_failure_resumes_projected_work_offline(kind, fai
         invoke()
     assert _operation(facade, "invoice." + kind)["state"] == "projected"
     assert payer["balance_cents"] == 123456
+    expected_balance = 0
+    if kind == "create":
+        # Provider/webhook progress is valid while local closeout is pending.
+        invoice = facade.supabase.tables["billing_invoices"][0]
+        status = "paid" if failure_stage == "audit" else "void"
+        facade._update_invoice_from_stripe(invoice["id"], "studio_1", {
+            **_Stripe.invoices[invoice["stripe_invoice_id"]],
+            "status": status,
+            "amount_remaining": 0,
+            "amount_paid": invoice["amount_due_cents"] if status == "paid" else 0,
+        }, "acct_1")
+        facade.balance_reply = {"balance_cents": 0, "billing_status": "current"}
     reads = list(_Stripe.retrieve_calls)
     facade.supabase.advance_billing_provider_clock(seconds=301)
     if kind == "create":
@@ -3883,7 +3891,7 @@ def test_invoice_local_closeout_failure_resumes_projected_work_offline(kind, fai
     invoke()
     assert _Stripe.retrieve_calls == reads
     assert _operation(facade, "invoice." + kind)["state"] == "completed"
-    _assert_local_invoice_closeout(facade, payer, kind)
+    _assert_local_invoice_closeout(facade, payer, kind, expected_balance=expected_balance)
 
 
 @pytest.mark.parametrize(("kind", "later_status", "remaining", "expected_balance"), [
