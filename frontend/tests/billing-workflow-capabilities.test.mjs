@@ -44,7 +44,6 @@ describe("billing workflow capabilities", () => {
       "billing-payer-actions.ts",
       "billing-payer-setup-action.ts",
       "billing-enrollment-actions.ts",
-      "billing-report-actions.ts",
     ].map((file) => fs.readFileSync(path.join(root, "src/lib", file), "utf8")).join("\n");
 
     for (const workflowId of [
@@ -58,7 +57,6 @@ describe("billing workflow capabilities", () => {
       "enrollment.create.external",
       "enrollment.activate",
       "enrollment.cancel.immediate",
-      "payment.external.record",
     ]) {
       assert.match(sources, new RegExp(workflowId.replaceAll(".", "\\.")));
     }

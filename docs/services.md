@@ -147,27 +147,28 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The current candidate's `/health/ready` calls `koaryu_release_schema_preflight_v23`
-and serves only at 137/head `20260910084231` with `release-db-attestation-v42`. Its
-full preflight reports 53 pending-history versions. It
+The current candidate's `/health/ready` calls `koaryu_release_schema_preflight_v24`
+and serves only at 138/head `20260910093958` with `release-db-attestation-v43`. Its
+full preflight reports 54 pending-history versions. It
 fails closed at every other migration state, so a backend deployed before its
 migration remains unhealthy. This describes the candidate contract, not a new
-hosted-state verification. The latest accepted predecessor is V41 at 136/head
-`20260908183744`; it selects only
-`20260910084231_independent_program_joining_dates_v42.sql`. Full V23 verifies V42,
-while V22 returns the V41 compatibility tuple. Existing V21/V20/V19/V18 callers
+hosted-state verification. The latest accepted predecessor is V42 at 137/head
+`20260910084231`; it selects only
+`20260910093958_external_payment_command_ownership_v43.sql`. Full V24 verifies V43,
+while V23 returns the V42 compatibility tuple. Existing V22/V21/V20/V19/V18 callers
 continue through that compatibility chain, but the candidate backend requires full
-V23. V42 changes only the private profile writer so an overall
-joining-date edit no longer changes dates on retained program memberships. New
-memberships keep the existing date default, and the preview model matches that rule.
-There is no backfill. Existing tenant checks, ranks, paused and other membership
-statuses, and locks remain intact. The V13 parent and affected V31/V12 semantic
-expectations advance; V40 rank-command and V41 payer-balance evidence remain
-unchanged. Old Python split read/write callers can still overwrite a newer payer
-balance until every serving backend and worker uses the V41 RPC and those old
-operations drain. All historical migrations remain unchanged. Merging does not apply
-the migration or deploy either application, and no production migration or deployment
-is authorized by this candidate documentation.
+V24. V43 adds the service-role-only, SECURITY INVOKER, VOLATILE
+`record_external_payment_v1` RPC. It commits a payer-only external payment and its
+original-actor audit together. Exact same-key/hash replay preserves both original
+records, and balance completion remains repeatable after commit. New external writes
+are USD-only; confirmed historical non-USD replay remains valid. There is no audit
+backfill. The new payment-and-audit guarantee begins only when every serving backend
+uses the RPC and old split-write operations drain. Old Python payer-balance split
+callers can also overwrite newer balances until every backend and worker uses the V41
+RPC and those operations drain. V40 rank, V41 balance, and V42 catalog and semantic
+pins remain unchanged. All historical migrations remain unchanged. Merging does not
+apply the migration or deploy either application, and no production migration or
+deployment is authorized by this candidate documentation.
 
 ## Supabase — database, auth, storage
 

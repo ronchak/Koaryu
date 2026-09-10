@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,27 +7,33 @@ import { test } from "node:test";
 import ts from "typescript";
 import { chromium } from "@playwright/test";
 
-// Mount the real provider and action hooks in Chromium. Only external I/O is replaced.
+// Mount real billing hooks and page controls in local Chromium; replace I/O and decoration.
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-function bundle({ realApi = false, refunds = false } = {}) {
+function bundle({ realApi = false, refunds = false, pageController = false } = {}) {
   const modules = [];
   const ids = new Map();
   const stubs = {
-    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router;`,
+    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router; const search=new URLSearchParams('tab=reports'); exports.useSearchParams=()=>search;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=window.fixture.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
-    "@/lib/performance": `exports.markPerformance=()=>{};exports.measurePerformance=()=>{};`,
+    "@/lib/performance": `exports.markPerformance=()=>{};exports.measurePerformance=()=>{};exports.markDashboardReadiness=()=>{};`,
   };
-  if (refunds) stubs["lucide-react"] = `module.exports=new Proxy({},{get:()=>()=>null});`;
+  if (refunds || pageController) stubs["lucide-react"] = `module.exports=new Proxy({},{get:()=>()=>null});`;
+  if (pageController) {
+    stubs["next/link"] = `const React=require("react");module.exports=({children,...props})=>React.createElement("a",props,children);`;
+    stubs["@/components/header"] = `exports.Header=({children})=>children;`;
+    stubs["@/components/operations/operations-surface"] = `exports.OperationsSurface=({children})=>children;`;
+  }
   if (realApi) delete stubs["@/lib/api"];
   function add(specifier, parent = resolve(frontend, "entry.js")) {
     let key = specifier;
     if (!(key in stubs)) {
       if (specifier.startsWith("@/")) key = resolve(frontend, "src", specifier.slice(2));
       else if (specifier.startsWith(".")) key = resolve(dirname(parent), specifier);
-      else key = require.resolve(specifier, { paths: [dirname(parent)] });
+      else key = require.resolve(specifier, { paths: [dirname(parent), frontend] });
+      if (existsSync(key) && statSync(key).isDirectory()) key = resolve(key, "index");
       if (!existsSync(key)) key = [".ts", ".tsx", ".js"].map(ext => key + ext).find(existsSync);
       if (!key) throw new Error(`Cannot resolve ${specifier} from ${parent}`);
     }
@@ -47,11 +53,16 @@ function bundle({ realApi = false, refunds = false } = {}) {
   const react = add("react");
   const dom = add("react-dom/client");
   const controller = add("@/lib/billing-data-controller");
+  const pageHook = pageController ? add("@/lib/billing-page-controller") : null;
+  const pageContent = pageController ? add("@/components/billing/billing-page-content") : null;
   const refund = refunds ? add("@/lib/billing-refund-controller") : null;
   const reports = refunds ? add("@/components/billing/billing-reports-tab") : null;
   const refundObserver = refunds ? `const refunds=require(${refund}).useBillingRefundController({...window.fixture.refundOptions,refreshBilling:state.refreshBilling,refreshPaymentAfterRefund:state.refreshPaymentAfterRefund});window.fixture.refunds=refunds;` : "";
-  const rendered = refunds ? `React.createElement(require(${reports}).BillingReportsTab,{billingPayers:[],billingPayments:state.payments,refundController:refunds,canManageRoutineBilling:false,externalAmount:'',externalMethod:'',externalNote:'',externalPayerId:'',externalPaymentTotal:0,exportJobs:[],isActionLoading:false,isLoadingAction:()=>false,onExternalAmountChange:()=>{},onExternalMethodChange:()=>{},onExternalNoteChange:()=>{},onExternalPayerChange:()=>{},onRecordExternalPayment:()=>{},paymentCohortAvailable:true,stripePaymentTotal:0})` : `React.createElement('output',null,JSON.stringify({landing:state.landing,plans:state.plans,payers:state.payers}))`;
-  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});function Observer(){const state=useBillingDataController(window.fixture.options);window.fixture.state=state;${refundObserver}React.useLayoutEffect(()=>{window.fixture.commits.push({tab:window.fixture.options.activeTab,settled:state.hasBillingLoadSettled,loading:state.isLoading,requestCount:window.fixture.requests.length});});React.useEffect(()=>{void state.ensureBilling();},[state.ensureBilling]);return ${rendered};}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(Observer));window.fixture.render();})();`;
+  const rendered = refunds ? `React.createElement(require(${reports}).BillingReportsTab,{billingPayers:[],billingPayments:state.payments,refundController:refunds,canManageRoutineBilling:false,externalAmount:'',externalMethod:'',externalNote:'',externalPayerId:'',externalPaymentReady:false,externalPaymentFormLocked:true,externalPaymentRecoveryMessage:'',externalPaymentIsRetry:false,externalPaymentTotal:0,exportJobs:[],isActionLoading:false,isLoadingAction:()=>false,onExternalAmountChange:()=>{},onExternalMethodChange:()=>{},onExternalNoteChange:()=>{},onExternalPayerChange:()=>{},onRecordExternalPayment:()=>{},paymentCohortAvailable:true,stripePaymentTotal:0})` : `React.createElement('output',null,JSON.stringify({landing:state.landing,plans:state.plans,payers:state.payers}))`;
+  const observer = pageController
+    ? `function Observer(){const page=require(${pageHook}).useBillingPageController(window.fixture.pageOptions);window.fixture.page=page.contentProps;window.fixture.actions=page.contentProps.tabContentProps.actions;return React.createElement(require(${pageContent}).BillingPageContent,page.contentProps);}`
+    : `function Observer(){const state=useBillingDataController(window.fixture.options);window.fixture.state=state;${refundObserver}React.useLayoutEffect(()=>{window.fixture.commits.push({tab:window.fixture.options.activeTab,settled:state.hasBillingLoadSettled,loading:state.isLoading,requestCount:window.fixture.requests.length});});React.useEffect(()=>{void state.ensureBilling();},[state.ensureBilling]);return ${rendered};}`;
+  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});${observer}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(Observer));window.fixture.remount=()=>{window.fixture.root.unmount();window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render();};window.fixture.render();})();`;
 }
 
 async function mountBillingFixture(browser) {
@@ -128,6 +139,303 @@ async function mountRefundFixture(browser) {
   await page.waitForFunction(()=>fixture.state?.payments.length===1 && fixture.refunds?.refundActionReady);
   return page;
 }
+
+// The server stores one synthetic receipt per key. Capture body, identity and durable
+// browser state at the I/O boundary, before either committing or holding the response.
+async function mountExternalPaymentFixture(browser, { role = "admin", preview = false, workflow = true, storageFault = null } = {}) {
+  const page = await browser.newPage();
+  await page.route("http://localhost:4173/", route => route.fulfill({contentType:"text/html",body:'<div id="root"></div>'}));
+  await page.goto("http://localhost:4173/");
+  await page.evaluate(({role,preview,workflow,storageFault}) => {
+    const f = window.fixture = {requests:[],posts:[],receipts:{},waiters:[],workflow,externalStorageReads:0};
+    f.pageOptions = {
+      config:{isPreviewMode:preview,token:"token-a",markSubscriptionRequired:()=>{f.redirected=true;}},
+      programsStore:{programs:[],programsLoaded:true,programsLoadError:null,refreshPrograms:async()=>{}},
+      studentsStore:{students:[],studentsLoaded:true,studentsLoadError:null,studentsMayBePartial:false,refreshStudents:async()=>{}},
+      studioStore:{currentRole:role,currentStudioId:"studio",currentUserId:"admin",identityGeneration:1},
+    };
+    f.saved = () => Object.entries(localStorage).filter(([key])=>key.startsWith("koaryu.external-payment:"));
+    f.storageFault = mode => {
+      const proto=Storage.prototype;
+      f.storageOriginals ??= {getItem:proto.getItem,setItem:proto.setItem,removeItem:proto.removeItem};
+      Object.assign(proto,f.storageOriginals);
+      if (mode==="get") proto.getItem=function(key){if(key.startsWith("koaryu.external-payment:")) {f.externalStorageReads++;throw new Error("Storage denied");}return f.storageOriginals.getItem.call(this,key);};
+      if (["set","silent","corrupt-write"].includes(mode)) proto.setItem=function(key,value){
+        if (!key.startsWith("koaryu.external-payment:")) return f.storageOriginals.setItem.call(this,key,value);
+        if(mode==="set") throw new Error("Storage full");
+        if(mode==="corrupt-write") return f.storageOriginals.setItem.call(this,key,"broken");
+      };
+      if (["remove","silent-remove"].includes(mode)) proto.removeItem=function(key){
+        if(!key.startsWith("koaryu.external-payment:")) return f.storageOriginals.removeItem.call(this,key);
+        if(mode==="remove") throw new Error("Storage denied");
+      };
+    };
+    if(storageFault==="missing") Object.defineProperty(window,"localStorage",{configurable:true,get(){throw new Error("Storage unavailable");}});
+    else if(storageFault==="corrupt") localStorage.setItem("koaryu.external-payment:admin:studio","broken");
+    else f.storageFault(storageFault);
+    f.api = {
+      get:async(path,token)=>{
+        f.requests.push({path,token,identity:structuredClone(f.pageOptions.studioStore)});
+        if(f.failReads) throw new Error("Payment read failed");
+        if(path==="/billing/landing") return {studio_id:f.pageOptions.studioStore.currentStudioId,financial_access:"available",errors:[],system_status:{workflow_capabilities:[{workflow_id:"payment.external.record",enabled:f.workflow}]},aggregates:{payment_cohort:{payment_count:Object.keys(f.receipts).length}}};
+        if(path==="/billing/payers") return [{id:"payer-1",display_name:"Family One"},{id:"payer-2",display_name:"Family Two"}];
+        if(path==="/billing/payments/page") return {items:Object.values(f.receipts),next_cursor:null,complete:true};
+        if(path==="/billing/payments/current-month-cohort") return {payment_count:Object.keys(f.receipts).length,net_amount_cents:7525,external_net_amount_cents:7525,stripe_net_amount_cents:0};
+        throw new Error(`Unexpected read ${path}`);
+      },
+      post:async(path,body,token,options)=>{
+        if(path!=="/billing/payments/external") throw new Error(`Unexpected write ${path}`);
+        const identity=structuredClone(f.pageOptions.studioStore);
+        const requestKey=options.headers["Idempotency-Key"];
+        f.posts.push({path,body:structuredClone(body),token,requestKey,identity,saved:structuredClone(f.saved())});
+        f.receipts[requestKey] ??= {id:`payment-${Object.keys(f.receipts).length+1}`,studio_id:identity.currentStudioId,...structuredClone(body),status:"externally_recorded",payment_method_type:"external",gross_paid_amount_cents:7525,net_collected_amount_cents:7525,refunded_amount_cents:0,disputed_amount_cents:0,refundable_amount_cents:0,created_at:"2026-09-09T00:00:00Z"};
+        const result=Object.hasOwn(f,"responseOverride") ? f.responseOverride : structuredClone(f.receipts[requestKey]);
+        if(f.holdPost) await new Promise(resolve=>f.waiters.push(resolve));
+        if(f.loseResponse) throw new Error("Payment response lost");
+        if(f.failAfterPost) f.failReads=true;
+        return result;
+      },
+    };
+  },{role,preview,workflow,storageFault});
+  await page.addScriptTag({content:bundle({pageController:true})});
+  await page.waitForFunction(()=>fixture.page && !fixture.page.showBillingLoading);
+  return page;
+}
+
+async function fillExternalPayment(page, values = {}) {
+  const draft={payer:"payer-1",amount:"75.25",method:" Check ",note:" paid at front desk ",...values};
+  await page.getByLabel("Payer",{exact:true}).selectOption(draft.payer);
+  await page.getByLabel("Amount",{exact:true}).fill(draft.amount);
+  await page.getByLabel("Method",{exact:true}).fill(draft.method);
+  await page.getByLabel("Note",{exact:true}).fill(draft.note);
+}
+const settleExternalPage = page => page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+
+test("external payment keeps the exact durable request through lost response, edits, remount and retry", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const page=await mountExternalPaymentFixture(browser);
+    await fillExternalPayment(page);
+    await page.evaluate(()=>{fixture.loseResponse=true;});
+    await page.getByRole("button",{name:"Record",exact:true}).click();
+    await page.waitForFunction(()=>fixture.page.error==="Payment response lost");
+    const first=await page.evaluate(()=>fixture.posts[0]);
+    assert.deepEqual(first.body,{payer_id:"payer-1",amount_cents:7525,currency:"usd",external_method:"Check",note:"paid at front desk"});
+    assert.equal(first.saved.length,1,"the complete request must exist before POST");
+    assert.deepEqual(JSON.parse(first.saved[0][1]),{version:1,requestKey:first.requestKey,payload:first.body});
+    assert.equal(first.token,"token-a");
+    assert.equal(first.path,"/billing/payments/external");
+    for(const label of ["Payer","Amount","Method","Note"]) assert.equal(await page.getByLabel(label,{exact:true}).isDisabled(),true);
+    await page.evaluate(()=>{
+      fixture.actions.onExternalPayerChange("payer-2");fixture.actions.onExternalAmountChange("99");
+      fixture.actions.onExternalMethodChange("Cash");fixture.actions.onExternalNoteChange("replacement");
+    });
+    await settleExternalPage(page);
+    assert.deepEqual(await page.evaluate(()=>[fixture.actions.externalPayerId,fixture.actions.externalAmount,fixture.actions.externalMethod,fixture.actions.externalNote]),["payer-1","75.25","Check","paid at front desk"]);
+    await page.evaluate(()=>fixture.remount());
+    await page.getByRole("button",{name:"Retry payment",exact:true}).waitFor();
+    assert.equal(await page.getByLabel("Note",{exact:true}).inputValue(),"paid at front desk");
+    await page.evaluate(()=>{fixture.loseResponse=false;});
+    await page.getByRole("button",{name:"Retry payment",exact:true}).click();
+    await page.waitForFunction(()=>fixture.page.message==="External payment recorded." && !fixture.page.isLoading);
+    assert.deepEqual(await page.evaluate(()=>fixture.posts.map(p=>[p.requestKey,p.body])),[[first.requestKey,first.body],[first.requestKey,first.body]]);
+    assert.equal(await page.evaluate(()=>Object.keys(fixture.receipts).length),1);
+    assert.equal(await page.evaluate(()=>fixture.saved().length),0);
+    assert.equal(await page.getByLabel("Amount",{exact:true}).inputValue(),"");
+    assert.equal(await page.getByLabel("Note",{exact:true}).inputValue(),"");
+  } finally {await browser.close();}
+});
+
+test("external payment rejects invalid drafts before capture and blocks unsafe storage", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const invalid=await mountExternalPaymentFixture(browser);
+    await fillExternalPayment(invalid);
+    for(const [field,value] of [["Amount","0.001"],["Amount","21474836.48"],["Method"," "],["Payer",""]]) {
+      await fillExternalPayment(invalid);
+      if(field==="Payer") await invalid.getByLabel(field,{exact:true}).selectOption(value);
+      else await invalid.getByLabel(field,{exact:true}).fill(value);
+      await invalid.getByRole("button",{name:"Record",exact:true}).click();
+      await settleExternalPage(invalid);
+      assert.ok(await invalid.evaluate(()=>fixture.page.error));
+      assert.deepEqual(await invalid.evaluate(()=>[fixture.posts.length,fixture.saved().length]),[0,0],`${field} must fail before durable capture`);
+    }
+    await fillExternalPayment(invalid);
+    // A direct callback exercises the API method limit beyond the input's maxLength.
+    await invalid.evaluate(()=>fixture.actions.onExternalMethodChange("x".repeat(81)));
+    await settleExternalPage(invalid);
+    await invalid.getByRole("button",{name:"Record",exact:true}).click();
+    assert.deepEqual(await invalid.evaluate(()=>[fixture.posts.length,fixture.saved().length]),[0,0]);
+    await invalid.close();
+
+    for(const fault of ["missing","get","corrupt","set","silent","corrupt-write"]) {
+      const early=["missing","get","corrupt"].includes(fault);
+      const page=await mountExternalPaymentFixture(browser,{storageFault:early ? fault : null});
+      if(!early) {
+        await fillExternalPayment(page);
+        await page.evaluate(fault=>fixture.storageFault(fault),fault);
+        await page.getByRole("button",{name:"Record",exact:true}).click();
+      }
+      await page.waitForFunction(()=>!fixture.actions.externalPaymentReady);
+      assert.equal(await page.getByRole("button",{name:"Record",exact:true}).isDisabled(),true,fault);
+      await page.evaluate(()=>fixture.actions.onRecordExternalPayment({preventDefault(){}}));
+      assert.equal(await page.evaluate(()=>fixture.posts.length),0,fault);
+      assert.match(await page.locator("body").innerText(),/storage is unavailable|saved payment request cannot be verified/i);
+      await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test("external payment retains an unverified response or failed retirement and retries its original key", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    for(const response of [null,{id:"payment-1"},"wrong-studio","wrong-note","wrong-amount"]) {
+      const page=await mountExternalPaymentFixture(browser);
+      await fillExternalPayment(page);
+      await page.evaluate(response=>{
+        fixture.responseOverride=typeof response==="string"
+          ? {id:"payment-1",studio_id:response==="wrong-studio"?"other":"studio",payer_id:"payer-1",amount_cents:response==="wrong-amount"?1:7525,currency:"usd",external_method:"Check",note:response==="wrong-note"?"different":"paid at front desk",status:"externally_recorded",payment_method_type:"external"}
+          : response;
+      },response);
+      await page.getByRole("button",{name:"Record",exact:true}).click();
+      await page.waitForFunction(()=>fixture.page.error.includes("could not be verified"));
+      assert.equal(await page.evaluate(()=>fixture.saved().length),1);
+      assert.equal(await page.getByLabel("Note",{exact:true}).isDisabled(),true);
+      assert.equal(await page.evaluate(()=>fixture.page.message),"");
+      await page.evaluate(()=>{delete fixture.responseOverride;});
+      await page.getByRole("button",{name:"Retry payment",exact:true}).click();
+      await page.waitForFunction(()=>fixture.saved().length===0 && !fixture.actions.isActionLoading);
+      assert.equal(await page.evaluate(()=>Object.keys(fixture.receipts).length),1);
+      assert.equal(await page.evaluate(()=>fixture.posts[0].requestKey===fixture.posts[1].requestKey),true);
+      await page.close();
+    }
+    for(const fault of ["remove","silent-remove"]) {
+      const page=await mountExternalPaymentFixture(browser);
+      await fillExternalPayment(page);
+      await page.evaluate(fault=>fixture.storageFault(fault),fault);
+      await page.getByRole("button",{name:"Record",exact:true}).click();
+      await page.waitForFunction(()=>fixture.page.error.includes("completion needs attention"));
+      assert.equal(await page.evaluate(()=>fixture.page.message),"External payment recorded.");
+      assert.equal(await page.evaluate(()=>fixture.saved().length),1);
+      assert.equal(await page.getByLabel("Amount",{exact:true}).isDisabled(),true);
+      await page.evaluate(()=>{fixture.storageFault(null);fixture.remount();});
+      await page.getByRole("button",{name:"Retry payment",exact:true}).click();
+      await page.waitForFunction(()=>fixture.saved().length===0 && !fixture.actions.isActionLoading);
+      assert.equal(await page.evaluate(()=>Object.keys(fixture.receipts).length),1);
+      assert.equal(await page.evaluate(()=>fixture.posts[0].requestKey===fixture.posts[1].requestKey),true);
+      await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test("external payment confirmation survives real loader failure and page Refresh only reads", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const page=await mountExternalPaymentFixture(browser);
+    await fillExternalPayment(page);
+    await page.evaluate(()=>{fixture.failAfterPost=true;});
+    await page.getByRole("button",{name:"Record",exact:true}).click();
+    await page.waitForFunction(()=>fixture.page.error.includes("Payment read failed") && !fixture.page.isLoading);
+    assert.equal(await page.evaluate(()=>fixture.page.message),"External payment recorded.");
+    assert.equal(await page.evaluate(()=>fixture.saved().length),0);
+    assert.match(await page.locator("body").innerText(),/External payment recorded/);
+    const reads=await page.evaluate(()=>fixture.requests.length);
+    await page.evaluate(()=>{fixture.failReads=false;});
+    await page.getByRole("button",{name:"Refresh",exact:true}).click();
+    await page.waitForFunction(()=>!fixture.page.isLoading && fixture.page.tabContentProps.billingPayments.length===1);
+    assert.equal(await page.evaluate(()=>fixture.posts.length),1);
+    assert.ok(await page.evaluate(n=>fixture.requests.length>n,reads));
+    assert.equal(await page.evaluate(()=>fixture.page.error),"");
+    assert.equal(await page.evaluate(()=>fixture.page.message),"External payment recorded.");
+  } finally {await browser.close();}
+});
+
+test("external payment held completion follows token renewal but cannot settle another identity or action", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    for(const change of ["token","user","studio","role","generation","signout","unmount"]) {
+      const page=await mountExternalPaymentFixture(browser);
+      await fillExternalPayment(page);
+      await page.evaluate(()=>{fixture.holdPost=true;});
+      await page.getByRole("button",{name:"Record",exact:true}).click();
+      await page.waitForFunction(()=>fixture.waiters.length===1);
+      const saved=await page.evaluate(()=>fixture.saved());
+      const before=await page.evaluate(()=>fixture.requests.length);
+      await page.evaluate(change=>{
+        const f=fixture;
+        if(change==="unmount") {f.root.unmount();return;}
+        const config={...f.pageOptions.config};
+        const studioStore={...f.pageOptions.studioStore};
+        if(change==="token") config.token="renewed";
+        if(change==="user") studioStore.currentUserId="replacement";
+        if(change==="studio") studioStore.currentStudioId="other";
+        if(change==="role") studioStore.currentRole="front_desk";
+        if(change==="generation") studioStore.identityGeneration++;
+        if(change==="signout") {config.token=null;studioStore.currentUserId=null;studioStore.currentRole=null;studioStore.identityGeneration++;}
+        f.pageOptions={...f.pageOptions,config,studioStore};f.render();
+      },change);
+      await settleExternalPage(page);
+      if(!["token","unmount"].includes(change)) {
+        assert.equal(await page.evaluate(()=>fixture.actions.isActionLoading),false,`${change} releases the old claim`);
+        assert.equal(await page.evaluate(()=>fixture.actions.claimAction("record-external")),true);
+        await settleExternalPage(page);
+      }
+      await page.evaluate(()=>fixture.waiters.shift()());
+      await settleExternalPage(page);
+      if(change==="token") {
+        await page.waitForFunction(()=>!fixture.actions.isActionLoading && !fixture.page.isLoading);
+        assert.equal(await page.evaluate(()=>fixture.saved().length),0);
+        assert.equal(await page.evaluate(()=>fixture.page.message),"External payment recorded.");
+        assert.ok(await page.evaluate(n=>fixture.requests.slice(n).every(r=>r.token==="renewed"),before));
+        assert.ok(await page.evaluate(n=>fixture.requests.length>n,before));
+      } else {
+        assert.deepEqual(await page.evaluate(()=>fixture.saved()),saved,`${change} cannot retire the original scope's attempt`);
+        if(change!=="unmount") {
+          assert.equal(await page.evaluate(()=>fixture.page.message),"");
+          assert.equal(await page.evaluate(()=>fixture.page.error),"");
+          assert.equal(await page.evaluate(()=>fixture.actions.isLoadingAction("record-external")),true,`${change} stale release cannot clear a new claim of the same action`);
+        }
+      }
+      assert.equal(await page.evaluate(()=>fixture.posts.length),1);
+      assert.equal(await page.evaluate(()=>fixture.posts[0].identity.currentUserId),"admin");
+      assert.equal(await page.evaluate(()=>fixture.posts[0].identity.currentStudioId),"studio");
+      await page.close();
+    }
+  } finally {await browser.close();}
+});
+
+test("external payment page enforces front desk, preview, denied-role and exact-workflow gates", async () => {
+  const browser=await chromium.launch({headless:true});
+  try {
+    const front=await mountExternalPaymentFixture(browser,{role:"front_desk"});
+    await fillExternalPayment(front);
+    await front.getByRole("button",{name:"Record",exact:true}).click();
+    await front.waitForFunction(()=>fixture.page.message==="External payment recorded." && !fixture.page.isLoading);
+    assert.equal(await front.evaluate(()=>fixture.posts.length),1);
+    assert.equal(await front.evaluate(()=>fixture.posts[0].identity.currentRole),"front_desk");
+    assert.ok(await front.evaluate(()=>fixture.requests.some(r=>r.path==="/billing/landing")));
+    assert.deepEqual(await front.evaluate(()=>[...new Set(fixture.requests.map(r=>r.path))].sort()),["/billing/landing","/billing/payers","/billing/payments/page"]);
+    await front.close();
+
+    const preview=await mountExternalPaymentFixture(browser,{preview:true,storageFault:"get"});
+    const payer=await preview.getByLabel("Payer",{exact:true}).locator("option").nth(1).getAttribute("value");
+    await fillExternalPayment(preview,{payer});
+    await preview.getByRole("button",{name:"Record",exact:true}).click();
+    await preview.waitForFunction(()=>fixture.page.message==="Demo external payment recorded locally.");
+    assert.deepEqual(await preview.evaluate(()=>[fixture.requests.length,fixture.posts.length,fixture.externalStorageReads]),[0,0,0]);
+    await preview.close();
+
+    for(const options of [{workflow:false},{role:"instructor"}]) {
+      const page=await mountExternalPaymentFixture(browser,options);
+      if(options.workflow===false) assert.equal(await page.getByRole("button",{name:"Record",exact:true}).isDisabled(),true);
+      else assert.match(await page.locator("body").innerText(),/Billing access is limited/);
+      await page.evaluate(()=>fixture.actions.onRecordExternalPayment({preventDefault(){}}));
+      assert.deepEqual(await page.evaluate(()=>[fixture.posts.length,fixture.saved().length]),[0,0]);
+      if(options.role) assert.equal(await page.evaluate(()=>fixture.requests.length),0);
+      await page.close();
+    }
+  } finally {await browser.close();}
+});
 
 test("confirmed refund retains its receipt when the real payment loader fails, then recovers with only a read", async () => {
   const browser=await chromium.launch({headless:true});

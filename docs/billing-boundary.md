@@ -109,7 +109,7 @@ A field the resolver cannot read is treated as a denial, and every denial must b
 | Create, finalize, retry, or void invoice | Invoice mutation endpoints | Admin | Stripe invoice/payment mutation, local projection, audit | Controls removed; hidden, live `FAIL-CLOSED` |
 | Reconcile invoice | `POST /billing/invoices/{id}/reconcile` | Admin / Front Desk | Stripe GET, local projection, balance recomputation, audit | Supported routine, `READ-ONLY LIVE` |
 | Payment list and monthly cohort | Payment GETs | Admin / Front Desk | Read | Supported read |
-| Record external payment | `POST /billing/payments/external` | Admin / Front Desk | Local payer-level payment and audit; no Stripe call | Supported routine, `LOCAL-ONLY` |
+| Record external payment | `POST /billing/payments/external` | Admin / Front Desk | Atomic local payer-level payment and original-actor audit; repeatable balance completion; no Stripe call | Supported routine, `LOCAL-ONLY` |
 | Billing CSV controls | `POST /billing/exports` | Admin | Creates an export job row and audit; no producer completes it | Removed; endpoint hidden and `BROKEN` |
 | Preview actions | Client preview branches | Preview role | Demo messages/state only | `DECORATIVE`; no provider effect |
 
@@ -181,12 +181,14 @@ idempotent activation workflow remains the sole owner of subscription mutation.
 | `POST /billing/invoices/{invoice_id}/reconcile` | Admin / Front Desk | Stripe retrieval only, local projection/balance, audit | Supported routine |
 | `GET /billing/payments` | Admin / Front Desk | Local read | Supported read |
 | `GET /billing/payments/current-month-cohort` | Admin / Front Desk | Local aggregate read | Supported read |
-| `POST /billing/payments/external` | Admin / Front Desk | Payer-only local payment, balance recomputation, audit | Supported routine |
+| `POST /billing/payments/external` | Admin / Front Desk | Atomic payer-only local payment and original-actor audit, then repeatable balance completion | Supported routine |
 | `POST /billing/payments/{payment_id}/refund` | Admin | Stripe refund, local projection, audit | Hidden; live `FAIL-CLOSED` |
 | `POST /billing/exports` | Admin | Queues local job and audit only | Hidden; `BROKEN` without worker |
 | `GET /billing/exports/{export_id}` | Admin | Reads queued job | Hidden read |
 
-The external-payment route rejects a missing `payer_id` or any `invoice_id` with `409` before service execution.
+The external-payment route rejects a missing `payer_id` or any `invoice_id` with `409`
+before service execution. The Python invoice-recording path has been removed; historical
+SQL invoice, tenant and overpayment guards remain.
 
 ### Webhooks
 
@@ -222,20 +224,24 @@ Webhook routes read the raw request body, enforce the request-size limit, verify
 
 | Contract field | Value |
 | --- | --- |
-| Source | Same-studio payer, positive amount, currency, external method, optional note |
+| Source | Same-studio payer, positive amount, USD currency, external method, optional note |
 | Target | One payment with `status=externally_recorded`, payer target, and current `processed_at` |
 | Actors | Admin, Front Desk |
 | Inputs | `payer_id`, amount, method, optional note, required `Idempotency-Key`; `invoice_id` forbidden |
 | Effective time | Recorded immediately in local history |
 | Provider action | None |
-| Idempotency | Unique by studio and key; canonical request hash must match. Same key/same request returns the existing payment; same key/different request returns `409` |
-| Pending state | None |
+| Idempotency | Unique by studio and key; canonical request hash must match. Same key/same request returns the original payment and audit; same key/different request returns `409`. Confirmed historical non-USD requests remain replayable, but new non-USD writes are rejected |
+| Pending state | Before POST, the browser stores the exact staff/studio-scoped payload and key, including the normalized note, and pins the original form until matching confirmation. Unavailable, corrupt or failing storage blocks an unprotected submission. Preview does not read or retire live attempts |
 | Webhooks | None expected |
-| Reconciliation | Refresh payment list and UTC-month cohort |
-| Failure and retry | Never claim a charge or invoice settlement. Reuse the same key for the same unchanged request |
-| Audit | `billing.external_payment_recorded` only when the row is first created |
+| Reconciliation | Preserve payment confirmation independently of payment-list and UTC-month-cohort refresh |
+| Failure and retry | Never claim a charge or invoice settlement. Reuse the same key for the same unchanged request. Refresh failure is separate from recording failure; failed retirement preserves the unresolved attempt. Token renewal keeps the same owner, while stale or different-session settlements cannot retire another owner's attempt |
+| Audit | `billing.external_payment_recorded` commits atomically with a new payment and preserves the original actor on replay; there is no historical audit backfill |
 | Recovery | Preserve the record; correction/reversal is a future Admin accounting workflow |
 | Live policy | Supported because it performs no Stripe mutation |
+
+A browser rollback must preserve pending-request recovery or block new recording until
+the unresolved attempt is confirmed. An older frontend does not safely understand the
+new pending-attempt storage contract.
 
 ### 3. Existing-invoice reconciliation
 

@@ -9,7 +9,6 @@ from fastapi import HTTPException
 from app.schemas.billing import (
     BillingInvoiceCreate,
     BillingInvoiceResponse,
-    ExternalPaymentCreate,
     StudentBillingEnrollmentCreate,
     StudentBillingEnrollmentResponse,
 )
@@ -2025,45 +2024,3 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                         adjustment["reconciliation_reason_code"],
                         "payment_identity_mismatch",
                     )
-
-    def test_external_payment_rejects_invoice_overpayment(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "billing_invoices": [{
-                "id": "invoice_1",
-                "studio_id": "studio_1",
-                "payer_id": "payer_1",
-                "status": "open",
-                "amount_due_cents": 200,
-                "amount_paid_cents": 50,
-                "amount_remaining_cents": 150,
-                "currency": "usd",
-                "external": False,
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
-            }],
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "billing_status": "past_due",
-                "balance_cents": 150,
-            }],
-            "billing_payments": [],
-            "audit_logs": [],
-        })
-
-        with self.assertRaises(HTTPException) as context:
-            asyncio.run(service.record_external_payment(
-                ExternalPaymentCreate(
-                    invoice_id="invoice_1",
-                    amount_cents=151,
-                    external_method="cash",
-                ),
-                "studio_1",
-                "actor_1",
-                idempotency_key="external-overpay",
-            ))
-
-        self.assertEqual(context.exception.status_code, 409)
-        self.assertIn("remaining balance", context.exception.detail)
-        self.assertEqual(service.supabase.tables["billing_payments"], [])

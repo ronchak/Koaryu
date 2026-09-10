@@ -217,10 +217,8 @@ export function useBillingPageController({
     billingConnect,
     canManageRoutineBilling: canManageRoutineBillingActions,
     isPreviewMode,
-    payerOperationIdentity:
-      currentUserId && currentStudioId
-        ? { userId: currentUserId, studioId: currentStudioId }
-        : null,
+    payerOperationIdentity: billingIdentity,
+    identityKey: billingIdentityKey,
     refreshBilling,
     setError,
     setExportJobs,

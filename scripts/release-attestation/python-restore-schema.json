@@ -113,6 +113,21 @@
       "state": "v42",
       "query": "V31_OPERATIONAL_MANIFEST_SQL",
       "expected": "EXPECTED_V42_OPERATIONAL_MANIFEST_V12"
+    },
+    "readiness-v43": {
+      "kind": "readiness",
+      "state": "v43",
+      "finalAlias": true
+    },
+    "release-v43": {
+      "kind": "release",
+      "state": "v43"
+    },
+    "external-payment-v43": {
+      "kind": "export",
+      "state": "v43",
+      "query": "V43_EXTERNAL_PAYMENT_STATE_SQL",
+      "expected": "EXPECTED_V43_EXTERNAL_PAYMENT_STATE"
     }
   },
   "cases": {
@@ -415,6 +430,125 @@
       "passLines": [
         "[restored V42] PASS actual V41 backup/restore, exact normalization, no migration backfill, ",
         "independent program dates through both profile writers on canonical/restored copies"
+      ]
+    },
+    "v43": {
+      "format": "forward",
+      "docstring": "Prove V42 logical restore and V43 atomic external-payment/audit continuation without historical repair.",
+      "exports": [
+        [
+          "readiness-v42.query",
+          "readiness-v42.expected"
+        ],
+        [
+          "catalog-v42.query",
+          "catalog-v42.expected",
+          "catalog-v42.restored"
+        ],
+        [
+          "release-v42.query",
+          "release-v42.expected"
+        ],
+        [
+          "rank-v40.query",
+          "rank-v40.expected"
+        ],
+        [
+          "payer-v41.query",
+          "payer-v41.expected"
+        ],
+        [
+          "readiness-v43.query",
+          "readiness-v43.expected"
+        ],
+        [
+          "readiness-v41.query",
+          "readiness-v41.expected"
+        ],
+        [
+          "readiness-v40.query",
+          "readiness-v40.expected"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v39.expected"
+        ],
+        [
+          "readiness-v38.query",
+          "readiness-v38.expected"
+        ],
+        [
+          "readiness-v37.query",
+          "readiness-v37.expected"
+        ],
+        [
+          "release-v43.query",
+          "release-v43.expected"
+        ],
+        [
+          "external-payment-v43.query",
+          "external-payment-v43.expected"
+        ],
+        [
+          "expectation-v42.query",
+          "expectation-v42.expected"
+        ],
+        [
+          "resource-v42.query",
+          "resource-v42.expected"
+        ],
+        [
+          "contract-v42.query",
+          "contract-v42.expected"
+        ],
+        [
+          "operational-v42.query",
+          "operational-v42.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v42",
+        "catalog-v42",
+        "release-v42",
+        "rank-v40",
+        "payer-v41"
+      ],
+      "checks": [
+        "readiness-v43",
+        "readiness-v42",
+        "readiness-v41",
+        "readiness-v40",
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "catalog-v42",
+        "rank-v40",
+        "payer-v41",
+        "release-v43",
+        "external-payment-v43",
+        "expectation-v42",
+        "resource-v42",
+        "contract-v42",
+        "operational-v42"
+      ],
+      "absentFunctions": [
+        "public.record_external_payment_v1(uuid,uuid,uuid,integer,text,text,text,text,text)"
+      ],
+      "semanticManifests": [
+        "private.koaryu_release_critical_surface_manifest_v16()",
+        "private.koaryu_release_critical_surface_manifest_v17()",
+        "private.koaryu_release_critical_surface_manifest_v18()",
+        "private.koaryu_release_operational_manifest_v10()",
+        "private.koaryu_release_operational_manifest_v11()",
+        "private.koaryu_release_student_rank_writer_manifest_v11()",
+        "private.koaryu_release_student_rank_writer_manifest_v13()",
+        "private.koaryu_release_resource_ownership_manifest_v31()",
+        "private.koaryu_release_operational_contract_v31()",
+        "private.koaryu_release_operational_manifest_v12()"
+      ],
+      "passLines": [
+        "[restored V43] PASS actual V42 backup/restore, exact normalization, no historical repair, ",
+        "original-actor payment/audit ownership, legacy replay and balance continuation on canonical/restored copies"
       ]
     }
   }

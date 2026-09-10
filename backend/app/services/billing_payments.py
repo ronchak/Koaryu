@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime, timezone
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -27,14 +25,14 @@ from app.services.billing_provider_operations import (
 )
 from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
 from app.services.stripe_mutation_policy import StripeMutationBlocked
-from app.services.supabase_rpc import execute_required_rpc
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 from app.services.stripe_service import StripeService
 
 
 
 EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL = "Idempotency-Key is required for external payments."
-EXTERNAL_PAYMENT_OVERPAY_DETAIL = "External payment exceeds the invoice remaining balance."
-EXTERNAL_PAYMENT_TARGET_REQUIRED_DETAIL = "External payments must target a payer or invoice."
+PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL = "External payments must currently target one payer, not an invoice."
+EXTERNAL_PAYMENT_USD_ONLY_DETAIL = "New external payments must use USD."
 REFUND_AMBIGUOUS_DETAIL = (
     "Refund outcome is not confirmed. Retry with the same Idempotency-Key after reconciliation."
 )
@@ -49,8 +47,7 @@ def build_external_payment_request_hash(
     payload = data.model_dump(mode="json", exclude_none=True)
     if effective_payer_id is not None:
         payload["payer_id"] = effective_payer_id
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return stable_hash(payload)
 
 
 class BillingPaymentManager:
@@ -61,9 +58,6 @@ class BillingPaymentManager:
     @property
     def supabase(self):
         return self.billing_service.supabase
-
-    def _ensure_record_in_studio(self, *args, **kwargs) -> None:
-        self.billing_service._ensure_record_in_studio(*args, **kwargs)
 
     def _get_row_or_404(self, *args, **kwargs):
         return self.billing_service._get_row_or_404(*args, **kwargs)
@@ -76,19 +70,6 @@ class BillingPaymentManager:
 
     def _idempotency_key(self, *parts: str) -> str:
         return self.billing_service._idempotency_key(*parts)
-
-    def _normalize_idempotency_key(self, value: str | None) -> str | None:
-        helper = getattr(self.billing_service, "_normalize_idempotency_key", None)
-        if callable(helper):
-            return helper(value)
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        if len(normalized) > 255:
-            raise HTTPException(status_code=400, detail="Idempotency-Key must be 255 characters or fewer.")
-        return normalized
 
     def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
         self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
@@ -130,146 +111,44 @@ class BillingPaymentManager:
         actor_id: str,
         idempotency_key: str | None = None,
     ) -> BillingPaymentResponse:
-        if not data.payer_id and not data.invoice_id:
-            raise HTTPException(status_code=400, detail=EXTERNAL_PAYMENT_TARGET_REQUIRED_DETAIL)
-
-        invoice = None
-        if data.invoice_id:
-            invoice = self._get_row_or_404("billing_invoices", data.invoice_id, studio_id, "Invoice not found.")
-            invoice_payer_id = invoice.get("payer_id")
-            if data.payer_id and invoice_payer_id and data.payer_id != invoice_payer_id:
-                raise HTTPException(status_code=409, detail="Invoice belongs to a different payer.")
-        effective_payer_id = data.payer_id or (invoice or {}).get("payer_id")
-        if effective_payer_id:
-            self._ensure_record_in_studio("billing_payers", effective_payer_id, studio_id, "Payer not found.")
-        normalized_idempotency_key = self._normalize_idempotency_key(idempotency_key)
-        if not normalized_idempotency_key:
+        if not data.payer_id or data.invoice_id:
+            raise HTTPException(status_code=409, detail=PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL)
+        request_key = normalize_idempotency_key(idempotency_key)
+        if not request_key:
             raise HTTPException(status_code=400, detail=EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL)
-        request_hash = self._external_payment_request_hash(data, effective_payer_id=effective_payer_id)
-        existing_idempotent_payment = None
-        if normalized_idempotency_key:
-            existing_idempotent_payment = self._find_payment_by_idempotency_key(studio_id, normalized_idempotency_key)
-            if existing_idempotent_payment:
-                self._ensure_external_payment_hash_matches(existing_idempotent_payment, request_hash)
-        if data.invoice_id and not existing_idempotent_payment:
-            self._ensure_external_payment_does_not_overpay_invoice(invoice or {}, data.amount_cents)
-        row = data.model_dump()
-        row.update({
-            "studio_id": studio_id,
-            "payer_id": effective_payer_id,
-            "status": "externally_recorded",
-            "payment_method_type": "external",
-            "disputed_amount_cents": 0,
-            "net_collected_amount_cents": data.amount_cents,
-            "refundable_amount_cents": 0,
-            "processed_at": datetime.now(timezone.utc).isoformat(),
-            "idempotency_key": normalized_idempotency_key,
-            "request_hash": request_hash if normalized_idempotency_key else None,
-        })
-        payment, created = self._claim_external_payment_request(
-            studio_id,
-            normalized_idempotency_key,
-            request_hash,
-            row,
-        )
-        if data.invoice_id:
-            invoice = self._recompute_external_invoice_payment_totals(
-                studio_id,
-                invoice["id"],
-            )
-            self._recompute_payer_balance(studio_id, invoice.get("payer_id"))
-        elif effective_payer_id:
-            self._recompute_payer_balance(studio_id, effective_payer_id)
-        if created:
-            self._audit(studio_id, actor_id, "billing.external_payment_recorded", payment["id"], {
-                "amount_cents": data.amount_cents,
-                "external_method": data.external_method,
-            })
-        return BillingPaymentResponse(**payment)
-
-    def _ensure_external_payment_does_not_overpay_invoice(
-        self,
-        invoice: dict[str, Any],
-        amount_cents: int,
-    ) -> None:
-        if invoice.get("amount_remaining_cents") is not None:
-            remaining = int(invoice.get("amount_remaining_cents") or 0)
-        else:
-            remaining = max(0, int(invoice.get("amount_due_cents") or 0) - int(invoice.get("amount_paid_cents") or 0))
-        if remaining <= 0:
-            raise HTTPException(status_code=409, detail="Invoice has no remaining balance.")
-        if int(amount_cents or 0) > remaining:
-            raise HTTPException(status_code=409, detail=EXTERNAL_PAYMENT_OVERPAY_DETAIL)
-
-    def _external_payment_request_hash(self, data: ExternalPaymentCreate, *, effective_payer_id: str | None) -> str:
-        return build_external_payment_request_hash(data, effective_payer_id=effective_payer_id)
-
-    def _claim_external_payment_request(
-        self,
-        studio_id: str,
-        idempotency_key: str | None,
-        request_hash: str,
-        payment_row: dict[str, Any],
-    ) -> tuple[dict[str, Any], bool]:
-        if idempotency_key:
-            existing = self._find_payment_by_idempotency_key(studio_id, idempotency_key)
-            if existing:
-                self._ensure_external_payment_hash_matches(existing, request_hash)
-                return existing, False
+        request_hash = build_external_payment_request_hash(data, effective_payer_id=data.payer_id)
         try:
-            result = self.supabase.table("billing_payments").insert(payment_row).execute()
-        except PostgrestAPIError as exc:
-            if self._is_external_payment_idempotency_guard_error(exc):
-                raise HTTPException(status_code=400, detail=EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL) from exc
-            if self._is_external_payment_overpay_guard_error(exc):
-                raise HTTPException(status_code=409, detail=EXTERNAL_PAYMENT_OVERPAY_DETAIL) from exc
-            if getattr(exc, "code", None) != "23505" or not idempotency_key:
-                raise
-            existing = self._find_payment_by_idempotency_key(studio_id, idempotency_key)
-            if not existing:
-                raise
-            self._ensure_external_payment_hash_matches(existing, request_hash)
-            return existing, False
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to record external payment.")
-        return result.data[0], True
-
-    def _is_external_payment_overpay_guard_error(self, exc: PostgrestAPIError) -> bool:
-        message = getattr(exc, "message", None) or str(exc)
-        return getattr(exc, "code", None) == "23514" and EXTERNAL_PAYMENT_OVERPAY_DETAIL in message
-
-    def _is_external_payment_idempotency_guard_error(self, exc: PostgrestAPIError) -> bool:
-        message = getattr(exc, "message", None) or str(exc)
-        return getattr(exc, "code", None) == "23514" and EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL in message
-
-    def _ensure_external_payment_hash_matches(self, payment: dict[str, Any], request_hash: str) -> None:
-        if payment.get("request_hash") != request_hash:
-            raise HTTPException(
-                status_code=409,
-                detail="This idempotency key is already in use for a different external payment request.",
-            )
-
-    def _find_payment_by_idempotency_key(self, studio_id: str, idempotency_key: str) -> dict[str, Any] | None:
-        result = (
-            self.supabase.table("billing_payments")
-            .select("*")
-            .eq("studio_id", studio_id)
-            .eq("idempotency_key", idempotency_key)
-            .limit(1)
-            .execute()
-        )
-        return result.data[0] if result.data else None
-
-    def _recompute_external_invoice_payment_totals(self, studio_id: str, invoice_id: str) -> dict[str, Any]:
-        execute_required_rpc(
-            self.supabase,
-            "recompute_billing_invoice_external_payment_totals",
-            {
+            result = execute_required_rpc(self.supabase, "record_external_payment_v1", {
                 "p_studio_id": studio_id,
-                "p_invoice_id": invoice_id,
-            },
-        )
-        return self._get_row_or_404("billing_invoices", invoice_id, studio_id, "Invoice not found.")
+                "p_actor_id": actor_id,
+                "p_payer_id": data.payer_id,
+                "p_amount_cents": data.amount_cents,
+                "p_currency": data.currency,
+                "p_external_method": data.external_method,
+                "p_note": data.note,
+                "p_idempotency_key": request_key,
+                "p_request_hash": request_hash,
+            })
+        except PostgrestAPIError as exc:
+            rejection = {
+                ("P0001", "external_payment_request_conflict"): (
+                    409, "This idempotency key is already in use for a different external payment request."),
+                ("22023", "external_payment_requires_usd"): (400, EXTERNAL_PAYMENT_USD_ONLY_DETAIL),
+                ("22023", "external_payment_invalid_key"): (400, EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL),
+                ("22023", "external_payment_invalid_request"): (400, "Invalid external payment request."),
+                ("P0002", "external_payment_payer_not_found"): (404, "Payer not found."),
+            }.get((getattr(exc, "code", None), getattr(exc, "message", None)))
+            if rejection:
+                raise HTTPException(status_code=rejection[0], detail=rejection[1]) from exc
+            raise
+        row = first_rpc_row(result)
+        if not row:
+            raise HTTPException(status_code=500, detail="External payment confirmation is unavailable. Retry the original request.")
+        payment = BillingPaymentResponse(**row)
+        # The payment and original-actor audit have already committed together.
+        # A failed balance refresh remains recoverable with this same request key.
+        self._recompute_payer_balance(studio_id, payment.payer_id)
+        return payment
 
     async def refund_payment(
         self,

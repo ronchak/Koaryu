@@ -40,14 +40,14 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-V41 is the latest accepted predecessor at 136/head `20260908183744`. The
-candidate finishes at 137/head `20260910084231`, readiness V23, and
-`release-db-attestation-v42`. Its full preflight has 53 pending-history versions.
+V42 is the latest accepted predecessor at 137/head `20260910084231`. The
+candidate finishes at 138/head `20260910093958`, readiness V24, and
+`release-db-attestation-v43`. Its full preflight has 54 pending-history versions.
 These are candidate requirements, not a claim about the current hosted database.
-The tool accepts V41 only after its exact history,
+The tool accepts V42 only after its exact history,
 readiness, raw definitions and catalog match, then selects one remaining file:
 
-- `20260910084231_independent_program_joining_dates_v42.sql`
+- `20260910093958_external_payment_command_ownership_v43.sql`
 
 V38 remains an accepted predecessor. Its remainder includes the V39 membership
 correction before V40. V39 preserves paused statuses and per-program joining dates
@@ -73,19 +73,28 @@ historical backfill. The database-first step does not fix races in old Python sp
 read/write callers. The serialization guarantee starts only after every serving
 backend and worker uses the RPC and those old operations drain.
 
-The local verifier executes the V38-to-V39, V39-to-V40, V40-to-V41, and V41-to-V42
-logical restore tests.
+V43 adds the service-role-only, SECURITY INVOKER, VOLATILE
+`record_external_payment_v1` RPC. It atomically commits a payer-only external payment
+and its original-actor audit. Exact same-key/hash replay returns the original payment
+and audit, and balance completion remains repeatable after commit. New writes are
+USD-only, while confirmed historical non-USD replay remains valid. It performs no
+historical audit repair or backfill. Existing invoice-target HTTP rejection and SQL
+invoice guards remain; the dead Python invoice path is removed. The guarantee starts
+only after every serving backend uses the RPC and old split-write operations drain.
+
+The local verifier executes the V38-to-V39, V39-to-V40, V40-to-V41, V41-to-V42, and
+V42-to-V43 logical restore tests.
 Each uses a real synthetic dump and a new local restore database, accepts only the
 reviewed PostgreSQL 17 CHECK/default-ACL representation differences, and verifies
 business-data preservation and old/new caller continuation. These are local
-contract proofs, not production backup evidence. The V41-to-V42 canonical and logical
-restore continuation passed, as did the complete 137-migration/51-contract local suite
-and its concurrency checks. Earlier restore proofs remain in force. The operator's backup helper and
+contract proofs, not production backup evidence. Candidate verification requires the
+V42-to-V43 canonical and logical restore continuation plus the core SQL and concurrency
+proofs. Earlier restore proofs remain in force. The operator's backup helper and
 release/image mappings must be updated and verified for the actual candidate
 before an authorized hosted rollout. Old V38 approvals and mappings are not reusable.
 
 Exact V31 through V37 remain state-bound forward-recovery points. They may
-resume only their immutable suffix through V42; hybrid histories, catalogs or
+resume only their immutable suffix through V43; hybrid histories, catalogs or
 readiness results are refused. A predecessor before V38 also needs the historical
 billing-index migration. Its ordinary index builds hold write locks that can delay
 billing and webhook writes until that transaction finishes. Plan that write pause
@@ -93,10 +102,10 @@ for a separately authorized rollout; its hosted duration has not been measured.
 
 Migration 119 keeps `koaryu_release_schema_preflight_v4` returning the historical
 V24 shape. The Payments chain preserves the schedule-shaped V5 response and owns
-V6 through V23. V42 adds the full V23 contract and makes V22 return its V41
-compatibility tuple only after V23 proves the complete new state. V21, V20, V19, and
-V18 continue through that existing chain, preserving the V40, V39, V38, and V37
-consumers. The candidate backend reads V23 and serves only at exact 137/V42. Older
+V6 through V24. V43 adds the full V24 contract and makes V23 return its V42
+compatibility tuple only after V24 proves the complete new state. V22, V21, V20, V19,
+and V18 continue through that existing chain, preserving the V41, V40, V39, V38, and
+V37 consumers. The candidate backend reads V24 and serves only at exact 138/V43. Older
 deployed backends retain their corresponding response during the database-first
 cutover.
 The temporary V22 and
@@ -111,24 +120,23 @@ look for it is wrong. `"status": "ready"` *is* the proof the attestation matched
 If migration 113 commits and migration 114 does not, stop. No approved
 application is eligible to serve at that partially migrated history. During the historical V24 release,
 the prior `709239` application required V16 and that release candidate required V24.
-The current candidate requires V42. Older V2 consumers from
+The current candidate requires V43. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
 Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
 post-110 rollback set. A database still at exact 110 must classify `state=staff-identity` and use its
-state-bound inspection token. The tool must select migrations 111 through 137 in
+state-bound inspection token. The tool must select migrations 111 through 138 in
 their immutable order. A separately approved disaster recovery to the proved
 restored V22 snapshot must classify exact `state=restored-v22` and select only
-migrations 116 through 137. Use the generated remaining-file list and its source
+migrations 116 through 138. Use the generated remaining-file list and its source
 manifest; do not maintain a second manual list. These are hypothetical recovery
 cases, not the current live state. Only the authorized operator runs production
-apply. Candidate promotion remains blocked until migration 137 produces exact
-V42 readiness and the final raw catalog/provider fingerprint. That raw evidence
-must independently attest the changed private profile writer and the stable release
-functions. The affected V13 parent plus V31 resource, contract, expectation and V12
-operational semantic pins advance. V40 rank-command and V41 VOLATILE payer-balance
-evidence remain unchanged.
+apply. Candidate promotion remains blocked until migration 138 produces exact
+V43 readiness and the final raw catalog/provider fingerprint. That raw evidence
+must independently attest the new external-payment RPC's SECURITY INVOKER and
+VOLATILE facts plus the V43 release facts. V40 rank-command, V41 payer-balance, and
+V42 catalog and semantic pins remain unchanged.
 
 The V33 retry-hash capture stays enabled throughout the database-first rolling
 deploy. Do not call `finalize_billing_invoice_retry_hash_capture_v33` during the
@@ -154,7 +162,7 @@ before starting, and record *why* on each thread if the finding is being deferre
 
 **Run the rollout tool from the exact candidate implementation.** For an unmerged
 release, invoke the tool from that candidate's worktree and pass its exact 40-character head.
-The tool creates a detached worktree at that SHA and verifies the 137-file sequence and
+The tool creates a detached worktree at that SHA and verifies the 138-file sequence and
 source hashes there. Do not run an older `main` copy of the tool and do not merge the PR
 to obtain the rollout script.
 

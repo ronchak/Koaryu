@@ -15,6 +15,7 @@ type UseBillingActionControllerOptions = {
   canManageRoutineBilling: boolean;
   isPreviewMode: boolean;
   payerOperationIdentity: PayerOperationIdentity | null;
+  identityKey: string | null;
   refreshBilling: () => Promise<void>;
   setError: (message: string) => void;
   setExportJobs: Dispatch<SetStateAction<ExportJob[]>>;
@@ -28,6 +29,7 @@ export function useBillingActionController({
   canManageRoutineBilling,
   isPreviewMode,
   payerOperationIdentity,
+  identityKey,
   refreshBilling,
   setError,
   setExportJobs,
@@ -57,6 +59,8 @@ export function useBillingActionController({
   });
   const reportActions = useBillingReportActions({
     canManageRoutineBilling,
+    identity: payerOperationIdentity,
+    identityKey,
     runtime,
     setExportJobs,
   });
