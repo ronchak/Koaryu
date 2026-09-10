@@ -617,7 +617,8 @@ def test_create_records_step_evidence_and_replays_without_duplicates():
     ]
 
 
-@pytest.mark.parametrize("stage,error", [("unregistered", 400), ("registered", 400), ("attempted", 409), ("confirmed", None)])
+@pytest.mark.parametrize("stage,error", [("unregistered", 400), ("registered", 400), ("attempted", 409),
+    ("empty_invoice", 409), ("partial_items", None), ("confirmed", None)])
 def test_historical_non_usd_invoice_uses_saved_attempts_and_replays(stage, error):
     data = _create_data().model_copy(update={"currency": "eur"})
     invoice = _draft_invoice(id="invoice_historical", stripe_invoice_id=None, currency="eur",
@@ -644,15 +645,19 @@ def test_historical_non_usd_invoice_uses_saved_attempts_and_replays(stage, error
             items=items, application_fee=37, due_date=data.due_date)
         client = BillingProviderStepCoordinator(facade.supabase)
         operation = client.register_plan(context, operation, plan_sha256=spec["plan_sha256"], steps=spec["steps"])["operation"]
-        for order in range(1, (4 if stage == "confirmed" else 2 if stage == "attempted" else 1)):
+        attempted_steps = {"registered": 0, "attempted": 1, "empty_invoice": 1, "partial_items": 2, "confirmed": 3}[stage]
+        for order in range(1, attempted_steps + 1):
             step = workflow._step_context(context, spec, order)
             current = client.transition_step(step, client.claim_step(step)["step"], "provider_request_in_flight")
-            if stage == "confirmed":
+            if stage != "attempted":
                 client.transition_step(step, current, "provider_succeeded",
                     provider_object_id="in_historical" if order == 1 else f"ii_historical_{order}")
         if stage == "confirmed":
             client.complete_provider_phase(context, operation, plan_sha256=spec["plan_sha256"], expected_step_count=3)
-            _seed_retry_provider({**invoice, "stripe_invoice_id": "in_historical"})
+        if stage in {"empty_invoice", "partial_items", "confirmed"}:
+            prior_amount = {"empty_invoice": 0, "partial_items": 5000, "confirmed": 7400}[stage]
+            _seed_retry_provider({**invoice, "stripe_invoice_id": "in_historical",
+                                 "amount_due_cents": prior_amount, "amount_remaining_cents": prior_amount})
     facade.supabase.advance_billing_provider_clock(seconds=31)
     if error:
         with pytest.raises(HTTPException) as failure:
@@ -665,7 +670,11 @@ def test_historical_non_usd_invoice_uses_saved_attempts_and_replays(stage, error
         assert result.id == replay.id == "invoice_historical"
         assert result.currency == "eur" and result.amount_due_cents == 7400
         assert len(facade.supabase.tables["billing_invoice_items"]) == 2
-    assert not (_Stripe.invoice_create_calls or _Stripe.item_create_calls)
+    assert not _Stripe.invoice_create_calls
+    assert len(_Stripe.item_create_calls) == (1 if stage == "partial_items" else 0)
+    if stage == "partial_items":
+        assert _Stripe.item_create_calls[0]["currency"] == "eur"
+        assert _Stripe.item_create_calls[0]["idempotency_key"] == spec["steps"][2]["stripe_idempotency_key"]
     assert len(facade.supabase.tables["billing_invoices"]) == 1
     assert invoice["currency"] == "eur" and invoice["amount_due_cents"] == 7400
     parent = _operation(facade, "invoice.create")

@@ -2622,7 +2622,9 @@
         "backend/app/services/billing_private_facade.py",
         "backend/app/services/billing_enrollments.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        179
+      ],
       "track": "Astra",
       "root_cause": "dead-plan-sync-interface",
       "collapse_with": [],
@@ -12320,7 +12322,7 @@
       "title": "Mixed-currency writes feed currency-blind totals",
       "track": "Astra",
       "disposition": "pending",
-      "reason": "PR172/V43 covers new external payments and PR175 covers local plan definitions. The tuition-currency candidate now guards fresh provider prices, activation and invoice creation while preserving saved attempt evidence and historical replay. Provider-fact recovery and truthful mixed/unknown-currency readers remain pending; no historical record is converted.",
+      "reason": "PR172/V43 covers new external payments and PR175 covers local plan definitions. PR179 now guards fresh provider prices, activation and invoice creation while preserving saved financial-attempt evidence and historical replay. Provider-fact recovery and truthful mixed/unknown-currency readers remain pending; no historical record is converted.",
       "verified_against": "18b64e9d7dbbdf363fc49bc0610d30fe67489f35",
       "source_paths": [
         "backend/app/api/v1/endpoints/billing.py",
@@ -12384,7 +12386,8 @@
       "verification": "Target accepted USD writes, rejected non-USD new writes, unchanged historical replay, and mixed/unknown-currency aggregates. Verify tenant, provider identity and idempotency boundaries.",
       "pull_requests": [
         172,
-        175
+        175,
+        179
       ],
       "initial_evidence": [
         {

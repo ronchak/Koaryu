@@ -1944,7 +1944,15 @@ class BillingInvoiceOperationWorkflow:
                 operation, saved_steps = saved["operation"], saved["steps"]
                 if len(saved_steps) != len(spec["steps"]):
                     raise HTTPException(status_code=503, detail=INVOICE_CREATE_AMBIGUOUS_DETAIL)
-            if not any(int(step.get("provider_request_attempt_count") or 0) for step in saved_steps):
+            # The invoice header has no line amounts. Only an attempted item
+            # establishes historical financial work that this intent may finish.
+            if not any(int(step.get("provider_request_attempt_count") or 0) for step in saved_steps[1:]):
+                if any(int(step.get("provider_request_attempt_count") or 0) for step in saved_steps):
+                    client.complete_provider_phase(
+                        context, operation, plan_sha256=spec["plan_sha256"],
+                        expected_step_count=len(spec["steps"]),
+                    )
+                    raise HTTPException(status_code=409, detail=INVOICE_CREATE_AMBIGUOUS_DETAIL)
                 operations.transition(
                     context, operation, "definitive_rejected",
                     error_code="tuition_currency_requires_usd",
