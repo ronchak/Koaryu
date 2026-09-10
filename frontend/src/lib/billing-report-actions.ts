@@ -116,6 +116,7 @@ export function useBillingReportActions({
     if (!scope || scopeRef.current !== scope || !active.ready || operationRef.current) return;
     const payloadResult = buildExternalBillingPaymentPayload(active.form);
     if (!active.attempt && !payloadResult.ok) {
+      runtime.setMessage("");
       errorMessage(payloadResult.error);
       return;
     }

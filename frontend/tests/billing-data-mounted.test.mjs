@@ -243,6 +243,12 @@ test("external payment keeps the exact durable request through lost response, ed
     assert.equal(await page.evaluate(()=>fixture.saved().length),0);
     assert.equal(await page.getByLabel("Amount",{exact:true}).inputValue(),"");
     assert.equal(await page.getByLabel("Note",{exact:true}).inputValue(),"");
+    await page.getByLabel("Amount",{exact:true}).fill("0.001");
+    await page.getByRole("button",{name:"Record",exact:true}).click();
+    await settleExternalPage(page);
+    assert.ok(await page.evaluate(()=>fixture.page.error));
+    assert.equal(await page.getByText("External payment recorded.",{exact:true}).count(),0,"a new invalid draft cannot retain the previous payment's success notice");
+    assert.deepEqual(await page.evaluate(()=>[fixture.posts.length,fixture.saved().length]),[2,0]);
   } finally {await browser.close();}
 });
 
