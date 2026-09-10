@@ -1261,7 +1261,10 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(response.local_object_id, "invoice_1")
         self.assertEqual(response.status, "open")
         self.assertEqual(service.supabase.tables["billing_invoices"][0]["amount_due_cents"], 123)
-        self.assertEqual(service.supabase.tables["billing_payers"][0]["balance_cents"], 123)
+        self.assertIn(
+            ("recompute_billing_payer_balance_v1", {"p_studio_id": "studio_1", "p_payer_id": "payer_1"}),
+            service.supabase.rpc_calls,
+        )
 
     def test_reconcile_invoice_falls_back_to_stored_subscription_webhook_shape(self):
         service = self.service()

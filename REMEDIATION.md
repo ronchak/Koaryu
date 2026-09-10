@@ -8,9 +8,9 @@ The [finding ledger](docs/remediation/ledger.json) accounts for all 278 retained
 
 ## Initial normalization
 
-Remote `main`, fetched before planning, is `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`, the audited commit. The worktree was clean. All 1,129 audited file hashes match, including four binary icons. There are no intervening implementation changes that make an audit finding obsolete. That does not turn a recommendation into a defect or remove the audit's exposure caveats.
+Remote `main`, fetched before planning, is `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`, the audited commit. The worktree was clean. The audit covers 1,128 other paths plus `CHANGELOG.md`, a Git symlink. Its 21-byte blob points to `frontend/CHANGELOG.md`; the target is the audited 3,535 bytes / 68 lines with SHA256 `83ad742cde26c593890a49cefc8ddb1fe41c9c4cca1b374a50ec18f6a1dd90bd`. Both the audit commit and main `9988c62` contain that same link and target. Direct Git object comparison matches 1,128 of 1,129 audited paths, including four binary icons. The remaining path matches only after resolving the symlink; no audited changelog content is missing. This establishes source correspondence only; it did not establish that each finding remains valid. The initial per-finding normalization was incomplete and must be replaced with individual verification and dispositions after PR162.
 
-The coordinator read the executive review, all 4,973 lines of the findings catalogue, the cross-system analysis and coverage report. Current root/package instructions, both README files, services, cutover, verification, billing and operator guidance were read. Three capable reviewers independently rechecked the integrity, billing and release clusters. The environment's total thread limit required reuse of the audit's reviewer threads. Their reports were read and reconciled by the coordinator. Findings remain static until the named behavioral verification is run.
+The coordinator read the executive review, all 4,973 lines of the findings catalogue, the cross-system analysis and coverage report. Current root/package instructions, both README files, services, cutover, verification, billing and operator guidance were read. Three existing reviewer threads rechecked the integrity, billing and release clusters. The environment's total thread limit led to reuse of the audit threads, which limited review independence. Their reports were read and reconciled, but that process did not replace individual normalization. From PR162 onward, each PR uses a fresh reviewer with a bounded diff and plan. Findings require their named verification before closure.
 
 The original audit is retained outside this public repository under the owner's September 7 review directory. The ledger preserves IDs, short descriptions and source paths without copying private operator evidence. Its catalogue digest binds the imported inventory. Source paths are starting points, not permanently valid line references.
 
@@ -172,18 +172,25 @@ without another provider mutation or changing delinquency definitions. Review
 identified a necessary acquired-lease check for projected retry replays. This
 financial integrity correction takes priority over the larger frontend owner.
 
-[PR #162](https://github.com/ronchak/Koaryu/pull/162) now has one local-closeout owner and passes its focused
-fault/replay suite. Twelve cases fail the unchanged main workflow and pass the
-correction. It also consolidates two duplicate service tests, removes one source-
-name assertion and an unused broken fake hook, and corrects the paid-status check.
-Three test-maintenance findings, BT2-03/06/07, are addressed; BT2-04 remains
-partial. Automated review then identified a balance-repair race and a completed
-create replay blocked by later invoice progress. Both were reproduced. The latter
-is corrected and independently reviewed. PR162 remains unmerged while a shared
-database balance owner and its forward release proof are prepared. BB1-07/BT2-01
-are pending again. Counts are 29 fixed, one resolved indirectly, 236 pending and
-12 intentional deferrals. Prior passing CI is evidence for the superseded Python-
-only candidate, not approval of this expanded change. See
+[PR #162](https://github.com/ronchak/Koaryu/pull/162) has one local-closeout owner
+and one database command for current payer-balance recomputation. The two material
+initial review comments were reproduced and corrected: concurrent replay can no
+longer overwrite a newer balance through the old split read/update, and completed
+creation remains replayable after later payment or voiding. All 135 historical
+migrations remain byte-identical; V41 is additive and preserves the existing formula.
+
+The complete local runner passes 136 migrations, 51 SQL contracts, real restores,
+observed concurrency and drift negatives. Full backend, generated-contract and
+release-workflow checks pass. One fresh independent reviewer approved the actual
+implementation and documentation without prior reviewer history. Final commit
+binding, exact-head CI and guarded merge are still required. PR162 remains a draft.
+
+Candidate counts are 31 fixed, one resolved indirectly, 234 pending and 12
+intentional deferrals. BB1-07/BT2-01 share the corrected completion responsibility;
+BT2-03/06/07 cover associated test corrections. Two duplicate service tests, two
+source-text tests and a broken fake hook were removed; arithmetic assurance moved
+to real SQL. Broader test reduction is unfinished. These counts are not the promised
+individual re-triage: that pass follows this merge against updated main. See
 [invoice-closeout verification](docs/remediation/invoice-closeout-verification.md).
 
 ## Deliberate non-goals and deferrals
@@ -199,16 +206,33 @@ The ledger records individual reasons for these initial deferrals:
 
 Do not create an automation builder, guardian-management product, mailbox, general workflow framework, universal resource store or new monitoring infrastructure to close a finding. Do not remove immutable migrations, generated contracts, financial receipts, authorization checks or justified compatibility solely because they are repetitive.
 
-## Product decisions to settle before dependent changes
+## Settled product decisions
 
-These remain pending, not inferred approvals or accepted risks:
+The owner settled these requirements on September 9. They are authorized work;
+implementation status remains in the ledger.
 
-- DM2-02: when an administrator explicitly changes the student's overall joining date, should it alter any individual program joining dates? Unrelated edits unequivocally must preserve them.
-- BB1-03: define overdue status for open invoices with no due date, due-today invoices and uncollectible balances. Draft and future-due invoices must not be falsely presented as overdue.
-- BB2-09: shared family invoices need payer-level attribution or an explicit allocation policy. Selecting the first student is not a policy; equal splitting will not be invented.
-- BB2-08: define the supported boundary for reconstructing a provider subscription that has no local group. Coherent provider facts can be derived; incomplete facts must not become monthly USD by default.
-- DOC1-05: verify and choose the outage support receiving address before changing mail/DNS policy. No mailbox provisioning is implied.
-- FSH1-05: choose whether unresolved external-payment requests, including their original notes, may be retained in scoped browser storage until confirmation, or require server-owned recovery. The dependent implementation is held; independent remediation continues.
+- DM2-02: overall joining-date edits must never alter any per-program joining date.
+- BB1-03: no grace period. Drafts and future-due invoices are never overdue. Overdue starts the day after the due date. No due date means outstanding, not overdue. Uncollectible remains separately identified.
+- BB2-09: shared family invoices stay at family level; no first-student selection or invented split.
+- BB2-08: derive only confirmed provider facts. Unknown fields remain empty; incomplete facts never default to monthly USD.
+- FSH1-05: retain the unresolved external-payment request, including its note, in browser storage scoped to the signed-in staff member and studio until the server confirms.
+- DOC1-05: defer pending owner action. Document the future support-address steps only; no mail/DNS changes or mailbox provisioning.
+
+After PR162, individually triage every placeholder finding against updated main
+before choosing further implementation. Use balanced calibration: reject clearly
+low-value recommendations with evidence and retain plausible issues. Classify all
+findings into Astra (money, access, tenant, concurrency, migrations and workflow
+ownership) or Sol (bounded low-risk documentation, presentation, dead interfaces,
+test consolidation and evidence cleanup). Write standalone Sol batch recipes in
+`docs/remediation/delegated/` before dispatch.
+
+The next structural priority is a release-attestation generator from declared
+schema state. Repeated handwritten preflight bodies and restore scripts are a
+verified program-level gap absent from the original audit. The ledger will track
+it separately from the 278 imported observations. Old attested versions must
+regenerate byte-identically; replace existing restore scripts only with demonstrated
+equivalence. PR162's already-written V41 migration stays outside that restructuring.
+There is no arbitrary cap on subsequent schema remediation.
 
 Prospective code corrections do not authorize historical financial backfills. Moved timestamps, missing actor audits and arbitrary attribution may lack sufficient evidence for truthful reconstruction.
 
@@ -216,7 +240,7 @@ Prospective code corrections do not authorize historical financial backfills. Mo
 
 Each PR must explain what behavior changed, why the boundary is safe, and the value of material test additions, deletions or consolidation. Focused checks precede affected-area verification. A test suite should become more meaningful, not necessarily larger. Negative tests at financial, tenant, destructive-write and migration boundaries must reject the intended failure rather than any exception.
 
-The coordinator owns edits and architectural decisions. Independent subagents inspect actual diffs and evidence. Material review feedback is resolved; out-of-scope or low-value suggestions may be declined with a concise technical reason. Review acceptance is bound to the actual candidate. Every merge still requires the exact-head `Release candidate gate`, resolved review threads, current base and guarded merge script. No ruleset bypass is part of this program.
+The coordinator owns architectural decisions and integration; bounded low-risk legwork is delegated to Sol. Each PR receives one fresh independent reviewer with only its diff and relevant plan, plus source and verification evidence needed to assess them. Prior cumulative reviewer threads are not reused. Material review feedback is resolved; out-of-scope or low-value suggestions may be declined with a concise technical reason. Review acceptance is bound to the actual candidate. Every merge still requires the exact-head `Release candidate gate`, resolved review threads, current base and guarded merge script. No ruleset bypass is part of this program.
 
 Production auto-deploy must remain off and be read back before merging. Merge authorization does not grant live billing activation, historical data repair or production migration execution. Production migrations remain human-only in a real terminal. A future database release needs new state-bound approval and backup/restore evidence; historical V38 tokens, approvals and helper mappings are not reusable authority. Prepared production work must remain reviewable and stop at the human-only gate.
 

@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 135 ]]; then
-  echo "ERROR: Expected the canonical 135-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 136 ]]; then
+  echo "ERROR: Expected the canonical 136-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 50 ]]; then
-  echo "ERROR: Expected the canonical 50-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 51 ]]; then
+  echo "ERROR: Expected the canonical 51-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
@@ -754,6 +754,12 @@ SQL
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
+  if [[ "$migration_filename" == "20260908183744_serialize_billing_payer_balance_v41.sql" ]]; then
+    run_interruptible python3 "$ROOT_DIR/scripts/verify-v40-v41-restore-contract.py" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+  fi
+
   echo "[migration $migration_index/$migration_total] RUN $migration_filename"
   if run_interruptible "$PSQL" "${psql_args[@]}" \
     --single-transaction \
@@ -1081,7 +1087,7 @@ if [[ "$schedule_window_manifest" != "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed7
 fi
 echo "[schedule-window manifest] PASS read RPC definition and ACL signal"
 
-echo "[V40 readiness] RUN exact final migration and manifest signal"
+echo "[V41 readiness] RUN exact final migration and manifest signal"
 operational_readiness="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
@@ -1093,32 +1099,33 @@ if (
     "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" \
     "$operational_readiness"
 ); then
-  echo "[V40 readiness] PASS exact final migration and manifest signal"
+  echo "[V41 readiness] PASS exact final migration and manifest signal"
 else
   status=$?
-  echo "[V40 readiness] actual=$operational_readiness" >&2
-  echo "[V40 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
+  echo "[V41 readiness] actual=$operational_readiness" >&2
+  echo "[V41 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
   exit "$status"
 fi
 
-echo "[V40 release] RUN exact read definitions and privileges"
-v40_release_manifest="$({
+echo "[V41 release] RUN exact read definitions and privileges"
+v41_release_manifest="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { V40_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V40_RELEASE_MANIFEST_SQL);"
+    "import { V41_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V41_RELEASE_MANIFEST_SQL);"
 } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-expected_v40_release_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V40_RELEASE_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V40_RELEASE_MANIFEST);")"
-if [[ "$v40_release_manifest" != "$expected_v40_release_manifest" ]]; then
-  echo "[V40 release] FAIL exact read definitions and privileges: $v40_release_manifest" >&2
+expected_v41_release_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V41_RELEASE_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V41_RELEASE_MANIFEST);")"
+if [[ "$v41_release_manifest" != "$expected_v41_release_manifest" ]]; then
+  echo "[V41 release] FAIL exact read definitions and privileges: $v41_release_manifest" >&2
   exit 1
 fi
-echo "[V40 release] PASS exact read definitions and privileges"
+echo "[V41 release] PASS exact read definitions and privileges"
 
 assert_history_index_rejects() {
   local label="$1"
   local mutation_sql="$2"
   local result=""
   local raw_manifest=""
+  local v41_ready=""
   local v40_ready=""
   local v39_ready=""
   local v38_ready=""
@@ -1129,16 +1136,17 @@ assert_history_index_rejects() {
     (
       cd "$ROOT_DIR"
       node --input-type=module --eval \
-        "import { V40_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V40_RELEASE_MANIFEST_SQL);"
+        "import { V41_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V41_RELEASE_MANIFEST_SQL);"
     )
-    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v21();\nSELECT ready FROM public.koaryu_release_schema_preflight_v20();\nSELECT ready FROM public.koaryu_release_schema_preflight_v19();\nSELECT ready FROM public.koaryu_release_schema_preflight_v18();\nROLLBACK;\n'
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v22();\nSELECT ready FROM public.koaryu_release_schema_preflight_v21();\nSELECT ready FROM public.koaryu_release_schema_preflight_v20();\nSELECT ready FROM public.koaryu_release_schema_preflight_v19();\nSELECT ready FROM public.koaryu_release_schema_preflight_v18();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   raw_manifest="$(printf '%s\n' "$result" | sed -n '1p')"
-  v40_ready="$(printf '%s\n' "$result" | sed -n '2p')"
-  v39_ready="$(printf '%s\n' "$result" | sed -n '3p')"
-  v38_ready="$(printf '%s\n' "$result" | sed -n '4p')"
-  v37_ready="$(printf '%s\n' "$result" | sed -n '5p')"
-  if [[ "$raw_manifest" == "$expected_v40_release_manifest" || "$v40_ready" != "f" || "$v39_ready" != "f" || "$v38_ready" != "f" || "$v37_ready" != "f" ]]; then
+  v41_ready="$(printf '%s\n' "$result" | sed -n '2p')"
+  v40_ready="$(printf '%s\n' "$result" | sed -n '3p')"
+  v39_ready="$(printf '%s\n' "$result" | sed -n '4p')"
+  v38_ready="$(printf '%s\n' "$result" | sed -n '5p')"
+  v37_ready="$(printf '%s\n' "$result" | sed -n '6p')"
+  if [[ "$raw_manifest" == "$expected_v41_release_manifest" || "$v41_ready" != "f" || "$v40_ready" != "f" || "$v39_ready" != "f" || "$v38_ready" != "f" || "$v37_ready" != "f" ]]; then
     echo "[Billing history negative] FAIL $label: $result" >&2
     exit 1
   fi
@@ -1177,7 +1185,7 @@ else
   exit "$status"
 fi
 
-echo "[V40 semantics] RUN final semantic chain and retained backend contracts"
+echo "[V41 semantics] RUN final semantic chain and retained backend contracts"
 while IFS='|' read -r query_export expected_export; do
   actual="$({
     cd "$ROOT_DIR"
@@ -1187,11 +1195,12 @@ while IFS='|' read -r query_export expected_export; do
   expected="$(cd "$ROOT_DIR" && node --input-type=module --eval \
     "import * as m from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(m[process.argv[1]]);" "$expected_export")"
   if [[ "$actual" != "$expected" ]]; then
-    echo "[V40 semantics] FAIL $query_export" >&2
+    echo "[V41 semantics] FAIL $query_export" >&2
     exit 1
   fi
-done <<'V40_CHECKS'
+done <<'V41_CHECKS'
 CRITICAL_SURFACE_MANIFEST_SQL|EXPECTED_V40_CRITICAL_SURFACE_MANIFEST
+V40_OPERATIONAL_READINESS_SQL|EXPECTED_V40_OPERATIONAL_READINESS
 V39_OPERATIONAL_READINESS_SQL|EXPECTED_V39_OPERATIONAL_READINESS
 V40_RANK_COMMAND_STATE_SQL|EXPECTED_V40_RANK_COMMAND_STATE
 V38_OPERATIONAL_READINESS_SQL|EXPECTED_V38_OPERATIONAL_READINESS
@@ -1200,8 +1209,76 @@ V31_EXPECTATION_STATE_SQL|EXPECTED_V40_EXPECTATION_STATE
 V31_RESOURCE_OWNERSHIP_MANIFEST_SQL|EXPECTED_V40_RESOURCE_OWNERSHIP_MANIFEST
 V31_OPERATIONAL_CONTRACT_SQL|EXPECTED_V40_OPERATIONAL_CONTRACT_V31
 V31_OPERATIONAL_MANIFEST_SQL|EXPECTED_V40_OPERATIONAL_MANIFEST_V12
-V40_CHECKS
-echo "[V40 semantics] PASS final semantic chain and retained backend contracts"
+V41_CHECKS
+echo "[V41 semantics] PASS final semantic chain and retained backend contracts"
+
+# The writer is VOLATILE and therefore has its own raw catalog signal.
+payer_balance_query="$(cd "$ROOT_DIR" && node --input-type=module --eval \
+  "import { V41_PAYER_BALANCE_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V41_PAYER_BALANCE_STATE_SQL);")"
+expected_payer_balance="$(cd "$ROOT_DIR" && node --input-type=module --eval \
+  "import { EXPECTED_V41_PAYER_BALANCE_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V41_PAYER_BALANCE_STATE);")"
+readiness_snapshot_sql="SELECT jsonb_build_array(
+  (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v22() r),
+  (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v21() r),
+  (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v20() r),
+  (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v19() r),
+  (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v18() r));"
+readiness_before="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$readiness_snapshot_sql")"
+payer_balance_before="$(printf '%s\n' "$payer_balance_query" | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+if [[ "$payer_balance_before" != "$expected_payer_balance" ]]; then
+  echo "[payer balance raw] FAIL exact writer definition and privileges: $payer_balance_before" >&2
+  exit 1
+fi
+assert_payer_balance_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local raw=""
+  local after=""
+  local readiness_after=""
+  echo "[payer balance negative] RUN $label"
+  raw="$({
+    printf 'BEGIN;\n%s\n%s\n' "$mutation_sql" "$payer_balance_query"
+    cat <<'SQL'
+DO $check$
+DECLARE version INTEGER; result RECORD;
+BEGIN
+  FOREACH version IN ARRAY ARRAY[22,21,20,19,18] LOOP
+    EXECUTE format('SELECT * FROM public.koaryu_release_schema_preflight_v%s()',version) INTO result;
+    IF result.ready IS DISTINCT FROM FALSE
+       OR ('payer_balance_rpc_v41'=ANY(result.security_failures)) IS DISTINCT FROM TRUE THEN
+      RAISE EXCEPTION 'Payer drift was not detected by readiness %: %',version,row_to_json(result);
+    END IF;
+  END LOOP;
+END;
+$check$;
+ROLLBACK;
+SQL
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  if [[ -z "$raw" || "$raw" == *$'\n'* || "$raw" == "$expected_payer_balance" ]]; then
+    echo "[payer balance negative] FAIL independent raw evidence did not reject $label: $raw" >&2
+    exit 1
+  fi
+  after="$(printf '%s\n' "$payer_balance_query" | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  readiness_after="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$readiness_snapshot_sql")"
+  if [[ "$after" != "$payer_balance_before" || "$readiness_after" != "$readiness_before" ]]; then
+    echo "[payer balance negative] FAIL $label did not restore the exact raw/readiness baseline" >&2
+    exit 1
+  fi
+  echo "[payer balance negative] PASS $label"
+}
+payer_balance_rpc='public.recompute_billing_payer_balance_v1(uuid,uuid)'
+assert_payer_balance_rejects "missing function" "DROP FUNCTION $payer_balance_rpc;"
+assert_payer_balance_rejects "incorrect volatility" "ALTER FUNCTION $payer_balance_rpc STABLE;"
+assert_payer_balance_rejects "incorrect owner" "ALTER FUNCTION $payer_balance_rpc OWNER TO service_role;"
+assert_payer_balance_rejects "unsafe search path" "ALTER FUNCTION $payer_balance_rpc SET search_path=public,pg_temp;"
+assert_payer_balance_rejects "PUBLIC execution" "GRANT EXECUTE ON FUNCTION $payer_balance_rpc TO PUBLIC;"
+assert_payer_balance_rejects "browser execution" "GRANT EXECUTE ON FUNCTION $payer_balance_rpc TO authenticated;"
+assert_payer_balance_rejects "service grant option" "GRANT EXECUTE ON FUNCTION $payer_balance_rpc TO service_role WITH GRANT OPTION;"
+assert_payer_balance_rejects "missing service execution" "REVOKE EXECUTE ON FUNCTION $payer_balance_rpc FROM service_role;"
+assert_payer_balance_rejects "changed body" \
+  "UPDATE pg_proc SET prosrc=prosrc||chr(10)||'-- injected drift' WHERE oid='$payer_balance_rpc'::regprocedure;"
+assert_payer_balance_rejects "unexpected overload" \
+  'CREATE FUNCTION public.recompute_billing_payer_balance_v1(TEXT,TEXT) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN RETURN; END; $$;'
 
 # Read the same independently pinned catalog facts after each isolated drift.
 expected_rank_command_state="$(cd "$ROOT_DIR" && node --input-type=module --eval \
@@ -1891,6 +1968,9 @@ else
   echo "[concurrency] FAIL Connect identity mapping/exclusion invariant (exit $status)" >&2
   exit "$status"
 fi
+
+echo "[concurrency] RUN payer balance snapshot and lock ordering"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-payer-balance-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
 echo "[concurrency] RUN rank transition replay and commit ordering"
 run_interruptible python3 "$ROOT_DIR/scripts/verify-rank-transition-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"

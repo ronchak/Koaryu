@@ -37,6 +37,7 @@ from app.services.billing_provider_operations import (
 from app.services.platform_billing_helpers import build_idempotency_key, stable_hash
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
+from tests.fakes.billing_balance import BillingBalanceRpcMixin
 
 
 def _unique_conflict(_table: str, _columns: tuple[str, ...]) -> PostgrestAPIError:
@@ -48,7 +49,7 @@ def _unique_conflict(_table: str, _columns: tuple[str, ...]) -> PostgrestAPIErro
     })
 
 
-class _InvoiceSupabase(BillingProviderOperationRpcMixin, RpcBackedSupabase):
+class _InvoiceSupabase(BillingBalanceRpcMixin, BillingProviderOperationRpcMixin, RpcBackedSupabase):
     def __init__(self, tables):
         super().__init__(tables)
         self.initialize_billing_provider_operations()
@@ -3782,6 +3783,19 @@ def _local_closeout_case(kind):
         _seed_retry_provider(invoice)
     payer = facade.supabase.tables["billing_payers"][0]
     payer.update(balance_cents=123456, billing_status="past_due")
+    facade.balance_reply = {
+        "balance_cents": 7400 if kind == "create" else 0,
+        "billing_status": "past_due" if kind == "create" else "current",
+    }
+    facade.balance_acknowledgements = 0
+    attempt_balance_count = 0
+
+    def acknowledge_balance(params):
+        assert params == {"p_studio_id": "studio_1", "p_payer_id": "payer_1"}
+        payer.update(facade.balance_reply)
+        facade.balance_acknowledgements += 1
+
+    facade.supabase.on_payer_balance_recompute = acknowledge_balance
     manager = _manager(facade)
     complete = facade.supabase._rpc_complete_billing_provider_operation_v1
 
@@ -3790,11 +3804,14 @@ def _local_closeout_case(kind):
         assert parent["state"] == "projected"
         assert params["p_expected_revision"] == parent["revision"]
         assert params["p_lease_owner"] == parent["lease_owner"]
+        assert facade.balance_acknowledgements > attempt_balance_count
         return complete(params)
 
     facade.supabase._rpc_complete_billing_provider_operation_v1 = checked_completion
 
     def invoke():
+        nonlocal attempt_balance_count
+        attempt_balance_count = facade.balance_acknowledgements
         if kind == "create":
             return manager.create_invoice_sync(
                 _create_data(), "studio_1", "actor_1", "local-closeout"
@@ -3849,11 +3866,12 @@ def test_invoice_local_closeout_failure_resumes_projected_work_offline(kind, fai
                 raise RuntimeError("local audit outage")
         facade.supabase.before_insert = fail_audit
     else:
-        def fail_balance(query, _rows):
-            if query.name == "billing_payers":
-                facade.supabase.on_update_query = None
-                raise RuntimeError("local balance outage")
-        facade.supabase.on_update_query = fail_balance
+        acknowledge = facade.supabase.on_payer_balance_recompute
+        def fail_balance(params):
+            assert params == {"p_studio_id": "studio_1", "p_payer_id": "payer_1"}
+            facade.supabase.on_payer_balance_recompute = acknowledge
+            raise RuntimeError("local balance outage")
+        facade.supabase.on_payer_balance_recompute = fail_balance
     with pytest.raises(RuntimeError, match=f"local {failure_stage} outage"):
         invoke()
     assert _operation(facade, "invoice." + kind)["state"] == "projected"
@@ -3904,6 +3922,9 @@ def test_completed_invoice_replay_repairs_legacy_local_facts_without_reopening(
     facade.supabase.tables["billing_payers"].append(other_payer)
     reads = list(_Stripe.retrieve_calls)
     calls = len(facade.supabase.rpc_calls)
+    # This is the database acknowledgement for the current fixture. The real SQL
+    # contract independently proves arithmetic and tenant/payer exclusion.
+    facade.balance_reply = {"balance_cents": expected_balance, "billing_status": "past_due"}
     response = invoke()
     assert response.status == later_status
     assert response.amount_remaining_cents == remaining
@@ -3981,15 +4002,16 @@ def test_retry_replay_requires_acquired_lease_before_local_or_provider_work(save
     assert denied.value.detail == INVOICE_RETRY_AMBIGUOUS_DETAIL
     assert facade.supabase.tables == before
     assert _Stripe.retrieve_calls == reads
-    assert not any(name in {"complete_billing_provider_operation_v1", "transition_billing_provider_operation_v1"}
+    assert not any(name in {"complete_billing_provider_operation_v1", "transition_billing_provider_operation_v1", "recompute_billing_payer_balance_v1"}
                    for name, _ in facade.supabase.rpc_calls[calls:])
     facade.supabase.advance_billing_provider_clock(seconds=301)
     if saved_state == "provider_succeeded":
-        def fail_local_balance(query, _rows):
-            if query.name == "billing_payers":
-                facade.supabase.on_update_query = None
-                raise RuntimeError("local balance outage after provider recovery")
-        facade.supabase.on_update_query = fail_local_balance
+        acknowledge = facade.supabase.on_payer_balance_recompute
+        def fail_local_balance(params):
+            assert params == {"p_studio_id": "studio_1", "p_payer_id": "payer_1"}
+            facade.supabase.on_payer_balance_recompute = acknowledge
+            raise RuntimeError("local balance outage after provider recovery")
+        facade.supabase.on_payer_balance_recompute = fail_local_balance
         with pytest.raises(RuntimeError, match="local balance outage after provider recovery"):
             invoke()
         assert parent["state"] == "projected"

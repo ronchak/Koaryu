@@ -21,6 +21,7 @@ from app.services.stripe_mutation_policy import StripeMutationBlocked
 from app.services.stripe_service import StripeTestClockRejected
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
+from tests.fakes.billing_balance import BillingBalanceRpcMixin
 
 
 def _payer_defaults(_table: str) -> dict:
@@ -41,7 +42,7 @@ class _ConnectAccounts:
         return {"studio_id": studio_id, **self.account}
 
 
-class _PayerSupabase(BillingProviderOperationRpcMixin, RpcBackedSupabase):
+class _PayerSupabase(BillingBalanceRpcMixin, BillingProviderOperationRpcMixin, RpcBackedSupabase):
     def __init__(self, tables):
         super().__init__(tables)
         self.initialize_billing_provider_operations()
@@ -1189,20 +1190,36 @@ class BillingPayerManagerTests(unittest.TestCase):
         self.assertEqual(manager._payer_id_for_customer("studio_1", "acct_1", "cus_1"), "payer_connected")
         self.assertIsNone(manager._payer_id_for_customer("studio_1", "acct_2", "cus_1"))
 
-    def test_recompute_payer_balance_ignores_terminal_invoice_states(self):
-        facade = _BillingFacade({
-            "billing_payers": [{"id": "payer_1", "studio_id": "studio_1", "balance_cents": 0, "billing_status": "current"}],
-            "billing_invoices": [
-                {"studio_id": "studio_1", "payer_id": "payer_1", "status": "open", "amount_due_cents": 2500, "amount_paid_cents": 500},
-                {"studio_id": "studio_1", "payer_id": "payer_1", "status": "paid", "amount_due_cents": 9999, "amount_paid_cents": 0},
-            ],
-        })
-
-        BillingPayerManager(facade)._recompute_payer_balance("studio_1", "payer_1")
-
-        payer = facade.supabase.tables["billing_payers"][0]
-        self.assertEqual(payer["balance_cents"], 2000)
-        self.assertEqual(payer["billing_status"], "past_due")
+    def test_balance_recomputation_requires_scoped_rpc_and_propagates_failures(self):
+        facade = _BillingFacade({})
+        manager = BillingPayerManager(facade)
+        manager._recompute_payer_balance("studio_1", None)
+        self.assertEqual(facade.supabase.rpc_calls, [])
+        manager._recompute_payer_balance("studio_1", "payer_1")
+        self.assertEqual(facade.supabase.rpc_calls, [
+            ("recompute_billing_payer_balance_v1", {"p_studio_id": "studio_1", "p_payer_id": "payer_1"}),
+        ])
+        self.assertEqual(facade.supabase.query_log, [])
+        for code in ("PGRST202", "42883", "42501"):
+            with self.subTest(code=code):
+                failure = PostgrestAPIError({
+                    "code": code, "message": "recompute_billing_payer_balance_v1 unavailable",
+                    "details": "", "hint": "",
+                })
+                def fail(_params):
+                    raise failure
+                facade.supabase.on_payer_balance_recompute = fail
+                expected = PostgrestAPIError if code == "42501" else RuntimeError
+                with self.assertRaises(expected) as caught:
+                    manager._recompute_payer_balance("studio_1", "payer_1")
+                if code == "42501":
+                    self.assertIs(caught.exception, failure)
+                else:
+                    self.assertIn("required", str(caught.exception))
+        facade.supabase.rpc = None
+        with self.assertRaisesRegex(RuntimeError, "does not expose rpc"):
+            manager._recompute_payer_balance("studio_1", "payer_1")
+        self.assertEqual(facade.supabase.query_log, [])
 
     def _payer_recovery(
         self,

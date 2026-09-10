@@ -90,8 +90,9 @@ def main(arguments):
     migration = root / "supabase/migrations" / MIGRATION
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 135 and list(hashes)[133:] == [MIGRATION,
-            "20260908133504_rank_history_command_ownership_v40.sql"],
+    require(len(hashes) == 136 and list(hashes)[133:] == [MIGRATION,
+            "20260908133504_rank_history_command_ownership_v40.sql",
+            "20260908183744_serialize_billing_payer_balance_v41.sql"],
             "Unexpected V39 historical prefix or current migration suffix")
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)

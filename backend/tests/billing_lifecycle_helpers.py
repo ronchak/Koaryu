@@ -26,9 +26,10 @@ from app.services.stripe_service import StripeService
 from app.services.stripe_service import _StripeV2RequestError
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
+from tests.fakes.billing_balance import BillingBalanceRpcMixin
 
 
-class _FakeSupabase(BillingReadRpcMixin, BillingProviderOperationRpcMixin, RpcBackedSupabase):
+class _FakeSupabase(BillingBalanceRpcMixin, BillingReadRpcMixin, BillingProviderOperationRpcMixin, RpcBackedSupabase):
     def __init__(self, tables):
         super().__init__(tables)
         self.initialize_billing_provider_operations()

@@ -1,114 +1,107 @@
-# Invoice local-closeout verification
+# Invoice closeout and payer-balance verification
 
-PR162 remains unmerged. Subsequent automated review found two material gaps in
-the first candidate. The prior review and CI records below do not certify the
-expanded correction. A completed-create lifecycle fix is now reviewed and passes
-291 focused tests plus 15 subtests. Database-owned balance repair and renewed
-release verification remain required.
+[PR #162](https://github.com/ronchak/Koaryu/pull/162) remains a draft pending final
+commit-bound review and exact-head CI. Its earlier Python-only checks do not
+certify this expanded candidate. BB1-07 and BT2-01 are fixed in this candidate;
+merge and deployment status are separate.
 
-[PR #162](https://github.com/ronchak/Koaryu/pull/162) addresses BB1-07 and supporting
-BT2-01, which describe one incomplete workflow. Invoice creation
-and payment retry could mark the operation completed before audit and payer
-balance work finished. Completed replay repaired the audit but skipped balance.
-The same key could therefore return success while the old balance remained.
+Invoice creation and payment retry previously marked the operation completed
+before audit and payer-balance work finished. Same-key replay could then return
+success while leaving a stale balance. A shared closeout now writes the original
+actor's deterministic audit, recomputes the balance, validates the response, and
+only then completes an owned projected operation. Historical completed replay
+repairs local facts without another provider mutation, reopening the receipt, or
+changing its terminal revision.
 
-The unchanged main implementation reproduces this for both commands. A local
-balance outage leaves completed state, and replay returns draft/paid respectively
-without another balance attempt. A deliberately stale balance of 123456 remains.
-Each case makes one provider mutation. This does not mean Stripe charged twice.
+Retry projection returns the current operation revision. Later audit or balance
+errors remain local failures; genuine provider ambiguity retains reconciliation.
+A projected/provider-succeeded retry replay must hold the lease returned by SQL
+before doing work. Completed creation replay permits subsequent payment or voiding
+without dropping the request, provider, item, account, generation or original-total
+checks. Initial and projected creation still require the original unpaid balance.
 
-The correction has one local-closeout owner for these two commands. It verifies
-the local invoice as before, writes the deterministic original-actor audit,
-recomputes the payer's current balance, validates the response and then completes
-an owned projected operation. Historical completed replay performs the same local
-repair without another completion call or changing its terminal identity/revision.
-The existing financial definitions, consent checks, account/generation binding,
-request identities and provider-operation state machine remain intact.
+The initial implementation's balance repair had a real race: one replay read 7,400,
+a concurrent payment wrote 0, and the replay overwrote it with 7,400. V41 replaces the
+shared Python SELECT/calculation/UPDATE with one required service-role RPC. The
+function locks the payer matching both studio and payer IDs, then uses a separate
+MVCC statement to sum invoice balances and update that payer. It takes no invoice
+row locks. READ COMMITTED is required; stronger transaction isolation is refused
+before writes. Missing scoped payers remain no-ops and errors propagate.
 
-Retry projection returns its latest operation revision before local closeout.
-Audit or balance failure after that point stays local instead of being classified
-as provider ambiguity. Actual provider/readback/projection ambiguity retains the
-existing reconciliation path. Completion still uses SQL's lease and revision
-checks; the application never forces a new revision or reopens a terminal record.
+This PR preserves the current balance formula, including its status set and
+explicit zero handling. Wide intermediate arithmetic retains an error if the
+existing integer balance column overflows. The settled overdue, family-attribution
+and provider-reconstruction policies will be implemented separately. It introduces
+no historical financial backfill or new provider operation.
 
-Review identified an important claim detail. A valid V33 resource replay can
-return projected/provider_succeeded while another request owns the lease. The
-retry now verifies returned lease ownership before either branch performs work.
-Completed replay is exempt, and reconciliation adoption keeps its existing rules.
-A still-owned failed operation may need its existing lease to expire before the
-same-key retry can finish. This change introduces no new lease-release protocol.
+## Evidence and test changes
 
-Local evidence:
+- Baseline fault/replay cases demonstrate premature completion and skipped balance
+  repair. The corrected orchestration covers audit/RPC/completion failures, durable
+  completion with a lost response, valid later lease acquisition, and refusal of a
+  foreign lease before local or provider work. Paid, void and partially paid
+  completed-create replays fail the prior candidate and pass the correction.
+- Python fakes acknowledge only the named balance RPC, with explicit scoped
+  callbacks where ordering matters. They do not duplicate its SUM algorithm.
+  Orchestration assertions prove a balance acknowledgement in the current attempt
+  before completion. Formula and tenant-scope assurance live in real SQL.
+- The SQL contract runs as service_role with legal rows and explicit expected
+  totals. It covers included/excluded statuses, zero and negative contributions,
+  empty and missing payers, another payer and studio, more than 1,000 invoices,
+  future/no-date preservation, overflow, transactional failure, and browser-role
+  denial. The actual remaining-balance column is NOT NULL; no constraint is
+  disabled to invent a null fixture.
+- Separate real sessions prove a waiting recomputation sees a preceding committed
+  payment, sees the original facts after rollback, and permits an independent payer
+  to progress. Observed blocking PIDs establish the intended lock ordering. An
+  invoice-owning transaction does not block the balance command's ordinary read.
+  One-time controlled SUM-before-lock and invoice-lock mutants fail their intended checks.
+- Actual canonical and logically restored V40 copies upgrade to V41 with identical
+  retained payer/invoice/operation/audit and supporting rows before explicit repair.
+  The explicit command changes only the intended payer balance/status and normal
+  timestamp; an old completed receipt replays without changing persisted facts.
+  Sources remain V40 and all owned databases and dump files are removed.
+- Full V22 and V21/V20/V19/V18 compatibility match their exact tuples. Existing
+  semantic values and V40 catalog/rank evidence remain unchanged. The new raw
+  writer digest is measured independently from catalog definitions and complete
+  explicit EXECUTE ACL entries. Ten isolated function/privilege/overload mutations must fail
+  both raw evidence and all five readiness consumers, then restore the exact
+  baseline after rollback.
+- The full backend passed 1,898 tests plus 5,450 subtests. Focused adapter/readiness
+  verification passed 369 plus 86 subtests; expanded local-target refusal checks
+  passed 3 tests. The permanent restore, SQL and concurrency entrypoints passed on
+  disposable PostgreSQL 17. The complete integrated runner passed all 136 migrations and 51 contracts,
+  retained restores, attestation negatives and concurrency checks. Release-workflow
+  checks passed all 130 tests. Generated API contracts remain unchanged.
 
-- All 12 new cases fail with the byte-identical main invoice workflow and pass the
-  correction. A private pytest plugin substitutes only that original workflow
-  class into the current invoice manager, keeping the same tests and fixtures.
-  Ten failures concern premature completion or stale balances; the foreign-lease
-  cases fail at the completion lease assertion or return 503 instead of the
-  required 409 refusal before work refusal. No baseline code was edited in the repository.
-- Audit-insert and actual payer-write failures for create/retry leave projected
-  state. A valid later claim finishes locally without more provider reads or
-  writes. Historical completed repair includes a later same-payer invoice,
-  another payer and another studio, proving the current total and scoped update.
-- Failure before completion and a lost response after durable completion converge
-  on one original-actor audit and one provider mutation. Completed repair calls
-  no completion RPC. Nonterminal completion passes the current revision and owner.
-- Both valid foreign-lease replay states reject with the expected 409 before local
-  writes, provider reads or completion. An acquired lease with the same replay
-  outcome succeeds, so replay itself is not incorrectly rejected.
-- Focused invoice operations/lifecycle suites pass 287 tests and 15 subtests after
-  final test refinements. The full backend passed 1,895 tests and 5,447 subtests
-  before those test-only refinements and one source-test deletion. API
-  contract generation check passes without generated changes. Independent plan, code, test and final cross-system review approved commit
-  `fa641b37b3cddca9bf02eaa27d25858a9b3b6618`. Its deterministic performance gate
-  also passed. Exact-head CI and guarded merge remain required.
+Two duplicate service retry tests were consolidated, one source-name allowlist
+and an unused broken fake hook were removed, and paid-response assertions were
+corrected. The old Python balance-algorithm test was replaced by a scoped adapter
+contract; SQL owns the arithmetic. Three low-level refund/dispute cases correctly
+assert that those helpers leave payer state unchanged rather than pretending they
+perform recomputation. A release-tool source-text test was removed: the retained
+metadata acceptance/rejection matrix and read-only query tests cover its contract.
+The independent optional-column allowlist assertion remains in the behavior test.
+BT2-03/06/07 are addressed; the broader BT2-04 cleanup remains partial. Test growth
+elsewhere in the program remains a separate problem, not a claimed achievement.
 
-These are Python orchestration tests using real managers/coordinators and the
-production payer-balance method, with existing provider/RPC doubles. They are not
-new PostgreSQL race or hosted-payment evidence. The shared fake does not fully
-model create lease transfer or retry lease validation. Tests therefore script a
-valid create acquisition response, explicitly assert completion revision/owner,
-and retain the certified V33 envelope while reproducing the real replay outcome.
-Existing database contracts and the required complete release gate remain intact.
+## Release and limits
 
-Two duplicate BillingService retry tests were folded into retained canonical-key
-and completed-replay cases, retaining their audit and provider-attempt assertions.
-The retained tests now assert real payer balances and both paid response values.
-A misleading new-key recovery name was corrected. Another test now reaches a
-projected operation through a failed completion call and clock expiry instead of
-rewriting a completed row's state. Distinct consent, tenant, account/generation,
-changed-key, step, projection-corruption and genuine provider-ambiguity tests stay.
-A source-name allowlist test was removed while its behavioral matrices remain; the
-unused fake classifier referencing an undefined exception was also deleted. These
-changes close BT2-03/06/07. The broader stale-name/fixture finding BT2-04 is partial.
+The new migration is `20260908183744_serialize_billing_payer_balance_v41.sql`,
+SHA256 `c8471ad12c1f534d0fe216a7f77db4c0dcfab1e1cc8f75075a2d6683fbc65ab7`.
+All 135 earlier migration files are unchanged. Current readiness requires
+136/head 20260908183744 and release-db-attestation-v41. The one inherited whitespace
+line 474 is retained inside the copied, attested preflight body; it is the sole
+`git diff --check` exception, not a changed whitespace rule.
 
-The delinquency definition, family invoice allocation, external-payment receipt
-retention and missing historical external-payment actor evidence remain separate
-open work. This correction changes execution of the existing balance calculation,
-not its business policy. No migration, hosted payment, backfill or deployment is
-part of this change.
+The concurrency guarantee starts when every serving backend and worker uses the
+RPC and old split operations have drained. Database-first compatibility does not
+serialize an older application's later direct update. Recalculation remains a
+follow-up to invoice projection: a crash before that request still needs replay or
+worker repair. Post-migration application rollback can restore the old race even
+though its readiness interface remains compatible.
 
-## Material review corrections
-
-A controlled interleaving through the current Python managers confirmed P1. A
-completed create replay reads7400, another request pays the invoice and writes0,
-then the replay overwrites the payer with7400. The original audit/provider command
-still occurs only once. All current runtime recomputations share the existing
-BillingPayerManager helper, so one required SQL RPC can become their owner. It
-must lock the scoped payer, then read the invoice sum in a separate statement,
-then update the balance/status. It must take no invoice row locks, preserving the
-existing invoice-to-payer order. The formula and billing-status policy stay the
-same. Real concurrency, formula, privileges and migration/restore proof is needed.
-
-P2 is corrected by omitting only the initial unpaid-balance assertion for a
-completed creation receipt. Request/provider/item/context/original-total checks
-remain, and initial/projected creation stays strict. Paid, zero-remaining void
-and partial-payment replay cases failed before and pass afterward. Projected
-corruption is reached through a failed completion and a valid later claim, not a
-terminal-state rewrite. Other existing fee/consent/account replay restrictions
-remain. This stage's independent approval does not resolve P1.
-
-The concurrency guarantee will apply only after all serving backend writers use
-the new RPC and old split recomputations have drained. Database-first compatibility
-alone cannot serialize an old application's later direct balance update. No broad
-trigger or historical one-time marker will be used to conceal that limit.
+This evidence is local and synthetic. No hosted payment, production migration,
+backfill or deployment was performed. Production apply remains human-only with
+fresh candidate-bound inspection, backup and approval evidence. One fresh reviewer
+receives the final diff and this PR's plan without the previous reviewers' history.
