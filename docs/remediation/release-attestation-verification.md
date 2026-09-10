@@ -32,3 +32,7 @@ No test was added merely to require a private implementation name or a version s
 The coordinator reviewed the Python renderer from a separate Astra task, required a reusable forward profile, corrected moving-alias handling, and added explicit canonical/restored evidence requirements. A separate fresh PR reviewer and final exact-head CI are still required before merge.
 
 No provider state, production database, production deployment, historical financial data or approval was changed. Generated output does not grant release authority. Future schema changes still need reviewed pins, meaningful business fixtures, the full database proof and the existing human-only production gates.
+
+## Supported Node versions
+
+A late automated review of PR167 found that Node 24 rejects the old experimental permission-flag spelling. The generator tests now use `--permission`, which is stable from the repository minimum Node 22.13.0. All eight generator tests passed on actual Node 22.13.0 and Node 24.15.0. No permission restriction, test case or engine range was removed. See the [Node permission model history](https://nodejs.org/api/permissions.html#permission-model).
