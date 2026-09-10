@@ -21,9 +21,9 @@ test API.
 
 | Measure | Before | After | Change |
 | --- | ---: | ---: | ---: |
-| Lines | 261 | 73 | -188 |
+| Lines | 261 | 76 | -185 |
 | Cases | 12 | 5 | -7 |
-| Assertion statements | 136 | 23 | -113 |
+| Assertion statements | 136 | 26 | -110 |
 
 Deleted cases covered roster source shape, import stage and copy spelling,
 progression and lead layout vocabulary, Belt notice and sticky geometry, folio and
@@ -34,7 +34,14 @@ harness changed.
 ## Verification and limits
 
 The reduced file and its existing roster, selection, import, lead, belt, and promotion
-history replacement suites pass together: 136 tests across 12 suites. The five cases
+history replacement suites pass together: 136 tests across 12 suites. Run them from
+`frontend/` with:
+
+```sh
+node --experimental-strip-types --test tests/records-workspace-contract.test.mjs tests/roster-presentation.test.mjs tests/student-selection-events.test.mjs tests/student-import-page-model.test.mjs tests/csv-import.test.mjs tests/preview-import-resolution.test.mjs tests/leads-page-model.test.mjs tests/store-initialization-mounted.test.mjs tests/workflow-stabilization-mounted.test.mjs tests/belt-editor-mounted.test.mjs tests/belt-tracker-page-model.test.mjs tests/store-promotion-history.test.mjs
+```
+
+The five cases
 left here still inspect source or CSS. They prove only the named forbidden-control and
 accessibility policies; they do not claim mounted interaction, geometry, route
 readiness, or complete mutation coverage. Later owning UI work may replace a retained

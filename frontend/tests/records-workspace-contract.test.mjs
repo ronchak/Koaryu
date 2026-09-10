@@ -18,9 +18,12 @@ describe("records workspace policies", () => {
 
     assert.match(add, /activeStaff\.map/);
     assert.match(detail, /currentAssignedStaff\.status !== "active"/);
+    assert.match(detail, /` · \$\{member\.status\}`/);
+    assert.match(detail, /ref=\{inspectorRef\}/);
     assert.match(detail, /tabIndex=\{-1\}/);
     assert.match(detail, /inspectorRef\.current\?\.focus\(\)/);
     assert.match(detail, /event\.key !== "Escape"[\s\S]*handleClose\(\)/);
+    assert.match(detail, /\[data-lead-id=\"\$\{CSS\.escape\(lead\.id\)\}\"\]/);
     assert.doesNotMatch(`${add}\n${detail}\n${controller}`, /deleteLead|api\.delete|>\s*Delete\s*</);
   });
 
