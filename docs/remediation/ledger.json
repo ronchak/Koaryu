@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "e4ab4fce14de9d4e4a68c2c43e98a800f1a80acc",
+  "last_reconciled_main": "d9d276672d550ed4197a90125551530d0d12e96a",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -1802,18 +1802,20 @@
       "id": "OPS2-10",
       "title": "Unused nontransactional import and membership writers remain in production modules",
       "cluster": "student_write_preservation",
-      "disposition": "pending",
-      "reason": "Standalone guardian and membership writers remain, but repository caller searches find only tests and internal self-calls. This is useful dead-code removal, not a live mutation defect.",
+      "disposition": "fixed",
+      "reason": "Removed unused guardian and membership table writers after caller verification. Active import and membership RPC adapters remain the only live write paths; the response builder still retains its used schema-error helper.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "d76c90da66dbb4fec520bdee2d23ace187adbe21",
       "source_paths": [
         "backend/app/services/student_import_guardians.py",
         "backend/app/services/student_program_memberships.py",
         "backend/app/services/student_import_executor.py",
         "backend/app/services/student_membership_actions.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        171
+      ],
       "track": "Sol",
       "root_cause": "retired-student-writers",
       "collapse_with": [
@@ -1841,7 +1843,7 @@
           "observation": "Live membership updates use mutate_student_program_membership_atomic."
         }
       ],
-      "next_change": "Confirm any documented private operator imports, then remove the unused guardian writer, membership replacement/sync methods and exclusively dependent helpers/tests.",
+      "next_change": "None for this bounded maintenance finding; preserve the active behavior and independent negative contracts.",
       "validation_plan": "Repeat symbol/import searches and run retained membership-action, normalization and executor tests after removal.",
       "scope_constraints": [
         "Live RPC ownership",
@@ -1850,7 +1852,8 @@
         "Atomic SQL contracts"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/05-backend-dead-code-and-fixtures.md"
+      "delegated_batch": "docs/remediation/delegated/05-backend-dead-code-and-fixtures.md",
+      "verification": "PR171: full backend1887 passed before final formatting/snapshot refinement; complete affected69 collector/validator and50 autopay tests passed afterward. Three enrollment modules passed independently. Coordinator checked moved fixture AST and complete validator fixture values. See backend-maintenance-verification.md."
     },
     {
       "id": "OPS2-11",
@@ -3740,16 +3743,18 @@
       "id": "BT1-05",
       "title": "Several test names describe behavior that their assertions now forbid",
       "cluster": "test_and_adapter_maintenance",
-      "disposition": "pending",
-      "reason": "Several cancellation tests still advertise provider mutation workflows while asserting that generic operations return 409 without provider calls. One no-subscription disable test is valid but also retains a misleading pending-mutation name.",
+      "disposition": "fixed",
+      "reason": "Six misleading generic-operation cases became one three-operation rejection matrix that snapshots all seeded business rows and prohibits provider mutation. The valid no-subscription disable case now has an accurate name.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new tests or hosted operations during normalization.",
+      "verified_against": "d76c90da66dbb4fec520bdee2d23ace187adbe21",
+      "verification": "PR171: full backend1887 passed before final formatting/snapshot refinement; complete affected69 collector/validator and50 autopay tests passed afterward. Three enrollment modules passed independently. Coordinator checked moved fixture AST and complete validator fixture values. See backend-maintenance-verification.md.",
       "source_paths": [
         "backend/tests/test_billing_autopay_lifecycle.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        171
+      ],
       "track": "Sol",
       "root_cause": "stale_billing_test_semantics",
       "collapse_with": [
@@ -3772,7 +3777,7 @@
           "observation": "The deletes-only-that-item test asserts that no item deletion, cancellation, or quantity update occurs."
         }
       ],
-      "next_change": "Replace the duplicate generic-operation rejection cases with a clearly named parameterized test. Rename the valid no-subscription disable case to describe disabling without subscription rewiring, while retaining distinct named-workflow lifecycle tests elsewhere.",
+      "next_change": "None for this bounded maintenance finding; preserve the active behavior and independent negative contracts.",
       "validation_plan": "Run the autopay lifecycle file and confirm test collection names distinguish unsupported generic operations from supported named workflows.",
       "scope_constraints": [
         "supported cancellation workflow behavior",
@@ -3915,18 +3920,20 @@
       "id": "BT1-09",
       "title": "Lifecycle helper acts as an import barrel for unrelated production and standard-library names",
       "cluster": "test_and_adapter_maintenance",
-      "disposition": "pending",
-      "reason": "Lifecycle suites still import standard-library names, schemas, exceptions, and production services through billing_lifecycle_helpers. The helper's accidental re-export API remains broad.",
+      "disposition": "fixed",
+      "reason": "Lifecycle consumers import ordinary library and production names directly from their owners. The shared helper keeps only imports used by its own fixture implementation.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new tests or hosted operations during normalization.",
+      "verified_against": "d76c90da66dbb4fec520bdee2d23ace187adbe21",
+      "verification": "PR171: full backend1887 passed before final formatting/snapshot refinement; complete affected69 collector/validator and50 autopay tests passed afterward. Three enrollment modules passed independently. Coordinator checked moved fixture AST and complete validator fixture values. See backend-maintenance-verification.md.",
       "source_paths": [
         "backend/tests/billing_lifecycle_helpers.py",
         "backend/tests/test_billing_autopay_lifecycle.py",
         "backend/tests/test_billing_connect_lifecycle.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        171
+      ],
       "track": "Sol",
       "root_cause": "test_helper_import_barrel",
       "collapse_with": [],
@@ -3947,7 +3954,7 @@
           "observation": "The Connect suite imports unrelated invoice and enrollment schemas plus asyncio and patch through the helper."
         }
       ],
-      "next_change": "Import standard-library and production symbols from their owning modules. Limit billing_lifecycle_helpers imports to intentional bases, fakes, and fixture factories, and remove imports unused by each suite.",
+      "next_change": "None for this bounded maintenance finding; preserve the active behavior and independent negative contracts.",
       "validation_plan": "Run the two lifecycle modules and use the existing linter or a focused unused-import check on the touched files.",
       "scope_constraints": [
         "shared fixture behavior",
@@ -4251,18 +4258,20 @@
       "id": "BT2-08",
       "title": "New test files reuse private fixtures by importing other test modules",
       "cluster": "test_and_adapter_maintenance",
-      "disposition": "pending",
-      "reason": "Three suites still import private fixtures from other test modules, including a two-level chain from reload tests through transition tests to activation tests.",
+      "disposition": "fixed",
+      "reason": "Shared activation, transition and landing fixtures have dedicated helper owners; backend tests no longer import other test modules. Moved fixture bodies retain their original behavior.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new tests or hosted operations during normalization.",
+      "verified_against": "d76c90da66dbb4fec520bdee2d23ace187adbe21",
+      "verification": "PR171: full backend1887 passed before final formatting/snapshot refinement; complete affected69 collector/validator and50 autopay tests passed afterward. Three enrollment modules passed independently. Coordinator checked moved fixture AST and complete validator fixture values. See backend-maintenance-verification.md.",
       "source_paths": [
         "backend/tests/test_billing_enrollment_transitions.py",
         "backend/tests/test_billing_enrollment_transition_reload.py",
         "backend/tests/test_billing_landing_runtime.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        171
+      ],
       "track": "Sol",
       "root_cause": "cross_test_fixture_ownership",
       "collapse_with": [],
@@ -4283,7 +4292,7 @@
           "observation": "The runtime suite imports the status factory from test_billing_landing."
         }
       ],
-      "next_change": "Move only the reused fixture builders and fake classes into narrowly named helper modules, then have each test module import those helpers directly.",
+      "next_change": "None for this bounded maintenance finding; preserve the active behavior and independent negative contracts.",
       "validation_plan": "Run each affected test file independently from the backend directory and confirm no imports from tests.test_* remain.",
       "scope_constraints": [
         "scenario-specific test bodies",
@@ -4666,16 +4675,18 @@
       "id": "BT4-02",
       "title": "Provider factory classification test does not inspect factories or callers",
       "cluster": "test_and_adapter_maintenance",
-      "disposition": "pending",
-      "reason": "The named factory-classification test still checks only that two unrelated strings occur somewhere under app. It cannot detect a new direct client factory caller or missing cleanup.",
+      "disposition": "fixed",
+      "reason": "Removed the two-string factory pseudo-test. Runtime lifetime, lane, scope, cleanup, body-admission and deadline tests remain.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new tests or hosted operations during normalization.",
+      "verified_against": "d76c90da66dbb4fec520bdee2d23ace187adbe21",
+      "verification": "PR171: full backend1887 passed before final formatting/snapshot refinement; complete affected69 collector/validator and50 autopay tests passed afterward. Three enrollment modules passed independently. Coordinator checked moved fixture AST and complete validator fixture values. See backend-maintenance-verification.md.",
       "source_paths": [
         "backend/tests/test_provider_request_boundary.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        171
+      ],
       "track": "Sol",
       "root_cause": "ineffective_provider_factory_inventory",
       "collapse_with": [],
@@ -4696,7 +4707,7 @@
           "observation": "A real special-case factory call creates a client and closes it in a finally path, but the test does not inspect this caller."
         }
       ],
-      "next_change": "Delete the named two-string pseudo-test and its unsupported global factory-classification claim. Retain adjacent actual lifespan, lane, scope and cleanup behavior tests and useful structural boundary checks. Do not build a new factory-inventory framework for this observation.",
+      "next_change": "None for this bounded maintenance finding; preserve the active behavior and independent negative contracts.",
       "validation_plan": "Run the existing provider-request-boundary suite and inspect that all meaningful runtime/lifetime assertions remain. No replacement wording test.",
       "scope_constraints": [
         "approved isolated client use cases",
@@ -5048,17 +5059,19 @@
       "id": "BT5-03",
       "title": "Tests preserve retired student write implementations",
       "cluster": "student_write_preservation",
-      "disposition": "pending",
-      "reason": "Tests still preserve the unused direct writers. Removal remains unmerged and must accompany OPS2-10.",
+      "disposition": "fixed",
+      "reason": "Deleted only the tests and fixtures exclusive to the retired nontransactional writers. Active executor and atomic membership behavior coverage remains.",
       "audit_importance": "low",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "d76c90da66dbb4fec520bdee2d23ace187adbe21",
       "source_paths": [
         "backend/tests/test_student_import_guardians.py",
         "backend/tests/test_student_program_memberships.py",
         "backend/app/services/student_import_executor.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        171
+      ],
       "track": "Sol",
       "root_cause": "retired-student-writers",
       "collapse_with": [
@@ -5081,7 +5094,7 @@
           "observation": "Same file also contains live normalization coverage that must remain."
         }
       ],
-      "next_change": "Remove only tests and fixtures exclusively supporting retired writers, in the same change as their implementation removal.",
+      "next_change": "None for this bounded maintenance finding; preserve the active behavior and independent negative contracts.",
       "validation_plan": "Check remaining test imports and run retained normalization and atomic action tests.",
       "scope_constraints": [
         "Live normalization tests",
@@ -5089,22 +5102,25 @@
         "Tenant and membership RPC coverage"
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/05-backend-dead-code-and-fixtures.md"
+      "delegated_batch": "docs/remediation/delegated/05-backend-dead-code-and-fixtures.md",
+      "verification": "PR171: full backend1887 passed before final formatting/snapshot refinement; complete affected69 collector/validator and50 autopay tests passed afterward. Three enrollment modules passed independently. Coordinator checked moved fixture AST and complete validator fixture values. See backend-maintenance-verification.md."
     },
     {
       "id": "BT5-04",
       "title": "Collector retains an unused query-engine fake after switching to one RPC",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The collector fake still contains an unused table-query interpreter while its active client explicitly forbids table access and serves only the RPC.",
+      "disposition": "fixed",
+      "reason": "Removed the unused collector table-query interpreter. The active RPC fake and collector scenarios remain intact.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "d76c90da66dbb4fec520bdee2d23ace187adbe21",
+      "verification": "PR171: full backend1887 passed before final formatting/snapshot refinement; complete affected69 collector/validator and50 autopay tests passed afterward. Three enrollment modules passed independently. Coordinator checked moved fixture AST and complete validator fixture values. See backend-maintenance-verification.md.",
       "source_paths": [
         "backend/tests/test_stripe_provider_rehearsal_collector.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        171
+      ],
       "track": "Sol",
       "root_cause": "provider_evidence_test_maintenance",
       "collapse_with": [
@@ -5117,7 +5133,7 @@
           "observation": "FakeQuery has a large independent filtering/projection implementation; FakeSupabase.table at96 raises and rpc returns FakeRpcQuery."
         }
       ],
-      "next_change": "Remove only the unreferenced query fake and imports made unused; retain FakeResponse and active RPC/error matrices.",
+      "next_change": "None for this bounded maintenance finding; preserve the active behavior and independent negative contracts.",
       "validation_plan": "Reference search plus the existing collector suite; no replacement fake or new tests.",
       "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5258,17 +5274,19 @@
       "id": "BT5-08",
       "title": "Dense hand-built rehearsal fixtures make contract changes hard to inspect",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The valid rehearsal fixtures still place large nested evidence structures on single lines and repeat linked identities across builders, making meaningful scope tests harder to inspect.",
+      "disposition": "fixed",
+      "reason": "Expanded the complete nested rehearsal fixture into readable multiline data and retained one small repeated readback builder. Independent evaluation confirms the fixture values are unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "d76c90da66dbb4fec520bdee2d23ace187adbe21",
+      "verification": "PR171: full backend1887 passed before final formatting/snapshot refinement; complete affected69 collector/validator and50 autopay tests passed afterward. Three enrollment modules passed independently. Coordinator checked moved fixture AST and complete validator fixture values. See backend-maintenance-verification.md.",
       "source_paths": [
         "backend/tests/test_stripe_provider_rehearsal_validator.py",
         "backend/tests/test_stripe_provider_rehearsal_collector.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        171
+      ],
       "track": "Sol",
       "root_cause": "provider_evidence_test_maintenance",
       "collapse_with": [
@@ -5282,7 +5300,7 @@
           "observation": "Nested lifecycle/readback fixtures are densely constructed alongside useful negative matrices."
         }
       ],
-      "next_change": "Format the existing fixtures and introduce only small named repeated-group builders where they reduce duplication; preserve independent expected evidence and all meaningful negative assertions.",
+      "next_change": "None for this bounded maintenance finding; preserve the active behavior and independent negative contracts.",
       "validation_plan": "Existing collector/validator suites must remain behaviorally equivalent; compare data objects or AST for pure formatting changes.",
       "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -12249,15 +12267,15 @@
     }
   },
   "current_counts": {
-    "pending": 216,
-    "fixed": 47,
+    "pending": 208,
+    "fixed": 55,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 72,
+    "Sol": 64,
     "Astra": 144
   }
 }
