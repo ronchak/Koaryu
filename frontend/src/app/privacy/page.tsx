@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 
-import { PublicPageShell } from "@/components/marketing/public-pages";
-import styles from "@/components/marketing/public-pages.module.css";
+import { LegalDocument } from "@/components/marketing/legal-document";
 
 export const metadata: Metadata = {
   title: "Privacy Policy | Koaryu",
@@ -71,48 +70,14 @@ const privacyNotice =
 
 export default function PrivacyPage() {
   return (
-    <PublicPageShell>
-      <header className={styles.legalHero}>
-        <div className={styles.legalHeroInner}>
-          <p className={styles.eyebrow}>Legal</p>
-          <h1>Privacy Policy</h1>
-          <p className={styles.legalDescription}>
-            How Koaryu handles account, studio, student, and payment-adjacent data.
-          </p>
-          <time className={styles.legalUpdated} dateTime="2026-05-19">
-            Updated May 19, 2026
-          </time>
-        </div>
-      </header>
-
-      <div className={styles.legalLayout}>
-        <nav className={styles.legalSectionNavigation} aria-label="Privacy policy sections">
-          <p className={styles.eyebrow}>On this page</p>
-          <ul>
-            {privacySections.map((section) => (
-              <li key={section.id}>
-                <a href={`#${section.id}`}>{section.title}</a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <article className={styles.legalDocument} aria-label="Privacy policy">
-          {privacySections.map((section) => (
-            <section key={section.id} id={section.id} className={styles.legalSection}>
-              <h2>{section.title}</h2>
-              <div className={styles.legalBody}>
-                {section.paragraphs.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
-                ))}
-              </div>
-            </section>
-          ))}
-          <aside className={styles.legalNotice} aria-label="Policy update notice">
-            {privacyNotice}
-          </aside>
-        </article>
-      </div>
-    </PublicPageShell>
+    <LegalDocument
+      title="Privacy Policy"
+      description="How Koaryu handles account, studio, student, and payment-adjacent data."
+      sections={privacySections}
+      navigationLabel="Privacy policy sections"
+      documentLabel="Privacy policy"
+      notice={privacyNotice}
+      noticeLabel="Policy update notice"
+    />
   );
 }

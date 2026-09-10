@@ -17,13 +17,7 @@ import {
   AccountSection,
 } from "@/components/account-page-shell";
 import { useStudioStore } from "@/lib/store";
-
-function roleLabel(role?: string | null) {
-  if (role === "admin") return "Admin";
-  if (role === "instructor") return "Instructor";
-  if (role === "front_desk") return "Front desk";
-  return "Member";
-}
+import { formatRoleLabel } from "@/lib/role-label";
 
 export default function AccountPage() {
   const { currentRole, studioName, userEmail, userName } = useStudioStore();
@@ -32,7 +26,7 @@ export default function AccountPage() {
     <AccountPageShell
       title="My account"
       description="Manage your Koaryu identity, preferences, subscription, and support options."
-      badge={roleLabel(currentRole)}
+      badge={formatRoleLabel(currentRole)}
     >
       <AccountSection title="Account summary">
         <AccountInfoRow label="Name" value={userName || "Not set"} />
@@ -40,7 +34,7 @@ export default function AccountPage() {
         <AccountInfoRow label="Studio" value={studioName || "Not selected"} />
         <AccountInfoRow
           label="Role"
-          value={roleLabel(currentRole)}
+          value={formatRoleLabel(currentRole)}
           detail="Your role controls access to staff, billing, and data tools."
         />
       </AccountSection>

@@ -19,15 +19,13 @@ export type OperationsPage =
 export function OperationsSurface({
   children,
   page,
-  allowInternalOverflow = false,
 }: {
   children: ReactNode;
   page: OperationsPage;
-  allowInternalOverflow?: boolean;
 }) {
   return (
     <div
-      className={`${styles.surface} ${allowInternalOverflow ? styles.internalOverflow : ""}`}
+      className={styles.surface}
       data-operations-surface="v2"
       data-operations-page={page}
     >
@@ -100,7 +98,7 @@ export function OperationsLoading({
   }[page];
 
   return (
-    <OperationsSurface page={page} allowInternalOverflow={page === "schedule"}>
+    <OperationsSurface page={page}>
       <div className={styles.loading} aria-busy="true" aria-live="polite" data-loading-family={page}>
         <div className={styles.loadingIntro}>
           <p className={styles.eyebrow}>Loading</p>

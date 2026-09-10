@@ -286,7 +286,7 @@ describe("operations behavior proof", () => {
     assert.match(schedule, /data-schedule-print-entry=\{entry\.kind\}/);
     assert.match(schedule, /layoutScheduleTimeItems\(entriesByDate\[key\] \|\| \[\]\)\.map\(\(block\) => block\.item\)/);
 
-    const browser = await chromium.launch({ channel: "chrome", headless: true });
+    const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage({ viewport: { width: 816, height: 1056 } });
       const inspectWeek = async ({ entriesPerDay, screenWidth }) => {
@@ -412,7 +412,7 @@ describe("operations behavior proof", () => {
     assert.match(schedule, /onChange=\{\(event\) => onProgramFilterChange\(event\.target\.value\)\}/);
     assert.match(css, /\.surface\[data-operations-page="schedule"\] > :global\(header\),[\s\S]*?\[data-schedule-program-filter\][\s\S]*?border-radius: 0 !important;[\s\S]*?background: #fff !important;[\s\S]*?color: #000 !important;[\s\S]*?box-shadow: none !important;[\s\S]*?transition: none !important;/);
 
-    const browser = await chromium.launch({ channel: "chrome", headless: true });
+    const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage({ viewport: { width: 816, height: 1056 } });
       for (const theme of ["light", "dark"]) {
@@ -547,7 +547,7 @@ describe("operations behavior proof", () => {
     assert.match(css, /\[data-month-schedule-view\] \[data-month-schedule-day\][\s\S]*?transition: none !important;/);
     assert.match(css, /\[data-month-schedule-view\] \[data-month-schedule-day\] \*[\s\S]*?background-color: transparent !important;[\s\S]*?color: #000 !important;/);
 
-    const browser = await chromium.launch({ channel: "chrome", headless: true });
+    const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       for (const actionLabel of ["Create", "Save"]) {

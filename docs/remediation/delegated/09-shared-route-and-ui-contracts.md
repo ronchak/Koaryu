@@ -2,11 +2,13 @@
 
 IDs: `FR1-12`, `FR1-14`, `FC2-15`, `FC2-16`, `FC3-06`, `FC3-07`
 
+Implementation: PR169. See [verification](../shared-ui-verification.md).
+
 Prerequisites: none. Keep auth, report authorization, schedule behavior, and navigation unchanged.
 
 ## Change
 
-- Extract only the identical role-label formatter used by `frontend/src/app/(dashboard)/layout.tsx`, `frontend/src/app/account-archived/page.tsx`, `frontend/src/app/(dashboard)/account/settings/page.tsx`, and `frontend/src/app/(dashboard)/account/page.tsx`. No sign-out consolidation and no role directory or API.
+- Extract only the identical role-label formatter used by `frontend/src/components/account-menu.tsx`, `frontend/src/app/(dashboard)/account/settings/page.tsx`, and `frontend/src/app/(dashboard)/account/page.tsx`. No sign-out consolidation and no role directory or API.
 - Extract one shared 404 view for `frontend/src/app/not-found.tsx` and `frontend/src/app/(errors)/404/page.tsx`. Extract one narrow legal-document renderer for `frontend/src/app/privacy/page.tsx` and `frontend/src/app/terms/page.tsx`. Keep route files, metadata, page content, labels, notices, and actions.
 - In `frontend/src/components/reports/reports-data-exports-panel.tsx`, remove unused `ExportReport.minimumRole`. Reuse `PanelHeader` and `StatBadge` from `frontend/src/components/reports/reports-page-sections.tsx`. Keep `frontend/src/lib/report-metrics.ts` and backend authorization as the role authorities.
 - Remove the no-op overflow prop and redundant class from `frontend/src/components/operations/operations-surface.tsx` and `.module.css`, plus schedule callers. Preserve horizontal schedule containment and vertical overflow.

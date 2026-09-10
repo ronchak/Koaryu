@@ -7,8 +7,16 @@ import {
   calculateAccountMenuPanelWidth,
   calculateAccountMenuPosition,
 } from "../src/lib/account-menu-position.ts";
+import { formatRoleLabel } from "../src/lib/role-label.ts";
 
 describe("account menu state extraction", () => {
+  it("uses one label mapping for known, unknown, and missing roles", () => {
+    assert.deepEqual(
+      ["admin", "front_desk", "instructor", "unknown", null].map(formatRoleLabel),
+      ["Admin", "Front desk", "Instructor", "Member", "Member"]
+    );
+  });
+
   it("keeps viewport positioning in a pure helper", () => {
     assert.equal(
       calculateAccountMenuPanelWidth({

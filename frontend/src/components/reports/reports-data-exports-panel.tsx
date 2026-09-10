@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Download, FileText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { PanelHeader, StatBadge } from "@/components/reports/reports-page-sections";
 import { api } from "@/lib/api";
 import { toLocalDateKey } from "@/lib/date";
 import { canRunReportExport, getReportExportMinimumRole } from "@/lib/report-metrics";
@@ -13,7 +14,6 @@ type ExportReport = {
   id: string;
   title: string;
   description: string;
-  minimumRole?: "front_desk";
 };
 
 type ExportGroup = {
@@ -58,18 +58,18 @@ export const EXPORT_GROUPS: ExportGroup[] = [
   {
     title: "Programs and Ranks",
     reports: [
-      { id: "programs", title: "Programs", description: "Program setup, colors, ordering, archived state, and system flags.", minimumRole: "front_desk" },
-      { id: "belt_ladders", title: "Belt Ladders", description: "Rank ladder definitions and per-ladder sub-rank terminology.", minimumRole: "front_desk" },
-      { id: "belt_ranks", title: "Belt Ranks", description: "Belt and stripe/tip requirements, ordering, colors, and approval rules.", minimumRole: "front_desk" },
+      { id: "programs", title: "Programs", description: "Program setup, colors, ordering, archived state, and system flags." },
+      { id: "belt_ladders", title: "Belt Ladders", description: "Rank ladder definitions and per-ladder sub-rank terminology." },
+      { id: "belt_ranks", title: "Belt Ranks", description: "Belt and stripe/tip requirements, ordering, colors, and approval rules." },
       { id: "promotions", title: "Promotion History", description: "Immutable promotion records, rank changes, notes, and approving staff IDs." },
     ],
   },
   {
     title: "Schedule",
     reports: [
-      { id: "class_templates", title: "Recurring Class Templates", description: "Weekly schedule definitions, dates, capacity, program, and instructor IDs.", minimumRole: "front_desk" },
-      { id: "class_sessions", title: "Class Sessions", description: "Individual class occurrences, status, notes, capacity, and soft-delete state.", minimumRole: "front_desk" },
-      { id: "attendance", title: "Attendance Records", description: "Check-ins, absences, cross-program credit, eligibility overrides, and staff IDs.", minimumRole: "front_desk" },
+      { id: "class_templates", title: "Recurring Class Templates", description: "Weekly schedule definitions, dates, capacity, program, and instructor IDs." },
+      { id: "class_sessions", title: "Class Sessions", description: "Individual class occurrences, status, notes, capacity, and soft-delete state." },
+      { id: "attendance", title: "Attendance Records", description: "Check-ins, absences, cross-program credit, eligibility overrides, and staff IDs." },
     ],
   },
   {
@@ -99,38 +99,6 @@ function downloadBlob(blob: Blob, filename: string) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-}
-
-function ExportStatBadge({ children }: { children: ReactNode }) {
-  return (
-    <span className="rounded-full bg-surface-raised px-2 py-1 text-xs text-text-secondary">
-      {children}
-    </span>
-  );
-}
-
-function ExportPanelHeader({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 mb-5">
-      <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
-        {subtitle && (
-          <p className="text-xs text-text-secondary mt-1 leading-relaxed">
-            {subtitle}
-          </p>
-        )}
-      </div>
-      {children}
-    </div>
-  );
 }
 
 function ExportGroupRegister({
@@ -262,14 +230,14 @@ export function ReportsDataExportsPanel({
 
   return (
     <section className="bg-surface p-4" data-report-appendix="data-exports">
-      <ExportPanelHeader
+      <PanelHeader
         title="Data Exports"
         subtitle="Separate CSV downloads for the core records owned by this studio."
       >
-        <ExportStatBadge>
+        <StatBadge>
           {EXPORT_GROUPS.reduce((count, group) => count + group.reports.length, 0)} CSV reports
-        </ExportStatBadge>
-      </ExportPanelHeader>
+        </StatBadge>
+      </PanelHeader>
 
       {exportMessage ? (
         <div className="mb-4 rounded-[10px] bg-success/10 px-4 py-3 text-sm text-success">

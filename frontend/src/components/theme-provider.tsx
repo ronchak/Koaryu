@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -84,6 +85,7 @@ function applyTheme(preference: ThemePreference, animate = false): ResolvedTheme
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(DEFAULT_THEME);
+  const preferenceRef = useRef<ThemePreference>(DEFAULT_THEME);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
   const [navigationPlacement, setNavigationPlacementState] =
     useState<NavigationPlacement>(DEFAULT_NAVIGATION_PLACEMENT);
@@ -95,6 +97,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       // Theme preference is progressive enhancement; the DOM theme still updates.
     }
 
+    preferenceRef.current = nextPreference;
     setPreferenceState(nextPreference);
     setResolvedTheme(applyTheme(nextPreference, true));
   }, []);
@@ -118,15 +121,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const syncTimer = window.setTimeout(() => {
       const initialPreference = getStoredPreference();
 
+      preferenceRef.current = initialPreference;
       setPreferenceState(initialPreference);
       setResolvedTheme(applyTheme(initialPreference));
       setNavigationPlacementState(getStoredNavigationPlacement());
     }, 0);
 
     function handleSystemChange() {
-      const currentPreference = getStoredPreference();
-      if (currentPreference === "system") {
-        setResolvedTheme(applyTheme(currentPreference));
+      if (preferenceRef.current === "system") {
+        setResolvedTheme(applyTheme(preferenceRef.current));
       }
     }
 
@@ -136,6 +139,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           event.newValue === "dark" || event.newValue === "light" || event.newValue === "system"
             ? event.newValue
             : DEFAULT_THEME;
+        preferenceRef.current = nextPreference;
         setPreferenceState(nextPreference);
         setResolvedTheme(applyTheme(nextPreference));
         return;
