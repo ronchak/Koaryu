@@ -23,11 +23,11 @@ BEGIN
       IS DISTINCT FROM '0:d054ae0cf5ce43ce2c241ca628e0724b5239bd696c323ba9c817b8bd21ee0eec' THEN
     RAISE EXCEPTION 'V34 closeout manifest mismatch.';
   END IF;
-  IF (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339') OR (v_current_count=134 AND v_current_head='20260908080420') OR ((v_current_count=135 AND v_current_head='20260908133504') OR (v_current_count=136 AND v_current_head='20260908183744')) THEN
+  IF (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339') OR (v_current_count=134 AND v_current_head='20260908080420') OR ((v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR (v_current_count=137 AND v_current_head='20260910084231'))) THEN
     IF private.koaryu_release_operational_contract_v29()
         IS DISTINCT FROM '0:32706cfae7047b70ee6b563048ffafa91d945bc824939e3000fa01631a459ecb'
        OR private.koaryu_release_operational_manifest_v10()
-        IS DISTINCT FROM (CASE WHEN (v_current_count=135 AND v_current_head='20260908133504') OR (v_current_count=136 AND v_current_head='20260908183744') THEN 'ec8605a828e82b738ce973627a8018735c28176399b7e9856aa0dd66a04b667a' ELSE 'e81893193bc199a3911d83ce0546d6458fdc4e63d34c05a1a8dd121da8087012' END)
+        IS DISTINCT FROM (CASE WHEN (v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR (v_current_count=137 AND v_current_head='20260910084231')) THEN 'ec8605a828e82b738ce973627a8018735c28176399b7e9856aa0dd66a04b667a' ELSE 'e81893193bc199a3911d83ce0546d6458fdc4e63d34c05a1a8dd121da8087012' END)
        OR private.koaryu_release_payments_replay_repairs_manifest_v30()
         IS DISTINCT FROM '0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98' THEN
       RAISE EXCEPTION 'V37 current compatibility manifests mismatch.';
@@ -55,7 +55,8 @@ BEGIN
     INTO v_v31_expectation_state
   FROM private.koaryu_release_v31_expectations;
   v_expected_v31_expectation_state:=CASE
-    WHEN (v_current_count=135 AND v_current_head='20260908133504') OR (v_current_count=136 AND v_current_head='20260908183744') THEN '1:220b289851c6a5714091f59560053b1a5a5cf7c4971a431bbc04a6dd85d42802'
+      WHEN (v_current_count=137 AND v_current_head='20260910084231') THEN '1:9f8cfdaa076ac36d3d1b827e4c50e17c8a9796150dac84ef3b2f62360893bd18'
+    WHEN (v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR (v_current_count=137 AND v_current_head='20260910084231')) THEN '1:220b289851c6a5714091f59560053b1a5a5cf7c4971a431bbc04a6dd85d42802'
     WHEN v_current_count=134 AND v_current_head='20260908080420'
          THEN '1:54e7ddd1b3979a6b764a14345c629293e24976d707ef8a8fbf2b3ab5c7a47693'
     WHEN (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339')

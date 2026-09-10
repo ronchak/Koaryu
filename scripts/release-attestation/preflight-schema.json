@@ -472,6 +472,17 @@
       "append": [
         "payer_balance_rpc_v41"
       ]
+    },
+    "v42": {
+      "extends": "v41",
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:49fb66b782a732d495428e62c88ae227f32ef4c22be6d41a4cac0ff686f81e48"
+        },
+        "operational_manifest_v12": {
+          "expected": "9f3190acf304988b74da920b85a8e1cdb6a62eb8615017788b057b477667e5a2"
+        }
+      }
     }
   }
 }

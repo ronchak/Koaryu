@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { committedStatement as extractStatement } from "./generate-release-attestation.mjs";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { migrationVersions, readinessTuple, releaseState } from "./release-attestation/states.mjs";
+import { CURRENT_RELEASE, migrationVersions, readinessTuple, releaseState } from "./release-attestation/states.mjs";
 import { renderCompatibility } from "./release-attestation/sql.mjs";
 import { renderPreflight } from "./release-attestation/preflight.mjs";
 import { renderRankReceiptManifest, renderRankReturnManifest } from "./release-attestation/manifests.mjs";
@@ -47,7 +47,7 @@ test("historical readiness stops at its own head when future migrations are appe
 
 test("unknown, missing and ambiguous histories cannot select a release", () => {
   assert.throws(() => releaseState("v999", versions), /Unknown release/);
-  assert.throws(() => releaseState("v41", versions.slice(0, -1)), /Missing release head/);
+  assert.throws(() => releaseState(CURRENT_RELEASE, versions.slice(0, -1)), /Missing release head/);
   assert.throws(() => releaseState("v41", [...versions].reverse()), /unique ordered/);
   assert.throws(() => migrationVersions([...filenames, filenames[0]]), /duplicate versions/);
   assert.throws(() => renderCompatibility(releaseState("v8", versions), releaseState("v7", versions)),
@@ -78,7 +78,7 @@ test("full preflights reproduce historical whitespace and every declared check",
   }
 });
 
-test("shared rank manifests reproduce all five historical statements", () => {
+test("shared rank manifests reproduce declared historical and current statements", () => {
   for (const artifact of manifestSchema.artifacts) {
     const generated = artifact.kind === "rank-return"
       ? renderRankReturnManifest({ ...artifact, functions: manifestSchema.functionSets[artifact.functionSet] })
@@ -127,6 +127,11 @@ test("the generated continuation rejects a hosted target before invoking databas
 });
 
 test("a future release uses declarations and fixtures without renderer edits or original target access", () => {
+  const previousId = CURRENT_RELEASE;
+  const previous = releaseState(previousId, versions);
+  const nextNumber = Number(previousId.slice(1)) + 1;
+  const nextId = `v${nextNumber}`;
+  const nextPreflight = Number(/_v(\d+)\(\)$/.exec(previous.preflight)[1]) + 1;
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-generator-forward-"));
   try {
     const inputs = path.join(temporary, "scripts/release-attestation");
@@ -135,21 +140,21 @@ test("a future release uses declarations and fixtures without renderer edits or 
     const read = name => JSON.parse(fs.readFileSync(path.join(inputs, name), "utf8"));
     const write = (name, value) => fs.writeFileSync(path.join(inputs, name), JSON.stringify(value));
     const declarations = read("release-states.json");
-    declarations.current = "v42";
-    declarations.identities.push(["v42", "20990101000000", 23, 42]);
+    declarations.current = nextId;
+    declarations.identities.push([nextId, "20990101000000", nextPreflight, nextNumber]);
     write("release-states.json", declarations);
     const preflights = read("preflight-schema.json");
-    preflights.states.v42 = { extends: "v41" };
+    preflights.states[nextId] = { extends: previousId };
     write("preflight-schema.json", preflights);
     const python = read("python-restore-schema.json");
-    python.bindings["readiness-v42"] = { kind: "readiness", state: "v42", finalAlias: true };
-    python.cases.v42 = {
+    python.bindings[`readiness-${nextId}`] = { kind: "readiness", state: nextId, finalAlias: true };
+    python.cases[nextId] = {
       format: "forward", docstring: "Synthetic authoring proof.",
-      exports: [["readiness-v41.query", "readiness-v41.expected"],
-        ["readiness-v42.query", "readiness-v42.expected"],
+      exports: [[`readiness-${previousId}.query`, `readiness-${previousId}.expected`],
+        [`readiness-${nextId}.query`, `readiness-${nextId}.expected`],
         ["catalog-v40.query", "catalog-v40.expected", "catalog-v40.restored"]],
-      predecessor: ["readiness-v41", "catalog-v40"],
-      checks: ["readiness-v42", "catalog-v40", "readiness-v41"],
+      predecessor: [`readiness-${previousId}`, "catalog-v40"],
+      checks: [`readiness-${nextId}`, "catalog-v40", `readiness-${previousId}`],
       absentFunctions: ["public.change_lesson_label_v1(uuid,text)"], passLines: ["Synthetic authoring proof"],
     };
     write("python-restore-schema.json", python);
@@ -159,7 +164,7 @@ test("a future release uses declarations and fixtures without renderer edits or 
       "seed-proof": '        require(seed == "1", "Synthetic seed missing")\n',
       continuation: '            require(snapshot(database) == before, "Synthetic continuation changed rows")\n',
     };
-    for (const [name, text] of Object.entries(fixtures)) fs.writeFileSync(path.join(inputs, `fixtures/python-v42-${name}.py.inc`), text);
+    for (const [name, text] of Object.entries(fixtures)) fs.writeFileSync(path.join(inputs, `fixtures/python-${nextId}-${name}.py.inc`), text);
     const probe = path.join(temporary, "probe.mjs");
     fs.writeFileSync(probe, `
 import fs from 'node:fs';
@@ -171,15 +176,15 @@ import {renderBackendReadiness} from './scripts/generate-release-attestation.mjs
 const names=${JSON.stringify(filenames)};
 const extended=[...names,'20990101000000_synthetic_authoring.sql'];
 const history=migrationVersions(extended);
-const old=renderPythonRestore('v41',extended,history);
-assert.ok(old.includes('"V41_OPERATIONAL_READINESS_SQL"'));
+const old=renderPythonRestore('${previousId}',extended,history);
+assert.ok(old.includes('"${previousId.toUpperCase()}_OPERATIONAL_READINESS_SQL"'));
 assert.ok(!old.includes('"FINAL_OPERATIONAL_READINESS_SQL"'));
-const current=renderPythonRestore('v42',extended,history);
+const current=renderPythonRestore('${nextId}',extended,history);
 assert.ok(current.includes('"FINAL_OPERATIONAL_READINESS_SQL"'));
 assert.ok(current.includes('for database, is_restored in [(canonical, False), (restored, True)]'));
 assert.ok(!current.includes('recompute_billing_payer_balance_v1'));
-assert.ok(renderPreflight(releaseState('v42',history)).includes('v_count <> 137'));
-assert.ok(renderBackendReadiness(history).includes('koaryu_release_schema_preflight_v23'));
+assert.ok(renderPreflight(releaseState('${nextId}',history)).includes('v_count <> ${previous.count + 1}'));
+assert.ok(renderBackendReadiness(history).includes('koaryu_release_schema_preflight_v${nextPreflight}'));
 console.log(JSON.stringify([old,current]));
 `);
     const allowed = fs.realpathSync(temporary);
@@ -191,11 +196,11 @@ console.log(JSON.stringify([old,current]));
     const syntax = spawnSync("python3", ["-c", "import ast,json,sys; scripts=json.load(sys.stdin); [(ast.parse(s),compile(s,'generated','exec')) for s in scripts]"],
       { input: JSON.stringify(scripts), encoding: "utf8", timeout: 10_000 });
     assert.equal(syntax.status, 0, syntax.stderr);
-    python.cases.v42.checks = ["readiness-v42", "readiness-v41"];
+    python.cases[nextId].checks = [`readiness-${nextId}`, `readiness-${previousId}`];
     write("python-restore-schema.json", python);
     const incomplete = spawnSync(process.execPath, ["--permission", `--allow-fs-read=${allowed}`, "--input-type=module"],
       { input: fs.readFileSync(probe, "utf8"), cwd: allowed, encoding: "utf8", timeout: 10_000 });
     assert.equal(incomplete.status, 1);
-    assert.match(incomplete.stderr, /requires explicit canonical\/restored evidence for v42/);
+    assert.match(incomplete.stderr, new RegExp(`requires explicit canonical/restored evidence for ${nextId}`));
   } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
 });

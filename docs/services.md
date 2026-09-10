@@ -147,17 +147,27 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The current candidate's `/health/ready` calls `koaryu_release_schema_preflight_v22`
-and serves only at 136/head `20260908183744` with `release-db-attestation-v41`. It
+The current candidate's `/health/ready` calls `koaryu_release_schema_preflight_v23`
+and serves only at 137/head `20260910084231` with `release-db-attestation-v42`. Its
+full preflight reports 53 pending-history versions. It
 fails closed at every other migration state, so a backend deployed before its
 migration remains unhealthy. This describes the candidate contract, not a new
-hosted-state verification. V41 preserves V40/V39/V38/V37 compatibility through
-V21/V20/V19/V18 only when full V22 proves the new state. Existing V40 catalog,
-rank, and semantic pins remain unchanged. The new payer-balance RPC is compatible
-with a database-first cutover, but old Python split read/write callers can still
-overwrite a newer balance until every serving backend and worker uses the RPC and
-those old operations drain. Merging does not apply the migration, run a backfill,
-or deploy either application.
+hosted-state verification. The latest accepted predecessor is V41 at 136/head
+`20260908183744`; it selects only
+`20260910084231_independent_program_joining_dates_v42.sql`. Full V23 verifies V42,
+while V22 returns the V41 compatibility tuple. Existing V21/V20/V19/V18 callers
+continue through that compatibility chain, but the candidate backend requires full
+V23. V42 changes only the private profile writer so an overall
+joining-date edit no longer changes dates on retained program memberships. New
+memberships keep the existing date default, and the preview model matches that rule.
+There is no backfill. Existing tenant checks, ranks, paused and other membership
+statuses, and locks remain intact. The V13 parent and affected V31/V12 semantic
+expectations advance; V40 rank-command and V41 payer-balance evidence remain
+unchanged. Old Python split read/write callers can still overwrite a newer payer
+balance until every serving backend and worker uses the V41 RPC and those old
+operations drain. All historical migrations remain unchanged. Merging does not apply
+the migration or deploy either application, and no production migration or deployment
+is authorized by this candidate documentation.
 
 ## Supabase — database, auth, storage
 

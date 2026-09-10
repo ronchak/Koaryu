@@ -116,7 +116,7 @@ def main(arguments):
         "V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS",
         "V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS",
         "V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS",
-        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
+        "V41_OPERATIONAL_READINESS_SQL", "EXPECTED_V41_OPERATIONAL_READINESS",
         "V41_RELEASE_MANIFEST_SQL", "EXPECTED_V41_RELEASE_MANIFEST",
         "V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V41_PAYER_BALANCE_STATE",
     ]
@@ -154,9 +154,10 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 136 and list(hashes)[-3:] == [
+    require(len(hashes) == 137 and list(hashes)[-4:] == [
         "20260908080420_student_membership_preservation_v39.sql",
-        "20260908133504_rank_history_command_ownership_v40.sql", MIGRATION], "Unexpected migration inventory")
+        "20260908133504_rank_history_command_ownership_v40.sql", MIGRATION,
+        "20260910084231_independent_program_joining_dates_v42.sql"], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
@@ -210,7 +211,7 @@ def main(arguments):
                        f"--command=INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('{version}','{name}');"])
             require(snapshot(database) == before, "V41 changed retained rows before explicit repair")
             checks = [
-                ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
+                ("V41_OPERATIONAL_READINESS_SQL", "EXPECTED_V41_OPERATIONAL_READINESS"),
                 ("V40_OPERATIONAL_READINESS_SQL", "EXPECTED_V40_OPERATIONAL_READINESS"),
                 ("V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS"),
                 ("V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS"),

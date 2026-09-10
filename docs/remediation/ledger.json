@@ -1554,7 +1554,7 @@
       "title": "Transient row failures become permanently replayed import failures",
       "cluster": "import_recovery",
       "disposition": "pending",
-      "reason": "Atomic row exceptions become row issues, but the run is completed and cached. Same-key replay cannot retry a transiently failed row.",
+      "reason": "Transient row failures remain cached as completed results. Failed or stale run recovery also repeats previously committed rows under the same IDs, so it can overwrite later staff edits, including independent program joining dates. These are two consequences of missing atomic row completion ownership.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -1588,10 +1588,25 @@
           "path": "backend/app/services/student_import_executor.py",
           "line": 224,
           "observation": "Student identity depends on import run and row number; a new run changes identities."
+        },
+        {
+          "path": "backend/app/services/student_import_executor.py",
+          "line": 203,
+          "observation": "Program validation occurs before the per-row try; a later invalid/archived program can fail the run after earlier rows commit. Reclaiming repeats their deterministic student IDs."
+        },
+        {
+          "path": "supabase/migrations/20260525022534_worker_claim_rpc_contract.sql",
+          "line": 316,
+          "observation": "Failed or stale claims reclaim the same run identity; only completed result-bearing claims return without execution."
+        },
+        {
+          "path": "supabase/migrations/20260613090000_harden_student_import_tenant_conflicts.sql",
+          "line": 273,
+          "observation": "The effective private import writer copies a non-null imported overall date into retained membership started_at. A staff program-date edit between failed-run attempts is therefore overwritten."
         }
       ],
       "next_change": "Add run/row receipts committed atomically with successful writes, distinguish retryable execution failures from invalid input, and resume eligible unfinished rows under the same identity. Expose that bounded retry through the existing import flow.",
-      "validation_plan": "Composed mixed-success import followed by same-key retry; include committed-write/lost-response, stale claim and unchanged successful-row cases.",
+      "validation_plan": "Composed mixed-success import followed by same-key retry; include committed-write/lost-response, stale claim and successful rows edited by staff between attempts. The retry must preserve those later profile, program-date, paused-status and rank edits while resuming only unfinished rows.",
       "scope_constraints": [
         "Existing import identities",
         "Tenant/actor authorization",
