@@ -21,7 +21,7 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 Pending work is split between 149 Astra and 78 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
 
-The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. Those entries do not inflate the original 278.
+The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. The dependency advisories are patched with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
 The marketing scene cleanup removes the unused parallel model, duplicate cloud generator and ineffective hero props. Five scoped observations are fixed; the four touched test files shrink by326 lines and seven cases. See [verification](docs/remediation/marketing-scene-verification.md). Broader test cleanup remains pending.
 
