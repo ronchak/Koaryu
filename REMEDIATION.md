@@ -11,15 +11,15 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 69 |
+| Fixed | 72 |
 | Resolved indirectly | 2 |
-| Pending | 194 |
+| Pending | 191 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Total | 278 |
 
-Pending work is split between 136 Astra and 58 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
+Pending work is split between 136 Astra and 55 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -31,10 +31,10 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 ## Next work
 
-1. [PR175](https://github.com/ronchak/Koaryu/pull/175) closes ACS1-02, BB2-02, BB2-03 and BT3-05 through atomic local plan writes, correct null/omission handling and no-op preservation. Full local verification passed 139 migrations and 52 SQL contracts, restore and concurrency proofs; see [verification](docs/remediation/local-plan-ownership-verification.md). It covers new local USD definitions only. Provider-command currency guards, mixed-currency totals and provider recovery remain pending.
-2. The next proposed Astra change is shared date-aware and currency-aware billing read facts. Billing and dashboard disagree about overdue status; stored event-driven status cannot handle midnight rollover. Use the settled day-after-due rule and explicit unavailable amounts where currencies cannot be combined. Preserve the UTC payment cohort, tenant access, current concurrency guards and historical records. Recheck reporting/export consumers before claiming either BB1-03 or PROGRAM-CURRENCY-01 complete. Provider unknown-fact recovery and family invoice attribution have separate storage/ownership boundaries and should remain separate changes.
-3. Sol's isolated roster presentation change covers FC3-02, FC3-03 and FC3-05. The corrected real-component fixture, supported build and fresh review passed. Rebase it onto the updated main, then require final-head CI and guarded merge. The broader source-test inventory remains pending; this change removes seven old assertions but adds meaningful browser coverage.
-4. Import retry ownership remains high priority: retrying a failed run can overwrite later staff edits on previously successful rows. OPS2-05 owns that defect. Due-worker and other lock-order findings remain pending. Plan listing round trips and unused legacy provider synchronization also remain pending; their responsibilities were not part of PR175.
+1. New verification raises import retry ownership, OPS2-05, ahead of expanding financial reads. Failed-run recovery can repeat student, membership, guardian and setup writes over later staff edits. There is no per-row completion receipt. Verify durable row/setup ownership, lost-response recovery and legacy-run handling before implementation. Avoid rewriting a growing 10,000-row JSON document on every row. This needs a forward database correction, not an existence check.
+2. Billing and dashboard still disagree about overdue status, and stored event-driven status cannot handle midnight rollover. A subsequent shared read correction should apply the settled day-after-due rule and explicit unavailable amounts where currencies cannot be combined. Preserve the UTC payment cohort, tenant access, current concurrency guards and historical records. Check reporting/export consumers before closing BB1-03 or PROGRAM-CURRENCY-01.
+3. Provider unknown-fact recovery, shared-family invoice attribution and prospective provider currency guards have separate ownership boundaries. Keep them separate from read aggregation and retain historical replay. Due-worker and other lock-order findings also remain pending. Local plan listing round trips and unused legacy provider synchronization were not part of PR175.
+4. Continue bounded Sol batches from the current ledger. PR176 fixes mobile sorting, shared badge contrast and hidden-rail hover behavior, but its stronger fixture grows the test/helper scope by 115 lines. Seven old assertions are removed; the broader source-test inventory remains open and still needs deliberate reduction.
 
 This is a rolling next-step plan. Each merge changes the evidence for subsequent work. Recheck affected pending findings, close only what is actually resolved, and discard future work made unnecessary by the new implementation.
 
@@ -64,7 +64,8 @@ This is a rolling next-step plan. Each merge changes the evidence for subsequent
 | [172](https://github.com/ronchak/Koaryu/pull/172) | Durable browser payment recovery and atomic payment/audit ownership | `08b1e77` | [External payments](docs/remediation/external-payment-recovery-verification.md) |
 | [174](https://github.com/ronchak/Koaryu/pull/174) | Corrected export memory and time measurement | `648e27c` | [Export fixture](docs/remediation/export-test-metrics-verification.md) |
 | [173](https://github.com/ronchak/Koaryu/pull/173) | Shared schedule rendering and real component tests | `9b4df61` | [Schedule](docs/remediation/schedule-rendering-verification.md) |
-| [175](https://github.com/ronchak/Koaryu/pull/175) | Atomic local plan writes and unchanged-save preservation | [Merge record](https://github.com/ronchak/Koaryu/pull/175) | [Local plans](docs/remediation/local-plan-ownership-verification.md) |
+| [175](https://github.com/ronchak/Koaryu/pull/175) | Atomic local plan writes and unchanged-save preservation | `a2f0057` | [Local plans](docs/remediation/local-plan-ownership-verification.md) |
+| [176](https://github.com/ronchak/Koaryu/pull/176) | Mobile roster sorting, shared badge contrast and hidden-rail hover suppression | [Merge record](https://github.com/ronchak/Koaryu/pull/176) | [Roster](docs/remediation/roster-presentation-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 

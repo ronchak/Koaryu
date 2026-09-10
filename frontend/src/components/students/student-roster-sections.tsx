@@ -197,6 +197,7 @@ export function StudentRosterTable({
   inactivityThreshold,
   onOpenStudent,
   onFocusStudent,
+  onHoverStudent,
   programs,
   selectedIds,
   sortDir,
@@ -213,6 +214,7 @@ export function StudentRosterTable({
   inactivityThreshold: number | null;
   onOpenStudent: (studentId: string) => void;
   onFocusStudent: (studentId: string) => void;
+  onHoverStudent?: (studentId: string) => void;
   programs: Program[];
   selectedIds: Set<string>;
   sortDir: SortDir;
@@ -324,7 +326,7 @@ export function StudentRosterTable({
               data-state={student.status}
               data-focused={focusedStudentId === student.id || undefined}
               onFocusCapture={() => onFocusStudent(student.id)}
-              onPointerEnter={() => onFocusStudent(student.id)}
+              onPointerEnter={onHoverStudent ? () => onHoverStudent(student.id) : undefined}
               onClick={() => onOpenStudent(student.id)}
               className={styles.rosterRow}
               data-selected={isSelected || undefined}

@@ -7,7 +7,7 @@ import ts from "typescript";
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-export function bundle(mode, { preview = false, pagedRoster = true, layout = false, leadsPage = false, leadController = false, programsSection = false, staffSection = false, subscriptionPage = false, scheduleController = false, scheduleForm = false, dashboardController = false, beltPage = false, realApi = false, detailController = false, rosterController = false, studentForm = false, legacyBootstrapFixture = false, operationsComponents = false } = {}) {
+export function bundle(mode, { preview = false, pagedRoster = true, layout = false, leadsPage = false, leadController = false, programsSection = false, staffSection = false, subscriptionPage = false, scheduleController = false, scheduleForm = false, dashboardController = false, beltPage = false, realApi = false, detailController = false, rosterController = false, studentForm = false, legacyBootstrapFixture = false, operationsComponents = false, rosterPresentation = false } = {}) {
   if (!["production", "development"].includes(mode) || typeof preview !== "boolean") throw new Error("Unsupported fixture environment");
   const modules = [];
   const ids = new Map();
@@ -19,6 +19,11 @@ export function bundle(mode, { preview = false, pagedRoster = true, layout = fal
     ...(operationsComponents ? {
       "@/lib/store": `exports.useStudioStore=()=>window.fixture.studioStore;exports.useProgramStore=()=>window.fixture.programStore;`,
       "./sliding-segmented-control.module.css": `module.exports={};`,
+      "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
+    } : {}),
+    ...(rosterPresentation ? {
+      "next/dynamic": `exports.__esModule=true;exports.default=()=>()=>null;`,
+      "./student-records.module.css": `exports.__esModule=true;exports.default=new Proxy({},{get:(_target,name)=>String(name)});`,
       "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
     } : {}),
     ...(scheduleForm ? {
@@ -114,6 +119,14 @@ export function bundle(mode, { preview = false, pagedRoster = true, layout = fal
     const schedule = add("@/components/schedule/schedule-page-section");
     const programs = add("@/components/settings/programs-section");
     return `(()=>{const process={env:{NODE_ENV:"production"}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const root=require(${dom}).createRoot(document.getElementById('root'));const SchedulePageSection=require(${schedule}).SchedulePageSection;const ProgramsSection=require(${programs}).ProgramsSection;const noop=()=>{};window.fixture.renderSchedule=props=>root.render(React.createElement(SchedulePageSection,{onRetryRange:noop,onNavigate:noop,onJumpToToday:noop,onViewChange:noop,onProgramFilterChange:noop,onDismissScheduleLoadError:noop,onDismissActionMessage:noop,onSelectDate:noop,onOpenAddClass:noop,...props,currentDate:new Date(props.currentDate),onOpenSession:session=>window.fixture.opened.push(session.id)}));window.fixture.renderPrograms=()=>root.render(React.createElement(ProgramsSection));})();`;
+  }
+  if (rosterPresentation) {
+    const react = add("react");
+    const dom = add("react-dom/client");
+    const page = add("@/components/students/student-roster-page-content");
+    const studentBadge = add("@/components/students/student-rank-badge");
+    const rankVisuals = add("@/components/belt-tracker/rank-visuals");
+    return `(()=>{const process={env:{NODE_ENV:"production"}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const root=require(${dom}).createRoot(document.getElementById('root'));const Page=require(${page}).StudentRosterPageContent;const StudentBadge=require(${studentBadge}).StudentRankBadge;const RankBadge=require(${rankVisuals}).RankBadge;const noop=()=>{};window.fixture.renderRoster=input=>root.render(React.createElement(Page,{actionMessage:null,activeBulkPanel:null,activeLoadError:null,allSelected:false,bulkActionError:null,bulkStatus:'active',canCreateStudents:false,canManageRoster:true,deleteError:null,filtered:input.filtered,fullRosterRequested:false,hasActiveFilters:false,hasNextPage:false,hasNewStudentFilter:false,hasPreviousPage:false,inactivityByStudentId:new Map(),inactivityThreshold:null,isAdding:false,isAddingTags:false,isDeleting:false,isInitialRosterLoading:false,isNewStudentYtd:false,isPagedLoading:false,isRosterRefreshing:false,isUpdatingStatus:false,newStudentDays:null,newStudentStartDate:null,onAddStudent:noop,onAddStudentSubmit:async()=>{},onAddTags:async()=>{},onBulkStatusChange:noop,onBulkStatusUpdate:async()=>{},onCancelDelete:noop,onCancelStatus:noop,onCancelTags:noop,onClearFilters:noop,onCloseStudentForm:noop,onDeleteSelected:async()=>{},onDismissActionMessage:noop,onDismissRosterQueryNotice:noop,onImportCsv:noop,onNextPage:noop,onOpenStudent:id=>window.fixture.opened.push(id),onPreviousPage:noop,onProgramFilterChange:noop,onRetryRosterLoad:noop,onSearchChange:noop,onSort:key=>window.fixture.sorts.push(key),onStatusFilterChange:noop,onTagInputChange:noop,onToggleBulkPanel:noop,onToggleSelect:id=>window.fixture.selected.push(id),onToggleSelectAll:noop,page:1,pageEnd:2,pageStart:1,pagedTotal:2,programFilter:'',programs:[],search:'',selectedCount:0,selectedIds:new Set(),showForm:false,sortDir:input.sortDir??'asc',sortKey:input.sortKey??'name',statusFilter:'',studentsCount:2,tagInput:'',totalPages:1,usesDerivedRosterFilters:false,visibleTotal:2}));window.fixture.renderBadges=()=>root.render(React.createElement('div',null,React.createElement(StudentBadge,{name:'Student yellow tip',colorHex:'#EAB308',isTip:true,tipColorHex:'#22C55E'}),React.createElement(RankBadge,{name:'Belt yellow tip',color:'#EAB308',isTip:true,tipColor:'#22C55E'})));})();`;
   }
   const react = add("react");
   const dom = add("react-dom/client");

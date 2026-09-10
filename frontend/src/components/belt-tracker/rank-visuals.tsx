@@ -1,6 +1,7 @@
 "use client";
 
 import type { BeltRank } from "@/types";
+import { getRankColorTreatment, prefersDarkRankText } from "@/lib/rank-color-treatment";
 
 export function ProgressBar({ current, label, required, met }: {
   current: number;
@@ -42,12 +43,7 @@ export function RankBadge({ name, color, isTip, tipColor }: {
   isTip?: boolean;
   tipColor?: string;
 }) {
-  const useDarkText = prefersDarkText(color);
-  const treatment = {
-    backgroundColor: color,
-    border: useDarkText ? "1px solid rgb(46 39 28 / 24%)" : "1px solid transparent",
-    color: useDarkText ? "#211b12" : "#ffffff",
-  };
+  const treatment = getRankColorTreatment(color);
 
   if (isTip && tipColor) {
     return (
@@ -77,7 +73,7 @@ export function RankBadge({ name, color, isTip, tipColor }: {
 }
 
 export function BeltVisual({ rank, size = "md" }: { rank: BeltRank; size?: "sm" | "md" }) {
-  const isLight = prefersDarkText(rank.color_hex);
+  const isLight = prefersDarkRankText(rank.color_hex);
   const dims = size === "sm" ? "w-7 h-3" : "w-10 h-4";
   return (
     <div
@@ -94,20 +90,4 @@ export function BeltVisual({ rank, size = "md" }: { rank: BeltRank; size?: "sm" 
       )}
     </div>
   );
-}
-
-function prefersDarkText(color: string): boolean {
-  const match = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(color.trim());
-  if (!match) return false;
-
-  const hex = match[1].length === 3
-    ? match[1].split("").map((character) => `${character}${character}`).join("")
-    : match[1];
-  const [red, green, blue] = [0, 2, 4].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
-  const [linearRed, linearGreen, linearBlue] = [red, green, blue].map((channel) => (
-    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-  ));
-  const luminance = 0.2126 * linearRed + 0.7152 * linearGreen + 0.0722 * linearBlue;
-
-  return luminance > 0.179;
 }

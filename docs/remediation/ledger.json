@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "9b4df618165146ef1f59472aa56e5e9266c27bd0",
+  "last_reconciled_main": "a2f0057dfd6bb0c74a14da77aae5528d9bf2c2b3",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -8965,21 +8965,40 @@
       "id": "FC3-02",
       "title": "Mobile roster hides every sorting control",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "At mobile width the table header containing every sort control is hidden, and the visible toolbar exposes only search and filters.",
+      "disposition": "fixed",
+      "reason": "Mobile sort key and direction use the existing roster controller. The toolbar stacks at820px; actual control rectangles prove no overlap in the reproduced601px/521px case, and mobile/desktop visibility checks pass.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7f0e77d17b3c160a075107d959041c3f3098ea79",
       "source_paths": [
         "frontend/src/components/students/student-records.module.css",
         "frontend/src/components/students/student-roster-sections.tsx",
         "frontend/src/components/students/student-roster-controls.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        176
+      ],
       "track": "Sol",
       "root_cause": "mobile_roster_sort_control_absent",
       "collapse_with": [],
       "current_evidence": [
+        {
+          "path": "frontend/src/components/students/student-roster-controls.tsx",
+          "line": 180,
+          "observation": "Mobile sort key and direction use the existing roster controller. The toolbar stacks at820px; actual control rectangles prove no overlap in the reproduced601px/521px case, and mobile/desktop visibility checks pass."
+        }
+      ],
+      "next_change": "Complete in PR176; preserve existing controller and data ownership.",
+      "validation_plan": "At 820px and below, keyboard-select each sort and confirm card order, direction, label, and desktop header behavior.",
+      "scope_constraints": [
+        "roster query semantics",
+        "student joining dates",
+        "pagination ownership",
+        "bulk selection"
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "delegated_batch": "docs/remediation/delegated/11-student-and-roster-presentation.md",
+      "audit_evidence": [
         {
           "path": "frontend/src/components/students/student-roster-sections.tsx",
           "line": 254,
@@ -8996,36 +9015,46 @@
           "observation": "The mobile-visible toolbar has search, status, and program controls but no sort control."
         }
       ],
-      "next_change": "Add a compact labeled mobile sort selector using the existing sort key and direction controller. Avoid a second sorting implementation.",
-      "validation_plan": "At 820px and below, keyboard-select each sort and confirm card order, direction, label, and desktop header behavior.",
-      "scope_constraints": [
-        "roster query semantics",
-        "student joining dates",
-        "pagination ownership",
-        "bulk selection"
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/11-student-and-roster-presentation.md"
+      "verification": "docs/remediation/roster-presentation-verification.md"
     },
     {
       "id": "FC3-03",
       "title": "Student rank badges duplicate the belt badge with weaker contrast rules",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "StudentRankBadge still uses white text for all non-white colors, including the current light Yellow Belt color, while RankBadge already uses luminance.",
+      "disposition": "fixed",
+      "reason": "Student and belt badges share one luminance treatment. Black/white foregrounds match its cutoff, including the verified #767676 contrast case; actual rendering retains tip markers and leaves rank/promotion semantics unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7f0e77d17b3c160a075107d959041c3f3098ea79",
       "source_paths": [
         "frontend/src/components/students/student-rank-badge.tsx",
         "frontend/src/components/belt-tracker/rank-visuals.tsx",
-        "frontend/src/lib/mock-data.ts"
+        "frontend/src/lib/mock-data.ts",
+        "frontend/src/lib/rank-color-treatment.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        176
+      ],
       "track": "Sol",
       "root_cause": "divergent_rank_badge_contrast",
       "collapse_with": [],
       "current_evidence": [
+        {
+          "path": "frontend/src/lib/rank-color-treatment.ts",
+          "line": 19,
+          "observation": "Student and belt badges share one luminance treatment. Black/white foregrounds match its cutoff, including the verified #767676 contrast case; actual rendering retains tip markers and leaves rank/promotion semantics unchanged."
+        }
+      ],
+      "next_change": "Complete in PR176; preserve existing controller and data ownership.",
+      "validation_plan": "Check contrast and rendering for white, yellow, black, malformed, three-digit hex, and tip colors.",
+      "scope_constraints": [
+        "rank semantics",
+        "promotion logic",
+        "stored belt colors"
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "delegated_batch": "docs/remediation/delegated/11-student-and-roster-presentation.md",
+      "audit_evidence": [
         {
           "path": "frontend/src/components/students/student-rank-badge.tsx",
           "line": 16,
@@ -9042,15 +9071,7 @@
           "observation": "Yellow Belt uses #EAB308 and therefore receives white text in StudentRankBadge."
         }
       ],
-      "next_change": "Extract or export one luminance-aware color treatment and use it in both badges while retaining each component's semantic inputs.",
-      "validation_plan": "Check contrast and rendering for white, yellow, black, malformed, three-digit hex, and tip colors.",
-      "scope_constraints": [
-        "rank semantics",
-        "promotion logic",
-        "stored belt colors"
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/11-student-and-roster-presentation.md"
+      "verification": "docs/remediation/roster-presentation-verification.md"
     },
     {
       "id": "FC3-04",
@@ -9108,21 +9129,39 @@
       "id": "FC3-05",
       "title": "Hovering roster rows rerenders the full roster even when quick view is hidden",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "The source performs redundant whole-roster updates below the hidden rail breakpoint, and full-roster mode is a supported amplifying case. Absence of timing measurements does not make this plausible bounded cleanup worth rejecting.",
+      "disposition": "fixed",
+      "reason": "Pointer entry updates quick view only while its rail is visible. Keyboard focus, selection and row opening retain their current handlers. Narrow/wide component checks prove the behavior without claiming measured speedup.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7f0e77d17b3c160a075107d959041c3f3098ea79",
       "source_paths": [
         "frontend/src/components/students/student-roster-page-content.tsx",
         "frontend/src/components/students/student-roster-sections.tsx",
         "frontend/src/components/students/student-records.module.css"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        176
+      ],
       "track": "Sol",
       "root_cause": "unmeasured_roster_hover_rerender",
       "collapse_with": [],
       "current_evidence": [
+        {
+          "path": "frontend/src/components/students/student-roster-page-content.tsx",
+          "line": 309,
+          "observation": "Pointer entry updates quick view only while its rail is visible. Keyboard focus, selection and row opening retain their current handlers. Narrow/wide component checks prove the behavior without claiming measured speedup."
+        }
+      ],
+      "next_change": "Complete in PR176; preserve existing controller and data ownership.",
+      "validation_plan": "Compare narrow/wide hover and keyboard behavior in actual roster rendering, including full-roster mode. Demonstrate that hidden-rail interaction no longer changes quick-view state; do not claim measured speedup without a profile.",
+      "scope_constraints": [
+        "roster state ownership solely for speculative optimization",
+        "responsive CSS",
+        "pagination behavior"
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "delegated_batch": "docs/remediation/delegated/11-student-and-roster-presentation.md",
+      "audit_evidence": [
         {
           "path": "frontend/src/components/students/student-roster-page-content.tsx",
           "line": 183,
@@ -9139,15 +9178,7 @@
           "observation": "CSS hides the reading rail below 1400px, but this alone does not establish harmful render cost."
         }
       ],
-      "next_change": "While updating the roster presentation, avoid quick-view state updates when its rail is hidden and keep hover ownership near the rail. Preserve keyboard focus, selection and row opening; use the existing breakpoint without adding a global observer framework.",
-      "validation_plan": "Compare narrow/wide hover and keyboard behavior in actual roster rendering, including full-roster mode. Demonstrate that hidden-rail interaction no longer changes quick-view state; do not claim measured speedup without a profile.",
-      "scope_constraints": [
-        "roster state ownership solely for speculative optimization",
-        "responsive CSS",
-        "pagination behavior"
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "delegated_batch": "docs/remediation/delegated/11-student-and-roster-presentation.md"
+      "verification": "docs/remediation/roster-presentation-verification.md"
     },
     {
       "id": "FC3-06",
@@ -12469,15 +12500,15 @@
     }
   },
   "current_counts": {
-    "pending": 194,
-    "fixed": 69,
+    "pending": 191,
+    "fixed": 72,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 58,
+    "Sol": 55,
     "Astra": 136
   }
 }

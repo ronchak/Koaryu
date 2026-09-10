@@ -7,7 +7,6 @@ const source = async (path) => readFile(new URL(path, import.meta.url), "utf8");
 describe("records workspace composition contracts", () => {
   it("keeps the student roster semantic, responsive, and printable", async () => {
     const roster = await source("../src/components/students/student-roster-sections.tsx");
-    const page = await source("../src/components/students/student-roster-page-content.tsx");
     const styles = await source("../src/components/students/student-records.module.css");
 
     assert.match(roster, /<table className=\{styles\.rosterTable\}>/);
@@ -23,14 +22,8 @@ describe("records workspace composition contracts", () => {
     assert.match(roster, /<aside className=\{styles\.studentReadingRail\}/);
     assert.match(roster, /Open full record/);
     assert.match(roster, /row: StudentRosterRow \| null/);
-    assert.match(roster, /Hover over or focus a student/);
-    assert.match(page, /focusedStudentId/);
-    assert.doesNotMatch(page, /filtered\[0\]/);
-    assert.match(page, /className=\{styles\.rosterRailSlot\}/);
     assert.match(styles, /\.rosterSearchInput \{[\s\S]*--student-field-padding: 0\.625rem 0\.875rem 0\.625rem 2\.75rem/);
-    assert.match(styles, /@media \(max-width: 1399px\)[\s\S]*\.rosterRailSlot \{ display: none; \}/);
     assert.match(styles, /\.mobileSelectAll \{ display: none; \}/);
-    assert.match(styles, /@media \(max-width: 820px\)/);
     assert.match(styles, /@media print/);
   });
 
@@ -180,7 +173,6 @@ describe("records workspace composition contracts", () => {
     assert.match(rankPlan, /role="tabpanel"[\s\S]*aria-labelledby="belt-tab-ladder"/);
     assert.match(visuals, /if \(required <= 0\)[\s\S]*Not required/);
     assert.match(visuals, /role="progressbar"[\s\S]*aria-valuetext=\{`\$\{current\} of \$\{required\}`\}/);
-    assert.match(visuals, /function prefersDarkText/);
   });
 
   it("keeps the two-column folio, print shell reset, product tokens, and local focus treatment", async () => {
