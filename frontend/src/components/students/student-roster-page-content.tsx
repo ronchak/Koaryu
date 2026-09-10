@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Header } from "@/components/header";
 import {
   StudentRosterBulkActionPanels,
@@ -32,6 +32,22 @@ const StudentForm = dynamic(
     ssr: false,
   }
 );
+
+const QUICK_VIEW_MEDIA_QUERY = "(min-width: 1400px)";
+
+function useQuickViewVisible() {
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia(QUICK_VIEW_MEDIA_QUERY);
+    const updateVisibility = () => setIsVisible(media.matches);
+    updateVisibility();
+    media.addEventListener("change", updateVisibility);
+    return () => media.removeEventListener("change", updateVisibility);
+  }, []);
+
+  return isVisible;
+}
 
 type StudentRosterPageContentProps = {
   actionMessage: string | null;
@@ -181,6 +197,7 @@ export function StudentRosterPageContent({
   visibleTotal,
 }: StudentRosterPageContentProps) {
   const [focusedStudentId, setFocusedStudentId] = useState<string | null>(null);
+  const isQuickViewVisible = useQuickViewVisible();
   const focusedRow = filtered.find((row) => row.student.id === focusedStudentId) ?? null;
 
   return (
@@ -226,12 +243,15 @@ export function StudentRosterPageContent({
           isRosterRefreshing={isRosterRefreshing}
           onProgramFilterChange={onProgramFilterChange}
           onSearchChange={onSearchChange}
+          onSort={onSort}
           onStatusFilterChange={onStatusFilterChange}
           onToggleBulkPanel={onToggleBulkPanel}
           programFilter={programFilter}
           programs={programs}
           search={search}
           selectedCount={selectedCount}
+          sortDir={sortDir}
+          sortKey={sortKey}
           statusFilter={statusFilter}
         />
 
@@ -286,6 +306,7 @@ export function StudentRosterPageContent({
                   inactivityByStudentId={inactivityByStudentId}
                   inactivityThreshold={inactivityThreshold}
                   onFocusStudent={setFocusedStudentId}
+                  onHoverStudent={isQuickViewVisible ? setFocusedStudentId : undefined}
                   onOpenStudent={onOpenStudent}
                   programs={programs}
                   selectedIds={selectedIds}

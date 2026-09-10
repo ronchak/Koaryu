@@ -166,6 +166,7 @@ describe("records workspace composition contracts", () => {
     const eligibility = await source("../src/components/belt-tracker/eligibility-panel.tsx");
     const rankPlan = await source("../src/components/belt-tracker/rank-plan-panel.tsx");
     const visuals = await source("../src/components/belt-tracker/rank-visuals.tsx");
+    const studentBadge = await source("../src/components/students/student-rank-badge.tsx");
 
     assert.match(shell, /<SlidingSegmentedControl[\s\S]*mode="tabs"/);
     assert.match(segmentedControl, /role=\{mode === "tabs" \? "tablist" : "group"\}/);
@@ -180,7 +181,8 @@ describe("records workspace composition contracts", () => {
     assert.match(rankPlan, /role="tabpanel"[\s\S]*aria-labelledby="belt-tab-ladder"/);
     assert.match(visuals, /if \(required <= 0\)[\s\S]*Not required/);
     assert.match(visuals, /role="progressbar"[\s\S]*aria-valuetext=\{`\$\{current\} of \$\{required\}`\}/);
-    assert.match(visuals, /function prefersDarkText/);
+    assert.match(visuals, /getRankColorTreatment\(color\)/);
+    assert.match(studentBadge, /getRankColorTreatment\(background\)/);
   });
 
   it("keeps the two-column folio, print shell reset, product tokens, and local focus treatment", async () => {

@@ -4,6 +4,7 @@ import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
+import type { SortDir, SortKey } from "@/lib/students-page-model";
 import type { Program, StudentStatus } from "@/types";
 import { AlertTriangle, Search, Trash2 } from "lucide-react";
 import styles from "./student-records.module.css";
@@ -106,12 +107,15 @@ export function StudentRosterToolbar({
   isRosterRefreshing,
   onProgramFilterChange,
   onSearchChange,
+  onSort,
   onStatusFilterChange,
   onToggleBulkPanel,
   programFilter,
   programs,
   search,
   selectedCount,
+  sortDir,
+  sortKey,
   statusFilter,
 }: {
   activeBulkPanel: StudentRosterBulkPanel | null;
@@ -119,12 +123,15 @@ export function StudentRosterToolbar({
   isRosterRefreshing: boolean;
   onProgramFilterChange: (value: string) => void;
   onSearchChange: (value: string) => void;
+  onSort: (key: SortKey) => void;
   onStatusFilterChange: (value: StudentRosterStatusFilter | "") => void;
   onToggleBulkPanel: (panel: StudentRosterBulkPanel) => void;
   programFilter: string;
   programs: Program[];
   search: string;
   selectedCount: number;
+  sortDir: SortDir;
+  sortKey: SortKey;
   statusFilter: StudentRosterStatusFilter | "";
 }) {
   return (
@@ -168,6 +175,30 @@ export function StudentRosterToolbar({
             </option>
           ))}
         </select>
+      </div>
+
+      <div className={styles.mobileSortControl}>
+        <label htmlFor="mobile-roster-sort">Sort</label>
+        <select
+          id="mobile-roster-sort"
+          aria-label="Sort students by"
+          value={sortKey}
+          onChange={(event) => onSort(event.target.value as SortKey)}
+          className={styles.rosterFilterSelect}
+        >
+          <option value="name">Name</option>
+          <option value="status">Status</option>
+          <option value="membership_start_date">Member since</option>
+          <option value="created_at">Created</option>
+        </select>
+        <button
+          type="button"
+          aria-label={`Sort ${sortDir === "asc" ? "descending" : "ascending"}`}
+          onClick={() => onSort(sortKey)}
+          className={styles.mobileSortDirection}
+        >
+          {sortDir === "asc" ? "Ascending" : "Descending"}
+        </button>
       </div>
 
       {isRosterRefreshing ? (

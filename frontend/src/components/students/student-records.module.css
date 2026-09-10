@@ -125,6 +125,9 @@
 .rosterFilterGroup { display: grid; grid-template-columns: repeat(2, minmax(8.5rem, auto)); gap: 0.625rem; }
 .rosterFilterSelect { min-width: 8.5rem; border: 1px solid var(--border); color: var(--text-primary); font-size: 0.875rem; outline: none; }
 .rosterFilterSelect:focus { border-color: var(--accent); }
+.mobileSortControl { display: none; grid-template-columns: auto minmax(8.5rem, 1fr) auto; gap: 0.5rem; align-items: center; }
+.mobileSortControl label { color: var(--text-secondary); font-size: 0.75rem; font-weight: 600; }
+.mobileSortDirection { padding-inline: 0.75rem; border: 1px solid var(--border); color: var(--text-primary); font-size: 0.8125rem; }
 .rosterRefreshState { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
 
 .selectionBand {
@@ -345,6 +348,7 @@
   .rosterTable th,
   .rosterTable td { display: block; width: 100%; }
   .rosterTable thead { display: none; }
+  .mobileSortControl { display: grid; }
   .rosterTable tbody { display: grid; gap: 0.75rem; }
   .rosterTable { overflow: visible; border-radius: 14px; background: transparent; box-shadow: none; }
   .rosterTable tbody tr { overflow: hidden; padding: 0.65rem 0.85rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
@@ -372,8 +376,11 @@
   .rosterToolbar { grid-template-columns: 1fr; }
   .rosterSearchField,
   .rosterFilterGroup,
+  .mobileSortControl,
   .selectionBand { grid-column: 1; }
   .rosterFilterGroup { grid-template-columns: 1fr; }
+  .mobileSortControl { grid-template-columns: auto minmax(0, 1fr); }
+  .mobileSortDirection { grid-column: 2; }
   .rosterFilterSelect { width: 100%; }
   .rosterRefreshState { justify-self: start; }
 }
