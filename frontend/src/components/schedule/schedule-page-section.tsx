@@ -15,6 +15,12 @@ import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { SlidingSegmentedControl } from "@/components/ui/sliding-segmented-control";
 import {
+  buildEntriesForDate,
+  groupSessionsByDate,
+  groupTemplatesByDay,
+  parseCalendarDate,
+} from "@/lib/schedule-calendar";
+import {
   formatScheduleDateKey,
   getScheduleTimeCanvasBounds,
   getScheduleWeekDates,
@@ -25,6 +31,7 @@ import {
 import type { ClassSession, ClassTemplate, Program } from "@/types";
 
 interface SchedulePageSectionProps {
+  businessDate: string;
   canManageSchedule: boolean;
   currentDate: Date;
   view: SchedulePageView;
@@ -86,16 +93,6 @@ function formatTime(value: string) {
   return `${hour12}:${minutes.slice(0, 2)} ${suffix}`;
 }
 
-function templateAppliesToDate(template: ClassTemplate, date: Date) {
-  const dateKey = formatScheduleDateKey(date);
-  return (
-    template.is_active &&
-    template.day_of_week === date.getDay() &&
-    template.start_date <= dateKey &&
-    (!template.end_date || template.end_date >= dateKey)
-  );
-}
-
 function getSessionButtonLabel(session: ClassSession) {
   return `Open ${session.name} at ${formatTime(session.start_time)}`;
 }
@@ -108,6 +105,7 @@ function formatCanvasHour(minute: number) {
 }
 
 export function SchedulePageSection({
+  businessDate,
   canManageSchedule,
   currentDate,
   view,
@@ -130,7 +128,7 @@ export function SchedulePageSection({
   onOpenSession,
   onOpenAddClass,
 }: SchedulePageSectionProps) {
-  const today = formatScheduleDateKey(new Date());
+  const today = businessDate;
   const weekDates = useMemo(() => getScheduleWeekDates(currentDate), [currentDate]);
   const activePrograms = useMemo(
     () => programs.filter((program) => !program.archived_at),
@@ -155,57 +153,40 @@ export function SchedulePageSection({
     [programFilter, templates]
   );
 
-  const sessionsByDate = useMemo(() => {
-    const grouped: Record<string, ClassSession[]> = {};
-    filteredSessions.forEach((session) => {
-      if (!grouped[session.date]) {
-        grouped[session.date] = [];
-      }
-      grouped[session.date].push(session);
-    });
-    return grouped;
-  }, [filteredSessions]);
-
-  const templatesByDay = useMemo(() => {
-    const grouped: Record<number, ClassTemplate[]> = {};
-    filteredTemplates.forEach((template) => {
-      if (!grouped[template.day_of_week]) {
-        grouped[template.day_of_week] = [];
-      }
-      grouped[template.day_of_week].push(template);
-    });
-    return grouped;
-  }, [filteredTemplates]);
-
-  const daySessionList = sessionsByDate[formatScheduleDateKey(currentDate)] || [];
+  const sessionsByDate = useMemo(() => groupSessionsByDate(filteredSessions), [filteredSessions]);
+  const templatesByDay = useMemo(() => groupTemplatesByDay(filteredTemplates), [filteredTemplates]);
   const entriesByDate = useMemo(() => {
     const grouped: Record<string, TimeCanvasEntry[]> = {};
     const dates = view === "day" ? [currentDate] : weekDates;
     dates.forEach((date) => {
       const key = formatScheduleDateKey(date);
-      const daySessions = sessionsByDate[key] || [];
-      const dayTemplates = (templatesByDay[date.getDay()] || []).filter((template) =>
-        templateAppliesToDate(template, date)
-      );
-      grouped[key] = daySessions.map((session) => ({
-        id: session.id,
-        kind: "session" as const,
-        start_time: session.start_time,
-        end_time: session.end_time,
-        session,
-      }));
-      if (daySessions.length === 0) {
-        grouped[key].push(...dayTemplates.map((template) => ({
-          id: template.id,
-          kind: "template" as const,
-          start_time: template.start_time,
-          end_time: template.end_time,
-          template,
-        })));
-      }
+      grouped[key] = buildEntriesForDate({
+        date,
+        sessionsByDate,
+        templatesByDay,
+        showTemplatePlaceholders: true,
+      }).map((entry) => entry.kind === "session" ? {
+        id: entry.session.id,
+        kind: entry.kind,
+        start_time: entry.session.start_time,
+        end_time: entry.session.end_time,
+        session: entry.session,
+      } : {
+        id: entry.template.id,
+        kind: entry.kind,
+        start_time: entry.template.start_time,
+        end_time: entry.template.end_time,
+        template: entry.template,
+      });
     });
     return grouped;
   }, [currentDate, sessionsByDate, templatesByDay, view, weekDates]);
+  const layoutsByDate = useMemo(
+    () => Object.fromEntries(
+      Object.entries(entriesByDate).map(([key, entries]) => [key, layoutScheduleTimeItems(entries)])
+    ),
+    [entriesByDate]
+  );
   const canvasBounds = useMemo(
     () => getScheduleTimeCanvasBounds(Object.values(entriesByDate).flat()),
     [entriesByDate]
@@ -221,10 +202,10 @@ export function SchedulePageSection({
   const peakWeekLaneCount = useMemo(
     () => weekDates.reduce((peak, date) => {
       const key = formatScheduleDateKey(date);
-      const blocks = layoutScheduleTimeItems(entriesByDate[key] || []);
+      const blocks = layoutsByDate[key] || [];
       return blocks.reduce((dayPeak, block) => Math.max(dayPeak, block.laneCount), peak);
     }, 1),
-    [entriesByDate, weekDates]
+    [layoutsByDate, weekDates]
   );
   const weekDayMinWidth = peakWeekLaneCount * SESSION_LANE_MIN_WIDTH;
   const weekCanvasMinWidth = Math.max(
@@ -235,7 +216,7 @@ export function SchedulePageSection({
 
   function renderTimeColumn(date: Date, compact: boolean) {
     const key = formatScheduleDateKey(date);
-    const blocks = layoutScheduleTimeItems(entriesByDate[key] || []);
+    const blocks = layoutsByDate[key] || [];
     return (
       <div
         className="relative border-r border-border last:border-r-0"
@@ -511,7 +492,7 @@ export function SchedulePageSection({
             sessions={filteredSessions}
             templates={filteredTemplates}
             selectedDate={currentDate}
-            today={new Date()}
+            today={parseCalendarDate(businessDate)}
             maxVisibleEntries={3}
             showHeader={false}
             showTemplatePlaceholders
@@ -551,7 +532,11 @@ export function SchedulePageSection({
                   const key = formatScheduleDateKey(date);
                   const isToday = key === today;
                   return (
-                    <div key={key} className={`relative border-r border-border px-2 py-3 text-center last:border-r-0 ${isToday ? "bg-accent/10" : ""}`}>
+                    <div
+                      key={key}
+                      className={`relative border-r border-border px-2 py-3 text-center last:border-r-0 ${isToday ? "bg-accent/10" : ""}`}
+                      aria-current={isToday ? "date" : undefined}
+                    >
                       <p className="text-xs text-muted">{DAY_NAMES[date.getDay()]}</p>
                       <p className={`mt-1 text-base tabular-nums ${isToday ? "font-semibold text-accent" : "text-text-primary"}`}>{date.getDate()}</p>
                     </div>
@@ -578,7 +563,7 @@ export function SchedulePageSection({
           <section data-schedule-print-week="true" aria-label="Weekly schedule">
             {weekDates.map((date) => {
               const key = formatScheduleDateKey(date);
-              const entries = layoutScheduleTimeItems(entriesByDate[key] || []).map((block) => block.item);
+              const entries = (layoutsByDate[key] || []).map((block) => block.item);
               return (
                 <section key={key} data-schedule-print-day={key}>
                   <header data-schedule-print-day-header="true">
@@ -692,7 +677,7 @@ export function SchedulePageSection({
           <p className="text-xs text-muted">Classes are placed by start time and duration. Overlaps share the same time lane.</p>
           </div>
 
-          {daySessionList.length === 0 ? (
+          {(entriesByDate[formatScheduleDateKey(currentDate)] || []).length === 0 ? (
             <div className="rounded-[14px] bg-surface py-16 text-center shadow-[var(--product-shadow-card)]">
               <Calendar aria-hidden="true" className="w-5 h-5 text-muted mx-auto mb-3" />
               <p className="text-sm text-text-secondary">No sessions scheduled for this day.</p>

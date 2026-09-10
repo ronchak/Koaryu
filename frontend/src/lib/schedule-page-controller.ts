@@ -320,6 +320,7 @@ export function useSchedulePageController({
       actionMessage,
       activeStudents,
       attendanceError,
+      businessDate: config.businessDate,
       canManageSchedule,
       classFormInitialValues,
       createClassError,
