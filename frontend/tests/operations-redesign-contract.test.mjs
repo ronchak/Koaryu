@@ -244,6 +244,7 @@ describe("operations behavior proof", () => {
     const browser = await chromium.launch({ headless: true });
     try {
       const page = await componentPage(browser, { width: 1280, height: 900 });
+      await page.clock.setFixedTime(new Date("2026-09-06T12:00:00Z"));
       const generated = session("generated-slot", "2026-09-07", "09:00", "10:00", "generated-template");
       const recurring = [
         template("generated-template", 1, "09:00", "10:00"),
