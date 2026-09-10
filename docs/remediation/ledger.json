@@ -12160,15 +12160,16 @@
       "id": "PROGRAM-DEPENDENCIES-02",
       "title": "Remaining development and moderate dependency advisories",
       "track": "Sol",
-      "disposition": "pending",
-      "reason": "Post-PR163 GitHub dependency inspection still reports js-yaml high in the frontend development tree, baseline-browser-mapping moderate, and pip moderate in requirements-dev. These are separate from the resolved runtime high/critical gate failure.",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "disposition": "fixed",
+      "reason": "Patched the three verified dependency advisories. The pip update is paired with pip-tools7.6.1 because the old compiler fails against pip26.2.1; the updated locked environment now regenerates its own lock. Runtime Python packages and direct frontend dependencies remain unchanged.",
+      "verified_against": "715e322d9030dcb28527a27bd52ad38f517c88a9",
       "source_paths": [
         "frontend/package-lock.json",
+        "backend/requirements-dev.in",
         "backend/requirements-dev.txt"
       ],
-      "next_change": "Recheck current advisories and dependency consumers. Apply bounded compatible patched tool/dependency versions, one coherent maintenance PR if feasible. Do not upgrade application architecture or weaken audit policy.",
-      "verification": "Clean installs and affected lint/build/test commands; unchanged runtime audit threshold. Confirm actual dependency versions and distinguish dependency scope from application reachability.",
+      "next_change": "None for the verified advisories; continue normal dependency audits.",
+      "verification": "Online npm audits and development-lock pip-audit report no known vulnerabilities. Clean installs, lint/build, frontend914 and backend1897 passed. The patched worktree compiler reproduced the lock twice with SHA25652776944c532e1c30aa7402bcac543535caec2021860e07d4559f5d08d2aa081; coordinator independently reran its dry-run and pip check. See dependency-maintenance-verification.md.",
       "pull_requests": [],
       "delegated_batch": "docs/remediation/delegated/13-dependency-maintenance.md"
     }
