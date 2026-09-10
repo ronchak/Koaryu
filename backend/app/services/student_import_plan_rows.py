@@ -70,6 +70,14 @@ def resolve_belt_rank_reference(
         return None, None, None
 
     program_label = format_program_label(raw_program_value)
+    confirmed = belt_rank_lookup.get("confirmed_ranks", {}).get((resolved_program_id, normalize_header(value)))
+    if confirmed is not None:
+        rank_id = confirmed["rank_id"]
+        current = belt_rank_lookup["rank_meta"].get(rank_id)
+        if (current is None or current.get("ladder_id") != confirmed["ladder_id"]
+                or current.get("program_id") != resolved_program_id):
+            return None, "unavailable", "The belt confirmed by this import is no longer available in its program. Reconcile the saved setup before importing this row."
+        return rank_id, None, None
     if raw_program_value and not resolved_program_id:
         return None, "missing", (
             f"Current belt '{raw_value}' could not be matched until {program_label} is set up in this studio."
@@ -281,7 +289,7 @@ def build_import_row_plan(
     mapping: dict[str, str],
     *,
     options: CsvImportOptions,
-    program_lookup: Optional[tuple[set[str], dict[str, str], set[str]]] = None,
+    program_lookup: Optional[dict[str, Any]] = None,
     belt_rank_lookup: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     mapped: dict = {}
@@ -363,13 +371,17 @@ def build_import_row_plan(
 
     raw_program = mapped.get("program_id") if isinstance(mapped.get("program_id"), str) else None
     if program_lookup and mapped.get("program_id"):
-        program_id, program_error_code, program_error = resolve_named_import_reference(
-            mapped.get("program_id"),
-            label="Program",
-            id_lookup=program_lookup[0],
-            name_lookup=program_lookup[1],
-            ambiguous_names=program_lookup[2],
-        )
+        confirmed_program = program_lookup["confirmed"].get(normalize_header(raw_program or ""))
+        if confirmed_program is not None:
+            program_id, program_error_code, program_error = confirmed_program["program_id"], None, None
+        else:
+            program_id, program_error_code, program_error = resolve_named_import_reference(
+                mapped.get("program_id"),
+                label="Program",
+                id_lookup=program_lookup["id_lookup"],
+                name_lookup=program_lookup["name_lookup"],
+                ambiguous_names=program_lookup["ambiguous_names"],
+            )
         if program_error_code == "ambiguous":
             row_issues.append(make_import_issue(
                 "ambiguous_program",
@@ -398,6 +410,25 @@ def build_import_row_plan(
                 ))
         elif program_id:
             plan["resolved_program_id"] = program_id
+            program = program_lookup["records"].get(program_id)
+            if program is None or program.get("archived_at"):
+                row_issues.append(make_import_issue(
+                    "unavailable_program",
+                    f"Program '{raw_program}' is archived or no longer available. Restore it or choose an active program before importing this row.",
+                    field="program_id",
+                    value=raw_program,
+                ))
+
+    if program_lookup and not raw_program:
+        confirmed_unassigned = program_lookup["confirmed"].get("__unassigned__")
+        if confirmed_unassigned is not None:
+            program = program_lookup["records"].get(confirmed_unassigned["program_id"])
+            if program is None or program.get("archived_at"):
+                row_issues.append(make_import_issue(
+                    "unavailable_program",
+                    "The Unassigned program confirmed by this import is no longer available. Reconcile its saved setup before importing this row.",
+                    field="program_id",
+                ))
 
     if belt_rank_lookup and mapped.get("current_belt_rank_id"):
         raw_belt = mapped.get("current_belt_rank_id")
@@ -407,7 +438,14 @@ def build_import_row_plan(
             raw_program_value=raw_program,
             belt_rank_lookup=belt_rank_lookup,
         )
-        if belt_rank_error_code == "ambiguous":
+        if belt_rank_error_code == "unavailable":
+            row_issues.append(make_import_issue(
+                "unavailable_belt",
+                belt_rank_error,
+                field="current_belt_rank_id",
+                value=raw_belt,
+            ))
+        elif belt_rank_error_code == "ambiguous":
             row_issues.append(make_import_issue(
                 "ambiguous_belt",
                 belt_rank_error or "Current belt matches multiple belt ranks in this studio",

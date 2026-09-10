@@ -1,6 +1,6 @@
 # Import retry ownership
 
-Base: main `ddacde14e3c0a43ae8faa0536a732b9b5ece59ed`, after PR176. Target OPS2-04, OPS2-05, OPS2-06, OPS2-07 and BT5-02 together where the final implementation proves closure. Financial read corrections remain pending; this change comes first because retries can overwrite committed customer data.
+Base: main `18b64e9d7dbbdf363fc49bc0610d30fe67489f35`, after PR177. Target OPS2-04, OPS2-05, OPS2-06, OPS2-07 and BT5-02 together where the final implementation proves closure. Financial read corrections remain pending; this change comes first because retries can overwrite committed customer data.
 
 ## Verified problem
 
@@ -15,7 +15,7 @@ A disposable PostgreSQL 17 probe on the same 139 migrations reproduced destructi
 - Give requested setup an import-specific transaction and receipt owner. Preserve the Unassigned system program for valid unmapped rows, with no system-program ladder. Preserve the default ladder for an import-created user-facing program and explicitly requested missing belts/ladders. Exclude rejected student rows from setup requests. Remove import calls to studio-wide ladder repair; do not port unrelated ladder renaming, attachment or program creation into the new transaction. Reuse confirmed setup identities after later staff edits, rather than upserting them again.
 - Fetch program facts once for planning and report archived programs before execution. The SQL row owner still rechecks tenant and archive boundaries. Remove per-row program lookup requests while retaining those database checks.
 - Freeze the final result and audit outcome together. Preserve the current noncritical audit-warning policy, but persist that warning before clearing the token. A lost finalization response is an unknown outcome recovered with the existing key, not an instruction to import the rows again.
-- Completed legacy caches remain replayable. Incomplete runs without trustworthy receipts fail closed rather than inferring success from editable records. Initialize the receipt contract atomically with the claim and distinguish old callers safely. Keep one authoritative claim implementation if compatibility entry points are needed. Old import callers must pause and drain during a separately authorized rollout.
+- Completed legacy caches remain replayable. Incomplete runs without trustworthy receipts fail closed rather than inferring success from editable records. Initialize the receipt contract atomically with the claim and distinguish old callers safely. Keep one authoritative claim implementation. The old entry point may replay completed caches but must refuse new and incomplete unreceipted work. Remove the old row-upsert write path and reject legacy completion; failed-run cleanup remains available. Old import callers must pause and drain during a separately authorized rollout. Rolling application code back alone will not re-enable legacy import writes.
 
 ## Locks and remaining design checks
 
@@ -38,3 +38,5 @@ Private prototypes have passed disposable service-role checks for 22 claim cases
 The existing finish RPC will own the final audit and return the saved result, keeping its current signature. Backend finalization must use that returned result and remove its separate audit/save-warning paths. Belt setup remains under verification. Completed setup identities are restored before planning unfinished rows; a now-unavailable confirmed target must be reported, never recreated from its old name.
 
 A separate product decision is pending: without a mapped Program, a globally unique program-specific belt passes preview but is rejected by the database before any student or membership persists. The proposed option keeps Unassigned and uses the existing unresolved-belt warning/notes or rejection setting. Do not implement that choice until answered. Existing independent program-date and USD-write decisions remain settled.
+
+Successful row and setup transactions renew progress after their writes, before commit. This replaces periodic Python heartbeat requests and prevents a waiting claimant from immediately treating a long successful write as stale. Three delayed-write, two-session probes verified the revised progress behavior. Replay is read-only. A final review found that retaining legacy unreceipted writes contradicted the fail-closed rollout boundary; those writes are being removed and their obsolete compatibility tests replaced with refusal and completed-cache tests.

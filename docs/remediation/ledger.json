@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "ddacde14e3c0a43ae8faa0536a732b9b5ece59ed",
+  "last_reconciled_main": "18b64e9d7dbbdf363fc49bc0610d30fe67489f35",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -72,7 +72,7 @@
     },
     {
       "id": "CTA1-02",
-      "title": "Database quick-start bypasses the repository\u2019s current target guidance",
+      "title": "Database quick-start bypasses the repository’s current target guidance",
       "cluster": "release_and_evidence",
       "disposition": "fixed",
       "reason": "PR156 corrected the database quick-start and explicitly made ordinary verification local/disposable; the cited unsafe guidance is no longer current.",
@@ -6262,7 +6262,7 @@
           "observation": "One Button stub drops disabled and loading behavior, while another variant at line 48 preserves disabled."
         }
       ],
-      "next_change": "Consolidate duplicated existing module-packing code so fixes such as ESM handling have one owner; preserve each test\u2019s explicit stubs and scope. Remove unused switches rather than creating a new fixture configuration framework or splitting files without ownership gains.",
+      "next_change": "Consolidate duplicated existing module-packing code so fixes such as ESM handling have one owner; preserve each test’s explicit stubs and scope. Remove unused switches rather than creating a new fixture configuration framework or splitting files without ownership gains.",
       "validation_plan": "Run only each migrated mounted suite in Chromium and compare its request, observer, disabled-state, and cleanup assertions before removing the old path.",
       "scope_constraints": [
         "real mounted hook coverage",
@@ -7216,7 +7216,7 @@
           "observation": "Adjacent collector counts streamed bytes and cancels on limit or deadline."
         }
       ],
-      "next_change": "Reuse the adjacent collector\u2019s bounded byte-stream/deadline mechanics for CSP input, cancel on overflow and decode only accepted bytes. Preserve content-type, early declared-length and privacy behavior; no collector framework.",
+      "next_change": "Reuse the adjacent collector’s bounded byte-stream/deadline mechanics for CSP input, cancel on overflow and decode only accepted bytes. Preserve content-type, early declared-length and privacy behavior; no collector framework.",
       "validation_plan": "Missing/understated length, multibyte UTF-8 overflow, stalled stream, malformed JSON and valid report cases.",
       "scope_constraints": [
         "Unauthenticated browser reporting",
@@ -8933,7 +8933,7 @@
     },
     {
       "id": "FC3-01",
-      "title": "Roster bulk actions can overlap and close one another\u2019s panels",
+      "title": "Roster bulk actions can overlap and close one another’s panels",
       "cluster": "read_and_mutation_ownership",
       "disposition": "pending",
       "reason": "Bulk actions still have separate pending flags while selection and panel switching remain unrestricted. Earlier completion can close a newer panel or clear newer selection.",
@@ -9198,7 +9198,7 @@
     },
     {
       "id": "FC3-06",
-      "title": "Button\u2019s asChild mode advertises props it silently drops",
+      "title": "Button’s asChild mode advertises props it silently drops",
       "cluster": "presentation_and_dead_interfaces",
       "disposition": "fixed",
       "reason": "asChild forwards native attributes and composed refs, including React 19 cleanup, while preserving child-then-wrapper clicks and disabled navigation blocking.",
@@ -10690,7 +10690,7 @@
           "observation": "Explicit preview src takes precedence over the saved photo URL."
         }
       ],
-      "next_change": "Handle photo preview, file retention and completion truth with the existing photo/profile owner in FSH3-02. A rejected or unknown upload must not be presented as saved; do not infer server rollback from timeout or clear another command\u2019s draft.",
+      "next_change": "Handle photo preview, file retention and completion truth with the existing photo/profile owner in FSH3-02. A rejected or unknown upload must not be presented as saved; do not infer server rollback from timeout or clear another command’s draft.",
       "validation_plan": "Reject an upload and confirm preview cleanup, saved-avatar restoration and visible failure/unknown-outcome wording.",
       "scope_constraints": "Do not delete server photos, add automatic upload retries or change permissions.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
@@ -12490,6 +12490,23 @@
         166
       ],
       "delegated_batch": "docs/remediation/delegated/13-dependency-maintenance.md"
+    },
+    {
+      "id": "PROGRAM-IMPORT-01",
+      "title": "Import preview accepts a program-specific belt without a Program, but execution rejects it",
+      "track": "Astra",
+      "root_cause": "import_reference_ownership",
+      "disposition": "pending",
+      "reason": "A real service-role probe confirms preview succeeds without warnings while SQL rejects before student or membership persistence. Choosing Unassigned with unresolved-belt handling, inferred program membership, or required Program changes customer-visible behavior; owner decision is pending. No inference or per-program mutation is authorized by the unrelated USD decision.",
+      "verified_against": "18b64e9d7dbbdf363fc49bc0610d30fe67489f35",
+      "source_paths": [
+        "backend/app/services/student_import_plan_rows.py",
+        "backend/app/services/student_import_executor.py",
+        "supabase/migrations/20260613090000_harden_student_import_tenant_conflicts.sql"
+      ],
+      "verification": "Pinned139migrations; planner valid with no issues, resolved_program_id null and matched program-specific rank. Original actualSQL rejects with current-belt/program mismatch; zero students and memberships persisted. See import-retry-ownership-plan.md.",
+      "next_change": "Apply the owner-selected policy, preserving independent per-program dates and existing unresolved-belt option.",
+      "pull_requests": []
     }
   ],
   "normalization": {

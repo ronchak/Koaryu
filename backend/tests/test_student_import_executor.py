@@ -1,157 +1,136 @@
-import unittest
+import asyncio
+from copy import deepcopy
 from types import SimpleNamespace
-from unittest.mock import patch
 
+import pytest
 from fastapi import HTTPException
 
-from app.schemas.student import CsvImportOptions
+from app.schemas.student import CsvImportOptions, CsvImportResult
 from app.services.student_import_executor import StudentImportExecutor
-from tests.fakes.supabase import RpcBackedSupabase
+from tests.fakes.supabase import TableBackedSupabase
+
+RUN = "44444444-4444-4444-8444-444444444444"
+STUDIO = "22222222-2222-4222-8222-222222222222"
+PROGRAM = "33333333-3333-4333-8333-333333333333"
+OTHER = "33333333-3333-4333-8333-333333333334"
+MAPPING = {"First": "legal_first_name", "Last": "legal_last_name", "Program": "program_id", "Status": "status", "Belt": "current_belt_rank_id"}
 
 
-class FakeSupabase(RpcBackedSupabase):
-    def _rpc_import_student_row_atomic(self, params: dict) -> list[dict]:
-        return [{
-            "student_id": params["p_student"]["id"],
-            "guardian_imported": bool(params.get("p_guardian_name")),
-        }]
+class ScriptedImportDb(TableBackedSupabase):
+    """Canned server boundaries; no duplicate claim or persistence algorithm."""
+    def __init__(self):
+        super().__init__({"programs": [
+            {"id": PROGRAM, "studio_id": STUDIO, "name": "Karate"},
+            {"id": OTHER, "studio_id": STUDIO, "name": "BJJ"},
+        ], "belt_ladders": [], "belt_ranks": []})
+        self.responses = []
+        self.calls = []
+
+    def rpc(self, name, params):
+        def execute():
+            expected_name, response = self.responses.pop(0)
+            assert name == expected_name
+            self.calls.append((name, deepcopy(params)))
+            if isinstance(response, Exception):
+                raise response
+            return SimpleNamespace(data=response(params) if callable(response) else response)
+        return SimpleNamespace(execute=execute)
+
+    def execute_import(self, rows, **options):
+        return asyncio.run(StudentImportExecutor(self).execute_import(
+            rows, MAPPING, CsvImportOptions(**options), STUDIO, "actor", "same-key"))
 
 
-class FakeImportRunStore:
-    latest = None
-
-    def __init__(self, _supabase):
-        self.failed_messages = []
-        FakeImportRunStore.latest = self
-
-    def claim(self, **_kwargs):
-        return (
-            {"id": "44444444-4444-4444-8444-444444444444"},
-            None,
-            "idempotency-key",
-            "worker-token",
-        )
-
-    def ensure_claim_active(self, _import_run_id, _processing_token):
-        return None
-
-    def mark_failed(self, _import_run_id, _processing_token, message):
-        self.failed_messages.append(message)
-        return True
+def claim(receipts=()):
+    return [{"claim_status": "claimed", "run_row": {"id": RUN, "receipts": list(receipts)}}]
 
 
-class StudentImportExecutorTest(unittest.TestCase):
-    def test_student_row_import_uses_atomic_rpc_contract(self):
-        supabase = FakeSupabase()
-        executor = StudentImportExecutor(supabase)
-        student_id = executor._import_student_row_atomic(
-            mapped={
-                "id": "11111111-1111-4111-8111-111111111111",
-                "studio_id": "22222222-2222-4222-8222-222222222222",
-                "legal_first_name": "Ava",
-                "legal_last_name": "Nguyen",
-                "program_id": "33333333-3333-4333-8333-333333333333",
-                "tags": ["trial"],
-            },
-            studio_id="22222222-2222-4222-8222-222222222222",
-            import_run_id="44444444-4444-4444-8444-444444444444",
-            processing_token="worker-token",
-            row_number=2,
-            guardian_fields={
-                "guardian_name": "Mina Nguyen",
-                "guardian_email": "mina@example.com",
-                "guardian_phone": "555-0100",
-                "guardian_relation": "Mother",
-            },
-            program_ids=["33333333-3333-4333-8333-333333333333"],
-        )
-
-        self.assertEqual(student_id, "11111111-1111-4111-8111-111111111111")
-        self.assertEqual(
-            [name for name, _params in supabase.rpc_calls],
-            ["import_student_row_atomic"],
-        )
-        params = supabase.rpc_calls[0][1]
-        self.assertEqual(params["p_processing_token"], "worker-token")
-        self.assertEqual(params["p_row_number"], 2)
-        self.assertEqual(params["p_guardian_name"], "Mina Nguyen")
-        self.assertEqual(params["p_program_ids"], ["33333333-3333-4333-8333-333333333333"])
-
-    def test_failed_unresolved_belt_row_does_not_increment_imported_without_belt(self):
-        def normalize_program_ids(_studio_id, program_id, _program_ids):
-            return [program_id]
-
-        executor = StudentImportExecutor(FakeSupabase())
-        executor.memberships = SimpleNamespace(
-            normalize_program_ids_for_write=normalize_program_ids
-        )
-        executor.planner = SimpleNamespace(
-            append_import_note=lambda existing, note: f"{existing}\n{note}" if existing else note
-        )
-
-        def fail_import(**_kwargs):
-            raise RuntimeError("row write failed")
-
-        executor._import_student_row_atomic = fail_import
-        row = {
-            "row_number": 2,
-            "is_valid": True,
-            "issues": [],
-            "data": {
-                "legal_first_name": "Ava",
-                "legal_last_name": "Nguyen",
-            },
-            "resolved_program_id": "33333333-3333-4333-8333-333333333333",
-            "unresolved_belt_value": "Blue",
-            "resolved_belt_rank_id": None,
-        }
-        import_runs = SimpleNamespace(ensure_claim_active=lambda _run_id, _token: None)
-
-        imported, imported_without_belt = executor._import_valid_rows(
-            planned_rows=[row],
-            studio_id="22222222-2222-4222-8222-222222222222",
-            import_run_id="44444444-4444-4444-8444-444444444444",
-            processing_token="worker-token",
-            import_runs=import_runs,
-        )
-
-        self.assertEqual(imported, 0)
-        self.assertEqual(imported_without_belt, 0)
-        self.assertFalse(row["is_valid"])
-        self.assertEqual(row["issues"][0].code, "execute_failed")
-        self.assertNotIn("row write failed", row["issues"][0].message)
-        self.assertIn("Retry or contact support", row["issues"][0].message)
-
-    def test_execute_import_sanitizes_unexpected_failure_response_and_failed_run_message(self):
-        executor = StudentImportExecutor(FakeSupabase())
-
-        def fail_prepare_import(*_args, **_kwargs):
-            raise RuntimeError("database constraint students_email_key leaked")
-
-        executor.planner = SimpleNamespace(prepare_import=fail_prepare_import)
-
-        with patch("app.services.student_import_executor.StudentImportRunStore", FakeImportRunStore):
-            with self.assertRaises(HTTPException) as context:
-                import asyncio
-
-                asyncio.run(
-                    executor.execute_import(
-                        rows=[{"First Name": "Ava"}],
-                        mapping={"First Name": "legal_first_name"},
-                        options=CsvImportOptions(),
-                        studio_id="22222222-2222-4222-8222-222222222222",
-                        actor_id="actor-1",
-                    )
-                )
-
-        self.assertEqual(context.exception.status_code, 500)
-        self.assertEqual(context.exception.detail["code"], "STUDENT_IMPORT_FAILED")
-        self.assertNotIn("students_email_key", context.exception.detail["message"])
-        self.assertEqual(
-            FakeImportRunStore.latest.failed_messages,
-            ["Student import failed unexpectedly. Retry or contact support."],
-        )
+def row_success(params):
+    return [{"student_id": params["p_student"]["id"], "guardian_imported": False}]
 
 
-if __name__ == "__main__":
-    unittest.main()
+def finish(params):
+    saved = {**params["p_result_json"], "non_critical_errors": ["Frozen audit warning"], "execution_status": "completed_with_warnings"}
+    return [{"updated": True, "run_row": {"result_json": saved}}]
+
+
+def test_unknown_row_failure_retries_same_key_and_preloads_original_outcomes():
+    db = ScriptedImportDb()
+    rows = [
+        {"First": "Ava", "Last": "Nguyen", "Program": "Karate", "Status": "current", "Belt": "Azure"},
+        {"First": "Mina", "Last": "Nguyen", "Program": "BJJ"},
+        {"Last": "Invalid", "Program": "Do not create"},
+    ]
+    db.responses = [("claim_student_import_run_v2", claim()), ("import_student_row_atomic", row_success),
+                    ("import_student_row_atomic", RuntimeError("private_database_failure")),
+                    ("finish_student_import_run", [{"updated": True}])]
+    with pytest.raises(HTTPException) as error:
+        db.execute_import(rows, create_missing_programs=True)
+    assert error.value.status_code == 500 and error.value.detail["code"] == "STUDENT_IMPORT_FAILED"
+    assert "private_database_failure" not in str(error.value.detail)
+    assert db.calls[-1][1]["p_status"] == "failed" and db.calls[-1][1]["p_result_json"] is None
+    first_row = db.calls[1][1]
+    assert first_row["p_row_number"] == 2 and first_row["p_program_ids"] == [PROGRAM]
+    assert first_row["p_student"]["notes"] == "Imported current belt (unresolved): Azure"
+    receipt = {"kind": "student", "key": "2", "result": {
+        "student_id": first_row["p_student"]["id"], "guardian_imported": False,
+        "outcome": first_row["p_student"]["_import_outcome"],
+    }}
+    # Changed reference data must not revalidate or rewrite the already committed row.
+    db.tables["programs"][0].update(name="Renamed", archived_at="2026-09-10")
+    db.responses = [("claim_student_import_run_v2", claim([receipt])),
+                    ("import_student_row_atomic", row_success), ("finish_student_import_run", finish)]
+    result = db.execute_import(rows, create_missing_programs=True)
+    assert result.imported_count == 2 and result.error_rows == 1
+    assert result.normalized_status_count == 1 and result.imported_without_belt_count == 1
+    assert result.execution_status == "completed_with_warnings" and result.non_critical_errors == ["Frozen audit warning"]
+    writes = [params for name, params in db.calls if name == "import_student_row_atomic"]
+    assert [params["p_row_number"] for params in writes] == [2, 3, 3]
+    assert writes[1]["p_student"]["id"] == writes[2]["p_student"]["id"]
+    claims = [params for name, params in db.calls if name == "claim_student_import_run_v2"]
+    assert claims[0]["p_request_hash"] == claims[1]["p_request_hash"]
+    assert all(params["p_idempotency_key"] == "same-key" for params in claims)
+    assert writes[2]["p_processing_token"] == claims[1]["p_processing_token"]
+    assert sum(query["table"] == "programs" for query in db.query_log) == 2
+    assert all(not query["insert"] and not query["update"] and not query["upsert"] for query in db.query_log)
+    assert not db.responses
+
+
+def test_completed_claim_and_all_receipted_recovery_need_no_reference_reads():
+    expected = CsvImportResult(total_rows=1, valid_rows=1, error_rows=0, imported_count=1, non_critical_errors=["Original warning"])
+    db = ScriptedImportDb()
+    db.responses = [("claim_student_import_run_v2", [{"claim_status": "completed", "run_row": {"result_json": expected.model_dump(mode="json")}}])]
+    result = db.execute_import([{"First": "Ava", "Last": "Nguyen"}])
+    assert result == expected.model_copy(update={"idempotency_key": "same-key", "reused_result": True, "execution_status": "reused"})
+    assert not db.query_log and len(db.calls) == 1
+    receipt = {"kind": "student", "key": "2", "result": {"outcome": {
+        "row_number": 2, "is_valid": True, "issues": [], "data": {}, "imported_without_belt": False,
+    }}}
+    db.responses = [("claim_student_import_run_v2", claim([receipt])), ("finish_student_import_run", finish)]
+    result = db.execute_import([{"First": "Ava", "Last": "Nguyen"}])
+    assert result.imported_count == 1 and result.non_critical_errors == ["Frozen audit warning"]
+    assert not db.query_log and not db.responses
+
+
+def test_setup_batches_requested_belts_and_excludes_rejected_rows():
+    db = ScriptedImportDb()
+    def setup(params):
+        assert params["p_program_id"] == OTHER and params["p_create_ladder"] is True
+        assert [rank["key"] for rank in params["p_ranks"]] == ["white", "blue"]
+        assert all(rank["existing_id"] is None for rank in params["p_ranks"])
+        return {"ladder": {"ladder_id": params["p_ladder_id"], "name": "BJJ", "created": True}, "ranks": [
+            {"rank_id": rank["id"], "name": rank["name"], "ladder_id": params["p_ladder_id"], "ladder_name": "BJJ", "created": True}
+            for rank in params["p_ranks"]
+        ]}
+    db.responses = [("claim_student_import_run_v2", claim()), ("prepare_student_import_belts_v1", setup),
+                    ("import_student_row_atomic", row_success), ("import_student_row_atomic", row_success),
+                    ("finish_student_import_run", finish)]
+    result = db.execute_import([
+        {"First": "Ava", "Last": "Nguyen", "Program": "BJJ", "Belt": "Blue"},
+        {"First": "Mina", "Last": "Nguyen", "Program": "BJJ", "Belt": "White"},
+        {"Last": "Invalid", "Program": "Do not create", "Belt": "Red"},
+    ], create_missing_programs=True, create_missing_belts=True)
+    assert result.created_programs == [] and result.created_ladders == ["BJJ"]
+    assert result.created_belts == ["White (BJJ)", "Blue (BJJ)"]
+    assert result.imported_count == 2 and result.error_rows == 1 and not db.responses
+    assert sum(query["table"] == "programs" for query in db.query_log) == 1
