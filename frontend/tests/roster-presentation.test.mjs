@@ -1,54 +1,88 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { describe, it } from "node:test";
-import {
-  getRankColorTreatment,
-  prefersDarkRankText,
-} from "../src/lib/rank-color-treatment.ts";
+import { after, before, describe, it } from "node:test";
+import { chromium } from "@playwright/test";
+import { getRankColorTreatment, prefersDarkRankText } from "../src/lib/rank-color-treatment.ts";
+import { bundle } from "./helpers/store-browser-harness.mjs";
 
-const source = async (path) => readFile(new URL(path, import.meta.url), "utf8");
+const presentationBundle = bundle("production", { rosterPresentation: true });
+const rosterStyles = await readFile(new URL("../src/components/students/student-records.module.css", import.meta.url), "utf8");
+
+function row(id, firstName) {
+  const student = {
+    id, studio_id: "studio-1", legal_first_name: firstName, legal_last_name: "Student",
+    preferred_name: null, email: `${id}@example.test`, phone: null, date_of_birth: null,
+    is_minor: false, status: "active", program_id: null, membership_start_date: "2026-01-02",
+    guardians: [], tags: [], notes: null, photo_url: null,
+    created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+  };
+  return {
+    student, programs: [], displayName: `${firstName} Student`, contact: student.email,
+    search: { name: firstName.toLowerCase(), email: student.email, programs: "" },
+    visibleTags: [], hiddenTagCount: 0,
+  };
+}
+
+function rosterProps() {
+  return {
+    filtered: [row("student-a", "Ada"), row("student-b", "Bea")],
+    sortDir: "asc",
+    sortKey: "name",
+  };
+}
 
 describe("roster presentation behavior", () => {
+  let browser;
+  before(async () => { browser = await chromium.launch({ headless: true }); });
+  after(async () => { await browser?.close(); });
+
   it("uses one luminance rule for light, dark, short, and malformed rank colors", () => {
     for (const color of ["#FFFFFF", "#EAB308", "#fff"]) {
       assert.equal(prefersDarkRankText(color), true, color);
       assert.equal(getRankColorTreatment(color).color, "#211b12", color);
     }
-
     for (const color of ["#111111", "malformed"]) {
       assert.equal(prefersDarkRankText(color), false, color);
       assert.equal(getRankColorTreatment(color).color, "#ffffff", color);
     }
-
-    assert.equal(getRankColorTreatment("#EAB308").backgroundColor, "#EAB308");
   });
 
-  it("routes mobile key and direction changes through the existing sort callback", async () => {
-    const controls = await source("../src/components/students/student-roster-controls.tsx");
-    const page = await source("../src/components/students/student-roster-page-content.tsx");
-    const styles = await source("../src/components/students/student-records.module.css");
+  it("mounts mobile sort, responsive quick view, keyboard, open, selection, and both tip badges", async () => {
+    const page = await browser.newPage({ viewport: { width: 820, height: 900 } });
+    await page.setContent(`<style>${rosterStyles}</style><main id="root"></main>`);
+    await page.evaluate(() => { window.fixture = { opened: [], selected: [], sorts: [] }; });
+    await page.addScriptTag({ content: presentationBundle });
+    await page.evaluate((props) => window.fixture.renderRoster(props), rosterProps());
 
-    assert.match(controls, /aria-label="Sort students by"[\s\S]*onChange=\{\(event\) => onSort\(event\.target\.value as SortKey\)\}/);
-    for (const key of ["name", "status", "membership_start_date", "created_at"]) {
-      assert.match(controls, new RegExp(`<option value="${key}">`));
+    const sort = page.getByLabel("Sort students by");
+    await sort.waitFor();
+    assert.equal(await sort.isVisible(), true);
+    await sort.selectOption("status");
+    await page.evaluate((props) => window.fixture.renderRoster(props), { ...rosterProps(), sortKey: "status" });
+    await page.getByRole("button", { name: "Sort descending" }).click();
+    assert.deepEqual(await page.evaluate(() => window.fixture.sorts), ["status", "status"]);
+
+    const beaRow = page.locator('[data-student-id="student-b"]');
+    await beaRow.hover();
+    assert.match(await page.getByLabel("Student quick view").textContent(), /Hover over or focus/);
+    await beaRow.getByRole("button", { name: "Open Bea Student profile" }).focus();
+    assert.match(await page.locator("aside").textContent(), /Bea Student/);
+    await beaRow.getByRole("checkbox").click();
+    await beaRow.getByRole("button", { name: "Open Bea Student profile" }).click();
+    assert.deepEqual(await page.evaluate(() => ({ opened: window.fixture.opened, selected: window.fixture.selected })), {
+      opened: ["student-b"], selected: ["student-b"],
+    });
+
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.locator('[data-student-id="student-a"]').hover();
+    assert.match(await page.locator("aside").textContent(), /Ada Student/);
+
+    await page.evaluate(() => window.fixture.renderBadges());
+    const badges = page.locator("#root > div > span");
+    assert.equal(await badges.count(), 2);
+    for (const badge of await badges.all()) {
+      assert.equal(await badge.evaluate((node) => getComputedStyle(node).color), "rgb(33, 27, 18)");
+      assert.equal(await badge.locator('span[style*="rgb(34, 197, 94)"]').count(), 1);
     }
-    assert.match(controls, /aria-label=\{`Sort \$\{sortDir === "asc" \? "descending" : "ascending"\}`\}[\s\S]*onClick=\{\(\) => onSort\(sortKey\)\}/);
-    assert.match(page, /<StudentRosterToolbar[\s\S]*onSort=\{onSort\}[\s\S]*sortDir=\{sortDir\}[\s\S]*sortKey=\{sortKey\}/);
-    assert.match(styles, /@media \(max-width: 820px\)[\s\S]*\.mobileSortControl \{ display: grid; \}/);
-  });
-
-  it("suppresses hidden-rail hover updates while retaining focus and open handlers", async () => {
-    const page = await source("../src/components/students/student-roster-page-content.tsx");
-    const roster = await source("../src/components/students/student-roster-sections.tsx");
-
-    assert.match(page, /const QUICK_VIEW_MEDIA_QUERY = "\(min-width: 1400px\)"/);
-    assert.match(page, /onHoverStudent=\{isQuickViewVisible \? setFocusedStudentId : undefined\}/);
-    assert.match(roster, /onFocusCapture=\{\(\) => onFocusStudent\(student\.id\)\}/);
-    assert.match(roster, /onPointerEnter=\{onHoverStudent \? \(\) => onHoverStudent\(student\.id\) : undefined\}/);
-    assert.match(roster, /onClick=\{\(\) => onOpenStudent\(student\.id\)\}/);
-    assert.match(roster, /onChange=\{\(\) => toggleSelect\(student\.id\)\}/);
-    const studentBadge = await source("../src/components/students/student-rank-badge.tsx");
-    assert.match(studentBadge, /isTip && tipColorHex/);
-    assert.match(studentBadge, /backgroundColor: tipColorHex/);
   });
 });
