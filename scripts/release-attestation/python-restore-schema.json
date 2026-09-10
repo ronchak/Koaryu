@@ -878,7 +878,7 @@
       ],
       "absentFunctions": [
         "public.claim_student_import_run_v2(uuid,uuid,text,text,text,text,integer)",
-        "public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean)",
+        "public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean,boolean)",
         "public.prepare_student_import_belts_v1(uuid,uuid,text,uuid,uuid,jsonb,boolean)"
       ],
       "semanticManifests": [

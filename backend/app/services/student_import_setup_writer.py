@@ -28,16 +28,19 @@ class StudentImportSetupWriter:
     ) -> None:
         unfinished = [row for row in planned_rows if row["is_valid"] and not row.get("completed")]
         programs = receipts.setdefault("program", {})
-        requested: dict[str, str] = {}
+        requested: dict[str, tuple[str, str | None]] = {}
         for row in unfinished:
             if name := row.get("pending_program_name"):
-                requested.setdefault(normalize_header(name), name.strip())
-            elif not row.get("resolved_program_id"):
-                requested.setdefault("__unassigned__", "Unassigned")
-        for key, name in requested.items():
+                requested.setdefault(normalize_header(name), (name.strip(), None))
+            elif row.get("resolved_program_id"):
+                name = row["data"]["program_id"]
+                requested.setdefault(normalize_header(name), (name, row["resolved_program_id"]))
+            else:
+                requested.setdefault("__unassigned__", ("Unassigned", None))
+        for key, (name, selected_id) in requested.items():
             if key in programs:
                 continue
-            program_id = deterministic_import_uuid(import_run_id, "program", key)
+            program_id = selected_id or deterministic_import_uuid(import_run_id, "program", key)
             result = first_rpc_row(execute_required_rpc(self.supabase, "prepare_student_import_program_v1", {
                 "p_studio_id": studio_id,
                 "p_import_run_id": import_run_id,
@@ -45,18 +48,17 @@ class StudentImportSetupWriter:
                 "p_key": key,
                 "p_program_id": program_id,
                 "p_name": name,
-                "p_ladder_id": deterministic_import_uuid(import_run_id, "ladder", program_id),
+                "p_ladder_id": None if selected_id else deterministic_import_uuid(import_run_id, "ladder", program_id),
                 "p_unassigned": key == "__unassigned__",
+                "p_create_program": selected_id is None,
             }))
             if not result or not result.get("program_id"):
                 raise RuntimeError("Import program setup returned no confirmed identity")
             programs[key] = result
         for row in unfinished:
-            name = row.get("pending_program_name")
-            if name:
-                row["resolved_program_id"] = programs[normalize_header(name)]["program_id"]
-            elif not row.get("resolved_program_id"):
-                row["resolved_program_id"] = programs["__unassigned__"]["program_id"]
+            reference = row["data"].get("program_id")
+            key = normalize_header(reference) if reference else "__unassigned__"
+            row["resolved_program_id"] = programs[key]["program_id"]
 
         pending_belts = [row for row in unfinished if row.get("pending_belt_name")]
         if not pending_belts:

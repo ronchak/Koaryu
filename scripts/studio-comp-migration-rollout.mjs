@@ -1038,7 +1038,7 @@ export const V44_RELEASE_MANIFEST_SQL = releaseManifestSql(V44_FUNCTIONS, "v44_r
 const V45_FUNCTIONS = Object.freeze([
   ...V44_FUNCTIONS.map(row => row[0] === "public.koaryu_release_schema_preflight_v25()"
     ? [row[0], "e6e83b8ffda275b6d774e2f419753166043c6fb8e02619450f2f600f38c83335", ...row.slice(2)] : row),
-  ["public.koaryu_release_schema_preflight_v26()", "9d078d87e6d1bf642d25a410955e48a6273bbf8cc5c0e384c9fa5bb16f9eab89", ...V44_FUNCTIONS.at(-1).slice(2)],
+  ["public.koaryu_release_schema_preflight_v26()", "64c34856972a7cc2a81a195856296e31bf92245b8f64acb140edca3dc6b3462b", ...V44_FUNCTIONS.at(-1).slice(2)],
 ]);
 export const EXPECTED_V45_RELEASE_MANIFEST = releaseManifest(V45_FUNCTIONS);
 export const V45_RELEASE_MANIFEST_SQL = releaseManifestSql(V45_FUNCTIONS, "v45_release_manifest");

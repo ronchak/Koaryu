@@ -49,6 +49,10 @@ def row_success(params):
     return [{"student_id": params["p_student"]["id"], "guardian_imported": False}]
 
 
+def selected_program(program_id, name):
+    return {"program_id": program_id, "name": name, "created": False, "ladder_id": None, "warning": None}
+
+
 def finish(params):
     saved = {**params["p_result_json"], "non_critical_errors": ["Frozen audit warning"], "execution_status": "completed_with_warnings"}
     return [{"updated": True, "run_row": {"result_json": saved}}]
@@ -61,7 +65,10 @@ def test_unknown_row_failure_retries_same_key_and_preloads_original_outcomes():
         {"First": "Mina", "Last": "Nguyen", "Program": "BJJ"},
         {"Last": "Invalid", "Program": "Do not create"},
     ]
-    db.responses = [("claim_student_import_run_v2", claim()), ("import_student_row_atomic", row_success),
+    karate, bjj = selected_program(PROGRAM, "Karate"), selected_program(OTHER, "BJJ")
+    db.responses = [("claim_student_import_run_v2", claim()),
+                    ("prepare_student_import_program_v1", karate), ("prepare_student_import_program_v1", bjj),
+                    ("import_student_row_atomic", row_success),
                     ("import_student_row_atomic", RuntimeError("private_database_failure")),
                     ("finish_student_import_run", [{"updated": True}])]
     with pytest.raises(HTTPException) as error:
@@ -69,7 +76,11 @@ def test_unknown_row_failure_retries_same_key_and_preloads_original_outcomes():
     assert error.value.status_code == 500 and error.value.detail["code"] == "STUDENT_IMPORT_FAILED"
     assert "private_database_failure" not in str(error.value.detail)
     assert db.calls[-1][1]["p_status"] == "failed" and db.calls[-1][1]["p_result_json"] is None
-    first_row = db.calls[1][1]
+    bindings = [params for name, params in db.calls if name == "prepare_student_import_program_v1"]
+    assert [(p["p_key"], p["p_program_id"], p["p_create_program"], p["p_ladder_id"]) for p in bindings] == [
+        ("karate", PROGRAM, False, None), ("bjj", OTHER, False, None),
+    ]
+    first_row = next(params for name, params in db.calls if name == "import_student_row_atomic")
     assert first_row["p_row_number"] == 2 and first_row["p_program_ids"] == [PROGRAM]
     assert first_row["p_student"]["notes"] == "Imported current belt (unresolved): Azure"
     receipt = {"kind": "student", "key": "2", "result": {
@@ -78,7 +89,11 @@ def test_unknown_row_failure_retries_same_key_and_preloads_original_outcomes():
     }}
     # Changed reference data must not revalidate or rewrite the already committed row.
     db.tables["programs"][0].update(name="Renamed", archived_at="2026-09-10")
-    db.responses = [("claim_student_import_run_v2", claim([receipt])),
+    db.tables["programs"][1]["name"] = "Renamed BJJ"
+    db.responses = [("claim_student_import_run_v2", claim([
+                        receipt, {"kind": "program", "key": "karate", "result": karate},
+                        {"kind": "program", "key": "bjj", "result": bjj},
+                    ])),
                     ("import_student_row_atomic", row_success), ("finish_student_import_run", finish)]
     result = db.execute_import(rows, create_missing_programs=True)
     assert result.imported_count == 2 and result.error_rows == 1
@@ -87,6 +102,7 @@ def test_unknown_row_failure_retries_same_key_and_preloads_original_outcomes():
     writes = [params for name, params in db.calls if name == "import_student_row_atomic"]
     assert [params["p_row_number"] for params in writes] == [2, 3, 3]
     assert writes[1]["p_student"]["id"] == writes[2]["p_student"]["id"]
+    assert writes[2]["p_program_ids"] == [OTHER] and result.created_programs == []
     claims = [params for name, params in db.calls if name == "claim_student_import_run_v2"]
     assert claims[0]["p_request_hash"] == claims[1]["p_request_hash"]
     assert all(params["p_idempotency_key"] == "same-key" for params in claims)
@@ -122,7 +138,9 @@ def test_setup_batches_requested_belts_and_excludes_rejected_rows():
             {"rank_id": rank["id"], "name": rank["name"], "ladder_id": params["p_ladder_id"], "ladder_name": "BJJ", "created": True}
             for rank in params["p_ranks"]
         ]}
-    db.responses = [("claim_student_import_run_v2", claim()), ("prepare_student_import_belts_v1", setup),
+    db.responses = [("claim_student_import_run_v2", claim()),
+                    ("prepare_student_import_program_v1", selected_program(OTHER, "BJJ")),
+                    ("prepare_student_import_belts_v1", setup),
                     ("import_student_row_atomic", row_success), ("import_student_row_atomic", row_success),
                     ("finish_student_import_run", finish)]
     result = db.execute_import([

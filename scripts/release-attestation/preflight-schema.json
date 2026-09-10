@@ -741,8 +741,8 @@
       "kind": "function_contract",
       "namespace": "public",
       "functionName": "prepare_student_import_program_v1",
-      "signature": "public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean)",
-      "expected": "ef0cd81057e6919e1e8c660d1e41061494d0ebfe1eaec1b8be14becbb8536ee1",
+      "signature": "public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean,boolean)",
+      "expected": "25fadfe0298192b7d2bf6c6210ad199743e7dd01d9dd035e7c9f36ba7c17794e",
       "acl": [
         [
           "postgres",

@@ -628,7 +628,7 @@ GRANT EXECUTE ON FUNCTION public.import_student_row_atomic(JSONB, UUID, UUID, TE
 CREATE FUNCTION public.prepare_student_import_program_v1(
     p_studio_id UUID, p_import_run_id UUID, p_processing_token TEXT,
     p_key TEXT, p_program_id UUID, p_name TEXT, p_ladder_id UUID,
-    p_unassigned BOOLEAN DEFAULT FALSE
+    p_unassigned BOOLEAN DEFAULT FALSE, p_create_program BOOLEAN DEFAULT TRUE
 )
 RETURNS JSONB
 LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path = pg_catalog AS $$
@@ -652,18 +652,27 @@ BEGIN
     IF FOUND THEN
         RETURN v_result;
     END IF;
-    IF p_program_id IS NULL OR p_name IS NULL OR btrim(p_name) = '' OR p_unassigned IS NULL
+    IF p_program_id IS NULL OR p_name IS NULL OR btrim(p_name) = '' OR p_unassigned IS NULL OR p_create_program IS NULL
        OR (p_unassigned AND p_name <> 'Unassigned')
-       OR (NOT p_unassigned AND p_ladder_id IS NULL) THEN
+       OR (p_create_program AND NOT p_unassigned AND p_ladder_id IS NULL) THEN
         RAISE EXCEPTION 'Import program details are incomplete.' USING ERRCODE = '22023';
     END IF;
 
-    -- Python owns CSV name normalization. Recheck the database's exact active-name
-    -- uniqueness here to tolerate a concurrent creator without overwriting it.
-    SELECT * INTO v_program FROM public.programs
-    WHERE studio_id = p_studio_id AND lower(name) = lower(btrim(p_name)) AND archived_at IS NULL
-    FOR SHARE;
-    IF NOT FOUND THEN
+    IF NOT p_create_program THEN
+        SELECT * INTO v_program FROM public.programs
+        WHERE id = p_program_id AND studio_id = p_studio_id AND archived_at IS NULL
+        FOR SHARE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'The selected import program is unavailable.' USING ERRCODE = '23503';
+        END IF;
+    ELSE
+        -- Python owns CSV normalization. Creation may reuse an exact active-name
+        -- conflict; an explicitly selected identity never falls back to a name.
+        SELECT * INTO v_program FROM public.programs
+        WHERE studio_id = p_studio_id AND lower(name) = lower(btrim(p_name)) AND archived_at IS NULL
+        FOR SHARE;
+    END IF;
+    IF v_program.id IS NULL THEN
         INSERT INTO public.programs(id, studio_id, name, description, color_hex, sort_order, is_system)
         VALUES (p_program_id, p_studio_id, btrim(p_name),
             CASE WHEN p_unassigned THEN 'Students awaiting program assignment.' ELSE 'Program created from student import.' END,
@@ -706,10 +715,10 @@ BEGIN
     RETURN v_result;
 END;
 $$;
-ALTER FUNCTION public.prepare_student_import_program_v1(UUID, UUID, TEXT, TEXT, UUID, TEXT, UUID, BOOLEAN) OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.prepare_student_import_program_v1(UUID, UUID, TEXT, TEXT, UUID, TEXT, UUID, BOOLEAN)
+ALTER FUNCTION public.prepare_student_import_program_v1(UUID, UUID, TEXT, TEXT, UUID, TEXT, UUID, BOOLEAN, BOOLEAN) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.prepare_student_import_program_v1(UUID, UUID, TEXT, TEXT, UUID, TEXT, UUID, BOOLEAN, BOOLEAN)
     FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.prepare_student_import_program_v1(UUID, UUID, TEXT, TEXT, UUID, TEXT, UUID, BOOLEAN)
+GRANT EXECUTE ON FUNCTION public.prepare_student_import_program_v1(UUID, UUID, TEXT, TEXT, UUID, TEXT, UUID, BOOLEAN, BOOLEAN)
     TO service_role;
 
 CREATE FUNCTION public.prepare_student_import_belts_v1(
@@ -1778,12 +1787,12 @@ BEGIN
         WHERE n.nspname='public' AND p.proname='prepare_student_import_program_v1') <> 1
        OR NOT EXISTS (
         SELECT 1 FROM pg_catalog.pg_proc p
-        WHERE p.oid=pg_catalog.to_regprocedure('public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean)')
+        WHERE p.oid=pg_catalog.to_regprocedure('public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean,boolean)')
           AND p.proowner='postgres'::REGROLE AND NOT p.prosecdef AND p.provolatile='v'
           AND p.prorettype='jsonb'::REGTYPE AND NOT p.proretset
           AND p.proconfig=ARRAY['search_path=pg_catalog']::TEXT[]
           AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
-              = 'ef0cd81057e6919e1e8c660d1e41061494d0ebfe1eaec1b8be14becbb8536ee1'
+              = '25fadfe0298192b7d2bf6c6210ad199743e7dd01d9dd035e7c9f36ba7c17794e'
           AND (SELECT jsonb_agg(jsonb_build_array(
                 CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
                 pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)

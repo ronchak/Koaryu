@@ -309,9 +309,15 @@ BEGIN
     IF finished.updated IS DISTINCT FROM FALSE THEN RAISE EXCEPTION 'Stale worker completed the run'; END IF;
 
     PERFORM public.prepare_student_import_program_v1(studio,run_id,'token','__unassigned__',gen_random_uuid(),'Unassigned',NULL,TRUE);
-    program_result := public.prepare_student_import_program_v1(studio,run_id,'token','owned',program_id,'Owned program',ladder_id,FALSE);
+    INSERT INTO public.programs(id,studio_id,name) VALUES(program_id,studio,'Owned program');
+    program_result := public.prepare_student_import_program_v1(studio,run_id,'token','owned',program_id,'Owned program',NULL,FALSE,FALSE);
+    IF program_result->'created' IS DISTINCT FROM 'false'::JSONB
+       OR EXISTS(SELECT 1 FROM public.belt_ladders WHERE studio_id=studio)
+       OR EXISTS(SELECT 1 FROM public.audit_logs WHERE studio_id=studio) THEN
+        RAISE EXCEPTION 'Selecting an existing program created or repaired configuration';
+    END IF;
     ranks := jsonb_build_array(jsonb_build_object('key','white','id',rank_id,'name','White','color_hex','#ffffff'));
-    belt_result := public.prepare_student_import_belts_v1(studio,run_id,'token',program_id,ladder_id,ranks,FALSE);
+    belt_result := public.prepare_student_import_belts_v1(studio,run_id,'token',program_id,ladder_id,ranks,TRUE);
     UPDATE public.programs SET name='Staff program',archived_at=now() WHERE id=program_id;
     UPDATE public.belt_ladders SET name='Staff ladder',sub_rank_term='Keep' WHERE id=ladder_id;
     UPDATE public.belt_ranks SET name='Staff rank',display_order=9,min_classes=42 WHERE id=rank_id;
