@@ -1756,9 +1756,9 @@ assert_attestation_rejects \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_student_rank_writer_manifest_v11()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
-  "V13 helper self-body drift (external authority only)" \
+  "V13 helper self-body drift (current definition pin)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_student_rank_writer_manifest_v13()'::regprocedure;" \
-  "t"
+  "f"
 assert_attestation_rejects \
   "V16 helper self-body drift (current definition pin)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_critical_surface_manifest_v16()'::regprocedure;" \
