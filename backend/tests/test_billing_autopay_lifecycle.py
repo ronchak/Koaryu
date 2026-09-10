@@ -1,39 +1,30 @@
 from __future__ import annotations
 
+import asyncio
+import copy
 import re
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 
+from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
+from app.schemas.billing import (
+    BillingInvoiceCreate,
+    BillingPayerAutopaySetupRequest,
+    StudentBillingEnrollmentUpdate,
+)
 from app.services.platform_billing_helpers import stable_hash
 from app.services.billing_autopay import BillingAutopayManager
 from app.services.billing_provider_operations import payer_setup_operation_disposition
+from app.services.stripe_service import StripeService
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 
 from tests.billing_lifecycle_helpers import (
-    BillingInvoiceCreate,
-    BillingInvoiceResponse,
-    BillingPayerAutopaySetupRequest,
     BillingPaymentsLifecycleTestBase,
-    BillingReconcileRequest,
-    BillingService,
-    HTTPException,
-    StripeService,
-    StudentBillingEnrollmentCreate,
-    StudentBillingEnrollmentResponse,
-    StudentBillingEnrollmentUpdate,
-    _FakeBillingSettings,
-    _FakeStripe,
     _FakeStripeService,
-    _FakeStripeWithMismatchedAccount,
     _FakeSupabase,
-    _StripeV2RequestError,
-    _test_invoice_request_hash,
-    asyncio,
-    datetime,
-    patch,
-    timedelta,
-    timezone,
 )
 
 
@@ -2577,52 +2568,103 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 self.assertIsNone(payer.get("autopay_terms_accepted_at"))
                 self.assertNotEqual(database.operation["state"], "completed")
 
-    def test_disable_autopay_rewires_active_subscription_to_invoice_collection(self):
-        service = self.service()
-        service.supabase = _AutopayOperationSupabase({
-            "billing_payers": [{
-                "id": "payer_1", "studio_id": "studio_1",
-                "display_name": "Family One", "autopay_status": "enabled",
-                "default_payment_method_id": "pm_123",
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
-            }],
-            "billing_subscriptions": [{
-                "id": "subscription_1", "studio_id": "studio_1",
-                "payer_id": "payer_1", "collection_mode": "autopay",
-                "status": "active", "stripe_subscription_id": "sub_1",
-            }],
-            "student_billing_enrollments": [{
-                "id": "enrollment_1", "studio_id": "studio_1",
-                "billing_subscription_id": "subscription_1",
-                "collection_mode": "autopay", "status": "active",
-            }],
-            "audit_logs": [],
-        })
-
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            with self.assertRaises(HTTPException) as blocked:
-                asyncio.run(service.disable_autopay(
+    def test_generic_subscription_changes_are_rejected_without_provider_mutation(self):
+        cases = (
+            (
+                "disable_autopay",
+                lambda service: service.disable_autopay(
                     "payer_1", "studio_1", "user_1"
-                ))
+                ),
+                "named cancellation workflow",
+            ),
+            (
+                "set_enrollment_status",
+                lambda service: service.set_enrollment_status(
+                    "enrollment_1", "canceled", "studio_1", "user_1"
+                ),
+                "named supported workflows",
+            ),
+            (
+                "update_enrollment",
+                lambda service: service.update_enrollment(
+                    "enrollment_1",
+                    StudentBillingEnrollmentUpdate(collection_mode="external"),
+                    "studio_1",
+                    "user_1",
+                ),
+                "Generic update is unavailable",
+            ),
+        )
 
-        self.assertEqual(blocked.exception.status_code, 409)
-        self.assertIn("named cancellation workflow", blocked.exception.detail)
-        self.assertEqual(
-            service.supabase.tables["billing_payers"][0]["autopay_status"],
-            "enabled",
-        )
-        self.assertEqual(
-            service.supabase.tables["billing_subscriptions"][0]["collection_mode"],
-            "autopay",
-        )
-        self.assertEqual(
-            service.supabase.tables["student_billing_enrollments"][0]["collection_mode"],
-            "autopay",
-        )
-        self.assertEqual(_FakeStripeService.subscription_update_calls, [])
-        self.assertEqual(service.supabase.tables["audit_logs"], [])
-    def test_disable_autopay_marks_subscription_pending_before_stripe_mutation(self):
+        for operation, invoke, expected_detail in cases:
+            with self.subTest(operation=operation):
+                _FakeStripeService.reset()
+                service = self.service()
+                service.supabase = _AutopayOperationSupabase({
+                    "billing_payers": [{
+                        "id": "payer_1",
+                        "studio_id": "studio_1",
+                        "display_name": "Family One",
+                        "autopay_status": "enabled",
+                        "default_payment_method_id": "pm_123",
+                        "created_at": "2026-05-18T00:00:00Z",
+                        "updated_at": "2026-05-18T00:00:00Z",
+                    }],
+                    "billing_subscriptions": [{
+                        "id": "subscription_1",
+                        "studio_id": "studio_1",
+                        "payer_id": "payer_1",
+                        "collection_mode": "autopay",
+                        "status": "active",
+                        "stripe_subscription_id": "sub_1",
+                    }],
+                    "student_billing_enrollments": [{
+                        "id": "enrollment_1",
+                        "studio_id": "studio_1",
+                        "billing_subscription_id": "subscription_1",
+                        "collection_mode": "autopay",
+                        "status": "active",
+                        "stripe_subscription_id": "sub_1",
+                        "stripe_subscription_item_id": "si_1",
+                        "metadata": {},
+                    }],
+                    "audit_logs": [],
+                })
+                state_tables = (
+                    "billing_payers",
+                    "billing_subscriptions",
+                    "student_billing_enrollments",
+                    "audit_logs",
+                )
+                state_before = {
+                    table: copy.deepcopy(service.supabase.tables[table])
+                    for table in state_tables
+                }
+
+                with (
+                    patch(
+                        "app.services.billing_service.StripeService",
+                        _FakeStripeService,
+                    ),
+                    self.assertRaises(HTTPException) as blocked,
+                ):
+                    asyncio.run(invoke(service))
+
+                self.assertEqual(blocked.exception.status_code, 409)
+                self.assertIn(expected_detail, blocked.exception.detail)
+                self.assertEqual(
+                    {
+                        table: service.supabase.tables[table]
+                        for table in state_tables
+                    },
+                    state_before,
+                )
+                self.assertEqual(_FakeStripeService.subscription_update_calls, [])
+                self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
+                self.assertEqual(_FakeStripeService.subscription_item_delete_calls, [])
+                self.assertEqual(_FakeStripeService.subscription_item_update_calls, [])
+
+    def test_disable_autopay_without_subscription_does_not_rewire_provider(self):
         service = self.service()
         service.supabase = _AutopayOperationSupabase({
             "billing_payers": [{
@@ -3016,111 +3058,3 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(blocked.exception.status_code, 409)
         self.assertEqual(_FakeStripeService.subscription_item_update_calls, [])
         self.assertEqual(service.supabase.billing_provider_operations, {})
-
-    def test_cancel_last_subscription_enrollment_cancels_subscription_without_deleting_last_item(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "student_billing_enrollments": [{
-                "id": "enrollment_1", "studio_id": "studio_1",
-                "collection_mode": "autopay", "status": "active",
-                "stripe_subscription_id": "sub_1",
-                "stripe_subscription_item_id": "si_1",
-            }],
-        })
-
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            with self.assertRaises(HTTPException) as unavailable:
-                asyncio.run(service.set_enrollment_status(
-                    "enrollment_1", "canceled", "studio_1", "user_1"
-                ))
-
-        self.assertEqual(unavailable.exception.status_code, 409)
-        self.assertIn("named supported workflows", unavailable.exception.detail)
-        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
-        self.assertEqual(_FakeStripeService.subscription_item_delete_calls, [])
-        self.assertEqual(_FakeStripeService.subscription_item_update_calls, [])
-    def test_cancel_uses_subscription_stripe_account_when_studio_account_rotated(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "student_billing_enrollments": [{
-                "id": "enrollment_1", "studio_id": "studio_1",
-                "collection_mode": "autopay", "status": "active",
-                "stripe_subscription_id": "sub_1",
-                "stripe_subscription_item_id": "si_1",
-            }],
-        })
-
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            with self.assertRaises(HTTPException) as unavailable:
-                asyncio.run(service.set_enrollment_status(
-                    "enrollment_1", "canceled", "studio_1", "user_1"
-                ))
-
-        self.assertEqual(unavailable.exception.status_code, 409)
-        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
-    def test_cancel_marks_enrollment_detach_pending_before_stripe_mutation(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "student_billing_enrollments": [{
-                "id": "enrollment_1", "studio_id": "studio_1",
-                "collection_mode": "autopay", "status": "active",
-                "stripe_subscription_id": "sub_1",
-                "stripe_subscription_item_id": "si_1",
-                "metadata": {},
-            }],
-        })
-
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            with self.assertRaises(HTTPException):
-                asyncio.run(service.set_enrollment_status(
-                    "enrollment_1", "canceled", "studio_1", "user_1"
-                ))
-
-        enrollment = service.supabase.tables["student_billing_enrollments"][0]
-        self.assertEqual(enrollment["metadata"], {})
-        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
-    def test_update_enrollment_to_external_records_local_detach_before_canceling_stripe(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "student_billing_enrollments": [{
-                "id": "enrollment_1", "studio_id": "studio_1",
-                "collection_mode": "autopay", "status": "active",
-                "stripe_subscription_id": "sub_1",
-                "stripe_subscription_item_id": "si_1",
-                "metadata": {},
-            }],
-        })
-
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            with self.assertRaises(HTTPException) as unavailable:
-                asyncio.run(service.update_enrollment(
-                    "enrollment_1",
-                    StudentBillingEnrollmentUpdate(collection_mode="external"),
-                    "studio_1",
-                    "user_1",
-                ))
-
-        self.assertEqual(unavailable.exception.status_code, 409)
-        self.assertIn("Generic update is unavailable", unavailable.exception.detail)
-        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
-    def test_cancel_one_of_multiple_subscription_enrollments_deletes_only_that_item(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "student_billing_enrollments": [{
-                "id": "enrollment_1", "studio_id": "studio_1",
-                "collection_mode": "autopay", "status": "active",
-                "stripe_subscription_id": "sub_1",
-                "stripe_subscription_item_id": "si_1",
-            }],
-        })
-
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            with self.assertRaises(HTTPException) as unavailable:
-                asyncio.run(service.set_enrollment_status(
-                    "enrollment_1", "canceled", "studio_1", "user_1"
-                ))
-
-        self.assertEqual(unavailable.exception.status_code, 409)
-        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
-        self.assertEqual(_FakeStripeService.subscription_item_delete_calls, [])
-        self.assertEqual(_FakeStripeService.subscription_item_update_calls, [])

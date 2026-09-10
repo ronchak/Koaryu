@@ -12,7 +12,7 @@ from app.api.v1.endpoints import billing as billing_endpoint
 from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
 from app.schemas.billing import PlatformBillingStatusResponse
 from app.services import billing_landing
-from tests.test_billing_landing import status
+from tests.billing_landing_fixtures import billing_system_status
 
 
 AGGREGATES = dict(
@@ -80,7 +80,7 @@ class LandingRuntimeFixture:
                 fixture.started.set()
                 assert fixture.release.wait(10), 'test must release the retained provider work'
                 self.client.touch('diagnostics-complete')
-                return status()
+                return billing_system_status()
 
             async def get_payment_account(self, studio):
                 raise AssertionError('a timed-out caller must not start a duplicate Connect read')

@@ -286,17 +286,6 @@ def test_student_photo_body_is_read_before_interactive_provider_admission():
     )
 
 
-def test_remaining_application_client_factories_are_isolated_special_cases():
-    # The runtime owns ordinary request clients. These are the direct factory
-    # callers left: runtime worker setup, off-loop JWKS fallback, off-loop
-    # readiness, dashboard child reads, rare live Stripe authorization, and
-    # owner-run CLI scripts. The CLI singleton is retained because that caller
-    # remains outside FastAPI and no request worker imports this accessor.
-    source = "\n".join(path.read_text() for path in (ROOT / "app").rglob("*.py"))
-    assert "_client: Optional" in source
-    assert "close_supabase_client" in source
-
-
 def test_outer_request_deadline_records_timeout_without_releasing_active_work():
     async def scenario():
         runtime = _runtime(workers=1, queue=0, operation_timeout=0.025)

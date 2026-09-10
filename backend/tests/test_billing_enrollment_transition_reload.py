@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from tests.test_billing_enrollment_transitions import (
+from tests.billing_enrollment_transition_fixtures import (
     _TransitionFacade,
     _TransitionStripe,
     _item,

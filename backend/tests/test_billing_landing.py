@@ -6,17 +6,10 @@ import pytest
 from fastapi import HTTPException, Response
 
 from app.api.v1.endpoints.billing import get_billing_landing as endpoint
-from app.schemas.billing import BillingSystemStatusResponse, StudioPaymentAccountResponse, BillingWebhookHealthResponse
+from app.schemas.billing import StudioPaymentAccountResponse
 from app.services.billing_landing import get_billing_landing, payment_cohort_period
 from datetime import datetime, timezone
-
-
-def status():
-    return BillingSystemStatusResponse(
-        studio_id='studio', configured_stripe_mode='test', ready_for_configured_mode=True,
-        live_payments_authorized=False, ready_for_live_payments=False, checked_at='2026-12-31T00:00:00Z',
-        payment_account=StudioPaymentAccountResponse(studio_id='studio'), mutation_capabilities={},
-        platform_webhooks=BillingWebhookHealthResponse(), connect_webhooks=BillingWebhookHealthResponse(), checks=[])
+from tests.billing_landing_fixtures import billing_system_status
 
 
 @pytest.mark.parametrize('role', ['admin', 'front_desk'])
@@ -27,7 +20,7 @@ def test_landing_authorizes_fields_independently(role, required):
                       has_student_billing=True, has_collection_history=True,
                       payment_cohort=dict(period_start='2026-12-01Z',period_end='2027-01-01Z',payment_count=1001))
     with patch('app.services.billing_landing.BillingService') as billing, patch('app.services.billing_landing.PlatformBillingService') as platform, patch('app.services.billing_landing.get_platform_subscription_access', return_value={'subscription_required': required}), patch('app.services.billing_landing.execute_required_rpc', return_value=SimpleNamespace(data=aggregates)) as rpc:
-        billing.return_value.get_system_status = AsyncMock(return_value=status())
+        billing.return_value.get_system_status = AsyncMock(return_value=billing_system_status())
         platform.return_value.get_status = AsyncMock(return_value=None)
         result = asyncio.run(get_billing_landing(Mock(), {'studio_id':'studio','role':role}))
         assert result.system_status.payment_account.studio_id == 'studio'
@@ -40,7 +33,7 @@ def test_landing_authorizes_fields_independently(role, required):
 
 def test_unverifiable_subscription_preserves_diagnostics_without_financial_query():
     with patch('app.services.billing_landing.BillingService') as billing, patch('app.services.billing_landing.get_platform_subscription_access', side_effect=HTTPException(503,'unavailable')), patch('app.services.billing_landing.execute_required_rpc') as rpc:
-        billing.return_value.get_system_status = AsyncMock(return_value=status())
+        billing.return_value.get_system_status = AsyncMock(return_value=billing_system_status())
         result = asyncio.run(get_billing_landing(Mock(), {'studio_id':'studio','role':'front_desk'}))
         assert result.financial_access=='unavailable'
         assert result.aggregates is None
