@@ -184,8 +184,8 @@ BEGIN
         ('omitted-null', NULL::DATE, '{}'::JSONB, TRUE, FALSE, NULL::DATE, DATE '2026-03-05', NULL::DATE),
         ('same-null', NULL::DATE, '{"membership_start_date":null}'::JSONB, TRUE, FALSE, NULL::DATE, DATE '2026-03-05', NULL::DATE),
         ('reorder', DATE '2026-01-10', '{}'::JSONB, TRUE, TRUE, DATE '2026-01-10', DATE '2026-03-05', NULL::DATE),
-        -- Keep explicit date-change compatibility until product policy is settled.
-        ('changed-date', DATE '2026-01-10', '{"membership_start_date":"2026-07-01"}'::JSONB, TRUE, FALSE, DATE '2026-07-01', DATE '2026-07-01', DATE '2026-07-01'),
+        -- Overall edits preserve both known and unknown program dates.
+        ('changed-date', DATE '2026-01-10', '{"membership_start_date":"2026-07-01"}'::JSONB, TRUE, FALSE, DATE '2026-07-01', DATE '2026-03-05', NULL::DATE),
         ('clear-date', DATE '2026-01-10', '{"membership_start_date":null}'::JSONB, TRUE, FALSE, NULL::DATE, DATE '2026-03-05', NULL::DATE),
         ('date-without-programs', DATE '2026-01-10', '{"membership_start_date":"2026-07-01"}'::JSONB, FALSE, FALSE, DATE '2026-07-01', DATE '2026-03-05', NULL::DATE),
         ('clear-without-programs', DATE '2026-01-10', '{"membership_start_date":null}'::JSONB, FALSE, FALSE, NULL::DATE, DATE '2026-03-05', NULL::DATE)

@@ -123,6 +123,16 @@
       "includeDefaults": true,
       "includeForeignKeys": true,
       "format": "catalog"
+    },
+    {
+      "kind": "rank-return",
+      "path": "supabase/migrations/20260910084231_independent_program_joining_dates_v42.sql",
+      "signature": "private.koaryu_release_student_rank_writer_manifest_v13()",
+      "sourceSha256": "c8a74004d450ddaa30373247938b94f714f682299640c47b17ddfb81d819b00e",
+      "functionSet": "student-writer-returns",
+      "parent": "private.koaryu_release_student_rank_writer_manifest_v11()",
+      "expectedParent": "0:055e856b82b43d1f62bc4e910bf58eae2de10272ebe22164d124e7f39598e54b",
+      "format": "catalog"
     }
   ]
 }

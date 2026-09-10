@@ -8,6 +8,17 @@ import { describe, it } from "node:test";
 
 import {
   ROLLOUT,
+  EXPECTED_V41_OPERATIONAL_READINESS,
+  V41_OPERATIONAL_READINESS_SQL,
+  EXPECTED_V42_RELEASE_MANIFEST,
+  V42_RELEASE_MANIFEST_SQL,
+  EXPECTED_V42_CATALOG_STATE,
+  EXPECTED_V42_RESTORED_CATALOG_STATE,
+  EXPECTED_V42_EXPECTATION_STATE,
+  EXPECTED_V42_RESOURCE_OWNERSHIP_MANIFEST,
+  EXPECTED_V42_OPERATIONAL_CONTRACT_V31,
+  EXPECTED_V42_OPERATIONAL_MANIFEST_V12,
+
   EXPECTED_V40_OPERATIONAL_READINESS,
   V40_OPERATIONAL_READINESS_SQL,
   EXPECTED_V41_RELEASE_MANIFEST,
@@ -276,6 +287,7 @@ const expectedMigrationFiles = [
   "20260908080420_student_membership_preservation_v39.sql",
   "20260908133504_rank_history_command_ownership_v40.sql",
   "20260908183744_serialize_billing_payer_balance_v41.sql",
+  "20260910084231_independent_program_joining_dates_v42.sql",
 ];
 const migrationBoundaries = new Map([
   ["pre", "20260814043325_default_program_memberships_to_starting_belt.sql"],
@@ -310,6 +322,7 @@ const migrationBoundaries = new Map([
   ["v38", "20260908080420_student_membership_preservation_v39.sql"],
   ["v39", "20260908133504_rank_history_command_ownership_v40.sql"],
   ["v40", "20260908183744_serialize_billing_payer_balance_v41.sql"],
+  ["v41", "20260910084231_independent_program_joining_dates_v42.sql"],
 ]);
 function expectedRemaining(state) {
   const first = expectedMigrationFiles.indexOf(migrationBoundaries.get(state));
@@ -317,7 +330,7 @@ function expectedRemaining(state) {
   return expectedMigrationFiles.slice(first);
 }
 
-const validCatalogState = EXPECTED_V40_CATALOG_STATE;
+const validCatalogState = EXPECTED_V42_CATALOG_STATE;
 const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
   "trigger=1:fedcba9876543210fedcba9876543210:0;" +
@@ -333,19 +346,19 @@ const validFingerprint =
   `v30_contract=${EXPECTED_V37_COMPAT_V30_OPERATIONAL_CONTRACT};` +
   `v30_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V11};` +
   `v31_compat_v30_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V11};` +
-  `v31_expectation=${EXPECTED_V40_EXPECTATION_STATE};` +
-  `v31_resource=${EXPECTED_V40_RESOURCE_OWNERSHIP_MANIFEST};` +
-  `v31_contract=${EXPECTED_V40_OPERATIONAL_CONTRACT_V31};` +
-  `v31_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V12};` +
+  `v31_expectation=${EXPECTED_V42_EXPECTATION_STATE};` +
+  `v31_resource=${EXPECTED_V42_RESOURCE_OWNERSHIP_MANIFEST};` +
+  `v31_contract=${EXPECTED_V42_OPERATIONAL_CONTRACT_V31};` +
+  `v31_manifest=${EXPECTED_V42_OPERATIONAL_MANIFEST_V12};` +
   `v35_evidence=${EXPECTED_V35_EVIDENCE_MANIFEST};` +
   `v36_recovery=${EXPECTED_V36_RECOVERY_MANIFEST};` +
   `v37_trigger_guard=${EXPECTED_V37_TRIGGER_GUARD_MANIFEST};` +
-  `v41_release=${EXPECTED_V41_RELEASE_MANIFEST};v41_balance=${EXPECTED_V41_PAYER_BALANCE_STATE};` +
+  `v42_release=${EXPECTED_V42_RELEASE_MANIFEST};v41_balance=${EXPECTED_V41_PAYER_BALANCE_STATE};` +
   `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};` +
   `critical_surface=${EXPECTED_V40_CRITICAL_SURFACE_MANIFEST}`;
 const validRestoredFingerprint = validFingerprint.replace(
-  `catalog=${EXPECTED_V40_CATALOG_STATE}`,
-  `catalog=${EXPECTED_V40_RESTORED_CATALOG_STATE}`,
+  `catalog=${EXPECTED_V42_CATALOG_STATE}`,
+  `catalog=${EXPECTED_V42_RESTORED_CATALOG_STATE}`,
 );
 
 function historyColumn(column_name, data_type, udt_name, overrides = {}) {
@@ -409,6 +422,14 @@ function preSnapshot(overrides = {}) {
   };
 }
 
+function snapshotQueryValues(snapshot) {
+  const headers = { history: "history_state", v40RankCommandState: "rank_command_state", v41PayerBalanceState: "payer_balance_state" };
+  return Object.fromEntries(Object.entries(snapshot).map(([key, value]) => [
+    headers[key] ?? key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`),
+    key === "historyColumns" ? JSON.stringify(value) : value,
+  ]));
+}
+
 function postSnapshot(packet, overrides = {}) {
   return {
     historyColumns: minimalHistoryColumns,
@@ -430,15 +451,17 @@ function postSnapshot(packet, overrides = {}) {
     v30ReplayRepairsManifest: EXPECTED_V37_COMPAT_V30_REPLAY_REPAIRS_MANIFEST,
     v30OperationalContract: EXPECTED_V37_COMPAT_V30_OPERATIONAL_CONTRACT,
     v30OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V11,
-    v31ExpectationState: EXPECTED_V40_EXPECTATION_STATE,
-    v31ResourceOwnershipManifest: EXPECTED_V40_RESOURCE_OWNERSHIP_MANIFEST,
-    v31OperationalContract: EXPECTED_V40_OPERATIONAL_CONTRACT_V31,
-    v31OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V12,
+    v31ExpectationState: EXPECTED_V42_EXPECTATION_STATE,
+    v31ResourceOwnershipManifest: EXPECTED_V42_RESOURCE_OWNERSHIP_MANIFEST,
+    v31OperationalContract: EXPECTED_V42_OPERATIONAL_CONTRACT_V31,
+    v31OperationalManifest: EXPECTED_V42_OPERATIONAL_MANIFEST_V12,
     v35EvidenceManifest: EXPECTED_V35_EVIDENCE_MANIFEST,
     v36RecoveryManifest: EXPECTED_V36_RECOVERY_MANIFEST,
     v37TriggerGuardManifest: EXPECTED_V37_TRIGGER_GUARD_MANIFEST,
     v40ReleaseManifest: null,
-    v41ReleaseManifest: EXPECTED_V41_RELEASE_MANIFEST,
+    v41ReleaseManifest: null,
+    v42ReleaseManifest: EXPECTED_V42_RELEASE_MANIFEST,
+    v41CompatibilityReadiness: EXPECTED_V41_OPERATIONAL_READINESS,
     v41PayerBalanceState: EXPECTED_V41_PAYER_BALANCE_STATE,
     v40CompatibilityReadiness: EXPECTED_V40_OPERATIONAL_READINESS,
     v40RankCommandState: EXPECTED_V40_RANK_COMMAND_STATE,
@@ -450,8 +473,23 @@ function postSnapshot(packet, overrides = {}) {
   };
 }
 
-function v40Snapshot(packet, overrides = {}) {
+function v41Snapshot(packet, overrides = {}) {
   return postSnapshot(packet, {
+    history: packet.v41History, targetHistory: packet.v41TargetHistory,
+    operationalReadiness: EXPECTED_V41_OPERATIONAL_READINESS,
+    catalogState: EXPECTED_V40_CATALOG_STATE,
+    v31ExpectationState: EXPECTED_V40_EXPECTATION_STATE,
+    v31ResourceOwnershipManifest: EXPECTED_V40_RESOURCE_OWNERSHIP_MANIFEST,
+    v31OperationalContract: EXPECTED_V40_OPERATIONAL_CONTRACT_V31,
+    v31OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V12,
+    v41ReleaseManifest: EXPECTED_V41_RELEASE_MANIFEST,
+    v42ReleaseManifest: null, v41CompatibilityReadiness: null,
+    ...overrides,
+  });
+}
+
+function v40Snapshot(packet, overrides = {}) {
+  return v41Snapshot(packet, {
     history: packet.v40History,
     targetHistory: packet.v40TargetHistory,
     operationalReadiness: EXPECTED_V40_OPERATIONAL_READINESS,
@@ -1052,7 +1090,7 @@ describe("studio-comp migration rollout guard", () => {
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|136\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|137\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -1089,7 +1127,7 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-136 packet through V41 and the Payments predecessors", () => {
+  it("derives an exact 100-to-137 packet through V42 and the Payments predecessors", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
     assert.equal(ROLLOUT.scheduleV25MigrationCount, 119);
@@ -1107,7 +1145,7 @@ describe("studio-comp migration rollout guard", () => {
       ],
     );
     assert.equal(ROLLOUT.v26MigrationCount, 121);
-    assert.equal(packet.migrationCount, 136);
+    assert.equal(packet.migrationCount, 137);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
@@ -1146,7 +1184,7 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.match(packet.sourceManifestSha256, /^[0-9a-f]{64}$/);
     assert.equal(packet.integrationComplete, true);
-    assert.equal(packet.pendingMigrations.length, 36);
+    assert.equal(packet.pendingMigrations.length, 37);
     assert.deepEqual(
       packet.pendingMigrations.map((filename) => filename.slice(0, 14)),
       ROLLOUT.releasePendingVersions,
@@ -1462,7 +1500,7 @@ describe("studio-comp migration rollout guard", () => {
     });
     assert.deepEqual(
       classifyStateSnapshot(
-        postSnapshot(packet, { catalogState: EXPECTED_V40_RESTORED_CATALOG_STATE }),
+        postSnapshot(packet, { catalogState: EXPECTED_V42_RESTORED_CATALOG_STATE }),
         packet,
         validFingerprint,
       ),
@@ -1913,42 +1951,9 @@ describe("studio-comp migration rollout guard", () => {
       providerFingerprint: null,
     });
     assert.match(V29_OPERATIONAL_READINESS_SQL, /koaryu_release_schema_preflight_v10/);
-    const postValues = new Map([
-      ["history_columns", extendedHistoryColumns],
-      ["history_state", packet.postHistory],
-      ["target_history", packet.postTargetHistory],
-      ["object_counts", "3:1"],
-      ["function_state", "3:0123456789abcdef0123456789abcdef:0"],
-      ["trigger_state", "1:fedcba9876543210fedcba9876543210:0"],
-      ["catalog_state", validCatalogState],
-      ["critical_surface_manifest", EXPECTED_V40_CRITICAL_SURFACE_MANIFEST],
-      ["v26_expectation_state", EXPECTED_V37_COMPAT_V26_EXPECTATION_STATE],
-      ["v27_expectation_state", EXPECTED_V37_COMPAT_V27_EXPECTATION_STATE],
-      ["v28_expectation_state", EXPECTED_V37_COMPAT_V28_EXPECTATION_STATE],
-      ["v29_expectation_state", EXPECTED_V37_COMPAT_V29_EXPECTATION_STATE],
-      ["v29_transition_manifest", EXPECTED_V34_COMPAT_V29_TRANSITION_MANIFEST],
-      ["v29_operational_contract", EXPECTED_V37_COMPAT_V29_OPERATIONAL_CONTRACT],
-      ["v29_operational_manifest", EXPECTED_V40_OPERATIONAL_MANIFEST_V10],
-      ["v30_expectation_state", EXPECTED_V37_COMPAT_V30_EXPECTATION_STATE],
-      ["v30_replay_repairs_manifest", EXPECTED_V37_COMPAT_V30_REPLAY_REPAIRS_MANIFEST],
-      ["v30_operational_contract", EXPECTED_V37_COMPAT_V30_OPERATIONAL_CONTRACT],
-      ["v30_operational_manifest", EXPECTED_V40_OPERATIONAL_MANIFEST_V11],
-      ["v31_expectation_state", EXPECTED_V40_EXPECTATION_STATE],
-      ["v31_resource_ownership_manifest", EXPECTED_V40_RESOURCE_OWNERSHIP_MANIFEST],
-      ["v31_operational_contract", EXPECTED_V40_OPERATIONAL_CONTRACT_V31],
-      ["v31_operational_manifest", EXPECTED_V40_OPERATIONAL_MANIFEST_V12],
-      ["v35_evidence_manifest", EXPECTED_V35_EVIDENCE_MANIFEST],
-      ["v36_recovery_manifest", EXPECTED_V36_RECOVERY_MANIFEST],
-      ["v37_trigger_guard_manifest", EXPECTED_V37_TRIGGER_GUARD_MANIFEST],
-      ["v41_release_manifest", EXPECTED_V41_RELEASE_MANIFEST],
-      ["payer_balance_state", EXPECTED_V41_PAYER_BALANCE_STATE],
-      ["v40_compatibility_readiness", EXPECTED_V40_OPERATIONAL_READINESS],
-      ["rank_command_state", EXPECTED_V40_RANK_COMMAND_STATE],
-      ["v39_compatibility_readiness", EXPECTED_V39_OPERATIONAL_READINESS],
-      ["v38_compatibility_readiness", EXPECTED_V38_OPERATIONAL_READINESS],
-      ["v37_compatibility_readiness", EXPECTED_V37_OPERATIONAL_READINESS],
-      ["operational_readiness", EXPECTED_OPERATIONAL_READINESS],
-    ]);
+    const postValues = new Map(Object.entries(snapshotQueryValues(
+      postSnapshot(packet, { historyColumns: stagingHistoryColumns }),
+    )));
     const postHeaders = [];
     const postSql = [];
     const post = readRemoteState(
@@ -1964,9 +1969,9 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.deepEqual(post, { state: "post", providerFingerprint: validFingerprint });
     assert.equal(postHeaders.at(-1), "operational_readiness");
-    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v22/);
+    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v23/);
     assert.ok(postSql.includes(V41_PAYER_BALANCE_STATE_SQL));
-    assert.ok(postSql.includes(V41_RELEASE_MANIFEST_SQL));
+    assert.ok(postSql.includes(V42_RELEASE_MANIFEST_SQL));
     assert.ok(postSql.includes(V40_CATALOG_STATE_SQL));
     assert.ok(postSql.includes(V40_RANK_COMMAND_STATE_SQL));
 
@@ -2461,46 +2466,9 @@ describe("studio-comp migration rollout guard", () => {
 
     for (const { snapshot, expected } of cases) {
       const values = new Map([
-        ["history_columns", extendedHistoryColumns],
-        ["history_state", snapshot.history],
-        ["target_history", snapshot.targetHistory],
-        ["object_counts", snapshot.objectCounts],
-        ["function_state", snapshot.functionState],
-        ["trigger_state", snapshot.triggerState],
-        ["catalog_state", snapshot.catalogState],
-        ["critical_surface_manifest", snapshot.criticalSurfaceManifest],
-        ["v26_expectation_state", snapshot.v26ExpectationState],
-        ["v27_expectation_state", snapshot.v27ExpectationState],
-        ["v28_expectation_state", snapshot.v28ExpectationState],
-        ["v29_expectation_state", snapshot.v29ExpectationState],
-        ["v29_transition_manifest", snapshot.v29TransitionManifest],
-        ["v29_operational_contract", snapshot.v29OperationalContract],
-        ["v29_operational_manifest", snapshot.v29OperationalManifest],
-        ["v30_expectation_state", snapshot.v30ExpectationState],
-        ["v30_replay_repairs_manifest", snapshot.v30ReplayRepairsManifest],
-        ["v30_operational_contract", snapshot.v30OperationalContract],
-        ["v30_operational_manifest", snapshot.v30OperationalManifest],
-        ["v31_expectation_state", snapshot.v31ExpectationState],
-        ["v31_resource_ownership_manifest", snapshot.v31ResourceOwnershipManifest],
-        ["v31_operational_contract", snapshot.v31OperationalContract],
-        ["v31_operational_manifest", snapshot.v31OperationalManifest],
-        ["v35_evidence_manifest", snapshot.v35EvidenceManifest],
-        ["v36_recovery_manifest", snapshot.v36RecoveryManifest],
-        ["v37_trigger_guard_manifest", snapshot.v37TriggerGuardManifest],
-        ["v38_billing_manifest", snapshot.v38BillingManifest],
-        ["v39_release_manifest", snapshot.v39ReleaseManifest],
-        ["v40_release_manifest", snapshot.v40ReleaseManifest],
-        ["v41_release_manifest", snapshot.v41ReleaseManifest],
-        ["payer_balance_state", snapshot.v41PayerBalanceState],
-        ["v40_compatibility_readiness", snapshot.v40CompatibilityReadiness],
-        ["rank_command_state", snapshot.v40RankCommandState],
-        ["v39_compatibility_readiness", snapshot.v39CompatibilityReadiness],
-        ["v38_compatibility_readiness", snapshot.v38CompatibilityReadiness],
-        ["v37_compatibility_readiness", snapshot.v37CompatibilityReadiness],
-        ["operational_readiness", snapshot.operationalReadiness],
-        ["writer_return_contract_state", snapshot.writerReturnContractState],
+        ...Object.entries(snapshotQueryValues({ ...snapshot, historyColumns: stagingHistoryColumns })),
         ["migration_row_count", expected.state === "pre" ? "100" : expected.state === "intermediate" ? "101" : expected.state === "recovery" ? "102" : expected.state === "convergence" ? "103" : expected.state === "attested" ? "104" : expected.state === "column-attested" ? "108" : expected.state === "trial-locked" ? String(ROLLOUT.trialLockedMigrationCount) : expected.state === "staff-identity" ? String(ROLLOUT.staffIdentityMigrationCount) : String(ROLLOUT.finalMigrationCount)],
-        ["migration_newest_version", expected.state === "pre" ? "20260801131844" : expected.state === "intermediate" ? "20260814043325" : expected.state === "recovery" ? "20260814103046" : expected.state === "convergence" ? "20260814105424" : expected.state === "attested" ? "20260814114500" : expected.state === "column-attested" ? "20260814200000" : expected.state === "trial-locked" ? "20260814213000" : expected.state === "staff-identity" ? "20260815220402" : "20260908183744"],
+        ["migration_newest_version", expected.state === "pre" ? "20260801131844" : expected.state === "intermediate" ? "20260814043325" : expected.state === "recovery" ? "20260814103046" : expected.state === "convergence" ? "20260814105424" : expected.state === "attested" ? "20260814114500" : expected.state === "column-attested" ? "20260814200000" : expected.state === "trial-locked" ? "20260814213000" : expected.state === "staff-identity" ? "20260815220402" : "20260910084231"],
       ]);
       const headers = [];
       const diagnosis = readRemoteDiagnosis(repositoryRoot, packet, {}, (_root, sql, header) => {
@@ -2779,7 +2747,7 @@ describe("studio-comp migration rollout guard", () => {
 
   it("makes an inspection token available only for accepted probe states", () => {
     const packet = candidatePacket();
-    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "restored-v22", "canonical-v23", "restored-v23-pending-v24", "v24", "schedule-v25", "v25", "v26", "v27", "v28", "v29", "v30", "v31", "v32", "v33", "v34", "v35", "v36", "v37", "v38", "v39", "v40", "post"]) {
+    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "restored-v22", "canonical-v23", "restored-v23-pending-v24", "v24", "schedule-v25", "v25", "v26", "v27", "v28", "v29", "v30", "v31", "v32", "v33", "v34", "v35", "v36", "v37", "v38", "v39", "v40", "v41", "post"]) {
       assert.equal(
         buildInspectionTokenForAcceptedState(packet, "staging", { state }),
         buildInspectionToken(packet, "staging", state),
@@ -2823,12 +2791,12 @@ describe("studio-comp migration rollout guard", () => {
   });
 
 
-  it("refuses to certify post-state before the exact 136-migration integration", () => {
+  it("refuses to certify post-state before the exact 137-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 136-migration sequence/,
+      /exact final 137-migration sequence/,
     );
   });
 
@@ -3162,7 +3130,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.equal(
       buildProductionConfirmationPhrase(staffIdentityPacket),
       [
-        "APPLY 26 MIGRATIONS FROM",
+        "APPLY 27 MIGRATIONS FROM",
         candidateSha,
         "MANIFEST",
         staffIdentityPacket.sourceManifestSha256,
@@ -3173,7 +3141,7 @@ describe("studio-comp migration rollout guard", () => {
   });
 });
 
-describe("V41 payer balance migration cutover", () => {
+describe("V42 joining-date migration cutover", () => {
   it("accepts exact V37 and V38 predecessors and selects their remaining migration suffixes", () => {
     const packet = candidatePacket();
     for (const invalidState of [undefined, null, ["v38"], { toString: () => "v38" }, "constructor"]) {
@@ -3210,9 +3178,13 @@ describe("V41 payer balance migration cutover", () => {
   it("rejects current readiness with historical or missing balance/rank/release facts", () => {
     const packet = candidatePacket();
     for (const change of [
-      { v41ReleaseManifest: null },
-      { v41ReleaseManifest: EXPECTED_V40_RELEASE_MANIFEST },
-      { v41ReleaseManifest: `${EXPECTED_V41_RELEASE_MANIFEST}extra` },
+      { v42ReleaseManifest: null },
+      { v42ReleaseManifest: EXPECTED_V40_RELEASE_MANIFEST },
+      { v42ReleaseManifest: `${EXPECTED_V42_RELEASE_MANIFEST}extra` },
+      { v41CompatibilityReadiness: null },
+      { v41CompatibilityReadiness: EXPECTED_OPERATIONAL_READINESS },
+      { v31ExpectationState: EXPECTED_V40_EXPECTATION_STATE },
+      { catalogState: EXPECTED_V40_CATALOG_STATE },
       { v41PayerBalanceState: null },
       { v41PayerBalanceState: `1:${"0".repeat(64)}` },
       { v41PayerBalanceState: `${EXPECTED_V41_PAYER_BALANCE_STATE}extra` },
@@ -3236,7 +3208,7 @@ describe("V41 payer balance migration cutover", () => {
       { v31OperationalContract: EXPECTED_V39_OPERATIONAL_CONTRACT_V31 },
       { v31OperationalManifest: EXPECTED_V39_OPERATIONAL_MANIFEST_V12 },
     ]) assert.throws(() => classifyStateSnapshot(postSnapshot(packet, change), packet), JSON.stringify(change));
-    for (const field of [`v41_release=${EXPECTED_V41_RELEASE_MANIFEST};`, `v41_balance=${EXPECTED_V41_PAYER_BALANCE_STATE};`, `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};`]) {
+    for (const field of [`v42_release=${EXPECTED_V42_RELEASE_MANIFEST};`, `v41_balance=${EXPECTED_V41_PAYER_BALANCE_STATE};`, `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};`]) {
       assert.throws(() => approvedProviderFingerprintVariants(validFingerprint.replace(field, "")));
     }
     assert.throws(() => approvedProviderFingerprintVariants(validFingerprint.replace(
@@ -3267,19 +3239,21 @@ describe("V41 payer balance migration cutover", () => {
     ]) assert.throws(() => classifyStateSnapshot(v39Snapshot(packet, change), packet), JSON.stringify(change));
   });
 
-  it("accepts V40 predecessors with their current rank/semantic facts and one remaining migration", () => {
+  it("accepts V40 predecessors with their current rank/semantic facts and their exact remaining migrations", () => {
     const packet = candidatePacket();
+    for (const state of ["v40", "v41"]) {
+      const snapshot = state === "v40" ? v40Snapshot : v41Snapshot;
     for (const catalogState of [EXPECTED_V40_CATALOG_STATE, EXPECTED_V40_RESTORED_CATALOG_STATE]) {
-      assert.deepEqual(classifyStateSnapshot(v40Snapshot(packet, { catalogState }), packet), { state: "v40", providerFingerprint: null });
+      assert.deepEqual(classifyStateSnapshot(snapshot(packet, { catalogState }), packet), { state, providerFingerprint: null });
     }
-    assert.deepEqual(packetForAcceptedState(packet, "v40").pendingMigrations,
-      ["20260908183744_serialize_billing_payer_balance_v41.sql"]);
-    assert.equal(buildInspectionTokenForAcceptedState(packet, "staging", { state: "v40" }), buildInspectionToken(packet, "staging", "v40"));
+    assert.deepEqual(packetForAcceptedState(packet, state).pendingMigrations,
+      expectedRemaining(state));
+    assert.equal(buildInspectionTokenForAcceptedState(packet, "staging", { state }), buildInspectionToken(packet, "staging", state));
     for (const change of [
       { targetHistory: packet.postTargetHistory },
       { operationalReadiness: EXPECTED_OPERATIONAL_READINESS },
-      { v40ReleaseManifest: EXPECTED_V41_RELEASE_MANIFEST },
-      { v40ReleaseManifest: null },
+      { [state + "ReleaseManifest"]: EXPECTED_V42_RELEASE_MANIFEST },
+      { [state + "ReleaseManifest"]: null },
       { v40RankCommandState: null },
       { catalogState: EXPECTED_V39_CATALOG_STATE },
       { criticalSurfaceManifest: EXPECTED_CRITICAL_SURFACE_MANIFEST },
@@ -3288,38 +3262,36 @@ describe("V41 payer balance migration cutover", () => {
       { v39CompatibilityReadiness: null },
       { v38CompatibilityReadiness: null },
       { v37CompatibilityReadiness: null },
-    ]) assert.throws(() => classifyStateSnapshot(v40Snapshot(packet, change), packet), JSON.stringify(change));
+    ]) assert.throws(() => classifyStateSnapshot(snapshot(packet, change), packet), JSON.stringify(change));
+    }
   });
 
-  it("queries only the matching V38, V39 or V40 predecessor contracts", () => {
+  it("queries only the matching V38 through V41 predecessor contracts", () => {
     const packet = candidatePacket();
     for (const [state, snapshot, readinessSql, rawHeader, rawSql] of [
       ["v38", v38Snapshot(packet), V38_OPERATIONAL_READINESS_SQL, "v38_billing_manifest", V38_BILLING_MANIFEST_SQL],
       ["v39", v39Snapshot(packet), V39_OPERATIONAL_READINESS_SQL, "v39_release_manifest", V39_RELEASE_MANIFEST_SQL],
       ["v40", v40Snapshot(packet), V40_OPERATIONAL_READINESS_SQL, "v40_release_manifest", V40_RELEASE_MANIFEST_SQL],
+      ["v41", v41Snapshot(packet), V41_OPERATIONAL_READINESS_SQL, "v41_release_manifest", V41_RELEASE_MANIFEST_SQL],
     ]) {
       const queried = new Map();
-      const values = { history_columns: JSON.stringify(snapshot.historyColumns), history_state: snapshot.history, target_history: snapshot.targetHistory };
-      for (const [key, value] of Object.entries(snapshot)) {
-        values[key.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`)] = key === "historyColumns" ? JSON.stringify(value) : value;
-      }
-      values.rank_command_state = snapshot.v40RankCommandState;
+      const values = snapshotQueryValues(snapshot);
       assert.deepEqual(readRemoteState(repositoryRoot, packet, {}, null, (_root, sql, header) => {
         assert.ok(Object.hasOwn(values, header), header);
         queried.set(header, sql);
         return values[header];
       }), { state, providerFingerprint: null });
-      assert.equal(queried.get("catalog_state"), state === "v40" ? V40_CATALOG_STATE_SQL : CATALOG_STATE_SQL);
+      assert.equal(queried.get("catalog_state"), ["v40", "v41"].includes(state) ? V40_CATALOG_STATE_SQL : CATALOG_STATE_SQL);
       assert.equal(queried.get("operational_readiness"), readinessSql);
       assert.equal(queried.get(rawHeader), rawSql);
       assert.ok(queried.has("v37_compatibility_readiness"));
       assert.equal(queried.has("v38_compatibility_readiness"), state !== "v38");
       assert.equal(queried.has("v40_release_manifest"), state === "v40");
-      assert.equal(queried.has("rank_command_state"), state === "v40");
-      assert.equal(queried.has("v39_compatibility_readiness"), state === "v40");
-      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v21")), state === "v40");
-      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v22")), false);
-      for (const header of ["v41_release_manifest", "payer_balance_state", "v40_compatibility_readiness"]) assert.equal(queried.has(header), false);
+      assert.equal(queried.has("rank_command_state"), ["v40", "v41"].includes(state));
+      assert.equal(queried.has("v39_compatibility_readiness"), ["v40", "v41"].includes(state));
+      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v21")), ["v40", "v41"].includes(state));
+      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v22")), state === "v41");
+      for (const header of ["v41_release_manifest", "payer_balance_state", "v40_compatibility_readiness"]) assert.equal(queried.has(header), state === "v41");
     }
   });
 });

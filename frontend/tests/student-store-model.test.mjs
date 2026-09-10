@@ -297,20 +297,19 @@ describe("student store model", () => {
     assert.deepEqual(membershipFacts(changed),[retainedFacts[0],retainedFacts[2],["new-membership","new-program","active","2026-01-10",null,"new-white","2026-09-08T12:00:00.000Z"]]);
   });
 
-  it("retains explicit joining-date compatibility pending the product policy decision", () => {
-    for (const [update, dates, overallDate] of [
-      [{membership_start_date:"2026-07-01",program_ids:["kids","nogi","unranked"]},["2026-07-01","2026-07-01","2026-07-01"],"2026-07-01"],
-      [{membership_start_date:null,program_ids:["kids","nogi","unranked"]},["2026-03-05","2026-06-12",null],null],
-      [{membership_start_date:"2026-07-01"},["2026-03-05","2026-06-12",null],"2026-07-01"],
-      [{membership_start_date:null},["2026-03-05","2026-06-12",null],null],
-    ]) {
-      const updated=applyPreviewStudentUpdate(retainedStudent(),update,retainedPrograms,retainedOptions);
-      assert.equal(updated.membership_start_date,overallDate);
-      assert.deepEqual(updated.program_memberships.map(row=>row.started_at),dates);
-      assert.deepEqual(updated.program_memberships.map(row=>row.status),["paused","active","paused"]);
+  it("keeps program dates independent when the overall joining date changes", () => {
+    for (const membership_start_date of ["2026-07-01", null]) {
+      for (const program_ids of [undefined, ["kids", "nogi", "unranked"]]) {
+        const update = {membership_start_date, ...(program_ids ? {program_ids} : {})};
+        const updated = applyPreviewStudentUpdate(retainedStudent(), update, retainedPrograms, retainedOptions);
+        assert.equal(updated.membership_start_date, membership_start_date);
+        assert.deepEqual(membershipFacts(updated), retainedFacts);
+      }
+      const updated = applyPreviewStudentUpdate(retainedStudent(), {
+        membership_start_date, program_ids: ["kids", "new-program"],
+      }, retainedPrograms, {...retainedOptions, idFactory: () => "new-membership"});
+      assert.deepEqual(membershipFacts(updated)[0], retainedFacts[0]);
+      assert.equal(updated.program_memberships[1].started_at, membership_start_date);
     }
-    const cleared=applyPreviewStudentUpdate(retainedStudent(),{membership_start_date:null,program_ids:["kids","new-program"]},retainedPrograms,{...retainedOptions,idFactory:()=>"new-membership"});
-    assert.equal(cleared.program_memberships[0].started_at,"2026-03-05");
-    assert.equal(cleared.program_memberships[1].started_at,null);
   });
 });

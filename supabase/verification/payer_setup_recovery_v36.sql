@@ -23,27 +23,30 @@ BEGIN
      IS DISTINCT FROM '0:455520fff5182b12b23368da1afe60e133a01b78913fada73e8a708b94ae8dbb' THEN
   RAISE EXCEPTION 'V36 payer setup recovery manifest mismatch.';
  END IF;
- IF (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339') OR (v_current_count=134 AND v_current_head='20260908080420') OR ((v_current_count=135 AND v_current_head='20260908133504') OR (v_current_count=136 AND v_current_head='20260908183744')) THEN
+ IF (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339') OR (v_current_count=134 AND v_current_head='20260908080420') OR ((v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR (v_current_count=137 AND v_current_head='20260910084231'))) THEN
   IF private.koaryu_release_operational_contract_v29()
       IS DISTINCT FROM '0:32706cfae7047b70ee6b563048ffafa91d945bc824939e3000fa01631a459ecb'
      OR private.koaryu_release_operational_manifest_v10()
-      IS DISTINCT FROM (CASE WHEN (v_current_count=135 AND v_current_head='20260908133504') OR (v_current_count=136 AND v_current_head='20260908183744') THEN 'ec8605a828e82b738ce973627a8018735c28176399b7e9856aa0dd66a04b667a' ELSE 'e81893193bc199a3911d83ce0546d6458fdc4e63d34c05a1a8dd121da8087012' END)
+      IS DISTINCT FROM (CASE WHEN (v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR (v_current_count=137 AND v_current_head='20260910084231')) THEN 'ec8605a828e82b738ce973627a8018735c28176399b7e9856aa0dd66a04b667a' ELSE 'e81893193bc199a3911d83ce0546d6458fdc4e63d34c05a1a8dd121da8087012' END)
      OR private.koaryu_release_payments_replay_repairs_manifest_v30()
       IS DISTINCT FROM '0:508a8a5206cf3561197bf0395e5b700a1d5d2f54aae921c34ced795324643b98'
      OR private.koaryu_release_operational_contract_v30()
       IS DISTINCT FROM '0:2b57633cdd638418ca7837de9a496755e0a3620f381375657f099f6bcded8c23'
      OR private.koaryu_release_operational_manifest_v11()
-      IS DISTINCT FROM (CASE WHEN (v_current_count=135 AND v_current_head='20260908133504') OR (v_current_count=136 AND v_current_head='20260908183744') THEN '2efb0b2cf73beabfb219dd3642a824714c1b0619c5498ecf195071f929e651f6' ELSE '43bb07edfbd3c6ee1431b6abda46ca1785b8ea117de2a13f95636fc7a3c3b263' END)
+      IS DISTINCT FROM (CASE WHEN (v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR (v_current_count=137 AND v_current_head='20260910084231')) THEN '2efb0b2cf73beabfb219dd3642a824714c1b0619c5498ecf195071f929e651f6' ELSE '43bb07edfbd3c6ee1431b6abda46ca1785b8ea117de2a13f95636fc7a3c3b263' END)
      OR private.koaryu_release_resource_ownership_manifest_v31()
-      IS DISTINCT FROM (CASE WHEN (v_current_count=135 AND v_current_head='20260908133504') OR (v_current_count=136 AND v_current_head='20260908183744') THEN '0:fda64c2e37a0e6efd3c69b1167fc2056fc53b85042ced46d511312c886a961a4'
+      IS DISTINCT FROM (CASE WHEN (v_current_count=137 AND v_current_head='20260910084231') THEN '0:49fb66b782a732d495428e62c88ae227f32ef4c22be6d41a4cac0ff686f81e48'
+          WHEN (v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR (v_current_count=137 AND v_current_head='20260910084231')) THEN '0:fda64c2e37a0e6efd3c69b1167fc2056fc53b85042ced46d511312c886a961a4'
           WHEN v_current_count=134 AND v_current_head='20260908080420' THEN '0:daf85d2ad59a6853e872eebedbac8b21b960635cd3a7dec6e304cee2a79e465b'
           ELSE '0:c609fd207f20746d6076d49d86a39240021d20122007278d053bcab160cfa2c9' END)
      OR private.koaryu_release_operational_contract_v31()
-      IS DISTINCT FROM (CASE WHEN (v_current_count=135 AND v_current_head='20260908133504') OR (v_current_count=136 AND v_current_head='20260908183744') THEN '0:9f037cc4464637876016f47584d44910a6e175b2358eecb44486779273e75510'
+      IS DISTINCT FROM (CASE WHEN (v_current_count=137 AND v_current_head='20260910084231') THEN '0:168cc61b730cae592edaecdd15ca126ad891d6ed70bd5d523362693c662e2888'
+          WHEN (v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR (v_current_count=137 AND v_current_head='20260910084231')) THEN '0:9f037cc4464637876016f47584d44910a6e175b2358eecb44486779273e75510'
           WHEN v_current_count=134 AND v_current_head='20260908080420' THEN '0:fcaa04476824143c2aa69fc5d1722dbdd5b4459e0edb0249fbc24e89c0af417c'
           ELSE '0:abfd3d70c27d61b7be33193069739ddaef7db8e8a4cc591be1aeeebe130b64cc' END)
      OR private.koaryu_release_operational_manifest_v12()
-      IS DISTINCT FROM (CASE WHEN (v_current_count=135 AND v_current_head='20260908133504') OR (v_current_count=136 AND v_current_head='20260908183744') THEN '27cb3807a6ff60653fc0c7423428710a2c01d9254c1e5f59c0e2cb16c37f4d26'
+      IS DISTINCT FROM (CASE WHEN (v_current_count=137 AND v_current_head='20260910084231') THEN '9f3190acf304988b74da920b85a8e1cdb6a62eb8615017788b057b477667e5a2'
+          WHEN (v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR (v_current_count=137 AND v_current_head='20260910084231')) THEN '27cb3807a6ff60653fc0c7423428710a2c01d9254c1e5f59c0e2cb16c37f4d26'
           WHEN v_current_count=134 AND v_current_head='20260908080420' THEN 'ead2be833206bfdadb455dfd41eaaae1b3d1d00b1ac2efabaaab6dd6ca4c5edf'
           ELSE 'ba219b8a319d416680ab268ba09c8dad109d4d73db0bfdadedf31318bead365d' END) THEN
    RAISE EXCEPTION 'V37 predecessor compatibility manifests mismatch.';
@@ -72,7 +75,8 @@ BEGIN
    INTO v_v31_expectation_state
  FROM private.koaryu_release_v31_expectations;
  IF v_v31_expectation_state IS DISTINCT FROM (CASE
-      WHEN (v_current_count=135 AND v_current_head='20260908133504') OR (v_current_count=136 AND v_current_head='20260908183744') THEN '1:220b289851c6a5714091f59560053b1a5a5cf7c4971a431bbc04a6dd85d42802'
+      WHEN (v_current_count=137 AND v_current_head='20260910084231') THEN '1:9f8cfdaa076ac36d3d1b827e4c50e17c8a9796150dac84ef3b2f62360893bd18'
+      WHEN (v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR (v_current_count=137 AND v_current_head='20260910084231')) THEN '1:220b289851c6a5714091f59560053b1a5a5cf7c4971a431bbc04a6dd85d42802'
       WHEN v_current_count=134 AND v_current_head='20260908080420'
       THEN '1:54e7ddd1b3979a6b764a14345c629293e24976d707ef8a8fbf2b3ab5c7a47693'
       WHEN (v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339')

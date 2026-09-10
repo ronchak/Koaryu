@@ -69,6 +69,50 @@
     "payer-v41": {
       "kind": "payer-balance",
       "state": "v41"
+    },
+    "readiness-v42": {
+      "kind": "readiness",
+      "state": "v42",
+      "finalAlias": true
+    },
+    "catalog-v41": {
+      "kind": "export",
+      "state": "v41",
+      "query": "V40_CATALOG_STATE_SQL",
+      "expected": "EXPECTED_V40_CATALOG_STATE",
+      "restored": "EXPECTED_V40_RESTORED_CATALOG_STATE"
+    },
+    "catalog-v42": {
+      "kind": "catalog",
+      "state": "v42",
+      "queryState": "v42"
+    },
+    "release-v42": {
+      "kind": "release",
+      "state": "v42"
+    },
+    "expectation-v42": {
+      "kind": "expectation",
+      "state": "v42",
+      "queryState": "v31"
+    },
+    "resource-v42": {
+      "kind": "export",
+      "state": "v42",
+      "query": "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL",
+      "expected": "EXPECTED_V42_RESOURCE_OWNERSHIP_MANIFEST"
+    },
+    "contract-v42": {
+      "kind": "export",
+      "state": "v42",
+      "query": "V31_OPERATIONAL_CONTRACT_SQL",
+      "expected": "EXPECTED_V42_OPERATIONAL_CONTRACT_V31"
+    },
+    "operational-v42": {
+      "kind": "export",
+      "state": "v42",
+      "query": "V31_OPERATIONAL_MANIFEST_SQL",
+      "expected": "EXPECTED_V42_OPERATIONAL_MANIFEST_V12"
     }
   },
   "cases": {
@@ -259,6 +303,118 @@
       "passLines": [
         "[restored V41] PASS actual V40 backup/restore, exact normalization, no migration backfill, ",
         "scoped balance repair and completed receipt replay on canonical/restored copies"
+      ]
+    },
+    "v42": {
+      "format": "forward",
+      "docstring": "Prove V41 logical restore and V42 independent joining-date edits without a backfill.",
+      "exports": [
+        [
+          "catalog-v41.query",
+          "catalog-v41.expected",
+          "catalog-v41.restored"
+        ],
+        [
+          "readiness-v41.query",
+          "readiness-v41.expected"
+        ],
+        [
+          "release-v41.query",
+          "release-v41.expected"
+        ],
+        [
+          "rank-v40.query",
+          "rank-v40.expected"
+        ],
+        [
+          "payer-v41.query",
+          "payer-v41.expected"
+        ],
+        [
+          "readiness-v42.query",
+          "readiness-v42.expected"
+        ],
+        [
+          "readiness-v40.query",
+          "readiness-v40.expected"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v39.expected"
+        ],
+        [
+          "readiness-v38.query",
+          "readiness-v38.expected"
+        ],
+        [
+          "readiness-v37.query",
+          "readiness-v37.expected"
+        ],
+        [
+          "catalog-v42.query",
+          "catalog-v42.expected",
+          "catalog-v42.restored"
+        ],
+        [
+          "release-v42.query",
+          "release-v42.expected"
+        ],
+        [
+          "expectation-v42.query",
+          "expectation-v42.expected"
+        ],
+        [
+          "resource-v42.query",
+          "resource-v42.expected"
+        ],
+        [
+          "contract-v42.query",
+          "contract-v42.expected"
+        ],
+        [
+          "operational-v42.query",
+          "operational-v42.expected"
+        ]
+      ],
+      "predecessor": [
+        "catalog-v41",
+        "readiness-v41",
+        "release-v41",
+        "rank-v40",
+        "payer-v41"
+      ],
+      "checks": [
+        "readiness-v42",
+        "readiness-v41",
+        "readiness-v40",
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "catalog-v42",
+        "rank-v40",
+        "payer-v41",
+        "release-v42",
+        "expectation-v42",
+        "resource-v42",
+        "contract-v42",
+        "operational-v42"
+      ],
+      "absentFunctions": [],
+      "semanticManifests": [
+        "private.koaryu_release_operational_contract_v26()",
+        "private.koaryu_release_operational_contract_v27()",
+        "private.koaryu_release_operational_contract_v28()",
+        "private.koaryu_release_operational_contract_v29()",
+        "private.koaryu_release_operational_contract_v30()",
+        "private.koaryu_release_operational_manifest_v10()",
+        "private.koaryu_release_operational_manifest_v11()",
+        "private.koaryu_release_critical_surface_manifest_v16()",
+        "private.koaryu_release_critical_surface_manifest_v17()",
+        "private.koaryu_release_critical_surface_manifest_v18()"
+      ],
+      "passLines": [
+        "[restored V42] PASS actual V41 backup/restore, exact normalization, no migration backfill, ",
+        "independent program dates through both profile writers on canonical/restored copies"
       ]
     }
   }
