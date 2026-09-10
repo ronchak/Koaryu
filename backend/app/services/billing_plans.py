@@ -13,6 +13,7 @@ from app.schemas.billing import (
     BillingPlanUpdate,
 )
 from app.services.billing_plan_sync import BillingPlanSyncWorkflow
+from app.services.billing_currency_policy import NEW_TUITION_CURRENCY_DETAIL, is_usd_currency
 from app.services.stripe_service import StripeService
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
@@ -152,9 +153,15 @@ class BillingPlanManager:
     ) -> BillingPlanResponse:
         if programs is None:
             programs = self._programs_for_plan(row["studio_id"], row["id"])
-        can_accept = bool(account.get("charges_enabled")) and row.get("status") == "active" and bool(row.get("stripe_price_id"))
+        is_usd = is_usd_currency(row.get("currency"))
+        can_accept = (
+            is_usd and bool(account.get("charges_enabled"))
+            and row.get("status") == "active" and bool(row.get("stripe_price_id"))
+        )
         pending_reason = None
-        if not account.get("charges_enabled"):
+        if not is_usd:
+            pending_reason = NEW_TUITION_CURRENCY_DETAIL
+        elif not account.get("charges_enabled"):
             pending_reason = "Stripe Connect charges are not enabled yet."
         elif not row.get("stripe_price_id"):
             pending_reason = "Plan needs a Stripe price before hosted payments can start."

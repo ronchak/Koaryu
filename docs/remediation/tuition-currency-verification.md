@@ -20,7 +20,7 @@ Six legacy-audit cases now share one behavioral test. Three activation branches 
 
 The shared fake previously omitted the three parent fields created by SQL step-plan registration. That omission hid saved step history from the currency preflight. It now records those fields. This is a bounded fixture correction, not a replacement SQL state machine. Real SQL verifies the new rejection sequences; existing SQL and concurrency contracts retain their role.
 
-Authored test files shrink by 33 lines but grow by 7,736 bytes because the new historical-receipt fixtures contain more explicit data. The number of test functions is unchanged; parameterized cases add assurance at the new financial boundary. This is not a claim that total test volume fell by every measure.
+Authored test files shrink by 31 lines but grow by 7,875 bytes because the new historical-receipt fixtures contain more explicit data. The number of test functions is unchanged; parameterized cases add assurance at the new financial boundary. This is not a claim that total test volume fell by every measure.
 
 ## Remaining work
 
@@ -29,3 +29,5 @@ BB2-04 stays pending until this candidate is reviewed and merged. PROGRAM-CURREN
 Private logs and failed probes are under `Koaryu Remediation/2026-09-07/currency-intents`.
 
 Root verification after the initial independent approval reproduced an empty-header gap at `a1ce2ec`: retry created two new EUR items despite neither monetary item having been attempted. The guard now distinguishes header work from financial item work. A corresponding positive case completes the original remaining item after a prior monetary item succeeded, preserving its currency and provider key. The original reviewer must verify this correction on its new head; prior green checks do not approve it.
+
+The plan response now applies the same USD predicate to its existing readiness flag and reason. A historical non-USD plan stays active with its original price, while the existing plan UI receives an explanation that new tuition requires USD. The final price/read-page checks cover both supported USD readiness and the preserved historical EUR response. No API fields or frontend logic were added.

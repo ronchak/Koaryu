@@ -282,6 +282,7 @@ class TestBillingPlanSync:
         ))
 
         assert first.status == "active"
+        assert first.can_accept_payments is True
         assert replay.stripe_product_id == first.stripe_product_id
         assert replay.stripe_price_id == first.stripe_price_id == alias.stripe_price_id
         assert len(_Stripe.created_products) == 1
@@ -360,6 +361,7 @@ class TestBillingPlanSync:
             replay = asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "historical"))
             assert result.stripe_price_id == replay.stripe_price_id == "price_historical"
             assert result.currency == "eur" and facade.supabase.tables["billing_plan_prices"][0]["currency"] == "eur"
+            assert result.can_accept_payments is False and "USD" in result.pending_reason
         after = facade.supabase.billing_provider_step_plans[parent["id"]]["steps"]
         for old, new in zip(saved, after, strict=True):
             assert (new["provider_request_attempt_count"], new.get("provider_object_id"), new["stripe_idempotency_key"]) == (
