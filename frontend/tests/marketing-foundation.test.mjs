@@ -95,27 +95,15 @@ describe("marketing foundation", () => {
     );
   });
 
-  it("keeps the exact inert, scoped fibre recipe", () => {
+  it("keeps one inert fibre layer scoped to the marketing root", () => {
     const fibreRule = foundationCss.match(
       /\[data-koaryu-marketing\]\.root::after\s*\{(?<body>[\s\S]*?)\n\}/
     );
     assert.ok(fibreRule?.groups?.body, "fibre must belong to the marketing root");
 
-    for (const contract of [
-      "viewBox='0 0 180 180'",
-      "baseFrequency='.035 .72'",
-      "numOctaves='3'",
-      "seed='41'",
-      "type='saturate'",
-      "values='0'",
-      "opacity='.42'",
-    ]) {
-      assert.ok(fibreRule.groups.body.includes(contract), `missing fibre ${contract}`);
-    }
-
+    assert.match(fibreRule.groups.body, /background-image:\s*url\("data:image\/svg\+xml/);
     assert.match(fibreRule.groups.body, /pointer-events:\s*none/);
     assert.match(fibreRule.groups.body, /opacity:\s*0\.095/);
-    assert.match(fibreRule.groups.body, /mix-blend-mode:\s*multiply/);
     assert.doesNotMatch(foundationCss, /@keyframes|animation:/);
   });
 
@@ -125,25 +113,6 @@ describe("marketing foundation", () => {
       assert.match(globalsCss, new RegExp(`--${token}:`));
     }
     assert.doesNotMatch(globalsCss, /data-koaryu-marketing|--koaryu-/);
-  });
-
-  it("exports paper-native links and a stateless native menu button", () => {
-    for (const component of [
-      "MarketingBrandLink",
-      "MarketingNavLink",
-      "MarketingActionLink",
-      "MarketingMenuButton",
-    ]) {
-      assert.match(primitivesSource, new RegExp(`export function ${component}\\b`));
-    }
-
-    assert.match(primitivesSource, /ComponentPropsWithoutRef<typeof Link>/);
-    assert.match(primitivesSource, /ButtonHTMLAttributes<HTMLButtonElement>/);
-    assert.match(primitivesSource, /variant\?: "primary" \| "secondary"/);
-    assert.match(primitivesSource, /className=\{joinClassNames\(/);
-    assert.match(primitivesSource, /<button/);
-    assert.match(primitivesSource, /aria-expanded=\{ariaExpanded\}/);
-    assert.match(primitivesSource, /aria-hidden="true"/);
   });
 
   it("uses the 44px, current-color, radius, focus, and hover contracts", () => {

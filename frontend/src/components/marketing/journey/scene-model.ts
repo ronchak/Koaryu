@@ -1,5 +1,3 @@
-import { landingPageContent } from "../../../lib/landing-page-content.ts";
-
 export const SCENE_WIDTH = 1600;
 export const SCENE_HEIGHT = 1000;
 
@@ -24,7 +22,6 @@ export const SCENE_PHASES = Object.freeze({
   students: Object.freeze([0.952, 1] as const),
 });
 
-export type ScenePhaseName = keyof typeof SCENE_PHASES;
 export type ScenePoint = Readonly<{ x: number; y: number }>;
 
 export interface SceneFrame {
@@ -33,28 +30,6 @@ export interface SceneFrame {
   readonly studentSpread: number;
   readonly variant: "landscape" | "portrait";
 }
-
-export interface SceneProgressModel {
-  readonly progress: number;
-  readonly phase: Readonly<Record<ScenePhaseName, number>>;
-  readonly mountainsFall: number;
-  readonly curtainOpen: number;
-  readonly dojoArrival: number;
-  readonly portalDolly: number;
-  readonly doorOpen: number;
-  readonly doorwayPush: number;
-  readonly skySettle: number;
-  readonly cloudGather: number;
-  readonly weaveMorph: number;
-  readonly floorSettle: number;
-  readonly studentArrival: number;
-}
-
-export const JOURNEY_SCENE_STOPS = Object.freeze(
-  Object.fromEntries(
-    landingPageContent.chapters.map(({ id, scene }) => [id, scene])
-  ) as Record<(typeof landingPageContent.chapters)[number]["id"], number>
-);
 
 export function clamp(value: number, minimum = 0, maximum = 1): number {
   if (Number.isNaN(value)) {
@@ -95,42 +70,6 @@ export function easeInOut(progress: number): number {
   return value < 0.5
     ? 2 * value * value
     : 1 - (-2 * value + 2) ** 2 / 2;
-}
-
-export function phaseProgress(
-  progress: number,
-  phase: ScenePhaseName
-): number {
-  const [start, end] = SCENE_PHASES[phase];
-  return rangeProgress(clamp(progress), start, end);
-}
-
-export function sceneProgressModel(progress: number): SceneProgressModel {
-  const safeProgress = clamp(progress);
-  const phase = Object.freeze(
-    Object.fromEntries(
-      (Object.keys(SCENE_PHASES) as ScenePhaseName[]).map((name) => [
-        name,
-        phaseProgress(safeProgress, name),
-      ])
-    ) as Record<ScenePhaseName, number>
-  );
-
-  return Object.freeze({
-    progress: safeProgress,
-    phase,
-    mountainsFall: easeIn(phase.mountains),
-    curtainOpen: easeInOut(phase.drop),
-    dojoArrival: easeOut(phase.drop),
-    portalDolly: easeInOut(phase.portal),
-    doorOpen: easeInOut(phase.door),
-    doorwayPush: easeIn(phase.through),
-    skySettle: easeInOut(phase.sky),
-    cloudGather: easeOut(phase.clouds),
-    weaveMorph: easeInOut(phase.morph),
-    floorSettle: easeInOut(phase.floor),
-    studentArrival: easeOut(phase.students),
-  });
 }
 
 export function frameForDimensions(
@@ -262,7 +201,7 @@ export const HALF_FAR = 990;
 export const HALF_NEAR = 2500;
 const EDGE_POINTS = 4;
 
-function makeCloudPath(seed: number): string {
+export function makeCloudPath(seed: number): string {
   const random = mulberry32(seed);
   const width = 380 + random() * 560;
   const height = 44 + random() * 52;

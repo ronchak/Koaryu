@@ -33,8 +33,6 @@ describe("conventional marketing page composition", () => {
 
     assert.match(source, /export \{ detailNextSteps, indexNextSteps \}/);
     assert.match(source, /export type \{ MarketingNextStep \}/);
-    assert.match(source, /sceneLabel\?: string/);
-    assert.match(source, /sceneFocus\?: string/);
   });
 
   it("uses one server-rendered marketing document shell and semantic navigation", () => {

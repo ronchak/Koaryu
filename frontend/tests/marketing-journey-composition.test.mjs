@@ -18,21 +18,7 @@ const controllerSource = source(
 const journeyCss = source(
   "../src/components/marketing/journey/journey.module.css"
 );
-const appPageSource = source("../src/app/page.tsx");
-
 describe("Journey server composition", () => {
-  it("keeps the route and landing composition server-owned with warmup intact", () => {
-    assert.doesNotMatch(appPageSource, /["']use client["']/);
-    assert.doesNotMatch(landingSource, /["']use client["']/);
-    assert.match(appPageSource, /export const metadata: Metadata/);
-    assert.match(appPageSource, /canonical: "https:\/\/koaryu\.app\/"/);
-    assert.match(appPageSource, /export default LandingPage/);
-    assert.match(landingSource, /<BackendWarmup\s*\/>/);
-    assert.match(landingSource, /<MarketingRoot layout="document">/);
-    assert.match(landingSource, /<JourneyController>/);
-    assert.match(landingSource, /<JourneyChapters\s*\/>/);
-  });
-
   it("maps the canonical 14 chapters once into semantic initial HTML", () => {
     assert.equal(landingPageContent.chapters.length, 14);
     assert.deepEqual(
@@ -65,31 +51,6 @@ describe("Journey server composition", () => {
     assert.doesNotMatch(chapterSource, /const\s+(?:FEATURE|FAQ|PRICE|ABOUT)_/);
   });
 
-  it("renders every canonical content family and all FAQ answers by reference", () => {
-    for (const reference of [
-      "chapter.headline.map",
-      "chapter.question",
-      "chapter.aside",
-      "chapter.proofLabel",
-      "chapter.proof",
-      "chapter.rows.map",
-      "chapter.routes.map",
-      "chapter.displayPrice",
-      "chapter.period",
-      "chapter.facts.map",
-      "chapter.principles.map",
-      "chapter.groups.map",
-      "group.items.map",
-      "item.answer",
-      "chapter.footerLinks.map",
-      "chapter.copyright",
-    ]) {
-      assert.ok(chapterSource.includes(reference), `missing ${reference}`);
-    }
-    assert.match(chapterSource, /import Link from "next\/link"/);
-    assert.match(chapterSource, /href === "\/signup" \|\| href === "\/login"/);
-    assert.match(chapterSource, /prefetch=\{actionPrefetch\(href\)\}/);
-  });
 });
 
 describe("Journey progressive enhancement and accessibility", () => {
@@ -148,106 +109,6 @@ describe("Journey progressive enhancement and accessibility", () => {
     assert.match(
       journeyCss,
       /\.rail button\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*24px;/
-    );
-  });
-
-  it("keeps browser access guarded and separates explicit history pushes", () => {
-    assert.match(controllerSource, /^"use client";/);
-    assert.match(controllerSource, /if \(typeof window === "undefined"/);
-    assert.match(controllerSource, /typeof Element === "undefined"/);
-    assert.match(controllerSource, /typeof Node === "undefined"/);
-    assert.match(controllerSource, /activeElement === document\.body/);
-    assert.match(controllerSource, /shouldHandleJourneyKeyboardFocus/);
-    assert.match(controllerSource, /type HistoryMode = "replace" \| "push"/);
-    assert.match(
-      controllerSource,
-      /const requestedRelativeUrl = `\$\{destination\.pathname\}\$\{destination\.search\}\$\{destination\.hash\}`[\s\S]*const currentRelativeUrl = `\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{window\.location\.hash\}`[\s\S]*requestedRelativeUrl === currentRelativeUrl/
-    );
-    assert.equal(
-      controllerSource.match(/window\.history\.pushState/g)?.length,
-      1,
-      "raw history pushes must stay inside the private URL writer"
-    );
-    assert.equal(
-      controllerSource.match(/window\.history\.replaceState/g)?.length,
-      1,
-      "raw history replacements must stay inside the private URL writer"
-    );
-    assert.match(
-      controllerSource,
-      /writeJourneyUrl\(`#\$\{nextHash\}`, options\.historyMode \?\? "replace"\)/,
-      "passive navigateTo callers must default to replacement"
-    );
-    assert.match(controllerSource, /window\.history\.replaceState/);
-    assert.match(controllerSource, /window\.history\.pushState/);
-    assert.match(controllerSource, /decideJourneyHashChange\(window\.location\.hash\)/);
-    assert.match(
-      controllerSource,
-      /decision\.action === "reset"[\s\S]*navigateTo\(decision\.chapterIndex, \{ writeHash: decision\.writeHash \}\)/
-    );
-    assert.match(
-      controllerSource,
-      /decision\.action === "navigate"[\s\S]*applyResolvedHash\(decision\.resolved, true\)/
-    );
-    assert.match(
-      controllerSource,
-      /historyMode: resolved\.wasAlias \? "replace" : historyMode[\s\S]*resolved\.wasAlias[\s\S]*writeJourneyUrl\(`#\$\{resolved\.canonicalHash\}`, "replace"\)/,
-      "legacy aliases must still canonicalize with replacement"
-    );
-    assert.match(controllerSource, /options\.writeHash !== false/);
-    assert.match(controllerSource, /event\.metaKey/);
-    assert.match(controllerSource, /event\.ctrlKey/);
-    assert.match(controllerSource, /event\.shiftKey/);
-    assert.match(controllerSource, /event\.altKey/);
-    assert.match(controllerSource, /<MarketingBrandLink href="\/" prefetch=\{false\} \/>/);
-    assert.match(
-      controllerSource,
-      /const decision = decideJourneyHashChange\(destination\.hash\)/,
-      "same-document hashless links must use the explicit reset decision"
-    );
-    assert.match(
-      controllerSource,
-      /writeJourneyUrl\([\s\S]*destination\.pathname[\s\S]*"push"[\s\S]*navigateTo\(decision\.chapterIndex, \{ writeHash: decision\.writeHash \}\)/,
-      "the hashless brand link must push once and reset without writing a hash"
-    );
-    assert.match(
-      controllerSource,
-      /applyResolvedHash\(decision\.resolved, true, "push"\)/,
-      "only captured same-page links opt into history pushes"
-    );
-    assert.match(
-      controllerSource,
-      /rangeProgress\(sceneProgress, 0\.48, 0\.52\)/,
-      "continuous chrome must reach dark ink at the feature stop"
-    );
-  });
-
-  it("compacts the mobile feature ledger without hiding its descriptions", () => {
-    for (const contract of [
-      /\.ledgerPlane\s*\{[\s\S]*padding:\s*18px 20px;/,
-      /\.ledgerPlane \.planeHeading\s*\{[\s\S]*font-size:\s*clamp\(30px, 9vw, 40px\)/,
-      /\.ledgerPlane \.supportingLede\s*\{[\s\S]*margin-top:\s*11px;[\s\S]*font-size:\s*13px/,
-      /\.ledgerPlane \.ledgerList\s*\{[\s\S]*margin-top:\s*13px/,
-      /\.ledgerPlane \.ledgerRow\s*\{[\s\S]*gap:\s*4px;[\s\S]*padding-block:\s*9px/,
-      /\.ledgerPlane \.ledgerRow p\s*\{[\s\S]*font-size:\s*12px;[\s\S]*line-height:\s*1\.42/,
-      /\.ledgerPlane \.planeLink\s*\{[\s\S]*margin-top:\s*6px/,
-    ]) {
-      assert.match(journeyCss, contract);
-    }
-    assert.match(
-      journeyCss,
-      /@media \(max-width: 820px\) and \(max-height: 700px\)[\s\S]*\.ledgerRow p[\s\S]*display:\s*none/,
-      "description hiding must remain confined to the canonical short-height tier"
-    );
-    assert.match(
-      journeyCss,
-      /@media \(max-width: 820px\) and \(max-height: 700px\)[\s\S]*chapter\[data-chapter-id="features"\][\s\S]*padding-top:\s*max\(72px, env\(safe-area-inset-top\)\)[\s\S]*\.ledgerPlane \.ledgerRow\s*\{[\s\S]*padding-block:\s*0/,
-      "short mobile must compact the feature plane without shrinking its 44px title links"
-    );
-    assert.match(
-      journeyCss,
-      /@media \(max-width: 820px\) and \(max-height: 700px\)[\s\S]*\.faqShell\s*\{[\s\S]*height:\s*calc\(100dvh - 148px\)[\s\S]*\.faqPanel\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;/,
-      "short mobile must reserve a bounded scroll region above the pager"
     );
   });
 

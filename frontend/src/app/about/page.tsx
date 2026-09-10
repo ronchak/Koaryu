@@ -72,8 +72,6 @@ export default function AboutPage() {
         title="Serious studio software for schools that still feel personal."
         description="Koaryu exists for martial arts owners who need a calmer way to run students, ranks, attendance, trials, billing, and retention without inheriting enterprise software complexity."
         cta="Start setup"
-        sceneLabel="Product philosophy"
-        sceneFocus="Independent studios"
       />
 
       <section
