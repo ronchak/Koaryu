@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import unittest
 from unittest.mock import patch
 
-from app.schemas.billing import BillingInvoiceCreate
 from app.services.billing_service import BillingService
 from tests.fakes.billing_balance import BillingBalanceRpcMixin
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
@@ -434,13 +431,6 @@ class _FakeStripeService:
 class _FakeBillingSettings:
     BILLING_PLATFORM_FEE_BPS = 50
     FRONTEND_URL = "https://app.koaryu.test"
-
-
-def _test_invoice_request_hash(data: BillingInvoiceCreate) -> str:
-    payload = data.model_dump(mode="json", exclude_none=True)
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
 
 
 class BillingPaymentsLifecycleTestBase(unittest.TestCase):

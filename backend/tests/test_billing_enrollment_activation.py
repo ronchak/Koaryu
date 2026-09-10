@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 
 import pytest
 from fastapi import HTTPException
 
 from app.services.billing_enrollments import BillingEnrollmentManager
 from app.services.stripe_mutation_policy import StripeMutationBlocked
+from app.services.billing_provider_operations import BillingProviderOperationContext, BillingProviderOperationCoordinator
+from app.services.platform_billing_helpers import stable_hash
 from tests.billing_enrollment_activation_fixtures import (
     _Facade,
     _Stripe,
@@ -87,76 +90,115 @@ def test_activation_requires_canonical_key_and_recurring_identity():
         assert _Stripe.create_subscription_calls == []
 
 
-def test_create_subscription_replays_and_different_key_adopts_without_duplicates():
-    facade = _Facade(_tables())
+@pytest.mark.parametrize("mode", ["autopay", "invoice_link"])
+def test_new_non_usd_activation_leaves_local_and_provider_state_unchanged(mode):
+    tables = _tables(enrollment=_enrollment(collection_mode=mode))
+    tables["billing_plans"] = [_plan(currency="eur")]
+    tables["billing_plan_prices"] = [_price(currency="eur")]
+    facade = _Facade(tables)
+    before = copy.deepcopy(facade.supabase.tables)
+    with pytest.raises(HTTPException) as failure:
+        asyncio.run(_manager(facade).activate_enrollment("enrollment_1", "studio_1", "actor_1", "new-eur"))
+    assert failure.value.status_code == 400 and "USD" in failure.value.detail
+    assert facade.supabase.tables == before
+    assert not facade.supabase.billing_provider_operations
+    assert not (_Stripe.create_subscription_calls or _Stripe.add_item_calls or _Stripe.update_item_calls)
+
+
+@pytest.mark.parametrize("stage,error", [("unattempted", 400), ("attempted", 409), ("confirmed", None)])
+def test_historical_non_usd_activation_uses_saved_provider_outcome(stage, error):
+    intent = {"version": 1, "operation_type": "enrollment.activate.invoice", "studio_id": "studio_1",
+        "enrollment_id": "enrollment_1", "student_id": "student_1", "payer_id": "payer_1", "plan_id": "plan_1",
+        "account_id": "acct_1", "generation": 2, "customer_id": "cus_1", "product_id": "prod_1",
+        "price_id": "price_1", "group_id": "group_1", "branch": "add_item", "expected_quantity": 1,
+        "expected_subscription_id": "sub_1", "expected_item_id": None}
+    intent["desired_sha256"] = stable_hash(intent)
+    tables = _tables(group=_group(currency="eur"), enrollment=_enrollment(metadata={"provider_activation_intent": intent}))
+    tables["billing_plans"] = [_plan(currency="eur")]
+    tables["billing_plan_prices"] = [_price(currency="eur")]
+    facade = _Facade(tables)
+    operations = BillingProviderOperationCoordinator(facade.supabase)
+    lease = "00000000-0000-4000-8000-000000000101"
+    claimed = operations.claim_resource(studio_id="studio_1", actor_id="actor_1", operation_type="enrollment.activate.invoice",
+        resource_type="enrollment", resource_id="enrollment_1", payer_id="payer_1", caller_request_key="historical",
+        request_sha256=intent["desired_sha256"], stripe_connected_account_id="acct_1", connect_account_generation=2, lease_owner=lease)
+    operation = claimed["operation"]
+    context = BillingProviderOperationContext(operation["id"], "studio_1", "actor_1", "enrollment.activate.invoice",
+        "historical", intent["desired_sha256"], "acct_1", 2, lease)
+    if stage != "unattempted":
+        operation = operations.transition(context, operation, "provider_request_in_flight")
+    if stage == "confirmed":
+        operations.transition(context, operation, "provider_succeeded", provider_object_id="sub_1",
+            provider_secondary_object_id="si_historical", result_code="enrollment_activation_provider_succeeded")
+        _Stripe.subscriptions["sub_1"] = _provider_subscription(items=[{"id": "si_historical", "quantity": 1,
+            "price": {"id": "price_1"}, "metadata": {"studio_id": "studio_1", "payer_id": "payer_1",
+            "billing_plan_id": "plan_1", "billing_subscription_id": "group_1", "enrollment_id": "enrollment_1"}}])
+    facade.supabase.advance_billing_provider_clock(seconds=31)
+    if error:
+        with pytest.raises(HTTPException) as failure:
+            asyncio.run(_manager(facade).activate_enrollment("enrollment_1", "studio_1", "actor_1", "historical"))
+        assert failure.value.status_code == error
+    else:
+        asyncio.run(_manager(facade).activate_enrollment("enrollment_1", "studio_1", "actor_1", "historical"))
+        replay = asyncio.run(_manager(facade).activate_enrollment("enrollment_1", "studio_1", "actor_1", "historical"))
+        assert replay.stripe_subscription_item_id == "si_historical" and replay.status == "active"
+        assert _operation(facade)["state"] == "completed"
+        assert len(_Stripe.retrieve_calls) == 1
+    assert _operation(facade)["provider_request_attempt_count"] == (0 if stage == "unattempted" else 1)
+    assert _operation(facade)["caller_request_key"] == "historical"
+    assert _operation(facade)["request_sha256"] == intent["desired_sha256"]
+    assert all(facade.supabase.tables[name][0]["currency"] == "eur" for name in (
+        "billing_plans", "billing_plan_prices", "billing_subscriptions"))
+    assert not (_Stripe.create_subscription_calls or _Stripe.add_item_calls or _Stripe.update_item_calls)
+
+
+@pytest.mark.parametrize("branch,subscription_id,item_id,key_suffix", [
+    ("create_subscription", "sub_created", "si_created", "create-subscription"),
+    ("add_item", "sub_1", "si_added", "add-item"),
+    ("update_quantity", "sub_1", "si_shared", "update-quantity"),
+])
+def test_activation_branches_preserve_exact_owner_replay_and_release_lock(branch, subscription_id, item_id, key_suffix):
+    facade = _Facade(_tables()) if branch == "create_subscription" else _existing_subscription_case(branch)
+    if branch == "update_quantity":
+        facade.supabase.tables["student_billing_enrollments"].append(_enrollment(
+            id="enrollment_detaching", billing_subscription_id="group_1", stripe_subscription_id="sub_1",
+            stripe_subscription_item_id="si_shared", metadata={"stripe_detach_pending": {"reason": "cancel"}}))
     manager = _manager(facade)
 
-    first = asyncio.run(manager.activate_enrollment(
-        "enrollment_1", "studio_1", "actor_1", "activation-owner"
-    ))
-    with pytest.raises(HTTPException) as denied:
-        asyncio.run(manager.activate_enrollment(
-            "enrollment_1", "studio_1", "actor_2", "activation-cross-actor"
-        ))
-    replay = asyncio.run(manager.activate_enrollment(
-        "enrollment_1", "studio_1", "actor_1", "activation-adopter"
-    ))
+    def activate(key, actor="actor_1"):
+        return asyncio.run(manager.activate_enrollment("enrollment_1", "studio_1", actor, key))
 
+    first = activate("activation-owner")
+    with pytest.raises(HTTPException) as denied:
+        activate("activation-cross-actor", "actor_2")
+    alias = activate("activation-adopter")
+    replay = activate("activation-owner")
     assert denied.value.status_code == 409
-    assert first.status == replay.status == "active"
-    assert first.stripe_subscription_id == replay.stripe_subscription_id == "sub_created"
-    assert first.stripe_subscription_item_id == "si_created"
-    assert len(_Stripe.create_subscription_calls) == 1
-    assert _Stripe.add_item_calls == []
-    assert _Stripe.update_item_calls == []
+    assert first.status == alias.status == replay.status == "active"
+    assert first.stripe_subscription_id == alias.stripe_subscription_id == replay.stripe_subscription_id == subscription_id
+    assert first.stripe_subscription_item_id == replay.stripe_subscription_item_id == item_id
+    calls = {"create_subscription": _Stripe.create_subscription_calls,
+             "add_item": _Stripe.add_item_calls, "update_quantity": _Stripe.update_item_calls}
+    assert len(calls[branch]) == sum(map(len, calls.values())) == 1
     assert len(facade.supabase.tables["audit_logs"]) == 1
     parent = _operation(facade)
-    assert parent["state"] == "completed"
-    assert parent["actor_id"] == "actor_1"
-    assert parent["caller_request_key"] == "activation-owner"
-    assert facade.supabase.billing_provider_operation_aliases[
-        ("studio_1", "enrollment.activate.invoice", "activation-adopter")
-    ] == parent["id"]
-    intent = facade.supabase.tables["student_billing_enrollments"][0]["metadata"][
-        "provider_activation_intent"
-    ]
-    assert intent["branch"] == "create_subscription"
-    assert intent["expected_subscription_id"] is None
-    assert intent["expected_item_id"] is None
-    assert intent["expected_quantity"] == 1
-    assert _Stripe.create_subscription_calls[0]["idempotency_key"] == (
-        f"koaryu:enrollment-activate:{parent['id']}:create-subscription"
-    )
-    resource_claim = next(
-        params
-        for name, params in facade.supabase.rpc_calls
-        if name == "claim_billing_provider_operation_resource_v1"
-    )
-    assert resource_claim["p_resource_type"] == "enrollment"
-    assert resource_claim["p_resource_id"] == "enrollment_1"
-    assert resource_claim["p_payer_id"] == "payer_1"
+    assert (parent["state"], parent["actor_id"], parent["caller_request_key"]) == ("completed", "actor_1", "activation-owner")
+    assert facade.supabase.billing_provider_operation_aliases[("studio_1", "enrollment.activate.invoice", "activation-adopter")] == parent["id"]
+    intent = facade.supabase.tables["student_billing_enrollments"][0]["metadata"]["provider_activation_intent"]
+    expected = {"create_subscription": (None, None, 1), "add_item": ("sub_1", None, 1),
+                "update_quantity": ("sub_1", "si_shared", 2)}[branch]
+    assert intent["branch"] == branch
+    assert (intent["expected_subscription_id"], intent["expected_item_id"], intent["expected_quantity"]) == expected
+    assert calls[branch][0]["idempotency_key"] == f"koaryu:enrollment-activate:{parent['id']}:{key_suffix}"
+    if branch == "update_quantity":
+        assert calls[branch][0]["quantity"] == 2
+    claim = next(params for name, params in facade.supabase.rpc_calls if name == "claim_billing_provider_operation_resource_v1")
+    assert (claim["p_resource_type"], claim["p_resource_id"], claim["p_payer_id"]) == ("enrollment", "enrollment_1", "payer_1")
+    names = [name for name, _ in facade.supabase.rpc_calls]
+    assert names.index("claim_billing_subscription_quantity_sync") < names.index("claim_billing_provider_operation_resource_v1")
+    assert names[-1] == "finish_billing_subscription_quantity_sync"
+    assert "stripe_quantity_sync_lock" not in facade.supabase.tables["billing_subscriptions"][0]["metadata"]
     assert "Core plan" not in repr(parent)
-
-
-def test_add_item_uses_one_mutation_and_exact_provider_identity():
-    facade = _Facade(_tables(group=_group()))
-    _Stripe.subscriptions["sub_1"] = _provider_subscription()
-
-    result = asyncio.run(_manager(facade).activate_enrollment(
-        "enrollment_1", "studio_1", "actor_1", "add-item-key"
-    ))
-
-    assert result.stripe_subscription_id == "sub_1"
-    assert result.stripe_subscription_item_id == "si_added"
-    assert _Stripe.create_subscription_calls == []
-    assert len(_Stripe.add_item_calls) == 1
-    assert _Stripe.update_item_calls == []
-    intent = facade.supabase.tables["student_billing_enrollments"][0]["metadata"][
-        "provider_activation_intent"
-    ]
-    assert intent["branch"] == "add_item"
-    assert intent["expected_subscription_id"] == "sub_1"
-    assert intent["expected_item_id"] is None
 
 
 def test_provider_backed_legacy_group_adopts_generation_before_add_item():
@@ -309,57 +351,6 @@ def test_schedule_inserted_between_activation_checks_prevents_provider_mutation(
     assert _operation(facade)["state"] == "definitive_rejected"
     assert _Stripe.add_item_calls == []
     assert _Stripe.update_item_calls == []
-
-
-def test_update_quantity_counts_exact_family_and_releases_lock():
-    item = {
-        "id": "si_shared",
-        "price": {"id": "price_1"},
-        "quantity": 1,
-        "metadata": {
-            "studio_id": "studio_1",
-            "payer_id": "payer_1",
-            "billing_plan_id": "plan_1",
-            "billing_subscription_id": "group_1",
-        },
-    }
-    peer = _enrollment(
-        id="enrollment_peer",
-        billing_subscription_id="group_1",
-        stripe_subscription_id="sub_1",
-        stripe_subscription_item_id="si_shared",
-        status="active",
-    )
-    detaching = _enrollment(
-        id="enrollment_detaching",
-        billing_subscription_id="group_1",
-        stripe_subscription_id="sub_1",
-        stripe_subscription_item_id="si_shared",
-        metadata={"stripe_detach_pending": {"reason": "cancel"}},
-    )
-    facade = _Facade(_tables(group=_group(), peers=[peer, detaching]))
-    _Stripe.subscriptions["sub_1"] = _provider_subscription(items=[item])
-
-    result = asyncio.run(_manager(facade).activate_enrollment(
-        "enrollment_1", "studio_1", "actor_1", "quantity-key"
-    ))
-
-    assert result.stripe_subscription_item_id == "si_shared"
-    assert len(_Stripe.update_item_calls) == 1
-    assert _Stripe.update_item_calls[0]["quantity"] == 2
-    intent = facade.supabase.tables["student_billing_enrollments"][0]["metadata"][
-        "provider_activation_intent"
-    ]
-    assert intent["branch"] == "update_quantity"
-    assert intent["expected_subscription_id"] == "sub_1"
-    assert intent["expected_item_id"] == "si_shared"
-    assert intent["expected_quantity"] == 2
-    rpc_names = [name for name, _params in facade.supabase.rpc_calls]
-    assert rpc_names.index("claim_billing_subscription_quantity_sync") < rpc_names.index(
-        "claim_billing_provider_operation_resource_v1"
-    )
-    assert rpc_names[-1] == "finish_billing_subscription_quantity_sync"
-    assert "stripe_quantity_sync_lock" not in facade.supabase.tables["billing_subscriptions"][0]["metadata"]
 
 
 def test_provider_success_local_failure_reconciles_and_readback_never_mutates_again():

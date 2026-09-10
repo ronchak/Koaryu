@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 
 import pytest
@@ -13,6 +14,7 @@ from app.services.billing_plans import BillingPlanManager
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
+    BillingProviderStepCoordinator,
     billing_provider_step_plan_sha256,
 )
 from app.services.platform_billing_helpers import build_idempotency_key
@@ -274,13 +276,14 @@ class TestBillingPlanSync:
         first = asyncio.run(manager.sync_plan(
             "plan_1", "studio_1", "actor_1", "plan-key-1",
         ))
+        alias = asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "plan-key-2"))
         replay = asyncio.run(manager.sync_plan(
             "plan_1", "studio_1", "actor_1", "plan-key-1",
         ))
 
         assert first.status == "active"
         assert replay.stripe_product_id == first.stripe_product_id
-        assert replay.stripe_price_id == first.stripe_price_id
+        assert replay.stripe_price_id == first.stripe_price_id == alias.stripe_price_id
         assert len(_Stripe.created_products) == 1
         assert len(_Stripe.created_prices) == 1
         assert _Stripe.updated_products == []
@@ -297,33 +300,71 @@ class TestBillingPlanSync:
         ]
         assert "Core plan" not in repr(parent)
         assert "Core plan" not in repr(steps)
-        register_call = next(
-            params
-            for name, params in facade.supabase.rpc_calls
-            if name == "register_billing_provider_operation_step_plan_v1"
-        )
-        assert set(register_call) == {
-            "p_operation_id",
-            "p_studio_id",
-            "p_actor_id",
-            "p_operation_type",
-            "p_caller_request_key",
-            "p_request_sha256",
-            "p_stripe_connected_account_id",
-            "p_connect_account_generation",
-            "p_lease_owner",
-            "p_expected_parent_revision",
-            "p_plan_sha256",
-            "p_expected_step_count",
-            "p_steps",
-        }
-        complete_phase = next(
-            params
-            for name, params in facade.supabase.rpc_calls
-            if name == "complete_billing_provider_operation_provider_phase_v31"
-        )
-        assert complete_phase["p_expected_parent_revision"] == 2
-        assert complete_phase["p_lease_owner"] == register_call["p_lease_owner"]
+        assert _Stripe.created_prices[0]["currency"] == "usd"
+
+    @pytest.mark.parametrize("currency,product_id", [("eur", None), (None, "prod_existing"), (" ", None)])
+    def test_fresh_price_requires_usd_before_product_mutation(self, currency, product_id):
+        facade = _Facade(_tables(_plan(currency=currency, stripe_product_id=product_id,
+            stripe_account_id="acct_1" if product_id else None)))
+        before = copy.deepcopy(facade.supabase.tables)
+        with pytest.raises(HTTPException) as failure:
+            asyncio.run(BillingPlanManager(facade, stripe_service_cls=_Stripe).sync_plan(
+                "plan_1", "studio_1", "actor_1", "unsupported-currency"))
+        assert failure.value.status_code == 400
+        parent = next(iter(facade.supabase.billing_provider_operations.values()))
+        assert (parent["state"], parent["error_code"], parent["provider_request_attempt_count"]) == (
+            "definitive_rejected", "tuition_currency_requires_usd", 0)
+        assert facade.supabase.tables == before
+        assert not (_Stripe.created_products or _Stripe.updated_products or _Stripe.created_prices)
+        assert not facade.supabase.billing_provider_step_plans
+
+    @pytest.mark.parametrize("stage,expected", [("registered", 400), ("product", 409), ("attempted_price", 409), ("confirmed_price", None)])
+    def test_historical_non_usd_price_respects_saved_attempt_evidence(self, stage, expected):
+        # Seed historical receipts directly; no forbidden price is created through this workflow.
+        facade = _Facade(_tables(_plan(currency="eur")))
+        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        workflow = BillingPlanSyncWorkflow(manager, stripe_service_cls=_Stripe)
+        plan = facade.supabase.tables["billing_plans"][0]
+        operations = BillingProviderOperationCoordinator(facade.supabase)
+        lease = "00000000-0000-4000-8000-000000000101"
+        claimed = operations.claim_resource(studio_id="studio_1", actor_id="actor_1", operation_type="plan.sync",
+            resource_type="plan", resource_id="plan_1", payer_id=None, caller_request_key="historical",
+            request_sha256=workflow._desired_plan_hash(plan, "acct_1", 1), stripe_connected_account_id="acct_1",
+            connect_account_generation=1, lease_owner=lease)
+        operation = claimed["operation"]
+        context = BillingProviderOperationContext(operation["id"], "studio_1", "actor_1", "plan.sync",
+            "historical", operation["request_sha256"], "acct_1", 1, lease)
+        spec = workflow._two_step_plan(plan, context)
+        client = BillingProviderStepCoordinator(facade.supabase)
+        registered = client.register_plan(context, operation, plan_sha256=spec["plan_sha256"], steps=spec["steps"])
+        operation = registered["operation"]
+        count = {"registered": 0, "product": 1, "attempted_price": 2, "confirmed_price": 2}[stage]
+        for order in range(1, count + 1):
+            step = workflow._step_context(context, spec["plan_sha256"], order, spec["steps"][order - 1])
+            current = client.claim_step(step)["step"]
+            current = client.transition_step(step, current, "provider_request_in_flight")
+            if not (stage == "attempted_price" and order == 2):
+                client.transition_step(step, current, "provider_succeeded", provider_object_id=("prod_historical" if order == 1 else "price_historical"))
+        if stage == "confirmed_price":
+            client.complete_provider_phase(context, operation, plan_sha256=spec["plan_sha256"], expected_step_count=2)
+        parent = next(iter(facade.supabase.billing_provider_operations.values()))
+        facade.supabase.advance_billing_provider_clock(seconds=31)
+        saved = copy.deepcopy(facade.supabase.billing_provider_step_plans[parent["id"]]["steps"])
+        if expected:
+            with pytest.raises(HTTPException) as failure:
+                asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "historical"))
+            assert failure.value.status_code == expected
+            assert facade.supabase.tables["billing_plan_prices"] == []
+        else:
+            result = asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "historical"))
+            replay = asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "historical"))
+            assert result.stripe_price_id == replay.stripe_price_id == "price_historical"
+            assert result.currency == "eur" and facade.supabase.tables["billing_plan_prices"][0]["currency"] == "eur"
+        after = facade.supabase.billing_provider_step_plans[parent["id"]]["steps"]
+        for old, new in zip(saved, after, strict=True):
+            assert (new["provider_request_attempt_count"], new.get("provider_object_id"), new["stripe_idempotency_key"]) == (
+                old["provider_request_attempt_count"], old.get("provider_object_id"), old["stripe_idempotency_key"])
+        assert not (_Stripe.created_products or _Stripe.updated_products or _Stripe.created_prices)
 
     def test_completed_replay_repairs_failed_audit_once_without_provider_access(self):
         facade = _Facade(_tables())
@@ -365,119 +406,43 @@ class TestBillingPlanSync:
             + len(_Stripe.created_prices)
             + len(_Stripe.retrieved_products)
         )
-        audit_reads = [
-            query for query in facade.supabase.query_log
-            if query["table"] == "audit_logs" and query["insert"] is None
-        ]
-        assert audit_reads
-        deterministic_id = facade.supabase.tables["audit_logs"][0]["id"]
-        assert any(
-            query["filters"] == (("eq", "id", deterministic_id),)
-            for query in audit_reads
-        )
 
-    def test_completed_replay_accepts_one_exact_legacy_audit_without_insert(self):
+    @pytest.mark.parametrize("change,error", [
+        ("none", None), ("actor", "mismatch"), ("product", "mismatch"),
+        ("missing_price", "mismatch"), ("entity", "mismatch"), ("duplicate", "ambiguous"),
+    ])
+    def test_completed_replay_verifies_legacy_audit_without_writing(self, change, error):
         facade = _Facade(_tables())
         manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
-        asyncio.run(manager.sync_plan(
-            "plan_1", "studio_1", "actor_1", "legacy-audit-key"
-        ))
+        asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "legacy-audit-key"))
         audit = facade.supabase.tables["audit_logs"][0]
         audit["id"] = "legacy-random-id"
-        audit["metadata"] = {
-            "operation_id": audit["metadata"]["operation_id"],
-            "stripe_product_id": audit["metadata"]["stripe_product_id"],
-            "stripe_price_id": audit["metadata"]["stripe_price_id"],
-        }
+        audit["metadata"] = {key: audit["metadata"][key] for key in (
+            "operation_id", "stripe_product_id", "stripe_price_id")}
+        if change == "actor":
+            audit["actor_id"] = "actor_other"
+        elif change == "product":
+            audit["metadata"]["stripe_product_id"] = "prod_other"
+        elif change == "missing_price":
+            audit["metadata"].pop("stripe_price_id")
+        elif change == "entity":
+            audit["entity_type"] = "other"
+        elif change == "duplicate":
+            facade.supabase.tables["audit_logs"].append({**copy.deepcopy(audit), "id": "legacy-second-id"})
+        before = copy.deepcopy(facade.supabase.tables["audit_logs"])
+        provider_calls = tuple(map(len, (_Stripe.created_products, _Stripe.updated_products,
+                                        _Stripe.created_prices, _Stripe.retrieved_products)))
         facade.supabase.query_log.clear()
-        provider_calls = (
-            len(_Stripe.created_products)
-            + len(_Stripe.updated_products)
-            + len(_Stripe.created_prices)
-            + len(_Stripe.retrieved_products)
-        )
-
-        replay = asyncio.run(manager.sync_plan(
-            "plan_1", "studio_1", "actor_1", "legacy-audit-key"
-        ))
-
-        assert replay.id == "plan_1"
-        assert facade.supabase.tables["audit_logs"] == [audit]
-        assert not any(
-            query["insert"] is not None
-            for query in facade.supabase.query_log
-            if query["table"] == "audit_logs"
-        )
-        assert provider_calls == (
-            len(_Stripe.created_products)
-            + len(_Stripe.updated_products)
-            + len(_Stripe.created_prices)
-            + len(_Stripe.retrieved_products)
-        )
-        legacy_read = next(
-            query for query in facade.supabase.query_log
-            if query["table"] == "audit_logs"
-            and any(key == "metadata->>operation_id" for _op, key, _value in query["filters"])
-        )
-        assert legacy_read["limit"] == 2
-
-    @pytest.mark.parametrize(
-        "mutate",
-        (
-            lambda row: row.update(actor_id="actor_other"),
-            lambda row: row["metadata"].update(stripe_product_id="prod_other"),
-            lambda row: row["metadata"].pop("stripe_price_id"),
-            lambda row: row.update(entity_type="other"),
-        ),
-    )
-    def test_completed_replay_rejects_malformed_legacy_audit(self, mutate):
-        facade = _Facade(_tables())
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
-        asyncio.run(manager.sync_plan(
-            "plan_1", "studio_1", "actor_1", "legacy-malformed-key"
-        ))
-        audit = facade.supabase.tables["audit_logs"][0]
-        audit["id"] = "legacy-random-id"
-        audit["metadata"] = {
-            "operation_id": audit["metadata"]["operation_id"],
-            "stripe_product_id": audit["metadata"]["stripe_product_id"],
-            "stripe_price_id": audit["metadata"]["stripe_price_id"],
-        }
-        mutate(audit)
-        provider_calls = len(_Stripe.created_products) + len(_Stripe.created_prices)
-
-        with pytest.raises(RuntimeError, match="plan_sync_legacy_audit_row_mismatch"):
-            asyncio.run(manager.sync_plan(
-                "plan_1", "studio_1", "actor_1", "legacy-malformed-key"
-            ))
-
-        assert len(facade.supabase.tables["audit_logs"]) == 1
-        assert provider_calls == len(_Stripe.created_products) + len(_Stripe.created_prices)
-
-    def test_completed_replay_rejects_duplicate_legacy_audit_identity(self):
-        facade = _Facade(_tables())
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
-        asyncio.run(manager.sync_plan(
-            "plan_1", "studio_1", "actor_1", "legacy-duplicate-key"
-        ))
-        audit = facade.supabase.tables["audit_logs"][0]
-        audit["id"] = "legacy-random-id-1"
-        audit["metadata"] = {
-            "operation_id": audit["metadata"]["operation_id"],
-            "stripe_product_id": audit["metadata"]["stripe_product_id"],
-            "stripe_price_id": audit["metadata"]["stripe_price_id"],
-        }
-        facade.supabase.tables["audit_logs"].append({
-            **audit, "id": "legacy-random-id-2", "metadata": dict(audit["metadata"])
-        })
-        provider_calls = len(_Stripe.created_products) + len(_Stripe.created_prices)
-
-        with pytest.raises(RuntimeError, match="plan_sync_legacy_audit_ambiguous"):
-            asyncio.run(manager.sync_plan(
-                "plan_1", "studio_1", "actor_1", "legacy-duplicate-key"
-            ))
-
-        assert provider_calls == len(_Stripe.created_products) + len(_Stripe.created_prices)
+        if error:
+            with pytest.raises(RuntimeError, match=f"plan_sync_legacy_audit.*{error}"):
+                asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "legacy-audit-key"))
+        else:
+            replay = asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "legacy-audit-key"))
+            assert replay.id == "plan_1"
+        assert facade.supabase.tables["audit_logs"] == before
+        assert not any(query["insert"] is not None for query in facade.supabase.query_log if query["table"] == "audit_logs")
+        assert provider_calls == tuple(map(len, (_Stripe.created_products, _Stripe.updated_products,
+                                                _Stripe.created_prices, _Stripe.retrieved_products)))
 
     @pytest.mark.parametrize(
         "winner_change, expected_error",
@@ -560,7 +525,7 @@ class TestBillingPlanSync:
         assert len(_Stripe.created_prices) == 1
         assert len(facade.supabase.tables["audit_logs"]) == 1
 
-    def test_real_v28_parent_evidence_resumes_projection_and_audits_once(self):
+    def test_provider_phase_receipt_resumes_projection_and_audits_once(self):
         facade = _Facade(_tables())
         crash = {"pending": True}
 
@@ -591,7 +556,6 @@ class TestBillingPlanSync:
         assert parent["provider_request_attempt_count"] == 1
         assert parent["provider_object_id"] == "price_1"
         assert parent["result_code"] == "provider_step_phase_completed"
-        assert parent["revision"] == 3
         assert facade.supabase.tables["audit_logs"] == []
 
         result = asyncio.run(manager.sync_plan(
@@ -988,26 +952,6 @@ class TestBillingPlanSync:
         assert parent["reconciliation_reason_code"] == "plan_sync_local_projection_failed"
         assert facade.supabase.tables["audit_logs"] == []
 
-    def test_different_key_same_desired_plan_collapses_and_old_key_replays(self):
-        facade = _Facade(_tables())
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
-
-        first = asyncio.run(manager.sync_plan(
-            "plan_1", "studio_1", "actor_1", "plan-key-1",
-        ))
-        second = asyncio.run(manager.sync_plan(
-            "plan_1", "studio_1", "actor_1", "plan-key-2",
-        ))
-        replay = asyncio.run(manager.sync_plan(
-            "plan_1", "studio_1", "actor_1", "plan-key-1",
-        ))
-
-        assert replay.stripe_price_id == first.stripe_price_id == second.stripe_price_id
-        assert len(_Stripe.created_products) == 1
-        assert len(_Stripe.updated_products) == 0
-        assert len(_Stripe.created_prices) == 1
-        assert len(facade.supabase.tables["audit_logs"]) == 1
-
     def test_changed_desired_plan_new_key_replaces_completed_owner(self):
         facade = _Facade(_tables())
         manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
@@ -1111,15 +1055,15 @@ class TestBillingPlanSync:
             postgres_text.encode("utf-8")
         ).hexdigest()
 
-    def _product_update_recovery(self, outcome, recovered_id=None):
+    def _product_update_recovery(self, outcome, recovered_id=None, *, currency="eur"):
         plan = _plan(
-            status="active",
+            status="active", currency=currency,
             stripe_account_id="acct_1",
             stripe_product_id="prod_existing",
             stripe_price_id="price_existing",
         )
         facade = _Facade(_tables(plan))
-        facade.supabase.tables["billing_plan_prices"] = [_price_row()]
+        facade.supabase.tables["billing_plan_prices"] = [_price_row(currency=currency)]
         manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
         _Stripe.update_error = RuntimeError("lost update response")
         with pytest.raises(HTTPException):

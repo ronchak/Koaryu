@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import hashlib
-import json
 from datetime import date, datetime, time, timezone
 
 import pytest
@@ -31,6 +29,7 @@ from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
+    BillingProviderStepCoordinator,
     IDEMPOTENCY_CONFLICT_DETAIL,
     OPERATION_TERMINAL_DETAIL,
 )
@@ -156,12 +155,6 @@ class _Facade:
             "entity_id": entity_id,
             "metadata": metadata,
         })
-
-    @staticmethod
-    def _invoice_request_hash(data):
-        payload = data.model_dump(mode="json", exclude_none=True)
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def _update_invoice_from_stripe(self, invoice_id, studio_id, provider, account_id):
         if self.projection_failures:
@@ -526,38 +519,17 @@ def test_create_requires_byte_bounded_key_and_exact_payer_generation():
     assert _Stripe.invoice_create_calls == []
 
 
-def test_create_rejects_malformed_due_date_before_local_or_provider_claim():
+@pytest.mark.parametrize("change,detail", [({"due_date": "2026-99-99"}, "YYYY-MM-DD"), ({"currency": "eur"}, "USD")])
+def test_create_rejects_invalid_new_intent_before_local_or_provider_claim(change, detail):
     facade = _Facade()
-    manager = _manager(facade)
-    malformed = _create_data().model_copy(update={"due_date": "2026-99-99"})
-
     with pytest.raises(HTTPException) as invalid:
-        manager.create_invoice_sync(
-            malformed, "studio_1", "actor_1", "invoice-invalid-date"
-        )
-
-    assert invalid.value.status_code == 400
-    assert "YYYY-MM-DD" in invalid.value.detail
+        _manager(facade).create_invoice_sync(
+            _create_data().model_copy(update=change), "studio_1", "actor_1", "invalid-invoice")
+    assert invalid.value.status_code == 400 and detail in invalid.value.detail
     assert facade.supabase.tables["billing_invoices"] == []
     assert facade.supabase.tables["billing_invoice_items"] == []
     assert facade.supabase.billing_provider_operations == {}
-    assert _Stripe.invoice_create_calls == []
-    assert _Stripe.item_create_calls == []
-
-    created = manager.create_invoice_sync(
-        _create_data(), "studio_1", "actor_1", "invoice-valid-date"
-    )
-
-    assert created.status == "draft"
-    assert len(facade.supabase.billing_provider_operations) == 1
-    assert len(_Stripe.invoice_create_calls) == 1
-    expected_due_date = int(datetime.combine(
-        date(2099, 9, 15),
-        time.min,
-        tzinfo=timezone.utc,
-    ).timestamp())
-    assert _Stripe.invoice_create_calls[0]["collection_method"] == "send_invoice"
-    assert _Stripe.invoice_create_calls[0]["due_date"] == expected_due_date
+    assert not (_Stripe.invoice_create_calls or _Stripe.item_create_calls)
 
 
 def test_create_due_date_freshness_does_not_block_exact_replay_after_midnight():
@@ -623,6 +595,9 @@ def test_create_records_step_evidence_and_replays_without_duplicates():
     assert first.status == "draft"
     assert len(_Stripe.invoice_create_calls) == 1
     assert len(_Stripe.item_create_calls) == 2
+    assert _Stripe.invoice_create_calls[0]["due_date"] == 4093113600  # 2099-09-15 UTC
+    assert _Stripe.invoice_create_calls[0]["collection_method"] == "send_invoice"
+    assert all(item["currency"] == "usd" for item in _Stripe.item_create_calls)
     assert facade.customer_sync_calls == 0
     assert len(facade.supabase.tables["billing_invoice_items"]) == 2
     assert len(facade.supabase.tables["audit_logs"]) == 1
@@ -640,6 +615,61 @@ def test_create_records_step_evidence_and_replays_without_duplicates():
         "connected_invoice_item.create",
         "connected_invoice_item.create",
     ]
+
+
+@pytest.mark.parametrize("stage,error", [("unregistered", 400), ("registered", 400), ("attempted", 409), ("confirmed", None)])
+def test_historical_non_usd_invoice_uses_saved_attempts_and_replays(stage, error):
+    data = _create_data().model_copy(update={"currency": "eur"})
+    invoice = _draft_invoice(id="invoice_historical", stripe_invoice_id=None, currency="eur",
+        amount_due_cents=7400, amount_remaining_cents=7400, application_fee_amount_cents=37,
+        idempotency_key="historical", due_date=data.due_date,
+        metadata={"connect_account_generation": 2, "provider_workflow": "invoice.create"})
+    facade = _Facade(invoice=invoice)
+    manager = _manager(facade)
+    invoice["request_hash"] = manager._invoice_request_hash(data)
+    workflow = BillingInvoiceOperationWorkflow(manager, stripe_service_cls=_Stripe)
+    items = [item.model_dump() for item in data.items]
+    desired_hash = stable_hash({"operation_type": "invoice.create", "studio_id": "studio_1",
+        "invoice_id": "invoice_historical", "payer_id": "payer_1", "stripe_customer_id": "cus_1",
+        "stripe_connected_account_id": "acct_1", "connect_account_generation": 2,
+        "collection_method": "send_invoice", "application_fee_amount_cents": 37,
+        "currency": "eur", "due_date": data.due_date, "items": items})
+    operations = BillingProviderOperationCoordinator(facade.supabase)
+    context, claimed = workflow._claim_parent(operations, studio_id="studio_1", actor_id="actor_1",
+        operation_type="invoice.create", caller_request_key="historical", request_sha256=desired_hash,
+        account_id="acct_1", generation=2)
+    operation = claimed["operation"]
+    if stage != "unregistered":
+        spec = workflow._invoice_step_plan(invoice, payer=_payer(), context=context,
+            items=items, application_fee=37, due_date=data.due_date)
+        client = BillingProviderStepCoordinator(facade.supabase)
+        operation = client.register_plan(context, operation, plan_sha256=spec["plan_sha256"], steps=spec["steps"])["operation"]
+        for order in range(1, (4 if stage == "confirmed" else 2 if stage == "attempted" else 1)):
+            step = workflow._step_context(context, spec, order)
+            current = client.transition_step(step, client.claim_step(step)["step"], "provider_request_in_flight")
+            if stage == "confirmed":
+                client.transition_step(step, current, "provider_succeeded",
+                    provider_object_id="in_historical" if order == 1 else f"ii_historical_{order}")
+        if stage == "confirmed":
+            client.complete_provider_phase(context, operation, plan_sha256=spec["plan_sha256"], expected_step_count=3)
+            _seed_retry_provider({**invoice, "stripe_invoice_id": "in_historical"})
+    facade.supabase.advance_billing_provider_clock(seconds=31)
+    if error:
+        with pytest.raises(HTTPException) as failure:
+            manager.create_invoice_sync(data, "studio_1", "actor_1", "historical")
+        assert failure.value.status_code == error
+        assert facade.supabase.tables["billing_invoice_items"] == []
+    else:
+        result = manager.create_invoice_sync(data, "studio_1", "actor_1", "historical")
+        replay = manager.create_invoice_sync(data, "studio_1", "actor_1", "historical")
+        assert result.id == replay.id == "invoice_historical"
+        assert result.currency == "eur" and result.amount_due_cents == 7400
+        assert len(facade.supabase.tables["billing_invoice_items"]) == 2
+    assert not (_Stripe.invoice_create_calls or _Stripe.item_create_calls)
+    assert len(facade.supabase.tables["billing_invoices"]) == 1
+    assert invoice["currency"] == "eur" and invoice["amount_due_cents"] == 7400
+    parent = _operation(facade, "invoice.create")
+    assert parent["caller_request_key"] == "historical" and parent["request_sha256"] == desired_hash
 
 
 def test_create_changed_payload_conflicts_without_more_provider_calls():
