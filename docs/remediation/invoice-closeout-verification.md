@@ -1,6 +1,6 @@
 # Invoice closeout and payer-balance verification
 
-[PR #162](https://github.com/ronchak/Koaryu/pull/162) remains a draft pending final
+[PR #162](https://github.com/ronchak/Koaryu/pull/162) remains unmerged pending final
 commit-bound review and exact-head CI. Its earlier Python-only checks do not
 certify this expanded candidate. BB1-07 and BT2-01 are fixed in this candidate;
 merge and deployment status are separate.
@@ -114,3 +114,13 @@ This evidence is local and synthetic. No hosted payment, production migration,
 backfill or deployment was performed. Production apply remains human-only with
 fresh candidate-bound inspection, backup and approval evidence. One fresh reviewer
 receives the final diff and this PR's plan without the previous reviewers' history.
+
+## Dependency prerequisite and rebase
+
+CI on 0eeed52 passed the database, backend and other release components, but the
+frontend dependency audit reported high/critical Next.js/Sharp advisories. PR163
+resolved that independent gate failure and merged as 6901f71. PR162 now starts
+from that patched main. Its invoice/V41 production code, tests and SQL/helper
+inputs are byte-identical to the reviewed 0eeed52 candidate; the patched frontend
+is inherited unchanged. Tracking records were reconciled separately. Fresh review
+binding and exact-head CI on the rebased candidate remain required.

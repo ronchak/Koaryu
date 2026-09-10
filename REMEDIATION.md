@@ -183,7 +183,7 @@ The complete local runner passes 136 migrations, 51 SQL contracts, real restores
 observed concurrency and drift negatives. Full backend, generated-contract and
 release-workflow checks pass. One fresh independent reviewer approved the actual
 implementation and documentation without prior reviewer history. Final commit
-binding, exact-head CI and guarded merge are still required. PR162 remains a draft.
+binding, exact-head CI and guarded merge are still required. PR162 remains unmerged.
 
 Candidate counts are 31 fixed, one resolved indirectly, 234 pending and 12
 intentional deferrals. BB1-07/BT2-01 share the corrected completion responsibility;
@@ -193,6 +193,21 @@ to real SQL. Broader test reduction is unfinished. These counts are not the prom
 individual re-triage: that pass follows this merge against updated main. See
 [invoice-closeout verification](docs/remediation/invoice-closeout-verification.md).
 
+PR162's first complete CI exposed a dependency-audit blocker in unchanged
+frontend dependencies. The independent [PR #163](https://github.com/ronchak/Koaryu/pull/163)
+merged as `6901f715bd7edd1ea27a8a3d626f66757590f212` after fresh review and all
+exact-head checks passed. It updates Next/ESLint to 16.3.3 and Sharp to 0.35.4,
+fixes ESM handling in the existing fixture packer, and removes two wording/metadata
+tests. Production auto-deploy was verified off; no production deployment occurred.
+
+Reassessment at 6901f71: CTA1-08 is resolved indirectly because the justified update
+also aligns runtime and lint versions. FT1-07 remains pending for broader fixture
+consolidation. Candidate counts are 31 fixed, two resolved indirectly, 234 pending
+and 11 deferred; PROGRAM-SECURITY-01 is separately fixed. PR162 was rebased without
+conflict; its invoice/V41 source and tests remain byte-identical to reviewed
+0eeed52. It still requires fresh review binding and exact-head CI before merge.
+The full individual triage remains the next program step after PR162.
+
 ## Deliberate non-goals and deferrals
 
 The ledger records individual reasons for these initial deferrals:
@@ -201,7 +216,7 @@ The ledger records individual reasons for these initial deferrals:
 - Changing stored financial recovery grammar, DM4-06, introduces compatibility work without a demonstrated current protocol mismatch.
 - Global Connect lock replacement, roster seek redesign and shared authorization-predicate consolidation, DM2-04/DM3-03/DM3-06, require contention, workload or equivalence evidence. Existing safeguards stay in place.
 - Download-task infrastructure, FC2-08, is not justified solely by a requested download surviving navigation.
-- Icon tooling, patch-version alignment, the historical pitch and account-wide branding, CTA1-06/08, DOC1-13 and OS1-09, are deferred until their actual use warrants work.
+- Icon tooling, the historical pitch and account-wide branding, CTA1-06, DOC1-13 and OS1-09, are deferred until their actual use warrants work.
 - Commercial offer wording, DOC1-10, has no proven contradictory offer and does not authorize changes to pricing or pilot terms.
 
 Do not create an automation builder, guardian-management product, mailbox, general workflow framework, universal resource store or new monitoring infrastructure to close a finding. Do not remove immutable migrations, generated contracts, financial receipts, authorization checks or justified compatibility solely because they are repetitive.

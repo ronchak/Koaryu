@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+  "last_reconciled_main": "6901f715bd7edd1ea27a8a3d626f66757590f212",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -142,17 +142,19 @@
       "id": "CTA1-08",
       "title": "Framework lint and runtime patch versions have drifted despite the stated alignment rule",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "deferred_intentionally",
-      "reason": "Same-minor lint/runtime patch mismatch has no verified incompatibility; align at the next justified dependency update.",
+      "disposition": "resolved_indirectly",
+      "reason": "The justified security dependency update in PR163 aligns both locked Next.js and eslint-config-next at16.3.3. The original deliberate deferral is no longer needed.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "6901f715bd7edd1ea27a8a3d626f66757590f212",
+      "verification": "Verified exact resolved versions and package declarations on mergedmain6901f71. Fullfrontend921 tests, lint/build/audit and exact-head release CI passed. Application code and alignment guidance were not changed.",
       "source_paths": [
         "frontend/AGENTS.md",
         "frontend/package-lock.json"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        163
+      ]
     },
     {
       "id": "CTA1-09",
@@ -2418,17 +2420,19 @@
       "title": "Browser fixture infrastructure is duplicated and difficult to review",
       "cluster": "test_and_adapter_maintenance",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Still pending: PR163 makes the existing browser packer handle the new SWC ESM helper, but does not consolidate duplicated fixture infrastructure or establish clearer ownership across the wider harness set.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "6901f715bd7edd1ea27a8a3d626f66757590f212",
+      "verification": "The unchanged schedule behavior case failed before packer transpilation and passes afterward; fullfrontend921 and exact-headCI passed. This is a narrow compatibility correction, not completion of the broader fixture-maintenance recommendation.",
       "source_paths": [
         "frontend/tests/billing-data-mounted.test.mjs",
         "frontend/tests/helpers/store-browser-harness.mjs",
         "frontend/tests/billing-enrollment-transition-model.test.mjs"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        163
+      ]
     },
     {
       "id": "FT1-08",
@@ -4657,8 +4661,11 @@
         "frontend/package.json",
         "frontend/package-lock.json"
       ],
-      "verification": "Candidate against main9988c62: selected Next/eslint-config-next16.3.3 and Sharp0.35.4; clean install, unchanged high-threshold audit and native PNG/WebP processing pass with libheif1.23.2. Fullfrontend921PASS, lint0errors/1unchanged-code warning, productionbuildPASS. Fresh independent review GREEN; final commit binding, exact-headCI and guardedmerge pending. No productiondeployment. See docs/remediation/framework-security.md.",
-      "pull_requests": []
+      "verification": "MergedPR163 at6901f71. Next/eslint16.3.3 and Sharp0.35.4; clean install, unchanged high-threshold audit, native PNG/WebP processing with libheif1.23.2, frontend921, lint/build and exact-head release CI passed. Fresh independent reviewer bound1fd893f. Guardedmerge read productionRender auto-deploy off twice; no productiondeployment. One existing moderate advisory remains.",
+      "pull_requests": [
+        163
+      ],
+      "verified_against": "6901f715bd7edd1ea27a8a3d626f66757590f212"
     }
   ]
 }
