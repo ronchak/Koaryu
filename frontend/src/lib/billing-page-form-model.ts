@@ -190,22 +190,22 @@ export function buildExternalBillingPaymentPayload({
   externalMethod: string;
   externalNote: string;
 }): BillingFormPayloadResult<ExternalBillingPaymentPayload> {
-  const amount = Number(externalAmount);
+  const amountCents = moneyInputToCents(externalAmount);
   if (!externalPayerId) {
     return { ok: false, error: "Choose a payer for this external payment." };
   }
-  if (!Number.isFinite(amount) || amount <= 0) {
+  if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 2_147_483_647) {
     return { ok: false, error: "Enter a valid external payment amount." };
   }
-  if (!externalMethod.trim()) {
-    return { ok: false, error: "Enter the external payment method." };
+  if (!externalMethod.trim() || externalMethod.trim().length > 80) {
+    return { ok: false, error: "Enter an external payment method of 1 to 80 characters." };
   }
 
   return {
     ok: true,
     payload: {
       payer_id: externalPayerId,
-      amount_cents: moneyInputToCents(externalAmount),
+      amount_cents: amountCents,
       currency: "usd",
       external_method: externalMethod.trim(),
       note: optionalText(externalNote),

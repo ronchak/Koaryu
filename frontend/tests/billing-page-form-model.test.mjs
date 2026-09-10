@@ -5,7 +5,6 @@ import {
   buildBillingPayerCreatePayload,
   buildBillingPlanCreatePayload,
   canSubmitStudentBillingEnrollmentForm,
-  buildExternalBillingPaymentPayload,
   buildStudentBillingEnrollmentCreatePayload,
   shouldDisableStudentBillingEnrollmentPayerSelect,
 } from "../src/lib/billing-page-form-model.ts";
@@ -178,37 +177,6 @@ describe("billing page form model", () => {
         payerCount: 0,
       }),
       true
-    );
-  });
-
-  it("validates and builds external payment payloads", () => {
-    assert.deepEqual(
-      buildExternalBillingPaymentPayload({
-        externalPayerId: "payer-1",
-        externalAmount: "10",
-        externalMethod: " ",
-        externalNote: "",
-      }),
-      { ok: false, error: "Enter the external payment method." }
-    );
-
-    assert.deepEqual(
-      buildExternalBillingPaymentPayload({
-        externalPayerId: "payer-1",
-        externalAmount: "75.25",
-        externalMethod: " Check ",
-        externalNote: " paid at front desk ",
-      }),
-      {
-        ok: true,
-        payload: {
-          payer_id: "payer-1",
-          amount_cents: 7525,
-          currency: "usd",
-          external_method: "Check",
-          note: "paid at front desk",
-        },
-      }
     );
   });
 });

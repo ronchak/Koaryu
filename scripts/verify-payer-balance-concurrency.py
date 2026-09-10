@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Prove payer balance snapshot/lock ordering on the disposable local cluster."""
+"""Prove payer balance ordering and external-payment replay on a disposable cluster."""
 import hashlib
 import json
 import os
 from pathlib import Path
 import queue
+import runpy
 import signal
 import subprocess
 import sys
@@ -21,7 +22,7 @@ class ProofFailure(RuntimeError):
 
 def run_cases(local,database):
     children=[];results=[]
-    ids={key:str(uuid4()) for key in ['actor','studio','payer','other','invoice','other_invoice']}
+    ids={key:str(uuid4()) for key in ['actor','retry_actor','studio','payer','other','invoice','other_invoice']}
     def sql(statement):return local.sql(database,statement)
     def command(payer):return f"SELECT public.recompute_billing_payer_balance_v1('{ids['studio']}','{ids[payer]}');"
     def start(label,statement,hold=True):
@@ -87,7 +88,8 @@ def run_cases(local,database):
     try:
         sql(f"""BEGIN;
 INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
-VALUES('{ids['actor']}','authenticated','authenticated','{ids['actor']}@example.invalid','{{}}','{{}}',now(),now());
+VALUES('{ids['actor']}','authenticated','authenticated','{ids['actor']}@example.invalid','{{}}','{{}}',now(),now()),
+('{ids['retry_actor']}','authenticated','authenticated','{ids['retry_actor']}@example.invalid','{{}}','{{}}',now(),now());
 INSERT INTO public.studios(id,name,slug,owner_id) VALUES('{ids['studio']}','Balance lock fixture','balance-{ids['studio']}','{ids['actor']}');
 INSERT INTO public.billing_payers(id,studio_id,display_name,balance_cents) VALUES
 ('{ids['payer']}','{ids['studio']}','Primary',100),('{ids['other']}','{ids['studio']}','Independent',0);
@@ -120,6 +122,20 @@ COMMIT;""")
         observed=facts();expected={'invoice':['paid',0],'payer':[0,'current'],'other':200}
         if observed!=expected:raise ProofFailure('invoice_owner_completion',observed)
         results.append({'case':'invoice_then_payer_without_inverse_lock','lock':lock,'facts':observed})
+        def external(actor):
+            return f"SELECT public.record_external_payment_v1('{ids['studio']}','{ids[actor]}','{ids['payer']}',500,'usd','cash','Original note','external-concurrent',repeat('a',64));"
+        holder=start('external_owner',external('actor'));ready(holder)
+        waiter=start('external_replay',external('retry_actor'),hold=False)
+        lock=wait_blocked(holder,waiter)
+        assert sql(f"SELECT count(*) FROM public.billing_payments WHERE studio_id='{ids['studio']}' AND idempotency_key='external-concurrent';")=='0'
+        release(holder);ready(waiter);finish(waiter)
+        payment=json.loads(next(line for line in holder['lines'] if line.startswith('{')))
+        replay=json.loads(next(line for line in waiter['lines'] if line.startswith('{')))
+        assert payment==replay
+        audits=json.loads(sql(f"SELECT jsonb_agg(jsonb_build_object('actor_id',actor_id,'entity_id',entity_id,'metadata',metadata)) FROM public.audit_logs WHERE studio_id='{ids['studio']}' AND action='billing.external_payment_recorded';"))
+        assert audits==[{'actor_id':ids['actor'],'entity_id':payment['id'],'metadata':{'amount_cents':500,'external_method':'cash'}}],audits
+        assert sql(f"SELECT count(*) FROM public.billing_payments WHERE studio_id='{ids['studio']}' AND idempotency_key='external-concurrent';")=='1'
+        results.append({'case':'external_payment_and_original_actor_audit_once','lock':lock,'payment_id':payment['id'],'audit_count':len(audits)})
         return results
     finally:
         for child in children:
@@ -139,11 +155,18 @@ def main(arguments):
     source_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     shared_path = Path(__file__).with_name("local_postgres_verification.py")
     shared_hash = hashlib.sha256(shared_path.read_bytes()).hexdigest()
-    readiness = json.loads(local.sql("postgres", "SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v22() r;"))
-    require(readiness.get("ready") is True and readiness.get("migration_count") == 136
-            and readiness.get("migration_head") == "20260908183744"
-            and readiness.get("manifest_version") == "release-db-attestation-v41"
-            and readiness.get("security_failures") == [], "Payer concurrency requires exact ready V41")
+    metadata_path = Path(__file__).resolve().parents[1] / "backend/app/services/generated_release_readiness.py"
+    metadata_hash = hashlib.sha256(metadata_path.read_bytes()).hexdigest()
+    metadata = runpy.run_path(str(metadata_path))
+    rpc = metadata["RELEASE_PREFLIGHT_RPC"]
+    require(rpc.startswith("koaryu_release_schema_preflight_v") and rpc.removeprefix("koaryu_release_schema_preflight_v").isdigit(),
+            "Invalid generated readiness RPC")
+    readiness = json.loads(local.sql("postgres", f"SELECT to_jsonb(r) FROM public.{rpc}() r;"))
+    expected = {"ready": True, "migration_count": metadata["EXPECTED_RELEASE_MIGRATION_COUNT"],
+                "migration_head": metadata["EXPECTED_RELEASE_MIGRATION_HEAD"],
+                "manifest_version": metadata["EXPECTED_RELEASE_MANIFEST_VERSION"],
+                "pending_versions": metadata["EXPECTED_RELEASE_PENDING_VERSIONS"], "security_failures": []}
+    require(readiness == expected, "Payment concurrency requires the exact current candidate readiness")
     database = f"koaryu_payer_balance_concurrency_{os.getpid()}"
     owned = False
     try:
@@ -151,10 +174,11 @@ def main(arguments):
         owned = True
         cases = run_cases(local, database)
         require(hashlib.sha256(Path(__file__).read_bytes()).hexdigest() == source_hash
-                and hashlib.sha256(shared_path.read_bytes()).hexdigest() == shared_hash,
+                and hashlib.sha256(shared_path.read_bytes()).hexdigest() == shared_hash
+                and hashlib.sha256(metadata_path.read_bytes()).hexdigest() == metadata_hash,
                 "Payer concurrency inputs changed during verification")
         (local.temporary / "payer-balance-concurrency-evidence.json").write_text(json.dumps({
-            "script_sha256": source_hash, "local_tools_sha256": shared_hash,
+            "script_sha256": source_hash, "local_tools_sha256": shared_hash, "readiness_metadata_sha256": metadata_hash,
             "readiness": readiness, "cases": cases,
         }, indent=2) + "\n")
         for case in cases:

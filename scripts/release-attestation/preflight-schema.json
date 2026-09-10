@@ -400,6 +400,34 @@
       "configuration": [
         "search_path=\"\""
       ]
+    },
+    "external_payment_rpc_v43": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "record_external_payment_v1",
+      "signature": "public.record_external_payment_v1(uuid,uuid,uuid,integer,text,text,text,text,text)",
+      "expected": "150aedb400108d00c3fe90ca3de7d4ccde6df24ad8dda4f045cd6256af1ad13d",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "jsonb",
+      "configuration": [
+        "search_path=\"\""
+      ]
     }
   },
   "states": {
@@ -483,6 +511,12 @@
           "expected": "9f3190acf304988b74da920b85a8e1cdb6a62eb8615017788b057b477667e5a2"
         }
       }
+    },
+    "v43": {
+      "extends": "v42",
+      "append": [
+        "external_payment_rpc_v43"
+      ]
     }
   }
 }

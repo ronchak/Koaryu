@@ -702,7 +702,7 @@ class BillingPaymentCohortSummaryResponse(BaseModel):
 class ExternalPaymentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount_cents: int = Field(ge=1)
+    amount_cents: int = Field(ge=1, le=2_147_483_647)
     currency: str = "usd"
     payer_id: Optional[str] = None
     invoice_id: Optional[str] = None

@@ -129,6 +129,10 @@ export function BillingTabContent(props: BillingTabContentProps) {
     externalMethod,
     externalNote,
     externalPayerId,
+    externalPaymentReady,
+    externalPaymentFormLocked,
+    externalPaymentRecoveryMessage,
+    externalPaymentIsRetry,
     isActionLoading,
     isLoadingAction,
     canUseWorkflow,
@@ -273,6 +277,10 @@ export function BillingTabContent(props: BillingTabContentProps) {
         externalMethod={externalMethod}
         externalNote={externalNote}
         externalPayerId={externalPayerId}
+        externalPaymentReady={externalPaymentReady}
+        externalPaymentFormLocked={externalPaymentFormLocked}
+        externalPaymentRecoveryMessage={externalPaymentRecoveryMessage}
+        externalPaymentIsRetry={externalPaymentIsRetry}
         externalPaymentTotal={externalPaymentTotal}
         exportJobs={exportJobs}
         isActionLoading={isActionLoading}

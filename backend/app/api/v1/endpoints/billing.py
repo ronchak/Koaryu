@@ -46,6 +46,7 @@ from app.schemas.billing import (
     StudentBillingEnrollmentUpdate,
     StudioPaymentAccountResponse,
 )
+from app.services.billing_payments import PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL
 from app.services.billing_service import BillingService
 from app.services.staging_provider_enrollment_policy import (
     allows_provider_enrollment_preparation,
@@ -61,9 +62,7 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 EXTERNAL_ENROLLMENT_ONLY_DETAIL = (
     "Billing attachments currently support external collection only."
 )
-PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL = (
-    "External payments must currently target one payer, not an invoice."
-)
+
 
 
 async def _audit_billing_action(

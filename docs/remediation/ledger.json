@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "d9d276672d550ed4197a90125551530d0d12e96a",
+  "last_reconciled_main": "cb897e2d35a8a75c71c5c1fec1a0b3907eb0ba1e",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2101,22 +2101,28 @@
       "id": "BB1-05",
       "title": "External payment retries cannot repair a missing audit entry",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "A payment can commit before balance or audit failure. Same-key replay returns created=false and permanently skips the missing audit.",
+      "disposition": "fixed",
+      "reason": "V43 commits each new payer external payment and its original-actor audit in one transaction. Existing studio/key/hash replay returns the original payment. Balance completion remains repeatable; historical missing audits are deliberately not fabricated.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and retained merged implementation evidence. No new runtime tests or hosted activity during normalization.",
+      "verified_against": "0abd5b57e7edbc81602921bf5d8023717d4d988d",
+      "verification": "See external-payment-recovery-verification.md for behavioral, real PostgreSQL, restore, test-reduction and review evidence; final-head release CI and guarded merge govern landing.",
       "source_paths": [
         "backend/app/services/billing_payments.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        172
+      ],
       "track": "Astra",
       "root_cause": "external-payment-audit-atomicity",
       "collapse_with": [
         "BT3-02"
       ],
-      "current_evidence": [
+      "next_change": "No remaining work for this scoped finding; preserve the payment and retry boundaries in later financial changes.",
+      "validation_plan": "Payer-targeted audit failure, balance failure and concurrent same-key cases must converge to one payment and one correct audit; verify any new RPC on disposable PostgreSQL.",
+      "scope_constraints": "No historical financial or invented-actor backfill, production SQL, provider mutation or expansion to invoice-targeted public recording.",
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "normalization_evidence": [
         {
           "path": "backend/app/services/billing_payments.py",
           "line": 169,
@@ -2133,10 +2139,18 @@
           "observation": "The supported endpoint restricts external payments to payer targets."
         }
       ],
-      "next_change": "Use a narrowly scoped atomic payment-plus-audit write for supported payer recording, preserving studio/key/hash identity and the original actor. Keep balance repair replayable.",
-      "validation_plan": "Payer-targeted audit failure, balance failure and concurrent same-key cases must converge to one payment and one correct audit; verify any new RPC on disposable PostgreSQL.",
-      "scope_constraints": "No historical financial or invented-actor backfill, production SQL, provider mutation or expansion to invoice-targeted public recording.",
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "current_evidence": [
+        {
+          "path": "supabase/migrations/20260910093958_external_payment_command_ownership_v43.sql",
+          "line": 23,
+          "observation": "Payer-only RPC uses existing unique request identity and inserts its original audit within the same transaction."
+        },
+        {
+          "path": "scripts/verify-payer-balance-concurrency.py",
+          "line": 125,
+          "observation": "Observed unique-index contention resolves to one payment and one original-actor audit."
+        }
+      ]
     },
     {
       "id": "BB1-06",
@@ -4354,22 +4368,28 @@
       "id": "BT3-02",
       "title": "External-payment replay test explicitly accepts a completed payment without its audit",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "The concurrent replay test still explicitly accepts an empty audit log. It supports the unresolved backend audit gap and does not define correct product behavior.",
+      "disposition": "fixed",
+      "reason": "PR172 removes the replay simulation that accepted a missing audit and the obsolete invoice-branch tests. Real PostgreSQL rollback, same-key contention and canonical/restored continuation now require one new payment and one original-actor audit.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and retained merged implementation evidence. No new runtime tests or hosted activity during normalization.",
+      "verified_against": "0abd5b57e7edbc81602921bf5d8023717d4d988d",
+      "verification": "See external-payment-recovery-verification.md for behavioral, real PostgreSQL, restore, test-reduction and review evidence; final-head release CI and guarded merge govern landing.",
       "source_paths": [
         "backend/tests/test_billing_payments.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        172
+      ],
       "track": "Astra",
       "root_cause": "external-payment-audit-atomicity",
       "collapse_with": [
         "BB1-05"
       ],
-      "current_evidence": [
+      "next_change": "No remaining work for this scoped finding; preserve the payment and retry boundaries in later financial changes.",
+      "validation_plan": "One payment, one original-actor audit and eventual balance completion after injected failures.",
+      "scope_constraints": "Retain hash-conflict and payment uniqueness checks; do not expose invoice-targeted recording or invent historical actors.",
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "normalization_evidence": [
         {
           "path": "backend/tests/test_billing_payments.py",
           "line": 849,
@@ -4381,10 +4401,18 @@
           "observation": "The fake balance method only records calls."
         }
       ],
-      "next_change": "Add supported payer-targeted concurrency and post-write failure cases alongside BB1-05; require atomic audit persistence and replayable balance completion.",
-      "validation_plan": "One payment, one original-actor audit and eventual balance completion after injected failures.",
-      "scope_constraints": "Retain hash-conflict and payment uniqueness checks; do not expose invoice-targeted recording or invent historical actors.",
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "current_evidence": [
+        {
+          "path": "supabase/migrations/20260910093958_external_payment_command_ownership_v43.sql",
+          "line": 23,
+          "observation": "Payer-only RPC uses existing unique request identity and inserts its original audit within the same transaction."
+        },
+        {
+          "path": "scripts/verify-payer-balance-concurrency.py",
+          "line": 125,
+          "observation": "Observed unique-index contention resolves to one payment and one original-actor audit."
+        }
+      ]
     },
     {
       "id": "BT3-03",
@@ -5992,23 +6020,29 @@
       "id": "FT1-04",
       "title": "External-payment tests prove header forwarding but not retry identity ownership",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "Report-action tests still cover supplied-key serialization, not the hook that loses command identity. Owner approval for exact browser retention is now settled.",
+      "disposition": "fixed",
+      "reason": "PR172 replaces forwarding/key-format and external capability source assertions with mounted real-page behavior for loss, remount, storage faults, confirmation, refresh and session ownership. Original refund coverage remains.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and retained merged implementation evidence. No new runtime tests or hosted activity during normalization.",
+      "verified_against": "09e1674b168c0d94fc5a4f35653e22bb153c0de5",
+      "verification": "See external-payment-recovery-verification.md for behavioral, real PostgreSQL, restore, test-reduction and review evidence; final-head release CI and guarded merge govern landing.",
       "source_paths": [
         "frontend/tests/billing-report-actions.test.mjs",
         "frontend/src/lib/billing-report-actions.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        172
+      ],
       "track": "Astra",
       "root_cause": "external-payment-browser-recovery",
       "collapse_with": [
         "FSH1-05"
       ],
-      "current_evidence": [
+      "next_change": "No remaining work for this scoped finding; preserve the payment and retry boundaries in later financial changes.",
+      "validation_plan": "A deterministic server fixture must retain one payment and the same exact payload/key until confirmation.",
+      "scope_constraints": "Keep serialization coverage; do not label header forwarding as complete idempotency protection or drop the unresolved note.",
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "normalization_evidence": [
         {
           "path": "frontend/tests/billing-report-actions.test.mjs",
           "line": 20,
@@ -6020,10 +6054,18 @@
           "observation": "Editing any payment field clears the hook's key."
         }
       ],
-      "next_change": "Add mounted submit-owner cases for committed-but-unconfirmed responses, edit/change-back, remount, blocked storage and staff/studio switches alongside FSH1-05.",
-      "validation_plan": "A deterministic server fixture must retain one payment and the same exact payload/key until confirmation.",
-      "scope_constraints": "Keep serialization coverage; do not label header forwarding as complete idempotency protection or drop the unresolved note.",
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "current_evidence": [
+        {
+          "path": "frontend/src/lib/billing-report-actions.ts",
+          "line": 152,
+          "observation": "Durable attempt is retained before posting; matching confirmation precedes retirement; stale-owner completion cannot settle it."
+        },
+        {
+          "path": "frontend/tests/billing-data-mounted.test.mjs",
+          "line": 145,
+          "observation": "Real page fixture retains browser storage and records exact transport requests through remount and injected failures."
+        }
+      ]
     },
     {
       "id": "FT1-05",
@@ -9336,23 +9378,29 @@
       "id": "FSH1-05",
       "title": "External-payment retry protection disappears on edit or remount",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "External-payment identity remains only in a React ref and is cleared on edits. A new key after an uncertain commit can duplicate a local payment record. Browser retention is authorized but unimplemented.",
+      "disposition": "fixed",
+      "reason": "PR172 retains and verifies the exact normalized payload, note and request key in staff/studio-scoped browser storage before POST. Pending fields stay pinned through failure and remount; only matching confirmation retires the attempt. Identity changes cannot settle another owner or replace its action.",
       "audit_importance": "high",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and retained merged implementation evidence. No new runtime tests or hosted activity during normalization.",
+      "verified_against": "09e1674b168c0d94fc5a4f35653e22bb153c0de5",
+      "verification": "See external-payment-recovery-verification.md for behavioral, real PostgreSQL, restore, test-reduction and review evidence; final-head release CI and guarded merge govern landing.",
       "source_paths": [
         "frontend/src/lib/billing-report-actions.ts",
         "backend/app/services/billing_payments.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        172
+      ],
       "track": "Astra",
       "root_cause": "external-payment-browser-recovery",
       "collapse_with": [
         "FT1-04"
       ],
-      "current_evidence": [
+      "next_change": "No remaining work for this scoped finding; preserve the payment and retry boundaries in later financial changes.",
+      "validation_plan": "Mounted commit/lost-response, edit/change-back, reload and scope-switch cases must reuse one command; blocked persistence must prevent an unprotected submission.",
+      "scope_constraints": "No note omission, timeout-based receipt expiry, cross-scope reuse, provider charging or historical deduplication/backfill.",
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "normalization_evidence": [
         {
           "path": "frontend/src/lib/billing-report-actions.ts",
           "line": 28,
@@ -9369,10 +9417,18 @@
           "observation": "Backend replay recognizes the supplied studio/key; a fresh key can insert another payment."
         }
       ],
-      "next_change": "Persist and verify the exact unresolved payload, including note, and key under staff+studio scope before submission. Restore after remount, prevent edits from replacing unresolved identity, and clear only after server confirmation.",
-      "validation_plan": "Mounted commit/lost-response, edit/change-back, reload and scope-switch cases must reuse one command; blocked persistence must prevent an unprotected submission.",
-      "scope_constraints": "No note omission, timeout-based receipt expiry, cross-scope reuse, provider charging or historical deduplication/backfill.",
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "current_evidence": [
+        {
+          "path": "frontend/src/lib/billing-report-actions.ts",
+          "line": 152,
+          "observation": "Durable attempt is retained before posting; matching confirmation precedes retirement; stale-owner completion cannot settle it."
+        },
+        {
+          "path": "frontend/tests/billing-data-mounted.test.mjs",
+          "line": 145,
+          "observation": "Real page fixture retains browser storage and records exact transport requests through remount and injected failures."
+        }
+      ]
     },
     {
       "id": "FSH1-06",
@@ -12086,7 +12142,7 @@
       "root_cause": "release_attestation_authority",
       "disposition": "fixed",
       "reason": "A declared-state generator now owns current SQL authoring, readiness metadata and restore orchestration. All ten historical scripts and eleven historical statements reproduce their committed bytes. The generated V31-through-V37 path removes the duplicate run and log splice. Business fixtures and frozen older attestations remain explicit.",
-      "verified_against": "e61392ad184ee71a1ee2025c37b5a0acd76a7193",
+      "verified_against": "8c961326b5669fdfeeb0d019d8e883ff4202d336",
       "source_paths": [
         "supabase/migrations",
         "scripts/studio-comp-migration-rollout.mjs",
@@ -12102,16 +12158,19 @@
         "BT4-08"
       ],
       "next_change": "Use the generator for subsequent forward schema corrections; retain explicit review of business SQL, pins and canonical/restored evidence.",
-      "verification": "release-attestation-verification.md: all historical migrations unchanged; full local136/51 suite and old/new restore boundaries passed; declared next-release rendering, guarded target refusal and source-independent generation checked. Final candidate review/CI still required.",
-      "pull_requests": []
+      "verification": "PR167 merged the generator after full local 136/51 verification, fresh review and exact-head CI. PR168 fixed the permission flag across Node22.13 and24.15 with eight checks and fresh review/CI. V42 and V43 use the declared forward authoring path; historical scripts and migrations remain immutable.",
+      "pull_requests": [
+        167,
+        168
+      ]
     },
     {
       "id": "PROGRAM-CURRENCY-01",
       "title": "Mixed-currency writes feed currency-blind totals",
       "track": "Astra",
       "disposition": "pending",
-      "reason": "Supported external-payment API writes accept unrestricted currency without a Stripe operation. Aggregate SQL sums currencies together and the frontend labels those totals USD. Built-in forms submit USD. Current reachability is verified statically; production occurrence is unverified.",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "reason": "PR172/V43 closes new external-payment currency writes while preserving exact historical non-USD replay. New tuition commands and mixed/unknown-currency aggregates still need correction. Creating only USD plans is insufficient because a historical non-USD plan can still begin fresh collection.",
+      "verified_against": "0abd5b57e7edbc81602921bf5d8023717d4d988d",
       "source_paths": [
         "backend/app/api/v1/endpoints/billing.py",
         "backend/app/schemas/billing.py",
@@ -12218,9 +12277,11 @@
         "BB1-03"
       ],
       "owner_decision": "September9: USD-only new tuition and external-payment writes; preserve existing confirmed non-USD records and prevent misleading combined totals.",
-      "next_change": "Enforce the settled currency boundary for new tuition and external-payment commands without invalidating exact historical replay. Preserve confirmed non-USD records and provider reconciliation facts. Make aggregate availability/currency explicit where legacy rows cannot form a truthful USD total. No FX conversion or financial backfill.",
+      "next_change": "Guard genuinely new tuition financial intents, including activation of historical non-USD plans and provider price creation, while preserving confirmed historical results and exact replay. Then make monetary availability/currency explicit for affected readers. No FX conversion or historical backfill.",
       "verification": "Target accepted USD writes, rejected non-USD new writes, unchanged historical replay, and mixed/unknown-currency aggregates. Verify tenant, provider identity and idempotency boundaries.",
-      "pull_requests": []
+      "pull_requests": [
+        172
+      ]
     },
     {
       "id": "PROGRAM-DEPENDENCIES-02",
@@ -12267,8 +12328,8 @@
     }
   },
   "current_counts": {
-    "pending": 208,
-    "fixed": 55,
+    "pending": 204,
+    "fixed": 59,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
@@ -12276,6 +12337,6 @@
   },
   "current_pending_tracks": {
     "Sol": 64,
-    "Astra": 144
+    "Astra": 140
   }
 }

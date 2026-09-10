@@ -20,6 +20,10 @@ export function BillingReportsTab({
   externalMethod,
   externalNote,
   externalPayerId,
+  externalPaymentReady,
+  externalPaymentFormLocked,
+  externalPaymentRecoveryMessage,
+  externalPaymentIsRetry,
   externalPaymentTotal,
   exportJobs,
   isActionLoading,
@@ -40,6 +44,10 @@ export function BillingReportsTab({
   externalMethod: string;
   externalNote: string;
   externalPayerId: string;
+  externalPaymentReady: boolean;
+  externalPaymentFormLocked: boolean;
+  externalPaymentRecoveryMessage: string;
+  externalPaymentIsRetry: boolean;
   externalPaymentTotal: number;
   exportJobs: ExportJob[];
   isActionLoading: boolean;
@@ -89,6 +97,7 @@ export function BillingReportsTab({
 
       <section className="rounded-[14px] border border-border bg-surface p-4">
         <SectionHeader icon={Banknote} title="Record external payment" description="Track cash, check, Zelle, Venmo, or outside-processor payments without charging a Koaryu platform fee." />
+        {externalPaymentRecoveryMessage && <p className="mb-3 text-sm text-text-secondary" role="status">{externalPaymentRecoveryMessage}</p>}
         <form onSubmit={onRecordExternalPayment} className="grid gap-3 md:grid-cols-[1fr_0.6fr_0.7fr_1fr_auto] md:items-end">
           <div className="flex flex-col gap-1.5">
             <label className="text-sm text-text-secondary font-medium" htmlFor="external-payer">Payer</label>
@@ -96,7 +105,7 @@ export function BillingReportsTab({
               id="external-payer"
               value={externalPayerId}
               onChange={(event) => onExternalPayerChange(event.target.value)}
-              disabled={!canManageRoutineBilling || billingPayers.length === 0}
+              disabled={!canManageRoutineBilling || externalPaymentFormLocked || billingPayers.length === 0}
               className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary"
             >
               <option value="">Choose payer</option>
@@ -105,12 +114,12 @@ export function BillingReportsTab({
               ))}
             </select>
           </div>
-          <Input label="Amount" value={externalAmount} onChange={(event) => onExternalAmountChange(event.target.value)} placeholder="129" inputMode="decimal" disabled={!canManageRoutineBilling} />
-          <Input label="Method" value={externalMethod} onChange={(event) => onExternalMethodChange(event.target.value)} placeholder="Zelle" disabled={!canManageRoutineBilling} />
-          <Input label="Note" value={externalNote} onChange={(event) => onExternalNoteChange(event.target.value)} placeholder="Optional" disabled={!canManageRoutineBilling} />
-          <Button type="submit" size="sm" disabled={!canManageRoutineBilling || isActionLoading || billingPayers.length === 0} isLoading={isLoadingAction("record-external")}>
+          <Input label="Amount" value={externalAmount} onChange={(event) => onExternalAmountChange(event.target.value)} placeholder="129" inputMode="decimal" disabled={!canManageRoutineBilling || externalPaymentFormLocked} />
+          <Input label="Method" maxLength={80} value={externalMethod} onChange={(event) => onExternalMethodChange(event.target.value)} placeholder="Zelle" disabled={!canManageRoutineBilling || externalPaymentFormLocked} />
+          <Input label="Note" value={externalNote} onChange={(event) => onExternalNoteChange(event.target.value)} placeholder="Optional" disabled={!canManageRoutineBilling || externalPaymentFormLocked} />
+          <Button type="submit" size="sm" disabled={!canManageRoutineBilling || !externalPaymentReady || isActionLoading || billingPayers.length === 0} isLoading={isLoadingAction("record-external")}>
             <Plus className="h-3.5 w-3.5" />
-            {isLoadingAction("record-external") ? "Recording..." : "Record"}
+            {isLoadingAction("record-external") ? "Recording..." : externalPaymentIsRetry ? "Retry payment" : "Record"}
           </Button>
         </form>
       </section>
