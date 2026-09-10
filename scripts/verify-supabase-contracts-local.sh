@@ -656,88 +656,15 @@ SQL
   fi
 
   if [[ "$migration_filename" == "20260826185651_payment_refund_payer_sync_resource_ownership.sql" ]]; then
-    echo "[restored V31] RUN V30 dump/restore then migration 126"
+    echo "[restored V31-V37] RUN one V31 business proof with declared forward continuation"
     if run_interruptible bash \
-      "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh" \
+      "$ROOT_DIR/scripts/verify-v30-v37-restore-contract.sh" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
-      echo "[restored V31] PASS V30 dump/restore then migration 126"
-      echo "[restored V34] RUN V30 dump/restore then migrations 126-129"
-      restored_v33_output="$(run_interruptible bash <(
-        awk '
-          /^echo "PASS: V30 dump\/restore predecessor plus migration 126/ {
-            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830065627_release_invoice_retry_preread_lease_v32.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830065627'\'','\''release_invoice_retry_preread_lease_v32'\'');\" >/dev/null"
-            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830082610_invoice_retry_release_compatibility_v33.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830082610'\'','\''invoice_retry_release_compatibility_v33'\'');\" >/dev/null"
-            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260830151714_invoice_retry_closeout_contract_v34.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260830151714'\'','\''invoice_retry_closeout_contract_v34'\'');\" >/dev/null"
-            print "catalog_sql=\"$(cd \"$repository_root\" && node --input-type=module --eval \"import { CATALOG_STATE_SQL } from '\''./scripts/studio-comp-migration-rollout.mjs'\''; process.stdout.write(CATALOG_STATE_SQL);\")\""
-            print "echo RESTORED_V34_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
-            print "\"$psql_bin\" \"${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260831022021_stripe_rehearsal_evidence_rpc_v35.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260831022021'\'','\''stripe_rehearsal_evidence_rpc_v35'\'');\" >/dev/null"
-            print "echo RESTORED_V35_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
-            print "echo RESTORED_V35_READINESS=\"$(read_restored \"SELECT ready::TEXT||'\''|'\''||migration_count::TEXT||'\''|'\''||migration_head||'\''|'\''||cardinality(security_failures)::TEXT||'\''|'\''||COALESCE(array_to_string(security_failures,'\'','\''),'\'''\'')||'\''|'\''||manifest_version FROM public.koaryu_release_schema_preflight_v16();\")\""
-            print "\"$psql_bin\" \"\${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260831054918_payer_setup_recovery_v36.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260831054918'\'','\''payer_setup_recovery_v36'\'');\" >/dev/null"
-            print "echo RESTORED_V36_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
-            print "echo RESTORED_V36_READINESS=\"$(read_restored \"SELECT ready::TEXT||'\''|'\''||migration_count::TEXT||'\''|'\''||migration_head||'\''|'\''||cardinality(security_failures)::TEXT||'\''|'\''||COALESCE(array_to_string(security_failures,'\'','\''),'\'''\'')||'\''|'\''||manifest_version FROM public.koaryu_release_schema_preflight_v17();\")\""
-            print "\"$psql_bin\" \"\${restored_args[@]}\" --single-transaction --file=\"$repository_root/supabase/migrations/20260902001000_fix_billing_adjustment_trigger_table_guards.sql\" --command=\"INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('\''20260902001000'\'','\''fix_billing_adjustment_trigger_table_guards'\'');\" >/dev/null"
-            print "echo RESTORED_V37_CATALOG_STATE=\"$(read_restored \"$catalog_sql\")\""
-            print "echo RESTORED_V37_READINESS=\"$(read_restored \"SELECT ready::TEXT||'\''|'\''||migration_count::TEXT||'\''|'\''||migration_head||'\''|'\''||cardinality(security_failures)::TEXT||'\''|'\''||COALESCE(array_to_string(security_failures,'\'','\''),'\'''\'')||'\''|'\''||manifest_version FROM public.koaryu_release_schema_preflight_v18();\")\""
-            print "echo RESTORED_V37_TRIGGER_GUARD=\"$(read_restored \"SELECT private.koaryu_release_adjustment_trigger_guard_manifest_v37();\")\""
-          }
-          { print }
-        ' "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh"
-      ) "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
-        "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR")"
-      printf '%s\n' "$restored_v33_output"
-      restored_v34_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V34_CATALOG_STATE=//p' | tail -1)"
-      restored_v35_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V35_CATALOG_STATE=//p' | tail -1)"
-      restored_v35_readiness="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V35_READINESS=//p' | tail -1)"
-      restored_v36_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V36_CATALOG_STATE=//p' | tail -1)"
-      restored_v36_readiness="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V36_READINESS=//p' | tail -1)"
-      restored_v37_catalog="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V37_CATALOG_STATE=//p' | tail -1)"
-      restored_v37_readiness="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V37_READINESS=//p' | tail -1)"
-      restored_v37_trigger_guard="$(printf '%s\n' "$restored_v33_output" | sed -n 's/^RESTORED_V37_TRIGGER_GUARD=//p' | tail -1)"
-      expected_restored_v34_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V34_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V34_RESTORED_CATALOG_STATE);")"
-      if [[ "$restored_v34_catalog" != "$expected_restored_v34_catalog" ]]; then
-        echo "[restored V34] FAIL exact restored catalog: $restored_v34_catalog" >&2
-        exit 1
-      fi
-      echo "[restored V34] PASS V30 dump/restore then migrations 126-129"
-      expected_restored_v35_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V35_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V35_RESTORED_CATALOG_STATE);")"
-      if [[ "$restored_v35_catalog" != "$expected_restored_v35_catalog" ]]; then
-        echo "[restored V35] FAIL exact restored catalog: $restored_v35_catalog" >&2
-        exit 1
-      fi
-      if [[ "$restored_v35_readiness" != "true|130|20260831022021|0||release-db-attestation-v35" ]]; then
-        echo "[restored V35] FAIL exact readiness: $restored_v35_readiness" >&2
-        exit 1
-      fi
-      echo "[restored V35] PASS V30 dump/restore then migrations 126-130"
-      expected_restored_v36_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V36_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V36_RESTORED_CATALOG_STATE);")"
-      if [[ "$restored_v36_catalog" != "$expected_restored_v36_catalog" ]]; then
-        echo "[restored V36] FAIL exact restored catalog: $restored_v36_catalog" >&2
-        exit 1
-      fi
-      if [[ "$restored_v36_readiness" != "true|131|20260831054918|0||release-db-attestation-v36" ]]; then
-        echo "[restored V36] FAIL exact readiness: $restored_v36_readiness" >&2
-        exit 1
-      fi
-      echo "[restored V36] PASS V30 dump/restore then migrations 126-131"
-      expected_restored_v37_catalog="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V37_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V37_RESTORED_CATALOG_STATE);")"
-      if [[ "$restored_v37_catalog" != "$expected_restored_v37_catalog" ]]; then
-        echo "[restored V37] FAIL exact restored catalog: $restored_v37_catalog" >&2
-        exit 1
-      fi
-      if [[ "$restored_v37_readiness" != "true|132|20260902001000|0||release-db-attestation-v37" ]]; then
-        echo "[restored V37] FAIL exact readiness: $restored_v37_readiness" >&2
-        exit 1
-      fi
-      if [[ "$restored_v37_trigger_guard" != "0:414c9c3d38914f4bd3c8498159944e6118716230b3ee5c5c9d99180b7ba177dc" ]]; then
-        echo "[restored V37] FAIL adjustment trigger guard: $restored_v37_trigger_guard" >&2
-        exit 1
-      fi
-      echo "[restored V37] PASS V30 dump/restore then migrations 126-132"
+      echo "[restored V31-V37] PASS exact restored catalogs, readiness and trigger guard"
     else
       status=$?
-      echo "[restored V31] FAIL V30 dump/restore then migration 126 (exit $status)" >&2
+      echo "[restored V31-V37] FAIL restored continuation (exit $status)" >&2
       exit "$status"
     fi
   fi

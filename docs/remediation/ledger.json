@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "0f8685347d19579c6784b804bc420a777afabadc",
+  "last_reconciled_main": "84ac2a877fdd4ee5bc31d74ea013bbb87a16d973",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -3197,11 +3197,11 @@
       "id": "OS2-01",
       "title": "Old rollout states are compared with readiness lists containing future migrations",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "Nine historical readiness constants still include exactly ten future pending versions. Pure current-module evaluation reproduces mismatched declared head/cardinality for each100\u2013108 state.",
+      "disposition": "fixed",
+      "reason": "Historical readiness derives its pending prefix from its declared head. All nine affected constants now stop at that head; other tuple fields and existing exported values are unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "e61392ad184ee71a1ee2025c37b5a0acd76a7193",
       "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
       "source_paths": [
         "scripts/studio-comp-migration-rollout.mjs",
@@ -3217,25 +3217,26 @@
       ],
       "current_evidence": [
         {
-          "path": "scripts/studio-comp-migration-rollout.mjs",
-          "line": 474,
-          "observation": "Negative slices of the47-entry V36 list produce26 entries for declared100/head20260801131844 instead of16."
+          "path": "scripts/release-attestation/states.mjs",
+          "line": 34,
+          "observation": "Historical readiness derives its pending prefix from its declared head. All nine affected constants now stop at that head; other tuple fields and existing exported values are unchanged."
         }
       ],
-      "next_change": "Derive head-bounded historical pending lists from declared state in the generator/registry change; do not change historical SQL bodies or unsupported apply policy.",
+      "next_change": "None for the verified root cause; preserve the recorded reproduction and release boundaries.",
       "validation_plan": "Compare every historical header/cardinality/head against independent migration history and actual predecessor readback; keep all exact-state rejection tests.",
       "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "implementation_verification": "docs/remediation/release-attestation-verification.md. Offline statement/script byte checks; full136-migration/51-contract local proof; targeted backend, workflow and API-contract checks passed. Final exact-head review/CI remain required before merge."
     },
     {
       "id": "OS2-02",
       "title": "Release-state knowledge is repeated across constants, validators, packet selection and tests",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "New V39\u2013V41 mapping improvements leave earlier counts, readiness, history and query routing independently duplicated. OS2-01 remains a concrete drift caused by that representation.",
+      "disposition": "fixed",
+      "reason": "Shared declarations now own release identities, counts, pending lists, version-bound readiness and generated backend metadata. Packet history serialization is consolidated with unchanged complete output. Explicit raw-evidence classifications remain because the historical contracts differ.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "e61392ad184ee71a1ee2025c37b5a0acd76a7193",
       "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
       "source_paths": [
         "scripts/studio-comp-migration-rollout.mjs",
@@ -3252,15 +3253,16 @@
       ],
       "current_evidence": [
         {
-          "path": "scripts/studio-comp-migration-rollout.mjs",
-          "line": 474,
-          "observation": "Historical readiness uses separate count/head/slice strings while later selection and collector branches encode versions again."
+          "path": "scripts/release-attestation/release-states.json",
+          "line": 2,
+          "observation": "Shared declarations now own release identities, counts, pending lists, version-bound readiness and generated backend metadata. Packet history serialization is consolidated with unchanged complete output. Explicit raw-evidence classifications remain because the historical contracts differ."
         }
       ],
-      "next_change": "Use one declared release-state authority for generated preflight/manifests/restore checks and common registry derivations; retain independent golden bytes and raw C/R evidence.",
+      "next_change": "None for the verified root cause; preserve the recorded reproduction and release boundaries.",
       "validation_plan": "Regenerate existing releases byte-identically, then prove historical/current state selection and real drift rejection on disposable PostgreSQL.",
       "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "implementation_verification": "docs/remediation/release-attestation-verification.md. Offline statement/script byte checks; full136-migration/51-contract local proof; targeted backend, workflow and API-contract checks passed. Final exact-head review/CI remain required before merge."
     },
     {
       "id": "OS2-03",
@@ -3394,11 +3396,11 @@
       "id": "OS3-01",
       "title": "Restore verification rewrites a shell program at its final PASS message",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The full verifier still reruns and text-splices the V30\u2192V31 script at an exact PASS message to extend its restored database through later releases.",
+      "disposition": "fixed",
+      "reason": "The local verifier runs one generated V31 business proof with explicit V32-through-V37 continuation. The PASS-line awk rewrite, second V31 execution and outer log-value extraction are removed; equivalent catalog/readiness/trigger checks passed on the actual restored database.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "e61392ad184ee71a1ee2025c37b5a0acd76a7193",
       "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
       "source_paths": [
         "scripts/verify-supabase-contracts-local.sh",
@@ -3414,14 +3416,15 @@
       "current_evidence": [
         {
           "path": "scripts/verify-supabase-contracts-local.sh",
-          "line": 667,
-          "observation": "awk inserts staged SQL before another shell script\u2019s final echo after that script already ran separately."
+          "line": 659,
+          "observation": "The local verifier runs one generated V31 business proof with explicit V32-through-V37 continuation. The PASS-line awk rewrite, second V31 execution and outer log-value extraction are removed; equivalent catalog/readiness/trigger checks passed on the actual restored database."
         }
       ],
-      "next_change": "Make restored-database stages explicit in generated restore checks, preserving a focused V31 proof but avoiding duplicate work and log-wording injection in the aggregate.",
+      "next_change": "None for the verified root cause; preserve the recorded reproduction and release boundaries.",
       "validation_plan": "Regenerate old checks equivalently; compare retained data, independent C/R hashes, negative controls and cleanup through the same real restore chain.",
       "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "implementation_verification": "docs/remediation/release-attestation-verification.md. Offline statement/script byte checks; full136-migration/51-contract local proof; targeted backend, workflow and API-contract checks passed. Final exact-head review/CI remain required before merge."
     },
     {
       "id": "OS3-02",
@@ -6058,7 +6061,9 @@
         "frontend/src/components/marketing/public-pages.tsx",
         "frontend/src/components/marketing/journey/scene-model.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165
+      ],
       "track": "Sol",
       "root_cause": "marketing_tests_target_nonproduction_contracts",
       "collapse_with": [
@@ -6081,7 +6086,7 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
-      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
+      "implementation_verification": "PR165 merged as9785f13 after fresh exact-head review and all release checks.37 targeted and914 full frontend tests passed; lint/tsc passed. Coordinator compared complete SVG bytes in22 cases with unchanged base. Four test files shrank326 lines and7 cases. See marketing-scene-verification.md."
     },
     {
       "id": "FT1-07",
@@ -8353,7 +8358,9 @@
       "source_paths": [
         "frontend/src/components/marketing/journey/journey-scene.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165
+      ],
       "track": "Sol",
       "root_cause": "unstable_static_scene_inputs",
       "collapse_with": [],
@@ -8374,7 +8381,7 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
-      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
+      "implementation_verification": "PR165 merged as9785f13 after fresh exact-head review and all release checks.37 targeted and914 full frontend tests passed; lint/tsc passed. Coordinator compared complete SVG bytes in22 cases with unchanged base. Four test files shrank326 lines and7 cases. See marketing-scene-verification.md."
     },
     {
       "id": "FC2-10",
@@ -8390,7 +8397,9 @@
         "frontend/src/components/marketing/journey/journey-scene.tsx",
         "frontend/tests/marketing-journey-scene.test.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165
+      ],
       "track": "Sol",
       "root_cause": "parallel_scene_progress_model",
       "collapse_with": [
@@ -8412,7 +8421,7 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
-      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
+      "implementation_verification": "PR165 merged as9785f13 after fresh exact-head review and all release checks.37 targeted and914 full frontend tests passed; lint/tsc passed. Coordinator compared complete SVG bytes in22 cases with unchanged base. Four test files shrank326 lines and7 cases. See marketing-scene-verification.md."
     },
     {
       "id": "FC2-11",
@@ -8427,7 +8436,9 @@
         "frontend/src/components/marketing/journey/journey-scene.tsx",
         "frontend/src/components/marketing/journey/scene-model.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165
+      ],
       "track": "Sol",
       "root_cause": "duplicated_cloud_path_generator",
       "collapse_with": [],
@@ -8447,7 +8458,7 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
-      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
+      "implementation_verification": "PR165 merged as9785f13 after fresh exact-head review and all release checks.37 targeted and914 full frontend tests passed; lint/tsc passed. Coordinator compared complete SVG bytes in22 cases with unchanged base. Four test files shrank326 lines and7 cases. See marketing-scene-verification.md."
     },
     {
       "id": "FC2-12",
@@ -8462,7 +8473,9 @@
         "frontend/src/components/marketing/public-pages.tsx",
         "frontend/tests/marketing-public-pages.test.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        165
+      ],
       "track": "Sol",
       "root_cause": "dead_marketing_hero_props",
       "collapse_with": [
@@ -8484,7 +8497,7 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/12-marketing-scene-contracts.md",
-      "implementation_verification": "docs/remediation/marketing-scene-verification.md;37 targeted tests, narrow lint and TypeScript passed. Coordinator compared complete SVG bytes against0f86853 for22 size/progress inputs with identical output. Final candidate gate remains mandatory."
+      "implementation_verification": "PR165 merged as9785f13 after fresh exact-head review and all release checks.37 targeted and914 full frontend tests passed; lint/tsc passed. Coordinator compared complete SVG bytes in22 cases with unchanged base. Four test files shrank326 lines and7 cases. See marketing-scene-verification.md."
     },
     {
       "id": "FC2-13",
@@ -11532,11 +11545,11 @@
       "id": "DM4-08",
       "title": "Release readiness code is produced by editing another function as plain text",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "Historical V32/V38 readiness is still authored by string-editing predecessor function definitions. Current V39\u2013V41 direct copies reduce hidden output but do not supply a generator or remove manual synchronized authoring.",
+      "disposition": "fixed",
+      "reason": "Future full preflight, compatibility and rank-manifest authoring uses declared state and shared emitters. Eleven historical statements reproduce exactly. Old dynamic DO authoring remains immutable history rather than being rewritten or treated as a current authoring method.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "e61392ad184ee71a1ee2025c37b5a0acd76a7193",
       "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
       "source_paths": [
         "supabase/migrations/20260830065627_release_invoice_retry_preread_lease_v32.sql",
@@ -11551,15 +11564,16 @@
       ],
       "current_evidence": [
         {
-          "path": "supabase/migrations/20260905022339_billing_landing_aggregates.sql",
-          "line": 78,
-          "observation": "Readiness assembly edits pg_get_functiondef text; new direct-function copies still manually reproduce inherited checks."
+          "path": "scripts/generate-release-attestation.mjs",
+          "line": 81,
+          "observation": "Future full preflight, compatibility and rank-manifest authoring uses declared state and shared emitters. Eleven historical statements reproduce exactly. Old dynamic DO authoring remains immutable history rather than being rewritten or treated as a current authoring method."
         }
       ],
-      "next_change": "Implement the authorized declared-schema generator for future authoring and byte-identical historical reproduction; do not rewrite applied migrations to hide old authoring history.",
+      "next_change": "None for the verified root cause; preserve the recorded reproduction and release boundaries.",
       "validation_plan": "Regenerate committed attested bodies exactly, check source hashes, and run real canonical/restored readiness/drift proofs.",
       "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "implementation_verification": "docs/remediation/release-attestation-verification.md. Offline statement/script byte checks; full136-migration/51-contract local proof; targeted backend, workflow and API-contract checks passed. Final exact-head review/CI remain required before merge."
     },
     {
       "id": "DM5-01",
@@ -12018,9 +12032,9 @@
       "title": "Release attestation has no declared-schema generator",
       "track": "Astra",
       "root_cause": "release_attestation_authority",
-      "disposition": "pending",
-      "reason": "Ten per-release restore scripts contain2855 lines, and preflight/manifest bodies are copied or text-edited across migrations. The separately repeated release constants already contain a demonstrated ten-version historical pending-list drift. The owner explicitly authorizes a generator to remove this accidental authoring complexity.",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "disposition": "fixed",
+      "reason": "A declared-state generator now owns current SQL authoring, readiness metadata and restore orchestration. All ten historical scripts and eleven historical statements reproduce their committed bytes. The generated V31-through-V37 path removes the duplicate run and log splice. Business fixtures and frozen older attestations remain explicit.",
+      "verified_against": "e61392ad184ee71a1ee2025c37b5a0acd76a7193",
       "source_paths": [
         "supabase/migrations",
         "scripts/studio-comp-migration-rollout.mjs",
@@ -12035,8 +12049,8 @@
         "DM4-08",
         "BT4-08"
       ],
-      "next_change": "After normalization and Sol handoff recipes, generate preflight/manifest bodies and version-specific restore checks from declared schema state. Prove old attested versions byte-identical by regeneration/diff. Replace old scripts only after equivalence; keep V41 as already merged and preserve every safety gate.",
-      "verification": "Current filename/source inventory confirms no attestation generator and10 restore scripts/2855lines. Pure historical tuple probes expose nine wrong count/head pending lists. See normalized map for the required independent runtime/byte-equivalence proof.",
+      "next_change": "Use the generator for subsequent forward schema corrections; retain explicit review of business SQL, pins and canonical/restored evidence.",
+      "verification": "release-attestation-verification.md: all historical migrations unchanged; full local136/51 suite and old/new restore boundaries passed; declared next-release rendering, guarded target refusal and source-independent generation checked. Final candidate review/CI still required.",
       "pull_requests": []
     },
     {
@@ -12170,7 +12184,9 @@
       ],
       "next_change": "None for the verified advisories; continue normal dependency audits.",
       "verification": "Online npm audits and development-lock pip-audit report no known vulnerabilities. Clean installs, lint/build, frontend914 and backend1897 passed. The patched worktree compiler reproduced the lock twice with SHA25652776944c532e1c30aa7402bcac543535caec2021860e07d4559f5d08d2aa081; coordinator independently reran its dry-run and pip check. See dependency-maintenance-verification.md.",
-      "pull_requests": [],
+      "pull_requests": [
+        166
+      ],
       "delegated_batch": "docs/remediation/delegated/13-dependency-maintenance.md"
     }
   ],
@@ -12199,8 +12215,8 @@
     }
   },
   "current_counts": {
-    "pending": 227,
-    "fixed": 36,
+    "pending": 223,
+    "fixed": 40,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
@@ -12208,6 +12224,6 @@
   },
   "current_pending_tracks": {
     "Sol": 78,
-    "Astra": 149
+    "Astra": 145
   }
 }

@@ -35,6 +35,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Regenerate frontend API contract types: `npm run generate:api-types`
 - Check generated frontend API contract types: `npm run check:api-types`
 - Check candidate-wide workflow coverage: `npm run check:release-workflow`
+- Check generated release statements, restore scripts and readiness metadata: `npm run check:release-attestation`
 - Summarize an approved private performance-log export: `npm run summarize:performance < /absolute/private/export.ndjson`
 - Check deterministic performance regression gate: `npm run check:performance-regression -- --expected-sha <full-sha>`
 - Generate or verify the guarded studio-comp database rollout packet: `node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>`

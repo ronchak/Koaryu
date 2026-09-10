@@ -1,0 +1,618 @@
+{
+  "v28": {
+    "file": "scripts/verify-v27-v28-restore-contract.sh",
+    "predecessor": "v27",
+    "source": "v26",
+    "probes": [
+      {
+        "name": "steps_manifest",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_provider_operation_steps_manifest_v28()",
+        "helper": null
+      },
+      {
+        "name": "operational_contract",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_operational_contract_v28()",
+        "helper": null
+      },
+      {
+        "name": "operational_manifest",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_operational_manifest_v8()",
+        "helper": null
+      },
+      {
+        "name": "canonical_manifest",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_operational_manifest_v9()",
+        "helper": null
+      },
+      {
+        "name": "readiness",
+        "kind": "readiness",
+        "state": "v28",
+        "shape": "short",
+        "helper": null
+      },
+      {
+        "name": "compat_readiness",
+        "kind": "readiness",
+        "state": "v27",
+        "shape": "short",
+        "helper": null
+      },
+      {
+        "name": "catalog_sql",
+        "kind": "export",
+        "export": "CATALOG_STATE_SQL"
+      },
+      {
+        "name": "catalog_state",
+        "kind": "variable",
+        "variable": "catalog_sql",
+        "helper": null
+      },
+      {
+        "name": "v27_expectation_state",
+        "kind": "expectation",
+        "version": 27,
+        "shape": "row",
+        "helper": null
+      },
+      {
+        "name": "v28_expectation_state",
+        "kind": "expectation",
+        "version": 28,
+        "shape": "row",
+        "helper": null
+      },
+      {
+        "name": "payer_generation_state",
+        "kind": "observation",
+        "sql": "SELECT format_type(attribute.atttypid, attribute.atttypmod) || ':' || attribute.attnotnull::TEXT || ':' || COALESCE(pg_get_expr(default_value.adbin, default_value.adrelid), '') || ':' || COALESCE((SELECT pg_get_constraintdef(constraint_state.oid) FROM pg_constraint AS constraint_state WHERE constraint_state.conrelid = 'public.billing_payers'::REGCLASS AND constraint_state.conname = 'billing_payers_connect_account_generation_positive'), '') FROM pg_attribute AS attribute LEFT JOIN pg_attrdef AS default_value ON default_value.adrelid = attribute.attrelid AND default_value.adnum = attribute.attnum WHERE attribute.attrelid = 'public.billing_payers'::REGCLASS AND attribute.attname = 'connect_account_generation' AND NOT attribute.attisdropped;",
+        "helper": null
+      },
+      {
+        "name": "resource_claim_state",
+        "kind": "observation",
+        "sql": "SELECT (SELECT count(*) FROM pg_class AS relation WHERE relation.oid IN ('public.billing_provider_operation_resources'::REGCLASS, 'public.billing_provider_operation_resource_aliases'::REGCLASS) AND relation.relrowsecurity AND NOT has_table_privilege('service_role', relation.oid, 'SELECT,INSERT,UPDATE,DELETE'))::TEXT || ':' || has_function_privilege('service_role', 'public.claim_billing_provider_operation_resource_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', 'EXECUTE')::TEXT || ':' || has_function_privilege('authenticated', 'public.claim_billing_provider_operation_resource_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', 'EXECUTE')::TEXT;",
+        "helper": null
+      }
+    ],
+    "echoes": [
+      {
+        "label": "RESTORED_V28_STEPS_MANIFEST",
+        "variable": "steps_manifest"
+      },
+      {
+        "label": "RESTORED_V28_OPERATIONAL_CONTRACT",
+        "variable": "operational_contract"
+      },
+      {
+        "label": "RESTORED_V28_OPERATIONAL_MANIFEST",
+        "variable": "operational_manifest"
+      },
+      {
+        "label": "RESTORED_V28_CANONICAL_MANIFEST",
+        "variable": "canonical_manifest"
+      },
+      {
+        "label": "RESTORED_V28_READINESS",
+        "variable": "readiness"
+      },
+      {
+        "label": "RESTORED_V28_COMPAT_V27_READINESS",
+        "variable": "compat_readiness"
+      },
+      {
+        "label": "RESTORED_V28_CATALOG_STATE",
+        "variable": "catalog_state"
+      },
+      {
+        "label": "RESTORED_V28_V27_EXPECTATION_STATE",
+        "variable": "v27_expectation_state"
+      },
+      {
+        "label": "RESTORED_V28_EXPECTATION_STATE",
+        "variable": "v28_expectation_state"
+      },
+      {
+        "label": "RESTORED_V28_PAYER_GENERATION_STATE",
+        "variable": "payer_generation_state"
+      },
+      {
+        "label": "RESTORED_V28_RESOURCE_CLAIM_STATE",
+        "variable": "resource_claim_state"
+      }
+    ],
+    "assertions": [
+      {
+        "variable": "steps_manifest",
+        "expected": "0:1de704b805b929154bf88e1727838d0d95c1c3da16246c3d48c3bdafafcb5931",
+        "message": "Restored V28 provider-operation manifest mismatch: $steps_manifest",
+        "inline": false
+      },
+      {
+        "variable": "operational_contract",
+        "expected": "0:d3d60ab2e0e41154fa4236e7300a755f3a25caa0edf75c93f2697551e29bbbfa",
+        "message": "Restored V28 operational contract mismatch: $operational_contract",
+        "inline": false
+      },
+      {
+        "variable": "canonical_manifest",
+        "expected": "bc0e88150f543978befadfa4711b4c7f1f376c386b75df1e1f5c741c295dba6a",
+        "message": "Restored V28 canonical manifest mismatch: $canonical_manifest",
+        "inline": false
+      },
+      {
+        "variable": "readiness",
+        "message": "Restored V28 readiness mismatch: $readiness",
+        "inline": false,
+        "readiness": {
+          "state": "v28",
+          "shape": "short"
+        }
+      },
+      {
+        "variable": "compat_readiness",
+        "message": "Restored V27 compatibility readiness mismatch: $compat_readiness",
+        "inline": false,
+        "readiness": {
+          "state": "v27",
+          "shape": "short"
+        }
+      },
+      {
+        "variable": "v27_expectation_state",
+        "expected": "1:74da7c7a75b048163e208473d28cf32366ace36108e99abe21947d89449d7ce6",
+        "message": "Restored V28-compatible V27 expectation mismatch: $v27_expectation_state",
+        "inline": false
+      },
+      {
+        "variable": "v28_expectation_state",
+        "expected": "1:ffde05a120e904a830fb9a61cd610ca474522dadf933408b410c1985e836d202",
+        "message": "Restored V28 expectation mismatch: $v28_expectation_state",
+        "inline": false
+      },
+      {
+        "variable": "payer_generation_state",
+        "expected": "integer:false::CHECK ((connect_account_generation > 0))",
+        "message": "Restored V28 payer-generation column mismatch: $payer_generation_state",
+        "inline": false
+      },
+      {
+        "variable": "resource_claim_state",
+        "expected": "2:true:false",
+        "message": "Restored V28 resource-claim ACL mismatch: $resource_claim_state",
+        "inline": false
+      }
+    ],
+    "negativeProbes": [],
+    "negativeAssertions": []
+  },
+  "v29": {
+    "file": "scripts/verify-v28-v29-restore-contract.sh",
+    "predecessor": "v28",
+    "source": "v26",
+    "probes": [
+      {
+        "name": "transition_manifest",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_enrollment_transition_manifest_v29()",
+        "helper": null
+      },
+      {
+        "name": "operational_contract",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_operational_contract_v29()",
+        "helper": null
+      },
+      {
+        "name": "operational_manifest",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_operational_manifest_v10()",
+        "helper": null
+      },
+      {
+        "name": "v28_canonical_manifest",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_operational_manifest_v9()",
+        "helper": null
+      },
+      {
+        "name": "readiness",
+        "kind": "readiness",
+        "state": "v29",
+        "shape": "diagnostic",
+        "helper": null
+      },
+      {
+        "name": "compat_readiness",
+        "kind": "readiness",
+        "state": "v28",
+        "shape": "diagnostic",
+        "helper": null
+      },
+      {
+        "name": "catalog_sql",
+        "kind": "export",
+        "export": "CATALOG_STATE_SQL"
+      },
+      {
+        "name": "catalog_state",
+        "kind": "variable",
+        "variable": "catalog_sql",
+        "helper": null
+      },
+      {
+        "name": "expectation_state",
+        "kind": "expectation",
+        "version": 29,
+        "shape": "row",
+        "helper": null
+      }
+    ],
+    "echoes": [
+      {
+        "label": "RESTORED_V29_TRANSITION_MANIFEST",
+        "variable": "transition_manifest"
+      },
+      {
+        "label": "RESTORED_V29_OPERATIONAL_CONTRACT",
+        "variable": "operational_contract"
+      },
+      {
+        "label": "RESTORED_V29_OPERATIONAL_MANIFEST",
+        "variable": "operational_manifest"
+      },
+      {
+        "label": "RESTORED_V29_V28_CANONICAL_MANIFEST",
+        "variable": "v28_canonical_manifest"
+      },
+      {
+        "label": "RESTORED_V29_READINESS",
+        "variable": "readiness"
+      },
+      {
+        "label": "RESTORED_V29_COMPAT_V28_READINESS",
+        "variable": "compat_readiness"
+      },
+      {
+        "label": "RESTORED_V29_CATALOG_STATE",
+        "variable": "catalog_state"
+      },
+      {
+        "label": "RESTORED_V29_EXPECTATION_STATE",
+        "variable": "expectation_state"
+      }
+    ],
+    "assertions": [
+      {
+        "variable": "transition_manifest",
+        "expected": "0:118b8031e9393f0114f486d0704e71475099d326f7fba9ad5d7518ad5a6a2c60",
+        "message": "Restored V29 transition manifest mismatch: $transition_manifest",
+        "inline": false
+      },
+      {
+        "variable": "operational_contract",
+        "expected": "0:e2c4f27b967c5bff881a00e51416691ef752cc51e8298fb2142c96f607e4e1d0",
+        "message": "Restored V29 operational contract mismatch: $operational_contract",
+        "inline": false
+      },
+      {
+        "variable": "operational_manifest",
+        "expected": "e9034c1e146f58baea795e16ea93c6eca75fa463e0ee057eada0e09a784248c6",
+        "message": "Restored V29 operational manifest mismatch: $operational_manifest",
+        "inline": false
+      },
+      {
+        "variable": "v28_canonical_manifest",
+        "expected": "67f9fb3a6730a356ad944828eeba4398912edf114dcdd2daf0a48e4cdc7a5280",
+        "message": "Restored post-V29 V28 manifest mismatch: $v28_canonical_manifest",
+        "inline": false
+      },
+      {
+        "variable": "readiness",
+        "message": "Restored V29 readiness mismatch: $readiness",
+        "inline": false,
+        "readiness": {
+          "state": "v29",
+          "shape": "diagnostic"
+        }
+      },
+      {
+        "variable": "compat_readiness",
+        "message": "Restored V28 compatibility readiness mismatch: $compat_readiness",
+        "inline": false,
+        "readiness": {
+          "state": "v28",
+          "shape": "diagnostic"
+        }
+      },
+      {
+        "variable": "expectation_state",
+        "expected": "1:7e003460a485f8125432d1c2c7087bc04f1a4037728aa4f16b22640daf2eb7c7",
+        "message": "Restored V29 expectation mismatch: $expectation_state",
+        "inline": false
+      }
+    ],
+    "negativeProbes": [],
+    "negativeAssertions": []
+  },
+  "v30": {
+    "file": "scripts/verify-v29-v30-restore-contract.sh",
+    "predecessor": "v29",
+    "source": "v26",
+    "probes": [
+      {
+        "name": "replay_manifest",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_payments_replay_repairs_manifest_v30()",
+        "helper": "read_value"
+      },
+      {
+        "name": "operational_contract",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_operational_contract_v30()",
+        "helper": "read_value"
+      },
+      {
+        "name": "operational_manifest",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_operational_manifest_v11()",
+        "helper": "read_value"
+      },
+      {
+        "name": "predecessor_manifest",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_operational_manifest_v10()",
+        "helper": "read_value"
+      },
+      {
+        "name": "transition_manifest",
+        "kind": "manifest",
+        "signature": "private.koaryu_release_enrollment_transition_manifest_v29()",
+        "helper": "read_value"
+      },
+      {
+        "name": "readiness",
+        "kind": "readiness",
+        "state": "v30",
+        "shape": "diagnostic",
+        "helper": "read_value"
+      },
+      {
+        "name": "compat_readiness",
+        "kind": "readiness",
+        "state": "v29",
+        "shape": "diagnostic",
+        "helper": "read_value"
+      },
+      {
+        "name": "catalog_sql",
+        "kind": "export",
+        "export": "CATALOG_STATE_SQL"
+      },
+      {
+        "name": "catalog_state",
+        "kind": "variable",
+        "variable": "catalog_sql",
+        "helper": "read_value"
+      },
+      {
+        "name": "v28_expectation",
+        "kind": "expectation",
+        "version": 28,
+        "shape": "rows",
+        "helper": "read_value"
+      },
+      {
+        "name": "v29_expectation",
+        "kind": "expectation",
+        "version": 29,
+        "shape": "rows",
+        "helper": "read_value"
+      },
+      {
+        "name": "v30_expectation",
+        "kind": "expectation",
+        "version": 30,
+        "shape": "rows",
+        "helper": "read_value"
+      },
+      {
+        "name": "authorization_surface",
+        "kind": "observation",
+        "sql": "SELECT has_function_privilege('service_role','public.set_studio_live_billing_authorization_operations_v1(uuid,text,boolean,timestamp with time zone,text,uuid,text[],text,text)','EXECUTE')::TEXT || ':' || has_function_privilege('service_role','public.set_studio_live_billing_authorization_scope_v3(uuid,text,boolean,timestamp with time zone,text,uuid,text,text)','EXECUTE')::TEXT || ':' || has_function_privilege('service_role','public.authorize_studio_live_billing_mutation_atomic(uuid,text,text,text,text)','EXECUTE')::TEXT || ':' || has_function_privilege('service_role','public.authorize_studio_live_billing_scope_v3(uuid,text,text,text,text)','EXECUTE')::TEXT || ':' || has_function_privilege('service_role','public.set_studio_live_billing_authorization_atomic(uuid,text,boolean,timestamp with time zone,text,uuid,text,text)','EXECUTE')::TEXT;",
+        "helper": "read_value"
+      },
+      {
+        "name": "allowlist_column",
+        "kind": "observation",
+        "sql": "SELECT format_type(a.atttypid,a.atttypmod) || ':' || a.attnotnull::TEXT || ':' || COALESCE(pg_get_expr(d.adbin,d.adrelid),'') FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid='public.studio_live_billing_authorizations'::REGCLASS AND a.attname='allowed_operations' AND NOT a.attisdropped;",
+        "helper": "read_value"
+      },
+      {
+        "name": "allowlist_constraint",
+        "kind": "observation",
+        "sql": "SELECT contype::TEXT || ':' || convalidated::TEXT FROM pg_constraint WHERE conrelid='public.studio_live_billing_authorizations'::REGCLASS AND conname='studio_live_billing_authorizations_operation_set_exact';",
+        "helper": "read_value"
+      }
+    ],
+    "echoes": [
+      {
+        "label": "RESTORED_V30_REPLAY_REPAIRS_MANIFEST",
+        "variable": "replay_manifest"
+      },
+      {
+        "label": "RESTORED_V30_OPERATIONAL_CONTRACT",
+        "variable": "operational_contract"
+      },
+      {
+        "label": "RESTORED_V30_OPERATIONAL_MANIFEST",
+        "variable": "operational_manifest"
+      },
+      {
+        "label": "RESTORED_V30_PREDECESSOR_OPERATIONAL_MANIFEST",
+        "variable": "predecessor_manifest"
+      },
+      {
+        "label": "RESTORED_V30_TRANSITION_MANIFEST",
+        "variable": "transition_manifest"
+      },
+      {
+        "label": "RESTORED_V30_READINESS",
+        "variable": "readiness"
+      },
+      {
+        "label": "RESTORED_V30_COMPAT_V29_READINESS",
+        "variable": "compat_readiness"
+      },
+      {
+        "label": "RESTORED_V30_CATALOG_STATE",
+        "variable": "catalog_state"
+      },
+      {
+        "label": "RESTORED_V30_V28_EXPECTATION_STATE",
+        "variable": "v28_expectation"
+      },
+      {
+        "label": "RESTORED_V30_V29_EXPECTATION_STATE",
+        "variable": "v29_expectation"
+      },
+      {
+        "label": "RESTORED_V30_EXPECTATION_STATE",
+        "variable": "v30_expectation"
+      },
+      {
+        "label": "RESTORED_V30_AUTHORIZATION_SURFACE",
+        "variable": "authorization_surface"
+      },
+      {
+        "label": "RESTORED_V30_ALLOWLIST_COLUMN",
+        "variable": "allowlist_column"
+      },
+      {
+        "label": "RESTORED_V30_ALLOWLIST_CONSTRAINT",
+        "variable": "allowlist_constraint"
+      }
+    ],
+    "assertions": [
+      {
+        "variable": "replay_manifest",
+        "expected": "0:bf7208ee6b49620e3ef146812c6e69fa8bc73058086d6d7df12c91ec41888f55",
+        "message": "Restored V30 replay manifest mismatch.",
+        "inline": true
+      },
+      {
+        "variable": "operational_contract",
+        "expected": "0:6396d71a8da8966ca50d412e6d5caccb7dc624775e69aef993b61e303f5d0400",
+        "message": "Restored V30 operational contract mismatch.",
+        "inline": true
+      },
+      {
+        "variable": "operational_manifest",
+        "expected": "f0fcffe6a705b1d66df0e1c87ae04fb92070b2ed4308da354979a46e47087460",
+        "message": "Restored V30 operational manifest mismatch.",
+        "inline": true
+      },
+      {
+        "variable": "predecessor_manifest",
+        "expected": "32107329f69000537b2e8167d12674a90f46a7a7c8978149b70b8dac5edc7e17",
+        "message": "Restored V30 predecessor manifest mismatch.",
+        "inline": true
+      },
+      {
+        "variable": "transition_manifest",
+        "expected": "0:118b8031e9393f0114f486d0704e71475099d326f7fba9ad5d7518ad5a6a2c60",
+        "message": "Restored V30 transition manifest mismatch.",
+        "inline": true
+      },
+      {
+        "variable": "readiness",
+        "message": "Restored V30 readiness mismatch: $readiness",
+        "inline": true,
+        "readiness": {
+          "state": "v30",
+          "shape": "diagnostic"
+        }
+      },
+      {
+        "variable": "compat_readiness",
+        "message": "Restored V29 compatibility readiness mismatch: $compat_readiness",
+        "inline": true,
+        "readiness": {
+          "state": "v29",
+          "shape": "diagnostic"
+        }
+      },
+      {
+        "variable": "v28_expectation",
+        "expected": "1:e57560e15d366056bd249ecf52225162403b0866c4fea4929b34c8ef84c3df11",
+        "message": "Restored V30 V28 expectation mismatch.",
+        "inline": true
+      },
+      {
+        "variable": "v29_expectation",
+        "expected": "1:b0e1d3777d1686ff48b9f5d73a255cc1f6d6fea974736215c7c21a621dbaa1a5",
+        "message": "Restored V30 V29 expectation mismatch.",
+        "inline": true
+      },
+      {
+        "variable": "v30_expectation",
+        "expected": "1:64daabcda5df9823fa4b32e7320e715d1d96dd0d0acc697ebed4570256655643",
+        "message": "Restored V30 expectation mismatch.",
+        "inline": true
+      },
+      {
+        "variable": "authorization_surface",
+        "expected": "true:false:true:false:true",
+        "message": "Restored V30 authorization ACL mismatch: $authorization_surface",
+        "inline": true
+      },
+      {
+        "variable": "allowlist_column",
+        "expected": "text[]:true:ARRAY[]::text[]",
+        "message": "Restored V30 allowlist column mismatch: $allowlist_column",
+        "inline": true
+      },
+      {
+        "variable": "allowlist_constraint",
+        "expected": "c:true",
+        "message": "Restored V30 allowlist constraint mismatch: $allowlist_constraint",
+        "inline": true
+      }
+    ],
+    "negativeProbes": [
+      {
+        "name": "acl_drift_ready",
+        "kind": "observation",
+        "sql": "BEGIN; GRANT EXECUTE ON FUNCTION public.authorize_studio_live_billing_scope_v3(uuid,text,text,text,text) TO service_role; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;",
+        "helper": "read_value",
+        "quote": "double"
+      },
+      {
+        "name": "constraint_drift_ready",
+        "kind": "observation",
+        "sql": "BEGIN; ALTER TABLE public.studio_live_billing_authorizations DROP CONSTRAINT studio_live_billing_authorizations_operation_set_exact; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;",
+        "helper": "read_value",
+        "quote": "double"
+      }
+    ],
+    "negativeAssertions": [
+      {
+        "variable": "acl_drift_ready",
+        "expected": "false",
+        "message": "Restored V30 preflight accepted legacy scope authorization.",
+        "inline": true
+      },
+      {
+        "variable": "constraint_drift_ready",
+        "expected": "false",
+        "message": "Restored V30 preflight accepted allowlist-constraint drift.",
+        "inline": true
+      }
+    ]
+  }
+}

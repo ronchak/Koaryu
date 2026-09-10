@@ -1,0 +1,265 @@
+{
+  "bindings": {
+    "readiness-v37": {
+      "kind": "readiness",
+      "state": "v37"
+    },
+    "readiness-v38": {
+      "kind": "readiness",
+      "state": "v38"
+    },
+    "readiness-v39": {
+      "kind": "readiness",
+      "state": "v39"
+    },
+    "readiness-v40": {
+      "kind": "readiness",
+      "state": "v40"
+    },
+    "readiness-v41": {
+      "kind": "readiness",
+      "state": "v41",
+      "finalAlias": true
+    },
+    "catalog-v37": {
+      "kind": "catalog",
+      "state": "v37",
+      "queryState": null
+    },
+    "catalog-v39": {
+      "kind": "catalog",
+      "state": "v39",
+      "queryState": null
+    },
+    "catalog-v40": {
+      "kind": "catalog",
+      "state": "v40",
+      "queryState": "v40"
+    },
+    "release-v39": {
+      "kind": "release",
+      "state": "v39"
+    },
+    "release-v40": {
+      "kind": "release",
+      "state": "v40"
+    },
+    "release-v41": {
+      "kind": "release",
+      "state": "v41"
+    },
+    "billing-v38": {
+      "kind": "billing",
+      "state": "v38"
+    },
+    "expectation-v39": {
+      "kind": "expectation",
+      "state": "v39",
+      "queryState": "v31"
+    },
+    "expectation-v40": {
+      "kind": "expectation",
+      "state": "v40",
+      "queryState": "v31"
+    },
+    "rank-v40": {
+      "kind": "rank-command",
+      "state": "v40"
+    },
+    "payer-v41": {
+      "kind": "payer-balance",
+      "state": "v41"
+    }
+  },
+  "cases": {
+    "v39": {
+      "format": "membership",
+      "docstring": "Prove a local V38 logical backup preserves memberships through the V39 upgrade.\n\nCalled only by verify-supabase-contracts-local.sh before migration 134. This owns\nits two newly created databases, never the caller's cluster or source database.\nThe fixed CHECK pairs cover PostgreSQL 17 dump/parser representation changes;\nunknown definitions or privilege differences stop the proof before repair.\n",
+      "exports": [
+        [
+          "catalog-v37.query",
+          "expectation-v39.query",
+          "readiness-v38.query"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v37.query",
+          "billing-v38.query"
+        ],
+        [
+          "release-v39.query",
+          "catalog-v37.expected",
+          "catalog-v37.restored"
+        ],
+        [
+          "catalog-v39.restored",
+          "expectation-v39.expected"
+        ],
+        [
+          "readiness-v38.expected",
+          "readiness-v39.expected"
+        ],
+        [
+          "readiness-v37.expected",
+          "billing-v38.expected",
+          "release-v39.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v38",
+        "catalog-v37",
+        "billing-v38"
+      ],
+      "restoredPredecessor": [
+        "catalog-v37",
+        "readiness-v38",
+        "billing-v38"
+      ],
+      "checks": [
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "catalog-v39",
+        "expectation-v39",
+        "release-v39"
+      ],
+      "passLines": [
+        "[restored V39] PASS V38 dump/restore, exact normalization, V39 upgrade, V19/V18 compatibility, and retained membership edit"
+      ]
+    },
+    "v40": {
+      "format": "rank",
+      "docstring": "Prove a real V39 logical restore continues safely through the V40 rank upgrade.",
+      "exports": [
+        [
+          "catalog-v39.query",
+          "catalog-v39.expected",
+          "catalog-v39.restored"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v39.expected"
+        ],
+        [
+          "release-v39.query",
+          "release-v39.expected"
+        ],
+        [
+          "readiness-v38.query",
+          "readiness-v38.expected"
+        ],
+        [
+          "readiness-v37.query",
+          "readiness-v37.expected"
+        ],
+        [
+          "readiness-v40.query",
+          "readiness-v40.expected"
+        ],
+        [
+          "catalog-v40.query",
+          "catalog-v40.restored"
+        ],
+        [
+          "rank-v40.query",
+          "rank-v40.expected"
+        ],
+        [
+          "release-v40.query",
+          "release-v40.expected"
+        ],
+        [
+          "expectation-v40.query",
+          "expectation-v40.expected"
+        ]
+      ],
+      "predecessor": [
+        "catalog-v39",
+        "readiness-v39",
+        "release-v39"
+      ],
+      "checks": [
+        "readiness-v40",
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "catalog-v40",
+        "rank-v40",
+        "release-v40",
+        "expectation-v40"
+      ],
+      "passLines": [
+        "[restored V40] PASS V39 backup/restore, exact normalization, immutable legacy/history preservation, ",
+        "new/old rank commands, FK cleanup and V20/V19/V18 compatibility"
+      ]
+    },
+    "v41": {
+      "format": "balance",
+      "docstring": "Verify a genuine V40 restore and the additive V41 payer-balance upgrade.",
+      "exports": [
+        [
+          "catalog-v40.query",
+          "catalog-v40.expected",
+          "catalog-v40.restored"
+        ],
+        [
+          "readiness-v40.query",
+          "readiness-v40.expected"
+        ],
+        [
+          "release-v40.query",
+          "release-v40.expected"
+        ],
+        [
+          "rank-v40.query",
+          "rank-v40.expected"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v39.expected"
+        ],
+        [
+          "readiness-v38.query",
+          "readiness-v38.expected"
+        ],
+        [
+          "readiness-v37.query",
+          "readiness-v37.expected"
+        ],
+        [
+          "readiness-v41.query",
+          "readiness-v41.expected"
+        ],
+        [
+          "release-v41.query",
+          "release-v41.expected"
+        ],
+        [
+          "payer-v41.query",
+          "payer-v41.expected"
+        ]
+      ],
+      "predecessor": [
+        "catalog-v40",
+        "readiness-v40",
+        "release-v40",
+        "rank-v40"
+      ],
+      "checks": [
+        "readiness-v41",
+        "readiness-v40",
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "catalog-v40",
+        "rank-v40",
+        "release-v41",
+        "payer-v41"
+      ],
+      "passLines": [
+        "[restored V41] PASS actual V40 backup/restore, exact normalization, no migration backfill, ",
+        "scoped balance repair and completed receipt replay on canonical/restored copies"
+      ]
+    }
+  }
+}

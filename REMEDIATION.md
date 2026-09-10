@@ -11,26 +11,26 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 36 |
+| Fixed | 40 |
 | Resolved indirectly | 2 |
-| Pending | 227 |
+| Pending | 223 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Total | 278 |
 
-Pending work is split between 149 Astra and 78 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
+Pending work is split between 145 Astra and 78 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
 
-The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. The dependency advisories are patched with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
+The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
-The marketing scene cleanup removes the unused parallel model, duplicate cloud generator and ineffective hero props. Five scoped observations are fixed; the four touched test files shrink by326 lines and seven cases. See [verification](docs/remediation/marketing-scene-verification.md). Broader test cleanup remains pending.
+[PR165](https://github.com/ronchak/Koaryu/pull/165), merged as `9785f13`, removes the unused parallel model, duplicate cloud generator and ineffective hero props. Five scoped observations are fixed; the four touched test files shrink by 326 lines and seven cases. See [verification](docs/remediation/marketing-scene-verification.md). Broader test cleanup remains pending.
 
 PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` received fresh independent review and all eleven release checks passed. The full disposable database verification passed 136 migrations and 51 contracts, including payer-balance concurrency and restore continuation. No production migration, deployment or backfill occurred.
 
 ## Next work
 
 1. The corrected ledger, map and Sol recipes merged in [PR164](https://github.com/ronchak/Koaryu/pull/164) as `0f86853` after fresh review and the full exact-head gate.
-2. Build the release-attestation generator. Declare schema state once, generate repeated preflight/manifest bodies and restore-check plumbing, and prove old attested output byte-identical. Keep the already-merged V41 unchanged. Release-specific business continuation fixtures remain explicit where schema cannot describe their behavior.
+2. The release-attestation generator is implemented and awaiting its final PR review/CI. It reproduces eleven historical statements and all ten restore scripts, derives application readiness metadata, and runs the V31-through-V37 restore continuation once. Historical migrations and explicit business fixtures remain intact. See [verification](docs/remediation/release-attestation-verification.md).
 3. Reassess current main after that merge. Select the next integrity correction using the normalized dependencies, including independent program dates, payment recovery/facts, lock-order defects and due-worker progress. Sol can execute ready low-risk batches with coordinator integration.
 
 This is a rolling next-step plan. Each merge changes the evidence for subsequent work. Recheck affected pending findings, close only what is actually resolved, and discard future work made unnecessary by the new implementation.

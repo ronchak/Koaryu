@@ -21,6 +21,8 @@
     "generate:api-types": "backend/venv/bin/python scripts/generate-api-types.py",
     "check:api-types": "backend/venv/bin/python scripts/generate-api-types.py --check",
     "dev:stripe-connect-smoke": "backend/venv/bin/python scripts/verify-connect-webhook-smoke.py --target local",
-    "summarize:performance": "node --experimental-strip-types scripts/summarize-performance.mjs"
+    "summarize:performance": "node --experimental-strip-types scripts/summarize-performance.mjs",
+    "generate:release-attestation": "node scripts/generate-release-attestation.mjs",
+    "check:release-attestation": "node --test scripts/generate-release-attestation.test.mjs && node scripts/generate-release-attestation.mjs --check"
   }
 }

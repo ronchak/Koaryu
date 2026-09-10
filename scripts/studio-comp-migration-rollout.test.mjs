@@ -924,38 +924,38 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("requires the exact V26 operational readiness output", () => {
-    assert.equal(
-      validateV26OperationalReadiness(EXPECTED_V26_OPERATIONAL_READINESS),
-      EXPECTED_V26_OPERATIONAL_READINESS,
-    );
-    for (const value of [null, "", "true|101|20260814043325", `${EXPECTED_V26_OPERATIONAL_READINESS}|extra`]) {
-      assert.throws(() => validateV26OperationalReadiness(value), /V26 operational readiness/);
-    }
-  });
+  it("requires exact predecessor and current operational readiness outputs", () => {
+    const readinessCases = [
+      {
+        validate: validateV26OperationalReadiness,
+        expected: EXPECTED_V26_OPERATIONAL_READINESS,
+        diagnostic: /V26 operational readiness/,
+        malformed: ["true|101|20260814043325"],
+      },
+      {
+        validate: validateV29OperationalReadiness,
+        expected: EXPECTED_V29_OPERATIONAL_READINESS,
+        diagnostic: /V29 operational readiness/,
+      },
+      {
+        validate: validateV30OperationalReadiness,
+        expected: EXPECTED_V30_OPERATIONAL_READINESS,
+        diagnostic: /V30 operational readiness/,
+      },
+      {
+        validate: validateOperationalReadiness,
+        expected: EXPECTED_OPERATIONAL_READINESS,
+        diagnostic: /operational readiness/i,
+      },
+    ];
+    const commonMalformedValues = [null, ""];
 
-  it("requires exact V29, V30, and V31 operational readiness outputs", () => {
-    assert.equal(
-      validateV29OperationalReadiness(EXPECTED_V29_OPERATIONAL_READINESS),
-      EXPECTED_V29_OPERATIONAL_READINESS,
-    );
-    assert.throws(
-      () => validateV29OperationalReadiness(`${EXPECTED_V29_OPERATIONAL_READINESS}|extra`),
-      /V29 operational readiness/,
-    );
-    assert.equal(validateOperationalReadiness(EXPECTED_OPERATIONAL_READINESS), EXPECTED_OPERATIONAL_READINESS);
-    assert.throws(
-      () => validateOperationalReadiness(`${EXPECTED_OPERATIONAL_READINESS}|extra`),
-      /V39 operational readiness/,
-    );
-    assert.equal(
-      validateV30OperationalReadiness(EXPECTED_V30_OPERATIONAL_READINESS),
-      EXPECTED_V30_OPERATIONAL_READINESS,
-    );
-    assert.throws(
-      () => validateV30OperationalReadiness(`${EXPECTED_V30_OPERATIONAL_READINESS}|extra`),
-      /V30 operational readiness/,
-    );
+    for (const { validate, expected, diagnostic, malformed = [] } of readinessCases) {
+      assert.equal(validate(expected), expected);
+      for (const value of [...commonMalformedValues, ...malformed, `${expected}|extra`]) {
+        assert.throws(() => validate(value), diagnostic);
+      }
+    }
   });
 
   it("requires the exact archive-critical semantic manifest output", () => {
@@ -1606,41 +1606,42 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("independently rejects every non-exact V26 output before post certification", () => {
+  it("independently rejects every non-exact V26 and V27 output before post certification", () => {
     const packet = candidatePacket();
-    for (const operationalReadiness of [
-      null,
-      "",
-      EXPECTED_V26_OPERATIONAL_READINESS.replace(/^true/, "false"),
-      EXPECTED_V26_OPERATIONAL_READINESS.replace("|121|", "|109|"),
-      EXPECTED_V26_OPERATIONAL_READINESS.replace("|20260826030249|", "|20260814213000|"),
-      EXPECTED_V26_OPERATIONAL_READINESS.replace(",20260826030249|", "|"),
-      EXPECTED_V26_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
-      EXPECTED_V26_OPERATIONAL_READINESS.replace("release-db-attestation-v26", "release-db-attestation-v16"),
-    ]) {
-      assert.throws(
-        () => classifyStateSnapshot(v26Snapshot(packet, { operationalReadiness }), packet),
-        /V26 operational readiness/,
-      );
-    }
-  });
+    const readinessCases = [
+      {
+        snapshot: v26Snapshot,
+        expected: EXPECTED_V26_OPERATIONAL_READINESS,
+        diagnostic: /V26 operational readiness/,
+      },
+      {
+        snapshot: v27Snapshot,
+        expected: EXPECTED_V27_OPERATIONAL_READINESS,
+        diagnostic: /V27 operational readiness/,
+      },
+    ];
 
-  it("independently rejects every non-exact V27 output before post certification", () => {
-    const packet = candidatePacket();
-    for (const operationalReadiness of [
-      null,
-      "",
-      EXPECTED_V27_OPERATIONAL_READINESS.replace(/^true/, "false"),
-      EXPECTED_V27_OPERATIONAL_READINESS.replace("|122|", "|109|"),
-      EXPECTED_V27_OPERATIONAL_READINESS.replace("|20260826051527|", "|20260814213000|"),
-      EXPECTED_V27_OPERATIONAL_READINESS.replace(",20260826051527|", "|"),
-      EXPECTED_V27_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
-      EXPECTED_V27_OPERATIONAL_READINESS.replace("release-db-attestation-v27", "release-db-attestation-v16"),
-    ]) {
-      assert.throws(
-        () => classifyStateSnapshot(v27Snapshot(packet, { operationalReadiness }), packet),
-        /V27 operational readiness/,
-      );
+    for (const readinessCase of readinessCases) {
+      const fields = readinessCase.expected.split("|");
+      const invalidValues = [
+        null,
+        "",
+        fields.with(0, "false").join("|"),
+        fields.with(1, "109").join("|"),
+        fields.with(2, "20260814213000").join("|"),
+        fields.with(3, fields[3].split(",").filter(migration => migration !== fields[2]).join(",")).join("|"),
+        fields.with(4, "1").with(5, "table_acl").join("|"),
+        fields.with(6, "release-db-attestation-v16").join("|"),
+      ];
+      for (const operationalReadiness of invalidValues) {
+        assert.throws(
+          () => classifyStateSnapshot(
+            readinessCase.snapshot(packet, { operationalReadiness }),
+            packet,
+          ),
+          readinessCase.diagnostic,
+        );
+      }
     }
   });
 

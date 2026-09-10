@@ -1,0 +1,477 @@
+{
+  "checks": {
+    "resource_ownership_manifest_v31": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_resource_ownership_manifest_v31()",
+      "expected": "0:daf85d2ad59a6853e872eebedbac8b21b960635cd3a7dec6e304cee2a79e465b",
+      "comparison": "IS DISTINCT FROM",
+      "failures": [
+        "resource_ownership_manifest_v31"
+      ]
+    },
+    "schedule_window_manifest_v1": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_schedule_window_manifest_v1()",
+      "expected": "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7",
+      "comparison": "<>",
+      "failures": [
+        "schedule_window_manifest_v1"
+      ]
+    },
+    "schedule_window_manifest_v1_function": {
+      "kind": "function-hash",
+      "signature": "private.koaryu_release_schedule_window_manifest_v1()",
+      "expected": "8df0d054a33defc36a16f802283cd815a6e5cfd9b1633d7aef288daa4b8158f0",
+      "hashSource": "definition",
+      "failures": [
+        "schedule_window_manifest_v1_function"
+      ]
+    },
+    "operational_contract_v31": {
+      "kind": "operational_contract_v31",
+      "table": "private.koaryu_release_v31_expectations",
+      "expectationKey": "operational_contract_v31",
+      "signature": "private.koaryu_release_operational_contract_v31()"
+    },
+    "operational_contract_v31_expectation_acl": {
+      "kind": "operational_contract_v31_expectation_acl",
+      "table": "private.koaryu_release_v31_expectations",
+      "tableName": "koaryu_release_v31_expectations"
+    },
+    "inherited_operational_contract_expectation_acl": {
+      "kind": "inherited_operational_contract_expectation_acl",
+      "tables": [
+        "koaryu_release_v27_expectations",
+        "koaryu_release_v28_expectations",
+        "koaryu_release_v29_expectations",
+        "koaryu_release_v30_expectations"
+      ]
+    },
+    "operational_contract_v30_expectation": {
+      "kind": "operational_contract_v30_expectation",
+      "table": "private.koaryu_release_v30_expectations",
+      "expectationKey": "operational_contract_v30",
+      "expected": "2b57633cdd638418ca7837de9a496755e0a3620f381375657f099f6bcded8c23"
+    },
+    "operational_contract_v26_expectation": {
+      "kind": "operational_contract_v26_expectation",
+      "table": "private.koaryu_release_v26_expectations",
+      "expectationKey": "operational_contract_v26",
+      "expected": "556935a0c58b3aca9509dd355798100efb1d147830875225fd8464e9a9736136"
+    },
+    "schema_preflight_v7_body": {
+      "kind": "function-hash",
+      "signature": "public.koaryu_release_schema_preflight_v7()",
+      "expected": "8ce5a3a090a1fc1d29dab85c65fe8be07d6efa9639950732d13cf88e854f91f1",
+      "hashSource": "body",
+      "failures": [
+        "schema_preflight_v7_body"
+      ]
+    },
+    "schema_preflight_v8_body": {
+      "kind": "function-hash",
+      "signature": "public.koaryu_release_schema_preflight_v8()",
+      "expected": "245040e7bfe42122a551d112ec9d411999b519866e59c8cd537de02c85f9889a",
+      "hashSource": "body",
+      "failures": [
+        "schema_preflight_v8_body"
+      ]
+    },
+    "schema_preflight_v9_body": {
+      "kind": "function-hash",
+      "signature": "public.koaryu_release_schema_preflight_v9()",
+      "expected": "0f34947cbc4126a929b69db07690ca4bc73fe8b5b9982190ebb6fe2ebbb2d179",
+      "hashSource": "body",
+      "failures": [
+        "schema_preflight_v9_body"
+      ]
+    },
+    "schema_preflight_v10_body": {
+      "kind": "function-hash",
+      "signature": "public.koaryu_release_schema_preflight_v10()",
+      "expected": "6b14a7594f511f258d6b94863c369a67f08e142dc721429adc7cdab4d4e64f86",
+      "hashSource": "body",
+      "failures": [
+        "schema_preflight_v10_body"
+      ]
+    },
+    "schema_preflight_v11_body": {
+      "kind": "function-hash",
+      "signature": "public.koaryu_release_schema_preflight_v11()",
+      "expected": "8270ab9a1a4ee091e700dc6fd2d33f2af5fa79dc1de34f3afd391c626e076843",
+      "hashSource": "body",
+      "failures": [
+        "schema_preflight_v11_body"
+      ]
+    },
+    "operational_contract_v26": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_operational_contract_v26()",
+      "expected": "0:556935a0c58b3aca9509dd355798100efb1d147830875225fd8464e9a9736136",
+      "comparison": "<>",
+      "failures": [
+        "operational_contract_v26"
+      ]
+    },
+    "operational_contract_v27": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_operational_contract_v27()",
+      "expected": "0:855d548e95744f3aede9b09986be342a935cef092ccd583e38e2febfba8fe6f6",
+      "comparison": "<>",
+      "failures": [
+        "operational_contract_v27"
+      ]
+    },
+    "operational_contract_v28": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_operational_contract_v28()",
+      "expected": "0:60fabacbd8f58f14d7ed25764fb6016ef44d6d3dfc926900793f52c1e3d7d13d",
+      "comparison": "<>",
+      "failures": [
+        "operational_contract_v28"
+      ]
+    },
+    "operational_contract_v29": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_operational_contract_v29()",
+      "expected": "0:32706cfae7047b70ee6b563048ffafa91d945bc824939e3000fa01631a459ecb",
+      "comparison": "<>",
+      "failures": [
+        "operational_contract_v29"
+      ]
+    },
+    "operational_contract_v30": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_operational_contract_v30()",
+      "expected": "0:2b57633cdd638418ca7837de9a496755e0a3620f381375657f099f6bcded8c23",
+      "comparison": "<>",
+      "failures": [
+        "operational_contract_v30"
+      ]
+    },
+    "payments_replay_repairs_manifest_v30_function": {
+      "kind": "function-hash",
+      "signature": "private.koaryu_release_payments_replay_repairs_manifest_v30()",
+      "expected": "a70b46c8b13a88f51d795be3ae4bc759bcc14495fda1cab9629e5c9c86e66228",
+      "hashSource": "definition",
+      "failures": [
+        "payments_replay_repairs_manifest_v30_function"
+      ]
+    },
+    "operational_manifest_v11_function": {
+      "kind": "function-hash",
+      "signature": "private.koaryu_release_operational_manifest_v11()",
+      "expected": "79e338cb42307acf37e395647f29dbb88df57fa8d65443cc976a30c566cff6d2",
+      "hashSource": "definition",
+      "failures": [
+        "operational_manifest_v11_function"
+      ]
+    },
+    "operational_manifest_v11": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_operational_manifest_v11()",
+      "expected": "43bb07edfbd3c6ee1431b6abda46ca1785b8ea117de2a13f95636fc7a3c3b263",
+      "comparison": "<>",
+      "failures": [
+        "operational_manifest_v11"
+      ]
+    },
+    "provider_operation_steps_manifest_v28": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_provider_operation_steps_manifest_v28()",
+      "expected": "0:6389e87cdb8a5db79c540f38da4fdc71aa56ed10fa5d5533518f470bf52f7dfc",
+      "comparison": "<>",
+      "failures": [
+        "provider_operation_steps_manifest_v28",
+        "operational_contract_v28"
+      ]
+    },
+    "resource_ownership_manifest_v31_function": {
+      "kind": "function-hash",
+      "signature": "private.koaryu_release_resource_ownership_manifest_v31()",
+      "expected": "6ee84c579e50be2b514ac00c975c1f60cf5f116e36adc27fe4296312e5188090",
+      "hashSource": "definition",
+      "failures": [
+        "resource_ownership_manifest_v31_function"
+      ],
+      "format": "compact"
+    },
+    "operational_contract_v31_function": {
+      "kind": "function-hash",
+      "signature": "private.koaryu_release_operational_contract_v31()",
+      "expected": "6b54e02534f38bcd7bb6e6e811d9e01c9782958319514fee3f0a2f1d4ed167d4",
+      "hashSource": "definition",
+      "failures": [
+        "operational_contract_v31_function"
+      ],
+      "format": "compact"
+    },
+    "provider_operation_steps_manifest_v28_function": {
+      "kind": "function-hash",
+      "signature": "private.koaryu_release_provider_operation_steps_manifest_v28()",
+      "expected": "b16b633c6f78a2d5cf7d63f1d32679563ff2429197cc92a4d94e826b33a26035",
+      "hashSource": "definition",
+      "failures": [
+        "provider_operation_steps_manifest_v28_function"
+      ],
+      "format": "compact"
+    },
+    "live_billing_v3_manifest_v25": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_live_billing_v3_manifest_v25()",
+      "expected": "0:3c2a6854c73a6e9c9704fabed38dac85b56eb26076add20c00ee97bed5bdc527",
+      "comparison": "<>",
+      "failures": [
+        "live_billing_v3_manifest_v25",
+        "operational_contract_v26",
+        "operational_contract_v27"
+      ]
+    },
+    "operational_manifest_v7_function": {
+      "kind": "function-hash",
+      "signature": "private.koaryu_release_operational_manifest_v7()",
+      "expected": "2615e19ea37158de13259f072419f7047440a2ad1065288e7b0056d21439f57f",
+      "hashSource": "definition",
+      "failures": [
+        "operational_manifest_v7_function"
+      ]
+    },
+    "operation_authorization_writer_function": {
+      "kind": "function-hash",
+      "signature": "public.set_studio_live_billing_authorization_operations_v1(uuid,text,boolean,timestamp with time zone,text,uuid,text[],text,text)",
+      "expected": "6500b8aaf8bb91cc91841f2bafaf3699b7ffa328ccaba4a0023721e3eb68f811",
+      "hashSource": "definition",
+      "failures": [
+        "operation_authorization_writer_function"
+      ]
+    },
+    "legacy_authorization_scope_execute": {
+      "kind": "legacy_authorization_scope_execute",
+      "signature": "public.set_studio_live_billing_authorization_scope_v3(uuid,text,boolean,timestamp with time zone,text,uuid,text,text)"
+    },
+    "operation_allowlist_constraint": {
+      "kind": "operation_allowlist_constraint",
+      "table": "public.studio_live_billing_authorizations",
+      "constraint": "studio_live_billing_authorizations_operation_set_exact"
+    },
+    "operation_allowlist_column": {
+      "kind": "operation_allowlist_column",
+      "table": "public.studio_live_billing_authorizations",
+      "column": "allowed_operations",
+      "type": "text[]",
+      "defaultExpression": "ARRAY[]::text[]"
+    },
+    "operation_allowlist_schedule_semantics": {
+      "kind": "operation_allowlist_schedule_semantics",
+      "function": "private.live_billing_operation_set_is_canonical_v1",
+      "scope": "connect_payments"
+    },
+    "operational_manifest_v12": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_operational_manifest_v12()",
+      "expected": "ead2be833206bfdadb455dfd41eaaae1b3d1d00b1ac2efabaaab6dd6ca4c5edf",
+      "comparison": "IS DISTINCT FROM",
+      "failures": [
+        "operational_manifest_v12"
+      ]
+    },
+    "operational_manifest_v12_function": {
+      "kind": "function-hash",
+      "signature": "private.koaryu_release_operational_manifest_v12()",
+      "expected": "57a017e4e7be92f023d31dc4a18e75b95c676765f42b54f9f5fb9f4b768ca3bd",
+      "hashSource": "definition",
+      "failures": [
+        "operational_manifest_v12_function"
+      ]
+    },
+    "invoice_retry_preread_manifest_v32": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_invoice_retry_preread_manifest_v32()",
+      "expected": "0:9c658ccd26b813cabc195023f2cac43a76b7c2dff4558b3f68659ad9c70c6cf5",
+      "comparison": "<>",
+      "failures": [
+        "invoice_retry_preread_manifest_v32"
+      ],
+      "format": "legacy-preread"
+    },
+    "invoice_retry_compatibility_manifest_v33": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_invoice_retry_compatibility_manifest_v33()",
+      "expected": "0:8497daa806dcd7e33992fe8ca76f3207eb36b41e5a976be781e3bf33b22d4fdb",
+      "comparison": "<>",
+      "failures": [
+        "invoice_retry_compatibility_manifest_v33"
+      ],
+      "format": "legacy-compatibility"
+    },
+    "invoice_retry_closeout_manifest_v34": {
+      "kind": "manifest",
+      "signature": "private.koaryu_release_invoice_retry_closeout_manifest_v34()",
+      "expected": "0:d054ae0cf5ce43ce2c241ca628e0724b5239bd696c323ba9c817b8bd21ee0eec",
+      "comparison": "<>",
+      "failures": [
+        "invoice_retry_closeout_manifest_v34"
+      ],
+      "format": "legacy-closeout"
+    },
+    "stripe_rehearsal_evidence_manifest_v35": {
+      "kind": "stripe_rehearsal_evidence_manifest_v35",
+      "signature": "private.koaryu_release_stripe_rehearsal_evidence_manifest_v35()",
+      "table": "private.koaryu_release_v35_expectations",
+      "field": "evidence_manifest"
+    },
+    "stripe_rehearsal_evidence_acl_v35": {
+      "kind": "stripe_rehearsal_evidence_acl_v35",
+      "signature": "public.read_stripe_rehearsal_local_evidence_v1(uuid,text,integer,timestamptz,timestamptz,jsonb,uuid[],uuid,text[],text[])"
+    },
+    "payer_setup_recovery_manifest_v36": {
+      "kind": "payer_setup_recovery_manifest_v36",
+      "signature": "private.koaryu_release_payer_setup_recovery_manifest_v36()",
+      "table": "private.koaryu_release_v36_expectations",
+      "field": "recovery_manifest"
+    },
+    "adjustment_trigger_guard_manifest_v37": {
+      "kind": "adjustment_trigger_guard_manifest_v37",
+      "signature": "private.koaryu_release_adjustment_trigger_guard_manifest_v37()",
+      "table": "private.koaryu_release_v37_expectations",
+      "field": "trigger_guard_manifest"
+    },
+    "billing_landing_reads_v38": {
+      "kind": "billing_landing_reads_v38",
+      "functions": [
+        {
+          "signature": "public.billing_payment_cohort(uuid,timestamptz,timestamptz)",
+          "bodyHash": "5d6f683e3c56fe05db7e4101073d1a23792081192219cfa9eda4db8dcf734a1d"
+        },
+        {
+          "signature": "public.billing_landing_aggregates(uuid,timestamptz,timestamptz)",
+          "bodyHash": "7adf5dc3a58e5f96aa87c3a4c1e4f509b081e97185a104e8d8239ad1fae2a222"
+        },
+        {
+          "signature": "public.billing_webhook_health(text,boolean,timestamptz)",
+          "bodyHash": "3bdcc77c7d768e5ede8750900c0b75ac98bdffbb14ada059c580185133a9fd52"
+        }
+      ]
+    },
+    "billing_history_indexes_v38": {
+      "kind": "billing_history_indexes_v38",
+      "indexes": [
+        {
+          "name": "public.idx_billing_invoices_studio_history",
+          "table": "public.billing_invoices",
+          "definition": "CREATE INDEX idx_billing_invoices_studio_history ON public.billing_invoices USING btree (studio_id, created_at DESC, id DESC)"
+        },
+        {
+          "name": "public.idx_billing_payments_studio_history",
+          "table": "public.billing_payments",
+          "definition": "CREATE INDEX idx_billing_payments_studio_history ON public.billing_payments USING btree (studio_id, created_at DESC, id DESC)"
+        }
+      ]
+    },
+    "rank_command_manifest_v40_definition": {
+      "kind": "rank_command_manifest_v40_definition",
+      "signature": "private.koaryu_release_critical_surface_manifest_v16()",
+      "expected": "7fb0ba103de76167982cc96f0698d7516418ababb0892dc70d5c85e1d83efc0f"
+    },
+    "payer_balance_rpc_v41": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "recompute_billing_payer_balance_v1",
+      "signature": "public.recompute_billing_payer_balance_v1(uuid,uuid)",
+      "expected": "0eb78ae7d2c51c73bb17011e2cb0249f3fdb580e7a6293bc92f549771af646cd",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": true,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "void",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    }
+  },
+  "states": {
+    "v39": {
+      "checks": [
+        "resource_ownership_manifest_v31",
+        "schedule_window_manifest_v1",
+        "schedule_window_manifest_v1_function",
+        "operational_contract_v31",
+        "operational_contract_v31_expectation_acl",
+        "inherited_operational_contract_expectation_acl",
+        "operational_contract_v30_expectation",
+        "operational_contract_v26_expectation",
+        "schema_preflight_v7_body",
+        "schema_preflight_v8_body",
+        "schema_preflight_v9_body",
+        "schema_preflight_v10_body",
+        "schema_preflight_v11_body",
+        "operational_contract_v26",
+        "operational_contract_v27",
+        "operational_contract_v28",
+        "operational_contract_v29",
+        "operational_contract_v30",
+        "payments_replay_repairs_manifest_v30_function",
+        "operational_manifest_v11_function",
+        "operational_manifest_v11",
+        "provider_operation_steps_manifest_v28",
+        "resource_ownership_manifest_v31_function",
+        "operational_contract_v31_function",
+        "provider_operation_steps_manifest_v28_function",
+        "live_billing_v3_manifest_v25",
+        "operational_manifest_v7_function",
+        "operation_authorization_writer_function",
+        "legacy_authorization_scope_execute",
+        "operation_allowlist_constraint",
+        "operation_allowlist_column",
+        "operation_allowlist_schedule_semantics",
+        "operational_manifest_v12",
+        "operational_manifest_v12_function",
+        "invoice_retry_preread_manifest_v32",
+        "invoice_retry_compatibility_manifest_v33",
+        "invoice_retry_closeout_manifest_v34",
+        "stripe_rehearsal_evidence_manifest_v35",
+        "stripe_rehearsal_evidence_acl_v35",
+        "payer_setup_recovery_manifest_v36",
+        "adjustment_trigger_guard_manifest_v37",
+        "billing_landing_reads_v38",
+        "billing_history_indexes_v38"
+      ]
+    },
+    "v40": {
+      "extends": "v39",
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:fda64c2e37a0e6efd3c69b1167fc2056fc53b85042ced46d511312c886a961a4"
+        },
+        "operational_manifest_v11": {
+          "expected": "2efb0b2cf73beabfb219dd3642a824714c1b0619c5498ecf195071f929e651f6"
+        },
+        "operational_manifest_v12": {
+          "expected": "27cb3807a6ff60653fc0c7423428710a2c01d9254c1e5f59c0e2cb16c37f4d26"
+        }
+      },
+      "append": [
+        "rank_command_manifest_v40_definition"
+      ]
+    },
+    "v41": {
+      "extends": "v40",
+      "append": [
+        "payer_balance_rpc_v41"
+      ]
+    }
+  }
+}
