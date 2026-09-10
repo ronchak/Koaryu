@@ -56,14 +56,6 @@ class _Accounts:
 class _Facade:
     def __init__(self, tables, account=None):
         self.supabase = _PlanSupabase(tables)
-        self.supabase.insert_defaults["billing_plans"] = {
-            "id": "plan_created",
-            "stripe_product_id": None,
-            "stripe_price_id": None,
-            "metadata": {},
-            "created_at": "2026-08-27T00:00:00Z",
-            "updated_at": "2026-08-27T00:00:00Z",
-        }
         self.supabase.insert_defaults["billing_plan_prices"] = {
             "id": "plan_price_created",
             "created_at": "2026-08-27T00:00:00Z",
@@ -94,15 +86,6 @@ class _Facade:
 
     def _idempotency_key(self, *parts):
         return build_idempotency_key(*parts)
-
-    def _audit(self, studio_id, actor_id, action, entity_id, metadata):
-        self.supabase.tables.setdefault("audit_logs", []).append({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": action,
-            "entity_id": entity_id,
-            "metadata": metadata,
-        })
 
 
 class _Stripe:
@@ -200,27 +183,75 @@ class TestBillingPlanSync:
     def setup_method(self):
         _Stripe.reset()
 
-    def test_plan_create_and_provider_update_are_local_only_and_pending(self):
-        facade = _Facade(_tables())
+    @pytest.mark.parametrize("plan_id,payload,values,program_ids,programs", [
+        (None, BillingPlanCreate(name=" New  plan ", amount_cents=5000, currency=" USD "), {
+            "name": "New plan", "description": None, "amount_cents": 5000,
+            "currency": "usd", "billing_interval": "monthly", "signup_fee_cents": 0,
+            "trial_days": 0, "proration_behavior": "next_cycle", "freeze_behavior": None,
+            "cancellation_policy": None, "tax_behavior": None,
+        }, [], []),
+        ("plan_1", BillingPlanUpdate(name=" New  plan ", description=None, currency=" USD "),
+         {"name": "New plan", "description": None, "currency": "usd"}, None, []),
+        ("plan_1", BillingPlanUpdate(program_ids=None), {}, None, []),
+        ("plan_1", BillingPlanUpdate(program_ids=[]), {}, [], []),
+        ("plan_1", BillingPlanUpdate(program_ids=["program_1", "program_1"]), {},
+         ["program_1", "program_1"], [{
+             "program_id": "program_1", "program_name": "Committed program",
+             "program_color_hex": "#123456",
+         }]),
+    ])
+    def test_local_plan_write_uses_rpc_identity_presence_and_committed_snapshot(
+        self, plan_id, payload, values, program_ids, programs,
+    ):
+        facade = _Facade({})
+        returned = {"plan": _plan(name="Committed plan", amount_cents=5000), "programs": programs}
+        facade.supabase._rpc_write_billing_plan_v1 = lambda _params: returned
         manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
-
-        created = asyncio.run(manager.create_plan(
-            BillingPlanCreate(name="New plan", amount_cents=5000),
-            "studio_1",
-            "actor_1",
-        ))
-        updated = asyncio.run(manager.update_plan(
-            "plan_1",
-            BillingPlanUpdate(amount_cents=13000, description="Changed"),
-            "studio_1",
-            "actor_1",
-        ))
-
-        assert created.status == "pending"
-        assert updated.status == "pending"
+        result = asyncio.run(
+            manager.create_plan(payload, "studio_1", "actor_1") if plan_id is None
+            else manager.update_plan(plan_id, payload, "studio_1", "actor_1")
+        )
+        assert facade.supabase.rpc_calls == [("write_billing_plan_v1", {
+            "p_studio_id": "studio_1", "p_actor_id": "actor_1", "p_plan_id": plan_id,
+            "p_values": values, "p_program_ids": program_ids,
+        })]
+        assert (result.id, result.name, result.amount_cents) == ("plan_1", "Committed plan", 5000)
+        assert [program.model_dump() for program in result.programs] == programs
+        assert result.status == "pending"
+        assert result.can_accept_payments is False
+        assert facade.supabase.query_log == []
         assert _Stripe.created_products == []
         assert _Stripe.updated_products == []
         assert _Stripe.created_prices == []
+        assert _Stripe.retrieved_products == []
+
+    @pytest.mark.parametrize("code,message,status", [
+        ("23505", "duplicate key", 409),
+        ("P0002", "billing_plan_not_found", 404),
+        ("P0002", "billing_plan_program_not_found", 404),
+        ("22023", "billing_plan_requires_usd", 400),
+        ("42501", "billing_plan_actor_not_active", 403),
+        ("40001", "retry required", None),
+    ])
+    def test_local_plan_rpc_rejections_do_not_fall_back(self, code, message, status):
+        facade = _Facade({})
+        error = PostgrestAPIError({"code": code, "message": message, "details": "", "hint": ""})
+
+        def reject(_params):
+            raise error
+
+        facade.supabase._rpc_write_billing_plan_v1 = reject
+        with pytest.raises(HTTPException if status else PostgrestAPIError) as failure:
+            asyncio.run(BillingPlanManager(facade, stripe_service_cls=_Stripe).update_plan(
+                "plan_1", BillingPlanUpdate(description=None), "studio_1", "actor_1",
+            ))
+        if status:
+            assert failure.value.status_code == status
+        else:
+            assert failure.value is error
+        assert facade.supabase.query_log == []
+        assert len(facade.supabase.rpc_calls) == 1
+        assert not (_Stripe.created_products or _Stripe.updated_products or _Stripe.created_prices)
 
     def test_plan_sync_requires_canonical_byte_bounded_key(self):
         for key in (None, "é" * 128):

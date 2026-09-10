@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "648e27cfe668ff35b50a1e20ece1487aca78673e",
+  "last_reconciled_main": "9b4df618165146ef1f59472aa56e5e9266c27bd0",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -517,22 +517,38 @@
       "id": "ACS1-02",
       "title": "Update schemas allow null for fields the database requires",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Explicit null remains accepted for required plan columns and survives exclude_unset dumping. Database rejection is still exposed as an unhandled error.",
+      "disposition": "fixed",
+      "reason": "Required plan columns reject explicit null at the API and RPC boundary while preserving omission and nullable text clearing; generated API types agree.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "671ed359e32e0c85dcc8075d6ce3e17935f6a59e",
       "source_paths": [
         "backend/app/schemas/billing.py",
         "backend/app/services/billing_plans.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        175
+      ],
       "track": "Astra",
       "root_cause": "plan-patch-nullability",
       "collapse_with": [
         "BT3-05"
       ],
       "current_evidence": [
+        {
+          "path": "backend/app/schemas/billing.py",
+          "line": 237,
+          "observation": "Required plan columns reject explicit null at the API and RPC boundary while preserving omission and nullable text clearing; generated API types agree."
+        }
+      ],
+      "next_change": "Complete in PR175; preserve the documented command and release boundaries.",
+      "validation_plan": "Omitted/null/value schema matrix plus a service case asserting invalid input changes no persisted state; check API types.",
+      "scope_constraints": [
+        "Do not impose a blanket null ban.",
+        "Preserve plan authorization and subscription gates."
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "audit_evidence": [
         {
           "path": "backend/app/schemas/billing.py",
           "line": 240,
@@ -549,13 +565,7 @@
           "observation": "Name, amount, currency, interval, signup fee, trial days and proration behavior are NOT NULL."
         }
       ],
-      "next_change": "Reject explicit null for required plan columns at validation while preserving omitted fields and clearing of description and other nullable fields.",
-      "validation_plan": "Omitted/null/value schema matrix plus a service case asserting invalid input changes no persisted state; check API types.",
-      "scope_constraints": [
-        "Do not impose a blanket null ban.",
-        "Preserve plan authorization and subscription gates."
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "verification": "docs/remediation/local-plan-ownership-verification.md"
     },
     {
       "id": "ACS1-03",
@@ -2487,21 +2497,39 @@
       "id": "BB2-02",
       "title": "Plan edits can partly persist before validation fails",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Update persists scalar changes before validating program ownership. Link replacement remains delete-then-insert across separate requests. Creation validates programs first but still writes the plan and links separately.",
+      "disposition": "fixed",
+      "reason": "V44 commits local plan scalars, tenant-checked program links and original-actor audit together. Invalid associations and injected write failures roll back the complete command, and the response includes its committed snapshot.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "671ed359e32e0c85dcc8075d6ce3e17935f6a59e",
       "source_paths": [
-        "backend/app/services/billing_plans.py"
+        "backend/app/services/billing_plans.py",
+        "supabase/migrations/20260910135133_local_plan_write_ownership_v44.sql"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        175
+      ],
       "track": "Astra",
       "root_cause": "nonatomic-local-plan-edit",
       "collapse_with": [
         "BT3-05"
       ],
       "current_evidence": [
+        {
+          "path": "supabase/migrations/20260910135133_local_plan_write_ownership_v44.sql",
+          "line": 30,
+          "observation": "V44 commits local plan scalars, tenant-checked program links and original-actor audit together. Invalid associations and injected write failures roll back the complete command, and the response includes its committed snapshot."
+        }
+      ],
+      "next_change": "Complete in PR175; preserve the documented command and release boundaries.",
+      "validation_plan": "Disposable transaction cases for invalid/cross-studio programs and forced link-insert failure; assert original scalars/status/links survive and failed creation leaves no plan.",
+      "scope_constraints": [
+        "Preserve authorization, tenant ownership and durable provider synchronization.",
+        "No provider calls in the local edit transaction.",
+        "Add migrations without rewriting history; no production apply."
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "audit_evidence": [
         {
           "path": "backend/app/services/billing_plans.py",
           "line": 95,
@@ -2523,34 +2551,44 @@
           "observation": "The maintained PATCH endpoint reaches update_plan after studio admin/subscription checks."
         }
       ],
-      "next_change": "Validate complete input before mutations, then atomically create/update the plan and replace associations in a tenant-checked local RPC. Revalidate program ownership inside the transaction and preserve concurrent edit/sync protections.",
-      "validation_plan": "Disposable transaction cases for invalid/cross-studio programs and forced link-insert failure; assert original scalars/status/links survive and failed creation leaves no plan.",
-      "scope_constraints": [
-        "Preserve authorization, tenant ownership and durable provider synchronization.",
-        "No provider calls in the local edit transaction.",
-        "Add migrations without rewriting history; no production apply."
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "verification": "docs/remediation/local-plan-ownership-verification.md"
     },
     {
       "id": "BB2-03",
       "title": "An unchanged plan field unnecessarily disables its active state",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Provider-field presence still marks an active plan pending even when normalized values are unchanged. This independently disables payment readiness after a successful no-op save.",
+      "disposition": "fixed",
+      "reason": "The locked persisted plan and association set determine actual changes. A normalized no-op leaves active readiness, timestamps, link IDs and audit count unchanged; genuine provider-related edits still invalidate non-archived plans.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "671ed359e32e0c85dcc8075d6ce3e17935f6a59e",
       "source_paths": [
-        "backend/app/services/billing_plans.py"
+        "backend/app/services/billing_plans.py",
+        "supabase/migrations/20260910135133_local_plan_write_ownership_v44.sql"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        175
+      ],
       "track": "Astra",
       "root_cause": "plan-noop-invalidates-sync",
       "collapse_with": [
         "BT3-05"
       ],
       "current_evidence": [
+        {
+          "path": "supabase/migrations/20260910135133_local_plan_write_ownership_v44.sql",
+          "line": 156,
+          "observation": "The locked persisted plan and association set determine actual changes. A normalized no-op leaves active readiness, timestamps, link IDs and audit count unchanged; genuine provider-related edits still invalidate non-archived plans."
+        }
+      ],
+      "next_change": "Complete in PR175; preserve the documented command and release boundaries.",
+      "validation_plan": "Active-plan no-op cases for exact and normalized values, nullable description clearing, a real change and an archived plan; assert readiness and provider call counts.",
+      "scope_constraints": [
+        "Preserve genuine-change invalidation and sync concurrency guards.",
+        "Do not activate unsynchronized plans."
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "audit_evidence": [
         {
           "path": "backend/app/services/billing_plans.py",
           "line": 85,
@@ -2567,13 +2605,7 @@
           "observation": "Activation rejects plans whose status is no longer active."
         }
       ],
-      "next_change": "Normalize supplied values and compare with the current persisted values before changing sync status. Preserve archived state and ensure comparison/write handling does not overwrite a concurrent edit.",
-      "validation_plan": "Active-plan no-op cases for exact and normalized values, nullable description clearing, a real change and an archived plan; assert readiness and provider call counts.",
-      "scope_constraints": [
-        "Preserve genuine-change invalidation and sync concurrency guards.",
-        "Do not activate unsynchronized plans."
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "verification": "docs/remediation/local-plan-ownership-verification.md"
     },
     {
       "id": "BB2-04",
@@ -4496,16 +4528,19 @@
       "id": "BT3-05",
       "title": "Plan sync coverage is deep while local plan edits have little failure coverage",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Local plan editing still has only a changed-scalar happy path in the owning suite. It does not cover null rejection, association failure rollback or unchanged active-plan saves.",
+      "disposition": "fixed",
+      "reason": "Literal adapter and consolidated schema cases replace the split-write simulation. Real PostgreSQL now proves rollback, no-op, tenant/role, currency and concurrent edit behavior while retaining the provider synchronization recovery tests.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "671ed359e32e0c85dcc8075d6ce3e17935f6a59e",
       "source_paths": [
         "backend/tests/test_billing_plan_sync.py",
-        "backend/app/services/billing_plans.py"
+        "backend/app/services/billing_plans.py",
+        "supabase/verification/billing_plan_write_ownership.sql"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        175
+      ],
       "track": "Astra",
       "root_cause": "local-plan-edit-coverage",
       "collapse_with": [
@@ -4514,6 +4549,20 @@
         "BB2-03"
       ],
       "current_evidence": [
+        {
+          "path": "supabase/verification/billing_plan_write_ownership.sql",
+          "line": 139,
+          "observation": "Literal adapter and consolidated schema cases replace the split-write simulation. Real PostgreSQL now proves rollback, no-op, tenant/role, currency and concurrent edit behavior while retaining the provider synchronization recovery tests."
+        }
+      ],
+      "next_change": "Complete in PR175; preserve the documented command and release boundaries.",
+      "validation_plan": "Omitted/null/value, valid/cross-studio associations, failed replacement/create, normalized no-op and actual-change cases.",
+      "scope_constraints": [
+        "Retain durable sync recovery, ownership and CAS coverage.",
+        "Do not count the supporting test gap as three additional production bugs."
+      ],
+      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "audit_evidence": [
         {
           "path": "backend/tests/test_billing_plan_sync.py",
           "line": 203,
@@ -4530,13 +4579,7 @@
           "observation": "Association validation still occurs after scalar persistence, making persisted-state assertions necessary."
         }
       ],
-      "next_change": "Add the focused local-edit matrix alongside ACS1-02, BB2-02 and BB2-03 remediation. Assert persisted scalars/status/links after rejection and use disposable SQL for transactional rollback guarantees.",
-      "validation_plan": "Omitted/null/value, valid/cross-studio associations, failed replacement/create, normalized no-op and actual-change cases.",
-      "scope_constraints": [
-        "Retain durable sync recovery, ownership and CAS coverage.",
-        "Do not count the supporting test gap as three additional production bugs."
-      ],
-      "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
+      "verification": "docs/remediation/local-plan-ownership-verification.md"
     },
     {
       "id": "BT3-06",
@@ -12232,8 +12275,8 @@
       "title": "Mixed-currency writes feed currency-blind totals",
       "track": "Astra",
       "disposition": "pending",
-      "reason": "PR172/V43 closes new external-payment currency writes while preserving exact historical non-USD replay. New tuition commands and mixed/unknown-currency aggregates still need correction. Creating only USD plans is insufficient because a historical non-USD plan can still begin fresh collection.",
-      "verified_against": "0abd5b57e7edbc81602921bf5d8023717d4d988d",
+      "reason": "PR172/V43 closes new external-payment currency writes while preserving exact historical replay. PR175 adds the local plan definition boundary. Fresh tuition/provider intents, recovered unknown provider facts, and mixed/unknown-currency reporting remain pending; no historical data is converted or backfilled.",
+      "verified_against": "671ed359e32e0c85dcc8075d6ce3e17935f6a59e",
       "source_paths": [
         "backend/app/api/v1/endpoints/billing.py",
         "backend/app/schemas/billing.py",
@@ -12250,9 +12293,55 @@
         "frontend/src/lib/billing-page-model.ts",
         "frontend/src/components/billing/billing-page-sections.tsx",
         "frontend/src/lib/billing-page-utils.ts",
-        "frontend/src/lib/billing-page-form-model.ts"
+        "frontend/src/lib/billing-page-form-model.ts",
+        "supabase/migrations/20260910093958_external_payment_command_ownership_v43.sql",
+        "supabase/migrations/20260910135133_local_plan_write_ownership_v44.sql"
       ],
       "current_evidence": [
+        {
+          "path": "supabase/migrations/20260910093958_external_payment_command_ownership_v43.sql",
+          "line": 59,
+          "observation": "New external-payment records require USD; existing same-key records retain their currency and verified replay."
+        },
+        {
+          "path": "supabase/migrations/20260910135133_local_plan_write_ownership_v44.sql",
+          "line": 124,
+          "observation": "PR175 candidate requires USD for new local plan definitions or actual financial changes; identical and nonfinancial historical edits remain allowed."
+        },
+        {
+          "path": "backend/app/services/billing_plan_sync.py",
+          "line": 598,
+          "observation": "Provider price creation still consumes historical plan currency and defaults absent currency to USD; the local-plan boundary alone does not guard a fresh provider intent."
+        },
+        {
+          "path": "backend/app/services/billing_invoice_operations.py",
+          "line": 172,
+          "observation": "New invoice intent still stores request currency before provider execution."
+        },
+        {
+          "path": "supabase/migrations/20260905022339_billing_landing_aggregates.sql",
+          "line": 18,
+          "observation": "Payment cohort aggregates do not group by currency; landing receivables likewise sum currencies at line48."
+        },
+        {
+          "path": "frontend/src/lib/billing-page-utils.ts",
+          "line": 49,
+          "observation": "Money formatting still defaults to USD and uses a fixed divisor; combined totals lack currency availability."
+        }
+      ],
+      "related_findings": [
+        "BB2-08",
+        "BB1-05",
+        "BB1-03"
+      ],
+      "owner_decision": "September9: USD-only new tuition and external-payment writes; preserve existing confirmed non-USD records and prevent misleading combined totals.",
+      "next_change": "Guard genuinely new tuition financial intents, including activation of historical non-USD plans and provider price creation, while preserving confirmed historical results and exact replay. Then make monetary availability/currency explicit for affected readers. No FX conversion or historical backfill.",
+      "verification": "Target accepted USD writes, rejected non-USD new writes, unchanged historical replay, and mixed/unknown-currency aggregates. Verify tenant, provider identity and idempotency boundaries.",
+      "pull_requests": [
+        172,
+        175
+      ],
+      "initial_evidence": [
         {
           "path": "backend/app/api/v1/endpoints/billing.py",
           "line": 1149,
@@ -12333,17 +12422,6 @@
           "line": 209,
           "observation": "External-payment UI submits USD explicitly; plan creation does the same at line 108."
         }
-      ],
-      "related_findings": [
-        "BB2-08",
-        "BB1-05",
-        "BB1-03"
-      ],
-      "owner_decision": "September9: USD-only new tuition and external-payment writes; preserve existing confirmed non-USD records and prevent misleading combined totals.",
-      "next_change": "Guard genuinely new tuition financial intents, including activation of historical non-USD plans and provider price creation, while preserving confirmed historical results and exact replay. Then make monetary availability/currency explicit for affected readers. No FX conversion or historical backfill.",
-      "verification": "Target accepted USD writes, rejected non-USD new writes, unchanged historical replay, and mixed/unknown-currency aggregates. Verify tenant, provider identity and idempotency boundaries.",
-      "pull_requests": [
-        172
       ]
     },
     {
@@ -12391,8 +12469,8 @@
     }
   },
   "current_counts": {
-    "pending": 198,
-    "fixed": 65,
+    "pending": 194,
+    "fixed": 69,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
@@ -12400,6 +12478,6 @@
   },
   "current_pending_tracks": {
     "Sol": 58,
-    "Astra": 140
+    "Astra": 136
   }
 }

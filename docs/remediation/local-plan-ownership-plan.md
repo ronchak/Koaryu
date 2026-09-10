@@ -1,0 +1,21 @@
+# Local plan write ownership
+
+ACS1-02, BB2-02, BB2-03 and BT3-05 share a local persistence boundary. Shipped UI creation inserts a plan, then links and audit in separate requests. The supported Admin update API can save scalars before program validation, accepts explicit null for required columns, and marks unchanged active plans pending. No maintained edit-plan UI was found.
+
+## Next change
+
+Add one narrowly scoped service-role RPC for plan creation and patching in a forward migration. A null plan ID means create; a supplied ID means update an existing same-studio plan, never upsert. Carry only the eleven editable scalar fields in an allowlisted object and a separate program-ID argument. Preserve missing keys versus explicit null. Program IDs omitted or null retain existing links, an empty list clears, and a list replaces its deduplicated set. Archived programs remain valid associations, as today.
+
+Keep existing Admin and platform-subscription endpoint checks. Follow the active-admin actor check already used by the durable plan owner. The RPC must recheck plan/program tenant ownership. Take a studio-scoped shared transaction advisory lock first, then a studio row KEY SHARE lock, the plan row lock and ordered program SHARE locks before replacing links. The existing guarded demo-clear function takes the matching exclusive advisory lock first. Do not give clear a broad studio UPDATE lock: that would invert existing student/provider writer locks. Audit actor_id has no foreign key, so no actor or staff row lock is needed. Keep scalar, link and original-actor audit writes in one transaction; any failure rolls everything back. Preserve provider-owned IDs, history and existing projection CAS. Verify lock ordering against program deletion, archive and provider projection.
+
+Normalize supplied names and currency through the existing request/service boundary. Reject explicit null for the seven required plan columns while retaining omission and nullable text clearing; generated API types must describe the same contract. Compare supplied values and association sets with the locked current state. A true no-op changes neither status, timestamps, links nor audit. Only an actual change to the existing provider-related field set marks a non-archived plan pending. Program-only changes preserve price readiness. Keep archived state.
+
+Return the committed plan and program snapshot together so response construction does not combine this command's plan with a later writer's links. Keep existing payment-readiness presentation rules and ancillary local account lookup. Remove superseded Python split writes and their unused forwarding helpers. Do not remove the separate legacy provider-sync path in this change; BB2-04 remains its own retirement task.
+
+Apply the settled USD rule to new local plan definitions. Preserve historical non-USD records, identical saves and nonfinancial maintenance. An actual change to amount, currency, interval, signup fee or trial days must produce a USD definition. Do not reinterpret or backfill historical values. Provider price/activation/invoice command guards and truthful aggregate currency remain pending under PROGRAM-CURRENCY-01; this PR does not close that broader finding.
+
+## Proof and scope
+
+Use a small adapter test with literal RPC results and recorded arguments, not another Python implementation of SQL plan editing. Replace the provider-sync suite's local-edit happy-path simulation. Consolidate schema omission/null/value cases. Real PostgreSQL owns scalar/link/audit rollback, invalid/cross-studio programs, normalized no-op, real changes, archived state, currency boundaries and committed snapshot proof. Preserve existing price projection CAS/recovery tests. Extend existing local concurrency proof rather than add another process framework.
+
+Use the release-attestation generator for the next state, preserving every historical migration. Require canonical and logical-restore continuation, target/ACL checks, full disposable contracts, generated API contracts, fresh independent review and exact-head CI before guarded merge. Measure test additions/deletions honestly. No browser edit-flow work, provider mutation, production SQL, deployment, historical backfill or new recovery framework belongs in this PR.

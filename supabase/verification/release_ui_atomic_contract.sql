@@ -596,7 +596,7 @@ BEGIN
     SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
     SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
     IF (v_current_count=131 AND v_current_head='20260831054918')
-       OR ((v_current_count=132 AND v_current_head='20260902001000') OR (v_current_count=133 AND v_current_head='20260905022339') OR (v_current_count=134 AND v_current_head='20260908080420') OR ((v_current_count=135 AND v_current_head='20260908133504') OR ((v_current_count=136 AND v_current_head='20260908183744') OR ((v_current_count=137 AND v_current_head='20260910084231') OR (v_current_count=138 AND v_current_head='20260910093958'))))) THEN
+       OR ((v_current_count,v_current_head) IN ((132,'20260902001000'), (133,'20260905022339'), (134,'20260908080420'), (135,'20260908133504'), (136,'20260908183744'), (137,'20260910084231'), (138,'20260910093958'), (139,'20260910135133'))) THEN
         IF v_v7.ready IS DISTINCT FROM false
            OR v_v7.migration_count IS DISTINCT FROM 126
            OR v_v7.migration_head IS DISTINCT FROM '20260826185651'

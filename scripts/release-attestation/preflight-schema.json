@@ -428,6 +428,62 @@
       "configuration": [
         "search_path=\"\""
       ]
+    },
+    "local_plan_rpc_v44": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "write_billing_plan_v1",
+      "signature": "public.write_billing_plan_v1(uuid,uuid,uuid,jsonb,uuid[])",
+      "expected": "ac577f4bec60aecc52b4950eda7d8a8a469d6ac035d05afeabb74e3a9c8fe789",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "jsonb",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    },
+    "local_plan_clear_coordination_v44": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "clear_studio_operational_data_atomic",
+      "signature": "public.clear_studio_operational_data_atomic(uuid,boolean)",
+      "expected": "9bc03bc31ae70310497bfa020088045b604e113550d79e1a9c6c754b58ec2876",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "void",
+      "configuration": [
+        "search_path=public, pg_temp"
+      ]
     }
   },
   "states": {
@@ -516,6 +572,13 @@
       "extends": "v42",
       "append": [
         "external_payment_rpc_v43"
+      ]
+    },
+    "v44": {
+      "extends": "v43",
+      "append": [
+        "local_plan_rpc_v44",
+        "local_plan_clear_coordination_v44"
       ]
     }
   }

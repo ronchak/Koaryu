@@ -2,7 +2,7 @@
 
 These recipes are for a fresh GPT-5.6 Sol task with repository access and no prior remediation memory. Use low effort for documentation, searches and fixture legwork. Read current AGENTS.md and relevant package guidance. Start from updated main and recheck every named caller before removal.
 
-The twelve audit batches assign all83 pending Sol observations exactly once. Batch13 is a separate program dependency finding. Batch numbering is an index, not a fixed execution order or one-PR requirement. Combine or separate chunks only at a coherent ownership/rollback boundary, and update the ledger after each merged result.
+At normalization, the twelve audit batches assigned all 83 then-pending Sol observations exactly once. Consult the current ledger before selecting a batch; completed findings remain in these historical recipes. Batch13 is a separate program dependency finding. Batch numbering is an index, not a fixed execution order or one-PR requirement. Combine or separate chunks only at a coherent ownership/rollback boundary, and update the ledger after each merged result.
 
 Astra owns money, authorization, tenant boundaries, concurrency, migrations and workflow ownership. Sol must not implement prerequisite Astra changes. A mixed test file permits only the stated fixture or presentation edits. Coordinate shared paths sequentially; never run competing implementations in the same worktree. No new generic framework, production deployment/migration, historical financial backfill, mail or DNS work.
 

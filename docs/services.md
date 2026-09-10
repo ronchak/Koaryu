@@ -147,28 +147,33 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The current candidate's `/health/ready` calls `koaryu_release_schema_preflight_v24`
-and serves only at 138/head `20260910093958` with `release-db-attestation-v43`. Its
-full preflight reports 54 pending-history versions. It
+The current candidate's `/health/ready` calls `koaryu_release_schema_preflight_v25`
+and serves only at 139/head `20260910135133` with `release-db-attestation-v44`. Its
+full preflight reports 55 pending-history versions. It
 fails closed at every other migration state, so a backend deployed before its
 migration remains unhealthy. This describes the candidate contract, not a new
-hosted-state verification. The latest accepted predecessor is V42 at 137/head
-`20260910084231`; it selects only
-`20260910093958_external_payment_command_ownership_v43.sql`. Full V24 verifies V43,
-while V23 returns the V42 compatibility tuple. Existing V22/V21/V20/V19/V18 callers
-continue through that compatibility chain, but the candidate backend requires full
-V24. V43 adds the service-role-only, SECURITY INVOKER, VOLATILE
-`record_external_payment_v1` RPC. It commits a payer-only external payment and its
-original-actor audit together. Exact same-key/hash replay preserves both original
-records, and balance completion remains repeatable after commit. New external writes
-are USD-only; confirmed historical non-USD replay remains valid. There is no audit
-backfill. The new payment-and-audit guarantee begins only when every serving backend
-uses the RPC and old split-write operations drain. Old Python payer-balance split
-callers can also overwrite newer balances until every backend and worker uses the V41
-RPC and those operations drain. V40 rank, V41 balance, and V42 catalog and semantic
-pins remain unchanged. All historical migrations remain unchanged. Merging does not
-apply the migration or deploy either application, and no production migration or
-deployment is authorized by this candidate documentation.
+hosted-state verification. The latest accepted predecessor is V43 at 138/head
+`20260910093958`; it selects only
+`20260910135133_local_plan_write_ownership_v44.sql`. Full V25 verifies V44, while
+V24 returns the V43 compatibility tuple. The older readiness chain remains available,
+but the candidate backend requires full V25.
+
+V44 adds the service-role-only `write_billing_plan_v1` RPC. One transaction owns plan
+scalars, program links, the original-actor audit, and the committed response snapshot.
+A true no-op preserves status, timestamps, and links. Explicit null is rejected for
+required fields; omission and nullable clearing remain distinct. New or financially
+changed local definitions must use USD. Historical records, identical saves, and
+nonfinancial maintenance keep their existing currency. The RPC takes the shared local
+plan advisory lock first; guarded demo clear takes the matching exclusive lock first
+without a broad studio UPDATE lock. The new guarantee begins only when old Python
+plan split-write requests drain. Demo reset and reseed requests remain separate and
+do not gain a new atomicity guarantee.
+
+V40 rank, V41 payer balance, V42 catalog and semantics, and V43 external-payment facts
+remain unchanged. The V41 and V43 guarantees still require their old split callers to
+drain. All historical migrations remain unchanged. Merging does not apply the migration
+or deploy either application, and no production migration or deployment is authorized
+by this candidate documentation.
 
 ## Supabase — database, auth, storage
 

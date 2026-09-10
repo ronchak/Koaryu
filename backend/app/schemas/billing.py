@@ -237,23 +237,24 @@ class BillingPlanCreate(BaseModel):
 class BillingPlanUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: Optional[str] = Field(default=None, min_length=1, max_length=140)
+    # Defaults represent omission; explicitly supplied required columns cannot be null.
+    name: str = Field(default=None, min_length=1, max_length=140)
     description: Optional[str] = None
-    amount_cents: Optional[int] = Field(default=None, ge=0)
-    currency: Optional[str] = None
-    billing_interval: Optional[BillingInterval] = None
+    amount_cents: int = Field(default=None, ge=0)
+    currency: str = Field(default=None)
+    billing_interval: BillingInterval = Field(default=None)
     program_ids: Optional[list[str]] = None
-    signup_fee_cents: Optional[int] = Field(default=None, ge=0)
-    trial_days: Optional[int] = Field(default=None, ge=0)
-    proration_behavior: Optional[str] = None
+    signup_fee_cents: int = Field(default=None, ge=0)
+    trial_days: int = Field(default=None, ge=0)
+    proration_behavior: str = Field(default=None)
     freeze_behavior: Optional[str] = None
     cancellation_policy: Optional[str] = None
     tax_behavior: Optional[str] = None
 
     @field_validator("currency")
     @classmethod
-    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
-        return value.strip().lower() if value else value
+    def normalize_currency(cls, value: str) -> str:
+        return value.strip().lower()
 
 
 class BillingPlanResponse(BaseModel):

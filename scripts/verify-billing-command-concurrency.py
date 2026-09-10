@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove payer balance ordering and external-payment replay on a disposable cluster."""
+"""Prove local billing command ordering and plan/reset coordination."""
 import hashlib
 import json
 import os
@@ -26,7 +26,7 @@ def run_cases(local,database):
     def sql(statement):return local.sql(database,statement)
     def command(payer):return f"SELECT public.recompute_billing_payer_balance_v1('{ids['studio']}','{ids[payer]}');"
     def start(label,statement,hold=True):
-        name='balance_'+label+'_'+uuid4().hex[:12]
+        name='billing_'+label+'_'+uuid4().hex[:12]
         process=subprocess.Popen([local.psql,*local.connection,'--dbname='+database,'--no-psqlrc','--quiet','--tuples-only','--no-align','--set=ON_ERROR_STOP=1','--set=VERBOSITY=verbose'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1,env=local.env)
         item={'process':process,'name':name,'lines':[],'errors':[],'events':queue.Queue()};children.append(item)
         def drain(stream,target,events=None):
@@ -53,7 +53,7 @@ def run_cases(local,database):
             except queue.Empty:
                 if forbidden_holder:
                     blocked=blocker(forbidden_holder,item)
-                    if blocked:raise ProofFailure('unexpected_invoice_lock',blocked)
+                    if blocked:raise ProofFailure('unexpected_blocking_lock',blocked)
                 code = item['process'].poll()
                 if code is not None:
                     for thread in item['threads']:
@@ -136,6 +136,167 @@ COMMIT;""")
         assert audits==[{'actor_id':ids['actor'],'entity_id':payment['id'],'metadata':{'amount_cents':500,'external_method':'cash'}}],audits
         assert sql(f"SELECT count(*) FROM public.billing_payments WHERE studio_id='{ids['studio']}' AND idempotency_key='external-concurrent';")=='1'
         results.append({'case':'external_payment_and_original_actor_audit_once','lock':lock,'payment_id':payment['id'],'audit_count':len(audits)})
+        def plan_fixture(label):
+            f={key:str(uuid4()) for key in ['actor','studio','plan','independent','program','replacement','student']}
+            sql(f"""BEGIN;
+INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+VALUES('{f['actor']}','authenticated','authenticated','{f['actor']}@example.invalid','{{}}','{{}}',now(),now());
+INSERT INTO public.studios(id,name,slug,owner_id)
+VALUES('{f['studio']}','Plan concurrency {label}','plan-{f['studio']}','{f['actor']}');
+INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES('{f['studio']}','{f['actor']}','admin');
+INSERT INTO public.programs(id,studio_id,name,color_hex) VALUES
+('{f['program']}','{f['studio']}','Original program','#112233'),
+('{f['replacement']}','{f['studio']}','Replacement program','#445566');
+INSERT INTO public.billing_plans(id,studio_id,name,amount_cents,status) VALUES
+('{f['plan']}','{f['studio']}','Primary',1000,'active'),
+('{f['independent']}','{f['studio']}','Independent',1000,'active');
+INSERT INTO public.billing_plan_programs(studio_id,billing_plan_id,program_id) VALUES
+('{f['studio']}','{f['plan']}','{f['program']}'),
+('{f['studio']}','{f['independent']}','{f['program']}');
+COMMIT;""")
+            return f
+        def plan_call(f,patch,programs=None,key='plan'):
+            values=json.dumps(patch).replace("'","''")
+            associations='NULL::uuid[]' if programs is None else "ARRAY["+','.join("'"+value+"'" for value in programs)+"]::uuid[]"
+            return f"public.write_billing_plan_v1('{f['studio']}','{f['actor']}','{f[key]}','{values}'::jsonb,{associations})"
+        def plan_state(f):
+            return json.loads(sql(f"""SELECT jsonb_build_object(
+'plan',(SELECT jsonb_build_array(amount_cents,description,cancellation_policy,status,archived_at IS NOT NULL,stripe_price_id) FROM public.billing_plans WHERE id='{f['plan']}'),
+'links',(SELECT COALESCE(jsonb_agg(program_id ORDER BY program_id),'[]'::jsonb) FROM public.billing_plan_programs WHERE billing_plan_id='{f['plan']}'),
+'audits',(SELECT count(*) FROM public.audit_logs WHERE entity_id='{f['plan']}' AND action='billing.plan_updated'));"""))
+        def plan_result(item):
+            return json.loads(next(line for line in item['lines'] if line.startswith('{')))
+        def plan_missing(call,message):
+            # Fail outside the expected-error handler if the command unexpectedly succeeds.
+            return f"""DO $expected$ DECLARE rejected boolean:=false; BEGIN
+BEGIN PERFORM {call}; EXCEPTION WHEN SQLSTATE 'P0002' THEN
+IF SQLERRM IS DISTINCT FROM '{message}' THEN RAISE; END IF; rejected:=true; END;
+IF NOT rejected THEN RAISE EXCEPTION 'expected plan command rejection'; END IF;
+END $expected$; SELECT 'EXPECTED_PLAN_REJECTION';"""
+        def clear_call(f):
+            return f"SELECT public.clear_studio_operational_data_atomic('{f['studio']}',false);"
+
+        f=plan_fixture('disjoint')
+        first=start('plan_disjoint_owner','SELECT '+plan_call(f,{'description':'First edit'})+';');ready(first)
+        second=start('plan_disjoint_waiter','SELECT '+plan_call(f,{'cancellation_policy':'Second edit'})+';',hold=False)
+        lock=wait_blocked(first,second)
+        independent=start('plan_disjoint_independent','SELECT '+plan_call(f,{'description':'Independent edit'},key='independent')+';',hold=False)
+        ready(independent,forbidden_holder=first);finish(independent)
+        assert plan_result(independent)['plan']['description']=='Independent edit'
+        release(first);ready(second);finish(second)
+        observed=plan_state(f)
+        assert observed=={'plan':[1000,'First edit','Second edit','pending',False,None],'links':[f['program']],'audits':2},observed
+        assert plan_result(second)['plan']['description']=='First edit'
+        results.append({'case':'plan_disjoint_patches_and_shared_program_independence','lock':lock,'facts':observed})
+
+        # Archive uses the exact single UPDATE boundary of BillingPlanManager.archive_plan.
+        # Its later independent audit request is outside this plan-row serialization proof.
+        for archive_first in [True,False]:
+            f=plan_fixture('archive')
+            archive=f"UPDATE public.billing_plans SET status='archived',archived_at='2026-09-10T00:00:00Z' WHERE id='{f['plan']}' AND studio_id='{f['studio']}';"
+            edit='SELECT '+plan_call(f,{'amount_cents':1200})+';'
+            first=start('plan_archive_owner',archive if archive_first else edit);ready(first)
+            second=start('plan_archive_waiter',edit if archive_first else archive,hold=False)
+            lock=wait_blocked(first,second)
+            release(first);ready(second);finish(second)
+            observed=plan_state(f)
+            assert observed=={'plan':[1200,None,None,'archived',True,None],'links':[f['program']],'audits':1},observed
+            results.append({'case':'plan_archive_before_edit' if archive_first else 'plan_edit_before_archive','lock':lock,'facts':observed})
+
+        # Minimal SQL CAS behavior only: these predicates also occur in the existing
+        # provider projection, but its full payload, snapshot and recovery remain
+        # covered by the retained backend tests. No provider workflow runs here.
+        for scalar_edit in [True,False]:
+            f=plan_fixture('cas')
+            call=plan_call(f,{'amount_cents':1300}) if scalar_edit else plan_call(f,{},[f['replacement']])
+            first=start('plan_cas_owner','SELECT '+call+';');ready(first)
+            second=start('plan_cas_projection',f"""WITH projected AS (
+UPDATE public.billing_plans AS plan SET status='active',stripe_price_id='price_concurrency'
+WHERE plan.id='{f['plan']}' AND plan.studio_id='{f['studio']}'
+AND plan.amount_cents=1000 AND plan.status='active' AND plan.archived_at IS NULL RETURNING id)
+SELECT jsonb_build_object('projected',count(*)) FROM projected;""",hold=False)
+            lock=wait_blocked(first,second)
+            release(first);ready(second);finish(second)
+            assert plan_result(second)=={'projected':0 if scalar_edit else 1}
+            observed=plan_state(f)
+            expected={'plan':[1300,None,None,'pending',False,None] if scalar_edit else [1000,None,None,'active',False,'price_concurrency'],
+                'links':[f['program'] if scalar_edit else f['replacement']],'audits':1}
+            assert observed==expected,observed
+            results.append({'case':'plan_real_edit_rejects_stale_sql_cas' if scalar_edit else 'plan_program_edit_preserves_sql_cas','lock':lock,'facts':observed})
+
+        f=plan_fixture('local-before-clear')
+        first=start('plan_before_clear','SELECT '+plan_call(f,{'description':'Committed before clear'},[f['replacement']])+';');ready(first)
+        second=start('clear_after_plan',clear_call(f),hold=False)
+        lock=wait_blocked(first,second);assert lock['event']=='advisory',lock
+        # Existing committed links remain untouched while clear waits for the advisory lock.
+        assert plan_state(f)['links']==[f['program']]
+        release(first);ready(second);finish(second)
+        observed=plan_state(f)
+        assert observed=={'plan':None,'links':[],'audits':1},observed
+        assert [p['program_id'] for p in plan_result(first)['programs']]==[f['replacement']]
+        results.append({'case':'plan_commit_before_real_clear','lock':lock,'facts':observed})
+
+        f=plan_fixture('clear-before-local')
+        first=start('clear_before_plan',clear_call(f));ready(first)
+        second=start('plan_after_clear',plan_missing(plan_call(f,{'description':'Must not persist'}),'billing_plan_not_found'),hold=False)
+        lock=wait_blocked(first,second);assert lock['event']=='advisory',lock
+        release(first);ready(second);finish(second)
+        assert 'EXPECTED_PLAN_REJECTION' in second['lines']
+        observed=plan_state(f)
+        assert observed=={'plan':None,'links':[],'audits':0},observed
+        results.append({'case':'real_clear_before_plan_rejects_without_audit','lock':lock,'facts':observed})
+
+        f=plan_fixture('profile-clear')
+        sql(f"INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,status) VALUES('{f['student']}','{f['studio']}','Profile','Continuation','active');")
+        first=start('profile_child_owner',f"SELECT id FROM public.students WHERE id='{f['student']}' FOR UPDATE;");ready(first)
+        second=start('clear_waits_profile',clear_call(f),hold=False)
+        lock=wait_blocked(first,second)
+        assert sql(f"SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING(pid) WHERE a.application_name='{second['name']}' AND l.locktype='advisory' AND l.mode='ExclusiveLock' AND l.granted;")=='1'
+        # Resume the real public profile RPC in the student-owning transaction.
+        # If clear adds studio FOR UPDATE, its late audit FK forms a deadlock here.
+        first['process'].stdin.write(f"""SELECT (public.write_student_profile_atomic(
+'{f['student']}','{f['studio']}','{f['actor']}',
+'{{"notes":"Profile audit completed while clear waited"}}'::jsonb,
+NULL::uuid[],'[]'::jsonb,false,'student.updated')).id;
+SELECT 'RESULT_READY'; COMMIT;
+""")
+        first['process'].stdin.close();ready(first);finish(first);ready(second);finish(second)
+        observed=json.loads(sql(f"SELECT jsonb_build_object('students',(SELECT count(*) FROM public.students WHERE id='{f['student']}'),'audits',(SELECT count(*) FROM public.audit_logs WHERE entity_id='{f['student']}' AND action='student.updated' AND actor_id='{f['actor']}' AND metadata->>'notes'='Profile audit completed while clear waited'));"))
+        assert observed=={'students':0,'audits':1},observed
+        results.append({'case':'real_profile_late_audit_completes_with_clear_advisory','lock':lock,'facts':observed})
+
+        f=plan_fixture('program-delete-first')
+        first=start('program_delete_owner',f"DELETE FROM public.programs WHERE id='{f['program']}';");ready(first)
+        second=start('plan_deleted_program',plan_missing(plan_call(f,{'amount_cents':1400},[f['program']]),'billing_plan_program_not_found'),hold=False)
+        lock=wait_blocked(first,second)
+        release(first);ready(second);finish(second)
+        assert 'EXPECTED_PLAN_REJECTION' in second['lines']
+        observed=plan_state(f)
+        assert observed=={'plan':[1000,None,None,'active',False,None],'links':[],'audits':0},observed
+        results.append({'case':'program_delete_before_plan_rolls_back_command','lock':lock,'facts':observed})
+
+        f=plan_fixture('plan-before-program-delete')
+        first=start('plan_program_owner','SELECT '+plan_call(f,{'description':'Before program deletion'},[f['replacement']])+';');ready(first)
+        second=start('program_delete_waiter',f"DELETE FROM public.programs WHERE id='{f['replacement']}';",hold=False)
+        lock=wait_blocked(first,second)
+        release(first);ready(second);finish(second)
+        observed=plan_state(f)
+        assert observed=={'plan':[1000,'Before program deletion',None,'pending',False,None],'links':[],'audits':1},observed
+        assert plan_result(first)['programs']==[{'program_id':f['replacement'],'program_name':'Replacement program','program_color_hex':'#445566'}]
+        results.append({'case':'plan_snapshot_before_program_delete','lock':lock,'facts':observed})
+
+        # Lock-level parent-order proof. The lock matches DELETE's studio row mode,
+        # but no actual studio deletion is claimed: staff orphan triggers are separate.
+        f=plan_fixture('parent-order')
+        first=start('studio_parent_owner',f"SELECT id FROM public.studios WHERE id='{f['studio']}' FOR UPDATE;");ready(first)
+        second=start('plan_waits_parent','SELECT '+plan_call(f,{'description':'After parent release'})+';',hold=False)
+        lock=wait_blocked(first,second)
+        probe=start('parent_order_plan_probe',f"SELECT id FROM public.billing_plans WHERE id='{f['plan']}' FOR UPDATE NOWAIT;")
+        ready(probe);release(probe)
+        release(first,commit=False);ready(second);finish(second)
+        observed=plan_state(f)
+        assert observed=={'plan':[1000,'After parent release',None,'pending',False,None],'links':[f['program']],'audits':1},observed
+        results.append({'case':'plan_waits_parent_before_locking_plan','lock':lock,'facts':observed})
         return results
     finally:
         for child in children:
@@ -167,7 +328,7 @@ def main(arguments):
                 "manifest_version": metadata["EXPECTED_RELEASE_MANIFEST_VERSION"],
                 "pending_versions": metadata["EXPECTED_RELEASE_PENDING_VERSIONS"], "security_failures": []}
     require(readiness == expected, "Payment concurrency requires the exact current candidate readiness")
-    database = f"koaryu_payer_balance_concurrency_{os.getpid()}"
+    database = f"koaryu_billing_command_concurrency_{os.getpid()}"
     owned = False
     try:
         local.run([createdb, *local.connection, "--owner=postgres", "--template=postgres", database])
@@ -176,13 +337,13 @@ def main(arguments):
         require(hashlib.sha256(Path(__file__).read_bytes()).hexdigest() == source_hash
                 and hashlib.sha256(shared_path.read_bytes()).hexdigest() == shared_hash
                 and hashlib.sha256(metadata_path.read_bytes()).hexdigest() == metadata_hash,
-                "Payer concurrency inputs changed during verification")
-        (local.temporary / "payer-balance-concurrency-evidence.json").write_text(json.dumps({
+                "Billing concurrency inputs changed during verification")
+        (local.temporary / "billing-command-concurrency-evidence.json").write_text(json.dumps({
             "script_sha256": source_hash, "local_tools_sha256": shared_hash, "readiness_metadata_sha256": metadata_hash,
             "readiness": readiness, "cases": cases,
         }, indent=2) + "\n")
         for case in cases:
-            print("[payer concurrency] PASS " + case["case"] + ": observed locks and persisted outcome", flush=True)
+            print("[billing concurrency] PASS " + case["case"] + ": observed locks and persisted outcome", flush=True)
     finally:
         if owned:
             local.sql("postgres", f"DROP DATABASE {database} WITH (FORCE);")
