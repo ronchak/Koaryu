@@ -93,7 +93,9 @@ export function bundle(mode, { preview = false, pagedRoster = true, layout = fal
     ids.set(key, id);
     modules.push("");
     let source = stubs[key] ?? readFileSync(key, "utf8");
-    if (/\.tsx?$/.test(key)) source = ts.transpileModule(source, { fileName: key, compilerOptions: {
+    const needsCommonJsTranspile = /\.tsx?$/.test(key)
+      || (/\.m?js$/.test(key) && /^(?:import|export)\b/m.test(source));
+    if (needsCommonJsTranspile) source = ts.transpileModule(source, { fileName: key, compilerOptions: {
       jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
       esModuleInterop: true,
     }}).outputText;

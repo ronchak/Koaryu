@@ -4635,5 +4635,20 @@
       ],
       "pull_requests": []
     }
+  ],
+  "program_findings": [
+    {
+      "id": "PROGRAM-SECURITY-01",
+      "title": "Frontend runtime dependency audit blocks current release candidates",
+      "track": "Astra",
+      "disposition": "fixed",
+      "reason": "Current main locks Next16.2.12 and Sharp0.35.3, affected by maintainer RCE/libheif advisories. PR162 CI reproduces the high/critical audit failure; a separately reviewed dependency update must land before invoice remediation can merge. No exploitation or Windows-hosting claim.",
+      "source_paths": [
+        "frontend/package.json",
+        "frontend/package-lock.json"
+      ],
+      "verification": "Candidate against main9988c62: selected Next/eslint-config-next16.3.3 and Sharp0.35.4; clean install, unchanged high-threshold audit and native PNG/WebP processing pass with libheif1.23.2. Fullfrontend921PASS, lint0errors/1unchanged-code warning, productionbuildPASS. Fresh independent review GREEN; final commit binding, exact-headCI and guardedmerge pending. No productiondeployment. See docs/remediation/framework-security.md.",
+      "pull_requests": []
+    }
   ]
 }
