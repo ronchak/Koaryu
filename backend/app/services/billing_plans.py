@@ -15,6 +15,7 @@ from app.schemas.billing import (
 from app.services.billing_invoice_projection import _stripe_id
 from app.services.billing_plan_sync import BillingPlanSyncWorkflow
 from app.services.stripe_service import StripeService
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
 class BillingPlanManager:
@@ -53,62 +54,53 @@ class BillingPlanManager:
         return [self._plan_response(row, account) for row in (result.data or [])]
 
     async def create_plan(self, data: BillingPlanCreate, studio_id: str, actor_id: str) -> BillingPlanResponse:
-        self._ensure_programs_in_studio(studio_id, data.program_ids)
+        return self._write_plan(data, studio_id, actor_id, plan_id=None)
+
+    async def update_plan(self, plan_id: str, data: BillingPlanUpdate, studio_id: str, actor_id: str) -> BillingPlanResponse:
+        if not plan_id:
+            raise HTTPException(status_code=404, detail="Billing plan not found.")
+        return self._write_plan(data, studio_id, actor_id, plan_id=plan_id)
+
+    def _write_plan(
+        self,
+        data: BillingPlanCreate | BillingPlanUpdate,
+        studio_id: str,
+        actor_id: str,
+        *,
+        plan_id: str | None,
+    ) -> BillingPlanResponse:
+        values = data.model_dump(mode="json", exclude_unset=plan_id is not None, exclude={"program_ids"})
+        if "name" in values:
+            values["name"] = " ".join(values["name"].split())
+            if not values["name"]:
+                raise HTTPException(status_code=400, detail="Billing plan name is required.")
         account = self._connect_accounts().ensure_row(studio_id)
-        plan_row = data.model_dump(exclude={"program_ids"})
-        plan_row["studio_id"] = studio_id
-        plan_row["name"] = " ".join(data.name.strip().split())
-        plan_row["status"] = "pending"
-        if not plan_row["name"]:
-            raise HTTPException(status_code=400, detail="Billing plan name is required.")
         try:
-            result = self.supabase.table("billing_plans").insert(plan_row).execute()
+            result = execute_required_rpc(self.supabase, "write_billing_plan_v1", {
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_plan_id": plan_id,
+                "p_values": values,
+                "p_program_ids": data.program_ids,
+            })
         except PostgrestAPIError as exc:
             if exc.code == "23505":
                 raise HTTPException(status_code=409, detail="A billing plan with this name already exists.") from exc
+            rejection = {
+                ("P0002", "billing_plan_not_found"): (404, "Billing plan not found."),
+                ("P0002", "billing_plan_program_not_found"): (404, "One or more programs were not found in this studio."),
+                ("22023", "billing_plan_invalid_request"): (400, "Invalid billing plan request."),
+                ("22023", "billing_plan_requires_usd"): (400, "New tuition plan definitions must use USD."),
+                ("42501", "billing_plan_actor_not_active"): (403, "Only studio admins can manage billing setup."),
+            }.get((exc.code, exc.message))
+            if rejection:
+                raise HTTPException(status_code=rejection[0], detail=rejection[1]) from exc
             raise
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to create billing plan.")
-        plan = result.data[0]
-        self._replace_plan_programs(studio_id, plan["id"], data.program_ids)
-        self._audit(studio_id, actor_id, "billing.plan_created", plan["id"], {"name": plan["name"], "program_ids": data.program_ids})
-        return self._plan_response(plan, account)
-
-    async def update_plan(self, plan_id: str, data: BillingPlanUpdate, studio_id: str, actor_id: str) -> BillingPlanResponse:
-        current = self._get_row_or_404("billing_plans", plan_id, studio_id, "Billing plan not found.")
-        update = data.model_dump(exclude_unset=True, exclude={"program_ids"})
-        if "name" in update and update["name"]:
-            update["name"] = " ".join(update["name"].strip().split())
-        if "currency" in update and update["currency"]:
-            update["currency"] = update["currency"].lower()
-        account = self._connect_accounts().ensure_row(studio_id)
-        provider_fields_changed = any(
-            key in update
-            for key in ("amount_cents", "currency", "billing_interval", "name", "description")
-        )
-        if provider_fields_changed and current.get("status") != "archived":
-            update["status"] = "pending"
-        if update:
-            try:
-                result = (
-                    self.supabase.table("billing_plans")
-                    .update(update)
-                    .eq("id", plan_id)
-                    .eq("studio_id", studio_id)
-                    .execute()
-                )
-            except PostgrestAPIError as exc:
-                if exc.code == "23505":
-                    raise HTTPException(status_code=409, detail="A billing plan with this name already exists.") from exc
-                raise
-            if not result.data:
-                raise HTTPException(status_code=404, detail="Billing plan not found.")
-            current = result.data[0]
-        if data.program_ids is not None:
-            self._ensure_programs_in_studio(studio_id, data.program_ids)
-            self._replace_plan_programs(studio_id, plan_id, data.program_ids)
-        self._audit(studio_id, actor_id, "billing.plan_updated", plan_id, {"changes": update, "program_ids": data.program_ids})
-        return self._plan_response(current, account)
+        saved = first_rpc_row(result)
+        if not saved or not isinstance(saved.get("plan"), dict) or not isinstance(saved.get("programs"), list):
+            raise HTTPException(status_code=500, detail="Billing plan save confirmation is unavailable.")
+        programs = [BillingPlanProgramResponse.model_validate(program) for program in saved["programs"]]
+        return self._plan_response(saved["plan"], account, programs=programs)
 
     async def sync_plan(
         self,
@@ -270,8 +262,15 @@ class BillingPlanManager:
             return {"interval": "week", "interval_count": 2}, 2
         return {"interval": "month", "interval_count": 1}, 1
 
-    def _plan_response(self, row: dict[str, Any], account: dict[str, Any]) -> BillingPlanResponse:
-        programs = self._programs_for_plan(row["studio_id"], row["id"])
+    def _plan_response(
+        self,
+        row: dict[str, Any],
+        account: dict[str, Any],
+        *,
+        programs: list[BillingPlanProgramResponse] | None = None,
+    ) -> BillingPlanResponse:
+        if programs is None:
+            programs = self._programs_for_plan(row["studio_id"], row["id"])
         can_accept = bool(account.get("charges_enabled")) and row.get("status") == "active" and bool(row.get("stripe_price_id"))
         pending_reason = None
         if not account.get("charges_enabled"):
@@ -306,21 +305,3 @@ class BillingPlanManager:
                 program_color_hex=program.get("color_hex"),
             ))
         return programs
-
-    def _replace_plan_programs(self, studio_id: str, plan_id: str, program_ids: list[str]) -> None:
-        self.supabase.table("billing_plan_programs").delete().eq("studio_id", studio_id).eq("billing_plan_id", plan_id).execute()
-        rows = [
-            {"studio_id": studio_id, "billing_plan_id": plan_id, "program_id": program_id}
-            for program_id in dict.fromkeys(program_ids)
-        ]
-        if rows:
-            self.supabase.table("billing_plan_programs").insert(rows).execute()
-
-    def _ensure_programs_in_studio(self, studio_id: str, program_ids: list[str]) -> None:
-        unique_ids = list(dict.fromkeys(program_ids))
-        if not unique_ids:
-            return
-        result = self.supabase.table("programs").select("id").eq("studio_id", studio_id).in_("id", unique_ids).execute()
-        found = {row["id"] for row in (result.data or [])}
-        if found != set(unique_ids):
-            raise HTTPException(status_code=404, detail="One or more programs were not found in this studio.")

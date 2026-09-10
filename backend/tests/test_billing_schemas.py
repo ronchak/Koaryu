@@ -104,6 +104,39 @@ class BillingPaymentResponseTest(unittest.TestCase):
 
 
 class BillingRequestSchemaTest(unittest.TestCase):
+    def test_plan_update_preserves_omission_null_and_values(self):
+        self.assertEqual(BillingPlanUpdate().model_dump(exclude_unset=True), {})
+        cases = (
+            ("name", "Core", False),
+            ("amount_cents", 0, False),
+            ("currency", "usd", False),
+            ("billing_interval", "weekly", False),
+            ("signup_fee_cents", 0, False),
+            ("trial_days", 0, False),
+            ("proration_behavior", "next_cycle", False),
+            ("description", "Membership", True),
+            ("freeze_behavior", "pause", True),
+            ("cancellation_policy", "Notice required", True),
+            ("tax_behavior", "inclusive", True),
+            ("program_ids", ["program_1", "program_1"], True),
+        )
+        for field, value, nullable in cases:
+            with self.subTest(field=field):
+                payload = {field: value}
+                self.assertEqual(BillingPlanUpdate(**payload).model_dump(exclude_unset=True), payload)
+                if nullable:
+                    self.assertEqual(
+                        BillingPlanUpdate(**{field: None}).model_dump(exclude_unset=True),
+                        {field: None},
+                    )
+                else:
+                    with self.assertRaises(ValidationError):
+                        BillingPlanUpdate(**{field: None})
+        self.assertEqual(
+            BillingPlanUpdate(program_ids=[]).model_dump(exclude_unset=True),
+            {"program_ids": []},
+        )
+
     def test_connect_onboarding_request_rejects_checkout_fields(self):
         with self.assertRaises(ValidationError) as context:
             ConnectOnboardingLinkRequest(success_url="https://app.koaryu.test/billing")

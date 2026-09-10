@@ -436,15 +436,15 @@ export interface ApiBillingPlanResponse {
 }
 
 export interface ApiBillingPlanUpdate {
-  name?: string | null;
+  name?: string;
   description?: string | null;
-  amount_cents?: number | null;
-  currency?: string | null;
-  billing_interval?: "weekly" | "biweekly" | "monthly" | "annual" | "paid_in_full" | "fixed_term" | "trial" | null;
+  amount_cents?: number;
+  currency?: string;
+  billing_interval?: "weekly" | "biweekly" | "monthly" | "annual" | "paid_in_full" | "fixed_term" | "trial";
   program_ids?: string[] | null;
-  signup_fee_cents?: number | null;
-  trial_days?: number | null;
-  proration_behavior?: string | null;
+  signup_fee_cents?: number;
+  trial_days?: number;
+  proration_behavior?: string;
   freeze_behavior?: string | null;
   cancellation_policy?: string | null;
   tax_behavior?: string | null;

@@ -533,12 +533,6 @@ class BillingPrivateFacadeMixin:
     def _programs_for_plan(self, studio_id: str, plan_id: str) -> list[BillingPlanProgramResponse]:
         return BillingPlanManager(self, stripe_service_cls=self._billing_stripe_service_cls())._programs_for_plan(studio_id, plan_id)
 
-    def _replace_plan_programs(self, studio_id: str, plan_id: str, program_ids: list[str]) -> None:
-        BillingPlanManager(self, stripe_service_cls=self._billing_stripe_service_cls())._replace_plan_programs(studio_id, plan_id, program_ids)
-
-    def _ensure_programs_in_studio(self, studio_id: str, program_ids: list[str]) -> None:
-        BillingPlanManager(self, stripe_service_cls=self._billing_stripe_service_cls())._ensure_programs_in_studio(studio_id, program_ids)
-
     def _ensure_record_in_studio(self, table: str, record_id: str, studio_id: str, detail: str) -> None:
         result = self.supabase.table(table).select("id").eq("id", record_id).eq("studio_id", studio_id).limit(1).execute()
         if not result.data:
