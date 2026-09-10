@@ -6024,7 +6024,7 @@
       "reason": "PR172 replaces forwarding/key-format and external capability source assertions with mounted real-page behavior for loss, remount, storage faults, confirmation, refresh and session ownership. Original refund coverage remains.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "0abd5b57e7edbc81602921bf5d8023717d4d988d",
+      "verified_against": "09e1674b168c0d94fc5a4f35653e22bb153c0de5",
       "verification": "See external-payment-recovery-verification.md for behavioral, real PostgreSQL, restore, test-reduction and review evidence; final-head release CI and guarded merge govern landing.",
       "source_paths": [
         "frontend/tests/billing-report-actions.test.mjs",
@@ -6057,7 +6057,7 @@
       "current_evidence": [
         {
           "path": "frontend/src/lib/billing-report-actions.ts",
-          "line": 151,
+          "line": 152,
           "observation": "Durable attempt is retained before posting; matching confirmation precedes retirement; stale-owner completion cannot settle it."
         },
         {
@@ -9382,7 +9382,7 @@
       "reason": "PR172 retains and verifies the exact normalized payload, note and request key in staff/studio-scoped browser storage before POST. Pending fields stay pinned through failure and remount; only matching confirmation retires the attempt. Identity changes cannot settle another owner or replace its action.",
       "audit_importance": "high",
       "evidence_role": "observation",
-      "verified_against": "0abd5b57e7edbc81602921bf5d8023717d4d988d",
+      "verified_against": "09e1674b168c0d94fc5a4f35653e22bb153c0de5",
       "verification": "See external-payment-recovery-verification.md for behavioral, real PostgreSQL, restore, test-reduction and review evidence; final-head release CI and guarded merge govern landing.",
       "source_paths": [
         "frontend/src/lib/billing-report-actions.ts",
@@ -9420,7 +9420,7 @@
       "current_evidence": [
         {
           "path": "frontend/src/lib/billing-report-actions.ts",
-          "line": 151,
+          "line": 152,
           "observation": "Durable attempt is retained before posting; matching confirmation precedes retirement; stale-owner completion cannot settle it."
         },
         {
