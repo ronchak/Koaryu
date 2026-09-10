@@ -17,6 +17,8 @@ describe("records workspace policies", () => {
     const controller = await source("../src/lib/leads-page-controller.ts");
 
     assert.match(add, /activeStaff\.map/);
+    assert.match(add, /<select[\s\S]*name="assigned_staff_id"[\s\S]*activeStaff\.map/);
+    assert.match(add, /assigned_staff_id:\s*\(formData\.get\("assigned_staff_id"\)/);
     assert.match(detail, /currentAssignedStaff\.status !== "active"/);
     assert.match(detail, /\$\{member\.status\}/);
     assert.match(detail, /ref=\{inspectorRef\}/);
@@ -30,14 +32,19 @@ describe("records workspace policies", () => {
   it("keeps loading and failure announcements singular", async () => {
     const leads = await source("../src/components/leads/lead-pipeline-board.tsx");
     const loading = await source("../src/components/records/records-loading.tsx");
+    const mapping = await source("../src/components/students/student-import-mapping-step.tsx");
     const leadErrorState = leads.slice(
       leads.indexOf("export function LeadLedgerLoadError"),
       leads.indexOf("export function LeadPipelineBoard"),
     );
+    const resetStart = mapping.lastIndexOf("<button", mapping.indexOf("onClick={onReset}"));
+    const resetControl = mapping.slice(resetStart, mapping.indexOf("</button>", resetStart));
 
     assert.doesNotMatch(leadErrorState, /LeadLedgerIntroLoading/);
+    assert.match(leadErrorState, /role="alert"[\s\S]*\{error\}[\s\S]*<Button[\s\S]*onClick=\{onRetry\}/);
     assert.equal((loading.match(/role="status"/g) ?? []).length, 1);
     assert.equal((loading.match(/aria-live="polite"/g) ?? []).length, 1);
+    assert.match(resetControl, /aria-label="[^"]+"/);
   });
 
   it("keeps belt tabs and progress accessible", async () => {
@@ -67,7 +74,7 @@ describe("records workspace policies", () => {
 
     for (const styles of stylesheets) {
       assert.match(styles, /button(?:,| \{)[\s\S]*min-width: 45px;[^}]*min-height: 45px/);
-      assert.match(styles, /label:has\(input:is\(\[type="checkbox"\], \[type="radio"\]\)\)[\s\S]*min-width: 45px;[^}]*min-height: 45px/);
+      assert.match(styles, /label:has\(input:is\(\[type="checkbox"\], \[type="radio"\]\)\)[\s\S]*display: flex;[^}]*min-width: 45px;[^}]*min-height: 45px/);
       assert.match(styles, /:focus-visible[\s\S]*outline: 2px solid var\(--product-focus\)/);
       assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
       assert.match(styles, /@media print/);

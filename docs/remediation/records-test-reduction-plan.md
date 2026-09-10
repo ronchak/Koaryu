@@ -13,17 +13,17 @@ history data.
 The reduced file keeps five narrow policies that existing behavior suites do not
 cover directly: no promotion-history or lead-deletion controls, active-assignee and
 inactive-current-assignee presentation, lead inspector focus and Escape handling,
-singular loading announcements, belt tab and progress semantics, and shared touch,
-focus, motion, and print CSS requirements. It adds no mounted fixture or production
-test API.
+assigned-staff submission, recoverable loading errors, the CSV reset control's
+accessible name, belt tab and progress semantics, and shared touch, focus, motion,
+and print CSS requirements. It adds no mounted fixture or production test API.
 
 ## Accounting
 
 | Measure | Before | After | Change |
 | --- | ---: | ---: | ---: |
-| Lines | 261 | 76 | -185 |
+| Lines | 261 | 83 | -178 |
 | Cases | 12 | 5 | -7 |
-| Assertion statements | 136 | 26 | -110 |
+| Assertion statements | 136 | 30 | -106 |
 
 Deleted cases covered roster source shape, import stage and copy spelling,
 progression and lead layout vocabulary, Belt notice and sticky geometry, folio and
@@ -47,4 +47,4 @@ accessibility policies; they do not claim mounted interaction, geometry, route
 readiness, or complete mutation coverage. Later owning UI work may replace a retained
 policy with behavior coverage without adding a parallel test framework.
 
-A fresh independent Astra reviewer checked the immutable patch in a separate read-only CLI task because native reviewer creation had reached its limit. It identified missing inspector ref/opener wiring and inactive-status presentation guards; those three guards are retained. Root then removed the decorative separator requirement while independently verifying that removing the dynamic status still fails the guard. Root passed all five final policy cases; the reviewer also passed them after the correction. Final-head review binding and CI remain required before guarded merge.
+A fresh independent Astra reviewer checked the immutable patch in a separate read-only CLI task because native reviewer creation had reached its limit. Its retained-contract review restored inspector ref/opener wiring, dynamic inactive-status presentation, positive error and retry UI, label display mode, assigned-staff select-to-payload wiring, and a nonempty accessible name on the icon-only CSV reset. The checks avoid pinning decorative copy. Final-head review binding and CI remain required before guarded merge.

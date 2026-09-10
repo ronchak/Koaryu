@@ -6427,7 +6427,7 @@
           "pull_request": 177,
           "verified_against": "abf674545b6229981179ba4e4464ad0653c51eb2",
           "path": "frontend/tests/records-workspace-contract.test.mjs",
-          "observation": "261 to76 lines, twelve tofive cases and136 to26 assertions; no new fixture or production change. Focus/status wiring guards remain, with the dynamic status value checked independently of separator copy."
+          "observation": "261 to83 lines, twelve tofive cases and136 to30 assertions; no new fixture or production change. Retained guards cover recovery UI, inspector focus return, inactive-assignee status, assigned-staff submission, label display mode and icon-only CSV reset naming without pinning decorative copy."
         }
       ]
     },
