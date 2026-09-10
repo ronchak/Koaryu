@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
+  "last_reconciled_main": "6901f715bd7edd1ea27a8a3d626f66757590f212",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -142,17 +142,19 @@
       "id": "CTA1-08",
       "title": "Framework lint and runtime patch versions have drifted despite the stated alignment rule",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "deferred_intentionally",
-      "reason": "Same-minor lint/runtime patch mismatch has no verified incompatibility; align at the next justified dependency update.",
+      "disposition": "resolved_indirectly",
+      "reason": "The justified security dependency update in PR163 aligns both locked Next.js and eslint-config-next at16.3.3. The original deliberate deferral is no longer needed.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "6901f715bd7edd1ea27a8a3d626f66757590f212",
+      "verification": "Verified exact resolved versions and package declarations on mergedmain6901f71. Fullfrontend921 tests, lint/build/audit and exact-head release CI passed. Application code and alignment guidance were not changed.",
       "source_paths": [
         "frontend/AGENTS.md",
         "frontend/package-lock.json"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        163
+      ]
     },
     {
       "id": "CTA1-09",
@@ -326,8 +328,8 @@
       "reason": "One transactional SQL owner validates the effective command before returning a prior receipt. Changed actor, target, notes, kind or explicit context conflicts instead of reporting the earlier operation as success.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
-      "verification": "Candidate implementation and independent reviews complete; 135 migrations/50 contracts, real legacy upgrade and logical restores, five observed lock races, 16 raw drift negatives, full backend/frontend suites and 130 release-workflow tests pass. See docs/remediation/rank-history-verification.md. Exact-head CI and guarded merge remain required; no hosted apply or deployment.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "PR161 merged after independent committed-head review and all exact-head CI passed on9196e0d. Full135-migration/50-contract suite, genuine legacy/restores, five observed rank races,16raw negatives and all application checks pass. Implementation bot review completed without findings; documentation-only rerun hit usage cap. Guarded merge verified production auto-deploy off twice. No hosted apply or deployment. See docs/remediation/rank-history-verification.md.",
       "source_paths": [
         "backend/app/services/belt_promotions.py"
       ],
@@ -535,8 +537,8 @@
       "reason": "Establishing one transactional rank-command owner removed the duplicated Python promotion/demotion identity, context and adjacency state machines and their unused delegate.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
-      "verification": "Candidate implementation and independent reviews complete; 135 migrations/50 contracts, real legacy upgrade and logical restores, five observed lock races, 16 raw drift negatives, full backend/frontend suites and 130 release-workflow tests pass. See docs/remediation/rank-history-verification.md. Exact-head CI and guarded merge remain required; no hosted apply or deployment.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "PR161 merged after independent committed-head review and all exact-head CI passed on9196e0d. Full135-migration/50-contract suite, genuine legacy/restores, five observed rank races,16raw negatives and all application checks pass. Implementation bot review completed without findings; documentation-only rerun hit usage cap. Guarded merge verified production auto-deploy off twice. No hosted apply or deployment. See docs/remediation/rank-history-verification.md.",
       "source_paths": [
         "backend/app/services/belt_promotions.py"
       ],
@@ -832,16 +834,18 @@
       "id": "BB1-07",
       "title": "Invoice closeout marks completion before its last required local work",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "PR162 gives create/retry one local closeout owner: audit, required payer-balance RPC and response validation precede completion; completed replay repairs local facts without another provider mutation. V41 locks the scoped payer before a separate current invoice SUM, removing the stale split-update race. Saved projected and completed create receipts permit later invoice progress while initial projection stays strict; the exact prior workflow fails the reused paid/void recovery cases.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Candidate against main9988c62: final full backend 1897 tests plus5450 subtests; focused invoice290 plus15; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
       "source_paths": [
         "backend/app/services/billing_invoice_operations.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        162
+      ]
     },
     {
       "id": "BB1-08",
@@ -1254,11 +1258,11 @@
       "title": "Old rollout states are compared with readiness lists containing future migrations",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Still applies after PR161: head-bounded recent pending lists preserve historical exports, but the audited count100\u2013108 negative offsets still include future migrations. Keep a separate historical-inspection correction with independently verified predecessor tuples.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected source and exact audit entry re-evaluated after the rank-history merge. Remaining scope is recorded here; no additional closure or hosted execution claimed.",
       "source_paths": [
         "scripts/studio-comp-migration-rollout.mjs",
         "supabase/migrations/20260801131844_finalize_release_database_attestation_v7.sql",
@@ -1271,11 +1275,11 @@
       "title": "Release-state knowledge is repeated across constants, validators, packet selection and tests",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Partly reduced by PR161: independent golden migration suffix and named test boundaries remove repeated arrays. Runtime release-state mappings and catalog/orchestration ownership remain pending; exact attestations are necessary safeguards.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected source and exact audit entry re-evaluated after the rank-history merge. Remaining scope is recorded here; no additional closure or hosted execution claimed.",
       "source_paths": [
         "scripts/studio-comp-migration-rollout.mjs",
         "scripts/studio-comp-migration-rollout.test.mjs"
@@ -1287,11 +1291,11 @@
       "title": "A current-state inspection makes 29 sequential Supabase CLI queries",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Still pending after PR161. Raw rank attestation adds current evidence queries; the scalar remote collector has not been consolidated into a consistent read snapshot.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected source and exact audit entry re-evaluated after the rank-history merge. Remaining scope is recorded here; no additional closure or hosted execution claimed.",
       "source_paths": [
         "scripts/studio-comp-migration-rollout.mjs",
         "scripts/studio-comp-migration-rollout.test.mjs"
@@ -1303,11 +1307,11 @@
       "title": "Malformed query output is reported as a connectivity problem",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Still pending after PR161. Query parser failures retain the existing generic acquisition/connectivity classification.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected source and exact audit entry re-evaluated after the rank-history merge. Remaining scope is recorded here; no additional closure or hosted execution claimed.",
       "source_paths": [
         "scripts/studio-comp-migration-rollout.mjs",
         "scripts/studio-comp-migration-rollout.test.mjs"
@@ -1352,11 +1356,11 @@
       "title": "Restore verification rewrites a shell program at its final PASS message",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Still pending after PR161. The new Python restore utility does not replace the older V30/V31 shell-rewriting restore procedure.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected source and exact audit entry re-evaluated after the rank-history merge. Remaining scope is recorded here; no additional closure or hosted execution claimed.",
       "source_paths": [
         "scripts/verify-supabase-contracts-local.sh",
         "scripts/verify-v30-v31-restore-contract.sh"
@@ -1400,11 +1404,11 @@
       "title": "V33 race checks assume the first transaction wins after a fixed sleep",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Still pending after PR161. New rank races observe actual lock blockers, but older V33 fixed-delay race checks were not changed.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected source and exact audit entry re-evaluated after the rank-history merge. Remaining scope is recorded here; no additional closure or hosted execution claimed.",
       "source_paths": [
         "scripts/verify-supabase-contracts-local.sh",
         "scripts/verify-student-profile-rank-plan-concurrency.sh",
@@ -1417,11 +1421,11 @@
       "title": "Report golden files preserve inconsistent attendance and belt-credit rules",
       "cluster": "business_dates_and_metrics",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Still pending after PR161. Rank-command fake algorithms were removed, but report golden attendance/belt-credit semantics remain unchanged.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected source and exact audit entry re-evaluated after the rank-history merge. Remaining scope is recorded here; no additional closure or hosted execution claimed.",
       "source_paths": [
         "backend/tests/fixtures/report_exports/intelligence_fixture.json",
         "backend/tests/fixtures/report_exports/intelligence_expected_csv.json",
@@ -1470,11 +1474,11 @@
       "title": "Shared table fake returns columns that were never selected",
       "cluster": "test_and_adapter_maintenance",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Still pending after PR161. Removing rank-transition fake algorithms does not correct select-column behavior in the remaining shared fake.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected source and exact audit entry re-evaluated after the rank-history merge. Remaining scope is recorded here; no additional closure or hosted execution claimed.",
       "source_paths": [
         "backend/tests/fakes/supabase.py",
         "backend/tests/test_belt_service.py"
@@ -1504,8 +1508,8 @@
       "reason": "Replaced permissive replay tests and copied SQL algorithms with narrow API adapter/error tests, actual PostgreSQL changed-command and legacy cases, and deterministic two-session concurrency proof.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
-      "verification": "Candidate implementation and independent reviews complete; 135 migrations/50 contracts, real legacy upgrade and logical restores, five observed lock races, 16 raw drift negatives, full backend/frontend suites and 130 release-workflow tests pass. See docs/remediation/rank-history-verification.md. Exact-head CI and guarded merge remain required; no hosted apply or deployment.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "PR161 merged after independent committed-head review and all exact-head CI passed on9196e0d. Full135-migration/50-contract suite, genuine legacy/restores, five observed rank races,16raw negatives and all application checks pass. Implementation bot review completed without findings; documentation-only rerun hit usage cap. Guarded merge verified production auto-deploy off twice. No hosted apply or deployment. See docs/remediation/rank-history-verification.md.",
       "source_paths": [
         "backend/tests/test_belt_service.py"
       ],
@@ -1565,18 +1569,20 @@
       "id": "BT2-01",
       "title": "Invoice recovery tests omit failure after completion but before balance refresh",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "PR162 gives create/retry one local closeout owner: audit, required payer-balance RPC and response validation precede completion; completed replay repairs local facts without another provider mutation. V41 locks the scoped payer before a separate current invoice SUM, removing the stale split-update race. Saved projected and completed create receipts permit later invoice progress while initial projection stays strict; the exact prior workflow fails the reused paid/void recovery cases.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Candidate against main9988c62: final full backend 1897 tests plus5450 subtests; focused invoice290 plus15; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
       "source_paths": [
         "backend/tests/test_billing_invoice_operations.py",
         "backend/tests/test_billing_invoice_lifecycle.py",
         "backend/tests/test_billing_enrollment_activation.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        162
+      ]
     },
     {
       "id": "BT2-02",
@@ -1599,27 +1605,29 @@
       "id": "BT2-03",
       "title": "Expected paid status is accidentally passed as assertEqual failure text",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "Consolidating the canonical-key recovery case replaced the diagnostic-message misuse with two explicit paid-status assertions.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Candidate against main9988c62: final full backend 1897 tests plus5450 subtests; focused invoice290 plus15; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
       "source_paths": [
         "backend/tests/test_billing_invoice_lifecycle.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        162
+      ]
     },
     {
       "id": "BT2-04",
       "title": "Historical test names and fixtures no longer match the scenarios asserted",
       "cluster": "test_and_adapter_maintenance",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Partially reduced by invoice-closeout test consolidation: canonical-key and fake-step evidence names now match their assertions. Other aged-operation, enrollment, refund/dispute and payer-generation cases remain pending.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected audit entry and current tests reviewed. Distinct assertions retained; no claim that the entire stale-fixture family is repaired.",
       "source_paths": [
         "backend/tests/test_billing_invoice_lifecycle.py",
         "backend/tests/test_billing_payers.py"
@@ -1650,32 +1658,36 @@
       "id": "BT2-06",
       "title": "Source-text assertion duplicates stronger behavioral tests and blocks harmless refactors",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "Removed the source-name allowlist assertion and unused inspect import; retained the stronger availability/error/recovery behavior matrices.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Candidate against main9988c62: final full backend 1897 tests plus5450 subtests; focused invoice290 plus15; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
       "source_paths": [
         "backend/tests/test_billing_invoice_operations.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        162
+      ]
     },
     {
       "id": "BT2-07",
       "title": "Unused fake error classifier references a nonexistent exception class",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "disposition": "fixed",
+      "reason": "Removed the unused fake error classifier referencing undefined _CardDecline. Production still uses its own tested Stripe error classifier.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Candidate against main9988c62: final full backend 1897 tests plus5450 subtests; focused invoice290 plus15; local target refusal3; releaseworkflow130; API contracts unchanged. Full disposable PostgreSQL17 run passed136 migrations/51 contracts, actual canonical/restored upgrades, raw drift and observed concurrency. One-time wrong-order mutants fail as intended. Fresh independent review GREEN LIGHT; final commit binding, exact-head CI and guarded merge pending. See docs/remediation/invoice-closeout-verification.md. No deployment or historical financial backfill.",
       "source_paths": [
         "backend/tests/test_billing_invoice_operations.py",
         "backend/app/services/billing_invoice_operations.py"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        162
+      ]
     },
     {
       "id": "BT2-08",
@@ -2100,11 +2112,11 @@
       "title": "The recovery runbook still recommends an incomplete, inconsistent backup method",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Still applies after PR161. The active recovery runbook retains separate filtered CLI dumps and a hosted restore recipe, conflicting with the complete-snapshot guarded backup owner. Local V39/V40 restore proof does not repair these instructions or certify production recovery.",
       "audit_importance": "high",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected source and exact audit entry re-evaluated after the rank-history merge. Remaining scope is recorded here; no additional closure or hosted execution claimed.",
       "source_paths": [
         "docs/staging-recovery-runbook.md",
         "docs/production-postgres-image-patch.md",
@@ -2117,11 +2129,11 @@
       "title": "Release guides disagree on the schema and approval needed to deploy",
       "cluster": "release_and_evidence",
       "disposition": "pending",
-      "reason": "The assurance PR corrects the stale staging-inactive statement. Release-version and approval contradictions in the other guides remain pending.",
+      "reason": "Partly reduced after PR161: services, cutover and current readiness agree on135/V40. Other current-looking release guides and operator inventory retain older requirements; dated historical evidence must remain distinct.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "Affected source and exact audit entry re-evaluated after the rank-history merge. Remaining scope is recorded here; no additional closure or hosted execution claimed.",
       "source_paths": [
         "docs/release-candidate-controls.md",
         "docs/render-backend-deployment.md",
@@ -2408,17 +2420,19 @@
       "title": "Browser fixture infrastructure is duplicated and difficult to review",
       "cluster": "test_and_adapter_maintenance",
       "disposition": "pending",
-      "reason": "Unchanged audited source; verify the owning behavior and affected contracts before its coherent remediation PR.",
+      "reason": "Still pending: PR163 makes the existing browser packer handle the new SWC ESM helper, but does not consolidate duplicated fixture infrastructure or establish clearer ownership across the wider harness set.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-      "verification": "Audit source hashes match current main; static primary verification retained. Runtime verification pending.",
+      "verified_against": "6901f715bd7edd1ea27a8a3d626f66757590f212",
+      "verification": "The unchanged schedule behavior case failed before packer transpilation and passes afterward; fullfrontend921 and exact-headCI passed. This is a narrow compatibility correction, not completion of the broader fixture-maintenance recommendation.",
       "source_paths": [
         "frontend/tests/billing-data-mounted.test.mjs",
         "frontend/tests/helpers/store-browser-harness.mjs",
         "frontend/tests/billing-enrollment-transition-model.test.mjs"
       ],
-      "pull_requests": []
+      "pull_requests": [
+        163
+      ]
     },
     {
       "id": "FT1-08",
@@ -4151,8 +4165,8 @@
       "reason": "History updates retain the original four rank-name/color snapshots, including after renaming and actual actor or single-rank FK nulling.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
-      "verification": "Candidate implementation and independent reviews complete; 135 migrations/50 contracts, real legacy upgrade and logical restores, five observed lock races, 16 raw drift negatives, full backend/frontend suites and 130 release-workflow tests pass. See docs/remediation/rank-history-verification.md. Exact-head CI and guarded merge remain required; no hosted apply or deployment.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "PR161 merged after independent committed-head review and all exact-head CI passed on9196e0d. Full135-migration/50-contract suite, genuine legacy/restores, five observed rank races,16raw negatives and all application checks pass. Implementation bot review completed without findings; documentation-only rerun hit usage cap. Guarded merge verified production auto-deploy off twice. No hosted apply or deployment. See docs/remediation/rank-history-verification.md.",
       "source_paths": [
         "supabase/migrations/20260814170000_preserve_retained_student_membership_ranks.sql",
         "supabase/migrations/20260520041120_harden_account_deletion_user_fks.sql"
@@ -4189,8 +4203,8 @@
       "reason": "New receipts retain immutable versioned command evidence independent of nullable history relationships. Genuine legacy receipts use conservative intact identity and, where required, complete transaction-audit proof. Intentional history deletion still deletes receipts.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "b5ec8fff6ef3b4a7011212e3b942fdf01f6586d2",
-      "verification": "Candidate implementation and independent reviews complete; 135 migrations/50 contracts, real legacy upgrade and logical restores, five observed lock races, 16 raw drift negatives, full backend/frontend suites and 130 release-workflow tests pass. See docs/remediation/rank-history-verification.md. Exact-head CI and guarded merge remain required; no hosted apply or deployment.",
+      "verified_against": "9988c6265c04ab6621dda4c468de6d21af143bc4",
+      "verification": "PR161 merged after independent committed-head review and all exact-head CI passed on9196e0d. Full135-migration/50-contract suite, genuine legacy/restores, five observed rank races,16raw negatives and all application checks pass. Implementation bot review completed without findings; documentation-only rerun hit usage cap. Guarded merge verified production auto-deploy off twice. No hosted apply or deployment. See docs/remediation/rank-history-verification.md.",
       "source_paths": [
         "supabase/migrations/20260814213000_lock_core_trial_decision_to_reservation.sql",
         "supabase/migrations/20260814170000_preserve_retained_student_membership_ranks.sql",
@@ -4647,8 +4661,11 @@
         "frontend/package.json",
         "frontend/package-lock.json"
       ],
-      "verification": "Candidate against main9988c62: selected Next/eslint-config-next16.3.3 and Sharp0.35.4; clean install, unchanged high-threshold audit and native PNG/WebP processing pass with libheif1.23.2. Fullfrontend921PASS, lint0errors/1unchanged-code warning, productionbuildPASS. Fresh independent review GREEN; final commit binding, exact-headCI and guardedmerge pending. No productiondeployment. See docs/remediation/framework-security.md.",
-      "pull_requests": []
+      "verification": "MergedPR163 at6901f71. Next/eslint16.3.3 and Sharp0.35.4; clean install, unchanged high-threshold audit, native PNG/WebP processing with libheif1.23.2, frontend921, lint/build and exact-head release CI passed. Fresh independent reviewer bound1fd893f. Guardedmerge read productionRender auto-deploy off twice; no productiondeployment. One existing moderate advisory remains.",
+      "pull_requests": [
+        163
+      ],
+      "verified_against": "6901f715bd7edd1ea27a8a3d626f66757590f212"
     }
   ]
 }

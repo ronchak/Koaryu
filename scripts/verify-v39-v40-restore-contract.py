@@ -219,7 +219,7 @@ def main(arguments):
         "V39_RELEASE_MANIFEST_SQL", "EXPECTED_V39_RELEASE_MANIFEST",
         "V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS",
         "V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS",
-        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
+        "V40_OPERATIONAL_READINESS_SQL", "EXPECTED_V40_OPERATIONAL_READINESS",
         "V40_CATALOG_STATE_SQL", "EXPECTED_V40_RESTORED_CATALOG_STATE",
         "V40_RANK_COMMAND_STATE_SQL", "EXPECTED_V40_RANK_COMMAND_STATE",
         "V40_RELEASE_MANIFEST_SQL", "EXPECTED_V40_RELEASE_MANIFEST",
@@ -244,8 +244,9 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 135 and list(hashes)[-2:] == [
-        "20260908080420_student_membership_preservation_v39.sql", MIGRATION], "Unexpected migration inventory")
+    require(len(hashes) == 136 and list(hashes)[-3:] == [
+        "20260908080420_student_membership_preservation_v39.sql", MIGRATION,
+        "20260908183744_serialize_billing_payer_balance_v41.sql"], "Unexpected migration inventory")
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
     source, restored = f"koaryu_v40_source_{os.getpid()}", f"koaryu_v40_restore_{os.getpid()}"
@@ -284,7 +285,7 @@ def main(arguments):
             f"AND command_membership_id IS NULL AND command_from_rank_id IS NULL) FROM public.promotions WHERE studio_id='{STUDIO}';") == "t",
             "V40 fabricated evidence for legacy receipts")
         checks = [
-            ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
+            ("V40_OPERATIONAL_READINESS_SQL", "EXPECTED_V40_OPERATIONAL_READINESS"),
             ("V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS"),
             ("V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS"),
             ("V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS"),

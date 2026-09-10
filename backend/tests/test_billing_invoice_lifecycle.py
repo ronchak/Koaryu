@@ -80,6 +80,12 @@ def _settled_payment_tables() -> dict[str, list[dict]]:
 
 
 class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
+    def _assert_payer_balance_requested(self, service):
+        self.assertIn(
+            ("recompute_billing_payer_balance_v1", {"p_studio_id": "studio_1", "p_payer_id": "payer_1"}),
+            service.supabase.rpc_calls,
+        )
+
     def test_interval_mapping_for_stripe_prices(self):
         service = self.service()
 
@@ -375,37 +381,6 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             ("studio_1", "invoice.retry", request_key)
         ]
 
-    def test_retry_invoice_payment_reuses_stable_stripe_key_after_lost_response(self):
-        service = self.service()
-        service.supabase = _FakeSupabase(self._retry_operation_tables())
-        _FakeStripeService.invoice_response = {
-            "id": "in_1", "status": "paid", "amount_due": 123,
-            "amount_paid": 123, "amount_remaining": 0, "currency": "usd",
-            "customer": "cus_1",
-            "metadata": {"studio_id": "studio_1", "invoice_id": "invoice_1"},
-        }
-        _FakeStripeService.pay_invoice_error_after_call = TimeoutError(
-            "sensitive provider timeout"
-        )
-
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            with self.assertRaises(HTTPException) as ambiguous:
-                asyncio.run(service.retry_invoice_payment(
-                    "invoice_1", "studio_1", "actor_1", "client-operation-1"
-                ))
-            _FakeStripeService.pay_invoice_error_after_call = None
-            invoice = asyncio.run(service.retry_invoice_payment(
-                "invoice_1", "studio_1", "actor_1", "client-operation-1"
-            ))
-
-        self.assertEqual(ambiguous.exception.status_code, 503)
-        self.assertNotIn("sensitive", ambiguous.exception.detail)
-        self.assertEqual(invoice.status, "paid")
-        self.assertEqual(len(_FakeStripeService.pay_invoice_calls), 1)
-        parent = self._retry_parent(service, "client-operation-1")
-        self.assertEqual(parent["state"], "completed")
-        self.assertEqual(parent["provider_request_attempt_count"], 1)
-        self.assertEqual(parent["provider_object_id"], "in_1")
     def test_retry_invoice_payment_rejects_new_key_for_completed_parent(self):
         service = self.service()
         service.supabase = _FakeSupabase(self._retry_operation_tables())
@@ -427,24 +402,12 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(len(_FakeStripeService.pay_invoice_calls), 1)
         canonical = self._retry_parent(service, "client-operation-1")
         self.assertEqual(canonical["state"], "completed")
-    def test_retry_invoice_payment_replay_does_not_duplicate_audit(self):
-        service = self.service()
-        service.supabase = _FakeSupabase(self._retry_operation_tables())
+        audits = service.supabase.tables["audit_logs"]
+        self.assertEqual(len(audits), 1)
+        self.assertEqual(audits[0]["actor_id"], "actor_1")
+        self.assertEqual(audits[0]["metadata"]["operation_id"], canonical["id"])
+        self._assert_payer_balance_requested(service)
 
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            asyncio.run(service.retry_invoice_payment(
-                "invoice_1", "studio_1", "actor_1", "response-loss-operation"
-            ))
-            asyncio.run(service.retry_invoice_payment(
-                "invoice_1", "studio_1", "actor_1", "response-loss-operation"
-            ))
-
-        self.assertEqual(len(_FakeStripeService.pay_invoice_calls), 1)
-        self.assertEqual(len(service.supabase.tables["audit_logs"]), 1)
-        self.assertEqual(
-            service.supabase.tables["audit_logs"][0]["metadata"]["operation_id"],
-            self._retry_parent(service, "response-loss-operation")["id"],
-        )
     def test_retry_card_decline_is_safe_4xx_and_new_operation_can_retry(self):
         service = self.service()
         service.supabase = _FakeSupabase(self._retry_operation_tables())
@@ -476,7 +439,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             "completed",
         )
         self.assertEqual(len(_FakeStripeService.pay_invoice_calls), 2)
-    def test_new_client_key_reconciles_and_resumes_active_server_operation(self):
+    def test_retry_lost_response_rejects_changed_key_and_recovers_canonical_key(self):
         service = self.service()
         service.supabase = _FakeSupabase(self._retry_operation_tables())
         _FakeStripeService.invoice_response = {
@@ -485,7 +448,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             "customer": "cus_1",
             "metadata": {"studio_id": "studio_1", "invoice_id": "invoice_1"},
         }
-        _FakeStripeService.pay_invoice_error_after_call = TimeoutError("response lost")
+        _FakeStripeService.pay_invoice_error_after_call = TimeoutError("sensitive provider timeout")
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             with self.assertRaises(HTTPException) as ambiguous:
@@ -505,12 +468,22 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             ))
 
         self.assertEqual(ambiguous.exception.status_code, 503)
+        self.assertNotIn("sensitive", ambiguous.exception.detail)
         self.assertEqual(changed_key.exception.status_code, 503)
-        self.assertEqual(paid.status, replay.status, "paid")
+        self.assertEqual(paid.status, "paid")
+        self.assertEqual(replay.status, "paid")
         self.assertEqual(len(_FakeStripeService.pay_invoice_calls), 1)
         canonical = self._retry_parent(service, "blocked-storage-key-1")
         self.assertEqual(canonical["state"], "completed")
         self.assertEqual(len(service.supabase.billing_provider_operation_resources), 1)
+        self.assertEqual(canonical["provider_request_attempt_count"], 1)
+        self.assertEqual(canonical["provider_object_id"], "in_1")
+        audits = service.supabase.tables["audit_logs"]
+        self.assertEqual(len(audits), 1)
+        self.assertEqual(audits[0]["actor_id"], "actor_1")
+        self.assertEqual(audits[0]["metadata"]["operation_id"], canonical["id"])
+        self._assert_payer_balance_requested(service)
+
     def test_aged_ambiguous_operation_never_auto_expires_or_pays_again(self):
         service = self.service()
         old = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
@@ -1229,14 +1202,12 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         payment = service.supabase.tables["billing_payments"][0]
         invoice = service.supabase.tables["billing_invoices"][0]
-        payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payment["status"], "disputed")
         self.assertEqual(invoice["status"], "paid")
         self.assertEqual(invoice["amount_paid_cents"], 200)
         self.assertEqual(invoice["amount_remaining_cents"], 0)
         self.assertIsNotNone(invoice["paid_at"])
-        self.assertEqual(payer["balance_cents"], 0)
-        self.assertEqual(payer["billing_status"], "current")
+        self._assert_payer_balance_requested(service)
 
     def test_succeeded_refund_is_idempotent_and_does_not_regress(self):
         service = self.service()
@@ -1441,7 +1412,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(service.supabase.tables["billing_payments"][0]["status"], "succeeded")
         self.assertEqual(service.supabase.tables["billing_invoices"][0]["amount_remaining_cents"], 0)
 
-    def test_refund_projection_updates_invoice_and_payer_balance(self):
+    def test_refund_projection_preserves_gross_invoice_and_payer_balance(self):
         service = self.service()
         service.supabase = _FakeSupabase({
             "billing_refunds": [],
@@ -1487,7 +1458,6 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         payment = service.supabase.tables["billing_payments"][0]
         invoice = service.supabase.tables["billing_invoices"][0]
-        payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payment["refunded_amount_cents"], 50)
         self.assertEqual(payment["status"], "succeeded")
         self.assertEqual(payment["net_collected_amount_cents"], 150)
@@ -1496,6 +1466,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(invoice["amount_paid_cents"], 200)
         self.assertEqual(invoice["amount_remaining_cents"], 0)
         self.assertEqual(invoice["paid_at"], "2026-05-18T00:00:00Z")
+        payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payer["balance_cents"], 0)
         self.assertEqual(payer["billing_status"], "current")
 
@@ -1545,7 +1516,6 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         payment = service.supabase.tables["billing_payments"][0]
         invoice = service.supabase.tables["billing_invoices"][0]
-        payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payment["status"], "refunded")
         self.assertEqual(payment["refunded_amount_cents"], 200)
         self.assertEqual(payment["net_collected_amount_cents"], 0)
@@ -1554,10 +1524,11 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(invoice["amount_paid_cents"], 200)
         self.assertEqual(invoice["amount_remaining_cents"], 0)
         self.assertEqual(invoice["paid_at"], "2026-05-18T00:00:00Z")
+        payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payer["balance_cents"], 0)
         self.assertEqual(payer["billing_status"], "current")
 
-    def test_dispute_projection_updates_invoice_and_payer_balance(self):
+    def test_dispute_projection_preserves_gross_invoice_and_payer_balance(self):
         service = self.service()
         service.supabase = _FakeSupabase({
             "billing_disputes": [],
@@ -1603,7 +1574,6 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         payment = service.supabase.tables["billing_payments"][0]
         invoice = service.supabase.tables["billing_invoices"][0]
-        payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payment["status"], "disputed")
         self.assertEqual(payment["disputed_amount_cents"], 200)
         self.assertEqual(payment["net_collected_amount_cents"], 0)
@@ -1612,6 +1582,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(invoice["amount_paid_cents"], 200)
         self.assertEqual(invoice["amount_remaining_cents"], 0)
         self.assertEqual(invoice["paid_at"], "2026-05-18T00:00:00Z")
+        payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payer["balance_cents"], 0)
         self.assertEqual(payer["billing_status"], "current")
 

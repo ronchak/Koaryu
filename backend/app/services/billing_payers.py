@@ -23,6 +23,7 @@ from app.services.billing_provider_operations import (
 from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
 from app.services.stripe_mutation_policy import StripeMutationBlocked, configured_stripe_mode
 from app.services.stripe_service import StripeService, StripeTestClockRejected
+from app.services.supabase_rpc import execute_required_rpc
 
 
 PAYER_SYNC_AMBIGUOUS_DETAIL = (
@@ -921,22 +922,7 @@ class BillingPayerManager:
     def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
         if not payer_id:
             return
-        result = (
-            self.supabase.table("billing_invoices")
-            .select("amount_due_cents, amount_paid_cents, amount_remaining_cents, status, external")
-            .eq("studio_id", studio_id)
-            .eq("payer_id", payer_id)
-            .in_("status", ["draft", "open", "uncollectible", "partially_refunded"])
-            .execute()
-        )
-        balance = 0
-        for row in result.data or []:
-            remaining = row.get("amount_remaining_cents")
-            if remaining is None:
-                remaining = max(0, int(row.get("amount_due_cents") or 0) - int(row.get("amount_paid_cents") or 0))
-            balance += max(0, int(remaining or 0))
-        billing_status = "current" if balance == 0 else "past_due"
-        self.supabase.table("billing_payers").update({
-            "balance_cents": balance,
-            "billing_status": billing_status,
-        }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+        execute_required_rpc(self.supabase, "recompute_billing_payer_balance_v1", {
+            "p_studio_id": studio_id,
+            "p_payer_id": payer_id,
+        })

@@ -23,7 +23,8 @@ installed Sharp binary. Reuse existing behavior tests; do not add source-text or
 version-string tests. A fresh independent reviewer receives only this plan and the
 diff. Exact-head release CI and the normal guarded merge remain mandatory.
 
-Status: implementation and local verification complete; final commit review and CI pending. The resolved versions are Next.js
+Status: PR163 merged as 6901f715bd7edd1ea27a8a3d626f66757590f212 after final
+commit review, all exact-head release checks, and guarded merge. The resolved versions are Next.js
 and eslint-config-next 16.3.3, Sharp 0.35.4 and libheif 1.23.2. React 19.2.4 is unchanged.
 The lockfile includes the matching platform binaries and required SWC helper;
 npm also refreshes peer metadata, bundled optional WASM entries and the existing
@@ -33,7 +34,8 @@ baseline-browser-mapping advisory remaining. Native PNG resize/WebP processing
 passes. The full frontend passed 921 tests (two fewer wording/metadata cases). Lint has
 zero errors and one new warning on an unchanged hard-navigation callback; the
 production build passes. Fresh independent source review approves the dependency
-and test deltas. Final commit binding, exact-head CI and guarded merge remain pending.
+and test deltas. Final review bound 1fd893f; exact-head CI passed. The guarded merge read
+production auto-deploy off twice. No production deployment was performed.
 
 The invoice/V41 changes are preserved on their separate branch. This newly found
 release blocker is tracked as PROGRAM-SECURITY-01 outside the 278 imported audit

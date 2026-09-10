@@ -90,8 +90,12 @@ source checks remain. A fixed independent digest and an actual reversed-order
 negative strengthen the retained contracts. Test count is not the acceptance goal.
 
 Independent plan, business SQL, forward migration, adapter, local tooling and
-restore and final cross-system reviews have completed. Exact-head CI and guarded
-merge are still required. Local restore evidence is not production backup evidence;
+restore and final cross-system reviews completed. All exact-head CI passed on
+`9196e0d42ffbfd704b5d6086ab3519186d1a3bb8`; the guarded merge produced
+`9988c6265c04ab6621dda4c468de6d21af143bc4`. Production auto-deploy was off on
+both authenticated readbacks. Automated review completed without findings on the
+implementation commit; its final documentation-only rerun hit the bot usage cap.
+Independent final-commit review approved the unchanged implementation and tracking. Local restore evidence is not production backup evidence;
 operator release/image mappings must be prepared for the actual authorized rollout.
 
 The final diff check reports one deliberate inherited whitespace-only line in the
