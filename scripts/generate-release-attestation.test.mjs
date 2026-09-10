@@ -183,7 +183,7 @@ assert.ok(renderBackendReadiness(history).includes('koaryu_release_schema_prefli
 console.log(JSON.stringify([old,current]));
 `);
     const allowed = fs.realpathSync(temporary);
-    const result = spawnSync(process.execPath, ["--experimental-permission", `--allow-fs-read=${allowed}`, "--input-type=module"],
+    const result = spawnSync(process.execPath, ["--permission", `--allow-fs-read=${allowed}`, "--input-type=module"],
       { input: fs.readFileSync(probe, "utf8"), cwd: allowed, encoding: "utf8", timeout: 10_000, maxBuffer: 1_000_000 });
     assert.equal(result.status, 0, result.stderr);
     const scripts = JSON.parse(result.stdout);
@@ -193,7 +193,7 @@ console.log(JSON.stringify([old,current]));
     assert.equal(syntax.status, 0, syntax.stderr);
     python.cases.v42.checks = ["readiness-v42", "readiness-v41"];
     write("python-restore-schema.json", python);
-    const incomplete = spawnSync(process.execPath, ["--experimental-permission", `--allow-fs-read=${allowed}`, "--input-type=module"],
+    const incomplete = spawnSync(process.execPath, ["--permission", `--allow-fs-read=${allowed}`, "--input-type=module"],
       { input: fs.readFileSync(probe, "utf8"), cwd: allowed, encoding: "utf8", timeout: 10_000 });
     assert.equal(incomplete.status, 1);
     assert.match(incomplete.stderr, /requires explicit canonical\/restored evidence for v42/);
