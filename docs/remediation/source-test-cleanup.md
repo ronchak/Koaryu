@@ -45,3 +45,5 @@ Sol can consolidate low-risk fixtures and presentation portions. Astra owns chan
 | [subscription-required-contract.test.mjs](../../frontend/tests/subscription-required-contract.test.mjs) | Astra | Mount the route with role, membership, capability, and API-response matrices. Record requests, headers, redirects, and rendered sensitive fields. Keep no source-order checks once behavior proves authorization happens before billing reads. |
 
 The per-file recipes are bounded starting points, not mechanical test-addition instructions. Existing authorization/mutation fixtures may already prove the required outcome; reuse them. After each PR, remove completed inventory obligations or record why a small static policy remains. No source-reader count alone measures assurance.
+
+Marketing batch12 removed the shadow scene/stop model and ineffective-prop tests. Its four touched files fell from886 to560 lines and31 to24 cases. The scene now uses actual server rendering; its small CSS inertness check remains static. Foundation/composition/public-page files retain other source assertions for later owning changes. FT1-11 remains pending.

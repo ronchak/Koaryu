@@ -1,4 +1,4 @@
-import { memo, useId } from "react";
+import { memo, useId, useMemo } from "react";
 
 import styles from "./journey-scene.module.css";
 import {
@@ -18,6 +18,7 @@ import {
   easeOut,
   frameForDimensions,
   floorPoint,
+  makeCloudPath,
   mix,
   mulberry32,
   polygonPoints,
@@ -190,39 +191,15 @@ function closedRidgePath(
   return `${smoothPath(ridgeLine(baseY, amplitude, frequency, phase, resolution))}L${SCENE_OVERSCAN.x + SCENE_OVERSCAN.width} 1900 L${SCENE_OVERSCAN.x} 1900 Z`;
 }
 
-function makeCloudPath(seed: number): string {
-  const random = mulberry32(seed);
-  const width = 380 + random() * 560;
-  const height = 44 + random() * 52;
-  const lobes = 4 + Math.floor(random() * 4);
-  const top: ScenePoint[] = [];
-  const bottom: ScenePoint[] = [];
-
-  for (let index = 0; index <= lobes; index += 1) {
-    const progress = index / lobes;
-    const arch = Math.sin(progress * Math.PI);
-    top.push({
-      x: -width / 2 + progress * width,
-      y: -height * arch * (0.5 + 0.55 * random()),
-    });
-  }
-
-  const segments = 5 + Math.floor(random() * 3);
-  for (let index = segments; index >= 0; index -= 1) {
-    const progress = index / segments;
-    const tail = index === 0 || index === segments ? 0.12 : 0.35 + 0.75 * random();
-    bottom.push({
-      x: -width / 2 + progress * width,
-      y: height * 0.34 * tail,
-    });
-  }
-
-  return smoothPath([...top, ...bottom], true, 0.9);
-}
-
 const RIDGE_PATHS = Object.freeze(
   RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
     closedRidgePath(baseY, amplitude, frequency, phase)
+  )
+);
+
+const FAR_RIDGE_PATHS = Object.freeze(
+  FAR_RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
+    closedRidgePath(baseY, amplitude, frequency, phase, 30)
   )
 );
 
@@ -840,7 +817,7 @@ const SkyWorld = memo(function SkyWorld({ progress, ids }: { readonly progress: 
             {FAR_RIDGES.map((ridge, index) => (
               <path
                 key={`far-ridge-${index}`}
-                d={closedRidgePath(ridge.baseY, ridge.amplitude, ridge.frequency, ridge.phase, 30)}
+                d={FAR_RIDGE_PATHS[index]}
                 fill={ridge.color}
                 opacity={0.95 - index * 0.05}
               />
@@ -1070,7 +1047,8 @@ export const JourneyScene = memo(function JourneyScene({
 }: JourneySceneProps) {
   const safeProgress = clamp(progress);
   const resolvedFrame = frame ?? frameForDimensions(viewportWidth, viewportHeight);
-  const ids = makeIds(useId());
+  const reactId = useId();
+  const ids = useMemo(() => makeIds(reactId), [reactId]);
   const horizon = mix(
     -330,
     330,

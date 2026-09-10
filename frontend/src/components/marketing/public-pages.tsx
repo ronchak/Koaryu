@@ -149,8 +149,6 @@ export function MarketingHero({
   cta: string;
   ctaHref?: string;
   secondaryCta?: { label: string; href: string } | null;
-  sceneLabel?: string;
-  sceneFocus?: string;
 }) {
   return (
     <section className={styles.hero}>
@@ -256,8 +254,6 @@ export function MarketingIndexPage({
         description={description}
         cta="Start setup"
         secondaryCta={secondaryCta}
-        sceneLabel={sectionTitle}
-        sceneFocus="Public product map"
       />
       <section
         className={`${styles.indexSection} ${indexFamilyClass}`}
@@ -325,8 +321,6 @@ export function MarketingDetailPage({
         description={page.summary}
         cta={page.primaryAction}
         ctaHref="#page-details"
-        sceneLabel={page.eyebrow}
-        sceneFocus="Workflow detail"
       />
       <section
         className={`${styles.proofBand} ${familyClass}`}
