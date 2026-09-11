@@ -27,7 +27,7 @@ Original audit only, 278 observations. Tracks describe current execution ownersh
 
 Six separate program findings are outside the 278: three fixed, three pending. Fixed: dependency prerequisites, remaining dependency advisories, and the attestation generator. Pending: mixed/unknown-currency reads, the unmapped Program/belt policy, and the activation retry/quantity defect. Program-track totals: Astra 4, Sol 2; pending Astra 3. Mixed findings still require Sol to implement application files.
 
-PR178 closes OPS2-04, OPS2-05, OPS2-06, OPS2-07 and BT5-02. No finding is marked fixed merely because it is included in draft PR180. Historical normalization counts remain dated evidence; `current_counts` and `current_disposition_tracks` in [ledger.json](ledger.json) are the current totals. CTA1-04 remains evidence-missing/rejected after verification: only 1,128 of the 1,129 audit files can be matched, not CHANGELOG.md.
+PR178 closes OPS2-04, OPS2-05, OPS2-06, OPS2-07 and BT5-02. No finding is marked fixed merely because it is included in draft PR180. Historical normalization counts remain dated evidence; `current_counts` and `current_disposition_tracks` in [ledger.json](ledger.json) are the current totals. CTA1-04 is rejected after verification: 1,128 paths match directly, and the remaining CHANGELOG.md is a 21-byte Git symlink to frontend/CHANGELOG.md. Its target matches the audited 3,535 bytes, 68 lines and SHA-256 `83ad742cde26c593890a49cefc8ddb1fe41c9c4cca1b374a50ec18f6a1dd90bd` at both c5742fe and current main. There is no missing changelog evidence or duplicated editing source.
 
 ## Delegated batches
 
