@@ -1,6 +1,6 @@
 # Import retry ownership
 
-Base: main `18b64e9d7dbbdf363fc49bc0610d30fe67489f35`, after PR177. Target OPS2-04, OPS2-05, OPS2-06, OPS2-07 and BT5-02 together where the final implementation proves closure. Financial read corrections remain pending; this change comes first because retries can overwrite committed customer data.
+Base: main `7113d130a1523d5048cb9cb15529aed6277a4770`, after PR179. All eight import commits rebased without a patch change; the completed SQL proof used the earlier `18b64e9` base, whose 139 migrations remain byte-identical. Target OPS2-04, OPS2-05, OPS2-06, OPS2-07 and BT5-02 together where the final implementation proves closure. Financial read corrections remain pending; this change comes first because retries can overwrite committed customer data.
 
 ## Verified problem
 

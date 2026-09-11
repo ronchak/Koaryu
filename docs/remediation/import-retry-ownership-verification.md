@@ -1,55 +1,31 @@
 # Import retry ownership verification
 
-PR178 remains a draft. Its first independent review found a missing existing-program binding. The reviewer approved that correction at `216f23a`; root then reproduced the equivalent existing-rank gap and extended the same receipt boundary. That extension awaits review. OPS2-04, OPS2-05, OPS2-06, OPS2-07 and BT5-02 remain pending until the final change is reviewed and merged. PROGRAM-IMPORT-01 records the separate unanswered product choice for a program-specific belt supplied without Program.
+PR178 remains a draft for PROGRAM-IMPORT-01, the unanswered policy for a program-specific belt supplied without Program. The retry-protection implementation is verified. OPS2-04/05/06/07 and BT5-02 remain pending until the final change merges.
 
-## Result under review
+The branch is based on main `7113d130a1523d5048cb9cb15529aed6277a4770`, after PR179. All eight import commits rebased without a patch change. Every Supabase and verifier input still matches the completed proof at `448b6e5e7fed45164bd0bbb32aaaf9a32eead869`. Refreshed exact-head CI must verify the rebased branch before merge.
 
-A retry uses committed row and setup outcomes instead of repeating writes over later staff edits. Unknown execution failures retain the same request identity and remain retryable. Invalid input remains a skipped row. Final audit warnings are stored with the completed result, so response loss does not create a different success story on retry.
+## Result
 
-Program facts are loaded once rather than once per student. Setup requests include only valid unfinished rows. The retired studio-wide ladder repair has no remaining caller and is removed; ordinary single-program ladder creation and renaming remain.
+Retries preload committed row and setup receipts, preserve subsequent staff edits/deletion, and write only unfinished rows. Existing program and rank selections are bound by identity, so a rename cannot create replacements. Unscoped ladders keep their ownership. Unknown execution failures retain the request identity; genuine invalid input remains a skipped row. Final audit warnings are stored with the completed result before the token is cleared.
 
-Completed legacy caches remain readable. New or incomplete imports through the retired caller are refused, as are unreceipted row writes and legacy completion. Existing incomplete legacy data is not inferred, rewritten or backfilled. A separately authorized rollout must stop old import callers before the database/backend transition. Rolling back only application code will not restore legacy import writes.
+Program facts load once. Setup includes only valid unfinished rows. The obsolete studio-wide ladder repair and its unused helpers are removed; ordinary single-program creation and renaming remain.
 
-## Database evidence
+Completed legacy caches remain readable. New/incomplete work from retired callers, unreceipted row writes and legacy completion are refused. No historical result is inferred or backfilled. A separately authorized rollout must stop old import callers before the database/backend transition. Application rollback alone does not restore legacy writes.
 
-The actual V45 migration passed on a disposable PostgreSQL 17 cluster after all 139 unchanged predecessors. It reported 140 migrations, head `20260910185031`, 56 pending versions and `release-db-attestation-v45`. V37–V44 compatibility readiness also passed.
+## Evidence
 
-Canonical and real logical-restored captures agree on the new function contracts and import schema. The generated rank manifest has zero invalid entries. The only expectation-data correction is the guarded V31 operational-contract row, from `168cc61b…` to `9a317cbe…`; other expectation tables stay unchanged. Historical raw constraint differences remain separately represented. No nonzero manifest was accepted as a new baseline.
+- The complete local PostgreSQL 17 suite passed all 140 migrations, all 52 contracts, retained restore checks, negative checks and concurrency checks at `448b6e5`. All frozen inputs stayed unchanged and the cluster was removed.
+- V44-to-V45 continuation passed on canonical and real logical-restored copies. Legacy students, guardians, independent program dates, historical EUR plan data and completed caches remain intact. Incomplete unreceipted work is refused.
+- All 15 student-writer concurrency cases passed: five retained rank cases, clear/import and Auth deletion/import in both orders, first-rank setup against the rank-plan student lock, existing-rank selection against the real rank-plan writer in both orders, and row/program/belt commit-progress renewal. Auth deletion here is actual SQL cascades, not a GoTrue API test.
+- Canonical/restored attestation preserves separate raw constraint fingerprints. New function contracts and receipt schema agree. The rank manifest has zero invalid entries. Only the guarded V31 operational-contract expectation changes; no nonzero manifest is accepted as a baseline.
+- The combined backend after rebase passed 1,904 tests and 5,471 subtests. API types and historical attestation reproduction passed again. All ten historical restore scripts remain byte-identical.
+- The two affected frontend files passed 40 tests. A negative control removed the live eligibility invalidation callback, caused the new mounted case to fail, and restored the runtime bytes.
+- Release-tool tests passed all 66 cases. The dedicated fresh PR178 reviewer approved the implementation and subsequent corrections through `448b6e5`; exact-head CI was green there. Range-diff verifies the unchanged import patch after rebase.
 
-The V44-to-V45 restore proof preserves existing students, independent program dates, guardians, legacy import results and a historical EUR plan. It refuses incomplete legacy recovery, replays completed caches and executes the maintained import contracts on canonical and restored copies. Contract source bytes are frozen and their hashes accompany the evidence.
+The first reviewer found a missing existing-program binding. Root reproduced it and then found the equivalent existing-rank gap. Both were corrected and reviewed. Earlier full runs stopped before the contract loop and are not full-pass evidence. A stale V13 self-body expectation was also corrected: V45 now requires both internal readiness and the external catalog to reject that tampering. The final complete run passed those checks.
 
-The maintained SQL contracts cover edited/deleted replay, first-rank preservation, actual foreign student and guardian collisions, receipt-failure rollback, setup replay and finalization warnings. A separate disposable proof confirmed that the real clear RPC cascades owned receipts while direct service-role receipt deletion remains forbidden and foreign records stay unchanged.
+## Test maintenance and limits
 
-The student-writer concurrency runner retains five rank cases and adds ten import cases: clear/import in both orders, Auth deletion/import in both orders, first-rank setup against the rank-plan student's lock, selection versus the rank-plan writer in both orders, and end-of-write progress for row/program/belt commands. All 15 targeted cases passed with observed blocking before settlement. Auth deletion here means actual SQL foreign-key cascades, not a GoTrue API test.
+The change removes the copied claim state machine, private setup-loop tests, retired-method traps, three frontend source assertions and duplicated operational release matrices. Payment business and authorization blocks remain byte-identical. Authored tests/local verifiers shrink by 159 lines; generated restore files grow by 265, for a combined increase of 106 lines. Generated output is not counted as reduced test volume.
 
-## Test maintenance
-
-The import Python tests shrink from 1,129 to 870 lines. The copied claim state machine and private-loop setup tests are removed. Composed executor tests cover same-key recovery, receipt preload, authoritative final warnings, completed replay and valid-row-only setup. Two program/ladder read tests now assert absence of writes rather than patching a retired helper name.
-
-Three frontend live-import source assertions are replaced by a real StoreProvider test. It confirms a saved import, fails belt refresh before that path can refresh eligibility, then observes the separate eligibility refresh. The fixture defaults were corrected to preserve the older mounted tests. All 40 tests in the two affected files passed. A private negative control removed the live invalidation callback, caused the new test to fail, and restored the original runtime bytes. The one preview sequence guard and unrelated bulk/lead guards remain.
-
-Release-tool tests keep their 66 cases by extending existing predecessor and corruption matrices. They caught a missing V44 predecessor entry in the runtime; that entry is fixed and all 66 passed. Across the changed Python, frontend, SQL, release-tool and concurrency tests plus the new restore fixtures, authored test and local-verifier code shrinks by 159 lines. Generated restore files grow by 265 lines, so those combined repository files grow by 106 lines; the maintained authoring surface is smaller. The generated V45 restore artifact is additional derived output, not another hand-maintained restore implementation. All ten historical restore scripts reproduce their original bytes.
-
-## Current check status
-
-- Actual V45 migration, retained readiness and focused SQL contracts: passed.
-- Targeted student-writer concurrency: 15 passed, including existing-rank selection versus the real rank-plan writer in both orders.
-- V44-to-V45 restore: passed; full-suite evidence is being refreshed with final maintained contracts.
-- Backend: the earlier full run passed 1,886 tests. After V45 metadata changes, one obsolete test-runner filename failed; its targeted guard checks now pass. The final run after dead-code removal passed all 1,886 tests.
-- Frontend affected files: 40 passed, with the missing-callback negative control detected.
-- Release tool: 66 passed. Generator: eight groups and historical reproduction passed.
-- Full local database suite: the first assembled run reached final checks and exposed a stale prior-version rank-manifest literal, which was corrected. The next run passed all 140 migrations and the restore checks, then was stopped during negative checks after independent review identified the program-binding correction. Neither run reached the 52-file contract loop; the earlier claim that those contracts passed was incorrect. The corrected candidate requires a complete run and follow-up review before merge.
-
-Early failures were retained as evidence: one draft SQL edit removed a guardian-block terminator and was corrected; a restore declaration incorrectly classified changed import manifests as unchanged; private test directories and unconfirmed Auth fixtures were corrected without weakening target or last-admin guards. These were not production failures. One generated whitespace-only line remains byte-identical to the inherited renderer format.
-
-No production migration, deployment, financial backfill, provider change, mail or DNS work occurred. Private logs, captures and failed attempts remain outside the repository under `Koaryu Remediation/2026-09-07/import-ownership`.
-
-## Independent review correction
-
-The fresh Astra reviewer reproduced a retry splitting remaining students into a newly created program after the original existing program was renamed. Root independently reproduced it with the real executor and scripted server responses. Every selected program reference now gets an immutable receipt, including existing programs and imports that create no belts. SQL selection uses an explicit ID and refuses missing, archived or foreign targets instead of falling back to a matching name. The existing two-attempt regression now checks a renamed program and fails against the prior writer. The revised RPC and assembled migration passed their focused SQL contracts; final restore, full-suite and reviewer confirmation are pending.
-
-Root reproduced rank renaming causing a retry to create a replacement rank. Existing selections now receive immutable rank receipts before student writes. The composed executor test preserves both program and rank identity across partial recovery. Service-role SQL covers edited/deleted replay, studio/program refusal and unscoped-ladder preservation. All 1,886 backend tests and 5,471 subtests passed after this extension. The assembled migration and 15 real two-session cases passed.
-
-CI at `216f23a` also exposed stale V34/V36 contract release matrices that stopped at V44. Those duplicate operational checks are consolidated under the pinned generated preflight; payment behavior and authorization checks remain. This is a test-authoring defect, not evidence of a successful full database run.
-
-The full local run at `69693b9` passed all 140 migrations, every restore including V45, current semantics and the earlier negative checks. It stopped at a stale V13 self-body test expectation before the concurrency and 52-contract loops. The raw external catalog rejected the tampered body and V31 compatibility readiness returned false, as the new V45 definition pin requires. The test now requires both rejections. Runtime, migration and generated attestation bytes are unchanged; the complete local run must finish before merge. Exact-head CI at `69693b9` and the independent review passed, but neither replaces this remaining local gate.
+The separate CSV policy decision remains open. No production migration, deployment, financial backfill, provider change, mail or DNS work occurred. Private logs, failed probes and final captures remain under `~/Koaryu Remediation/2026-09-07/import-ownership`, including `full-v13-result.json` and `rebase-currency-proof.json`.

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "18b64e9d7dbbdf363fc49bc0610d30fe67489f35",
+  "last_reconciled_main": "7113d130a1523d5048cb9cb15529aed6277a4770",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -72,7 +72,7 @@
     },
     {
       "id": "CTA1-02",
-      "title": "Database quick-start bypasses the repository’s current target guidance",
+      "title": "Database quick-start bypasses the repository\u2019s current target guidance",
       "cluster": "release_and_evidence",
       "disposition": "fixed",
       "reason": "PR156 corrected the database quick-start and explicitly made ordinary verification local/disposable; the cited unsafe guidance is no longer current.",
@@ -477,7 +477,7 @@
       "reason": "Enrollment dates remain unrestricted strings. Malformed dates reach date columns; external enrollment updates also lack date validation. This is an input-error defect, not demonstrated corruption.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "source_paths": [
         "backend/app/schemas/billing.py",
         "backend/app/services/billing_enrollments.py",
@@ -1983,7 +1983,7 @@
       "reason": "Enrollment and subscription lists still silently cap results, and the enrollment tab consumes those lists. Invoice/payment pagination does not resolve this separate gap.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted activity during normalization.",
       "source_paths": [
         "backend/app/services/billing_enrollments.py"
@@ -2178,7 +2178,7 @@
       "reason": "Both eligibility checks still convert every exception into terminal cancellation rejection, including read failures and non-cancellation identity failures. Capability-gated callers remain present.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "verification": "Current source and relevant callers inspected; see current_evidence. No hosted activity or new runtime tests in this normalization.",
       "source_paths": [
         "backend/app/services/billing_enrollment_activation.py"
@@ -2303,7 +2303,7 @@
       "reason": "Managers still accept Any owners, and enrollment lifecycle delegates dynamically back into its manager. File splitting has not made collaborator requirements explicit.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "verification": "Current source and relevant callers inspected; see current_evidence and retained merged implementation evidence. No new runtime tests or hosted activity during normalization.",
       "source_paths": [
         "backend/app/services/billing_enrollments.py",
@@ -2347,7 +2347,7 @@
       "reason": "Invoice closeout improved, but audit identity verification remains divergent. Invoice and activation helpers still accept an existing ID or any duplicate-key error without verifying the winning row.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "verification": "Current source and relevant callers inspected; see current_evidence and retained merged implementation evidence. No new runtime tests or hosted activity during normalization.",
       "source_paths": [
         "backend/app/services/billing_autopay.py",
@@ -2466,7 +2466,7 @@
       "reason": "Each listed plan still performs its own program-association query. This is a concrete N+1 pattern, without measured latency evidence.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted activity during normalization.",
       "source_paths": [
         "backend/app/services/billing_plans.py"
@@ -2619,11 +2619,11 @@
       "id": "BB2-04",
       "title": "Unused legacy plan synchronization duplicates the durable workflow",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Main retains an unused legacy writer whose only callers are forwarding wrappers. The independent tuition-currency candidate removes that chain and its orphaned lookup; public durable synchronization remains. Keep pending until review and merge.",
+      "disposition": "fixed",
+      "reason": "PR179 removed the unused direct price writer, both forwarding routes and the orphaned price lookup. Public synchronization still uses the durable owner; interval and recovery helpers remain. Repository-wide caller checks, 1,908 backend tests, targeted readiness checks, independent review and exact-head CI verified the change.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "18b64e9d7dbbdf363fc49bc0610d30fe67489f35",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "source_paths": [
         "backend/app/services/billing_plans.py",
         "backend/app/services/billing_plan_sync.py",
@@ -2639,26 +2639,16 @@
       "current_evidence": [
         {
           "path": "backend/app/services/billing_plans.py",
-          "line": 144,
-          "observation": "Unused legacy routine performs product/price mutations and local writes; force is unused."
+          "line": 112,
+          "observation": "Public synchronization delegates to the durable workflow; the unused writer and price lookup are absent."
         },
         {
-          "path": "backend/app/services/billing_private_facade.py",
-          "line": 48,
-          "observation": "Forwards to the legacy routine; the enrollment wrapper at billing_enrollments.py:46 only forwards again."
-        },
-        {
-          "path": "backend/app/services/billing_plans.py",
-          "line": 120,
-          "observation": "sync_plan invokes BillingPlanSyncWorkflow."
-        },
-        {
-          "path": "backend/app/services/billing_plan_sync.py",
-          "line": 589,
-          "observation": "The durable workflow still uses the interval helper, which must remain."
+          "path": "docs/remediation/tuition-currency-verification.md",
+          "line": 3,
+          "observation": "Records scope, tests, historical financial preservation and proof limits for merged PR179."
         }
       ],
-      "next_change": "Review and merge codex/remediation-tuition-currency; verify no restored caller after rebasing, then close this observation.",
+      "next_change": "Closed. Recheck only if a new caller or replacement path is introduced.",
       "validation_plan": "Repository-wide caller search plus existing plan-sync and interval-helper cases. Private external callers remain unverified.",
       "scope_constraints": [
         "Do not simplify the durable coordinator, recovery history or compatibility readers.",
@@ -2852,7 +2842,7 @@
       "reason": "One provider item can represent multiple enrollments, but invoice identity still selects one enrollment arbitrarily. Reporting consumes that student identity, so attribution is consequential even when family totals remain correct.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "source_paths": [
         "backend/app/services/billing_webhook_projection.py",
         "backend/app/services/billing_enrollment_activation.py"
@@ -3650,10 +3640,10 @@
       "title": "Billing SQL fakes accept impossible state transitions and incomplete ownership checks",
       "cluster": "database_concurrency_and_workers",
       "disposition": "pending",
-      "reason": "Partial safeguards exist, including a shared clock and parent transition rules. Completion still lacks the projected-state guard, lease checks cover only selected operation types, and step/due/autopay fakes remain permissive.",
+      "reason": "PR179 corrected the three omitted step-plan registration fields in the shared fake. The broader fake still omits completion/lease checks and misrepresents some partial-phase transitions; actual SQL proofs remain necessary. This wider contract-drift observation stays pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "source_paths": [
         "backend/tests/fakes/billing_provider_operations.py",
         "backend/tests/test_billing_autopay_lifecycle.py",
@@ -4070,7 +4060,7 @@
       "reason": "Worker-two scenarios still run without advancing database time. Their idempotent readback assertions remain useful, but the fake grants reclaim before the real lease permits it.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "source_paths": [
         "backend/tests/test_billing_enrollment_transitions.py",
         "backend/tests/fakes/billing_provider_operations.py",
@@ -5468,7 +5458,7 @@
       "reason": "The active new-backup recipe still makes separate filtered CLI dumps; it contradicts the complete snapshot and migration-history requirements. Historical July artifacts are not being invalidated.",
       "audit_importance": "high",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
       "source_paths": [
         "docs/staging-recovery-runbook.md",
@@ -6272,7 +6262,7 @@
           "observation": "One Button stub drops disabled and loading behavior, while another variant at line 48 preserves disabled."
         }
       ],
-      "next_change": "Consolidate duplicated existing module-packing code so fixes such as ESM handling have one owner; preserve each test’s explicit stubs and scope. Remove unused switches rather than creating a new fixture configuration framework or splitting files without ownership gains.",
+      "next_change": "Consolidate duplicated existing module-packing code so fixes such as ESM handling have one owner; preserve each test\u2019s explicit stubs and scope. Remove unused switches rather than creating a new fixture configuration framework or splitting files without ownership gains.",
       "validation_plan": "Run only each migrated mounted suite in Chromium and compare its request, observer, disabled-state, and cleanup assertions before removing the old path.",
       "scope_constraints": [
         "real mounted hook coverage",
@@ -7226,7 +7216,7 @@
           "observation": "Adjacent collector counts streamed bytes and cancels on limit or deadline."
         }
       ],
-      "next_change": "Reuse the adjacent collector’s bounded byte-stream/deadline mechanics for CSP input, cancel on overflow and decode only accepted bytes. Preserve content-type, early declared-length and privacy behavior; no collector framework.",
+      "next_change": "Reuse the adjacent collector\u2019s bounded byte-stream/deadline mechanics for CSP input, cancel on overflow and decode only accepted bytes. Preserve content-type, early declared-length and privacy behavior; no collector framework.",
       "validation_plan": "Missing/understated length, multibyte UTF-8 overflow, stalled stream, malformed JSON and valid report cases.",
       "scope_constraints": [
         "Unauthenticated browser reporting",
@@ -8943,7 +8933,7 @@
     },
     {
       "id": "FC3-01",
-      "title": "Roster bulk actions can overlap and close one another’s panels",
+      "title": "Roster bulk actions can overlap and close one another\u2019s panels",
       "cluster": "read_and_mutation_ownership",
       "disposition": "pending",
       "reason": "Bulk actions still have separate pending flags while selection and panel switching remain unrestricted. Earlier completion can close a newer panel or clear newer selection.",
@@ -9208,7 +9198,7 @@
     },
     {
       "id": "FC3-06",
-      "title": "Button’s asChild mode advertises props it silently drops",
+      "title": "Button\u2019s asChild mode advertises props it silently drops",
       "cluster": "presentation_and_dead_interfaces",
       "disposition": "fixed",
       "reason": "asChild forwards native attributes and composed refs, including React 19 cleanup, while preserving child-then-wrapper clicks and disabled navigation blocking.",
@@ -10700,7 +10690,7 @@
           "observation": "Explicit preview src takes precedence over the saved photo URL."
         }
       ],
-      "next_change": "Handle photo preview, file retention and completion truth with the existing photo/profile owner in FSH3-02. A rejected or unknown upload must not be presented as saved; do not infer server rollback from timeout or clear another command’s draft.",
+      "next_change": "Handle photo preview, file retention and completion truth with the existing photo/profile owner in FSH3-02. A rejected or unknown upload must not be presented as saved; do not infer server rollback from timeout or clear another command\u2019s draft.",
       "validation_plan": "Reject an upload and confirm preview cleanup, saved-avatar restoration and visible failure/unknown-outcome wording.",
       "scope_constraints": "Do not delete server photos, add automatic upload retries or change permissions.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703"
@@ -10921,7 +10911,7 @@
       "reason": "The alert metric still counts only the legacy retry ledger while current invoice retries use provider operations. This is a dormant monitoring gap because repository documentation records alerting as disabled.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "source_paths": [
         "supabase/migrations/20260801060000_operational_alert_delivery_state.sql",
         "backend/app/services/operational_alerts.py",
@@ -12332,8 +12322,8 @@
       "title": "Mixed-currency writes feed currency-blind totals",
       "track": "Astra",
       "disposition": "pending",
-      "reason": "PR172/V43 covers new external payments and PR175 covers local plan definitions. PR179 now guards fresh provider prices, activation and invoice creation while preserving saved financial-attempt evidence and historical replay. Provider-fact recovery and truthful mixed/unknown-currency readers remain pending; no historical record is converted.",
-      "verified_against": "18b64e9d7dbbdf363fc49bc0610d30fe67489f35",
+      "reason": "PR172/V43 covers new external payments, PR175 covers local plan definitions, and merged PR179 covers fresh provider prices, activation and invoice monetary items. Saved financial attempts and historical replay remain protected. Unknown provider-fact recovery and truthful mixed/unknown-currency readers remain pending; no historical record is converted.",
+      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
       "source_paths": [
         "backend/app/api/v1/endpoints/billing.py",
         "backend/app/schemas/billing.py",
@@ -12356,34 +12346,24 @@
       ],
       "current_evidence": [
         {
-          "path": "supabase/migrations/20260910093958_external_payment_command_ownership_v43.sql",
-          "line": 59,
-          "observation": "New external-payment records require USD; existing same-key records retain their currency and verified replay."
-        },
-        {
-          "path": "supabase/migrations/20260910135133_local_plan_write_ownership_v44.sql",
-          "line": 124,
-          "observation": "PR175 candidate requires USD for new local plan definitions or actual financial changes; identical and nonfinancial historical edits remain allowed."
-        },
-        {
-          "path": "backend/app/services/billing_plan_sync.py",
-          "line": 598,
-          "observation": "Provider price creation still consumes historical plan currency and defaults absent currency to USD; the local-plan boundary alone does not guard a fresh provider intent."
+          "path": "backend/app/services/billing_currency_policy.py",
+          "line": 8,
+          "observation": "One explicit USD predicate is used by the three provider write owners and plan readiness."
         },
         {
           "path": "backend/app/services/billing_invoice_operations.py",
-          "line": 172,
-          "observation": "New invoice intent still stores request currency before provider execution."
+          "line": 1940,
+          "observation": "Saved header work is distinguished from financial-item attempts before new invoice lines."
         },
         {
           "path": "supabase/migrations/20260905022339_billing_landing_aggregates.sql",
           "line": 18,
-          "observation": "Payment cohort aggregates do not group by currency; landing receivables likewise sum currencies at line48."
+          "observation": "Existing payment/receivable aggregates remain currency-blind and need the separate read correction."
         },
         {
-          "path": "frontend/src/lib/billing-page-utils.ts",
-          "line": 49,
-          "observation": "Money formatting still defaults to USD and uses a fixed divisor; combined totals lack currency availability."
+          "path": "backend/app/services/billing_subscription_webhook_projection.py",
+          "line": 89,
+          "observation": "Unknown provider group facts still require the separate nullable-fact recovery correction."
         }
       ],
       "related_findings": [
@@ -12392,7 +12372,7 @@
         "BB1-03"
       ],
       "owner_decision": "September9: USD-only new tuition and external-payment writes; preserve existing confirmed non-USD records and prevent misleading combined totals.",
-      "next_change": "Review the bounded tuition-currency candidate. After merging, prioritize shared overdue/currency read facts, then provider unknown-fact recovery and family/report attribution. Keep this entry open until affected aggregate readers are truthful.",
+      "next_change": "Keep open for shared overdue/currency read facts, provider unknown-fact recovery and report attribution. The fresh tuition write boundary is implemented; an empty product or invoice header does not authorize a new non-USD financial write.",
       "verification": "Target accepted USD writes, rejected non-USD new writes, unchanged historical replay, and mixed/unknown-currency aggregates. Verify tenant, provider identity and idempotency boundaries.",
       "pull_requests": [
         172,
@@ -12544,8 +12524,8 @@
     }
   },
   "current_counts": {
-    "pending": 191,
-    "fixed": 72,
+    "pending": 190,
+    "fixed": 73,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
@@ -12553,6 +12533,6 @@
   },
   "current_pending_tracks": {
     "Sol": 55,
-    "Astra": 136
+    "Astra": 135
   }
 }
