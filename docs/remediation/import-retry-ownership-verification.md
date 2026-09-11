@@ -1,8 +1,8 @@
 # Import retry ownership verification
 
-PR178 remains a draft for PROGRAM-IMPORT-01, the unanswered policy for a program-specific belt supplied without Program. The retry-protection implementation is verified. OPS2-04/05/06/07 and BT5-02 remain pending until the final change merges.
+PR178 merged as `f942dad3509a2e2cc9b55d546c2d22e097f77abe`. OPS2-04/05/06/07 and BT5-02 are fixed. PROGRAM-IMPORT-01 remains a separate unanswered policy for a program-specific belt supplied without Program; the current refusal happens before student or membership writes and does not block the bounded retry correction.
 
-The branch is based on main `7113d130a1523d5048cb9cb15529aed6277a4770`, after PR179. All eight import commits rebased without a patch change. Every Supabase and verifier input still matches the completed proof at `448b6e5e7fed45164bd0bbb32aaaf9a32eead869`. Refreshed exact-head CI must verify the rebased branch before merge.
+The branch is based on main `7113d130a1523d5048cb9cb15529aed6277a4770`, after PR179. All eight import commits rebased without a patch change. Every Supabase and verifier input still matches the completed proof at `448b6e5e7fed45164bd0bbb32aaaf9a32eead869`. All eleven checks passed at final head `c762a480b0e8f7c198b678c0dfcfb5da04075995`. The dedicated reviewer approved that exact head; the guarded merge read production Render auto-deploy off twice.
 
 ## Result
 

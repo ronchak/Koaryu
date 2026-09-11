@@ -11,15 +11,15 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 73 |
+| Fixed | 78 |
 | Resolved indirectly | 2 |
-| Pending | 190 |
+| Pending | 185 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Total | 278 |
 
-Pending work is split between 135 Astra and 55 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
+Pending work is split between 29 Astra and 156 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -31,11 +31,13 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 [PR179](https://github.com/ronchak/Koaryu/pull/179), merged as `7113d13`, enforces USD at new tuition financial writes and retires the unused pricing path. Historical financial attempts, exact replay and provider references remain protected. Empty provider headers do not authorize new non-USD amounts. Mixed-currency reporting, unknown provider facts and family attribution remain pending. See [verification](docs/remediation/tuition-currency-verification.md).
 
-## Next work
+## Paused at a clean stopping point
 
-1. PR178's import retry correction passed all 140 migrations, 52 contracts, restore/negative checks and concurrency checks, including 15 student-writer cases. It remains a draft for the unresolved CSV Program/belt policy. The branch is rebased onto main after PR179; refreshed CI must validate integration before merge. See the [import plan](docs/remediation/import-retry-ownership-plan.md).
-2. Astra is verifying the remaining activation readiness failure classification, BB1-06, after the currency work exposed the relevant ownership paths. Transient read failures must not become a false cancellation decision. Shared overdue/currency read facts, provider unknown-fact recovery and family/report attribution remain high priorities; no financial definition is being reopened.
-3. Sol's next coherent change retires six verified obsolete frontend interfaces from [batch08](docs/remediation/delegated/08-display-and-dead-interfaces.md). Calendar-date rendering, dashboard analytics and store/lead ownership are excluded from that slice. Keep its mounted and SQL assurance honest and separate.
+PR178 merged as `f942dad3509a2e2cc9b55d546c2d22e097f77abe`. It closes five import findings after fresh review, all eleven checks on `c762a480`, the full 140-migration/52-contract proof and 15 student concurrency cases. No further implementation is authorized in this wind-down. The separate CSV Program/belt policy remains pending and refused before student writes.
+
+The already-written frontend cleanup is committed and pushed as draft [PR180](https://github.com/ronchak/Koaryu/pull/180), awaiting fresh review and final-base verification. Its six findings stay pending. No application or database feature work should start merely to use remaining capacity.
+
+Read [HANDOFF](docs/remediation/HANDOFF.md) for exact counts, completed/remaining batches, the next PR and known risks. The [production release packet](docs/remediation/PRODUCTION-RELEASE.md) is preparation for a human operator, not an executed release. Production remains V38, with seven migrations outstanding. A fresh backup and verified restore are still required.
 
 ## Completed changes
 
@@ -68,6 +70,8 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 | [177](https://github.com/ronchak/Koaryu/pull/177) | Removed redundant records UI source tests | `18b64e9` | [Test reduction](docs/remediation/records-test-reduction-plan.md) |
 | [179](https://github.com/ronchak/Koaryu/pull/179) | USD for new tuition financial writes and retired legacy pricing | `7113d13` | [Currency](docs/remediation/tuition-currency-verification.md) |
 
+| [178](https://github.com/ronchak/Koaryu/pull/178) | Durable import outcomes, safe retry and removed broad ladder repair | `f942dad` | [Import ownership](docs/remediation/import-retry-ownership-verification.md) |
+
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 
 ## Settled product decisions
@@ -82,7 +86,7 @@ Earlier PRs reused cumulative review threads. Their recorded checks remain evide
 
 ## Working and release rules
 
-Astra owns money, authorization, tenant boundaries, concurrency, migrations and workflow ownership. Sol owns bounded documentation, presentation, proven dead interfaces and test/evidence legwork. The coordinator owns architecture and integration. Parallelize reading; do not let implementations overlap.
+The latest owner instruction supersedes the original risk-based split: Sol owns all frontend/backend implementation, including financial and authorization application logic. Astra personally owns every Supabase change, migration, SQL contract and database concurrency proof. Sol also owns documentation and other maintenance. Safety and independent review requirements are unchanged. The coordinator owns architecture and integration. Parallelize reading; do not let implementations overlap.
 
 Use short-lived `codex/` branches from current main, one coherent rollback boundary per PR. Review every substantive automated comment on its merits. Explain declined material suggestions. Require a fresh independent reviewer, current-head evidence, resolved material feedback, and the exact-head `Release candidate gate`. Merge with `scripts/merge-release-pr.sh` using recorded head and base SHAs. Never merge a broken intermediate state.
 
