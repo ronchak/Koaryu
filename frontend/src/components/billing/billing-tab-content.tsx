@@ -3,7 +3,7 @@
 import type { BillingTab } from "@/components/billing/billing-page-chrome";
 import { BillingEnrollmentsTab } from "@/components/billing/billing-enrollments-tab";
 import { BillingFamiliesTab } from "@/components/billing/billing-families-tab";
-import { BillingInvoicesSection } from "@/components/billing/billing-invoices-section";
+import { BillingInvoicesTab } from "@/components/billing/billing-invoices-tab";
 import { BillingOverviewTab } from "@/components/billing/billing-page-sections";
 import { BillingPlansTab } from "@/components/billing/billing-plans-tab";
 import { BillingReportsTab } from "@/components/billing/billing-reports-tab";
@@ -16,7 +16,6 @@ import type {
   BillingPayment,
   BillingPayer,
   BillingPlan,
-  ExportJob,
   PlatformBillingStatus,
   StudentBillingEnrollment,
   StudioPaymentAccount,
@@ -48,7 +47,6 @@ type BillingTabContentProps = {
   connectRequirementItems: { id: string; label: string; description: string; complete: boolean }[];
   currentMonthPaymentCount: number;
   externalPaymentTotal: number;
-  exportJobs: ExportJob[];
   failedInvoiceCount: number;
   hasStripeConnectedAccount: boolean;
   invoiceController: BillingInvoiceController;
@@ -97,7 +95,6 @@ export function BillingTabContent(props: BillingTabContentProps) {
     connectRequirementItems,
     currentMonthPaymentCount,
     externalPaymentTotal,
-    exportJobs,
     failedInvoiceCount,
     hasStripeConnectedAccount,
     invoiceController,
@@ -254,7 +251,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
   }
   if (activeTab === "invoices") {
     return (
-      <BillingInvoicesSection
+      <BillingInvoicesTab
         billingInvoices={billingInvoices}
         billingPayers={billingPayers}
         canReconcileInvoices={canManageRoutineBilling}
@@ -282,7 +279,6 @@ export function BillingTabContent(props: BillingTabContentProps) {
         externalPaymentRecoveryMessage={externalPaymentRecoveryMessage}
         externalPaymentIsRetry={externalPaymentIsRetry}
         externalPaymentTotal={externalPaymentTotal}
-        exportJobs={exportJobs}
         isActionLoading={isActionLoading}
         isLoadingAction={isLoadingAction}
         onExternalAmountChange={onExternalAmountChange}

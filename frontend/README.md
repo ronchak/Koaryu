@@ -95,18 +95,22 @@ and the public marketing pages, start the frontend with
 npm run test:e2e:preview-smoke
 ```
 
-The belt-ladder check is a live-stateful smoke test. Run it only against a
-disposable account and studio name:
+The mounted belt editor check verifies browser save behavior and repeated rank
+payloads without credentials or a database:
 
 ```bash
-KOARYU_LIVE_STATEFUL_E2E=true \
-KOARYU_E2E_LOGIN_EMAIL=... \
-KOARYU_E2E_LOGIN_PASSWORD=... \
-KOARYU_E2E_STUDIO_NAME="Disposable Belt Ladder Smoke" \
-npm run test:e2e:live-belt
+node --experimental-strip-types --test tests/belt-editor-mounted.test.mjs
 ```
 
-Do not point this check at production accounts or reusable customer data. The test intentionally avoids logging account identifiers.
+From the repository root, the separate local Supabase contract check verifies
+belt-rank persistence:
+
+```bash
+npm run check:supabase-contracts-local
+```
+
+These are independent browser-payload and database-persistence checks, not a
+joined browser-to-database test.
 
 ## Bundle Analysis
 

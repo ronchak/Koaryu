@@ -924,7 +924,6 @@ describe("operations behavior proof", () => {
       negativeCopy,
       /canUseWorkflow\("invoice\.finalize"\)[\s\S]*onInvoiceAction\(invoice\.id, "finalize"\)/,
     );
-    assert.match(negativeCopy, /New CSV exports are currently unavailable/);
   });
 
   it("keeps Automations a read-only catalog with exact live destinations and proposals", () => {

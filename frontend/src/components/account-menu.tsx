@@ -98,7 +98,10 @@ function ThemeIcon({ preference }: { preference: ThemePreference }) {
   return <Moon className="h-4 w-4" />;
 }
 
-function billingLabel(status: PlatformBillingStatus | null, canViewSubscription: boolean) {
+function billingLabel(
+  status: Pick<PlatformBillingStatus, "status" | "comped"> | null,
+  canViewSubscription: boolean,
+) {
   if (!canViewSubscription) {
     return { label: "Billing", subtitle: "Studio payment workspace" };
   }
@@ -153,23 +156,8 @@ export function AccountMenu({
   const billingCopy = billingLabel(
     isPreviewMode
       ? {
-          studio_id: "preview",
-          plan_name: "Koaryu Core",
-          monthly_price_cents: 2700,
-          currency: "usd",
           status: "comped",
           comped: true,
-          can_start_checkout: false,
-          cancel_at_period_end: false,
-          email_usage: {
-            included: 500,
-            sent: 0,
-            overage_count: 0,
-            overage_rate_cents: 0.2,
-            estimated_overage_cents: 0,
-            period_start: "",
-            period_end: "",
-          },
         }
       : effectivePlatformBilling,
     canViewSubscription,
