@@ -350,6 +350,16 @@ The recovery key remains in macOS Keychain. Copying the key to a physically cont
 
 A restore target is disposable and isolated. Never use current staging, production, or any project containing records that must be retained.
 
+The shell procedure below restores database and Storage inputs, but it does not
+by itself close the authenticated application-recovery gate. A conforming
+exercise must also follow the exact disposable-target, outbound-sink,
+application, integrity, privacy, timing, and cleanup contract in
+[the authenticated restore validation contract](audit-notes/authenticated-restore-validation.md).
+Its final sanitized evidence must pass
+`npm run verify:authenticated-restore -- --evidence /absolute/private/path/evidence.json --require-production-derived`.
+The checked-in synthetic fixture exercises only the verifier and cannot close
+the gate.
+
 1. Create a temporary hosted Supabase project. Record its new ref as `RESTORE_REF`, then explicitly reject every durable target:
 
    ```bash
@@ -373,13 +383,21 @@ A restore target is disposable and isolated. Never use current staging, producti
    test "$(tr -d '\n' < "$RESTORE_WORKDIR/supabase/.temp/project-ref")" = "$RESTORE_REF"
    ```
 
-2. Verify the encrypted checksums, decrypt into a locked temporary directory, restore, and validate in one failure-safe shell:
+2. After the separately approved off-site download, verify its receipt and the
+   encrypted checksums, decrypt into a locked temporary directory, restore, and
+   validate in one failure-safe shell. `BACKUP_DIR` must be the fresh
+   provider-downloaded directory, not the historical local source:
 
    ```bash
    set -euo pipefail
    set +x
    umask 077
-   BACKUP_DIR="$HOME/Koaryu Backups/production-20260710T070020Z"
+   : "${BACKUP_DIR:?set BACKUP_DIR to the fresh provider-downloaded directory}"
+   : "${PROVIDER_DOWNLOAD_RECEIPT:?set the private provider download receipt path}"
+   KNOWN_LOCAL_SOURCE="$HOME/Koaryu Backups/production-20260710T070020Z"
+   test -d "$BACKUP_DIR"
+   test -f "$PROVIDER_DOWNLOAD_RECEIPT"
+   test "$BACKUP_DIR" != "$KNOWN_LOCAL_SOURCE"
    RESTORE_DIR=""
    BACKUP_PASSWORD=""
    cleanup_restore() {
@@ -491,8 +509,28 @@ A restore target is disposable and isolated. Never use current staging, producti
    trap - EXIT HUP INT TERM
    ```
 
-3. Validate only aggregate, non-PII evidence. The July 10 drill produced 37 `public` tables, 61 `auth.users` rows, and 52 `public.studios` rows. A future drill must also run an authenticated tenant-safe application read before it is considered a full application recovery exercise.
-4. Delete the temporary hosted target through the Supabase control plane only after the operator reconfirms `RESTORE_REF`. Unset `RESTORE_REF` and `BACKUP_DIR` afterward. Recreate ordinary staging from repository migrations, not from the production backup.
+3. Validate only aggregate, non-PII evidence. The July 10 drill produced 37
+   `public` tables, 61 `auth.users` rows, and 52 `public.studios` rows, but those
+   three counts are historical context rather than current acceptance. The new
+   encrypted integrity manifest must cover every expected relation plus
+   primary-key-set, structure, migration-history, relationship, Auth, and
+   Storage digests required by the authenticated restore contract.
+4. Clear restored source sessions before application exposure, add only the
+   contract's controlled synthetic identities and probes, deploy the same exact
+   candidate SHA to both disposable applications, and execute the fixed
+   direct/proxy/frontend, same-tenant, cross-tenant, role, and private-Storage
+   matrix. Store no credentials, PII, response bodies, tokens, raw object paths,
+   or signed URLs in evidence.
+5. Remove every synthetic mutation, then delete the temporary application,
+   callback/sink, and Supabase resources after the operator reconfirms their
+   opaque IDs. Provider API readback must report each resource absent. Delete
+   plaintext/download/work directories, revoke target credentials and sessions,
+   verify ordinary staging received zero production-derived rows, and unset
+   `RESTORE_REF`, `BACKUP_DIR`, and `PROVIDER_DOWNLOAD_RECEIPT`.
+6. Record `destroyed` only after cleanup readback, stop the elapsed-time clock,
+   and run the final verifier with `--require-production-derived`. Recreate
+   ordinary staging from repository migrations, never from the production
+   backup.
 
 ## Recovery Decision
 
