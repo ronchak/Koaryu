@@ -40,14 +40,16 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-V43 is the latest accepted predecessor at 138/head `20260910093958`. The
-candidate finishes at 139/head `20260910135133`, readiness V25, and
-`release-db-attestation-v44`. Its full preflight has 55 pending-history versions.
-These are candidate requirements, not a claim about the current hosted database.
-The tool accepts V43 only after its exact history,
-readiness, raw definitions and catalog match, then selects one remaining file:
-
-- `20260910135133_local_plan_write_ownership_v44.sql`
+The paused remediation candidate is V45 at 140/head `20260910185031`, full
+preflight V26 and `release-db-attestation-v45`, with 56 pending-history versions.
+V44 is its latest accepted predecessor at 139/head `20260910135133`. Current
+production and staging were both read back as V38 during wind-down. The exact
+seven-file remainder and all attended commands are in
+[PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md). That packet supersedes
+the older V44-specific counts and active-candidate instructions below; their
+business/compatibility explanations remain useful history. No production apply
+or deployment was executed. V45's old-import refusal requires a real drain plan,
+even while older readiness consumers retain their compatibility response.
 
 V38 remains an accepted predecessor. Its remainder includes the V39 membership
 correction before V40. V39 preserves paused statuses and per-program joining dates

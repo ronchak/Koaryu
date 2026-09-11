@@ -147,33 +147,26 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The current candidate's `/health/ready` calls `koaryu_release_schema_preflight_v25`
-and serves only at 139/head `20260910135133` with `release-db-attestation-v44`. Its
-full preflight reports 55 pending-history versions. It
-fails closed at every other migration state, so a backend deployed before its
-migration remains unhealthy. This describes the candidate contract, not a new
-hosted-state verification. The latest accepted predecessor is V43 at 138/head
-`20260910093958`; it selects only
-`20260910135133_local_plan_write_ownership_v44.sql`. Full V25 verifies V44, while
-V24 returns the V43 compatibility tuple. The older readiness chain remains available,
-but the candidate backend requires full V25.
+The paused remediation candidate is `f942dad3509a2e2cc9b55d546c2d22e097f77abe`,
+with 140 migrations through V45. Backend readiness uses full V26 and requires
+head `20260910185031`, manifest `release-db-attestation-v45` and 56 pending-history
+versions. Its latest accepted predecessor is V44 at 139/head `20260910135133`.
+The compatibility chain retains V19–V25 consumers after the complete V45 state
+is verified. Legacy import writes are deliberately refused; readiness compatibility
+does not make old import callers safe to resume.
 
-V44 adds the service-role-only `write_billing_plan_v1` RPC. One transaction owns plan
-scalars, program links, the original-actor audit, and the committed response snapshot.
-A true no-op preserves status, timestamps, and links. Explicit null is rejected for
-required fields; omission and nullable clearing remain distinct. New or financially
-changed local definitions must use USD. Historical records, identical saves, and
-nonfinancial maintenance keep their existing currency. The RPC takes the shared local
-plan advisory lock first; guarded demo clear takes the matching exclusive lock first
-without a broad studio UPDATE lock. The new guarantee begins only when old Python
-plan split-write requests drain. Demo reset and reseed requests remain separate and
-do not gain a new atomicity guarantee.
+Read-only inspection on September11 UTC confirmed both databases still at V38,
+133/head `20260905022339`, and production frontend/backend at
+`c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. No remediation migration or application
+was deployed during wind-down. Render production auto-deploy was read back off;
+Vercel main auto-deployment remains disabled in the deployed and candidate config.
 
-V40 rank, V41 payer balance, V42 catalog and semantics, and V43 external-payment facts
-remain unchanged. The V41 and V43 guarantees still require their old split callers to
-drain. All historical migrations remain unchanged. Merging does not apply the migration
-or deploy either application, and no production migration or deployment is authorized
-by this candidate documentation.
+The [V38-to-V45 production packet](remediation/PRODUCTION-RELEASE.md) owns the
+current ordered migration hashes, backup/restore prerequisites, rollout commands,
+compatibility limits and rollback rules. It is prepared for a human, not executed.
+V41 payer-balance, V43 external-payment and V44 local-plan guarantees require old
+split callers to drain. V45 requires stopping old import callers before migration.
+No historical financial backfill or live billing activation is included.
 
 ## Supabase — database, auth, storage
 

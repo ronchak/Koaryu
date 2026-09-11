@@ -1,6 +1,6 @@
 # Studio-Comp Migration Rollout
 
-Status: **V37 is the accepted predecessor; the candidate targets 133/head 20260905022339 and V38**
+Status: **Historical V24–V38 rollout documentation. Current V38-to-V45 execution instructions are in [the remediation production packet](remediation/PRODUCTION-RELEASE.md). Do not use the historical candidate counts below for the current release.**
 
 ## Combined schedule-window, Payments, and performance extension
 
