@@ -17,7 +17,7 @@ Generation writes into an empty directory and refuses to overwrite files. Checki
 - `preflight-schema.json` holds shared checks and per-state additions/overrides. Preserve earlier states; put changed pins in the new state's override. `preflight-policy.mjs` contains explicit catalog and semantic checks that a schema inventory cannot infer.
 - `manifest-schema.json` holds required rank-writer signatures, return contracts and receipt-schema facts. Expected values remain reviewed facts. They are never silently copied from the database being inspected.
 - `restore-cases.json` and `restore-shell.mjs` retain finite historical shell layouts. Their declarations identify source ancestry, probes and expectations. Historical wording and formatting are preserved for byte reproduction.
-- `python-restore-schema.json`, `restore-python.mjs` and `fixtures/python-*` own the Python restore cases. Use the reusable forward profile for a new release. Business seeds, snapshots and continuation assertions remain explicit fixtures.
+- `python-restore-schema.json`, `restore-python.mjs` and `fixtures/python-*` own the Python restore cases. Use the reusable forward profile for a new release. Business seeds, snapshots and continuation assertions remain explicit fixtures. A forward case's `semanticManifests` list contains only facts that must remain unchanged across the upgrade. Put intentionally changed facts in its version-bound `checks` instead.
 - Other `fixtures/` files contain V31's financial, replay and concurrency proofs. They are substantive tests, not disposable boilerplate.
 
 ## Adding a release

@@ -118,7 +118,7 @@ class StudentImportRunStore:
         effective_key: str,
         claim_token: str,
     ) -> tuple[dict[str, Any], Optional[CsvImportResult], str, Optional[str]]:
-        result = execute_required_rpc(self.supabase, "claim_student_import_run", {
+        result = execute_required_rpc(self.supabase, "claim_student_import_run_v2", {
             "p_studio_id": studio_id,
             "p_actor_id": actor_id,
             "p_operation": IMPORT_RUN_OPERATION,
@@ -148,6 +148,14 @@ class StudentImportRunStore:
                     "idempotency key. Retry shortly with the same key."
                 ),
             )
+        if claim_status == "unsupported_run":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This unfinished import predates safe retry tracking. Keep this request "
+                    "and contact support to reconcile its saved rows before importing again."
+                ),
+            )
         if claim_status == "claimed" and isinstance(run_row, dict):
             return run_row, None, effective_key, claim_token
 
@@ -158,7 +166,7 @@ class StudentImportRunStore:
         import_run_id: str,
         processing_token: str,
         result: CsvImportResult,
-    ) -> bool:
+    ) -> CsvImportResult:
         update_result = execute_required_rpc(self.supabase, "finish_student_import_run", {
             "p_import_run_id": import_run_id,
             "p_processing_token": processing_token,
@@ -167,7 +175,15 @@ class StudentImportRunStore:
             "p_error_message": None,
         })
         row = first_rpc_row(update_result) or {}
-        return bool(row.get("updated"))
+        run_row = row.get("run_row")
+        if not row.get("updated") or not isinstance(run_row, dict):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This student import was reclaimed before completion. Retry with the same idempotency key.",
+            )
+        # The database freezes the final audit outcome with this response. A lost
+        # reply is recovered by claiming the same key, never by inventing success.
+        return CsvImportResult.model_validate(run_row.get("result_json"))
 
     def mark_failed(
         self,
@@ -184,16 +200,3 @@ class StudentImportRunStore:
         })
         row = first_rpc_row(update_result) or {}
         return bool(row.get("updated"))
-
-    def ensure_claim_active(self, import_run_id: str, processing_token: str) -> None:
-        update_result = execute_required_rpc(self.supabase, "heartbeat_student_import_run", {
-            "p_import_run_id": import_run_id,
-            "p_processing_token": processing_token,
-        })
-        row = first_rpc_row(update_result) or {}
-        if row.get("updated"):
-            return
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This student import was reclaimed by another request. Retry shortly with the same idempotency key.",
-        )

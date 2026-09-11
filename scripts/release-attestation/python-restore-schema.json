@@ -132,7 +132,7 @@
     "readiness-v44": {
       "kind": "readiness",
       "state": "v44",
-      "finalAlias": true
+      "finalAlias": false
     },
     "release-v44": {
       "kind": "release",
@@ -149,6 +149,44 @@
       "state": "v44",
       "query": "V44_CLEAR_STATE_SQL",
       "expected": "EXPECTED_V44_CLEAR_STATE"
+    },
+    "readiness-v45": {
+      "kind": "readiness",
+      "state": "v45",
+      "finalAlias": true
+    },
+    "catalog-v45": {
+      "kind": "catalog",
+      "state": "v45",
+      "queryState": "v45"
+    },
+    "release-v45": {
+      "kind": "release",
+      "state": "v45"
+    },
+    "expectation-v45": {
+      "kind": "export",
+      "state": "v45",
+      "query": "V31_EXPECTATION_STATE_SQL",
+      "expected": "EXPECTED_V45_EXPECTATION_STATE"
+    },
+    "resource-v45": {
+      "kind": "export",
+      "state": "v45",
+      "query": "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL",
+      "expected": "EXPECTED_V45_RESOURCE_OWNERSHIP_MANIFEST"
+    },
+    "contract-v45": {
+      "kind": "export",
+      "state": "v45",
+      "query": "V31_OPERATIONAL_CONTRACT_SQL",
+      "expected": "EXPECTED_V45_OPERATIONAL_CONTRACT"
+    },
+    "operational-v45": {
+      "kind": "export",
+      "state": "v45",
+      "query": "V31_OPERATIONAL_MANIFEST_SQL",
+      "expected": "EXPECTED_V45_OPERATIONAL_MANIFEST_V12"
     }
   },
   "cases": {
@@ -709,6 +747,151 @@
       "passLines": [
         "[restored V44] PASS actual V43 backup/restore, no historical backfill, ",
         "local plan/audit ownership, no-op preservation, old/new callers and guarded clear on canonical/restored copies"
+      ]
+    },
+    "v45": {
+      "format": "forward",
+      "docstring": "Prove V44 restore preserves legacy imports and V45 receipt-owned continuation without historical backfill.",
+      "exports": [
+        [
+          "readiness-v44.query",
+          "readiness-v44.expected"
+        ],
+        [
+          "catalog-v42.query",
+          "catalog-v42.expected",
+          "catalog-v42.restored"
+        ],
+        [
+          "release-v44.query",
+          "release-v44.expected"
+        ],
+        [
+          "rank-v40.query",
+          "rank-v40.expected"
+        ],
+        [
+          "payer-v41.query",
+          "payer-v41.expected"
+        ],
+        [
+          "external-payment-v43.query",
+          "external-payment-v43.expected"
+        ],
+        [
+          "local-plan-v44.query",
+          "local-plan-v44.expected"
+        ],
+        [
+          "plan-clear-v44.query",
+          "plan-clear-v44.expected"
+        ],
+        [
+          "readiness-v45.query",
+          "readiness-v45.expected"
+        ],
+        [
+          "readiness-v43.query",
+          "readiness-v43.expected"
+        ],
+        [
+          "readiness-v42.query",
+          "readiness-v42.expected"
+        ],
+        [
+          "readiness-v41.query",
+          "readiness-v41.expected"
+        ],
+        [
+          "readiness-v40.query",
+          "readiness-v40.expected"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v39.expected"
+        ],
+        [
+          "readiness-v38.query",
+          "readiness-v38.expected"
+        ],
+        [
+          "readiness-v37.query",
+          "readiness-v37.expected"
+        ],
+        [
+          "catalog-v45.query",
+          "catalog-v45.expected",
+          "catalog-v45.restored"
+        ],
+        [
+          "release-v45.query",
+          "release-v45.expected"
+        ],
+        [
+          "expectation-v45.query",
+          "expectation-v45.expected"
+        ],
+        [
+          "resource-v45.query",
+          "resource-v45.expected"
+        ],
+        [
+          "contract-v45.query",
+          "contract-v45.expected"
+        ],
+        [
+          "operational-v45.query",
+          "operational-v45.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v44",
+        "catalog-v42",
+        "release-v44",
+        "rank-v40",
+        "payer-v41",
+        "external-payment-v43",
+        "local-plan-v44",
+        "plan-clear-v44"
+      ],
+      "checks": [
+        "readiness-v45",
+        "readiness-v44",
+        "readiness-v43",
+        "readiness-v42",
+        "readiness-v41",
+        "readiness-v40",
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "catalog-v45",
+        "release-v45",
+        "rank-v40",
+        "payer-v41",
+        "external-payment-v43",
+        "local-plan-v44",
+        "plan-clear-v44",
+        "expectation-v45",
+        "resource-v45",
+        "contract-v45",
+        "operational-v45"
+      ],
+      "absentFunctions": [
+        "public.claim_student_import_run_v2(uuid,uuid,text,text,text,text,integer)",
+        "public.prepare_student_import_program_v1(uuid,uuid,text,text,uuid,text,uuid,boolean,boolean)",
+        "public.prepare_student_import_belts_v1(uuid,uuid,text,uuid,uuid,jsonb,boolean)",
+        "public.bind_student_import_rank_v1(uuid,uuid,text,uuid,text,uuid)"
+      ],
+      "semanticManifests": [
+        "private.koaryu_release_critical_surface_manifest_v16()",
+        "private.koaryu_release_critical_surface_manifest_v17()",
+        "private.koaryu_release_critical_surface_manifest_v18()",
+        "private.koaryu_release_operational_manifest_v10()",
+        "private.koaryu_release_operational_manifest_v11()"
+      ],
+      "passLines": [
+        "[restored V45] PASS actual V44 backup/restore, retained legacy data and completed caches, ",
+        "untracked retry refusal and maintained import contracts on canonical/restored copies"
       ]
     }
   }

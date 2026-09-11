@@ -32,9 +32,6 @@ class ProgramService:
     def _program_ladders(self) -> ProgramLadderSync:
         return ProgramLadderSync(self.supabase, audit_writer=self._records.audit)
 
-    def ensure_program_ladders(self, studio_id: str) -> None:
-        self._program_ladders().ensure_program_ladders(studio_id)
-
     async def list_programs(
         self,
         studio_id: str,

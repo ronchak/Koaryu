@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 
 from app.services.program_service import ProgramService
 from tests.fakes.supabase import TableBackedSupabase
@@ -27,8 +26,8 @@ class ProgramServiceTest(unittest.TestCase):
         })
         service = ProgramService(supabase)
 
-        with patch.object(ProgramService, "ensure_program_ladders", side_effect=AssertionError("repair write")):
-            programs = service.list_programs_sync("studio-1")
+        programs = service.list_programs_sync("studio-1")
+        self.assertTrue(all(q["insert"] is None and q["upsert"] is None and q["update"] is None and not q["delete"] for q in supabase.query_log))
 
         self.assertEqual(len(programs), 1)
         self.assertEqual(programs[0].id, "program-1")

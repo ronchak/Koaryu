@@ -1,488 +1,148 @@
 from __future__ import annotations
 
-import logging
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import HTTPException
-from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
-from app.services.program_service import ProgramService
-from app.services.student_import_csv import (
-    belt_import_sort_key,
-    infer_belt_color_hex,
-    make_import_issue,
-    normalize_header,
-)
+from app.services.student_import_csv import belt_import_sort_key, infer_belt_color_hex, make_import_issue, normalize_header
 from app.services.student_import_ids import deterministic_import_uuid
 from app.services.student_import_planner import StudentImportPlanner
-
-
-logger = logging.getLogger(__name__)
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
 class StudentImportSetupWriter:
+    """Prepare only valid unfinished rows; SQL owns each confirmed setup outcome."""
+
     def __init__(self, supabase: Client):
         self.supabase = supabase
 
-    def _build_named_record_lookup(
+    def prepare(
         self,
-        table_name: str,
-        studio_id: str,
-    ) -> tuple[set[str], dict[str, str], set[str]]:
-        return StudentImportPlanner(self.supabase).build_named_record_lookup(table_name, studio_id)
-
-    def _resolve_named_import_reference(
-        self,
-        raw_value: Optional[str],
+        planned_rows: list[dict[str, Any]],
         *,
-        label: str,
-        id_lookup: set[str],
-        name_lookup: dict[str, str],
-        ambiguous_names: set[str],
-    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        return StudentImportPlanner(self.supabase).resolve_named_import_reference(
-            raw_value,
-            label=label,
-            id_lookup=id_lookup,
-            name_lookup=name_lookup,
-            ambiguous_names=ambiguous_names,
-        )
-
-    def _create_missing_programs(
-        self,
         studio_id: str,
-        actor_id: str,
-        planned_rows: list[dict[str, Any]],
         import_run_id: str,
-        non_critical_errors: Optional[list[str]] = None,
-    ) -> list[str]:
-        requested_names: dict[str, str] = {}
-        for row in planned_rows:
-            raw_name = row.get("pending_program_name")
-            if not raw_name:
+        processing_token: str,
+        receipts: dict[str, dict[str, Any]],
+    ) -> None:
+        unfinished = [row for row in planned_rows if row["is_valid"] and not row.get("completed")]
+        programs = receipts.setdefault("program", {})
+        requested: dict[str, tuple[str, str | None]] = {}
+        for row in unfinished:
+            if name := row.get("pending_program_name"):
+                requested.setdefault(normalize_header(name), (name.strip(), None))
+            elif row.get("resolved_program_id"):
+                name = row["data"]["program_id"]
+                requested.setdefault(normalize_header(name), (name, row["resolved_program_id"]))
+            else:
+                requested.setdefault("__unassigned__", ("Unassigned", None))
+        for key, (name, selected_id) in requested.items():
+            if key in programs:
                 continue
-            normalized_name = normalize_header(raw_name)
-            if normalized_name and normalized_name not in requested_names:
-                requested_names[normalized_name] = raw_name.strip()
+            program_id = selected_id or deterministic_import_uuid(import_run_id, "program", key)
+            result = first_rpc_row(execute_required_rpc(self.supabase, "prepare_student_import_program_v1", {
+                "p_studio_id": studio_id,
+                "p_import_run_id": import_run_id,
+                "p_processing_token": processing_token,
+                "p_key": key,
+                "p_program_id": program_id,
+                "p_name": name,
+                "p_ladder_id": None if selected_id else deterministic_import_uuid(import_run_id, "ladder", program_id),
+                "p_unassigned": key == "__unassigned__",
+                "p_create_program": selected_id is None,
+            }))
+            if not result or not result.get("program_id"):
+                raise RuntimeError("Import program setup returned no confirmed identity")
+            programs[key] = result
+        for row in unfinished:
+            reference = row["data"].get("program_id")
+            key = normalize_header(reference) if reference else "__unassigned__"
+            row["resolved_program_id"] = programs[key]["program_id"]
 
-        if not requested_names:
-            return []
-
-        program_lookup = self._build_named_record_lookup("programs", studio_id)
-        program_service = ProgramService(self.supabase)
-        created_programs: list[str] = []
-        for normalized_name, raw_name in requested_names.items():
-            existing_id = program_lookup[1].get(normalized_name)
-            if existing_id:
+        confirmed_ranks = receipts.setdefault("rank", {})
+        for row in unfinished:
+            if not row.get("resolved_belt_rank_id"):
                 continue
+            rank_key = normalize_header(row["data"]["current_belt_rank_id"])
+            key = f"{row['resolved_program_id']}:{rank_key}"
+            if key not in confirmed_ranks:
+                result = first_rpc_row(execute_required_rpc(self.supabase, "bind_student_import_rank_v1", {
+                    "p_studio_id": studio_id,
+                    "p_import_run_id": import_run_id,
+                    "p_processing_token": processing_token,
+                    "p_program_id": row["resolved_program_id"],
+                    "p_key": rank_key,
+                    "p_rank_id": row["resolved_belt_rank_id"],
+                }))
+                if not result or not result.get("rank_id"):
+                    raise RuntimeError("Import rank selection returned no confirmed identity")
+                confirmed_ranks[key] = result
+            row["resolved_belt_rank_id"] = confirmed_ranks[key]["rank_id"]
 
-            program_id = deterministic_import_uuid(import_run_id, "program", normalized_name)
-            result = None
-            sort_order = (len(program_lookup[0]) + len(created_programs)) * 10
-            full_program_row = {
-                "id": program_id,
-                "studio_id": studio_id,
-                "name": raw_name,
-                "description": "Program created from student import.",
-                "color_hex": "#64748B",
-                "sort_order": sort_order,
-                "is_system": False,
-                "archived_at": None,
-            }
-            try:
-                result = (
-                    self.supabase.table("programs")
-                    .upsert(
-                        full_program_row,
-                        on_conflict="id",
-                    )
-                    .execute()
-                )
-            except PostgrestAPIError as exc:
-                if exc.code not in {"42703", "PGRST204", "PGRST205"}:
-                    result = None
-                else:
-                    result = (
-                        self.supabase.table("programs")
-                        .upsert(
-                            {
-                                "id": program_id,
-                                "studio_id": studio_id,
-                                "name": raw_name,
-                                "description": "Program created from student import.",
-                            },
-                            on_conflict="id",
-                        )
-                        .execute()
-                    )
-            except Exception:
-                result = None
-            if not result or not result.data:
-                refreshed_lookup = self._build_named_record_lookup("programs", studio_id)
-                if refreshed_lookup[1].get(normalized_name):
-                    program_lookup = refreshed_lookup
-                    continue
-                raise HTTPException(status_code=500, detail=f"Failed to create program '{raw_name}'")
-
-            created_programs.append(raw_name)
-            program_lookup = self._build_named_record_lookup("programs", studio_id)
-
-        if created_programs:
-            program_service.ensure_program_ladders(studio_id)
-            try:
-                self.supabase.table("audit_logs").insert({
-                    "studio_id": studio_id,
-                    "actor_id": actor_id,
-                    "action": "programs.created_from_import",
-                    "entity_type": "program",
-                    "entity_id": None,
-                    "metadata": {"names": created_programs},
-                }).execute()
-            except Exception:
-                logger.exception(
-                    "Student import program audit log write failed",
-                    extra={"studio_id": studio_id, "import_run_id": import_run_id},
-                )
-                if non_critical_errors is not None:
-                    non_critical_errors.append(
-                        "Programs were created, but the import audit log could not be written."
-                    )
-
-        refreshed_lookup = self._build_named_record_lookup("programs", studio_id)
-        for row in planned_rows:
-            raw_name = row.get("pending_program_name")
-            if not raw_name:
-                continue
-            resolved_id, _, _ = self._resolve_named_import_reference(
-                raw_name,
-                label="Program",
-                id_lookup=refreshed_lookup[0],
-                name_lookup=refreshed_lookup[1],
-                ambiguous_names=refreshed_lookup[2],
-            )
-            row["resolved_program_id"] = resolved_id
-
-        return created_programs
-
-    def _create_missing_belts(
-        self,
-        studio_id: str,
-        actor_id: str,
-        planned_rows: list[dict[str, Any]],
-        belt_rank_lookup: dict[str, Any],
-        import_run_id: str,
-        non_critical_errors: Optional[list[str]] = None,
-    ) -> tuple[list[str], list[str]]:
-        pending_rows = [row for row in planned_rows if row.get("pending_belt_name")]
-        if not pending_rows:
-            return [], []
-
-        ladders_by_program: dict[str, list[str]] = defaultdict(list, {
-            program_id: list(ladder_ids)
-            for program_id, ladder_ids in belt_rank_lookup.get("ladders_by_program", {}).items()
-        })
-        ladder_meta = {
-            ladder_id: dict(meta)
-            for ladder_id, meta in belt_rank_lookup.get("ladder_meta", {}).items()
-        }
-
-        requested_program_ids = sorted({
-            row.get("resolved_program_id")
-            for row in pending_rows
-            if row.get("resolved_program_id")
-        })
-        program_names: dict[str, str] = {}
-        if requested_program_ids:
-            programs_result = (
-                self.supabase.table("programs")
-                .select("id, name")
-                .eq("studio_id", studio_id)
-                .in_("id", requested_program_ids)
-                .execute()
-            )
-            program_names = {
-                row["id"]: row.get("name") or "Imported Program"
-                for row in (programs_result.data or [])
-                if row.get("id")
-            }
-
-        requested_new_ladders: dict[str, str] = {}
-        for row in pending_rows:
-            if row.get("belt_creation_target_ladder_id"):
-                continue
-
-            program_id = row.get("resolved_program_id")
-            if not program_id:
-                continue
-
-            program_ladders = ladders_by_program.get(program_id, [])
-            if len(program_ladders) == 1:
-                row["belt_creation_target_ladder_id"] = program_ladders[0]
-                row["belt_creation_requires_new_ladder"] = False
-                continue
-
-            if len(program_ladders) == 0:
-                requested_new_ladders[program_id] = program_names.get(program_id, "Imported Program")
-                continue
-
-            row["issues"].append(make_import_issue(
-                "ambiguous_belt_ladder",
-                f"{program_names.get(program_id, 'This program')} has multiple belt ladders, so Koaryu could not safely auto-create this current belt during import.",
-                field="current_belt_rank_id",
-                value=row.get("unresolved_belt_value"),
-                suggested_action="Choose one ladder for this program in Belt Tracker, then retry the import.",
-            ))
-            row["is_valid"] = False
-
-        created_ladders: list[str] = []
-        created_ladder_ids: dict[str, str] = {}
-        for program_id, program_name in sorted(requested_new_ladders.items(), key=lambda item: item[1].lower()):
-            existing_program_ladders = (
-                self.supabase.table("belt_ladders")
-                .select("id, name, program_id")
-                .eq("studio_id", studio_id)
-                .eq("program_id", program_id)
-                .order("created_at")
-                .execute()
-            )
-            existing_program_ladder_rows = existing_program_ladders.data or []
-            if len(existing_program_ladder_rows) == 1:
-                existing_ladder = existing_program_ladder_rows[0]
-                ladder_id = existing_ladder["id"]
-                created_ladder_ids[program_id] = ladder_id
-                ladders_by_program[program_id] = [ladder_id]
-                ladder_meta[ladder_id] = {
-                    "name": existing_ladder.get("name") or program_name,
-                    "program_id": program_id,
-                }
-                continue
-            if len(existing_program_ladder_rows) > 1:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Program '{program_name}' has multiple ladders. Please clean them up in Belt Tracker before importing current belts.",
-                )
-
-            ladder_id = deterministic_import_uuid(import_run_id, "ladder", program_id)
-            result = None
-            try:
-                result = (
-                    self.supabase.table("belt_ladders")
-                    .upsert(
-                        {
-                            "id": ladder_id,
-                            "studio_id": studio_id,
-                            "name": program_name,
-                            "program_id": program_id,
-                            "sub_rank_term": "Stripe",
-                        },
-                        on_conflict="id",
-                    )
-                    .execute()
-                )
-            except Exception:
-                result = None
-            if not result or not result.data:
-                existing_program_ladders = (
-                    self.supabase.table("belt_ladders")
-                    .select("id, name, program_id")
-                    .eq("studio_id", studio_id)
-                    .eq("program_id", program_id)
-                    .order("created_at")
-                    .execute()
-                )
-                existing_program_ladder_rows = existing_program_ladders.data or []
-                if len(existing_program_ladder_rows) == 1:
-                    existing_ladder = existing_program_ladder_rows[0]
-                    ladder_id = existing_ladder["id"]
-                    created_ladder_ids[program_id] = ladder_id
-                    ladders_by_program[program_id] = [ladder_id]
-                    ladder_meta[ladder_id] = {
-                        "name": existing_ladder.get("name") or program_name,
-                        "program_id": program_id,
-                    }
-                    continue
-                raise HTTPException(status_code=500, detail=f"Failed to create ladder for program '{program_name}'")
-
-            ladder_id = result.data[0]["id"]
-            created_ladder_ids[program_id] = ladder_id
-            ladders_by_program[program_id] = [ladder_id]
-            ladder_meta[ladder_id] = {
-                "name": result.data[0].get("name") or program_name,
-                "program_id": program_id,
-            }
-            created_ladders.append(program_name)
-
-        if created_ladders:
-            try:
-                self.supabase.table("audit_logs").insert({
-                    "studio_id": studio_id,
-                    "actor_id": actor_id,
-                    "action": "belt_ladders.created_from_import",
-                    "entity_type": "belt_ladder",
-                    "entity_id": None,
-                    "metadata": {"names": created_ladders},
-                }).execute()
-            except Exception:
-                logger.exception(
-                    "Student import belt ladder audit log write failed",
-                    extra={"studio_id": studio_id, "import_run_id": import_run_id},
-                )
-                if non_critical_errors is not None:
-                    non_critical_errors.append(
-                        "Belt ladders were created, but the import audit log could not be written."
-                    )
-
-        for row in pending_rows:
-            if row.get("belt_creation_target_ladder_id"):
-                continue
-            program_id = row.get("resolved_program_id")
-            if program_id and program_id in created_ladder_ids:
-                row["belt_creation_target_ladder_id"] = created_ladder_ids[program_id]
-                row["belt_creation_requires_new_ladder"] = False
-
-        requested_belts: dict[tuple[str, str], dict[str, str]] = {}
-        for row in pending_rows:
-            raw_name = row.get("pending_belt_name")
-            ladder_id = row.get("belt_creation_target_ladder_id")
-            if not raw_name or not ladder_id:
-                continue
-
-            normalized_name = normalize_header(raw_name)
-            if not normalized_name:
-                continue
-
-            key = (ladder_id, normalized_name)
-            if key not in requested_belts:
-                ladder_name = (
-                    (ladder_meta.get(ladder_id) or {}).get("name")
-                    or "Imported ladder"
-                )
-                requested_belts[key] = {
-                    "raw_name": raw_name.strip(),
-                    "ladder_name": ladder_name,
-                }
-
-        if not requested_belts:
-            return created_ladders, []
-
-        ladder_ids = sorted({ladder_id for ladder_id, _ in requested_belts.keys()})
-        ranks_result = (
-            self.supabase.table("belt_ranks")
-            .select("id, ladder_id, display_order, name")
-            .eq("studio_id", studio_id)
-            .in_("ladder_id", ladder_ids)
-            .order("display_order")
-            .execute()
-        )
-
-        next_display_order: dict[str, int] = defaultdict(int)
-        existing_rank_ids_by_key: dict[tuple[str, str], str] = {}
-        for rank in ranks_result.data or []:
-            ladder_id = rank.get("ladder_id")
+        pending_belts = [row for row in unfinished if row.get("pending_belt_name")]
+        if not pending_belts:
+            return
+        lookup = StudentImportPlanner(self.supabase).build_belt_rank_lookup(studio_id)
+        by_program: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in pending_belts:
+            by_program[row["resolved_program_id"]].append(row)
+        confirmed_ladders = receipts.setdefault("ladder", {})
+        default_ladders = {value["program_id"]: value["ladder_id"] for value in programs.values() if value.get("ladder_id")}
+        for program_id, rows in by_program.items():
+            current_ladders = lookup["ladders_by_program"].get(program_id, [])
+            confirmed = confirmed_ladders.get(program_id)
+            ladder_id = (confirmed or {}).get("ladder_id") or default_ladders.get(program_id)
+            create_ladder = False
             if not ladder_id:
-                continue
-            next_display_order[ladder_id] = max(
-                next_display_order[ladder_id],
-                int(rank.get("display_order", 0)) + 1,
-            )
-            normalized_rank_name = normalize_header(rank.get("name") or "")
-            if normalized_rank_name:
-                existing_rank_ids_by_key[(ladder_id, normalized_rank_name)] = rank["id"]
-
-        created_belt_ids: dict[tuple[str, str], str] = {}
-        created_belts: list[str] = []
-        ordered_requests = sorted(
-            requested_belts.items(),
-            key=lambda item: (item[0][0], belt_import_sort_key(item[1]["raw_name"])),
-        )
-        for (ladder_id, normalized_name), meta in ordered_requests:
-            existing_rank_id = existing_rank_ids_by_key.get((ladder_id, normalized_name))
-            if existing_rank_id:
-                created_belt_ids[(ladder_id, normalized_name)] = existing_rank_id
+                if len(current_ladders) > 1:
+                    self._reject(rows, "ambiguous_belt_ladder", "This program has multiple belt ladders. Choose one in Belt Tracker before importing these belts.")
+                    continue
+                ladder_id = current_ladders[0] if current_ladders else deterministic_import_uuid(import_run_id, "ladder", program_id)
+                create_ladder = not current_ladders
+            elif ladder_id not in current_ladders:
+                self._reject(rows, "unavailable_belt_ladder", "The ladder confirmed by this import is no longer available. Reconcile its saved setup before importing these belts.")
                 continue
 
-            rank_id = deterministic_import_uuid(import_run_id, "belt", f"{ladder_id}:{normalized_name}")
-            result = None
-            try:
-                result = (
-                    self.supabase.table("belt_ranks")
-                    .upsert(
-                        {
-                            "id": rank_id,
-                            "studio_id": studio_id,
-                            "ladder_id": ladder_id,
-                            "name": meta["raw_name"],
-                            "color_hex": infer_belt_color_hex(meta["raw_name"]),
-                            "display_order": next_display_order[ladder_id],
-                            "min_classes": 0,
-                            "min_months": 0,
-                            "requires_approval": True,
-                            "is_tip": False,
-                            "tip_color_hex": None,
-                        },
-                        on_conflict="id",
-                    )
-                    .execute()
-                )
-            except Exception:
-                result = None
-
-            if result and result.data:
-                created_belt_ids[(ladder_id, normalized_name)] = result.data[0]["id"]
-                existing_rank_ids_by_key[(ladder_id, normalized_name)] = result.data[0]["id"]
-                next_display_order[ladder_id] += 1
-                created_belts.append(f"{meta['raw_name']} ({meta['ladder_name']})")
+            requests: dict[str, dict[str, Any]] = {}
+            for row in rows:
+                name = row["pending_belt_name"].strip()
+                key = normalize_header(name)
+                existing = lookup["program_rank_name_lookup"].get(program_id, {}).get(key, [])
+                if len(existing) > 1:
+                    self._reject([row], "ambiguous_belt", "This belt name matches multiple ranks in its program. Choose an unambiguous belt before importing this row.")
+                    continue
+                requests.setdefault(key, {
+                    "key": key,
+                    "name": name,
+                    "id": deterministic_import_uuid(import_run_id, "belt", f"{ladder_id}:{key}"),
+                    "existing_id": existing[0] if existing else None,
+                    "color_hex": infer_belt_color_hex(name),
+                })
+            if not requests:
                 continue
+            ordered = sorted(requests.values(), key=lambda request: belt_import_sort_key(request["name"]))
+            result = first_rpc_row(execute_required_rpc(self.supabase, "prepare_student_import_belts_v1", {
+                "p_studio_id": studio_id,
+                "p_import_run_id": import_run_id,
+                "p_processing_token": processing_token,
+                "p_program_id": program_id,
+                "p_ladder_id": ladder_id,
+                "p_ranks": ordered,
+                "p_create_ladder": create_ladder,
+            }))
+            if not result or len(result.get("ranks", [])) != len(ordered):
+                raise RuntimeError("Import belt setup returned incomplete outcomes")
+            confirmed_ladders[program_id] = result["ladder"]
+            for request, rank in zip(ordered, result["ranks"], strict=True):
+                confirmed_ranks[f"{program_id}:{request['key']}"] = rank
+            for row in rows:
+                if row["is_valid"]:
+                    key = f"{program_id}:{normalize_header(row['pending_belt_name'])}"
+                    row["resolved_belt_rank_id"] = confirmed_ranks[key]["rank_id"]
 
-            existing_rank = (
-                self.supabase.table("belt_ranks")
-                .select("id, name")
-                .eq("studio_id", studio_id)
-                .eq("ladder_id", ladder_id)
-                .execute()
-            )
-            existing_rank_id = next(
-                (
-                    rank.get("id")
-                    for rank in (existing_rank.data or [])
-                    if normalize_header(rank.get("name") or "") == normalized_name
-                ),
-                None,
-            )
-            if not existing_rank_id:
-                raise HTTPException(status_code=500, detail=f"Failed to create belt '{meta['raw_name']}'")
-            created_belt_ids[(ladder_id, normalized_name)] = existing_rank_id
-
-        if created_belts:
-            try:
-                self.supabase.table("audit_logs").insert({
-                    "studio_id": studio_id,
-                    "actor_id": actor_id,
-                    "action": "belt_ranks.created_from_import",
-                    "entity_type": "belt_rank",
-                    "entity_id": None,
-                    "metadata": {"names": created_belts},
-                }).execute()
-            except Exception:
-                logger.exception(
-                    "Student import belt rank audit log write failed",
-                    extra={"studio_id": studio_id, "import_run_id": import_run_id},
-                )
-                if non_critical_errors is not None:
-                    non_critical_errors.append(
-                        "Belt ranks were created, but the import audit log could not be written."
-                    )
-
-        for row in planned_rows:
-            raw_name = row.get("pending_belt_name")
-            ladder_id = row.get("belt_creation_target_ladder_id")
-            if not raw_name or not ladder_id:
-                continue
-            normalized_name = normalize_header(raw_name)
-            created_rank_id = created_belt_ids.get((ladder_id, normalized_name))
-            if created_rank_id:
-                row["resolved_belt_rank_id"] = created_rank_id
-
-        return created_ladders, created_belts
+    @staticmethod
+    def _reject(rows: list[dict[str, Any]], code: str, message: str) -> None:
+        for row in rows:
+            row["issues"].append(make_import_issue(code, message, field="current_belt_rank_id"))
+            row["is_valid"] = False

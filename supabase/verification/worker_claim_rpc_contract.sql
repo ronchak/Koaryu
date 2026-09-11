@@ -13,6 +13,7 @@ DECLARE
         'public.claim_due_account_deletion_requests(integer,text,integer)',
         'public.finish_account_deletion_request(uuid,text,text,text)',
         'public.claim_student_import_run(uuid,uuid,text,text,text,text,integer)',
+        'public.claim_student_import_run_v2(uuid,uuid,text,text,text,text,integer)',
         'public.heartbeat_student_import_run(uuid,text)',
         'public.finish_student_import_run(uuid,text,text,jsonb,text)'
     ];
@@ -33,8 +34,9 @@ BEGIN
             RAISE EXCEPTION 'Worker claim RPC % must be SECURITY INVOKER.', v_signature;
         END IF;
 
-        IF NOT COALESCE('search_path=public, pg_temp' = ANY(v_config), false) THEN
-            RAISE EXCEPTION 'Worker claim RPC % must pin search_path to public, pg_temp.', v_signature;
+        IF v_config IS DISTINCT FROM ARRAY[CASE WHEN v_signature LIKE 'public.claim_student_import_run_v2(%'
+                THEN 'search_path=pg_catalog' ELSE 'search_path=public, pg_temp' END]::TEXT[] THEN
+            RAISE EXCEPTION 'Worker claim RPC % has an unexpected search_path.', v_signature;
         END IF;
 
         FOREACH v_role IN ARRAY ARRAY['anon', 'authenticated']
@@ -58,11 +60,7 @@ DECLARE
     v_event_row JSONB;
     v_fresh_request_id UUID;
     v_request_id UUID;
-    v_run_id UUID;
-    v_smoke_key TEXT := 'worker-smoke-' || gen_random_uuid()::TEXT;
     v_stale_request_id UUID;
-    v_studio_id UUID := gen_random_uuid();
-    v_import_owner_id UUID := gen_random_uuid();
     v_updated BOOLEAN;
 BEGIN
     BEGIN
@@ -257,144 +255,176 @@ BEGIN
         RAISE EXCEPTION 'Correct account deletion token should finish request.';
     END IF;
 
-    INSERT INTO auth.users (
-        id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
-    ) VALUES (
-        v_import_owner_id, 'authenticated', 'authenticated',
-        'worker-import-' || v_import_owner_id::TEXT || '@example.invalid',
-        '{}'::JSONB, '{}'::JSONB, NOW(), NOW()
-    );
-    INSERT INTO public.studios (id, name, slug, owner_id)
-    VALUES (v_studio_id, 'Worker Import Contract', 'worker-import-' || v_studio_id::TEXT, v_import_owner_id);
-
-    BEGIN
-        PERFORM *
-          FROM public.claim_student_import_run(
-              v_studio_id,
-              NULL,
-              'students_csv_execute',
-              v_smoke_key,
-              'hash-1',
-              '',
-              45
-          );
-        RAISE EXCEPTION 'Expected blank student import claim token to be rejected.';
-    EXCEPTION WHEN invalid_parameter_value THEN
-        NULL;
-    END;
-
-    SELECT claim_status, run_row
-      INTO v_claim_status, v_event_row
-      FROM public.claim_student_import_run(
-          v_studio_id,
-          NULL,
-          'students_csv_execute',
-          v_smoke_key,
-          'hash-1',
-          'student-token-1',
-          45
-      );
-
-    IF v_claim_status IS DISTINCT FROM 'claimed' THEN
-        RAISE EXCEPTION 'Expected first student import claim, got %.', v_claim_status;
-    END IF;
-    v_run_id := (v_event_row->>'id')::UUID;
-    IF v_run_id IS NULL THEN
-        RAISE EXCEPTION 'Student import claim did not return a run identity.';
-    END IF;
-
-    SELECT updated
-      INTO v_updated
-      FROM public.heartbeat_student_import_run(v_run_id, 'wrong-token');
-
-    IF v_updated IS DISTINCT FROM FALSE THEN
-        RAISE EXCEPTION 'Wrong student import token must not heartbeat run.';
-    END IF;
-
-    SELECT updated
-      INTO v_updated
-      FROM public.heartbeat_student_import_run(v_run_id, 'student-token-1');
-
-    IF v_updated IS DISTINCT FROM TRUE THEN
-        RAISE EXCEPTION 'Correct student import token should heartbeat run.';
-    END IF;
-
-    SELECT claim_status
-      INTO v_claim_status
-      FROM public.claim_student_import_run(
-          v_studio_id,
-          NULL,
-          'students_csv_execute',
-          v_smoke_key,
-          'hash-2',
-          'student-token-2',
-          45
-      );
-
-    IF v_claim_status IS DISTINCT FROM 'hash_mismatch' THEN
-        RAISE EXCEPTION 'Student import hash mismatch should be explicit, got %.', v_claim_status;
-    END IF;
-
-    SELECT claim_status
-      INTO v_claim_status
-      FROM public.claim_student_import_run(
-          v_studio_id,
-          NULL,
-          'students_csv_execute',
-          v_smoke_key,
-          'hash-1',
-          'student-token-2',
-          45
-      );
-
-    IF v_claim_status IS DISTINCT FROM 'already_processing' THEN
-        RAISE EXCEPTION 'Fresh student import claim should stay processing, got %.', v_claim_status;
-    END IF;
-
-    SELECT updated
-      INTO v_updated
-      FROM public.finish_student_import_run(
-          v_run_id,
-          'wrong-token',
-          'completed',
-          '{"imported_count":1}'::JSONB,
-          NULL
-      );
-
-    IF v_updated IS DISTINCT FROM FALSE THEN
-        RAISE EXCEPTION 'Wrong student import token must not finish run.';
-    END IF;
-
-    SELECT updated
-      INTO v_updated
-      FROM public.finish_student_import_run(
-          v_run_id,
-          'student-token-1',
-          'completed',
-          '{"imported_count":1}'::JSONB,
-          NULL
-      );
-
-    IF v_updated IS DISTINCT FROM TRUE THEN
-        RAISE EXCEPTION 'Correct student import token should finish run.';
-    END IF;
-
-    SELECT claim_status
-      INTO v_claim_status
-      FROM public.claim_student_import_run(
-          v_studio_id,
-          NULL,
-          'students_csv_execute',
-          v_smoke_key,
-          'hash-1',
-          'student-token-3',
-          45
-      );
-
-    IF v_claim_status IS DISTINCT FROM 'completed' THEN
-        RAISE EXCEPTION 'Completed student import should be reusable, got %.', v_claim_status;
-    END IF;
-    RAISE NOTICE 'Koaryu worker claim RPC contract verification passed.';
+    RAISE NOTICE 'Stripe and account-deletion worker contracts passed.';
 END $$;
 
+CREATE FUNCTION pg_temp.fail_import_audit() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.action = 'students.imported' AND current_setting('koaryu.test_import_audit', TRUE) = 'fail' THEN
+        RAISE EXCEPTION 'Synthetic audit failure' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER test_import_audit BEFORE INSERT ON public.audit_logs
+FOR EACH ROW EXECUTE FUNCTION pg_temp.fail_import_audit();
+
+DO $$
+DECLARE
+    studio UUID := gen_random_uuid(); actor UUID := gen_random_uuid(); run_id UUID; legacy_id UUID;
+    candidate RECORD; finished RECORD; saved JSONB; original JSONB;
+    program_id UUID := gen_random_uuid(); ladder_id UUID := gen_random_uuid(); rank_id UUID := gen_random_uuid();
+    program_result JSONB; belt_result JSONB; rank_result JSONB; unscoped_result JSONB; ranks JSONB;
+    foreign_studio UUID := gen_random_uuid(); foreign_program UUID := gen_random_uuid();
+    result JSONB := '{"total_rows":1,"valid_rows":0,"error_rows":1,"imported_count":0,"non_critical_errors":[]}'::JSONB;
+    rejected BOOLEAN;
+BEGIN
+    INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+    VALUES(actor,'authenticated','authenticated',actor::TEXT || '@example.invalid','{}','{}',now(),now());
+    INSERT INTO public.studios(id,name,slug,owner_id) VALUES(studio,'Import worker contract',studio::TEXT,actor);
+    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,actor,'admin');
+    SET LOCAL ROLE service_role;
+
+    rejected := FALSE;
+    BEGIN
+        PERFORM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','modern','hash','',45);
+    EXCEPTION WHEN invalid_parameter_value THEN rejected := TRUE;
+    END;
+    IF NOT rejected THEN RAISE EXCEPTION 'Blank token was accepted'; END IF;
+    SELECT * INTO candidate FROM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','modern','hash','token',45);
+    run_id := (candidate.run_row->>'id')::UUID;
+    IF candidate.claim_status IS DISTINCT FROM 'claimed' OR run_id IS NULL
+       OR candidate.run_row->'receipts' IS DISTINCT FROM '[]'::JSONB
+       OR candidate.run_row->'receipts_enabled' IS DISTINCT FROM 'true'::JSONB THEN
+        RAISE EXCEPTION 'Modern claim was not initialized atomically';
+    END IF;
+    SELECT * INTO candidate FROM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','modern','different','other',45);
+    IF candidate.claim_status IS DISTINCT FROM 'hash_mismatch' THEN RAISE EXCEPTION 'Changed request accepted'; END IF;
+    SELECT * INTO candidate FROM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','modern','hash','other',45);
+    IF candidate.claim_status IS DISTINCT FROM 'already_processing' THEN RAISE EXCEPTION 'Active claim stolen'; END IF;
+    IF (SELECT updated FROM public.heartbeat_student_import_run(run_id,'wrong')) IS DISTINCT FROM FALSE
+       OR (SELECT updated FROM public.heartbeat_student_import_run(run_id,'token')) IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'Retained heartbeat token boundary failed';
+    END IF;
+    SELECT * INTO finished FROM public.finish_student_import_run(run_id,'wrong','completed',result,NULL);
+    IF finished.updated IS DISTINCT FROM FALSE THEN RAISE EXCEPTION 'Stale worker completed the run'; END IF;
+
+    PERFORM public.prepare_student_import_program_v1(studio,run_id,'token','__unassigned__',gen_random_uuid(),'Unassigned',NULL,TRUE);
+    INSERT INTO public.programs(id,studio_id,name) VALUES(program_id,studio,'Owned program');
+    program_result := public.prepare_student_import_program_v1(studio,run_id,'token','owned',program_id,'Owned program',NULL,FALSE,FALSE);
+    IF program_result->'created' IS DISTINCT FROM 'false'::JSONB
+       OR EXISTS(SELECT 1 FROM public.belt_ladders WHERE studio_id=studio)
+       OR EXISTS(SELECT 1 FROM public.audit_logs WHERE studio_id=studio) THEN
+        RAISE EXCEPTION 'Selecting an existing program created or repaired configuration';
+    END IF;
+    ranks := jsonb_build_array(jsonb_build_object('key','white','id',rank_id,'name','White','color_hex','#ffffff'));
+    belt_result := public.prepare_student_import_belts_v1(studio,run_id,'token',program_id,ladder_id,ranks,TRUE);
+    rank_result := public.bind_student_import_rank_v1(studio,run_id,'token',program_id,'selected white',rank_id);
+    IF rank_result->>'rank_id' IS DISTINCT FROM rank_id::TEXT
+       OR rank_result->>'context_program_id' IS DISTINCT FROM program_id::TEXT
+       OR rank_result->'created' IS DISTINCT FROM 'false'::JSONB THEN
+        RAISE EXCEPTION 'Existing rank selection did not bind the original identity';
+    END IF;
+    INSERT INTO public.studios(id,name,slug,owner_id) VALUES(foreign_studio,'Foreign import',foreign_studio::TEXT,actor);
+    INSERT INTO public.programs(id,studio_id,name) VALUES(foreign_program,foreign_studio,'Foreign program');
+    rejected := FALSE;
+    BEGIN PERFORM public.bind_student_import_rank_v1(foreign_studio,run_id,'token',foreign_program,'foreign',rank_id);
+    EXCEPTION WHEN OTHERS THEN rejected := SQLERRM LIKE '%claim is no longer active%'; END;
+    IF NOT rejected THEN RAISE EXCEPTION 'Foreign studio selected an import rank'; END IF;
+    rejected := FALSE;
+    BEGIN PERFORM public.bind_student_import_rank_v1(studio,run_id,'token',foreign_program,'foreign',rank_id);
+    EXCEPTION WHEN foreign_key_violation THEN rejected := TRUE; END;
+    IF NOT rejected THEN RAISE EXCEPTION 'Foreign program selected an import rank'; END IF;
+    UPDATE public.belt_ladders SET program_id=NULL WHERE id=ladder_id;
+    unscoped_result := public.bind_student_import_rank_v1(studio,run_id,'token',program_id,'unscoped',rank_id);
+    IF unscoped_result->'program_id' IS DISTINCT FROM 'null'::JSONB
+       OR unscoped_result->>'context_program_id' IS DISTINCT FROM program_id::TEXT
+       OR NOT EXISTS(SELECT 1 FROM public.belt_ladders l WHERE l.id=ladder_id AND l.program_id IS NULL)
+       OR (SELECT count(*) FROM public.audit_logs WHERE studio_id=studio) IS DISTINCT FROM 2 THEN
+        RAISE EXCEPTION 'Selecting an unscoped rank repaired configuration or emitted an audit';
+    END IF;
+    UPDATE public.belt_ladders SET program_id=(program_result->>'program_id')::UUID WHERE id=ladder_id;
+    UPDATE public.programs SET name='Staff program',archived_at=now() WHERE id=program_id;
+    UPDATE public.belt_ladders SET name='Staff ladder',sub_rank_term='Keep' WHERE id=ladder_id;
+    UPDATE public.belt_ranks SET name='Staff rank',display_order=9,min_classes=42 WHERE id=rank_id;
+    IF public.prepare_student_import_program_v1(studio,run_id,'token','owned',program_id,'Owned program',ladder_id,FALSE) IS DISTINCT FROM program_result
+       OR public.prepare_student_import_belts_v1(studio,run_id,'token',program_id,ladder_id,ranks,FALSE) IS DISTINCT FROM belt_result
+       OR public.bind_student_import_rank_v1(studio,run_id,'token',program_id,'selected white',rank_id) IS DISTINCT FROM rank_result
+       OR NOT EXISTS(SELECT 1 FROM public.programs WHERE id=program_id AND name='Staff program' AND archived_at IS NOT NULL)
+       OR NOT EXISTS(SELECT 1 FROM public.belt_ladders WHERE id=ladder_id AND name='Staff ladder' AND sub_rank_term='Keep')
+       OR NOT EXISTS(SELECT 1 FROM public.belt_ranks WHERE id=rank_id AND name='Staff rank' AND display_order=9 AND min_classes=42) THEN
+        RAISE EXCEPTION 'Setup replay overwrote later staff edits';
+    END IF;
+    DELETE FROM public.belt_ladders WHERE id=ladder_id;
+    DELETE FROM public.programs WHERE id=program_id;
+    IF public.prepare_student_import_program_v1(studio,run_id,'token','owned',program_id,'Owned program',ladder_id,FALSE) IS DISTINCT FROM program_result
+       OR public.prepare_student_import_belts_v1(studio,run_id,'token',program_id,ladder_id,ranks,FALSE) IS DISTINCT FROM belt_result
+       OR public.bind_student_import_rank_v1(studio,run_id,'token',program_id,'selected white',rank_id) IS DISTINCT FROM rank_result
+       OR EXISTS(SELECT 1 FROM public.programs WHERE id=program_id)
+       OR EXISTS(SELECT 1 FROM public.belt_ladders WHERE id=ladder_id)
+       OR EXISTS(SELECT 1 FROM public.belt_ranks WHERE id=rank_id)
+       OR (SELECT count(*) FROM public.audit_logs WHERE studio_id=studio) IS DISTINCT FROM 2 THEN
+        RAISE EXCEPTION 'Setup replay recreated deleted configuration or repeated an audit';
+    END IF;
+    PERFORM public.finish_student_import_run(run_id,'token','failed',NULL,'Retryable interruption');
+    SELECT * INTO candidate FROM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','modern','hash','retry',45);
+    IF candidate.claim_status IS DISTINCT FROM 'claimed' OR (candidate.run_row->>'id')::UUID IS DISTINCT FROM run_id
+       OR jsonb_array_length(candidate.run_row->'receipts') IS DISTINCT FROM 6 THEN
+        RAISE EXCEPTION 'Failed-run recovery lost its setup receipt or run identity';
+    END IF;
+    UPDATE public.student_import_runs SET processing_started_at=now()-INTERVAL '1 hour' WHERE id=run_id;
+    SELECT * INTO candidate FROM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','modern','hash','reclaimed',45);
+    IF candidate.claim_status IS DISTINCT FROM 'claimed' OR candidate.run_row->>'processing_token' IS DISTINCT FROM 'reclaimed' THEN
+        RAISE EXCEPTION 'Stale modern claim was not reclaimed';
+    END IF;
+    rejected := FALSE;
+    BEGIN PERFORM public.finish_student_import_run(run_id,'reclaimed','completed',result || '{"imported_count":1}',NULL);
+    EXCEPTION WHEN invalid_parameter_value THEN rejected := TRUE;
+    END;
+    IF NOT rejected THEN RAISE EXCEPTION 'Uncommitted student count was accepted'; END IF;
+    PERFORM set_config('koaryu.test_import_audit','fail',TRUE);
+    SELECT * INTO finished FROM public.finish_student_import_run(run_id,'reclaimed','completed',result,NULL);
+    saved := finished.run_row->'result_json';
+    IF finished.updated IS DISTINCT FROM TRUE OR saved->>'execution_status' IS DISTINCT FROM 'completed_with_warnings'
+       OR saved->'non_critical_errors' IS DISTINCT FROM jsonb_build_array('Students were imported, but the final import audit log could not be written. Contact support if you need the audit event reconciled.')
+       OR EXISTS(SELECT 1 FROM public.audit_logs WHERE studio_id=studio AND action='students.imported') THEN
+        RAISE EXCEPTION 'Final audit failure was not frozen with completion';
+    END IF;
+    SELECT * INTO candidate FROM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','modern','hash','later',45);
+    IF candidate.claim_status IS DISTINCT FROM 'completed' OR candidate.run_row->'result_json' IS DISTINCT FROM saved THEN
+        RAISE EXCEPTION 'Lost final reply did not recover the exact stored result';
+    END IF;
+
+    SELECT * INTO candidate FROM public.claim_student_import_run(studio,actor,'students_csv_execute','old-new','hash','old',45);
+    IF candidate.claim_status IS DISTINCT FROM 'unsupported_run'
+       OR EXISTS(SELECT 1 FROM public.student_import_runs WHERE studio_id=studio AND idempotency_key='old-new') THEN
+        RAISE EXCEPTION 'Old caller started an untracked import';
+    END IF;
+    INSERT INTO public.student_import_runs(studio_id,actor_id,idempotency_key,request_hash,status,processing_token,processing_started_at)
+    VALUES(studio,actor,'legacy','legacy-hash','processing','legacy-token',now()-INTERVAL '1 hour') RETURNING id INTO legacy_id;
+    SELECT to_jsonb(r) INTO original FROM public.student_import_runs r WHERE id=legacy_id;
+    SELECT * INTO candidate FROM public.claim_student_import_run(studio,actor,'students_csv_execute','legacy','legacy-hash','old-retry',45);
+    IF candidate.claim_status IS DISTINCT FROM 'unsupported_run' THEN RAISE EXCEPTION 'Old caller resumed untracked work'; END IF;
+    SELECT * INTO candidate FROM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','legacy','legacy-hash','new-retry',45);
+    IF candidate.claim_status IS DISTINCT FROM 'unsupported_run'
+       OR (SELECT to_jsonb(r) FROM public.student_import_runs r WHERE id=legacy_id) IS DISTINCT FROM original THEN
+        RAISE EXCEPTION 'New caller changed incomplete legacy work';
+    END IF;
+    rejected := FALSE;
+    BEGIN PERFORM public.finish_student_import_run(legacy_id,'legacy-token','completed',result,NULL);
+    EXCEPTION WHEN invalid_parameter_value THEN rejected := TRUE;
+    END;
+    IF NOT rejected THEN RAISE EXCEPTION 'Untracked legacy completion was accepted'; END IF;
+    -- Model a genuinely completed pre-migration cache, without replaying its old writes.
+    UPDATE public.student_import_runs SET status='completed',processing_token=NULL,result_json=result WHERE id=legacy_id;
+    SELECT * INTO candidate FROM public.claim_student_import_run(studio,actor,'students_csv_execute','legacy','legacy-hash','old-cache',45);
+    IF candidate.claim_status IS DISTINCT FROM 'completed' OR candidate.run_row->'result_json' IS DISTINCT FROM result THEN
+        RAISE EXCEPTION 'Old caller lost completed legacy cache';
+    END IF;
+    SELECT * INTO candidate FROM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','legacy','legacy-hash','new-cache',45);
+    IF candidate.claim_status IS DISTINCT FROM 'completed' OR candidate.run_row->'result_json' IS DISTINCT FROM result THEN
+        RAISE EXCEPTION 'New caller lost completed legacy cache';
+    END IF;
+    RAISE NOTICE 'Import claim, recovery, finalization and legacy refusal contracts passed.';
+END $$;
 ROLLBACK;

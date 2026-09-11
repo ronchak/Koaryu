@@ -11,15 +11,15 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 72 |
+| Fixed | 73 |
 | Resolved indirectly | 2 |
-| Pending | 191 |
+| Pending | 190 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Total | 278 |
 
-Pending work is split between 136 Astra and 55 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
+Pending work is split between 135 Astra and 55 Sol observations. Across all dispositions, 183 are Astra and 95 Sol. These are observations, not ticket or PR counts. Supporting tests and repeated manifestations travel with their owning correction. Grouping pending work does not resolve it.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -29,14 +29,13 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 [PR169](https://github.com/ronchak/Koaryu/pull/169), merged as `e4ab4fc`, closes six shared UI findings. It combines identical views, removes dead options and fixes Button and System theme behavior. The associated tests shrink by 6 lines and one case; [verification](docs/remediation/shared-ui-verification.md) records scope and limits. [PR168](https://github.com/ronchak/Koaryu/pull/168), merged as `8c96132`, corrected the generator permission flag across supported Node releases.
 
+[PR179](https://github.com/ronchak/Koaryu/pull/179), merged as `7113d13`, enforces USD at new tuition financial writes and retires the unused pricing path. Historical financial attempts, exact replay and provider references remain protected. Empty provider headers do not authorize new non-USD amounts. Mixed-currency reporting, unknown provider facts and family attribution remain pending. See [verification](docs/remediation/tuition-currency-verification.md).
+
 ## Next work
 
-1. New verification raises import retry ownership, OPS2-05, ahead of expanding financial reads. Failed-run recovery can repeat student, membership, guardian and setup writes over later staff edits. There is no per-row completion receipt. Verify durable row/setup ownership, lost-response recovery and legacy-run handling before implementation. Avoid rewriting a growing 10,000-row JSON document on every row. This needs a forward database correction, not an existence check.
-2. Billing and dashboard still disagree about overdue status, and stored event-driven status cannot handle midnight rollover. A subsequent shared read correction should apply the settled day-after-due rule and explicit unavailable amounts where currencies cannot be combined. Preserve the UTC payment cohort, tenant access, current concurrency guards and historical records. Check reporting/export consumers before closing BB1-03 or PROGRAM-CURRENCY-01.
-3. Provider unknown-fact recovery, shared-family invoice attribution and prospective provider currency guards have separate ownership boundaries. Keep them separate from read aggregation and retain historical replay. Due-worker and other lock-order findings also remain pending. Local plan listing round trips and unused legacy provider synchronization were not part of PR175.
-4. Continue bounded Sol batches from the current ledger. [PR177](https://github.com/ronchak/Koaryu/pull/177) removes 178 lines and seven cases from the records UI source-test file, retaining five narrow policies. Together with PR176, those test/helper changes net 63 fewer lines. This is partial FT1-11 progress; the broader source-test inventory remains open. See the [accounting and limits](docs/remediation/records-test-reduction-plan.md).
-
-This is a rolling next-step plan. Each merge changes the evidence for subsequent work. Recheck affected pending findings, close only what is actually resolved, and discard future work made unnecessary by the new implementation.
+1. PR178's import retry correction passed all 140 migrations, 52 contracts, restore/negative checks and concurrency checks, including 15 student-writer cases. It remains a draft for the unresolved CSV Program/belt policy. The branch is rebased onto main after PR179; refreshed CI must validate integration before merge. See the [import plan](docs/remediation/import-retry-ownership-plan.md).
+2. Astra is verifying the remaining activation readiness failure classification, BB1-06, after the currency work exposed the relevant ownership paths. Transient read failures must not become a false cancellation decision. Shared overdue/currency read facts, provider unknown-fact recovery and family/report attribution remain high priorities; no financial definition is being reopened.
+3. Sol's next coherent change retires six verified obsolete frontend interfaces from [batch08](docs/remediation/delegated/08-display-and-dead-interfaces.md). Calendar-date rendering, dashboard analytics and store/lead ownership are excluded from that slice. Keep its mounted and SQL assurance honest and separate.
 
 ## Completed changes
 
@@ -66,7 +65,8 @@ This is a rolling next-step plan. Each merge changes the evidence for subsequent
 | [173](https://github.com/ronchak/Koaryu/pull/173) | Shared schedule rendering and real component tests | `9b4df61` | [Schedule](docs/remediation/schedule-rendering-verification.md) |
 | [175](https://github.com/ronchak/Koaryu/pull/175) | Atomic local plan writes and unchanged-save preservation | `a2f0057` | [Local plans](docs/remediation/local-plan-ownership-verification.md) |
 | [176](https://github.com/ronchak/Koaryu/pull/176) | Mobile roster sorting, shared badge contrast and hidden-rail hover suppression | `ddacde1` | [Roster](docs/remediation/roster-presentation-verification.md) |
-| [177](https://github.com/ronchak/Koaryu/pull/177) | Removed redundant records UI source tests | [Merge record](https://github.com/ronchak/Koaryu/pull/177) | [Test reduction](docs/remediation/records-test-reduction-plan.md) |
+| [177](https://github.com/ronchak/Koaryu/pull/177) | Removed redundant records UI source tests | `18b64e9` | [Test reduction](docs/remediation/records-test-reduction-plan.md) |
+| [179](https://github.com/ronchak/Koaryu/pull/179) | USD for new tuition financial writes and retired legacy pricing | `7113d13` | [Currency](docs/remediation/tuition-currency-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 

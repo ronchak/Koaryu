@@ -12,6 +12,7 @@ from app.services.student_import_csv import (
     validate_csv_import_mapping,
 )
 from app.services.student_import_planner import StudentImportPlanner
+from app.services.student_import_plan_rows import parse_import_date
 from app.services.student_service import (
     StudentService,
 )
@@ -100,9 +101,9 @@ class StudentImportCsvParsingTests(unittest.TestCase):
         self.assertIn(str(CSV_IMPORT_MAX_ROWS), raised.exception.detail)
 
     def test_date_parser_accepts_month_names_and_excel_serial_dates(self):
-        parsed_month, month_error = self.planner.parse_import_date("May 6, 2018", "date of birth")
-        parsed_serial, serial_error = self.planner.parse_import_date("45123", "membership start date")
-        parsed_dotted, dotted_error = self.planner.parse_import_date("07.23.2015", "date of birth")
+        parsed_month, month_error = parse_import_date("May 6, 2018", "date of birth")
+        parsed_serial, serial_error = parse_import_date("45123", "membership start date")
+        parsed_dotted, dotted_error = parse_import_date("07.23.2015", "date of birth")
 
         self.assertIsNone(month_error)
         self.assertEqual(parsed_month, "2018-05-06")
@@ -112,7 +113,7 @@ class StudentImportCsvParsingTests(unittest.TestCase):
         self.assertEqual(parsed_dotted, "2015-07-23")
 
     def test_date_parser_rejects_year_only_values_instead_of_excel_serializing_them(self):
-        parsed_date, date_error = self.planner.parse_import_date("2018", "date of birth")
+        parsed_date, date_error = parse_import_date("2018", "date of birth")
 
         self.assertIsNone(parsed_date)
         self.assertIn("Invalid date of birth", date_error)

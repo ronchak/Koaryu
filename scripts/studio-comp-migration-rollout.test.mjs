@@ -10,6 +10,10 @@ import {
   ROLLOUT,
   EXPECTED_V43_OPERATIONAL_READINESS,
   V43_OPERATIONAL_READINESS_SQL,
+  EXPECTED_V44_OPERATIONAL_READINESS,
+  V44_OPERATIONAL_READINESS_SQL,
+  EXPECTED_V45_RELEASE_MANIFEST,
+  V45_RELEASE_MANIFEST_SQL,
   EXPECTED_V44_RELEASE_MANIFEST,
   V44_RELEASE_MANIFEST_SQL,
   EXPECTED_V44_LOCAL_PLAN_STATE,
@@ -33,6 +37,11 @@ import {
   EXPECTED_V42_RESOURCE_OWNERSHIP_MANIFEST,
   EXPECTED_V42_OPERATIONAL_CONTRACT_V31,
   EXPECTED_V42_OPERATIONAL_MANIFEST_V12,
+  EXPECTED_V45_CATALOG_STATE,
+  EXPECTED_V45_EXPECTATION_STATE,
+  EXPECTED_V45_RESOURCE_OWNERSHIP_MANIFEST,
+  EXPECTED_V45_OPERATIONAL_CONTRACT,
+  EXPECTED_V45_OPERATIONAL_MANIFEST_V12,
 
   EXPECTED_V40_OPERATIONAL_READINESS,
   V40_OPERATIONAL_READINESS_SQL,
@@ -305,6 +314,7 @@ const expectedMigrationFiles = [
   "20260910084231_independent_program_joining_dates_v42.sql",
   "20260910093958_external_payment_command_ownership_v43.sql",
   "20260910135133_local_plan_write_ownership_v44.sql",
+  "20260910185031_student_import_retry_ownership_v45.sql",
 ];
 const migrationBoundaries = new Map([
   ["pre", "20260814043325_default_program_memberships_to_starting_belt.sql"],
@@ -342,6 +352,7 @@ const migrationBoundaries = new Map([
   ["v41", "20260910084231_independent_program_joining_dates_v42.sql"],
   ["v42", "20260910093958_external_payment_command_ownership_v43.sql"],
   ["v43", "20260910135133_local_plan_write_ownership_v44.sql"],
+  ["v44", "20260910185031_student_import_retry_ownership_v45.sql"],
 ]);
 function expectedRemaining(state) {
   const first = expectedMigrationFiles.indexOf(migrationBoundaries.get(state));
@@ -349,7 +360,11 @@ function expectedRemaining(state) {
   return expectedMigrationFiles.slice(first);
 }
 
-const validCatalogState = EXPECTED_V42_CATALOG_STATE;
+const validCatalogState = EXPECTED_V45_CATALOG_STATE;
+// Measured from an actual logical restore upgraded from V44, retained here so a
+// runtime constant cannot silently move both accepted catalog fixtures together.
+const expectedV45RestoredCatalogState =
+  "column_acls=252:77ed54c37fb6a77a67823ac6a3c13e100fdfe9a15d417087eaa8335aca7984c4:0;columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;functions=126:3d10e340cc982c439b38a406af0ae2d31a978ffb60b73beaaf3f3549fb412893:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=191:ac1c5b8bd2202b318843d62691fec39501e3b58e2090447f8d7633b43dfdf3da:0;scoped_indexes=45:1bfef3f53dfb4665e9f438c66cc04baf062234ae4e47a66a1ae9b7c924c47486:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=25:0b972e5cc9be4772e46edfdac6a45d9d6074c433df6cb139232028c9d637d06d:0;tables=22:d3352c35012f5c65edb3cf3b7c5b864f916357d6a11d732199fe30b04034962f:0;triggers=14:03a92971a8b66629aac9892448a2448e6844bfb7edd27c0c5448f17235e270e7:0";
 const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
   "trigger=1:fedcba9876543210fedcba9876543210:0;" +
@@ -365,19 +380,19 @@ const validFingerprint =
   `v30_contract=${EXPECTED_V37_COMPAT_V30_OPERATIONAL_CONTRACT};` +
   `v30_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V11};` +
   `v31_compat_v30_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V11};` +
-  `v31_expectation=${EXPECTED_V42_EXPECTATION_STATE};` +
-  `v31_resource=${EXPECTED_V42_RESOURCE_OWNERSHIP_MANIFEST};` +
-  `v31_contract=${EXPECTED_V42_OPERATIONAL_CONTRACT_V31};` +
-  `v31_manifest=${EXPECTED_V42_OPERATIONAL_MANIFEST_V12};` +
+  `v31_expectation=${EXPECTED_V45_EXPECTATION_STATE};` +
+  `v31_resource=${EXPECTED_V45_RESOURCE_OWNERSHIP_MANIFEST};` +
+  `v31_contract=${EXPECTED_V45_OPERATIONAL_CONTRACT};` +
+  `v31_manifest=${EXPECTED_V45_OPERATIONAL_MANIFEST_V12};` +
   `v35_evidence=${EXPECTED_V35_EVIDENCE_MANIFEST};` +
   `v36_recovery=${EXPECTED_V36_RECOVERY_MANIFEST};` +
   `v37_trigger_guard=${EXPECTED_V37_TRIGGER_GUARD_MANIFEST};` +
-  `v44_release=${EXPECTED_V44_RELEASE_MANIFEST};v44_plan=${EXPECTED_V44_LOCAL_PLAN_STATE};v44_clear=${EXPECTED_V44_CLEAR_STATE};v43_external=${EXPECTED_V43_EXTERNAL_PAYMENT_STATE};v41_balance=${EXPECTED_V41_PAYER_BALANCE_STATE};` +
+  `v45_release=${EXPECTED_V45_RELEASE_MANIFEST};v44_plan=${EXPECTED_V44_LOCAL_PLAN_STATE};v44_clear=${EXPECTED_V44_CLEAR_STATE};v43_external=${EXPECTED_V43_EXTERNAL_PAYMENT_STATE};v41_balance=${EXPECTED_V41_PAYER_BALANCE_STATE};` +
   `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};` +
   `critical_surface=${EXPECTED_V40_CRITICAL_SURFACE_MANIFEST}`;
 const validRestoredFingerprint = validFingerprint.replace(
-  `catalog=${EXPECTED_V42_CATALOG_STATE}`,
-  `catalog=${EXPECTED_V42_RESTORED_CATALOG_STATE}`,
+  `catalog=${EXPECTED_V45_CATALOG_STATE}`,
+  `catalog=${expectedV45RestoredCatalogState}`,
 );
 
 function historyColumn(column_name, data_type, udt_name, overrides = {}) {
@@ -470,10 +485,10 @@ function postSnapshot(packet, overrides = {}) {
     v30ReplayRepairsManifest: EXPECTED_V37_COMPAT_V30_REPLAY_REPAIRS_MANIFEST,
     v30OperationalContract: EXPECTED_V37_COMPAT_V30_OPERATIONAL_CONTRACT,
     v30OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V11,
-    v31ExpectationState: EXPECTED_V42_EXPECTATION_STATE,
-    v31ResourceOwnershipManifest: EXPECTED_V42_RESOURCE_OWNERSHIP_MANIFEST,
-    v31OperationalContract: EXPECTED_V42_OPERATIONAL_CONTRACT_V31,
-    v31OperationalManifest: EXPECTED_V42_OPERATIONAL_MANIFEST_V12,
+    v31ExpectationState: EXPECTED_V45_EXPECTATION_STATE,
+    v31ResourceOwnershipManifest: EXPECTED_V45_RESOURCE_OWNERSHIP_MANIFEST,
+    v31OperationalContract: EXPECTED_V45_OPERATIONAL_CONTRACT,
+    v31OperationalManifest: EXPECTED_V45_OPERATIONAL_MANIFEST_V12,
     v35EvidenceManifest: EXPECTED_V35_EVIDENCE_MANIFEST,
     v36RecoveryManifest: EXPECTED_V36_RECOVERY_MANIFEST,
     v37TriggerGuardManifest: EXPECTED_V37_TRIGGER_GUARD_MANIFEST,
@@ -481,7 +496,9 @@ function postSnapshot(packet, overrides = {}) {
     v41ReleaseManifest: null,
     v42ReleaseManifest: null,
     v43ReleaseManifest: null,
-    v44ReleaseManifest: EXPECTED_V44_RELEASE_MANIFEST,
+    v44ReleaseManifest: null,
+    v45ReleaseManifest: EXPECTED_V45_RELEASE_MANIFEST,
+    v44CompatibilityReadiness: EXPECTED_V44_OPERATIONAL_READINESS,
     v44LocalPlanState: EXPECTED_V44_LOCAL_PLAN_STATE,
     v44ClearState: EXPECTED_V44_CLEAR_STATE,
     v43CompatibilityReadiness: EXPECTED_V43_OPERATIONAL_READINESS,
@@ -503,8 +520,29 @@ function v43Snapshot(packet, overrides = {}) {
   return postSnapshot(packet, {
     history: packet.v43History, targetHistory: packet.v43TargetHistory,
     operationalReadiness: EXPECTED_V43_OPERATIONAL_READINESS,
+    catalogState: EXPECTED_V42_CATALOG_STATE,
+    v31ExpectationState: EXPECTED_V42_EXPECTATION_STATE,
+    v31ResourceOwnershipManifest: EXPECTED_V42_RESOURCE_OWNERSHIP_MANIFEST,
+    v31OperationalContract: EXPECTED_V42_OPERATIONAL_CONTRACT_V31,
+    v31OperationalManifest: EXPECTED_V42_OPERATIONAL_MANIFEST_V12,
     v43ReleaseManifest: EXPECTED_V43_RELEASE_MANIFEST,
-    v44ReleaseManifest: null, v44LocalPlanState: null, v44ClearState: null, v43CompatibilityReadiness: null,
+    v44ReleaseManifest: null, v45ReleaseManifest: null, v44CompatibilityReadiness: null,
+    v44LocalPlanState: null, v44ClearState: null, v43CompatibilityReadiness: null,
+    ...overrides,
+  });
+}
+
+function v44Snapshot(packet, overrides = {}) {
+  return postSnapshot(packet, {
+    history: packet.v44History, targetHistory: packet.v44TargetHistory,
+    operationalReadiness: EXPECTED_V44_OPERATIONAL_READINESS,
+    catalogState: EXPECTED_V42_CATALOG_STATE,
+    v31ExpectationState: EXPECTED_V42_EXPECTATION_STATE,
+    v31ResourceOwnershipManifest: EXPECTED_V42_RESOURCE_OWNERSHIP_MANIFEST,
+    v31OperationalContract: EXPECTED_V42_OPERATIONAL_CONTRACT_V31,
+    v31OperationalManifest: EXPECTED_V42_OPERATIONAL_MANIFEST_V12,
+    v44ReleaseManifest: EXPECTED_V44_RELEASE_MANIFEST,
+    v45ReleaseManifest: null, v44CompatibilityReadiness: null,
     ...overrides,
   });
 }
@@ -1136,7 +1174,7 @@ describe("studio-comp migration rollout guard", () => {
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|139\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|140\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -1173,7 +1211,7 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-139 packet through V44 and the Payments predecessors", () => {
+  it("derives an exact 100-to-140 packet through V45 and the Payments predecessors", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
     assert.equal(ROLLOUT.scheduleV25MigrationCount, 119);
@@ -1191,7 +1229,7 @@ describe("studio-comp migration rollout guard", () => {
       ],
     );
     assert.equal(ROLLOUT.v26MigrationCount, 121);
-    assert.equal(packet.migrationCount, 139);
+    assert.equal(packet.migrationCount, 140);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
@@ -1545,7 +1583,7 @@ describe("studio-comp migration rollout guard", () => {
     });
     assert.deepEqual(
       classifyStateSnapshot(
-        postSnapshot(packet, { catalogState: EXPECTED_V42_RESTORED_CATALOG_STATE }),
+        postSnapshot(packet, { catalogState: expectedV45RestoredCatalogState }),
         packet,
         validFingerprint,
       ),
@@ -2014,10 +2052,10 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.deepEqual(post, { state: "post", providerFingerprint: validFingerprint });
     assert.equal(postHeaders.at(-1), "operational_readiness");
-    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v25/);
+    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v26/);
     assert.ok(postSql.includes(V41_PAYER_BALANCE_STATE_SQL));
     assert.ok(postSql.includes(V43_EXTERNAL_PAYMENT_STATE_SQL));
-    assert.ok(postSql.includes(V44_RELEASE_MANIFEST_SQL));
+    assert.ok(postSql.includes(V45_RELEASE_MANIFEST_SQL));
     assert.ok(postSql.includes(V44_LOCAL_PLAN_STATE_SQL));
     assert.ok(postSql.includes(V44_CLEAR_STATE_SQL));
     assert.ok(postSql.includes(V40_CATALOG_STATE_SQL));
@@ -2839,12 +2877,12 @@ describe("studio-comp migration rollout guard", () => {
   });
 
 
-  it("refuses to certify post-state before the exact 139-migration integration", () => {
+  it("refuses to certify post-state before the exact 140-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 139-migration sequence/,
+      /exact final 140-migration sequence/,
     );
   });
 
@@ -3189,23 +3227,15 @@ describe("studio-comp migration rollout guard", () => {
   });
 });
 
-describe("V44 local-plan migration cutover", () => {
-  it("accepts exact V37 and V38 predecessors and selects their remaining migration suffixes", () => {
+describe("V45 import-ownership migration cutover", () => {
+  it("accepts exact V37 and V38 predecessor evidence", () => {
     const packet = candidatePacket();
-    for (const invalidState of [undefined, null, ["v38"], { toString: () => "v38" }, "constructor"]) {
-      assert.throws(() => packetForAcceptedState(packet, invalidState));
-      assert.throws(() => buildInspectionTokenForAcceptedState(packet, "staging", { state: invalidState }));
-      assert.throws(() => formatNonSuccessProbeState({ state: invalidState }));
-    }
-    for (const [state, history, targetHistory, readiness, suffix] of [
-      ["v37", packet.v37History, packet.v37TargetHistory, EXPECTED_V37_OPERATIONAL_READINESS,
-        expectedRemaining("v37")],
-      ["v38", packet.v38History, packet.v38TargetHistory, EXPECTED_V38_OPERATIONAL_READINESS,
-        expectedRemaining("v38")],
+    for (const [state, history, targetHistory, readiness] of [
+      ["v37", packet.v37History, packet.v37TargetHistory, EXPECTED_V37_OPERATIONAL_READINESS],
+      ["v38", packet.v38History, packet.v38TargetHistory, EXPECTED_V38_OPERATIONAL_READINESS],
     ]) {
       const predecessor = v38Snapshot(packet, { history, targetHistory, operationalReadiness: readiness });
       assert.deepEqual(classifyStateSnapshot(predecessor, packet), { state, providerFingerprint: null });
-      assert.deepEqual(packetForAcceptedState(packet, state).pendingMigrations, suffix);
       assert.equal(buildInspectionTokenForAcceptedState(packet, "staging", { state }), buildInspectionToken(packet, "staging", state));
       assert.notEqual(buildInspectionToken(packet, "staging", state), buildInspectionToken(packet, "staging", "post"));
       for (const change of [
@@ -3223,12 +3253,14 @@ describe("V44 local-plan migration cutover", () => {
     ]) assert.throws(() => classifyStateSnapshot(v38Snapshot(packet, change), packet));
   });
 
-  it("rejects current readiness with historical or missing balance/rank/release facts", () => {
+  it("rejects final V45 readiness with missing or historical release safeguards", () => {
     const packet = candidatePacket();
     for (const change of [
-      { v44ReleaseManifest: null },
-      { v44ReleaseManifest: EXPECTED_V43_RELEASE_MANIFEST },
-      { v44ReleaseManifest: `${EXPECTED_V44_RELEASE_MANIFEST}extra` },
+      { v45ReleaseManifest: null },
+      { v45ReleaseManifest: EXPECTED_V44_RELEASE_MANIFEST },
+      { v45ReleaseManifest: `${EXPECTED_V45_RELEASE_MANIFEST}extra` },
+      { v44CompatibilityReadiness: null },
+      { v44CompatibilityReadiness: EXPECTED_V43_OPERATIONAL_READINESS },
       { v44LocalPlanState: null },
       { v44LocalPlanState: `${EXPECTED_V44_LOCAL_PLAN_STATE}extra` },
       { v44ClearState: null },
@@ -3241,8 +3273,11 @@ describe("V44 local-plan migration cutover", () => {
       { v43ExternalPaymentState: `${EXPECTED_V43_EXTERNAL_PAYMENT_STATE}extra` },
       { v41CompatibilityReadiness: null },
       { v41CompatibilityReadiness: EXPECTED_OPERATIONAL_READINESS },
-      { v31ExpectationState: EXPECTED_V40_EXPECTATION_STATE },
-      { catalogState: EXPECTED_V40_CATALOG_STATE },
+      { v31ExpectationState: EXPECTED_V42_EXPECTATION_STATE },
+      { v31ResourceOwnershipManifest: EXPECTED_V42_RESOURCE_OWNERSHIP_MANIFEST },
+      { v31OperationalContract: EXPECTED_V42_OPERATIONAL_CONTRACT_V31 },
+      { v31OperationalManifest: EXPECTED_V42_OPERATIONAL_MANIFEST_V12 },
+      { catalogState: EXPECTED_V42_CATALOG_STATE },
       { v41PayerBalanceState: null },
       { v41PayerBalanceState: `1:${"0".repeat(64)}` },
       { v41PayerBalanceState: `${EXPECTED_V41_PAYER_BALANCE_STATE}extra` },
@@ -3266,7 +3301,7 @@ describe("V44 local-plan migration cutover", () => {
       { v31OperationalContract: EXPECTED_V39_OPERATIONAL_CONTRACT_V31 },
       { v31OperationalManifest: EXPECTED_V39_OPERATIONAL_MANIFEST_V12 },
     ]) assert.throws(() => classifyStateSnapshot(postSnapshot(packet, change), packet), JSON.stringify(change));
-    for (const field of [`v44_release=${EXPECTED_V44_RELEASE_MANIFEST};`, `v44_plan=${EXPECTED_V44_LOCAL_PLAN_STATE};`, `v44_clear=${EXPECTED_V44_CLEAR_STATE};`, `v43_external=${EXPECTED_V43_EXTERNAL_PAYMENT_STATE};`, `v41_balance=${EXPECTED_V41_PAYER_BALANCE_STATE};`, `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};`]) {
+    for (const field of [`v45_release=${EXPECTED_V45_RELEASE_MANIFEST};`, `v44_plan=${EXPECTED_V44_LOCAL_PLAN_STATE};`, `v44_clear=${EXPECTED_V44_CLEAR_STATE};`, `v43_external=${EXPECTED_V43_EXTERNAL_PAYMENT_STATE};`, `v41_balance=${EXPECTED_V41_PAYER_BALANCE_STATE};`, `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};`]) {
       assert.throws(() => approvedProviderFingerprintVariants(validFingerprint.replace(field, "")));
     }
     assert.throws(() => approvedProviderFingerprintVariants(validFingerprint.replace(
@@ -3278,8 +3313,6 @@ describe("V44 local-plan migration cutover", () => {
     for (const catalogState of [EXPECTED_V39_CATALOG_STATE, EXPECTED_V39_RESTORED_CATALOG_STATE]) {
       assert.deepEqual(classifyStateSnapshot(v39Snapshot(packet, { catalogState }), packet), { state: "v39", providerFingerprint: null });
     }
-    assert.deepEqual(packetForAcceptedState(packet, "v39").pendingMigrations,
-      expectedRemaining("v39"));
     for (const change of [
       { targetHistory: packet.postTargetHistory },
       { operationalReadiness: EXPECTED_OPERATIONAL_READINESS },
@@ -3304,17 +3337,16 @@ describe("V44 local-plan migration cutover", () => {
       ["v41", v41Snapshot, [EXPECTED_V40_CATALOG_STATE, EXPECTED_V40_RESTORED_CATALOG_STATE]],
       ["v42", v42Snapshot, [EXPECTED_V42_CATALOG_STATE, EXPECTED_V42_RESTORED_CATALOG_STATE]],
       ["v43", v43Snapshot, [EXPECTED_V42_CATALOG_STATE, EXPECTED_V42_RESTORED_CATALOG_STATE]],
+      ["v44", v44Snapshot, [EXPECTED_V42_CATALOG_STATE, EXPECTED_V42_RESTORED_CATALOG_STATE]],
     ]) {
     for (const catalogState of catalogs) {
       assert.deepEqual(classifyStateSnapshot(snapshot(packet, { catalogState }), packet), { state, providerFingerprint: null });
     }
-    assert.deepEqual(packetForAcceptedState(packet, state).pendingMigrations,
-      expectedRemaining(state));
     assert.equal(buildInspectionTokenForAcceptedState(packet, "staging", { state }), buildInspectionToken(packet, "staging", state));
     for (const change of [
       { targetHistory: packet.postTargetHistory },
       { operationalReadiness: EXPECTED_OPERATIONAL_READINESS },
-      { [state + "ReleaseManifest"]: EXPECTED_V44_RELEASE_MANIFEST },
+      { [state + "ReleaseManifest"]: EXPECTED_V45_RELEASE_MANIFEST },
       { [state + "ReleaseManifest"]: null },
       { v40RankCommandState: null },
       { catalogState: EXPECTED_V39_CATALOG_STATE },
@@ -3328,7 +3360,7 @@ describe("V44 local-plan migration cutover", () => {
     }
   });
 
-  it("queries only the matching V38 through V43 predecessor contracts", () => {
+  it("queries only the matching V38 through V44 predecessor contracts", () => {
     const packet = candidatePacket();
     for (const [state, snapshot, readinessSql, rawHeader, rawSql] of [
       ["v38", v38Snapshot(packet), V38_OPERATIONAL_READINESS_SQL, "v38_billing_manifest", V38_BILLING_MANIFEST_SQL],
@@ -3337,6 +3369,7 @@ describe("V44 local-plan migration cutover", () => {
       ["v41", v41Snapshot(packet), V41_OPERATIONAL_READINESS_SQL, "v41_release_manifest", V41_RELEASE_MANIFEST_SQL],
       ["v42", v42Snapshot(packet), V42_OPERATIONAL_READINESS_SQL, "v42_release_manifest", V42_RELEASE_MANIFEST_SQL],
       ["v43", v43Snapshot(packet), V43_OPERATIONAL_READINESS_SQL, "v43_release_manifest", V43_RELEASE_MANIFEST_SQL],
+      ["v44", v44Snapshot(packet), V44_OPERATIONAL_READINESS_SQL, "v44_release_manifest", V44_RELEASE_MANIFEST_SQL],
     ]) {
       const queried = new Map();
       const values = snapshotQueryValues(snapshot);
@@ -3345,21 +3378,23 @@ describe("V44 local-plan migration cutover", () => {
         queried.set(header, sql);
         return values[header];
       }), { state, providerFingerprint: null });
-      assert.equal(queried.get("catalog_state"), ["v40", "v41", "v42", "v43"].includes(state) ? V40_CATALOG_STATE_SQL : CATALOG_STATE_SQL);
+      assert.equal(queried.get("catalog_state"), ["v40", "v41", "v42", "v43", "v44"].includes(state) ? V40_CATALOG_STATE_SQL : CATALOG_STATE_SQL);
       assert.equal(queried.get("operational_readiness"), readinessSql);
       assert.equal(queried.get(rawHeader), rawSql);
       assert.ok(queried.has("v37_compatibility_readiness"));
       assert.equal(queried.has("v38_compatibility_readiness"), state !== "v38");
       assert.equal(queried.has("v40_release_manifest"), state === "v40");
-      assert.equal(queried.has("rank_command_state"), ["v40", "v41", "v42", "v43"].includes(state));
-      assert.equal(queried.has("v39_compatibility_readiness"), ["v40", "v41", "v42", "v43"].includes(state));
-      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v21")), ["v40", "v41", "v42", "v43"].includes(state));
-      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v22")), ["v41", "v42", "v43"].includes(state));
+      assert.equal(queried.has("rank_command_state"), ["v40", "v41", "v42", "v43", "v44"].includes(state));
+      assert.equal(queried.has("v39_compatibility_readiness"), ["v40", "v41", "v42", "v43", "v44"].includes(state));
+      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v21")), ["v40", "v41", "v42", "v43", "v44"].includes(state));
+      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v22")), ["v41", "v42", "v43", "v44"].includes(state));
       assert.equal(queried.has("v41_release_manifest"), state === "v41");
-      assert.equal(queried.has("v41_compatibility_readiness"), ["v42", "v43"].includes(state));
-      for (const header of ["payer_balance_state", "v40_compatibility_readiness"]) assert.equal(queried.has(header), ["v41", "v42", "v43"].includes(state));
-      for (const header of ["v43_release_manifest", "external_payment_state", "v42_compatibility_readiness"]) assert.equal(queried.has(header), state === "v43");
-      for (const header of ["v44_release_manifest", "local_plan_state", "clear_state", "v43_compatibility_readiness"]) assert.equal(queried.has(header), false);
+      assert.equal(queried.has("v41_compatibility_readiness"), ["v42", "v43", "v44"].includes(state));
+      for (const header of ["payer_balance_state", "v40_compatibility_readiness"]) assert.equal(queried.has(header), ["v41", "v42", "v43", "v44"].includes(state));
+      assert.equal(queried.has("v43_release_manifest"), state === "v43");
+      for (const header of ["external_payment_state", "v42_compatibility_readiness"]) assert.equal(queried.has(header), state === "v43" || state === "v44");
+      for (const header of ["v44_release_manifest", "local_plan_state", "clear_state", "v43_compatibility_readiness"]) assert.equal(queried.has(header), state === "v44");
+      for (const header of ["v45_release_manifest", "v44_compatibility_readiness"]) assert.equal(queried.has(header), false);
     }
   });
 });

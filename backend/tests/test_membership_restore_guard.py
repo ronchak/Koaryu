@@ -88,11 +88,12 @@ def test_restore_helper_refuses_remote_or_unowned_targets_before_invoking_tools(
         for script, arguments in [
             (SCRIPT, [str(executable)] * 4 + [socket, port, temporary, str(ROOT)]),
             (ROOT / "scripts/verify-v39-v40-restore-contract.py", [str(executable)] * 4 + [socket, port, temporary, str(ROOT)]),
-            (ROOT / "scripts/verify-rank-transition-concurrency.py", [str(executable), socket, port]),
+            (ROOT / "scripts/verify-student-write-concurrency.py", [str(executable), socket, port]),
             (ROOT / "scripts/verify-v40-v41-restore-contract.py", [str(executable)] * 4 + [socket, port, temporary, str(ROOT)]),
             (ROOT / "scripts/verify-v41-v42-restore-contract.py", [str(executable)] * 4 + [socket, port, temporary, str(ROOT)]),
             (ROOT / "scripts/verify-v42-v43-restore-contract.py", [str(executable)] * 4 + [socket, port, temporary, str(ROOT)]),
             (ROOT / "scripts/verify-v43-v44-restore-contract.py", [str(executable)] * 4 + [socket, port, temporary, str(ROOT)]),
+            (ROOT / "scripts/verify-v44-v45-restore-contract.py", [str(executable)] * 4 + [socket, port, temporary, str(ROOT)]),
             (ROOT / "scripts/verify-billing-command-concurrency.py", [str(executable), socket, port]),
         ]:
             result = subprocess.run([sys.executable, str(script), *arguments], capture_output=True, text=True)

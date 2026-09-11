@@ -7,12 +7,21 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
 from app.schemas.program import ProgramResponse, ProgramUsageResponse
-from app.services.program_ladder_sync import (
-    PROGRAM_BASE_SELECT,
-    PROGRAM_SELECT,
-    _is_optional_program_schema_error,
-    _normalize_name,
+
+PROGRAM_SELECT = (
+    "id, studio_id, name, description, color_hex, sort_order, is_system, "
+    "archived_at, created_at, updated_at"
 )
+PROGRAM_BASE_SELECT = "id, studio_id, name, description, created_at"
+OPTIONAL_PROGRAM_SCHEMA_ERROR_CODES = {"42P01", "42703", "PGRST204", "PGRST205"}
+
+
+def _normalize_name(value: str) -> str:
+    return " ".join(value.strip().split()).lower()
+
+
+def _is_optional_program_schema_error(exc: PostgrestAPIError) -> bool:
+    return exc.code in OPTIONAL_PROGRAM_SCHEMA_ERROR_CODES
 
 
 def program_error(status_code: int, code: str, message: str, **details: Any) -> HTTPException:
