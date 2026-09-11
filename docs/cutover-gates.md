@@ -88,8 +88,14 @@ original-actor audit, and the returned snapshot in one transaction. A no-op pres
 status, timestamps, and links. Required fields reject explicit null; omission and
 nullable clearing remain distinct. New or financially changed local definitions must
 use USD. Historical rows, identical saves, and nonfinancial maintenance keep their
-existing currency. Broader provider, new-currency, and aggregate-currency work remains
-pending.
+existing currency. New provider price, enrollment-activation and invoice-creation
+writes also require USD before their first financial attempt. Existing attempted
+financial operations, confirmed results and product-only maintenance retain their original
+currency and recovery identity. A confirmed product alone does not authorize an
+unattempted non-USD price. An empty invoice header likewise does not authorize new
+non-USD line amounts; partial evidence stays in reconciliation. The provider
+guard takes effect when all serving writers run the updated application. Unknown
+provider-fact recovery and mixed-currency totals remain separate pending work.
 
 Local plan writes take a studio-scoped shared transaction advisory lock first, then
 the studio KEY SHARE lock, plan lock, and ordered program locks. Guarded demo clear

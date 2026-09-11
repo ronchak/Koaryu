@@ -2612,17 +2612,19 @@
       "title": "Unused legacy plan synchronization duplicates the durable workflow",
       "cluster": "financial_facts_and_local_edits",
       "disposition": "pending",
-      "reason": "Useful bounded cleanup: the legacy direct provider-mutation routine remains, but repository callers are only forwarding wrappers. Public synchronization uses the durable workflow.",
+      "reason": "Main retains an unused legacy writer whose only callers are forwarding wrappers. The independent tuition-currency candidate removes that chain and its orphaned lookup; public durable synchronization remains. Keep pending until review and merge.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "18b64e9d7dbbdf363fc49bc0610d30fe67489f35",
       "source_paths": [
         "backend/app/services/billing_plans.py",
         "backend/app/services/billing_plan_sync.py",
         "backend/app/services/billing_private_facade.py",
         "backend/app/services/billing_enrollments.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        179
+      ],
       "track": "Astra",
       "root_cause": "dead-plan-sync-interface",
       "collapse_with": [],
@@ -2648,7 +2650,7 @@
           "observation": "The durable workflow still uses the interval helper, which must remain."
         }
       ],
-      "next_change": "Remove only the unused _sync_plan_price implementation and its forwarding chain. Remove orphaned imports and price-lookup wrappers only after confirming their remaining references.",
+      "next_change": "Review and merge codex/remediation-tuition-currency; verify no restored caller after rebasing, then close this observation.",
       "validation_plan": "Repository-wide caller search plus existing plan-sync and interval-helper cases. Private external callers remain unverified.",
       "scope_constraints": [
         "Do not simplify the durable coordinator, recovery history or compatibility readers.",
@@ -12320,8 +12322,8 @@
       "title": "Mixed-currency writes feed currency-blind totals",
       "track": "Astra",
       "disposition": "pending",
-      "reason": "PR172/V43 closes new external-payment currency writes while preserving exact historical replay. PR175 adds the local plan definition boundary. Fresh tuition/provider intents, recovered unknown provider facts, and mixed/unknown-currency reporting remain pending; no historical data is converted or backfilled.",
-      "verified_against": "671ed359e32e0c85dcc8075d6ce3e17935f6a59e",
+      "reason": "PR172/V43 covers new external payments and PR175 covers local plan definitions. PR179 now guards fresh provider prices, activation and invoice creation while preserving saved financial-attempt evidence and historical replay. Provider-fact recovery and truthful mixed/unknown-currency readers remain pending; no historical record is converted.",
+      "verified_against": "18b64e9d7dbbdf363fc49bc0610d30fe67489f35",
       "source_paths": [
         "backend/app/api/v1/endpoints/billing.py",
         "backend/app/schemas/billing.py",
@@ -12380,11 +12382,12 @@
         "BB1-03"
       ],
       "owner_decision": "September9: USD-only new tuition and external-payment writes; preserve existing confirmed non-USD records and prevent misleading combined totals.",
-      "next_change": "Guard genuinely new tuition financial intents, including activation of historical non-USD plans and provider price creation, while preserving confirmed historical results and exact replay. Then make monetary availability/currency explicit for affected readers. No FX conversion or historical backfill.",
+      "next_change": "Review the bounded tuition-currency candidate. After merging, prioritize shared overdue/currency read facts, then provider unknown-fact recovery and family/report attribution. Keep this entry open until affected aggregate readers are truthful.",
       "verification": "Target accepted USD writes, rejected non-USD new writes, unchanged historical replay, and mixed/unknown-currency aggregates. Verify tenant, provider identity and idempotency boundaries.",
       "pull_requests": [
         172,
-        175
+        175,
+        179
       ],
       "initial_evidence": [
         {

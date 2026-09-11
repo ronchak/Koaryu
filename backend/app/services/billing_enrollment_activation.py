@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import StudentBillingEnrollmentResponse
+from app.services.billing_currency_policy import NEW_TUITION_CURRENCY_DETAIL, is_usd_currency
 from app.services.billing_invoice_projection import _object_get, _stripe_id
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
@@ -82,6 +83,8 @@ class BillingEnrollmentActivationWorkflow:
                 status_code=409,
                 detail="Paid-in-full enrollment activation requires the separate invoice workflow.",
             )
+        if not isinstance(activation_intent, dict) and not is_usd_currency(plan.get("currency")):
+            raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
         account = self._local_ready_account(studio_id)
         account_id = str(account["stripe_connected_account_id"])
         generation = self._account_generation(account)
@@ -304,6 +307,15 @@ class BillingEnrollmentActivationWorkflow:
         quantity_lock_token: str,
         caller_request_key_sha256: str,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        if (
+            int(operation.get("provider_request_attempt_count") or 0) == 0
+            and not is_usd_currency(plan.get("currency"))
+        ):
+            operations.transition(
+                context, operation, "definitive_rejected",
+                error_code="tuition_currency_requires_usd",
+            )
+            raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
         branch = intent["branch"]
         stripe_service = self.stripe_service_cls()
         if branch in {"add_item", "update_quantity"}:

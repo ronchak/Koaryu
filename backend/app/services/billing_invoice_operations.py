@@ -22,6 +22,7 @@ from app.schemas.billing import (
     validate_billing_invoice_due_date,
 )
 from app.services.billing_invoice_projection import _object_get, _stripe_id
+from app.services.billing_currency_policy import NEW_TUITION_CURRENCY_DETAIL, is_usd_currency
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
     BillingProviderOperationContext,
@@ -1936,6 +1937,27 @@ class BillingInvoiceOperationWorkflow:
         due_date: Any,
     ) -> dict[str, Any]:
         client = BillingProviderStepCoordinator(self.supabase)
+        if not is_usd_currency(invoice.get("currency")):
+            saved_steps = []
+            if operation.get("provider_step_plan_sha256"):
+                saved = client.read_plan(context, plan_sha256=spec["plan_sha256"])
+                operation, saved_steps = saved["operation"], saved["steps"]
+                if len(saved_steps) != len(spec["steps"]):
+                    raise HTTPException(status_code=503, detail=INVOICE_CREATE_AMBIGUOUS_DETAIL)
+            # The invoice header has no line amounts. Only an attempted item
+            # establishes historical financial work that this intent may finish.
+            if not any(int(step.get("provider_request_attempt_count") or 0) for step in saved_steps[1:]):
+                if any(int(step.get("provider_request_attempt_count") or 0) for step in saved_steps):
+                    client.complete_provider_phase(
+                        context, operation, plan_sha256=spec["plan_sha256"],
+                        expected_step_count=len(spec["steps"]),
+                    )
+                    raise HTTPException(status_code=409, detail=INVOICE_CREATE_AMBIGUOUS_DETAIL)
+                operations.transition(
+                    context, operation, "definitive_rejected",
+                    error_code="tuition_currency_requires_usd",
+                )
+                raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
         registered = client.register_plan(
             context,
             operation,

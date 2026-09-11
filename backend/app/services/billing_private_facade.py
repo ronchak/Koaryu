@@ -45,9 +45,6 @@ class BillingPrivateFacadeMixin:
         if account_id:
             self._billing_stripe_service_cls()().retrieve_account(account_id=account_id)
 
-    def _sync_plan_price(self, plan: dict[str, Any], account: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
-        return BillingPlanManager(self, stripe_service_cls=self._billing_stripe_service_cls())._sync_plan_price(plan, account, force=force)
-
     def _find_or_create_billing_subscription(
         self,
         enrollment: dict[str, Any],
@@ -277,26 +274,6 @@ class BillingPrivateFacadeMixin:
             group_id,
             item_id,
             exclude_enrollment_id=exclude_enrollment_id,
-        )
-
-    def _find_plan_price(
-        self,
-        studio_id: str,
-        plan_id: str,
-        account_id: str,
-        amount: int,
-        currency: str,
-        billing_interval: str,
-        recurring: bool,
-    ) -> Optional[dict[str, Any]]:
-        return BillingPlanManager(self, stripe_service_cls=self._billing_stripe_service_cls())._find_plan_price(
-            studio_id,
-            plan_id,
-            account_id,
-            amount,
-            currency,
-            billing_interval,
-            recurring,
         )
 
     def _update_enrollment(self, enrollment_id: str, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:

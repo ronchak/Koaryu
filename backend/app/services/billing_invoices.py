@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceResponse
+from app.services.billing_currency_policy import NEW_TUITION_CURRENCY_DETAIL, is_usd_currency
 from app.services.billing_invoice_operations import BillingInvoiceOperationWorkflow
 from app.services.stripe_service import StripeService
 
@@ -180,6 +181,8 @@ class BillingInvoiceManager:
                         detail="This idempotency key is already in use for a different invoice request.",
                     )
                 return existing
+        if not is_usd_currency(invoice_row.get("currency")):
+            raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
         try:
             inserted = self.supabase.table("billing_invoices").insert(invoice_row).execute()
         except PostgrestAPIError as exc:

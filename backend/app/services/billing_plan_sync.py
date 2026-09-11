@@ -7,6 +7,7 @@ from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import BillingPlanResponse
+from app.services.billing_currency_policy import NEW_TUITION_CURRENCY_DETAIL, is_usd_currency
 from app.services.billing_invoice_projection import _stripe_id
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
@@ -408,6 +409,28 @@ class BillingPlanSyncWorkflow:
         steps = plan_spec["steps"]
         plan_sha256 = str(plan_spec["plan_sha256"])
         step_client = BillingProviderStepCoordinator(self.supabase)
+        if not is_usd_currency(plan.get("currency")):
+            saved_steps = []
+            if operation.get("provider_step_plan_sha256"):
+                saved = step_client.read_plan(context, plan_sha256=plan_sha256)
+                operation, saved_steps = saved["operation"], saved["steps"]
+                if len(saved_steps) != 2:
+                    raise HTTPException(status_code=503, detail=PLAN_SYNC_AMBIGUOUS_DETAIL)
+            fresh_price = not saved_steps or (
+                saved_steps[1].get("state") == "pending"
+                and int(saved_steps[1].get("provider_request_attempt_count") or 0) == 0
+            )
+            if fresh_price:
+                if any(int(step.get("provider_request_attempt_count") or 0) for step in saved_steps):
+                    step_client.complete_provider_phase(
+                        context, operation, plan_sha256=plan_sha256, expected_step_count=2,
+                    )
+                    raise HTTPException(status_code=409, detail=PLAN_SYNC_AMBIGUOUS_DETAIL)
+                operations.transition(
+                    context, operation, "definitive_rejected",
+                    error_code="tuition_currency_requires_usd",
+                )
+                raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
         registered = step_client.register_plan(
             context,
             operation,
@@ -580,6 +603,15 @@ class BillingPlanSyncWorkflow:
                 return provider_id
             raise HTTPException(status_code=503, detail=PLAN_SYNC_AMBIGUOUS_DETAIL)
         self._raise_for_blocked_step(envelope)
+        if (
+            int(current.get("provider_request_attempt_count") or 0) == 0
+            and not is_usd_currency(plan.get("currency"))
+        ):
+            client.transition_step(
+                step, current, "definitive_rejected",
+                error_code="tuition_currency_requires_usd",
+            )
+            raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
         current = client.transition_step(
             step,
             current,

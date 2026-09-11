@@ -1761,6 +1761,9 @@ class BillingProviderOperationRpcMixin:
             "plan_sha256": params["p_plan_sha256"],
             "steps": steps,
         }
+        operation["provider_step_plan_sha256"] = params["p_plan_sha256"]
+        operation["provider_step_expected_count"] = len(steps)
+        operation["provider_step_plan_registered_at"] = self._billing_provider_timestamp(self.billing_provider_now)
         operation["revision"] += 1
         return {
             "outcome": "registered",

@@ -12,8 +12,8 @@ from app.schemas.billing import (
     BillingPlanResponse,
     BillingPlanUpdate,
 )
-from app.services.billing_invoice_projection import _stripe_id
 from app.services.billing_plan_sync import BillingPlanSyncWorkflow
+from app.services.billing_currency_policy import NEW_TUITION_CURRENCY_DETAIL, is_usd_currency
 from app.services.stripe_service import StripeService
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
@@ -133,124 +133,6 @@ class BillingPlanManager:
         self._audit(studio_id, actor_id, "billing.plan_archived", plan_id, {})
         return self._plan_response(result.data[0], self._connect_accounts().ensure_row(studio_id))
 
-    def _sync_plan_price(self, plan: dict[str, Any], account: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
-        account_id = account.get("stripe_connected_account_id")
-        if not account_id:
-            return plan
-        stripe_service = self.stripe_service_cls()
-        product_id = plan.get("stripe_product_id")
-        product_metadata = {"studio_id": plan["studio_id"], "billing_plan_id": plan["id"], "product": "koaryu_payments"}
-        if product_id:
-            stripe_service.update_connected_product(
-                account_id=account_id,
-                studio_id=plan["studio_id"],
-                product_id=product_id,
-                name=plan["name"],
-                description=plan.get("description"),
-                metadata=product_metadata,
-                idempotency_key=self._idempotency_key(
-                    "plan-product-update", plan["id"], str(plan.get("updated_at") or ""),
-                ),
-            )
-        else:
-            product = stripe_service.create_connected_product(
-                account_id=account_id,
-                studio_id=plan["studio_id"],
-                name=plan["name"],
-                description=plan.get("description"),
-                metadata=product_metadata,
-                idempotency_key=self._idempotency_key("plan-product", plan["id"]),
-            )
-            product_id = _stripe_id(product)
-
-        recurring, interval_count = self._stripe_recurring_for_interval(plan.get("billing_interval") or "monthly")
-        active_price = self._find_plan_price(
-            plan["studio_id"],
-            plan["id"],
-            account_id,
-            int(plan.get("amount_cents") or 0),
-            plan.get("currency") or "usd",
-            plan.get("billing_interval") or "monthly",
-            bool(recurring),
-        )
-        if active_price:
-            stripe_price_id = active_price["stripe_price_id"]
-            version = active_price.get("version") or plan.get("stripe_price_version") or 1
-        else:
-            version = int(plan.get("stripe_price_version") or 1)
-            if plan.get("stripe_price_id"):
-                version += 1
-            lookup_key = f"koaryu_{plan['studio_id']}_{plan['id']}_v{version}"
-            price = stripe_service.create_connected_price(
-                account_id=account_id,
-                studio_id=plan["studio_id"],
-                product_id=product_id,
-                unit_amount=int(plan.get("amount_cents") or 0),
-                currency=plan.get("currency") or "usd",
-                recurring=recurring,
-                lookup_key=lookup_key,
-                metadata={**product_metadata, "version": str(version), "billing_interval": plan.get("billing_interval") or "monthly"},
-                idempotency_key=self._idempotency_key("plan-price", plan["id"], str(version), str(plan.get("amount_cents") or 0)),
-            )
-            stripe_price_id = _stripe_id(price)
-            self.supabase.table("billing_plan_prices").insert({
-                "studio_id": plan["studio_id"],
-                "billing_plan_id": plan["id"],
-                "stripe_account_id": account_id,
-                "stripe_product_id": product_id,
-                "stripe_price_id": stripe_price_id,
-                "amount_cents": plan.get("amount_cents") or 0,
-                "currency": plan.get("currency") or "usd",
-                "billing_interval": plan.get("billing_interval") or "monthly",
-                "interval_count": interval_count,
-                "recurring": bool(recurring),
-                "active": True,
-                "version": version,
-            }).execute()
-        update = {
-            "stripe_account_id": account_id,
-            "stripe_product_id": product_id,
-            "stripe_price_id": stripe_price_id,
-            "stripe_price_lookup_key": f"koaryu_{plan['studio_id']}_{plan['id']}_v{version}",
-            "stripe_price_version": version,
-            "status": "active",
-        }
-        result = (
-            self.supabase.table("billing_plans")
-            .update(update)
-            .eq("id", plan["id"])
-            .eq("studio_id", plan["studio_id"])
-            .execute()
-        )
-        return result.data[0] if result.data else {**plan, **update}
-
-    def _find_plan_price(
-        self,
-        studio_id: str,
-        plan_id: str,
-        account_id: str,
-        amount: int,
-        currency: str,
-        billing_interval: str,
-        recurring: bool,
-    ) -> Optional[dict[str, Any]]:
-        result = (
-            self.supabase.table("billing_plan_prices")
-            .select("*")
-            .eq("studio_id", studio_id)
-            .eq("billing_plan_id", plan_id)
-            .eq("stripe_account_id", account_id)
-            .eq("amount_cents", amount)
-            .eq("currency", currency)
-            .eq("billing_interval", billing_interval)
-            .eq("recurring", recurring)
-            .eq("active", True)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        return result.data[0] if result.data else None
-
     def _stripe_recurring_for_interval(self, billing_interval: str) -> tuple[Optional[dict[str, Any]], int]:
         if billing_interval == "paid_in_full":
             return None, 1
@@ -271,9 +153,15 @@ class BillingPlanManager:
     ) -> BillingPlanResponse:
         if programs is None:
             programs = self._programs_for_plan(row["studio_id"], row["id"])
-        can_accept = bool(account.get("charges_enabled")) and row.get("status") == "active" and bool(row.get("stripe_price_id"))
+        is_usd = is_usd_currency(row.get("currency"))
+        can_accept = (
+            is_usd and bool(account.get("charges_enabled"))
+            and row.get("status") == "active" and bool(row.get("stripe_price_id"))
+        )
         pending_reason = None
-        if not account.get("charges_enabled"):
+        if not is_usd:
+            pending_reason = NEW_TUITION_CURRENCY_DETAIL
+        elif not account.get("charges_enabled"):
             pending_reason = "Stripe Connect charges are not enabled yet."
         elif not row.get("stripe_price_id"):
             pending_reason = "Plan needs a Stripe price before hosted payments can start."
