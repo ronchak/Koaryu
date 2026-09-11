@@ -1,0 +1,145 @@
+{
+  "policy_version": "koaryu-production-data-classification/v1",
+  "input_schema_version": 1,
+  "manifest_schema_version": 1,
+  "classifier_version": "1.0.0",
+  "in_scope_record_types": [
+    "auth_user",
+    "studio",
+    "studio_subscription",
+    "studio_payment_account",
+    "stripe_event"
+  ],
+  "taxonomy": [
+    {
+      "classification": "current_customer",
+      "description": "A current customer relationship is supported by approved aggregate provider evidence."
+    },
+    {
+      "classification": "historical_customer",
+      "description": "A historical customer relationship is supported by approved aggregate provider evidence."
+    },
+    {
+      "classification": "controlled_synthetic",
+      "description": "A controlled fixture or demo marker exists in the approved marker registry."
+    },
+    {
+      "classification": "required_system",
+      "description": "An approved system dependency requires the record to remain present."
+    },
+    {
+      "classification": "historical_setup",
+      "description": "The data owner approved a narrowly scoped setup-record attestation."
+    },
+    {
+      "classification": "unknown",
+      "description": "Admissible evidence is absent, incomplete, or conflicting; preservation is required."
+    }
+  ],
+  "evidence_hierarchy": [
+    {
+      "rank": 1,
+      "evidence_kinds": [
+        "live_customer_relationship",
+        "historical_customer_relationship"
+      ],
+      "description": "Authoritative provider or finalized business-relationship aggregates."
+    },
+    {
+      "rank": 2,
+      "evidence_kinds": [
+        "registered_system_dependency",
+        "registered_synthetic_marker"
+      ],
+      "description": "Approved controlled registries with opaque source references."
+    },
+    {
+      "rank": 3,
+      "evidence_kinds": [
+        "owner_approved_setup_attestation"
+      ],
+      "description": "A narrowly scoped attestation approved by the named data owner."
+    },
+    {
+      "rank": 4,
+      "evidence_kinds": [
+        "application_relationship",
+        "recent_activity"
+      ],
+      "description": "Context only; these signals can never produce a non-unknown classification."
+    }
+  ],
+  "rules": [
+    {
+      "rule_id": "customer-live-v1",
+      "evidence_kind": "live_customer_relationship",
+      "claim_group": "customer",
+      "classification": "current_customer",
+      "reason_code": "live_customer_relationship_present",
+      "confidence": "high",
+      "priority": 100
+    },
+    {
+      "rule_id": "customer-historical-v1",
+      "evidence_kind": "historical_customer_relationship",
+      "claim_group": "customer",
+      "classification": "historical_customer",
+      "reason_code": "historical_customer_relationship_present",
+      "confidence": "high",
+      "priority": 90
+    },
+    {
+      "rule_id": "system-registry-v1",
+      "evidence_kind": "registered_system_dependency",
+      "claim_group": "system",
+      "classification": "required_system",
+      "reason_code": "registered_system_dependency_present",
+      "confidence": "high",
+      "priority": 80
+    },
+    {
+      "rule_id": "synthetic-registry-v1",
+      "evidence_kind": "registered_synthetic_marker",
+      "claim_group": "synthetic",
+      "classification": "controlled_synthetic",
+      "reason_code": "registered_synthetic_marker_present",
+      "confidence": "high",
+      "priority": 80
+    },
+    {
+      "rule_id": "setup-owner-attestation-v1",
+      "evidence_kind": "owner_approved_setup_attestation",
+      "claim_group": "setup",
+      "classification": "historical_setup",
+      "reason_code": "owner_approved_setup_attestation_present",
+      "confidence": "medium",
+      "priority": 70
+    }
+  ],
+  "context_only_evidence": [
+    {
+      "evidence_kind": "application_relationship",
+      "reason_code": "application_relationship_is_context_only"
+    },
+    {
+      "evidence_kind": "recent_activity",
+      "reason_code": "recent_activity_is_context_only"
+    }
+  ],
+  "unknown_rules": {
+    "conflict_rule_id": "unknown-conflict-v1",
+    "conflict_reason_code": "conflicting_conclusive_evidence",
+    "insufficient_rule_id": "unknown-insufficient-v1",
+    "insufficient_reason_code": "insufficient_admissible_evidence",
+    "confidence": "low"
+  },
+  "governance": {
+    "data_owner": "Ronak Chakraborty",
+    "technical_operator": "Codex release orchestrator",
+    "classification_approver": "Ronak Chakraborty",
+    "retention_location": "approved encrypted Koaryu backup destination",
+    "retention_period": "24 months after the manifest is superseded",
+    "policy_review_cadence": "at least annually and whenever evidence rules or scope change",
+    "mutation_authority": "none"
+  }
+}

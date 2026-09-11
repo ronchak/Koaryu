@@ -32,6 +32,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Check example environment files: `npm run check:env-examples`
 - Verify a fully assembled staging environment is isolated: `npm run verify:staging-isolation`
 - Audit support triage privacy docs/scripts: `npm run audit:support-privacy`
+- Audit the offline production-data classification policy and synthetic fixtures: `npm run audit:production-classification`
 - Regenerate frontend API contract types: `npm run generate:api-types`
 - Check generated frontend API contract types: `npm run check:api-types`
 - Check candidate-wide workflow coverage: `npm run check:release-workflow`

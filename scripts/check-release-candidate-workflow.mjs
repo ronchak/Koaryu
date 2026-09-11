@@ -29,6 +29,7 @@ const requiredSnippets = [
   "npm run check:env-examples",
   "npm run audit:support-privacy",
   "node --test scripts/verify-deployed-release.test.mjs",
+  "npm run audit:production-classification",
 ];
 
 const candidateJobs = [

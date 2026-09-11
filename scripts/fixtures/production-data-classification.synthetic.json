@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "policy_version": "koaryu-production-data-classification/v1",
+  "snapshot": {
+    "backup_set_ref": "backup_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_project_ref": "project_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "captured_at": "2026-07-27T12:00:00Z",
+    "application_sha": "cccccccccccccccccccccccccccccccccccccccc",
+    "repository_migration_head": "20260727110000",
+    "remote_migration_history_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "backup_data_ciphertext_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "artifact_encryption_key_ref": "keyver_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "retention_location_ref": "retention_dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "opaque_ref_scheme": "hmac-sha256-v1",
+    "opaque_ref_key_version": "keyver_ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "extractor_version": "aggregate-extractor/v1",
+    "creation_role": "codex_release_orchestrator"
+  },
+  "source_counts": {
+    "auth_user": 3,
+    "studio": 2,
+    "studio_subscription": 1,
+    "studio_payment_account": 0,
+    "stripe_event": 1
+  },
+  "records": [
+    {
+      "opaque_ref": "entity_1111111111111111111111111111111111111111111111111111111111111111",
+      "record_type": "auth_user",
+      "evidence": [
+        {
+          "kind": "application_relationship",
+          "count": 1,
+          "source_ref": "evidence_1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        {
+          "kind": "historical_customer_relationship",
+          "count": 2,
+          "source_ref": "evidence_2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        {
+          "kind": "live_customer_relationship",
+          "count": 1,
+          "source_ref": "evidence_3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      ]
+    },
+    {
+      "opaque_ref": "entity_2222222222222222222222222222222222222222222222222222222222222222",
+      "record_type": "studio_subscription",
+      "evidence": [
+        {
+          "kind": "historical_customer_relationship",
+          "count": 1,
+          "source_ref": "evidence_4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      ]
+    },
+    {
+      "opaque_ref": "entity_3333333333333333333333333333333333333333333333333333333333333333",
+      "record_type": "studio",
+      "evidence": [
+        {
+          "kind": "registered_synthetic_marker",
+          "count": 1,
+          "source_ref": "evidence_5555555555555555555555555555555555555555555555555555555555555555"
+        }
+      ]
+    },
+    {
+      "opaque_ref": "entity_4444444444444444444444444444444444444444444444444444444444444444",
+      "record_type": "stripe_event",
+      "evidence": [
+        {
+          "kind": "registered_system_dependency",
+          "count": 1,
+          "source_ref": "evidence_6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      ]
+    },
+    {
+      "opaque_ref": "entity_5555555555555555555555555555555555555555555555555555555555555555",
+      "record_type": "studio",
+      "evidence": [
+        {
+          "kind": "owner_approved_setup_attestation",
+          "count": 1,
+          "source_ref": "evidence_7777777777777777777777777777777777777777777777777777777777777777"
+        }
+      ]
+    },
+    {
+      "opaque_ref": "entity_6666666666666666666666666666666666666666666666666666666666666666",
+      "record_type": "auth_user",
+      "evidence": [
+        {
+          "kind": "recent_activity",
+          "count": 42,
+          "source_ref": "evidence_8888888888888888888888888888888888888888888888888888888888888888"
+        }
+      ]
+    },
+    {
+      "opaque_ref": "entity_7777777777777777777777777777777777777777777777777777777777777777",
+      "record_type": "auth_user",
+      "evidence": [
+        {
+          "kind": "live_customer_relationship",
+          "count": 1,
+          "source_ref": "evidence_9999999999999999999999999999999999999999999999999999999999999999"
+        },
+        {
+          "kind": "registered_synthetic_marker",
+          "count": 1,
+          "source_ref": "evidence_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    }
+  ]
+}
