@@ -59,6 +59,18 @@ test("release-candidate repository controls require complete history", () => {
   );
 });
 
+test("release-candidate workflow rejects a missing backend quality gate", () => {
+  const weakened = workflow.replace(
+    "python -m ruff check app tests scripts",
+    "python -m pytest tests",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /python -m ruff check app tests scripts/,
+  );
+});
+
 test("release-candidate workflow rejects a missing aggregate dependency", () => {
   const weakened = workflow.replace("      - database\n", "");
 

@@ -165,32 +165,6 @@ class DemoScheduleSeeder:
             "grace": 1,
             "julian": 14,
         }
-        student_names = {
-            "aiko": "Aiko Tanaka",
-            "mateo": "Mateo Cruz",
-            "priya": "Priya Sharma",
-            "nina": "Nina Patel",
-            "marcus": "Marcus Webb",
-            "hana": "Hana Mori",
-            "liam": "Liam Johnson",
-            "ava": "Ava Martinez",
-            "noah_b": "Noah Bennett",
-            "zara": "Zara Ali",
-            "ethan": "Ethan Wong",
-            "lucas": "Lucas Grant",
-            "maya": "Maya Chen",
-            "oliver": "Oliver Stone",
-            "amara": "Amara Okafor",
-            "ben": "Ben Carter",
-            "isabella": "Isabella Rossi",
-            "kai": "Kai Thompson",
-            "mia_j": "Mia Johnson",
-            "omar": "Omar Haddad",
-            "rebecca": "Rebecca Nguyen",
-            "miles": "Miles Brooks",
-            "grace": "Grace Miller",
-            "julian": "Julian Bennett",
-        }
         attendance_rows = []
         for student_key, count in attendance_counts.items():
             for index, session_id in enumerate(history_session_ids[-count:]):

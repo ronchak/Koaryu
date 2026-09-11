@@ -28,6 +28,7 @@ Use this file for work under `backend/`. Fall back to the repo root `AGENTS.md` 
 - Regenerate the hash-pinned runtime lock after editing `requirements.in`: `cd backend && venv/bin/pip-compile --generate-hashes --strip-extras --output-file requirements.txt requirements.in`
 - Regenerate the hash-pinned development lock after editing `requirements-dev.in`: `cd backend && venv/bin/pip-compile --generate-hashes --strip-extras --allow-unsafe --output-file requirements-dev.txt requirements-dev.in`
 - Start local API: `cd backend && venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001`
+- Run backend quality lint: `cd backend && venv/bin/python -m ruff check app tests scripts`
 - Run all tests: `cd backend && venv/bin/python -m pytest tests`
 - Run targeted tests: `cd backend && venv/bin/python -m pytest tests/test_health_endpoints.py`
 
@@ -51,6 +52,7 @@ The local backend runs on `http://127.0.0.1:8001`.
 
 ## Verification
 
+- Run `cd backend && venv/bin/python -m ruff check app tests scripts` for backend Python changes.
 - Run targeted pytest files for the area you changed.
 - Run `cd backend && venv/bin/python -m pytest tests` for broader service or routing changes.
 - After changing support or account-deletion behavior, also run:

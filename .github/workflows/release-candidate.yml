@@ -119,7 +119,7 @@ jobs:
           KOARYU_PREVIEW_SMOKE_E2E=true KOARYU_PREFETCH_PRODUCTION_E2E=true KOARYU_E2E_FRONTEND_URL=http://localhost:4012 npx playwright test e2e/performance-navigation.spec.ts e2e/navigation-recovery.spec.ts e2e/intent-prefetch.spec.ts --workers=1
 
   backend:
-    name: Backend tests, contracts, and audit
+    name: Backend quality, tests, contracts, and audit
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -160,6 +160,9 @@ jobs:
 
       - name: Audit backend dependencies
         run: python -m pip_audit -r requirements.txt
+
+      - name: Lint backend Python
+        run: python -m ruff check app tests scripts
 
       - name: Run backend tests
         run: python -m pytest tests
