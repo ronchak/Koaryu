@@ -13,15 +13,15 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 83 |
+| Fixed | 84 |
 | Resolved indirectly | 2 |
-| Pending | 180 |
+| Pending | 179 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Total | 278 |
 
-Pending work is split between 29 Astra and 151 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
+Pending work is split between 29 Astra and 150 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -94,6 +94,8 @@ PR184 merged as `0559911b4c6fd7c57095ffcfbff73a7c2bbb49ba`, deleting 35 facade m
 | [189](https://github.com/ronchak/Koaryu/pull/189) | Concrete payment/reconciliation ownership and real refund/RPC fixtures | `df2cced` | [Payment/reconciliation ownership](docs/remediation/payment-reconciliation-ownership-verification.md) |
 
 | [190](https://github.com/ronchak/Koaryu/pull/190) | Concrete enrollment records/workflows; private billing facade removed | `c13b8bf` | [Enrollment ownership](docs/remediation/enrollment-ownership-verification.md) |
+
+| [191](https://github.com/ronchak/Koaryu/pull/191) | Calendar age, truthful student read states and unique CSV controls | `d14a1ba` | [Student display](docs/remediation/student-display-truth-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 

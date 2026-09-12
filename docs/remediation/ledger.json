@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "c13b8bfd80a53f08f62017bc8d25a1d13cd1fc67",
+  "last_reconciled_main": "d14a1bac0709a83a90f27a532bedbcc4d6557f05",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -8029,7 +8029,9 @@
       "source_paths": [
         "frontend/src/components/belt-tracker/eligibility-panel.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        191
+      ],
       "track": "Sol",
       "root_cause": "unavailable-rendered-empty",
       "collapse_with": [
@@ -8804,7 +8806,9 @@
         "frontend/src/components/schedule/session-detail-modal.tsx",
         "frontend/src/components/students/student-detail-sidebar.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        191
+      ],
       "track": "Sol",
       "root_cause": "unavailable-rendered-empty",
       "collapse_with": [
@@ -8903,7 +8907,9 @@
       "source_paths": [
         "frontend/src/components/students/student-detail-sidebar.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        191
+      ],
       "track": "Sol",
       "root_cause": "elapsed_time_age_display",
       "collapse_with": [],
@@ -9196,7 +9202,9 @@
         "backend/app/services/student_import_csv.py",
         "backend/app/services/student_import_headers.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        191
+      ],
       "track": "Sol",
       "root_cause": "preview-header-control-id-collision",
       "collapse_with": [],
@@ -9964,12 +9972,12 @@
       "id": "FSH1-04",
       "title": "Billing calendar dates display a day early in western time zones",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "Billing date-only fields still pass through UTC parsing followed by browser-local formatting, producing the previous date in western timezones.",
+      "disposition": "fixed",
+      "reason": "All four date-only billing displays use a dedicated UTC calendar-date formatter, preserving abbreviated labels and null fallback. Timestamp report callers retain local-time formatting; financial/overdue policy is unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "168a08620864bb9b971a18948de10318946253cc",
+      "verification": "Coordinator verified every affected date/timestamp caller and passed 13 date/transition tests. Full frontend passed 911 cases, one fewer through date-test consolidation. See billing-calendar-display-verification.md.",
       "source_paths": [
         "frontend/src/lib/billing-page-utils.ts",
         "frontend/src/lib/billing-period.ts",
@@ -9997,7 +10005,7 @@
           "observation": "Invoice due dates use the same formatter."
         }
       ],
-      "next_change": "Introduce an explicit date-only formatting path for these calendar fields; preserve separately defined timestamp formatting for timestamp callers.",
+      "next_change": "None for calendar display. Keep date-only presentation separate from timestamp interpretation and the pending overdue-policy database correction.",
       "validation_plan": "Check 2026-05-01 renders May 1 in Los Angeles and UTC, plus empty values and an existing timestamp caller.",
       "scope_constraints": "Display only: preserve amounts, stored dates, payment state, overdue rules and provider timestamp semantics.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -13178,15 +13186,15 @@
     }
   },
   "current_counts": {
-    "pending": 180,
-    "fixed": 83,
+    "pending": 179,
+    "fixed": 84,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 151,
+    "Sol": 150,
     "Astra": 29
   },
   "execution_policy": {
@@ -13198,12 +13206,12 @@
   },
   "current_disposition_tracks": {
     "pending": {
-      "Sol": 151,
+      "Sol": 150,
       "Astra": 29
     },
     "fixed": {
       "Astra": 22,
-      "Sol": 61
+      "Sol": 62
     },
     "rejected_after_verification": {
       "Sol": 1
