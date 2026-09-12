@@ -9,7 +9,6 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import BillingPlanCreate, BillingPlanUpdate
-from app.services.billing_plan_sync import BillingPlanSyncWorkflow
 from app.services.billing_plans import BillingPlanManager
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
@@ -17,7 +16,6 @@ from app.services.billing_provider_operations import (
     BillingProviderStepCoordinator,
     billing_provider_step_plan_sha256,
 )
-from app.services.platform_billing_helpers import build_idempotency_key
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
 
@@ -57,7 +55,7 @@ class _Accounts:
         return {"studio_id": studio_id, **self.account}
 
 
-class _Facade:
+class _PlanFixture:
     def __init__(self, tables, account=None):
         self.supabase = _PlanSupabase(tables)
         self.supabase.insert_defaults["billing_plan_prices"] = {
@@ -70,25 +68,12 @@ class _Facade:
             "status": "charges_enabled",
             "metadata": {"connect_account_generation": 1},
         }
-
-    def _connect_accounts(self):
-        return _Accounts(self.account)
-
-    def _get_row_or_404(self, table, record_id, studio_id, detail):
-        row = next(
-            (
-                candidate
-                for candidate in self.supabase.tables.setdefault(table, [])
-                if candidate.get("id") == record_id and candidate.get("studio_id") == studio_id
-            ),
-            None,
+        self.accounts = _Accounts(self.account)
+        self.manager = BillingPlanManager(
+            self.supabase,
+            self.accounts,
+            stripe_service_cls=_Stripe,
         )
-        if row is None:
-            raise HTTPException(status_code=404, detail=detail)
-        return row
-
-    def _idempotency_key(self, *parts):
-        return build_idempotency_key(*parts)
 
 
 class _Stripe:
@@ -240,10 +225,10 @@ class TestBillingPlanSync:
         program_ids,
         programs,
     ):
-        facade = _Facade({})
+        facade = _PlanFixture({})
         returned = {"plan": _plan(name="Committed plan", amount_cents=5000), "programs": programs}
         facade.supabase._rpc_write_billing_plan_v1 = lambda _params: returned
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        manager = facade.manager
         result = asyncio.run(
             manager.create_plan(payload, "studio_1", "actor_1")
             if plan_id is None
@@ -283,7 +268,7 @@ class TestBillingPlanSync:
         ],
     )
     def test_local_plan_rpc_rejections_do_not_fall_back(self, code, message, status):
-        facade = _Facade({})
+        facade = _PlanFixture({})
         error = PostgrestAPIError({"code": code, "message": message, "details": "", "hint": ""})
 
         def reject(_params):
@@ -292,7 +277,7 @@ class TestBillingPlanSync:
         facade.supabase._rpc_write_billing_plan_v1 = reject
         with pytest.raises(HTTPException if status else PostgrestAPIError) as failure:
             asyncio.run(
-                BillingPlanManager(facade, stripe_service_cls=_Stripe).update_plan(
+                facade.manager.update_plan(
                     "plan_1",
                     BillingPlanUpdate(description=None),
                     "studio_1",
@@ -309,14 +294,9 @@ class TestBillingPlanSync:
 
     def test_plan_sync_requires_canonical_byte_bounded_key(self):
         for key in (None, "é" * 128):
-            facade = _Facade(_tables())
+            facade = _PlanFixture(_tables())
             try:
-                asyncio.run(
-                    BillingPlanManager(
-                        facade,
-                        stripe_service_cls=_Stripe,
-                    ).sync_plan("plan_1", "studio_1", "actor_1", key)
-                )
+                asyncio.run(facade.manager.sync_plan("plan_1", "studio_1", "actor_1", key))
             except HTTPException as exc:
                 assert exc.status_code == 400
             else:
@@ -324,8 +304,8 @@ class TestBillingPlanSync:
             assert facade.supabase.billing_provider_operations == {}
 
     def test_two_step_create_replays_without_duplicate_product_price_or_audit(self):
-        facade = _Facade(_tables())
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        facade = _PlanFixture(_tables())
+        manager = facade.manager
 
         first = asyncio.run(
             manager.sync_plan(
@@ -371,7 +351,7 @@ class TestBillingPlanSync:
         "currency,product_id", [("eur", None), (None, "prod_existing"), (" ", None)]
     )
     def test_fresh_price_requires_usd_before_product_mutation(self, currency, product_id):
-        facade = _Facade(
+        facade = _PlanFixture(
             _tables(
                 _plan(
                     currency=currency,
@@ -383,9 +363,7 @@ class TestBillingPlanSync:
         before = copy.deepcopy(facade.supabase.tables)
         with pytest.raises(HTTPException) as failure:
             asyncio.run(
-                BillingPlanManager(facade, stripe_service_cls=_Stripe).sync_plan(
-                    "plan_1", "studio_1", "actor_1", "unsupported-currency"
-                )
+                facade.manager.sync_plan("plan_1", "studio_1", "actor_1", "unsupported-currency")
             )
         assert failure.value.status_code == 400
         parent = next(iter(facade.supabase.billing_provider_operations.values()))
@@ -409,9 +387,9 @@ class TestBillingPlanSync:
     )
     def test_historical_non_usd_price_respects_saved_attempt_evidence(self, stage, expected):
         # Seed historical receipts directly; no forbidden price is created through this workflow.
-        facade = _Facade(_tables(_plan(currency="eur")))
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
-        workflow = BillingPlanSyncWorkflow(manager, stripe_service_cls=_Stripe)
+        facade = _PlanFixture(_tables(_plan(currency="eur")))
+        manager = facade.manager
+        workflow = manager
         plan = facade.supabase.tables["billing_plans"][0]
         operations = BillingProviderOperationCoordinator(facade.supabase)
         lease = "00000000-0000-4000-8000-000000000101"
@@ -495,7 +473,7 @@ class TestBillingPlanSync:
         assert not (_Stripe.created_products or _Stripe.updated_products or _Stripe.created_prices)
 
     def test_completed_replay_repairs_failed_audit_once_without_provider_access(self):
-        facade = _Facade(_tables())
+        facade = _PlanFixture(_tables())
         fail = {"pending": True}
 
         def fail_first_audit(table, _payloads, _rows):
@@ -504,7 +482,7 @@ class TestBillingPlanSync:
                 raise RuntimeError("audit unavailable")
 
         facade.supabase.before_insert = fail_first_audit
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        manager = facade.manager
 
         with pytest.raises(RuntimeError, match="audit unavailable"):
             asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "audit-repair-key"))
@@ -545,8 +523,8 @@ class TestBillingPlanSync:
         ],
     )
     def test_completed_replay_verifies_legacy_audit_without_writing(self, change, error):
-        facade = _Facade(_tables())
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        facade = _PlanFixture(_tables())
+        manager = facade.manager
         asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "legacy-audit-key"))
         audit = facade.supabase.tables["audit_logs"][0]
         audit["id"] = "legacy-random-id"
@@ -616,8 +594,8 @@ class TestBillingPlanSync:
         ),
     )
     def test_audit_insert_race_requires_exact_winner(self, winner_change, expected_error):
-        facade = _Facade(_tables())
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        facade = _PlanFixture(_tables())
+        manager = facade.manager
         first = {"pending": True}
 
         def race_audit(table, payloads, rows):
@@ -670,9 +648,9 @@ class TestBillingPlanSync:
         )
 
     def test_lost_product_success_response_resumes_at_price_step(self):
-        facade = _Facade(_tables())
+        facade = _PlanFixture(_tables())
         facade.supabase.lose_product_success_response_once = True
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        manager = facade.manager
 
         try:
             asyncio.run(
@@ -702,7 +680,7 @@ class TestBillingPlanSync:
         assert len(facade.supabase.tables["audit_logs"]) == 1
 
     def test_provider_phase_receipt_resumes_projection_and_audits_once(self):
-        facade = _Facade(_tables())
+        facade = _PlanFixture(_tables())
         crash = {"pending": True}
 
         def crash_after_provider_phase(query, _rows):
@@ -716,7 +694,7 @@ class TestBillingPlanSync:
             return None
 
         facade.supabase.on_update_query = crash_after_provider_phase
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        manager = facade.manager
 
         try:
             asyncio.run(
@@ -755,8 +733,8 @@ class TestBillingPlanSync:
         assert len(facade.supabase.tables["audit_logs"]) == 1
 
     def test_completed_two_step_price_drift_is_sanitized_without_provider_retry(self):
-        facade = _Facade(_tables())
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        facade = _PlanFixture(_tables())
+        manager = facade.manager
         asyncio.run(
             manager.sync_plan(
                 "plan_1",
@@ -789,8 +767,8 @@ class TestBillingPlanSync:
         assert provider_call_count == len(_Stripe.created_products) + len(_Stripe.created_prices)
 
     def test_projected_two_step_price_drift_moves_to_reconciliation_without_provider_retry(self):
-        facade = _Facade(_tables())
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        facade = _PlanFixture(_tables())
+        manager = facade.manager
         asyncio.run(
             manager.sync_plan(
                 "plan_1",
@@ -848,8 +826,8 @@ class TestBillingPlanSync:
                 "created_at": "2026-08-27T00:00:00Z",
             }
         )
-        facade = _Facade(tables)
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        facade = _PlanFixture(tables)
+        manager = facade.manager
         asyncio.run(
             manager.sync_plan(
                 "plan_1",
@@ -885,13 +863,10 @@ class TestBillingPlanSync:
         )
         tables = _tables(plan)
         tables["billing_plan_prices"].append(_price_row(metadata={"legacy_marker": "keep"}))
-        facade = _Facade(tables)
+        facade = _PlanFixture(tables)
 
         result = asyncio.run(
-            BillingPlanManager(
-                facade,
-                stripe_service_cls=_Stripe,
-            ).sync_plan("plan_1", "studio_1", "actor_1", "legacy-price-key")
+            facade.manager.sync_plan("plan_1", "studio_1", "actor_1", "legacy-price-key")
         )
 
         assert result.status == "active"
@@ -921,7 +896,7 @@ class TestBillingPlanSync:
         tables = _tables(plan)
         price = _price_row(metadata={"legacy_marker": "keep"})
         tables["billing_plan_prices"].append(price)
-        facade = _Facade(tables)
+        facade = _PlanFixture(tables)
 
         def race_generation(_rows):
             price["metadata"] = {
@@ -933,10 +908,7 @@ class TestBillingPlanSync:
 
         try:
             asyncio.run(
-                BillingPlanManager(
-                    facade,
-                    stripe_service_cls=_Stripe,
-                ).sync_plan("plan_1", "studio_1", "actor_1", "raced-generation-key")
+                facade.manager.sync_plan("plan_1", "studio_1", "actor_1", "raced-generation-key")
             )
         except HTTPException as exc:
             assert exc.status_code == 409
@@ -949,13 +921,13 @@ class TestBillingPlanSync:
         assert _Stripe.created_prices == []
 
     def test_local_projection_failure_requires_reconciliation_without_provider_retry(self):
-        facade = _Facade(_tables())
+        facade = _PlanFixture(_tables())
         facade.supabase.on_update_query = lambda query, _rows: (
             []
             if query.name == "billing_plans" and (query.update_payload or {}).get("stripe_price_id")
             else None
         )
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        manager = facade.manager
 
         for expected_status in (503, 409):
             try:
@@ -979,7 +951,7 @@ class TestBillingPlanSync:
 
     def test_plan_projection_commit_then_lost_response_converges_and_replays(self):
         plan = _plan()
-        facade = _Facade(_tables(plan))
+        facade = _PlanFixture(_tables(plan))
         lost = {"pending": True}
 
         def commit_then_lose_response(query, _rows):
@@ -994,7 +966,7 @@ class TestBillingPlanSync:
             return None
 
         facade.supabase.on_update_query = commit_then_lose_response
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        manager = facade.manager
 
         completed = asyncio.run(
             manager.sync_plan("plan_1", "studio_1", "actor_1", "plan-update-lost")
@@ -1012,7 +984,7 @@ class TestBillingPlanSync:
         assert len(_Stripe.created_prices) == 1
 
     def test_price_insert_commit_then_lost_response_recovers_owned_row(self):
-        facade = _Facade(_tables())
+        facade = _PlanFixture(_tables())
         lost = {"pending": True}
 
         def commit_price_then_lose_response(name, payloads, rows):
@@ -1028,7 +1000,7 @@ class TestBillingPlanSync:
                 raise RuntimeError("price projection response lost")
 
         facade.supabase.before_insert = commit_price_then_lose_response
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        manager = facade.manager
 
         completed = asyncio.run(
             manager.sync_plan("plan_1", "studio_1", "actor_1", "price-insert-lost")
@@ -1059,7 +1031,7 @@ class TestBillingPlanSync:
             active=False,
         )
         tables["billing_plan_prices"].append(preexisting_price)
-        facade = _Facade(tables)
+        facade = _PlanFixture(tables)
 
         def archive_before_projection(_rows):
             plan["status"] = "archived"
@@ -1068,12 +1040,7 @@ class TestBillingPlanSync:
         facade.supabase.before_update = archive_before_projection
 
         with pytest.raises(HTTPException) as failed:
-            asyncio.run(
-                BillingPlanManager(
-                    facade,
-                    stripe_service_cls=_Stripe,
-                ).sync_plan("plan_1", "studio_1", "actor_1", "archive-race")
-            )
+            asyncio.run(facade.manager.sync_plan("plan_1", "studio_1", "actor_1", "archive-race"))
 
         assert failed.value.status_code == 503
         assert plan["status"] == "archived"
@@ -1100,7 +1067,7 @@ class TestBillingPlanSync:
                 "provider_operation_id": "other_operation",
             },
         )
-        facade = _Facade(_tables(plan))
+        facade = _PlanFixture(_tables(plan))
         price_reads = {"count": 0}
 
         def expose_other_owned_price_after_provider(_columns):
@@ -1120,10 +1087,7 @@ class TestBillingPlanSync:
 
         with pytest.raises(HTTPException) as failed:
             asyncio.run(
-                BillingPlanManager(
-                    facade,
-                    stripe_service_cls=_Stripe,
-                ).sync_plan("plan_1", "studio_1", "actor_1", "other-owned-price")
+                facade.manager.sync_plan("plan_1", "studio_1", "actor_1", "other-owned-price")
             )
 
         assert failed.value.status_code == 503
@@ -1147,7 +1111,7 @@ class TestBillingPlanSync:
         )
         tables = _tables(plan)
         tables["billing_plan_prices"].append(_price_row())
-        facade = _Facade(tables)
+        facade = _PlanFixture(tables)
 
         def edit_before_projection(_rows):
             plan["amount_cents"] = 18000
@@ -1157,12 +1121,7 @@ class TestBillingPlanSync:
         facade.supabase.before_update = edit_before_projection
 
         with pytest.raises(HTTPException) as failed:
-            asyncio.run(
-                BillingPlanManager(
-                    facade,
-                    stripe_service_cls=_Stripe,
-                ).sync_plan("plan_1", "studio_1", "actor_1", "terms-race")
-            )
+            asyncio.run(facade.manager.sync_plan("plan_1", "studio_1", "actor_1", "terms-race"))
 
         assert failed.value.status_code == 503
         assert plan["amount_cents"] == 18000
@@ -1179,8 +1138,8 @@ class TestBillingPlanSync:
         assert facade.supabase.tables["audit_logs"] == []
 
     def test_changed_desired_plan_new_key_replaces_completed_owner(self):
-        facade = _Facade(_tables())
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        facade = _PlanFixture(_tables())
+        manager = facade.manager
 
         first = asyncio.run(
             manager.sync_plan(
@@ -1207,8 +1166,8 @@ class TestBillingPlanSync:
         assert len(facade.supabase.tables["audit_logs"]) == 2
 
     def test_changed_desired_plan_conflicts_with_old_key(self):
-        facade = _Facade(_tables())
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        facade = _PlanFixture(_tables())
+        manager = facade.manager
         asyncio.run(
             manager.sync_plan(
                 "plan_1",
@@ -1261,15 +1220,10 @@ class TestBillingPlanSync:
                 "created_at": "2026-08-27T00:00:00Z",
             }
         )
-        facade = _Facade(tables)
+        facade = _PlanFixture(tables)
 
         try:
-            asyncio.run(
-                BillingPlanManager(
-                    facade,
-                    stripe_service_cls=_Stripe,
-                ).sync_plan("plan_1", "studio_1", "actor_1", "plan-key")
-            )
+            asyncio.run(facade.manager.sync_plan("plan_1", "studio_1", "actor_1", "plan-key"))
         except HTTPException as exc:
             assert exc.status_code == 409
         else:
@@ -1314,9 +1268,9 @@ class TestBillingPlanSync:
             stripe_product_id="prod_existing",
             stripe_price_id="price_existing",
         )
-        facade = _Facade(_tables(plan))
+        facade = _PlanFixture(_tables(plan))
         facade.supabase.tables["billing_plan_prices"] = [_price_row(currency=currency)]
-        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+        manager = facade.manager
         _Stripe.update_error = RuntimeError("lost update response")
         with pytest.raises(HTTPException):
             asyncio.run(manager.sync_plan("plan_1", "studio_1", "actor_1", "plan-recovery-key"))
@@ -1375,7 +1329,7 @@ class TestBillingPlanSync:
         assert operation["error_code"] == "plan_sync_recovery_source_drift"
 
     def test_product_update_reconcile_only_gets_without_second_mutation(self):
-        facade, manager, operation, plan = self._product_update_recovery(
+        _facade, manager, operation, plan = self._product_update_recovery(
             "provider_succeeded_reconcile_only", "prod_existing"
         )
         _Stripe.update_error = None
@@ -1383,9 +1337,7 @@ class TestBillingPlanSync:
             "id": "prod_existing",
             "name": plan["name"],
             "description": plan["description"],
-            "metadata": BillingPlanSyncWorkflow(
-                facade, stripe_service_cls=_Stripe
-            )._product_metadata(plan),
+            "metadata": manager._product_metadata(plan),
         }
         result = asyncio.run(
             manager.sync_plan("plan_1", "studio_1", "actor_1", "plan-recovery-key")
@@ -1407,9 +1359,7 @@ class TestBillingPlanSync:
             "id": "prod_existing",
             "name": plan["name"],
             "description": plan["description"],
-            "metadata": BillingPlanSyncWorkflow(
-                facade, stripe_service_cls=_Stripe
-            )._product_metadata(plan),
+            "metadata": manager._product_metadata(plan),
         }
         if mismatch == "id":
             response["id"] = "prod_wrong"

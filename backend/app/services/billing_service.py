@@ -149,23 +149,29 @@ class BillingService(BillingPrivateFacadeMixin):
         self._connect_actions().audit_dashboard_opened(studio_id, actor_id)
 
     async def list_plans(self, studio_id: str) -> list[BillingPlanResponse]:
-        return await BillingPlanManager(self, stripe_service_cls=StripeService).list_plans(
-            studio_id
-        )
+        return await BillingPlanManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        ).list_plans(studio_id)
 
     async def create_plan(
         self, data: BillingPlanCreate, studio_id: str, actor_id: str
     ) -> BillingPlanResponse:
-        return await BillingPlanManager(self, stripe_service_cls=StripeService).create_plan(
-            data, studio_id, actor_id
-        )
+        return await BillingPlanManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        ).create_plan(data, studio_id, actor_id)
 
     async def update_plan(
         self, plan_id: str, data: BillingPlanUpdate, studio_id: str, actor_id: str
     ) -> BillingPlanResponse:
-        return await BillingPlanManager(self, stripe_service_cls=StripeService).update_plan(
-            plan_id, data, studio_id, actor_id
-        )
+        return await BillingPlanManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        ).update_plan(plan_id, data, studio_id, actor_id)
 
     async def sync_plan(
         self,
@@ -174,7 +180,11 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: str | None = None,
     ) -> BillingPlanResponse:
-        return await BillingPlanManager(self, stripe_service_cls=StripeService).sync_plan(
+        return await BillingPlanManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        ).sync_plan(
             plan_id,
             studio_id,
             actor_id,
@@ -184,9 +194,11 @@ class BillingService(BillingPrivateFacadeMixin):
     async def archive_plan(
         self, plan_id: str, studio_id: str, actor_id: str
     ) -> BillingPlanResponse:
-        return await BillingPlanManager(self, stripe_service_cls=StripeService).archive_plan(
-            plan_id, studio_id, actor_id
-        )
+        return await BillingPlanManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        ).archive_plan(plan_id, studio_id, actor_id)
 
     async def list_payers(self, studio_id: str) -> list[BillingPayerResponse]:
         return await BillingPayerManager(self, stripe_service_cls=StripeService).list_payers(
