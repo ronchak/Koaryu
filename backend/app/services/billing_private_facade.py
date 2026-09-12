@@ -12,46 +12,6 @@ from app.services.platform_billing_helpers import build_idempotency_key
 
 
 class BillingPrivateFacadeMixin:
-    def _ensure_connect_ready(self, studio_id: str) -> dict[str, Any]:
-        return self._connect_accounts().ensure_ready(studio_id)
-
-    def _project_invoice_event(
-        self,
-        invoice: dict[str, Any],
-        account_id: Optional[str],
-        event_type: str,
-        event_created: Optional[int] = None,
-    ) -> None:
-        self._webhook_projector()._project_invoice_event(
-            invoice, account_id, event_type, event_created
-        )
-
-    def _project_payment_intent(
-        self,
-        intent: dict[str, Any],
-        account_id: Optional[str],
-        event_type: str,
-        event_created: Optional[int] = None,
-    ) -> None:
-        self._webhook_projector()._project_payment_intent(
-            intent, account_id, event_type, event_created
-        )
-
-    def _project_refund(
-        self,
-        refund: Any,
-        account_id: Optional[str],
-        *,
-        charge: Optional[dict[str, Any]] = None,
-        event_created: Optional[int] = None,
-    ) -> dict[str, Any]:
-        return self._webhook_projector()._project_refund(
-            refund,
-            account_id,
-            charge=charge,
-            event_created=event_created,
-        )
-
     def _project_subscription(
         self,
         subscription: dict[str, Any],
@@ -61,36 +21,6 @@ class BillingPrivateFacadeMixin:
     ) -> Optional[dict[str, Any]]:
         return self._webhook_projector()._project_subscription(
             subscription, account_id, event_type, event_created
-        )
-
-    def _find_invoice_for_stripe(
-        self, invoice: dict[str, Any], account_id: Optional[str]
-    ) -> Optional[dict[str, Any]]:
-        return self._webhook_projector()._find_invoice_for_stripe(invoice, account_id)
-
-    def _find_payment_by_intent(
-        self, account_id: Optional[str], payment_intent_id: Optional[str]
-    ) -> Optional[dict[str, Any]]:
-        return self._webhook_projector()._find_payment_by_intent(account_id, payment_intent_id)
-
-    @staticmethod
-    def _stripe_object_to_dict(value: Any) -> dict[str, Any]:
-        if isinstance(value, dict):
-            return value
-        if hasattr(value, "to_dict_recursive"):
-            return value.to_dict_recursive()
-        if hasattr(value, "to_dict"):
-            return value.to_dict()
-        return dict(value)
-
-    def _stored_stripe_event_object(
-        self,
-        account_id: Optional[str],
-        object_id: str,
-        event_types: list[str],
-    ) -> Optional[dict[str, Any]]:
-        return self._webhook_projector()._stored_stripe_event_object(
-            account_id, object_id, event_types
         )
 
     def _application_fee_percent(self, account: dict[str, Any]) -> float:

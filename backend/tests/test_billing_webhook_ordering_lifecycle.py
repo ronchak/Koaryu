@@ -24,8 +24,9 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "open",
@@ -80,8 +81,9 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_unlinked",
                 "status": "succeeded",
@@ -126,8 +128,9 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "open",
@@ -181,8 +184,9 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
             )
 
         service.supabase.before_update = newer_event_wins
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "open",
@@ -245,8 +249,9 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
             )
 
         service.supabase.before_update = newer_event_wins
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "paid",
@@ -295,8 +300,9 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
                         "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
                     }
                 )
+                webhook_projector = service._webhook_projector()
 
-                service._project_invoice_event(
+                webhook_projector.project_invoice_event(
                     {
                         "id": "in_1",
                         "status": "paid",
@@ -345,8 +351,9 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_2",
                 "status": "paid",
@@ -379,8 +386,9 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_unknown",
                 "status": "paid",
@@ -449,8 +457,9 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_unknown",
                 "status": "succeeded",

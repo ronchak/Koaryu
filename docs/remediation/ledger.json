@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "32b1ff3bc6ad36070e8164a5069a14b8008930c1",
+  "last_reconciled_main": "9d99ad53cddcbd03989671ff408e1ac30e47e9e0",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2364,13 +2364,11 @@
       ],
       "current_evidence": [
         {
-          "path": "backend/app/services/billing_invoice_operations.py",
-          "line": 2334,
+          "path": "backend/app/services/billing_invoices.py",
           "observation": "_finish_local_invoice audits, recomputes balance and validates the response before completing."
         },
         {
-          "path": "backend/app/services/billing_invoice_operations.py",
-          "line": 242,
+          "path": "backend/app/services/billing_invoices.py",
           "observation": "Completed create replay calls the same local closeout; retry does so at line 802."
         }
       ],
@@ -2432,11 +2430,11 @@
       "title": "Split billing files still share an implicit global owner",
       "cluster": "financial_command_completion",
       "disposition": "pending",
-      "reason": "Invoice commands now share one concrete owner; the separate invoice workflow is deleted. Plans, payers, projections, Connect and autopay also have concrete dependencies, ordinary audit/redirect rules are consolidated, and the reverse import is gone. The private facade still has 16 methods for payment, reconciliation and enrollment callers. ACS1-07 remains a separate public response-contract issue.",
+      "reason": "Payment and reconciliation now use concrete owners and projector interfaces. Their facade and webhook forwarding routes are removed, and the status loader targets Connect actions directly. Earlier changes covered plans, payers, projections, Connect, autopay and invoices. The remaining eight facade methods and four opaque owners belong to the enrollment family, so this finding stays pending. ACS1-07 remains separate.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "be39dcc78bf7ebc190079c94c7390098e26a18c0",
-      "verification": "Coordinator matched 65 moved invoice methods, eight manager algorithms, two studio-scoped query bodies, consent eligibility, all projector/service methods and public signatures. The final 355-test focused run passed; all 1,904 backend tests passed before the final test-only correction. Source loses 87 lines and 15 definitions; tests lose 42 lines with 146 definitions and 305 cases retained. Only two obsolete counter assertions were removed; four effective failure-point checks were added.",
+      "verified_against": "32f686bd6b4f3ce416deeb48d4a8184090ba43eb",
+      "verification": "Coordinator verified 16 payment algorithms, the tenant-scoped query, 24 payment projector methods, 32 webhook methods, six reconciliation workflows, the conversion helper and remaining facade/service contracts. The final affected run passed 225 tests. Source loses 82 lines and 22 definitions; tests retain 180 cases, lose seven helper definitions and gain 65 physical lines for actual dependencies and failure evidence. PROGRAM-REFUND-01 records the separate pre-existing database recovery gap.",
       "source_paths": [
         "backend/app/services/billing_enrollments.py",
         "backend/app/services/billing_enrollment_stripe_lifecycle.py",
@@ -2448,7 +2446,8 @@
         184,
         185,
         186,
-        187
+        187,
+        188
       ],
       "track": "Sol",
       "root_cause": "untyped-billing-boundaries",
@@ -2470,7 +2469,7 @@
           "observation": "The manager constructs the lifecycle and delegates methods back into it."
         }
       ],
-      "next_change": "Give payment and reconciliation concrete owners and remove their facade calls. Then resolve the remaining enrollment manager/activation/transition/lifecycle graph. Recheck bound callbacks into BillingService, including the status reporter loader, before considering this architecture finding complete.",
+      "next_change": "Remove the enrollment manager, activation, transition and lifecycle back-references with concrete record/account/projection dependencies. Delete the remaining facade after every caller is verified; inspect dynamic forwarding and bound callbacks before closing the architecture finding.",
       "validation_plan": "For each selected billing responsibility, verify moved algorithms and public contracts, retain financial/tenant/idempotency behavior, remove obsolete fixture/forwarding code and require fresh independent exact-head review/CI. Re-enumerate owners and facade methods after each merge; do not close this umbrella after one family.",
       "scope_constraints": "Do not replace the coordinator, move blocking I/O ownership, flatten recovery workflows or alter enrollment/date semantics.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -2501,8 +2500,8 @@
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "backend/app/services/billing_invoice_operations.py",
-          "line": 3027,
+          "path": "backend/app/services/billing_invoices.py",
+          "line": 3354,
           "observation": "Audit lookup selects only id and silently accepts 23505."
         },
         {
@@ -11465,8 +11464,7 @@
           "observation": "billing-reconciliation-stale counts billing_invoice_retry_operations with reconciliation_required status older than one hour."
         },
         {
-          "path": "backend/app/services/billing_invoice_operations.py",
-          "line": 777,
+          "path": "backend/app/services/billing_invoices.py",
           "observation": "Current retry flow claims through BillingProviderOperationCoordinator."
         },
         {
@@ -13125,6 +13123,30 @@
       "verification": "Private activation-readiness/root-reproduction.json and investigation.last.md. No production mutation or fix.",
       "execution_ownership": "Astra owns any forward database prepare/defer/lease contract; Sol owns the backend implementation and fixtures. One coordinated design.",
       "next_change": "Design stable request identity separately from the execution quantity snapshot. Preserve existing attempted operations and idempotency; verify zero-attempt and post-attempt boundaries with real concurrency before a bounded correction.",
+      "pull_requests": []
+    },
+    {
+      "id": "PROGRAM-REFUND-01",
+      "title": "A refund projection can invalidate its own recovery fingerprint before receipt completion",
+      "track": "Astra",
+      "disposition": "pending",
+      "audit_importance": "high",
+      "root_cause": "mutable_refund_projection_in_resource_identity",
+      "reason": "Verified on unchanged main: a succeeded refund projects 500 cents, receipt completion fails, and a same-key retry after lease expiry returns 409 while the receipt remains projected. The resource fingerprint includes refunded_amount_cents and non-completed replay requires the original fingerprint. This pre-existing database-dependent recovery gap is outside this application-only run; it is not an accepted risk or a completed remediation.",
+      "verified_against": "9d99ad53cddcbd03989671ff408e1ac30e47e9e0",
+      "source_paths": [
+        "backend/app/services/billing_payments.py",
+        "backend/app/services/billing_payment_projection.py",
+        "supabase/migrations/20260826185651_payment_refund_payer_sync_resource_ownership.sql",
+        "supabase/migrations/20260830082610_invoice_retry_release_compatibility_v33.sql"
+      ],
+      "related_findings": [
+        "BT1-02",
+        "BB1-09"
+      ],
+      "verification": "Coordinator invoked unchanged-main BillingService with its actual projector and existing in-memory database/provider fakes. Failure before the completion RPC commit left operation state projected, refunded_amount_cents=500 and one provider refund. After restoring completion and advancing the fake clock 31 seconds, same-key retry returned 409 without another provider call. Read-only SQL inspection confirmed the fingerprint field and the non-completed version conflict guard. No SQL execution, database proof or provider operation was performed. See refund-completion-risk.md.",
+      "next_change": "In the next authorized database run, reproduce against the actual database contract and make a small forward correction that distinguishes the operation's own verified projection from unrelated resource changes. Preserve actor/studio/account scope, immutable request identity, lease ownership, idempotency and historical completed replay. No historical financial backfill.",
+      "execution_ownership": "Astra owns database design, migration and SQL/concurrency verification. Sol may implement a separately bounded application/test portion after that prerequisite is settled.",
       "pull_requests": []
     }
   ],

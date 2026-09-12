@@ -50,8 +50,9 @@ class BillingSubscriptionProjectionLifecycleTest(BillingPaymentsLifecycleTestBas
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "paid",
@@ -145,8 +146,9 @@ class BillingSubscriptionProjectionLifecycleTest(BillingPaymentsLifecycleTestBas
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "paid",
@@ -233,8 +235,9 @@ class BillingSubscriptionProjectionLifecycleTest(BillingPaymentsLifecycleTestBas
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "paid",
@@ -299,8 +302,9 @@ class BillingSubscriptionProjectionLifecycleTest(BillingPaymentsLifecycleTestBas
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "paid",
@@ -501,8 +505,9 @@ class BillingSubscriptionProjectionLifecycleTest(BillingPaymentsLifecycleTestBas
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "paid",
@@ -571,8 +576,9 @@ class BillingSubscriptionProjectionLifecycleTest(BillingPaymentsLifecycleTestBas
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        webhook_projector = service._webhook_projector()
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "paid",

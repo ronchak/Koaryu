@@ -21,8 +21,10 @@ from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
 )
-from app.services.platform_billing_helpers import MAX_IDEMPOTENCY_KEY_LENGTH, build_idempotency_key
+from app.services.billing_connect_accounts import BillingConnectAccountStore
+from app.services.platform_billing_helpers import MAX_IDEMPOTENCY_KEY_LENGTH
 from app.services.stripe_mutation_policy import StripeMutationBlocked
+from tests.fakes.billing_balance import BillingBalanceRpcMixin
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.billing_reads import BillingReadRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
@@ -46,13 +48,18 @@ def _dated_defaults(_table: str) -> dict:
     }
 
 
-class _BillingSupabase(BillingReadRpcMixin, BillingProviderOperationRpcMixin, RpcBackedSupabase):
+class _BillingSupabase(
+    BillingBalanceRpcMixin,
+    BillingReadRpcMixin,
+    BillingProviderOperationRpcMixin,
+    RpcBackedSupabase,
+):
     def __init__(self, tables):
         super().__init__(tables)
         self.initialize_billing_provider_operations()
 
 
-class _BillingFacade:
+class _BillingPaymentFixture:
     def __init__(self, tables: dict[str, list[dict]]):
         payment_accounts = {
             row.get("stripe_account_id")
@@ -75,93 +82,32 @@ class _BillingFacade:
             payment.setdefault("payer_id", "payer_1")
             if payment.get("stripe_account_id"):
                 payment.setdefault("connect_account_generation", 1)
+            if payment.get("stripe_charge_id"):
+                payment.setdefault("status", "succeeded")
         self.supabase = _BillingSupabase(tables)
         for table in ("billing_payments", "billing_refunds", "export_jobs", "audit_logs"):
             self.supabase.insert_defaults[table] = _dated_defaults
+        self.supabase.insert_defaults["billing_refunds"] = {
+            "id": "refund_local",
+            **_dated_defaults("billing_refunds"),
+        }
         self.supabase.unique_constraints["billing_payments"] = [("studio_id", "idempotency_key")]
         self.supabase.unique_conflict_error_factory = lambda _table, _columns: conflict_error()
         self.balance_recomputes: list[tuple[str, str | None]] = []
-
-    def _ensure_record_in_studio(
-        self, table: str, record_id: str, studio_id: str, detail: str
-    ) -> None:
-        self._get_row_or_404(table, record_id, studio_id, detail)
-
-    def _get_row_or_404(self, table: str, record_id: str, studio_id: str, detail: str) -> dict:
-        result = (
-            self.supabase.table(table)
-            .select("*")
-            .eq("id", record_id)
-            .eq("studio_id", studio_id)
-            .limit(1)
-            .execute()
+        self.supabase.on_payer_balance_recompute = self._observe_balance_recompute
+        self.connect_accounts = BillingConnectAccountStore(
+            self.supabase,
+            settings=None,
+            stripe_service_cls=_FakeStripeService,
         )
-        if not result.data:
-            raise AssertionError(detail)
-        return result.data[0]
-
-    def _recompute_payer_balance(self, studio_id: str, payer_id: str | None) -> None:
-        self.balance_recomputes.append((studio_id, payer_id))
-
-    def _idempotency_key(self, *parts: str) -> str:
-        return build_idempotency_key(*parts)
-
-    def _connect_accounts(self):
-        facade = self
-
-        class Accounts:
-            @staticmethod
-            def by_stripe_account(account_id: str):
-                return next(
-                    (
-                        row
-                        for row in facade.supabase.tables.get("studio_payment_accounts", [])
-                        if row.get("stripe_connected_account_id") == account_id
-                    ),
-                    None,
-                )
-
-        return Accounts()
-
-    def _audit(
-        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict
-    ) -> None:
-        self.supabase.table("audit_logs").insert(
-            {
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": action,
-                "entity_id": entity_id,
-                "metadata": metadata,
-            }
-        ).execute()
-
-    def _project_refund(self, refund: dict, account_id: str) -> dict:
-        payment = next(
-            row
-            for row in self.supabase.tables.get("billing_payments", [])
-            if row["id"] == refund["metadata"]["payment_id"]
+        self.manager = BillingPaymentManager(
+            self.supabase,
+            self.connect_accounts,
+            stripe_service_cls=_FakeStripeService,
         )
-        row = {
-            "id": "refund_local",
-            "studio_id": refund["metadata"]["studio_id"],
-            "payment_id": refund["metadata"]["payment_id"],
-            "stripe_refund_id": refund["id"],
-            "stripe_charge_id": refund["charge"],
-            "stripe_account_id": account_id,
-            "connect_account_generation": payment["connect_account_generation"],
-            "amount_cents": refund["amount"],
-            "status": refund.get("status") or "succeeded",
-            "reason": refund.get("reason"),
-            "reconciliation_required": False,
-            "created_at": "2026-01-01T00:00:00Z",
-        }
-        existing = self.supabase.tables.setdefault("billing_refunds", [])
-        if not any(
-            candidate.get("stripe_refund_id") == row["stripe_refund_id"] for candidate in existing
-        ):
-            existing.append(row)
-        return row
+
+    def _observe_balance_recompute(self, params: dict) -> None:
+        self.balance_recomputes.append((params["p_studio_id"], params["p_payer_id"]))
 
 
 class _FakeStripeService:
@@ -211,7 +157,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
     def _completed_refund_audit_fixture(self, *, refund_status="succeeded"):
         _FakeStripeService.reset()
         _FakeStripeService.refund_status = refund_status
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -227,7 +173,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 "audit_logs": [],
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
         data = BillingRefundCreate(amount_cents=500, reason="requested_by_customer")
         result = asyncio.run(
             manager.refund_payment(
@@ -267,7 +213,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
             with self.subTest(refund_status=refund_status):
                 _FakeStripeService.reset()
                 _FakeStripeService.refund_status = refund_status
-                facade = _BillingFacade(
+                facade = _BillingPaymentFixture(
                     {
                         "billing_payments": [
                             {
@@ -283,7 +229,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                         "audit_logs": [],
                     }
                 )
-                manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+                manager = facade.manager
                 data = BillingRefundCreate(amount_cents=500, reason="requested_by_customer")
 
                 def fail_audit(table_name, _payloads, _rows):
@@ -743,7 +689,8 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 },
             ]
         )
-        manager = BillingPaymentManager(_BillingFacade({"billing_payments": current_rows}))
+        fixture = _BillingPaymentFixture({"billing_payments": current_rows})
+        manager = fixture.manager
 
         summary = asyncio.run(
             manager.current_month_payment_cohort_summary(
@@ -792,9 +739,9 @@ class BillingPaymentManagerTests(unittest.TestCase):
             "refundable_amount_cents": 0,
             "processed_at": "2026-01-01T00:00:00Z",
         }
-        facade = _BillingFacade({})
+        facade = _BillingPaymentFixture({})
         facade.supabase._rpc_record_external_payment_v1 = lambda _params: returned
-        manager = BillingPaymentManager(facade)
+        manager = facade.manager
         result = asyncio.run(
             manager.record_external_payment(payload, "studio_1", "actor_1", " payment-key ")
         )
@@ -816,7 +763,14 @@ class BillingPaymentManagerTests(unittest.TestCase):
                         "p_idempotency_key": "payment-key",
                         "p_request_hash": "5c962180b754669afcfb875eede42df081d7c9bcbd164ba7bd7bdea0a1a45403",
                     },
-                )
+                ),
+                (
+                    "recompute_billing_payer_balance_v1",
+                    {
+                        "p_studio_id": "studio_1",
+                        "p_payer_id": "payer_1",
+                    },
+                ),
             ],
         )
         self.assertEqual(
@@ -837,10 +791,10 @@ class BillingPaymentManagerTests(unittest.TestCase):
             ({"payer_id": "payer_1"}, None, 400, EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL),
         ]:
             with self.subTest(fields=fields, key=key):
-                facade = _BillingFacade({})
+                facade = _BillingPaymentFixture({})
                 with self.assertRaises(HTTPException) as failure:
                     asyncio.run(
-                        BillingPaymentManager(facade).record_external_payment(
+                        facade.manager.record_external_payment(
                             ExternalPaymentCreate(
                                 amount_cents=500, external_method="cash", **fields
                             ),
@@ -869,16 +823,16 @@ class BillingPaymentManagerTests(unittest.TestCase):
             "payment_method_type": "external",
             "processed_at": "2026-01-01T00:00:00Z",
         }
-        facade = _BillingFacade({})
+        facade = _BillingPaymentFixture({})
         facade.supabase._rpc_record_external_payment_v1 = lambda _params: returned
 
-        def recompute(studio, payer):
-            facade.balance_recomputes.append((studio, payer))
+        def recompute(params):
+            facade._observe_balance_recompute(params)
             if len(facade.balance_recomputes) == 1:
                 raise RuntimeError("balance refresh failed after confirmation")
 
-        facade._recompute_payer_balance = recompute
-        manager = BillingPaymentManager(facade)
+        facade.supabase.on_payer_balance_recompute = recompute
+        manager = facade.manager
         with self.assertRaisesRegex(RuntimeError, "balance refresh failed"):
             asyncio.run(
                 manager.record_external_payment(payload, "studio_1", "actor_1", "original-key")
@@ -890,8 +844,22 @@ class BillingPaymentManagerTests(unittest.TestCase):
             (result.id, result.currency, result.processed_at),
             ("legacy_payment", "eur", "2026-01-01T00:00:00Z"),
         )
-        first, retry = [params for _, params in facade.supabase.rpc_calls]
+        self.assertEqual(
+            [name for name, _params in facade.supabase.rpc_calls],
+            [
+                "record_external_payment_v1",
+                "recompute_billing_payer_balance_v1",
+                "record_external_payment_v1",
+                "recompute_billing_payer_balance_v1",
+            ],
+        )
+        (_, first), (_, first_balance), (_, retry), (_, retry_balance) = facade.supabase.rpc_calls
         self.assertEqual(retry, {**first, "p_actor_id": "actor_2"})
+        self.assertEqual(
+            first_balance,
+            {"p_studio_id": "studio_1", "p_payer_id": "payer_1"},
+        )
+        self.assertEqual(retry_balance, first_balance)
         self.assertEqual(facade.balance_recomputes, [("studio_1", "payer_1")] * 2)
         self.assertEqual(facade.supabase.query_log, [])
 
@@ -903,7 +871,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
             ("40001", "external_payment_retry_required", None),
         ]:
             with self.subTest(message=message):
-                facade = _BillingFacade({})
+                facade = _BillingPaymentFixture({})
                 error = PostgrestAPIError(
                     {"code": code, "message": message, "details": "", "hint": ""}
                 )
@@ -916,7 +884,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                     HTTPException if expected_status else PostgrestAPIError
                 ) as failure:
                     asyncio.run(
-                        BillingPaymentManager(facade).record_external_payment(
+                        facade.manager.record_external_payment(
                             ExternalPaymentCreate(
                                 payer_id="payer_1", amount_cents=500, external_method="cash"
                             ),
@@ -929,13 +897,17 @@ class BillingPaymentManagerTests(unittest.TestCase):
                     self.assertEqual(failure.exception.status_code, expected_status)
                 if message == "external_payment_requires_usd":
                     self.assertEqual(failure.exception.detail, EXTERNAL_PAYMENT_USD_ONLY_DETAIL)
+                self.assertEqual(
+                    [name for name, _params in facade.supabase.rpc_calls],
+                    ["record_external_payment_v1"],
+                )
                 self.assertEqual(facade.balance_recomputes, [])
                 self.assertEqual(facade.supabase.query_log, [])
-        facade = _BillingFacade({})
+        facade = _BillingPaymentFixture({})
         facade.supabase._rpc_record_external_payment_v1 = lambda _params: None
         with self.assertRaises(HTTPException) as failure:
             asyncio.run(
-                BillingPaymentManager(facade).record_external_payment(
+                facade.manager.record_external_payment(
                     ExternalPaymentCreate(
                         payer_id="payer_1", amount_cents=500, external_method="cash"
                     ),
@@ -945,11 +917,15 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 )
             )
         self.assertEqual(failure.exception.status_code, 500)
+        self.assertEqual(
+            [name for name, _params in facade.supabase.rpc_calls],
+            ["record_external_payment_v1"],
+        )
         self.assertEqual(facade.balance_recomputes, [])
 
     def test_refund_payment_uses_injected_stripe_and_projection_delegate(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -963,7 +939,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 ]
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         refund = asyncio.run(
             manager.refund_payment(
@@ -990,7 +966,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
         for application_fee_amount_cents, expected in ((0, False), (6, True)):
             with self.subTest(application_fee_amount_cents=application_fee_amount_cents):
                 _FakeStripeService.reset()
-                facade = _BillingFacade(
+                facade = _BillingPaymentFixture(
                     {
                         "billing_payments": [
                             {
@@ -1005,10 +981,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                         ]
                     }
                 )
-                manager = BillingPaymentManager(
-                    facade,
-                    stripe_service_cls=_FakeStripeService,
-                )
+                manager = facade.manager
 
                 asyncio.run(
                     manager.refund_payment(
@@ -1030,13 +1003,9 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 )
 
     def test_pending_refund_audits_request_without_claiming_money_returned(self):
-        class PendingRefundFacade(_BillingFacade):
-            def _project_refund(self, refund: dict, account_id: str) -> dict:
-                row = super()._project_refund(refund, account_id)
-                row["status"] = "pending"
-                return row
-
-        facade = PendingRefundFacade(
+        _FakeStripeService.reset()
+        _FakeStripeService.refund_status = "pending"
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1051,7 +1020,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 ],
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         refund = asyncio.run(
             manager.refund_payment(
@@ -1071,7 +1040,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
     def test_refund_payment_requires_canonical_request_idempotency_key(self):
         for key in (None, "é" * 128):
             with self.subTest(key=key):
-                facade = _BillingFacade(
+                facade = _BillingPaymentFixture(
                     {
                         "billing_payments": [
                             {
@@ -1085,10 +1054,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                         ]
                     }
                 )
-                manager = BillingPaymentManager(
-                    facade,
-                    stripe_service_cls=_FakeStripeService,
-                )
+                manager = facade.manager
 
                 with self.assertRaises(HTTPException) as context:
                     asyncio.run(
@@ -1106,7 +1072,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
     def test_invalid_refund_reason_does_not_claim_payment_or_block_later_valid_request(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1120,7 +1086,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 ]
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         invalid_payload = BillingRefundCreate.model_construct(
             amount_cents=500,
@@ -1158,7 +1124,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
     def test_refund_payment_rejects_amount_above_refundable_balance_before_stripe(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1172,7 +1138,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 ]
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         with self.assertRaises(HTTPException) as context:
             asyncio.run(
@@ -1194,7 +1160,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
     def test_same_amount_refunds_use_caller_idempotency_to_distinguish_operations(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1208,7 +1174,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 ]
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
         payload = BillingRefundCreate(amount_cents=500)
 
         asyncio.run(
@@ -1235,7 +1201,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
     def test_refund_same_key_different_hash_conflicts_without_second_provider_call(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1250,7 +1216,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 "audit_logs": [],
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         asyncio.run(
             manager.refund_payment(
@@ -1279,7 +1245,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
     def test_new_refund_key_waits_while_prior_refund_is_unsettled(self):
         _FakeStripeService.reset()
         _FakeStripeService.refund_status = "pending"
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1294,7 +1260,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 "audit_logs": [],
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
         payload = BillingRefundCreate(amount_cents=500)
 
         first = asyncio.run(
@@ -1336,7 +1302,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
     def test_new_refund_key_replaces_projected_failed_refund_owner(self):
         _FakeStripeService.reset()
         _FakeStripeService.refund_status = "failed"
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1351,7 +1317,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 "audit_logs": [],
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
         payload = BillingRefundCreate(amount_cents=500)
 
         first = asyncio.run(
@@ -1381,7 +1347,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
     def test_different_refund_keys_use_parent_state_without_payment_metadata_receipts(self):
         _FakeStripeService.reset()
         original_metadata = {"support_note": "keep"}
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1397,7 +1363,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 "audit_logs": [],
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         asyncio.run(
             manager.refund_payment(
@@ -1434,7 +1400,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
     def test_omitted_refund_amount_replays_parent_amount_after_payment_totals_change(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1451,7 +1417,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 "audit_logs": [],
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         first = asyncio.run(
             manager.refund_payment(
@@ -1483,12 +1449,8 @@ class BillingPaymentManagerTests(unittest.TestCase):
         self.assertEqual(payment["metadata"], {"support_note": "keep"})
 
     def test_refund_provider_success_local_failure_requires_reconciliation_without_retry(self):
-        class FailingProjectionFacade(_BillingFacade):
-            def _project_refund(self, refund: dict, account_id: str) -> dict:
-                raise RuntimeError("local projection failed with private payload")
-
         _FakeStripeService.reset()
-        facade = FailingProjectionFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1503,7 +1465,23 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 "audit_logs": [],
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
+        observed_projection_failure = []
+
+        def fail_refund_projection(table_name, payloads, _rows):
+            if table_name == "billing_refunds":
+                refund = payloads[0]
+                observed_projection_failure.append(
+                    {
+                        "table": table_name,
+                        "refund_id": refund["stripe_refund_id"],
+                        "studio_id": refund["studio_id"],
+                        "provider_refund_count": len(_FakeStripeService.refunds),
+                    }
+                )
+                raise RuntimeError("local projection failed with private payload")
+
+        facade.supabase.before_insert = fail_refund_projection
 
         with self.assertRaises(HTTPException) as failed:
             asyncio.run(
@@ -1528,6 +1506,17 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
         self.assertEqual(failed.exception.status_code, 503)
         self.assertEqual(replay.exception.status_code, 409)
+        self.assertEqual(
+            observed_projection_failure,
+            [
+                {
+                    "table": "billing_refunds",
+                    "refund_id": "re_created",
+                    "studio_id": "studio_1",
+                    "provider_refund_count": 1,
+                }
+            ],
+        )
         self.assertEqual(len(_FakeStripeService.refunds), 1)
         operation = next(iter(facade.supabase.billing_provider_operations.values()))
         self.assertEqual(operation["state"], "reconciliation_required")
@@ -1549,7 +1538,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
             with self.subTest(expected_state=expected_state):
                 _FakeStripeService.reset()
                 _FakeStripeService.refund_error = provider_error
-                facade = _BillingFacade(
+                facade = _BillingPaymentFixture(
                     {
                         "billing_payments": [
                             {
@@ -1563,7 +1552,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                         ],
                     }
                 )
-                manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+                manager = facade.manager
 
                 with self.assertRaises(HTTPException):
                     asyncio.run(
@@ -1593,7 +1582,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
     def test_refund_rejects_cross_studio_generation_before_operation_or_provider(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1619,10 +1608,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
         with self.assertRaises(HTTPException) as context:
             asyncio.run(
-                BillingPaymentManager(
-                    facade,
-                    stripe_service_cls=_FakeStripeService,
-                ).refund_payment(
+                facade.manager.refund_payment(
                     "payment_1",
                     BillingRefundCreate(amount_cents=500),
                     "studio_1",
@@ -1643,7 +1629,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
             "amount_remaining_cents": 700,
             "status": "open",
         }
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1660,7 +1646,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 "audit_logs": [],
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         first = asyncio.run(
             manager.refund_payment(
@@ -1693,7 +1679,9 @@ class BillingPaymentManagerTests(unittest.TestCase):
         for operation_state in ("completed", "projected"):
             with self.subTest(operation_state=operation_state):
                 _FakeStripeService.reset()
-                facade = _BillingFacade(
+                if operation_state == "projected":
+                    _FakeStripeService.refund_status = "pending"
+                facade = _BillingPaymentFixture(
                     {
                         "billing_payments": [
                             {
@@ -1709,21 +1697,55 @@ class BillingPaymentManagerTests(unittest.TestCase):
                         "audit_logs": [],
                     }
                 )
-                manager = BillingPaymentManager(
-                    facade,
-                    stripe_service_cls=_FakeStripeService,
-                )
-                asyncio.run(
-                    manager.refund_payment(
-                        "payment_1",
-                        BillingRefundCreate(amount_cents=500),
-                        "studio_1",
-                        "actor_1",
-                        "refund-key",
+                manager = facade.manager
+                if operation_state == "completed":
+                    asyncio.run(
+                        manager.refund_payment(
+                            "payment_1",
+                            BillingRefundCreate(amount_cents=500),
+                            "studio_1",
+                            "actor_1",
+                            "refund-key",
+                        )
                     )
-                )
+                else:
+                    original_complete = facade.supabase._rpc_complete_billing_provider_operation_v1
+                    completion_attempts = []
+
+                    def fail_completion(params):
+                        facade.supabase._rpc_complete_billing_provider_operation_v1 = (
+                            original_complete
+                        )
+                        completion_attempts.append(dict(params))
+                        raise RuntimeError("completion unavailable")
+
+                    facade.supabase._rpc_complete_billing_provider_operation_v1 = fail_completion
+                    with self.assertRaisesRegex(RuntimeError, "completion unavailable"):
+                        asyncio.run(
+                            manager.refund_payment(
+                                "payment_1",
+                                BillingRefundCreate(amount_cents=500),
+                                "studio_1",
+                                "actor_1",
+                                "refund-key",
+                            )
+                        )
+                    self.assertEqual(len(completion_attempts), 1)
+                    facade.supabase.advance_billing_provider_clock(seconds=31)
+
                 operation = next(iter(facade.supabase.billing_provider_operations.values()))
-                operation["state"] = operation_state
+                if operation_state == "projected":
+                    self.assertEqual(operation["state"], "projected")
+                    self.assertEqual(
+                        facade.supabase.tables["billing_payments"][0]["refunded_amount_cents"],
+                        0,
+                    )
+                else:
+                    self.assertEqual(operation["state"], "completed")
+                    self.assertEqual(
+                        facade.supabase.tables["billing_payments"][0]["refunded_amount_cents"],
+                        500,
+                    )
                 facade.supabase.tables["billing_refunds"][0]["payment_id"] = "payment_other"
 
                 with self.assertRaises(HTTPException) as mismatch:
@@ -1739,6 +1761,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
                 self.assertEqual(mismatch.exception.status_code, 503)
                 self.assertNotIn("payment_other", mismatch.exception.detail)
+                self.assertEqual(len(_FakeStripeService.refunds), 1)
                 if operation_state == "projected":
                     self.assertEqual(operation["state"], "reconciliation_required")
                     self.assertEqual(
@@ -1750,7 +1773,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
     def test_long_refund_idempotency_keys_are_capped_for_stripe(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1764,7 +1787,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 ]
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
         payload = BillingRefundCreate(amount_cents=500)
 
         asyncio.run(
@@ -1796,13 +1819,13 @@ class BillingPaymentManagerTests(unittest.TestCase):
         self.assertTrue(all(key.startswith("koaryu:payment-refund:") for key in keys))
 
     def test_create_and_get_export_job_records_async_request_metadata(self):
-        facade = _BillingFacade({"export_jobs": []})
+        facade = _BillingPaymentFixture({"export_jobs": []})
         facade.supabase.insert_defaults["export_jobs"] = {
             "status": "queued",
             "created_at": "2026-01-01T00:00:00Z",
             "updated_at": "2026-01-01T00:00:00Z",
         }
-        manager = BillingPaymentManager(facade)
+        manager = facade.manager
 
         created = asyncio.run(
             manager.create_export_job(
@@ -1819,7 +1842,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
     def _refund_recovery(self, outcome, recovered_id=None):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _BillingPaymentFixture(
             {
                 "billing_payments": [
                     {
@@ -1840,7 +1863,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 "audit_logs": [],
             }
         )
-        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
         payload = BillingRefundCreate(amount_cents=500, reason="requested_by_customer")
         _FakeStripeService.refund_error = RuntimeError("lost refund response")
         with self.assertRaises(HTTPException):

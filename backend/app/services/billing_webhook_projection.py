@@ -104,17 +104,19 @@ class BillingWebhookProjector:
             "invoice.voided",
             "invoice.marked_uncollectible",
         }:
-            self._project_invoice_event(data_object, account_id, event_type, event_created)
+            self.project_invoice_event(data_object, account_id, event_type, event_created)
             return
         if event_type in {
             "payment_intent.processing",
             "payment_intent.succeeded",
             "payment_intent.payment_failed",
         }:
-            self._project_payment_intent(data_object, account_id, event_type, event_created)
+            self._payment_events().project_payment_intent(
+                data_object, account_id, event_type, event_created
+            )
             return
         if event_type == "charge.refunded":
-            self._project_charge_refund(data_object, account_id, event_created)
+            self._payment_events().project_charge_refund(data_object, account_id, event_created)
             return
         if event_type in {
             "charge.refund.updated",
@@ -122,10 +124,12 @@ class BillingWebhookProjector:
             "refund.failed",
             "refund.updated",
         }:
-            self._project_refund(data_object, account_id, event_created=event_created)
+            self._payment_events().project_refund(
+                data_object, account_id, event_created=event_created
+            )
             return
         if event_type.startswith("charge.dispute."):
-            self._project_dispute(data_object, account_id, event_created)
+            self._payment_events().project_dispute(data_object, account_id, event_created)
             return
         if event_type.startswith("customer.subscription."):
             self._project_subscription(data_object, account_id, event_type, event_created)
@@ -864,14 +868,14 @@ class BillingWebhookProjector:
             }
         ).eq("id", payer_id).eq("studio_id", studio_id).execute()
 
-    def _project_invoice_event(
+    def project_invoice_event(
         self,
         invoice: dict[str, Any],
         account_id: Optional[str],
         event_type: str,
         event_created: Optional[int] = None,
     ) -> None:
-        local = self._find_invoice_for_stripe(invoice, account_id)
+        local = self.find_invoice_for_stripe(invoice, account_id)
         metadata = invoice_metadata(invoice)
         studio_id = self.connect_accounts.resolve_stripe_event_studio_id(
             account_id,
@@ -892,62 +896,12 @@ class BillingWebhookProjector:
             return
         self._update_subscription_period_from_invoice(studio_id, invoice, account_id)
         if event_type == "invoice.paid":
-            self._project_payment_from_invoice(
+            self._payment_events().project_payment_from_invoice(
                 invoice, account_id, local, event_created=event_created
             )
             self._link_orphan_payment_to_invoice(invoice, account_id, local)
         if local.get("payer_id"):
             recompute_payer_balance(self.supabase, studio_id, local.get("payer_id"))
-
-    def _project_payment_intent(
-        self,
-        intent: dict[str, Any],
-        account_id: Optional[str],
-        event_type: str,
-        event_created: Optional[int] = None,
-    ) -> None:
-        self._payment_events()._project_payment_intent(
-            intent, account_id, event_type, event_created
-        )
-
-    def _link_adjustments_to_payment(
-        self, payment: dict[str, Any], account_id: Optional[str]
-    ) -> dict[str, Any]:
-        return self._payment_events()._link_adjustments_to_payment(payment, account_id)
-
-    def _project_charge_refund(
-        self,
-        charge: dict[str, Any],
-        account_id: Optional[str],
-        event_created: Optional[int] = None,
-    ) -> None:
-        self._payment_events()._project_charge_refund(charge, account_id, event_created)
-
-    def _project_refund(
-        self,
-        refund: Any,
-        account_id: Optional[str],
-        *,
-        charge: Optional[dict[str, Any]] = None,
-        event_created: Optional[int] = None,
-    ) -> dict[str, Any]:
-        return self._payment_events()._project_refund(
-            refund,
-            account_id,
-            charge=charge,
-            event_created=event_created,
-        )
-
-    def _project_dispute(
-        self,
-        dispute: dict[str, Any],
-        account_id: Optional[str],
-        event_created: Optional[int] = None,
-    ) -> None:
-        self._payment_events()._project_dispute(dispute, account_id, event_created)
-
-    def _refresh_invoice_and_payer_from_payment_events(self, payment: dict[str, Any]) -> None:
-        self._payment_events()._refresh_invoice_and_payer_from_payment_events(payment)
 
     def _project_subscription(
         self,
@@ -1089,21 +1043,6 @@ class BillingWebhookProjector:
             projection["application_fee_amount_cents"] = int(application_fee_amount)
         return projection
 
-    def _project_payment_from_invoice(
-        self,
-        invoice: dict[str, Any],
-        account_id: Optional[str],
-        local_invoice: dict[str, Any],
-        *,
-        event_created: Optional[int] = None,
-    ) -> None:
-        self._payment_events()._project_payment_from_invoice(
-            invoice,
-            account_id,
-            local_invoice,
-            event_created=event_created,
-        )
-
     def _invoice_identity_projection(
         self,
         studio_id: str,
@@ -1203,7 +1142,7 @@ class BillingWebhookProjector:
             return
         payment_intent_id = _stripe_id(invoice.get("payment_intent"))
         payment = (
-            self._find_payment_by_intent(account_id, payment_intent_id)
+            self._payment_events().find_payment_by_intent(account_id, payment_intent_id)
             if payment_intent_id
             else None
         )
@@ -1242,7 +1181,7 @@ class BillingWebhookProjector:
             ).execute()
             local_invoice.update(invoice_update)
 
-    def _find_invoice_for_stripe(
+    def find_invoice_for_stripe(
         self, invoice: dict[str, Any], account_id: Optional[str]
     ) -> Optional[dict[str, Any]]:
         metadata = invoice_metadata(invoice)
@@ -1323,12 +1262,7 @@ class BillingWebhookProjector:
     ) -> Optional[dict[str, Any]]:
         return self._payment_events()._find_payment_by_charge(account_id, charge_id)
 
-    def _find_payment_by_intent(
-        self, account_id: Optional[str], payment_intent_id: Optional[str]
-    ) -> Optional[dict[str, Any]]:
-        return self._payment_events()._find_payment_by_intent(account_id, payment_intent_id)
-
-    def _stored_stripe_event_object(
+    def stored_stripe_event_object(
         self,
         account_id: Optional[str],
         object_id: str,
@@ -1357,16 +1291,6 @@ class BillingWebhookProjector:
             if _stripe_id(data_object) == object_id:
                 return data_object
         return None
-
-    def _find_subscription_for_stripe(
-        self, subscription: dict[str, Any], account_id: Optional[str]
-    ) -> Optional[dict[str, Any]]:
-        return self._subscription_events().find_subscription_for_stripe(subscription, account_id)
-
-    def _project_subscription_items(
-        self, subscription: dict[str, Any], group: dict[str, Any]
-    ) -> None:
-        self._subscription_events().project_subscription_items(subscription, group)
 
     def _update_invoice_last_event(
         self, invoice: dict[str, Any], studio_id: str, event_created: int
