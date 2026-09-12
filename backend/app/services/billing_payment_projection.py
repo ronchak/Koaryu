@@ -145,7 +145,7 @@ class BillingPaymentEventProjector:
         payment_method_details = _object_get(charge, "payment_method_details") or {}
         return _object_get(payment_method_details, "type")
 
-    def _project_payment_intent(
+    def project_payment_intent(
         self,
         intent: dict[str, Any],
         account_id: Optional[str],
@@ -560,7 +560,7 @@ class BillingPaymentEventProjector:
             account_id,
         )
 
-    def _project_charge_refund(
+    def project_charge_refund(
         self,
         charge: dict[str, Any],
         account_id: Optional[str],
@@ -568,9 +568,9 @@ class BillingPaymentEventProjector:
     ) -> None:
         refunds = (charge.get("refunds") or {}).get("data") or []
         for refund in refunds:
-            self._project_refund(refund, account_id, charge=charge, event_created=event_created)
+            self.project_refund(refund, account_id, charge=charge, event_created=event_created)
 
-    def _project_refund(
+    def project_refund(
         self,
         refund: Any,
         account_id: Optional[str],
@@ -705,7 +705,7 @@ class BillingPaymentEventProjector:
                 )
                 if not concurrent.data:
                     raise
-                return self._project_refund(
+                return self.project_refund(
                     refund_dict,
                     account_id,
                     charge=charge,
@@ -715,7 +715,7 @@ class BillingPaymentEventProjector:
             self._reconcile_payment_adjustments(payment, account_id)
         return result.data[0] if result.data else row
 
-    def _project_dispute(
+    def project_dispute(
         self,
         dispute: dict[str, Any],
         account_id: Optional[str],
@@ -864,7 +864,7 @@ class BillingPaymentEventProjector:
                 )
                 if not concurrent.data:
                     raise
-                self._project_dispute(dispute, account_id, event_created)
+                self.project_dispute(dispute, account_id, event_created)
         if payment:
             self._reconcile_payment_adjustments(payment, account_id)
 
@@ -1090,7 +1090,7 @@ class BillingPaymentEventProjector:
         ).execute()
         recompute_payer_balance(self.supabase, studio_id, payer_id or invoice.get("payer_id"))
 
-    def _project_payment_from_invoice(
+    def project_payment_from_invoice(
         self,
         invoice: dict[str, Any],
         account_id: Optional[str],
@@ -1117,7 +1117,7 @@ class BillingPaymentEventProjector:
                 "status": "succeeded",
                 "metadata": invoice.get("metadata") or {},
             }
-        self._project_payment_intent(
+        self.project_payment_intent(
             intent if isinstance(intent, dict) else intent.to_dict_recursive(),
             account_id,
             "payment_intent.succeeded",
@@ -1248,7 +1248,7 @@ class BillingPaymentEventProjector:
         rows = query.limit(2).execute().data or []
         return rows[0] if len(rows) == 1 else None
 
-    def _find_payment_by_intent(
+    def find_payment_by_intent(
         self, account_id: Optional[str], payment_intent_id: Optional[str]
     ) -> Optional[dict[str, Any]]:
         if not payment_intent_id:

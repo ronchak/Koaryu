@@ -1470,8 +1470,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",
@@ -1577,8 +1578,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             }
         ]
         service.supabase = _FakeSupabase(tables)
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",
@@ -1661,8 +1663,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             },
         ]
         service.supabase = _FakeSupabase(tables)
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",
@@ -1841,8 +1844,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_refund(
+        payment_events.project_refund(
             {
                 "id": "re_1",
                 "charge": "ch_1",
@@ -1910,8 +1914,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_refund(
+        payment_events.project_refund(
             {
                 "id": "re_1",
                 "charge": "ch_1",
@@ -1981,7 +1986,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         )
         payment_events = service._webhook_projector()._payment_events()
 
-        payment_events._project_dispute(
+        payment_events.project_dispute(
             {
                 "id": "dp_1",
                 "charge": "ch_1",
@@ -2091,8 +2096,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
     def test_refund_without_provider_success_status_does_not_change_financial_totals(self):
         service = self.service()
         service.supabase = _FakeSupabase(_settled_payment_tables())
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_refund(
+        payment_events.project_refund(
             {
                 "id": "re_missing_status",
                 "charge": "ch_1",
@@ -2137,7 +2143,8 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             )
 
         service.supabase.before_insert = insert_competing_refund
-        service._project_refund(
+        payment_events = service._webhook_projector()._payment_events()
+        payment_events.project_refund(
             {
                 "id": "re_concurrent",
                 "charge": "ch_1",
@@ -2266,7 +2273,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         service.supabase = _FakeSupabase(tables)
         payment_events = service._webhook_projector()._payment_events()
 
-        service._project_refund(
+        payment_events.project_refund(
             {
                 "id": "re_1",
                 "charge": "ch_replayed",
@@ -2278,7 +2285,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             "acct_1",
             event_created=200,
         )
-        payment_events._project_dispute(
+        payment_events.project_dispute(
             {
                 "id": "dp_1",
                 "charge": "ch_replayed",
@@ -2305,7 +2312,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         service.supabase = _FakeSupabase(_settled_payment_tables())
         payment_events = service._webhook_projector()._payment_events()
 
-        payment_events._project_dispute(
+        payment_events.project_dispute(
             {
                 "id": "dp_missing_status",
                 "charge": "ch_1",
@@ -2341,8 +2348,8 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 }
                 payment_events = service._webhook_projector()._payment_events()
 
-                payment_events._project_dispute(dispute, "acct_1", event_created=100)
-                payment_events._project_dispute(
+                payment_events.project_dispute(dispute, "acct_1", event_created=100)
+                payment_events.project_dispute(
                     {**dispute, "status": terminal_status},
                     "acct_1",
                     event_created=200,
@@ -2391,8 +2398,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             }
         ]
         service.supabase = _FakeSupabase(tables)
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_refund(
+        payment_events.project_refund(
             {
                 "id": "re_historical",
                 "charge": "ch_1",

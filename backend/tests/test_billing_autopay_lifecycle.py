@@ -768,8 +768,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",

@@ -86,28 +86,30 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                     provider.return_value.retrieve_connected_payment_intent.return_value = intent
                     payment_events = service._webhook_projector()._payment_events()
                     if first_source == "invoice":
-                        payment_events._project_payment_from_invoice(
+                        payment_events.project_payment_from_invoice(
                             invoice,
                             "acct_1",
                             local_invoice,
                             event_created=int(observed.timestamp()),
                         )
                     else:
-                        service._project_payment_intent(
+                        payment_events.project_payment_intent(
                             intent, "acct_1", "payment_intent.succeeded", int(collected.timestamp())
                         )
-                    payment_events._project_payment_from_invoice(
+                    payment_events.project_payment_from_invoice(
                         invoice, "acct_1", local_invoice, event_created=int(observed.timestamp())
                     )
-                    service._project_payment_intent(
+                    payment_events.project_payment_intent(
                         intent, "acct_1", "payment_intent.succeeded", int(observed.timestamp())
                     )
-                    service._project_payment_intent(intent, "acct_1", "payment_intent.succeeded")
+                    payment_events.project_payment_intent(
+                        intent, "acct_1", "payment_intent.succeeded"
+                    )
 
                 payments = service.supabase.tables["billing_payments"]
                 self.assertEqual(len(payments), 1)
                 self.assertEqual(payments[0]["processed_at"], collected.isoformat())
-                manager = BillingPaymentManager(service)
+                manager = BillingPaymentManager(service.supabase, service._connect_accounts())
                 june = asyncio.run(
                     manager.current_month_payment_cohort_summary("studio_1", as_of=collected)
                 )
@@ -121,7 +123,10 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
         for winner_event in (150, 300):
             with self.subTest(winner_event=winner_event):
                 service, intent = self.payment_facts_fixture()
-                service._project_payment_intent(intent, "acct_1", "payment_intent.processing", 100)
+                payment_events = service._webhook_projector()._payment_events()
+                payment_events.project_payment_intent(
+                    intent, "acct_1", "payment_intent.processing", 100
+                )
                 winner_time = "2026-06-30T23:59:59+00:00"
 
                 def concurrent_success(rows):
@@ -138,7 +143,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
 
                 service.supabase.before_update = concurrent_success
                 service.supabase.query_log.clear()
-                service._project_payment_intent(intent, "acct_1", "payment_intent.succeeded", 200)
+                payment_events.project_payment_intent(
+                    intent, "acct_1", "payment_intent.succeeded", 200
+                )
                 payment = service.supabase.tables["billing_payments"][0]
                 self.assertEqual(payment["processed_at"], winner_time)
                 self.assertEqual(payment["last_stripe_event_created"], max(200, winner_event))
@@ -198,10 +205,11 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
         service, intent = self.payment_facts_fixture()
         first_seen = datetime(2026, 6, 30, 23, 59, 59, tzinfo=timezone.utc)
         with patch("app.services.billing_payment_projection.datetime", wraps=datetime) as clock:
+            payment_events = service._webhook_projector()._payment_events()
             clock.now.return_value = first_seen
-            service._project_payment_intent(intent, "acct_1", "payment_intent.succeeded")
+            payment_events.project_payment_intent(intent, "acct_1", "payment_intent.succeeded")
             clock.now.return_value = datetime(2026, 7, 2, tzinfo=timezone.utc)
-            service._project_payment_intent(intent, "acct_1", "payment_intent.succeeded")
+            payment_events.project_payment_intent(intent, "acct_1", "payment_intent.succeeded")
         self.assertEqual(
             service.supabase.tables["billing_payments"][0]["processed_at"], first_seen.isoformat()
         )
@@ -222,7 +230,8 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
             "currency": "usd",
         }
         service.supabase.tables["billing_invoices"] = [invoice]
-        service._project_payment_intent(intent, "acct_1", "payment_intent.succeeded", 100)
+        payment_events = service._webhook_projector()._payment_events()
+        payment_events.project_payment_intent(intent, "acct_1", "payment_intent.succeeded", 100)
         payment = service.supabase.tables["billing_payments"][0]
         self.assertEqual(payment["amount_cents"], 0)
         self.assertEqual(payment["net_collected_amount_cents"], 0)
@@ -237,11 +246,11 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                     payment_events = service._webhook_projector()._payment_events()
                     # A partial capture can collect less than the intended amount.
                     intent["amount"] = 2000
-                    service._project_payment_intent(
+                    payment_events.project_payment_intent(
                         intent, "acct_1", "payment_intent.succeeded", 100
                     )
                     if terminal == "refunded":
-                        service._project_refund(
+                        payment_events.project_refund(
                             {
                                 "id": "re_1",
                                 "charge": "ch_1",
@@ -254,7 +263,7 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                             "acct_1",
                         )
                     elif terminal == "disputed":
-                        payment_events._project_dispute(
+                        payment_events.project_dispute(
                             {
                                 "id": "dp_1",
                                 "charge": "ch_1",
@@ -285,7 +294,7 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                         expected["net_collected_amount_cents"],
                         1000 if terminal == "succeeded" else 0,
                     )
-                    service._project_payment_intent(
+                    payment_events.project_payment_intent(
                         {**intent, "amount_received": 0, "status": incoming},
                         "acct_1",
                         f"payment_intent.{incoming}",
@@ -324,9 +333,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_disputes": [],
             }
         )
-        service._recompute_payer_balance = lambda *_args: None
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_no_charge",
                 "amount": 12900,
@@ -394,7 +403,7 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "transient retrieval failure"
             )
             payment_events = service._webhook_projector()._payment_events()
-            payment_events._project_payment_from_invoice(
+            payment_events.project_payment_from_invoice(
                 {
                     "id": "in_1",
                     "payment_intent": "pi_1",
@@ -450,8 +459,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
             "latest_charge": "ch_1",
             "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
         }
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             intent,
             "acct_1",
             "payment_intent.processing",
@@ -462,7 +472,7 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(processing["net_collected_amount_cents"], 0)
         self.assertEqual(processing["refundable_amount_cents"], 0)
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {**intent, "amount_received": 12900},
             "acct_1",
             "payment_intent.succeeded",
@@ -500,8 +510,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_disputes": [],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_failed",
                 "amount": 12900,
@@ -558,9 +569,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
-        service._recompute_payer_balance = lambda *_args: None
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "amount": 12900,
@@ -612,8 +623,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_payers": [],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "amount": 12900,
@@ -714,8 +726,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",
@@ -779,8 +792,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",
@@ -836,8 +850,10 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        webhook_projector = service._webhook_projector()
+        payment_events = webhook_projector._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",
@@ -853,7 +869,7 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
             event_created=300,
         )
 
-        service._project_invoice_event(
+        webhook_projector.project_invoice_event(
             {
                 "id": "in_1",
                 "status": "open",
@@ -900,8 +916,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",
@@ -948,9 +965,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_disputes": [],
             }
         )
-        service._recompute_payer_balance = lambda *_args: None
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",
@@ -989,8 +1006,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_disputes": [],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",
@@ -1059,9 +1077,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
-        service._recompute_payer_balance = lambda *_args: None
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",
@@ -1125,9 +1143,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
-        service._recompute_payer_balance = lambda *_args: None
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_payment_intent(
+        payment_events.project_payment_intent(
             {
                 "id": "pi_1",
                 "status": "succeeded",

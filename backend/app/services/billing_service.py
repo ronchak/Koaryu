@@ -81,6 +81,13 @@ class BillingService(BillingPrivateFacadeMixin):
             stripe_service_cls=StripeService,
         )
 
+    def _payment_manager(self) -> BillingPaymentManager:
+        return BillingPaymentManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        )
+
     def project_connect_event(self, event: dict[str, Any]) -> None:
         self._webhook_projector().project_connect_event(event)
 
@@ -145,7 +152,7 @@ class BillingService(BillingPrivateFacadeMixin):
             self.supabase,
             settings=self.settings,
             connect_accounts=self._connect_accounts(),
-            payment_account_loader=self.get_payment_account,
+            payment_account_loader=self._connect_actions().get_payment_account,
         ).get_system_status(studio_id, actor_role)
 
     async def reconcile_stripe_object(
@@ -154,8 +161,17 @@ class BillingService(BillingPrivateFacadeMixin):
         studio_id: str,
         actor_id: str,
     ) -> BillingReconcileResponse:
+        connect_accounts = self._connect_accounts()
+        connect_actions = BillingConnectActions(
+            self.supabase,
+            connect_accounts,
+            self.settings,
+            stripe_service_cls=StripeService,
+        )
         return await BillingReconciliationService(
-            self,
+            self.supabase,
+            connect_accounts,
+            connect_actions,
             stripe_service_cls=StripeService,
         ).reconcile_stripe_object(data, studio_id, actor_id)
 
@@ -514,18 +530,13 @@ class BillingService(BillingPrivateFacadeMixin):
         )
 
     async def list_payments(self, studio_id: str) -> list[BillingPaymentResponse]:
-        return await BillingPaymentManager(self, stripe_service_cls=StripeService).list_payments(
-            studio_id
-        )
+        return await self._payment_manager().list_payments(studio_id)
 
     async def current_month_payment_cohort_summary(
         self,
         studio_id: str,
     ) -> BillingPaymentCohortSummaryResponse:
-        return await BillingPaymentManager(
-            self,
-            stripe_service_cls=StripeService,
-        ).current_month_payment_cohort_summary(studio_id)
+        return await self._payment_manager().current_month_payment_cohort_summary(studio_id)
 
     async def record_external_payment(
         self,
@@ -534,9 +545,7 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: str | None = None,
     ) -> BillingPaymentResponse:
-        return await BillingPaymentManager(
-            self, stripe_service_cls=StripeService
-        ).record_external_payment(
+        return await self._payment_manager().record_external_payment(
             data,
             studio_id,
             actor_id,
@@ -551,7 +560,7 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: str | None = None,
     ) -> BillingRefundResponse:
-        return await BillingPaymentManager(self, stripe_service_cls=StripeService).refund_payment(
+        return await self._payment_manager().refund_payment(
             payment_id,
             data,
             studio_id,
@@ -562,15 +571,11 @@ class BillingService(BillingPrivateFacadeMixin):
     async def create_export_job(
         self, data: ExportJobCreate, studio_id: str, actor_id: str
     ) -> ExportJobResponse:
-        return await BillingPaymentManager(
-            self, stripe_service_cls=StripeService
-        ).create_export_job(
+        return await self._payment_manager().create_export_job(
             data,
             studio_id,
             actor_id,
         )
 
     async def get_export_job(self, export_id: str, studio_id: str) -> ExportJobResponse:
-        return await BillingPaymentManager(self, stripe_service_cls=StripeService).get_export_job(
-            export_id, studio_id
-        )
+        return await self._payment_manager().get_export_job(export_id, studio_id)

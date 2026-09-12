@@ -6,6 +6,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
+from supabase import Client
 
 from app.schemas.billing import (
     BillingPaymentResponse,
@@ -17,13 +18,21 @@ from app.schemas.billing import (
     ExternalPaymentCreate,
 )
 from app.services.billing_invoice_projection import _object_get, _stripe_id
+from app.services.billing_audit import record_billing_audit
+from app.services.billing_connect_accounts import BillingConnectAccountStore
+from app.services.billing_payment_projection import BillingPaymentEventProjector
+from app.services.billing_payers import recompute_payer_balance
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
     PAYMENT_REFUND_OPERATION_TYPE,
     provider_operation_disposition,
 )
-from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
+from app.services.platform_billing_helpers import (
+    build_idempotency_key,
+    normalize_idempotency_key,
+    stable_hash,
+)
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 from app.services.stripe_service import StripeService
@@ -53,34 +62,20 @@ def build_external_payment_request_hash(
 
 class BillingPaymentManager:
     def __init__(
-        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+        self,
+        supabase: Client,
+        connect_accounts: BillingConnectAccountStore,
+        *,
+        stripe_service_cls: type[StripeService] = StripeService,
     ):
-        self.billing_service = billing_service
+        self.supabase = supabase
+        self.connect_accounts = connect_accounts
         self.stripe_service_cls = stripe_service_cls
-
-    @property
-    def supabase(self):
-        return self.billing_service.supabase
-
-    def _get_row_or_404(self, *args, **kwargs):
-        return self.billing_service._get_row_or_404(*args, **kwargs)
-
-    def _connect_accounts(self):
-        return self.billing_service._connect_accounts()
-
-    def _recompute_payer_balance(self, studio_id: str, payer_id: str | None) -> None:
-        self.billing_service._recompute_payer_balance(studio_id, payer_id)
-
-    def _idempotency_key(self, *parts: str) -> str:
-        return self.billing_service._idempotency_key(*parts)
-
-    def _audit(
-        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
-    ) -> None:
-        self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
-
-    def _project_refund(self, refund: Any, account_id: str, **kwargs) -> dict[str, Any]:
-        return self.billing_service._project_refund(refund, account_id, **kwargs)
+        self.projector = BillingPaymentEventProjector(
+            supabase,
+            connect_accounts,
+            stripe_service_cls=stripe_service_cls,
+        )
 
     async def list_payments(self, studio_id: str) -> list[BillingPaymentResponse]:
         result = (
@@ -173,7 +168,7 @@ class BillingPaymentManager:
         payment = BillingPaymentResponse(**row)
         # The payment and original-actor audit have already committed together.
         # A failed balance refresh remains recoverable with this same request key.
-        self._recompute_payer_balance(studio_id, payment.payer_id)
+        recompute_payer_balance(self.supabase, studio_id, payment.payer_id)
         return payment
 
     async def refund_payment(
@@ -444,7 +439,7 @@ class BillingPaymentManager:
                         "payment_id": payment_id,
                         "product": "koaryu_payments",
                     },
-                    idempotency_key=self._idempotency_key("payment-refund", context.operation_id),
+                    idempotency_key=build_idempotency_key("payment-refund", context.operation_id),
                 )
             except StripeMutationBlocked:
                 coordinator.transition(
@@ -490,7 +485,7 @@ class BillingPaymentManager:
                     exc,
                 )
         try:
-            row = self._project_refund(refund, account_id)
+            row = self.projector.project_refund(refund, account_id)
             self._verify_refund_projection(
                 row,
                 payment=payment,
@@ -719,7 +714,7 @@ class BillingPaymentManager:
         studio_id: str,
         account_id: str,
     ) -> int:
-        account = self._connect_accounts().by_stripe_account(account_id)
+        account = self.connect_accounts.by_stripe_account(account_id)
         raw_generation = (account or {}).get("metadata", {}).get("connect_account_generation")
         if raw_generation is None:
             raw_generation = 1
@@ -835,7 +830,7 @@ class BillingPaymentManager:
                 exc,
             )
         try:
-            row = self._project_refund(
+            row = self.projector.project_refund(
                 {
                     "id": operation["provider_object_id"],
                     "charge": payment["stripe_charge_id"],
@@ -935,7 +930,8 @@ class BillingPaymentManager:
         )
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create export job.")
-        self._audit(
+        record_billing_audit(
+            self.supabase,
             studio_id,
             actor_id,
             "billing.export_requested",
@@ -948,3 +944,18 @@ class BillingPaymentManager:
         return ExportJobResponse(
             **self._get_row_or_404("export_jobs", export_id, studio_id, "Export job not found.")
         )
+
+    def _get_row_or_404(
+        self, table: str, record_id: str, studio_id: str, detail: str
+    ) -> dict[str, Any]:
+        result = (
+            self.supabase.table(table)
+            .select("*")
+            .eq("id", record_id)
+            .eq("studio_id", studio_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail=detail)
+        return result.data
