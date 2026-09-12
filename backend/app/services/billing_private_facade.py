@@ -6,23 +6,14 @@ from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
 
-from app.schemas.billing import (
-    BillingInvoiceCreate,
-)
 from app.services.billing_fees import application_fee_amount, application_fee_percent
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
     BillingProviderOperationCoordinator,
 )
-from app.services.billing_enrollments import BillingEnrollmentManager
 from app.services.billing_invoice_projection import _object_get
-from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_payers import BillingPayerManager
-from app.services.billing_system_status import BillingSystemStatusReporter
 from app.services.platform_billing_helpers import build_idempotency_key
-from app.services.billing_webhook_event_state import (
-    timestamp,
-)
 
 
 class BillingPrivateFacadeMixin:
@@ -48,39 +39,6 @@ class BillingPrivateFacadeMixin:
             )
         return account
 
-    def _validate_connect_account_access(self, account: dict[str, Any]) -> None:
-        account_id = account.get("stripe_connected_account_id")
-        if account_id:
-            self._billing_stripe_service_cls()().retrieve_account(account_id=account_id)
-
-    def _find_or_create_billing_subscription(
-        self,
-        enrollment: dict[str, Any],
-        plan: dict[str, Any],
-        payer: dict[str, Any],
-        account: dict[str, Any],
-    ) -> dict[str, Any]:
-        return BillingEnrollmentManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._find_or_create_billing_subscription(
-            enrollment,
-            plan,
-            payer,
-            account,
-        )
-
-    def _project_checkout_session(
-        self,
-        session: dict[str, Any],
-        account_id: Optional[str],
-        event_created: Optional[int] = None,
-    ) -> None:
-        self._webhook_projector()._project_checkout_session(
-            session,
-            account_id,
-            event_created,
-        )
-
     def _project_invoice_event(
         self,
         invoice: dict[str, Any],
@@ -103,19 +61,6 @@ class BillingPrivateFacadeMixin:
             intent, account_id, event_type, event_created
         )
 
-    def _link_adjustments_to_payment(
-        self, payment: dict[str, Any], account_id: Optional[str]
-    ) -> dict[str, Any]:
-        return self._webhook_projector()._link_adjustments_to_payment(payment, account_id)
-
-    def _project_charge_refund(
-        self,
-        charge: dict[str, Any],
-        account_id: Optional[str],
-        event_created: Optional[int] = None,
-    ) -> None:
-        self._webhook_projector()._project_charge_refund(charge, account_id, event_created)
-
     def _project_refund(
         self,
         refund: Any,
@@ -130,17 +75,6 @@ class BillingPrivateFacadeMixin:
             charge=charge,
             event_created=event_created,
         )
-
-    def _project_dispute(
-        self,
-        dispute: dict[str, Any],
-        account_id: Optional[str],
-        event_created: Optional[int] = None,
-    ) -> None:
-        self._webhook_projector()._project_dispute(dispute, account_id, event_created)
-
-    def _refresh_invoice_and_payer_from_payment_events(self, payment: dict[str, Any]) -> None:
-        self._webhook_projector()._refresh_invoice_and_payer_from_payment_events(payment)
 
     def _project_subscription(
         self,
@@ -170,125 +104,15 @@ class BillingPrivateFacadeMixin:
             event_created=event_created,
         )
 
-    def _insert_invoice_from_stripe(
-        self,
-        studio_id: str,
-        invoice: dict[str, Any],
-        account_id: Optional[str],
-        event_created: Optional[int] = None,
-    ) -> dict[str, Any]:
-        return self._webhook_projector()._insert_invoice_from_stripe(
-            studio_id, invoice, account_id, event_created
-        )
-
-    def _invoice_projection(self, invoice: Any, account_id: Optional[str]) -> dict[str, Any]:
-        return self._webhook_projector()._invoice_projection(invoice, account_id)
-
-    def _project_payment_from_invoice(
-        self,
-        invoice: dict[str, Any],
-        account_id: Optional[str],
-        local_invoice: dict[str, Any],
-        *,
-        event_created: Optional[int] = None,
-    ) -> None:
-        self._webhook_projector()._project_payment_from_invoice(
-            invoice,
-            account_id,
-            local_invoice,
-            event_created=event_created,
-        )
-
-    def _invoice_identity_projection(
-        self,
-        studio_id: str,
-        invoice: Any,
-        account_id: Optional[str],
-        *,
-        current: Optional[dict[str, Any]] = None,
-    ) -> dict[str, Any]:
-        return self._webhook_projector()._invoice_identity_projection(
-            studio_id,
-            invoice,
-            account_id,
-            current=current,
-        )
-
-    def _invoice_enrollment(self, studio_id: str, invoice: Any) -> Optional[dict[str, Any]]:
-        return self._webhook_projector()._invoice_enrollment(studio_id, invoice)
-
-    def _update_subscription_period_from_invoice(
-        self, studio_id: str, invoice: Any, account_id: Optional[str]
-    ) -> None:
-        self._webhook_projector()._update_subscription_period_from_invoice(
-            studio_id, invoice, account_id
-        )
-
-    def _link_orphan_payment_to_invoice(
-        self, invoice: dict[str, Any], account_id: Optional[str], local_invoice: dict[str, Any]
-    ) -> None:
-        self._webhook_projector()._link_orphan_payment_to_invoice(
-            invoice, account_id, local_invoice
-        )
-
     def _find_invoice_for_stripe(
         self, invoice: dict[str, Any], account_id: Optional[str]
     ) -> Optional[dict[str, Any]]:
         return self._webhook_projector()._find_invoice_for_stripe(invoice, account_id)
 
-    def _find_invoice_by_payment_intent_or_invoice(
-        self,
-        account_id: Optional[str],
-        payment_intent_id: Optional[str],
-        stripe_invoice_id: Optional[str],
-    ) -> Optional[dict[str, Any]]:
-        return self._webhook_projector()._find_invoice_by_payment_intent_or_invoice(
-            account_id,
-            payment_intent_id,
-            stripe_invoice_id,
-        )
-
-    def _find_invoice_by_customer_amount(
-        self,
-        account_id: Optional[str],
-        customer_id: Optional[str],
-        amount_cents: int,
-        currency: str,
-    ) -> Optional[dict[str, Any]]:
-        return self._webhook_projector()._find_invoice_by_customer_amount(
-            account_id,
-            customer_id,
-            amount_cents,
-            currency,
-        )
-
-    def _find_unlinked_payment_by_customer_amount(
-        self,
-        account_id: Optional[str],
-        customer_id: Optional[str],
-        amount_cents: int,
-        currency: str,
-    ) -> Optional[dict[str, Any]]:
-        return self._webhook_projector()._find_unlinked_payment_by_customer_amount(
-            account_id,
-            customer_id,
-            amount_cents,
-            currency,
-        )
-
-    def _find_payment_by_charge(
-        self, account_id: Optional[str], charge_id: Optional[str]
-    ) -> Optional[dict[str, Any]]:
-        return self._webhook_projector()._find_payment_by_charge(account_id, charge_id)
-
     def _find_payment_by_intent(
         self, account_id: Optional[str], payment_intent_id: Optional[str]
     ) -> Optional[dict[str, Any]]:
         return self._webhook_projector()._find_payment_by_intent(account_id, payment_intent_id)
-
-    @staticmethod
-    def _is_stale_webhook_processing(row: dict[str, Any]) -> bool:
-        return BillingSystemStatusReporter.is_stale_webhook_processing(row)
 
     @staticmethod
     def _stripe_object_to_dict(value: Any) -> dict[str, Any]:
@@ -310,55 +134,6 @@ class BillingPrivateFacadeMixin:
             account_id, object_id, event_types
         )
 
-    def _find_subscription_for_stripe(
-        self, subscription: dict[str, Any], account_id: Optional[str]
-    ) -> Optional[dict[str, Any]]:
-        return self._webhook_projector()._find_subscription_for_stripe(subscription, account_id)
-
-    def _project_subscription_items(
-        self, subscription: dict[str, Any], group: dict[str, Any]
-    ) -> None:
-        self._webhook_projector()._project_subscription_items(subscription, group)
-
-    def _subscription_item_id_for_group_plan(
-        self, studio_id: str, group_id: str, plan_id: str
-    ) -> Optional[str]:
-        return BillingEnrollmentManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._subscription_item_id_for_group_plan(
-            studio_id,
-            group_id,
-            plan_id,
-        )
-
-    def _active_enrollment_count_for_subscription_item(
-        self,
-        studio_id: str,
-        group_id: Optional[str],
-        item_id: str,
-        *,
-        exclude_enrollment_id: Optional[str] = None,
-    ) -> int:
-        return BillingEnrollmentManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._active_enrollment_count_for_subscription_item(
-            studio_id,
-            group_id,
-            item_id,
-            exclude_enrollment_id=exclude_enrollment_id,
-        )
-
-    def _update_enrollment(
-        self, enrollment_id: str, studio_id: str, update: dict[str, Any]
-    ) -> dict[str, Any]:
-        return BillingEnrollmentManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._update_enrollment(
-            enrollment_id,
-            studio_id,
-            update,
-        )
-
     def _payer_id_for_customer(
         self, studio_id: str, account_id: Optional[str], customer_id: Optional[str]
     ) -> Optional[str]:
@@ -369,28 +144,6 @@ class BillingPrivateFacadeMixin:
             account_id,
             customer_id,
         )
-
-    def _stripe_account_for_studio(self, studio_id: str) -> Optional[str]:
-        account = self._connect_accounts().ensure_row(studio_id)
-        return account.get("stripe_connected_account_id")
-
-    def _stripe_account_for_enrollment_subscription(
-        self, enrollment: dict[str, Any]
-    ) -> Optional[str]:
-        subscription_row_id = enrollment.get("billing_subscription_id")
-        if subscription_row_id:
-            result = (
-                self.supabase.table("billing_subscriptions")
-                .select("stripe_account_id")
-                .eq("id", subscription_row_id)
-                .eq("studio_id", enrollment["studio_id"])
-                .limit(1)
-                .execute()
-            )
-            if result.data and result.data[0].get("stripe_account_id"):
-                return result.data[0]["stripe_account_id"]
-
-        return self._stripe_account_for_studio(enrollment["studio_id"])
 
     def _has_stripe_billing_history(self, studio_id: str) -> bool:
         checks = (
@@ -425,16 +178,6 @@ class BillingPrivateFacadeMixin:
             self, stripe_service_cls=self._billing_stripe_service_cls()
         )._payment_method_fields_from_payment_method(
             payment_method,
-        )
-
-    def _subscription_item_id_for_enrollment(
-        self, subscription: Any, enrollment_id: str
-    ) -> Optional[str]:
-        return BillingEnrollmentManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._subscription_item_id_for_enrollment(
-            subscription,
-            enrollment_id,
         )
 
     def _latest_charge(self, intent: dict[str, Any]) -> Any:
@@ -525,23 +268,6 @@ class BillingPrivateFacadeMixin:
             origins.add(f"http://{alternate_host}:{parsed.port}")
         return origins
 
-    def _normalize_idempotency_key(self, value: Optional[str]) -> Optional[str]:
-        return BillingInvoiceManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._normalize_idempotency_key(value)
-
-    def _invoice_request_hash(self, data: BillingInvoiceCreate) -> str:
-        return BillingInvoiceManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._invoice_request_hash(data)
-
-    def _update_invoice_last_event(
-        self, invoice: dict[str, Any], studio_id: str, event_created: int
-    ) -> dict[str, Any]:
-        return self._webhook_projector()._update_invoice_last_event(
-            invoice, studio_id, event_created
-        )
-
     def _resolve_stripe_event_studio_id(
         self,
         account_id: Optional[str],
@@ -570,45 +296,6 @@ class BillingPrivateFacadeMixin:
         if account_id:
             return row_account_id == account_id
         return row_account_id is None
-
-    def _claim_invoice_create_request(
-        self,
-        studio_id: str,
-        idempotency_key: Optional[str],
-        request_hash: str,
-        invoice_row: dict[str, Any],
-    ) -> dict[str, Any]:
-        return BillingInvoiceManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._claim_invoice_create_request(
-            studio_id,
-            idempotency_key,
-            request_hash,
-            invoice_row,
-        )
-
-    def _find_invoice_by_idempotency_key(
-        self, studio_id: str, idempotency_key: str
-    ) -> Optional[dict[str, Any]]:
-        return BillingInvoiceManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._find_invoice_by_idempotency_key(
-            studio_id,
-            idempotency_key,
-        )
-
-    def _insert_invoice_item_once(self, row: dict[str, Any]) -> None:
-        BillingInvoiceManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._insert_invoice_item_once(row)
-
-    def _timestamp(self, value: Any) -> Optional[str]:
-        return timestamp(value)
-
-    def _date_to_epoch(self, value: str) -> int:
-        return BillingInvoiceManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._date_to_epoch(value)
 
     def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
         BillingPayerManager(

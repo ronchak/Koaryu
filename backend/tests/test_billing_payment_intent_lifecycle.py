@@ -84,8 +84,9 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ):
                     clock.now.return_value = observed
                     provider.return_value.retrieve_connected_payment_intent.return_value = intent
+                    payment_events = service._webhook_projector()._payment_events()
                     if first_source == "invoice":
-                        service._project_payment_from_invoice(
+                        payment_events._project_payment_from_invoice(
                             invoice,
                             "acct_1",
                             local_invoice,
@@ -95,7 +96,7 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                         service._project_payment_intent(
                             intent, "acct_1", "payment_intent.succeeded", int(collected.timestamp())
                         )
-                    service._project_payment_from_invoice(
+                    payment_events._project_payment_from_invoice(
                         invoice, "acct_1", local_invoice, event_created=int(observed.timestamp())
                     )
                     service._project_payment_intent(
@@ -233,6 +234,7 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
             for incoming in ("processing", "payment_failed"):
                 with self.subTest(terminal=terminal, incoming=incoming):
                     service, intent = self.payment_facts_fixture()
+                    payment_events = service._webhook_projector()._payment_events()
                     # A partial capture can collect less than the intended amount.
                     intent["amount"] = 2000
                     service._project_payment_intent(
@@ -252,7 +254,7 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                             "acct_1",
                         )
                     elif terminal == "disputed":
-                        service._project_dispute(
+                        payment_events._project_dispute(
                             {
                                 "id": "dp_1",
                                 "charge": "ch_1",
@@ -391,7 +393,8 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
             provider.return_value.retrieve_connected_payment_intent.side_effect = RuntimeError(
                 "transient retrieval failure"
             )
-            service._project_payment_from_invoice(
+            payment_events = service._webhook_projector()._payment_events()
+            payment_events._project_payment_from_invoice(
                 {
                     "id": "in_1",
                     "payment_intent": "pi_1",
