@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "d6bab29209d2ee4650b8f01e0ece474ff519f422",
+  "last_reconciled_main": "91184e762f99be7e3ebb26d959701d365797e57b",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2434,18 +2434,20 @@
       "title": "Split billing files still share an implicit global owner",
       "cluster": "financial_command_completion",
       "disposition": "pending",
-      "reason": "Managers still accept Any owners, and enrollment lifecycle delegates dynamically back into its manager. File splitting has not made collaborator requirements explicit. The September 12 owner-directed replan makes removal of this implicit object the primary structural objective. A single family collapse is partial progress only; retain pending until the remaining owners, private facade and reverse dependency are removed. The plan component now receives concrete dependencies; its separate workflow and three facade aliases are removed. Other billing families retain the shared-owner graph, so this finding remains pending.",
+      "reason": "Managers still accept Any owners, and enrollment lifecycle delegates dynamically back into its manager. File splitting has not made collaborator requirements explicit. The September 12 owner-directed replan makes removal of this implicit object the primary structural objective. A single family collapse is partial progress only; retain pending until the remaining owners, private facade and reverse dependency are removed. The plan component now receives concrete dependencies; its separate workflow and three facade aliases are removed. Other billing families retain the shared-owner graph, so this finding remains pending. The next verified deletion removes 35 facade methods and four dead enrollment forwarders without changing live implementations. Remaining concrete dependency replacement and facade removal are still pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "f6a5a167b6e25c4a86042be7e608f186ebeddeec",
-      "verification": "Plan ownership independently verified against this source commit: 36 workflow method comparisons, preserved public signatures and 427 unchanged assertion nodes after only the interval-test receiver substitution; 105 focused tests and 1904 full backend tests pass. Other billing families remain pending.",
+      "verified_against": "c63b6ba2413c3ca4f39f6ac2589c2a735b4df61c",
+      "verification": "Coordinator verified the exact 39-method removal set and 62 unchanged surviving method ASTs; 121 test functions, parameter tables and all 712 assertion nodes are preserved after declared receiver retargeting. Coordinator targeted 121 and implementer full backend 1,904 passed. Other billing owners/facade routes remain pending.",
       "source_paths": [
         "backend/app/services/billing_enrollments.py",
         "backend/app/services/billing_enrollment_stripe_lifecycle.py",
         "backend/app/services/billing_invoices.py",
         "backend/app/services/billing_payers.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        183
+      ],
       "track": "Sol",
       "root_cause": "untyped-billing-boundaries",
       "collapse_with": [

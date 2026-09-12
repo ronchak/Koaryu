@@ -39,6 +39,8 @@ The owner resumed work on September 12 with a 50-point weekly usage cap and a 45
 
 Draft [PR180](https://github.com/ronchak/Koaryu/pull/180) remains committed and pushed with six pending findings. The owner redirected this run to billing architecture, adding BB1-09 ahead of the original 55 delegated findings. The prior display worker stopped before implementation. Four blocked prerequisites remain explicitly excluded. The paused [HANDOFF](docs/remediation/HANDOFF.md) is historical context until this run's final refresh. The [production packet](docs/remediation/PRODUCTION-RELEASE.md) remains preparation for a human operator, not execution authority for this run.
 
+PR183 merged as `91184e762f99be7e3ebb26d959701d365797e57b`. Plans now have one concrete owner; the separate sync workflow and three facade aliases are deleted. Production shrinks by 35 lines and ten definitions, and tests by 48 lines with unchanged cases. This is partial progress on BB1-09, which remains pending. See [plan ownership verification](docs/remediation/billing-plan-ownership-verification.md).
+
 ## Completed changes
 
 | PR | Result | Merge | Evidence |
@@ -72,6 +74,7 @@ Draft [PR180](https://github.com/ronchak/Koaryu/pull/180) remains committed and 
 
 | [178](https://github.com/ronchak/Koaryu/pull/178) | Durable import outcomes, safe retry and removed broad ladder repair | `f942dad` | [Import ownership](docs/remediation/import-retry-ownership-verification.md) |
 | [182](https://github.com/ronchak/Koaryu/pull/182) | Pinned formatters and mechanical code baseline | `d6bab29` | [Formatters](docs/remediation/formatter-verification.md) |
+| [183](https://github.com/ronchak/Koaryu/pull/183) | Concrete billing plan ownership and deleted facade aliases | `91184e7` | [Plan ownership](docs/remediation/billing-plan-ownership-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 
