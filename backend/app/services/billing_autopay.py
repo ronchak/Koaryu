@@ -6,12 +6,16 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
+from supabase import Client
 
+from app.core.config import Settings
 from app.schemas.billing import (
     BillingLinkResponse,
     BillingPayerAutopaySetupRequest,
     BillingPayerResponse,
 )
+from app.services.billing_audit import record_billing_audit
+from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_invoice_projection import _object_get, _stripe_id
 from app.services.billing_provider_operations import (
     AUTOPAY_DISABLE_SUBSCRIPTION_ACTIVE_DETAIL,
@@ -21,7 +25,13 @@ from app.services.billing_provider_operations import (
     PAYER_SETUP_OPERATION_TYPE,
     payer_setup_operation_disposition,
 )
-from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
+from app.services.billing_payers import get_payer_or_404
+from app.services.platform_billing_helpers import (
+    build_idempotency_key,
+    normalize_idempotency_key,
+    safe_redirect_url,
+    stable_hash,
+)
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from app.services.stripe_service import StripeService
 
@@ -41,35 +51,17 @@ AUTOPAY_EXISTING_CONSENT_UNVERIFIED_DETAIL = (
 
 class BillingAutopayManager:
     def __init__(
-        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+        self,
+        supabase: Client,
+        connect_accounts: BillingConnectAccountStore,
+        settings: Settings,
+        *,
+        stripe_service_cls: type[StripeService] = StripeService,
     ):
-        self.billing_service = billing_service
+        self.supabase = supabase
+        self.connect_accounts = connect_accounts
+        self.settings = settings
         self.stripe_service_cls = stripe_service_cls
-
-    @property
-    def supabase(self):
-        return self.billing_service.supabase
-
-    @property
-    def settings(self):
-        return self.billing_service.settings
-
-    def _get_row_or_404(self, *args, **kwargs):
-        return self.billing_service._get_row_or_404(*args, **kwargs)
-
-    def _ensure_connect_ready(self, studio_id: str) -> dict[str, Any]:
-        return self.billing_service._ensure_connect_ready(studio_id)
-
-    def _safe_redirect_url(self, value: Optional[str], default: str) -> str:
-        return self.billing_service._safe_redirect_url(value, default)
-
-    def _idempotency_key(self, *parts: str) -> str:
-        return self.billing_service._idempotency_key(*parts)
-
-    def _audit(
-        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
-    ) -> None:
-        self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
 
     async def create_autopay_setup_link(
         self,
@@ -85,8 +77,8 @@ class BillingAutopayManager:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Idempotency-Key is required for autopay setup.",
             )
-        payer = self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
-        account = self._ensure_connect_ready(studio_id)
+        payer = get_payer_or_404(self.supabase, payer_id, studio_id)
+        account = self.connect_accounts.ensure_ready(studio_id)
         account_id = str(account.get("stripe_connected_account_id") or "")
         generation = self._connect_account_generation(account)
         if not account_id or generation is None:
@@ -104,16 +96,20 @@ class BillingAutopayManager:
                 ),
             )
         frontend_url = self.settings.FRONTEND_URL.rstrip("/")
-        return_url = self._safe_redirect_url(
-            data.return_url, f"{frontend_url}/billing?autopay=success"
+        return_url = safe_redirect_url(
+            data.return_url,
+            f"{frontend_url}/billing?autopay=success",
+            self.settings.FRONTEND_URL,
         )
-        success_url = self._safe_redirect_url(
+        success_url = safe_redirect_url(
             data.success_url or data.return_url,
             f"{frontend_url}/billing?autopay=success",
+            self.settings.FRONTEND_URL,
         )
-        cancel_url = self._safe_redirect_url(
+        cancel_url = safe_redirect_url(
             data.cancel_url or data.return_url,
             f"{frontend_url}/billing?autopay=cancelled",
+            self.settings.FRONTEND_URL,
         )
         request_sha256 = stable_hash(
             {
@@ -304,7 +300,7 @@ class BillingAutopayManager:
                     "stripe_account_id": account_id,
                     "connect_account_generation": str(generation),
                 },
-                idempotency_key=self._idempotency_key(
+                idempotency_key=build_idempotency_key(
                     "payer-autopay-setup",
                     context.operation_id,
                 ),
@@ -872,7 +868,7 @@ class BillingAutopayManager:
     async def disable_autopay(
         self, payer_id: str, studio_id: str, actor_id: str
     ) -> BillingPayerResponse:
-        self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
+        get_payer_or_404(self.supabase, payer_id, studio_id)
         active_subscription_ids = self._active_payer_autopay_subscription_ids(payer_id, studio_id)
         if active_subscription_ids:
             raise HTTPException(
@@ -885,7 +881,8 @@ class BillingAutopayManager:
             actor_id=actor_id,
             disabled_at=datetime.now(timezone.utc).isoformat(),
         )
-        self._audit(
+        record_billing_audit(
+            self.supabase,
             studio_id,
             actor_id,
             "billing.autopay_disabled",

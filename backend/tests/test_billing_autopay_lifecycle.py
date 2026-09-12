@@ -1325,7 +1325,11 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         }
 
         database.tables["audit_logs"] = [dict(exact)]
-        manager = BillingAutopayManager(service)
+        manager = BillingAutopayManager(
+            service.supabase,
+            service._connect_accounts(),
+            service.settings,
+        )
         manager._audit_autopay_setup_started_once(
             context=context,
             payer_id="payer_1",
@@ -1359,7 +1363,11 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         service = self.service()
         database = _AutopayOperationSupabase(_autopay_tables())
         service.supabase = database
-        manager = BillingAutopayManager(service)
+        manager = BillingAutopayManager(
+            service.supabase,
+            service._connect_accounts(),
+            service.settings,
+        )
         context = SimpleNamespace(
             operation_id="operation-current",
             studio_id="studio_1",
@@ -1447,7 +1455,11 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             with self.subTest(winner_kind=winner_kind):
                 database = _AutopayOperationSupabase(_autopay_tables())
                 service.supabase = database
-                manager = BillingAutopayManager(service)
+                manager = BillingAutopayManager(
+                    service.supabase,
+                    service._connect_accounts(),
+                    service.settings,
+                )
                 insert_attempts = 0
 
                 def race(name, payloads, rows):

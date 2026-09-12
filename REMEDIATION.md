@@ -81,6 +81,8 @@ PR184 merged as `0559911b4c6fd7c57095ffcfbff73a7c2bbb49ba`, deleting 35 facade m
 
 | [185](https://github.com/ronchak/Koaryu/pull/185) | Concrete payer ownership and removed reverse service import | `b219fd0` | [Payer ownership](docs/remediation/payer-ownership-verification.md) |
 
+| [186](https://github.com/ronchak/Koaryu/pull/186) | Concrete provider projection ownership and deleted forwarding routes | `27eddf0` | [Projection ownership](docs/remediation/projection-ownership-verification.md) |
+
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 
 ## Settled product decisions

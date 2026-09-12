@@ -78,8 +78,9 @@ class BillingService(BillingPrivateFacadeMixin):
 
     def _connect_actions(self) -> BillingConnectActions:
         return BillingConnectActions(
-            self,
+            self.supabase,
             self._connect_accounts(),
+            self.settings,
             stripe_service_cls=StripeService,
         )
 
@@ -414,7 +415,9 @@ class BillingService(BillingPrivateFacadeMixin):
         request_idempotency_key: str,
     ) -> BillingLinkResponse:
         return await BillingAutopayManager(
-            self,
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
             stripe_service_cls=StripeService,
         ).create_autopay_setup_link(
             payer_id,
@@ -428,7 +431,9 @@ class BillingService(BillingPrivateFacadeMixin):
         self, payer_id: str, studio_id: str, actor_id: str
     ) -> BillingPayerResponse:
         return await BillingAutopayManager(
-            self,
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
             stripe_service_cls=StripeService,
         ).disable_autopay(payer_id, studio_id, actor_id)
 

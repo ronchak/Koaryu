@@ -1332,7 +1332,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             with self.assertRaises(HTTPException) as context:
-                service._ensure_connect_ready("studio_1")
+                service._connect_accounts().ensure_ready("studio_1")
 
         self.assertEqual(_FakeStripeService.retrieve_calls, ["acct_existing"])
         self.assertEqual(context.exception.status_code, 409)
