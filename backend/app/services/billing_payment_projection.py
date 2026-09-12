@@ -4,8 +4,11 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from postgrest.exceptions import APIError as PostgrestAPIError
+from supabase import Client
 
+from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_invoice_projection import _object_get, _stripe_id
+from app.services.billing_payers import payer_id_for_customer, recompute_payer_balance
 from app.services.billing_webhook_event_state import (
     PAYMENT_STATUS_ORDER,
     add_stripe_event_created_guard,
@@ -108,14 +111,15 @@ def _provider_timestamp(value: Any) -> str | None:
 
 class BillingPaymentEventProjector:
     def __init__(
-        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+        self,
+        supabase: Client,
+        connect_accounts: BillingConnectAccountStore,
+        *,
+        stripe_service_cls: type[StripeService] = StripeService,
     ):
-        self.billing_service = billing_service
+        self.supabase = supabase
+        self.connect_accounts = connect_accounts
         self.stripe_service_cls = stripe_service_cls
-
-    @property
-    def supabase(self):
-        return self.billing_service.supabase
 
     @staticmethod
     def _preserve_established_identity(
@@ -127,35 +131,19 @@ class BillingPaymentEventProjector:
             if existing.get(field) is not None:
                 row[field] = existing[field]
 
-    def _resolve_stripe_event_studio_id(
-        self,
-        account_id: Optional[str],
-        *,
-        metadata_studio_id: Optional[str] = None,
-        local_studio_id: Optional[str] = None,
-    ) -> Optional[str]:
-        return self.billing_service._resolve_stripe_event_studio_id(
-            account_id,
-            metadata_studio_id=metadata_studio_id,
-            local_studio_id=local_studio_id,
-        )
-
-    def _payer_id_for_customer(
-        self,
-        studio_id: str,
-        account_id: Optional[str],
-        customer_id: Optional[str],
-    ) -> Optional[str]:
-        return self.billing_service._payer_id_for_customer(studio_id, account_id, customer_id)
-
     def _latest_charge(self, intent: dict[str, Any]) -> Any:
-        return self.billing_service._latest_charge(intent)
+        latest = intent.get("latest_charge")
+        if latest:
+            return latest
+        charges = (intent.get("charges") or {}).get("data") or []
+        return charges[0] if charges else None
 
     def _payment_method_type(self, intent: dict[str, Any], charge: Any) -> Optional[str]:
-        return self.billing_service._payment_method_type(intent, charge)
-
-    def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
-        self.billing_service._recompute_payer_balance(studio_id, payer_id)
+        payment_method_types = intent.get("payment_method_types") or []
+        if payment_method_types:
+            return payment_method_types[0]
+        payment_method_details = _object_get(charge, "payment_method_details") or {}
+        return _object_get(payment_method_details, "type")
 
     def _project_payment_intent(
         self,
@@ -174,7 +162,7 @@ class BillingPaymentEventProjector:
             _stripe_id(intent),
             invoice_id,
         )
-        studio_id = self._resolve_stripe_event_studio_id(
+        studio_id = self.connect_accounts.resolve_stripe_event_studio_id(
             account_id,
             metadata_studio_id=metadata.get("studio_id"),
             local_studio_id=(local_invoice or {}).get("studio_id"),
@@ -186,7 +174,7 @@ class BillingPaymentEventProjector:
         payer_id = (
             metadata.get("payer_id")
             or (local_invoice or {}).get("payer_id")
-            or self._payer_id_for_customer(studio_id, account_id, customer_id)
+            or payer_id_for_customer(self.supabase, studio_id, account_id, customer_id)
         )
         if not payer_id and not local_invoice and metadata.get("product") != "koaryu_payments":
             return
@@ -285,7 +273,7 @@ class BillingPaymentEventProjector:
                 self._refresh_invoice_and_payer_from_payment_events(payment)
                 invoice_recomputed = True
         if payment.get("payer_id") and not invoice_recomputed:
-            self._recompute_payer_balance(studio_id, payment.get("payer_id"))
+            recompute_payer_balance(self.supabase, studio_id, payment.get("payer_id"))
 
     def _update_existing_payment_projection(
         self,
@@ -440,7 +428,7 @@ class BillingPaymentEventProjector:
     ) -> Optional[int]:
         if not account_id or not studio_id:
             return None
-        account = self.billing_service._connect_accounts().by_stripe_account(account_id)
+        account = self.connect_accounts.by_stripe_account(account_id)
         if not account or account.get("studio_id") != studio_id:
             return None
         raw_generation = (account.get("metadata") or {}).get("connect_account_generation") or 1
@@ -605,7 +593,7 @@ class BillingPaymentEventProjector:
             charge_id,
             studio_id=metadata_studio_id,
         )
-        studio_id = self._resolve_stripe_event_studio_id(
+        studio_id = self.connect_accounts.resolve_stripe_event_studio_id(
             account_id,
             metadata_studio_id=metadata_studio_id,
             local_studio_id=(payment or {}).get("studio_id"),
@@ -741,7 +729,7 @@ class BillingPaymentEventProjector:
             charge_id,
             studio_id=metadata_studio_id,
         )
-        studio_id = self._resolve_stripe_event_studio_id(
+        studio_id = self.connect_accounts.resolve_stripe_event_studio_id(
             account_id,
             metadata_studio_id=metadata_studio_id,
             local_studio_id=(payment or {}).get("studio_id"),
@@ -1037,7 +1025,7 @@ class BillingPaymentEventProjector:
     ) -> bool:
         if adjustment.get("studio_id") and adjustment.get("studio_id") != payment.get("studio_id"):
             return False
-        if not self.billing_service._row_matches_stripe_account(adjustment, account_id):
+        if not self.connect_accounts.row_matches_stripe_account(adjustment, account_id):
             return False
         return self._generation_matches(adjustment, payment.get("connect_account_generation"))
 
@@ -1048,7 +1036,7 @@ class BillingPaymentEventProjector:
         if not studio_id:
             return
         if not invoice_id:
-            self._recompute_payer_balance(studio_id, payer_id)
+            recompute_payer_balance(self.supabase, studio_id, payer_id)
             return
 
         invoice_result = (
@@ -1060,11 +1048,11 @@ class BillingPaymentEventProjector:
             .execute()
         )
         if not invoice_result.data:
-            self._recompute_payer_balance(studio_id, payer_id)
+            recompute_payer_balance(self.supabase, studio_id, payer_id)
             return
         invoice = invoice_result.data[0]
         if invoice.get("status") == "void":
-            self._recompute_payer_balance(studio_id, payer_id or invoice.get("payer_id"))
+            recompute_payer_balance(self.supabase, studio_id, payer_id or invoice.get("payer_id"))
             return
 
         payment_rows = (
@@ -1100,7 +1088,7 @@ class BillingPaymentEventProjector:
         self.supabase.table("billing_invoices").update(invoice_update).eq("id", invoice_id).eq(
             "studio_id", studio_id
         ).execute()
-        self._recompute_payer_balance(studio_id, payer_id or invoice.get("payer_id"))
+        recompute_payer_balance(self.supabase, studio_id, payer_id or invoice.get("payer_id"))
 
     def _project_payment_from_invoice(
         self,

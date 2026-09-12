@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "0559911b4c6fd7c57095ffcfbff73a7c2bbb49ba",
+  "last_reconciled_main": "b219fd029f621baa2686485c84979e4c7f31b9c2",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2434,11 +2434,11 @@
       "title": "Split billing files still share an implicit global owner",
       "cluster": "financial_command_completion",
       "disposition": "pending",
-      "reason": "Plans and payer operations now have concrete dependencies. PR184 removed 39 dead forwarding/helper definitions. Payer facts no longer construct a manager and the reverse import into billing_service is removed. Other managers/workflows and the remaining private facade still use the shared-owner graph, so this architectural finding stays pending.",
+      "reason": "Plans, payer operations and all three provider projectors now have concrete dependencies. The reverse import is gone and the private facade is down to 24 methods. Command managers and three workflow owners still depend on the shared-owner graph, so the architectural finding remains pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "0647c20dced74281383cd9a3eb07eb2867417614",
-      "verification": "Coordinator verified 18 retained payer methods, four relocated facts, three production lookup/audit bodies and unchanged operator logic after exact dependency substitutions. All 765 assertion nodes in the modified tests remain; final focused309 passed. Other billing owner routes remain pending.",
+      "verified_against": "811477c801e04d0b2b193fe7796a2ea4cf8a46a4",
+      "verification": "Coordinator checked 169 retained methods after declared dependency substitutions, six relocated bodies, all 462 unchanged assertions and 15 direct account identity cases. The affected suites passed 189 tests and the implementer full backend passed 1,904. Projection source loses 86 lines and 21 net function/method definitions; edited tests add five constructor lines with cases unchanged.",
       "source_paths": [
         "backend/app/services/billing_enrollments.py",
         "backend/app/services/billing_enrollment_stripe_lifecycle.py",
@@ -2447,7 +2447,8 @@
       ],
       "pull_requests": [
         183,
-        184
+        184,
+        185
       ],
       "track": "Sol",
       "root_cause": "untyped-billing-boundaries",
@@ -2471,7 +2472,7 @@
           "observation": "The manager constructs the lifecycle and delegates methods back into it."
         }
       ],
-      "next_change": "Make all three provider projectors independent of BillingService using the existing payer facts and account identity owner, then re-evaluate remaining setup, payment, reconciliation, invoice and enrollment dependency routes.",
+      "next_change": "Remove remaining command ownership through concrete account, payer, projection and audit dependencies; reassess setup, reconciliation, payments, invoices and enrollments after this projection change.",
       "validation_plan": "For each selected billing responsibility, verify moved algorithms and public contracts, retain financial/tenant/idempotency behavior, remove obsolete fixture/forwarding code and require fresh independent exact-head review/CI. Re-enumerate owners and facade methods after each merge; do not close this umbrella after one family.",
       "scope_constraints": "Do not replace the coordinator, move blocking I/O ownership, flatten recovery workflows or alter enrollment/date semantics.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",

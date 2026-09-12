@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from supabase import Client
+
+from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_invoice_projection import _stripe_id, subscription_period_bounds
 from app.services.billing_webhook_event_state import (
     SUBSCRIPTION_STATUS_ORDER,
@@ -13,28 +16,9 @@ from app.services.billing_webhook_event_state import (
 
 
 class BillingSubscriptionWebhookProjector:
-    def __init__(self, billing_service: Any):
-        self.billing_service = billing_service
-
-    @property
-    def supabase(self):
-        return self.billing_service.supabase
-
-    def _resolve_stripe_event_studio_id(
-        self,
-        account_id: Optional[str],
-        *,
-        metadata_studio_id: Optional[str] = None,
-        local_studio_id: Optional[str] = None,
-    ) -> Optional[str]:
-        return self.billing_service._resolve_stripe_event_studio_id(
-            account_id,
-            metadata_studio_id=metadata_studio_id,
-            local_studio_id=local_studio_id,
-        )
-
-    def _row_matches_stripe_account(self, row: dict[str, Any], account_id: Optional[str]) -> bool:
-        return self.billing_service._row_matches_stripe_account(row, account_id)
+    def __init__(self, supabase: Client, connect_accounts: BillingConnectAccountStore):
+        self.supabase = supabase
+        self.connect_accounts = connect_accounts
 
     def project_subscription(
         self,
@@ -45,7 +29,7 @@ class BillingSubscriptionWebhookProjector:
     ) -> Optional[dict[str, Any]]:
         metadata = subscription.get("metadata") or {}
         local = self.find_subscription_for_stripe(subscription, account_id)
-        studio_id = self._resolve_stripe_event_studio_id(
+        studio_id = self.connect_accounts.resolve_stripe_event_studio_id(
             account_id,
             metadata_studio_id=metadata.get("studio_id"),
             local_studio_id=(local or {}).get("studio_id"),
@@ -131,7 +115,9 @@ class BillingSubscriptionWebhookProjector:
                 .limit(1)
                 .execute()
             )
-            if result.data and self._row_matches_stripe_account(result.data[0], account_id):
+            if result.data and self.connect_accounts.row_matches_stripe_account(
+                result.data[0], account_id
+            ):
                 return result.data[0]
         stripe_id = _stripe_id(subscription)
         if not stripe_id:

@@ -96,6 +96,35 @@ class BillingConnectAccountStore:
         )
         return result.data[0] if result.data else None
 
+    def resolve_stripe_event_studio_id(
+        self,
+        account_id: Optional[str],
+        *,
+        metadata_studio_id: Optional[str] = None,
+        local_studio_id: Optional[str] = None,
+    ) -> Optional[str]:
+        account = self.by_stripe_account(account_id) if account_id else None
+        account_studio_id = (account or {}).get("studio_id")
+
+        if account_id:
+            trusted_studio_id = account_studio_id or local_studio_id
+        else:
+            trusted_studio_id = local_studio_id or metadata_studio_id
+
+        if not trusted_studio_id:
+            return None
+        for candidate in (account_studio_id, local_studio_id, metadata_studio_id):
+            if candidate and candidate != trusted_studio_id:
+                return None
+        return trusted_studio_id
+
+    @staticmethod
+    def row_matches_stripe_account(row: dict[str, Any], account_id: Optional[str]) -> bool:
+        row_account_id = row.get("stripe_account_id")
+        if account_id:
+            return row_account_id == account_id
+        return row_account_id is None
+
     def refresh_status(self, account: dict[str, Any], *, strict: bool) -> dict[str, Any]:
         account_id = account.get("stripe_connected_account_id")
         if not account_id:

@@ -5,7 +5,9 @@ from typing import Any, Optional
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from postgrest.exceptions import APIError as PostgrestAPIError
+from supabase import Client
 
+from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
     PAYER_SETUP_OPERATION_TYPE,
@@ -20,6 +22,12 @@ from app.services.billing_invoice_projection import (
     invoice_subscription_id,
     invoice_subscription_item_id,
     local_invoice_status,
+)
+from app.services.billing_payers import (
+    get_payer_or_404,
+    payer_id_for_customer,
+    payment_method_fields_from_payment_method,
+    recompute_payer_balance,
 )
 from app.services.stripe_service import StripeService
 from app.services.platform_billing_helpers import stable_hash
@@ -38,68 +46,25 @@ from app.services.billing_webhook_event_state import (
 
 class BillingWebhookProjector:
     def __init__(
-        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
-    ):
-        self.billing_service = billing_service
-        self.stripe_service_cls = stripe_service_cls
-
-    @property
-    def supabase(self):
-        return self.billing_service.supabase
-
-    def _connect_accounts(self):
-        return self.billing_service._connect_accounts()
-
-    def _resolve_stripe_event_studio_id(
         self,
-        account_id: Optional[str],
+        supabase: Client,
+        connect_accounts: BillingConnectAccountStore,
         *,
-        metadata_studio_id: Optional[str] = None,
-        local_studio_id: Optional[str] = None,
-    ) -> Optional[str]:
-        return self.billing_service._resolve_stripe_event_studio_id(
-            account_id,
-            metadata_studio_id=metadata_studio_id,
-            local_studio_id=local_studio_id,
-        )
-
-    def _get_row_or_404(
-        self,
-        table: str,
-        record_id: str,
-        studio_id: str,
-        detail: str,
-    ) -> dict[str, Any]:
-        return self.billing_service._get_row_or_404(table, record_id, studio_id, detail)
-
-    def _payment_method_fields_from_customer(self, customer: Any) -> dict[str, Any]:
-        return self.billing_service._payment_method_fields_from_customer(customer)
-
-    def _payment_method_fields_from_payment_method(self, payment_method: Any) -> dict[str, Any]:
-        return self.billing_service._payment_method_fields_from_payment_method(payment_method)
-
-    def _payer_id_for_customer(
-        self,
-        studio_id: str,
-        account_id: Optional[str],
-        customer_id: Optional[str],
-    ) -> Optional[str]:
-        return self.billing_service._payer_id_for_customer(studio_id, account_id, customer_id)
-
-    def _row_matches_stripe_account(self, row: dict[str, Any], account_id: Optional[str]) -> bool:
-        return self.billing_service._row_matches_stripe_account(row, account_id)
-
-    def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
-        self.billing_service._recompute_payer_balance(studio_id, payer_id)
+        stripe_service_cls: type[StripeService] = StripeService,
+    ):
+        self.supabase = supabase
+        self.connect_accounts = connect_accounts
+        self.stripe_service_cls = stripe_service_cls
 
     def _payment_events(self) -> BillingPaymentEventProjector:
         return BillingPaymentEventProjector(
-            self.billing_service,
+            self.supabase,
+            self.connect_accounts,
             stripe_service_cls=self.stripe_service_cls,
         )
 
     def _subscription_events(self) -> BillingSubscriptionWebhookProjector:
-        return BillingSubscriptionWebhookProjector(self.billing_service)
+        return BillingSubscriptionWebhookProjector(self.supabase, self.connect_accounts)
 
     def project_connect_event(self, event: dict[str, Any]) -> None:
         event_type = event.get("type") or ""
@@ -108,7 +73,7 @@ class BillingWebhookProjector:
         data_object = (event.get("data") or {}).get("object") or {}
         if event_type == "account.application.deauthorized":
             account_id = account_id or data_object.get("id")
-            self._connect_accounts().update_by_stripe_account(
+            self.connect_accounts.update_by_stripe_account(
                 account_id,
                 {
                     "status": "deauthorized",
@@ -120,9 +85,9 @@ class BillingWebhookProjector:
             return
         if event_type == "account.updated":
             account_id = account_id or data_object.get("id")
-            self._connect_accounts().update_by_stripe_account(
+            self.connect_accounts.update_by_stripe_account(
                 account_id,
-                self._connect_accounts().update_from_stripe(data_object),
+                self.connect_accounts.update_from_stripe(data_object),
                 event_created=event_created,
             )
             return
@@ -192,7 +157,7 @@ class BillingWebhookProjector:
         if not operation_id or not setup_request_id or terms_version != AUTOPAY_TERMS_VERSION:
             self._handle_legacy_checkout_session(session, account_id, metadata)
             return
-        studio_id = self._resolve_stripe_event_studio_id(
+        studio_id = self.connect_accounts.resolve_stripe_event_studio_id(
             account_id,
             metadata_studio_id=metadata.get("studio_id"),
         )
@@ -209,7 +174,7 @@ class BillingWebhookProjector:
             or not session_id
         ):
             return
-        payer = self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
+        payer = get_payer_or_404(self.supabase, payer_id, studio_id)
         if (
             payer.get("stripe_account_id") != account_id
             or payer.get("stripe_customer_id") != customer_id
@@ -454,7 +419,7 @@ class BillingWebhookProjector:
                 or not payment_method_id
             ):
                 raise RuntimeError("setup_intent_readback_incomplete")
-            payment_fields = self._payment_method_fields_from_payment_method(payment_method)
+            payment_fields = payment_method_fields_from_payment_method(payment_method)
             if payment_fields.get("default_payment_method_id") != payment_method_id:
                 raise RuntimeError("payment_method_projection_incomplete")
         except Exception:
@@ -556,7 +521,7 @@ class BillingWebhookProjector:
         payer_id = self._bounded_metadata_value(metadata.get("payer_id"))
         session_id = _stripe_id(session)
         customer_id = _stripe_id(session.get("customer"))
-        resolved_studio_id = self._resolve_stripe_event_studio_id(
+        resolved_studio_id = self.connect_accounts.resolve_stripe_event_studio_id(
             account_id,
             metadata_studio_id=studio_id,
         )
@@ -571,7 +536,7 @@ class BillingWebhookProjector:
             or generation is None
         ):
             raise RuntimeError("legacy_autopay_setup_identity_unverified")
-        payer = self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
+        payer = get_payer_or_404(self.supabase, payer_id, studio_id)
         if any(
             (
                 payer.get("stripe_account_id") != account_id,
@@ -772,7 +737,7 @@ class BillingWebhookProjector:
     ) -> Optional[int]:
         if not account_id or not studio_id:
             return None
-        account = self._connect_accounts().by_stripe_account(account_id)
+        account = self.connect_accounts.by_stripe_account(account_id)
         if not account or account.get("studio_id") != studio_id:
             return None
         value = (account.get("metadata") or {}).get("connect_account_generation") or 1
@@ -908,7 +873,7 @@ class BillingWebhookProjector:
     ) -> None:
         local = self._find_invoice_for_stripe(invoice, account_id)
         metadata = invoice_metadata(invoice)
-        studio_id = self._resolve_stripe_event_studio_id(
+        studio_id = self.connect_accounts.resolve_stripe_event_studio_id(
             account_id,
             metadata_studio_id=metadata.get("studio_id"),
             local_studio_id=(local or {}).get("studio_id"),
@@ -932,7 +897,7 @@ class BillingWebhookProjector:
             )
             self._link_orphan_payment_to_invoice(invoice, account_id, local)
         if local.get("payer_id"):
-            self._recompute_payer_balance(studio_id, local.get("payer_id"))
+            recompute_payer_balance(self.supabase, studio_id, local.get("payer_id"))
 
     def _project_payment_intent(
         self,
@@ -1155,8 +1120,11 @@ class BillingWebhookProjector:
         payer_id = (
             metadata.get("payer_id")
             or current.get("payer_id")
-            or self._payer_id_for_customer(
-                studio_id, account_id, _stripe_id(_object_get(invoice, "customer"))
+            or payer_id_for_customer(
+                self.supabase,
+                studio_id,
+                account_id,
+                _stripe_id(_object_get(invoice, "customer")),
             )
         )
         enrollment_id = metadata.get("enrollment_id") or (enrollment or {}).get("id")
@@ -1289,7 +1257,9 @@ class BillingWebhookProjector:
                 .limit(1)
                 .execute()
             )
-            if result.data and self._row_matches_stripe_account(result.data[0], account_id):
+            if result.data and self.connect_accounts.row_matches_stripe_account(
+                result.data[0], account_id
+            ):
                 return result.data[0]
         stripe_invoice_id = _stripe_id(invoice)
         if not stripe_invoice_id:

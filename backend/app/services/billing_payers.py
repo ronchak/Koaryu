@@ -101,6 +101,20 @@ def recompute_payer_balance(client: Client, studio_id: str, payer_id: Optional[s
     )
 
 
+def get_payer_or_404(client: Client, payer_id: str, studio_id: str) -> dict[str, Any]:
+    result = (
+        client.table("billing_payers")
+        .select("*")
+        .eq("id", payer_id)
+        .eq("studio_id", studio_id)
+        .maybe_single()
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Payer not found.")
+    return result.data
+
+
 class BillingPayerManager:
     def __init__(
         self,
@@ -114,19 +128,6 @@ class BillingPayerManager:
         self.connect_accounts = connect_accounts
         self.settings = settings
         self.stripe_service_cls = stripe_service_cls
-
-    def _get_payer_or_404(self, payer_id: str, studio_id: str) -> dict[str, Any]:
-        result = (
-            self.supabase.table("billing_payers")
-            .select("*")
-            .eq("id", payer_id)
-            .eq("studio_id", studio_id)
-            .maybe_single()
-            .execute()
-        )
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Payer not found.")
-        return result.data
 
     def _ensure_guardian_in_studio(self, guardian_id: str, studio_id: str) -> None:
         result = (
@@ -185,7 +186,7 @@ class BillingPayerManager:
         return BillingPayerResponse(**payer)
 
     async def get_payer(self, payer_id: str, studio_id: str) -> BillingPayerResponse:
-        return BillingPayerResponse(**self._get_payer_or_404(payer_id, studio_id))
+        return BillingPayerResponse(**get_payer_or_404(self.supabase, payer_id, studio_id))
 
     async def update_payer(
         self,
@@ -194,7 +195,7 @@ class BillingPayerManager:
         studio_id: str,
         actor_id: str,
     ) -> BillingPayerResponse:
-        self._get_payer_or_404(payer_id, studio_id)
+        get_payer_or_404(self.supabase, payer_id, studio_id)
         update = data.model_dump(exclude_unset=True)
         if update.get("guardian_id"):
             self._ensure_guardian_in_studio(update["guardian_id"], studio_id)
@@ -228,7 +229,7 @@ class BillingPayerManager:
                 detail="Idempotency-Key is required for payer sync.",
             )
         self._validate_test_clock_context(test_clock_id)
-        payer = self._get_payer_or_404(payer_id, studio_id)
+        payer = get_payer_or_404(self.supabase, payer_id, studio_id)
         account = self._local_ready_connect_account(studio_id)
         account_id = str(account["stripe_connected_account_id"])
         generation = self._connect_account_generation(account)
@@ -940,7 +941,7 @@ class BillingPayerManager:
         context: BillingProviderOperationContext,
         operation: dict[str, Any],
     ) -> dict[str, Any]:
-        payer = self._get_payer_or_404(payer_id, context.studio_id)
+        payer = get_payer_or_404(self.supabase, payer_id, context.studio_id)
         if (
             payer.get("stripe_account_id") != context.stripe_connected_account_id
             or payer.get("connect_account_generation") != context.connect_account_generation

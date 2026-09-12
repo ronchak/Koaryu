@@ -79,6 +79,8 @@ PR184 merged as `0559911b4c6fd7c57095ffcfbff73a7c2bbb49ba`, deleting 35 facade m
 | [183](https://github.com/ronchak/Koaryu/pull/183) | Concrete billing plan ownership and deleted facade aliases | `91184e7` | [Plan ownership](docs/remediation/billing-plan-ownership-verification.md) |
 | [184](https://github.com/ronchak/Koaryu/pull/184) | Deleted 39 dead billing forwarding/helper definitions | `0559911` | [Facade pruning](docs/remediation/billing-facade-pruning-verification.md) |
 
+| [185](https://github.com/ronchak/Koaryu/pull/185) | Concrete payer ownership and removed reverse service import | `b219fd0` | [Payer ownership](docs/remediation/payer-ownership-verification.md) |
+
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 
 ## Settled product decisions
