@@ -34,6 +34,8 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Audit support triage privacy docs/scripts: `npm run audit:support-privacy`
 - Regenerate frontend API contract types: `npm run generate:api-types`
 - Check generated frontend API contract types: `npm run check:api-types`
+- Check backend formatting: `cd backend && venv/bin/python -m ruff format --check .`
+- Check frontend formatting: `cd frontend && npm run format:check`
 - Check candidate-wide workflow coverage: `npm run check:release-workflow`
 - Check generated release statements, restore scripts and readiness metadata: `npm run check:release-attestation`
 - Summarize an approved private performance-log export: `npm run summarize:performance < /absolute/private/export.ndjson`

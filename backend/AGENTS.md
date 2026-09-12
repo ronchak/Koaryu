@@ -30,6 +30,8 @@ Use this file for work under `backend/`. Fall back to the repo root `AGENTS.md` 
 - Start local API: `cd backend && venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001`
 - Run all tests: `cd backend && venv/bin/python -m pytest tests`
 - Run targeted tests: `cd backend && venv/bin/python -m pytest tests/test_health_endpoints.py`
+- Format Python: `cd backend && venv/bin/python -m ruff format .`
+- Check Python formatting: `cd backend && venv/bin/python -m ruff format --check .`
 
 The local backend runs on `http://127.0.0.1:8001`.
 

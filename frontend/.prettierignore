@@ -1,0 +1,40 @@
+.next/
+.vercel/
+node_modules/
+out/
+build/
+coverage/
+playwright-report/
+test-results/
+package-lock.json
+vercel.json
+*.md
+.env*
+src/types/generated/api-contracts.ts
+
+# Temporary source-text contracts in tests/billing-enrollment-transition-model.test.mjs.
+src/components/billing/billing-enrollments-tab.tsx
+# Temporary source-text contracts in tests/billing-invoice-action-model.test.mjs.
+src/lib/billing-page-controller.ts
+src/components/billing/billing-invoices-tab.tsx
+# Temporary source-text contracts in tests/dashboard-shell-home-contract.test.mjs and tests/performance-evidence.test.mjs.
+src/components/dashboard/dashboard-home.tsx
+# Temporary source-text contracts in tests/dashboard-shell-home-contract.test.mjs.
+src/lib/store.tsx
+# Temporary source-text contracts in tests/legal-name-ui-contract.test.mjs.
+src/components/account/legal-name-blocking-screen.tsx
+# Temporary source-text contracts in tests/login-auth-contract.test.mjs.
+src/app/(auth)/login/page.tsx
+# Temporary source-text contracts in tests/operations-redesign-contract.test.mjs.
+src/components/billing/billing-page-sections.tsx
+src/components/billing/billing-families-tab.tsx
+src/app/(dashboard)/automations/page.tsx
+src/components/settings/programs-section.tsx
+# Temporary source-text contracts in tests/operations-redesign-contract.test.mjs and tests/reports-export-catalog-contract.test.mjs.
+src/components/reports/reports-data-exports-panel.tsx
+# Temporary source-text contracts in tests/operations-redesign-contract.test.mjs.
+src/app/(dashboard)/account/settings/page.tsx
+# Temporary source-text contracts in tests/schedule-range-intent-contract.test.mjs.
+src/app/(dashboard)/reports/page.tsx
+# Temporary source-text contracts in tests/settings-access.test.mjs.
+src/app/(dashboard)/settings/page.tsx
