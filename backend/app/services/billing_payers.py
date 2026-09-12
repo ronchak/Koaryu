@@ -5,13 +5,16 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
+from supabase import Client
 
+from app.core.config import Settings
 from app.schemas.billing import (
     STRIPE_TEST_CLOCK_ID_PATTERN,
     BillingPayerCreate,
     BillingPayerResponse,
     BillingPayerUpdate,
 )
+from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_invoice_projection import _object_get, _stripe_id
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
@@ -20,7 +23,11 @@ from app.services.billing_provider_operations import (
     PAYER_SYNC_OPERATION_TYPE,
     provider_operation_disposition,
 )
-from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
+from app.services.platform_billing_helpers import (
+    build_idempotency_key,
+    normalize_idempotency_key,
+    stable_hash,
+)
 from app.services.stripe_mutation_policy import StripeMutationBlocked, configured_stripe_mode
 from app.services.stripe_service import StripeService, StripeTestClockRejected
 from app.services.supabase_rpc import execute_required_rpc
@@ -31,36 +38,121 @@ PAYER_SYNC_AMBIGUOUS_DETAIL = (
 )
 
 
+def payer_id_for_customer(
+    client: Client,
+    studio_id: str,
+    account_id: Optional[str],
+    customer_id: Optional[str],
+) -> Optional[str]:
+    if not customer_id:
+        return None
+    query = (
+        client.table("billing_payers")
+        .select("id")
+        .eq("studio_id", studio_id)
+        .eq("stripe_customer_id", customer_id)
+        .limit(1)
+    )
+    query = (
+        query.eq("stripe_account_id", account_id)
+        if account_id
+        else query.is_("stripe_account_id", "null")
+    )
+    result = query.execute()
+    return result.data[0]["id"] if result.data else None
+
+
+def payment_method_fields_from_customer(customer: Any) -> dict[str, Any]:
+    invoice_settings = _object_get(customer, "invoice_settings") or {}
+    payment_method = _object_get(invoice_settings, "default_payment_method")
+    return payment_method_fields_from_payment_method(payment_method)
+
+
+def payment_method_fields_from_payment_method(payment_method: Any) -> dict[str, Any]:
+    if not payment_method:
+        return {
+            "default_payment_method_id": None,
+            "default_payment_method_brand": None,
+            "default_payment_method_last4": None,
+            "default_payment_method_exp_month": None,
+            "default_payment_method_exp_year": None,
+        }
+    method_type = _object_get(payment_method, "type")
+    card = _object_get(payment_method, "card") or {}
+    return {
+        "default_payment_method_id": _stripe_id(payment_method),
+        "default_payment_method_brand": _object_get(card, "brand") or method_type,
+        "default_payment_method_last4": _object_get(card, "last4"),
+        "default_payment_method_exp_month": _object_get(card, "exp_month"),
+        "default_payment_method_exp_year": _object_get(card, "exp_year"),
+    }
+
+
+def recompute_payer_balance(client: Client, studio_id: str, payer_id: Optional[str]) -> None:
+    if not payer_id:
+        return
+    execute_required_rpc(
+        client,
+        "recompute_billing_payer_balance_v1",
+        {
+            "p_studio_id": studio_id,
+            "p_payer_id": payer_id,
+        },
+    )
+
+
 class BillingPayerManager:
     def __init__(
-        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+        self,
+        client: Client,
+        connect_accounts: BillingConnectAccountStore,
+        settings: Settings,
+        *,
+        stripe_service_cls: type[StripeService] = StripeService,
     ):
-        self.billing_service = billing_service
+        self.supabase = client
+        self.connect_accounts = connect_accounts
+        self.settings = settings
         self.stripe_service_cls = stripe_service_cls
 
-    @property
-    def supabase(self):
-        return self.billing_service.supabase
+    def _get_payer_or_404(self, payer_id: str, studio_id: str) -> dict[str, Any]:
+        result = (
+            self.supabase.table("billing_payers")
+            .select("*")
+            .eq("id", payer_id)
+            .eq("studio_id", studio_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Payer not found.")
+        return result.data
 
-    def _connect_accounts(self):
-        return self.billing_service._connect_accounts()
-
-    def _ensure_connect_ready(self, studio_id: str) -> dict[str, Any]:
-        return self.billing_service._ensure_connect_ready(studio_id)
-
-    def _get_row_or_404(self, *args, **kwargs):
-        return self.billing_service._get_row_or_404(*args, **kwargs)
-
-    def _ensure_record_in_studio(self, *args, **kwargs) -> None:
-        self.billing_service._ensure_record_in_studio(*args, **kwargs)
-
-    def _idempotency_key(self, *parts: str) -> str:
-        return self.billing_service._idempotency_key(*parts)
+    def _ensure_guardian_in_studio(self, guardian_id: str, studio_id: str) -> None:
+        result = (
+            self.supabase.table("guardians")
+            .select("id")
+            .eq("id", guardian_id)
+            .eq("studio_id", studio_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Guardian not found.")
 
     def _audit(
         self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
     ) -> None:
-        self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": action,
+                "entity_type": "billing",
+                "entity_id": entity_id,
+                "metadata": metadata,
+            }
+        ).execute()
 
     async def list_payers(self, studio_id: str) -> list[BillingPayerResponse]:
         result = (
@@ -78,9 +170,7 @@ class BillingPayerManager:
         row = data.model_dump()
         row["studio_id"] = studio_id
         if row.get("guardian_id"):
-            self._ensure_record_in_studio(
-                "guardians", row["guardian_id"], studio_id, "Guardian not found."
-            )
+            self._ensure_guardian_in_studio(row["guardian_id"], studio_id)
         result = self.supabase.table("billing_payers").insert(row).execute()
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create payer.")
@@ -95,9 +185,7 @@ class BillingPayerManager:
         return BillingPayerResponse(**payer)
 
     async def get_payer(self, payer_id: str, studio_id: str) -> BillingPayerResponse:
-        return BillingPayerResponse(
-            **self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
-        )
+        return BillingPayerResponse(**self._get_payer_or_404(payer_id, studio_id))
 
     async def update_payer(
         self,
@@ -106,12 +194,10 @@ class BillingPayerManager:
         studio_id: str,
         actor_id: str,
     ) -> BillingPayerResponse:
-        self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
+        self._get_payer_or_404(payer_id, studio_id)
         update = data.model_dump(exclude_unset=True)
         if update.get("guardian_id"):
-            self._ensure_record_in_studio(
-                "guardians", update["guardian_id"], studio_id, "Guardian not found."
-            )
+            self._ensure_guardian_in_studio(update["guardian_id"], studio_id)
         if not update:
             return await self.get_payer(payer_id, studio_id)
         result = (
@@ -142,7 +228,7 @@ class BillingPayerManager:
                 detail="Idempotency-Key is required for payer sync.",
             )
         self._validate_test_clock_context(test_clock_id)
-        payer = self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
+        payer = self._get_payer_or_404(payer_id, studio_id)
         account = self._local_ready_connect_account(studio_id)
         account_id = str(account["stripe_connected_account_id"])
         generation = self._connect_account_generation(account)
@@ -321,7 +407,7 @@ class BillingPayerManager:
             )
             raise HTTPException(status_code=409, detail=PAYER_SYNC_AMBIGUOUS_DETAIL)
         saved_summary = self._payer_sync_summary(sync_mode, target_customer_id)
-        stripe_key = self._idempotency_key("payer-sync", context.operation_id)
+        stripe_key = build_idempotency_key("payer-sync", context.operation_id)
         metadata = {
             "studio_id": payer["studio_id"],
             "payer_id": payer["id"],
@@ -666,7 +752,7 @@ class BillingPayerManager:
             raise RuntimeError("payer_sync_recovered_customer_mismatch")
 
     def _local_ready_connect_account(self, studio_id: str) -> dict[str, Any]:
-        account = self._connect_accounts().ensure_row(studio_id)
+        account = self.connect_accounts.ensure_row(studio_id)
         if (
             account.get("studio_id") != studio_id
             or not account.get("stripe_connected_account_id")
@@ -759,7 +845,7 @@ class BillingPayerManager:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Stripe test clock ID is malformed.",
             )
-        settings = self.billing_service.settings
+        settings = self.settings
         if getattr(settings, "ENVIRONMENT", None) != "staging":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -779,7 +865,7 @@ class BillingPayerManager:
         customer_id: str,
         context: BillingProviderOperationContext,
     ) -> dict[str, Any]:
-        payment_fields = self._payment_method_fields_from_customer(provider_customer)
+        payment_fields = payment_method_fields_from_customer(provider_customer)
         active_consent = None
         if not payment_fields.get("default_payment_method_id"):
             try:
@@ -854,9 +940,7 @@ class BillingPayerManager:
         context: BillingProviderOperationContext,
         operation: dict[str, Any],
     ) -> dict[str, Any]:
-        payer = self._get_row_or_404(
-            "billing_payers", payer_id, context.studio_id, "Payer not found."
-        )
+        payer = self._get_payer_or_404(payer_id, context.studio_id)
         if (
             payer.get("stripe_account_id") != context.stripe_connected_account_id
             or payer.get("connect_account_generation") != context.connect_account_generation
@@ -893,59 +977,3 @@ class BillingPayerManager:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=PAYER_SYNC_AMBIGUOUS_DETAIL,
         ) from exc
-
-    def _payer_id_for_customer(
-        self, studio_id: str, account_id: Optional[str], customer_id: Optional[str]
-    ) -> Optional[str]:
-        if not customer_id:
-            return None
-        query = (
-            self.supabase.table("billing_payers")
-            .select("id")
-            .eq("studio_id", studio_id)
-            .eq("stripe_customer_id", customer_id)
-            .limit(1)
-        )
-        query = (
-            query.eq("stripe_account_id", account_id)
-            if account_id
-            else query.is_("stripe_account_id", "null")
-        )
-        result = query.execute()
-        return result.data[0]["id"] if result.data else None
-
-    def _payment_method_fields_from_customer(self, customer: Any) -> dict[str, Any]:
-        invoice_settings = _object_get(customer, "invoice_settings") or {}
-        payment_method = _object_get(invoice_settings, "default_payment_method")
-        return self._payment_method_fields_from_payment_method(payment_method)
-
-    def _payment_method_fields_from_payment_method(self, payment_method: Any) -> dict[str, Any]:
-        if not payment_method:
-            return {
-                "default_payment_method_id": None,
-                "default_payment_method_brand": None,
-                "default_payment_method_last4": None,
-                "default_payment_method_exp_month": None,
-                "default_payment_method_exp_year": None,
-            }
-        method_type = _object_get(payment_method, "type")
-        card = _object_get(payment_method, "card") or {}
-        return {
-            "default_payment_method_id": _stripe_id(payment_method),
-            "default_payment_method_brand": _object_get(card, "brand") or method_type,
-            "default_payment_method_last4": _object_get(card, "last4"),
-            "default_payment_method_exp_month": _object_get(card, "exp_month"),
-            "default_payment_method_exp_year": _object_get(card, "exp_year"),
-        }
-
-    def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
-        if not payer_id:
-            return
-        execute_required_rpc(
-            self.supabase,
-            "recompute_billing_payer_balance_v1",
-            {
-                "p_studio_id": studio_id,
-                "p_payer_id": payer_id,
-            },
-        )

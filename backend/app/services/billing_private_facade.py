@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -12,15 +11,16 @@ from app.services.billing_provider_operations import (
     BillingProviderOperationCoordinator,
 )
 from app.services.billing_invoice_projection import _object_get
-from app.services.billing_payers import BillingPayerManager
+from app.services.billing_payers import (
+    payer_id_for_customer,
+    payment_method_fields_from_customer,
+    payment_method_fields_from_payment_method,
+    recompute_payer_balance,
+)
 from app.services.platform_billing_helpers import build_idempotency_key
 
 
 class BillingPrivateFacadeMixin:
-    @staticmethod
-    def _billing_stripe_service_cls():
-        return importlib.import_module("app.services.billing_service").StripeService
-
     def project_connect_event(self, event: dict[str, Any]) -> None:
         self._webhook_projector().project_connect_event(event)
 
@@ -137,9 +137,8 @@ class BillingPrivateFacadeMixin:
     def _payer_id_for_customer(
         self, studio_id: str, account_id: Optional[str], customer_id: Optional[str]
     ) -> Optional[str]:
-        return BillingPayerManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._payer_id_for_customer(
+        return payer_id_for_customer(
+            self.supabase,
             studio_id,
             account_id,
             customer_id,
@@ -169,16 +168,10 @@ class BillingPrivateFacadeMixin:
         return False
 
     def _payment_method_fields_from_customer(self, customer: Any) -> dict[str, Any]:
-        return BillingPayerManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._payment_method_fields_from_customer(customer)
+        return payment_method_fields_from_customer(customer)
 
     def _payment_method_fields_from_payment_method(self, payment_method: Any) -> dict[str, Any]:
-        return BillingPayerManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._payment_method_fields_from_payment_method(
-            payment_method,
-        )
+        return payment_method_fields_from_payment_method(payment_method)
 
     def _latest_charge(self, intent: dict[str, Any]) -> Any:
         latest = intent.get("latest_charge")
@@ -298,9 +291,7 @@ class BillingPrivateFacadeMixin:
         return row_account_id is None
 
     def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
-        BillingPayerManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._recompute_payer_balance(studio_id, payer_id)
+        recompute_payer_balance(self.supabase, studio_id, payer_id)
 
     def _ensure_record_in_studio(
         self, table: str, record_id: str, studio_id: str, detail: str
