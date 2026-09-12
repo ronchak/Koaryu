@@ -7,6 +7,8 @@ Koaryu's working architecture and safeguards stay. This program corrects verifie
 
 ## Current position
 
+Pending integrity risk: [PROGRAM-REFUND-01](docs/remediation/refund-completion-risk.md) records a refund whose own projection can block same-key receipt completion recovery. It was reproduced on unchanged main and confirmed against the SQL source. Its database correction is outside this run; the risk is not accepted or fixed.
+
 All 278 retained audit observations now have an individual disposition, reason, source evidence and execution track in the [ledger](docs/remediation/ledger.json). There are no repeated placeholder reasons. The [normalized map](docs/remediation/normalized-map.md) explains shared causes, dependencies, deliberate exclusions and verification limits. [Sol batches](docs/remediation/delegated/README.md) contain the delegated recipes.
 
 | Disposition | Audit findings |
@@ -84,6 +86,8 @@ PR184 merged as `0559911b4c6fd7c57095ffcfbff73a7c2bbb49ba`, deleting 35 facade m
 | [186](https://github.com/ronchak/Koaryu/pull/186) | Concrete provider projection ownership and deleted forwarding routes | `27eddf0` | [Projection ownership](docs/remediation/projection-ownership-verification.md) |
 
 | [187](https://github.com/ronchak/Koaryu/pull/187) | Concrete Connect/autopay ownership and shared ordinary audit/redirect rules | `32b1ff3` | [Connect/autopay ownership](docs/remediation/connect-autopay-ownership-verification.md) |
+
+| [188](https://github.com/ronchak/Koaryu/pull/188) | One concrete invoice owner and real projection/consent fixtures | `9d99ad5` | [Invoice ownership](docs/remediation/invoice-ownership-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 
