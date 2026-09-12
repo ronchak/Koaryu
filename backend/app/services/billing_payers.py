@@ -14,6 +14,7 @@ from app.schemas.billing import (
     BillingPayerResponse,
     BillingPayerUpdate,
 )
+from app.services.billing_audit import record_billing_audit
 from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_invoice_projection import _object_get, _stripe_id
 from app.services.billing_provider_operations import (
@@ -141,20 +142,6 @@ class BillingPayerManager:
         if not result.data:
             raise HTTPException(status_code=404, detail="Guardian not found.")
 
-    def _audit(
-        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
-    ) -> None:
-        self.supabase.table("audit_logs").insert(
-            {
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": action,
-                "entity_type": "billing",
-                "entity_id": entity_id,
-                "metadata": metadata,
-            }
-        ).execute()
-
     async def list_payers(self, studio_id: str) -> list[BillingPayerResponse]:
         result = (
             self.supabase.table("billing_payers")
@@ -176,7 +163,8 @@ class BillingPayerManager:
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create payer.")
         payer = result.data[0]
-        self._audit(
+        record_billing_audit(
+            self.supabase,
             studio_id,
             actor_id,
             "billing.payer_created",
@@ -211,7 +199,14 @@ class BillingPayerManager:
         if not result.data:
             raise HTTPException(status_code=404, detail="Payer not found.")
         payer = result.data[0]
-        self._audit(studio_id, actor_id, "billing.payer_updated", payer_id, {"changes": update})
+        record_billing_audit(
+            self.supabase,
+            studio_id,
+            actor_id,
+            "billing.payer_updated",
+            payer_id,
+            {"changes": update},
+        )
         return BillingPayerResponse(**payer)
 
     async def sync_payer(

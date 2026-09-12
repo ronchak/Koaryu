@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from typing import Any, Optional
-from urllib.parse import urlparse
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
+from app.services.billing_audit import record_billing_audit
 from app.services.billing_fees import application_fee_amount, application_fee_percent
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
@@ -16,19 +16,7 @@ from app.services.platform_billing_helpers import build_idempotency_key
 
 class BillingPrivateFacadeMixin:
     def _ensure_connect_ready(self, studio_id: str) -> dict[str, Any]:
-        account = self._connect_accounts().ensure_row(studio_id)
-        if not account.get("stripe_connected_account_id"):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Connect Stripe before using hosted payments.",
-            )
-        account = self._connect_accounts().refresh_status(account, strict=True)
-        if not account.get("charges_enabled"):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Stripe Connect charges are not enabled yet.",
-            )
-        return account
+        return self._connect_accounts().ensure_ready(studio_id)
 
     def _project_invoice_event(
         self,
@@ -125,29 +113,6 @@ class BillingPrivateFacadeMixin:
             account_id, object_id, event_types
         )
 
-    def _has_stripe_billing_history(self, studio_id: str) -> bool:
-        checks = (
-            ("billing_plans", "stripe_price_id"),
-            ("billing_payers", "stripe_customer_id"),
-            ("billing_subscriptions", "stripe_subscription_id"),
-            ("billing_invoices", "stripe_invoice_id"),
-            ("billing_payments", "stripe_payment_intent_id"),
-            ("billing_refunds", "stripe_refund_id"),
-            ("billing_disputes", "stripe_dispute_id"),
-        )
-        for table, column in checks:
-            result = (
-                self.supabase.table(table)
-                .select("id")
-                .eq("studio_id", studio_id)
-                .not_.is_(column, "null")
-                .limit(1)
-                .execute()
-            )
-            if result.data:
-                return True
-        return False
-
     def _application_fee_percent(self, account: dict[str, Any]) -> float:
         return application_fee_percent(
             account.get("platform_fee_bps"), self.settings.BILLING_PLATFORM_FEE_BPS
@@ -198,30 +163,6 @@ class BillingPrivateFacadeMixin:
     def _idempotency_key(self, *parts: str) -> str:
         return build_idempotency_key(*parts)
 
-    def _safe_redirect_url(self, value: Optional[str], default: str) -> str:
-        url = (value or default).strip()
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise HTTPException(status_code=400, detail="Billing redirect URL must be absolute.")
-        origin = f"{parsed.scheme}://{parsed.netloc}"
-        if origin not in self._allowed_redirect_origins():
-            raise HTTPException(status_code=400, detail="Billing redirect URL is not allowed.")
-        return url
-
-    def _allowed_redirect_origins(self) -> set[str]:
-        parsed = urlparse(self.settings.FRONTEND_URL.rstrip("/"))
-        if not parsed.scheme or not parsed.netloc:
-            return set()
-        origins = {f"{parsed.scheme}://{parsed.netloc}"}
-        if (
-            parsed.scheme == "http"
-            and parsed.hostname in {"localhost", "127.0.0.1"}
-            and parsed.port
-        ):
-            alternate_host = "127.0.0.1" if parsed.hostname == "localhost" else "localhost"
-            origins.add(f"http://{alternate_host}:{parsed.port}")
-        return origins
-
     def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
         recompute_payer_balance(self.supabase, studio_id, payer_id)
 
@@ -254,46 +195,14 @@ class BillingPrivateFacadeMixin:
             raise HTTPException(status_code=404, detail=detail)
         return result.data
 
-    def _get_studio(self, studio_id: str) -> dict[str, Any]:
-        result = (
-            self.supabase.table("studios")
-            .select("id, name, owner_id")
-            .eq("id", studio_id)
-            .single()
-            .execute()
-        )
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Studio not found.")
-        return result.data
-
-    def _get_user_email(self, user_id: Optional[str]) -> Optional[str]:
-        if not user_id:
-            return None
-        try:
-            result = self.supabase.auth.admin.get_user_by_id(user_id)
-        except Exception:
-            return None
-        user = getattr(result, "user", None)
-        return getattr(user, "email", None)
-
     def _audit(
         self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
     ) -> None:
-        self.supabase.table("audit_logs").insert(
-            {
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": action,
-                "entity_type": "billing",
-                "entity_id": entity_id,
-                "metadata": metadata,
-            }
-        ).execute()
-
-    def _audit_best_effort(
-        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
-    ) -> None:
-        try:
-            self._audit(studio_id, actor_id, action, entity_id, metadata)
-        except Exception:
-            return
+        record_billing_audit(
+            self.supabase,
+            studio_id,
+            actor_id,
+            action,
+            entity_id,
+            metadata,
+        )

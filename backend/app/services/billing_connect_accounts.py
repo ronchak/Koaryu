@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 from app.schemas.billing import StudioPaymentAccountResponse
 from app.services.billing_fees import platform_fee_bps
@@ -41,6 +41,44 @@ class BillingConnectAccountStore:
         if not insert_result.data:
             raise HTTPException(status_code=500, detail="Failed to initialize payment account.")
         return insert_result.data[0]
+
+    def ensure_ready(self, studio_id: str) -> dict[str, Any]:
+        account = self.ensure_row(studio_id)
+        if not account.get("stripe_connected_account_id"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Connect Stripe before using hosted payments.",
+            )
+        account = self.refresh_status(account, strict=True)
+        if not account.get("charges_enabled"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Stripe Connect charges are not enabled yet.",
+            )
+        return account
+
+    def has_billing_history(self, studio_id: str) -> bool:
+        checks = (
+            ("billing_plans", "stripe_price_id"),
+            ("billing_payers", "stripe_customer_id"),
+            ("billing_subscriptions", "stripe_subscription_id"),
+            ("billing_invoices", "stripe_invoice_id"),
+            ("billing_payments", "stripe_payment_intent_id"),
+            ("billing_refunds", "stripe_refund_id"),
+            ("billing_disputes", "stripe_dispute_id"),
+        )
+        for table, column in checks:
+            result = (
+                self.supabase.table(table)
+                .select("id")
+                .eq("studio_id", studio_id)
+                .not_.is_(column, "null")
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                return True
+        return False
 
     def update(self, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:
         result = (

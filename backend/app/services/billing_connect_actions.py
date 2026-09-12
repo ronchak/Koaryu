@@ -1,17 +1,24 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import HTTPException, status
+from supabase import Client
 
+from app.core.config import Settings
 from app.schemas.billing import (
     BillingLinkResponse,
     ConnectOnboardingDeliveryAckResponse,
     ConnectOnboardingLinkResponse,
     StudioPaymentAccountResponse,
 )
+from app.services.billing_audit import record_billing_audit
 from app.services.billing_connect_accounts import BillingConnectAccountStore
-from app.services.platform_billing_helpers import build_idempotency_key, normalize_idempotency_key
+from app.services.platform_billing_helpers import (
+    build_idempotency_key,
+    normalize_idempotency_key,
+    safe_redirect_url,
+)
 from app.services.stripe_connect_gateway import (
     build_connect_account_v2_payload,
     build_connect_onboarding_link_v2_payload,
@@ -29,13 +36,15 @@ from app.services.studio_live_billing_authorizations import (
 class BillingConnectActions:
     def __init__(
         self,
-        billing_service,
+        supabase: Client,
         connect_accounts: BillingConnectAccountStore,
+        settings: Settings,
         *,
         stripe_service_cls=StripeService,
     ):
-        self.billing_service = billing_service
+        self.supabase = supabase
         self.connect_accounts = connect_accounts
+        self.settings = settings
         self.stripe_service_cls = stripe_service_cls
 
     async def get_payment_account(self, studio_id: str) -> StudioPaymentAccountResponse:
@@ -53,24 +62,24 @@ class BillingConnectActions:
         business_entity_type: Optional[str] = None,
         request_idempotency_key: Optional[str] = None,
     ) -> ConnectOnboardingLinkResponse:
-        frontend_url = self.billing_service.settings.FRONTEND_URL.rstrip("/")
-        safe_refresh_url = self.billing_service._safe_redirect_url(
+        frontend_url = self.settings.FRONTEND_URL.rstrip("/")
+        safe_refresh_url = safe_redirect_url(
             refresh_url,
             f"{frontend_url}/billing/connect/refresh",
+            self.settings.FRONTEND_URL,
         )
-        safe_return_url = self.billing_service._safe_redirect_url(
+        safe_return_url = safe_redirect_url(
             return_url,
             f"{frontend_url}/billing?connect=return",
+            self.settings.FRONTEND_URL,
         )
         account = self.connect_accounts.ensure_row(studio_id)
         stripe_account_id = account.get("stripe_connected_account_id")
-        stripe_service = self.stripe_service_cls(supabase=self.billing_service.supabase)
+        stripe_service = self.stripe_service_cls(supabase=self.supabase)
         bootstrap_context = None
         stripe_mode = configured_stripe_mode(stripe_service.settings)
         authorization_store = (
-            StudioLiveBillingAuthorizationStore(self.billing_service.supabase)
-            if stripe_mode == "live"
-            else None
+            StudioLiveBillingAuthorizationStore(self.supabase) if stripe_mode == "live" else None
         )
 
         if authorization_store is not None:
@@ -112,12 +121,12 @@ class BillingConnectActions:
                 (account.get("metadata") or {}).get("connect_account_generation") or 1
             )
             if bootstrap_context is None:
-                studio = self.billing_service._get_studio(studio_id)
+                studio = self._get_studio(studio_id)
                 recovery_context = {
                     "business_name": studio.get("name") or "Koaryu studio",
                     "contact_email": (
-                        self.billing_service._get_user_email(actor_id)
-                        or self.billing_service._get_user_email(studio.get("owner_id"))
+                        self._get_user_email(actor_id)
+                        or self._get_user_email(studio.get("owner_id"))
                     ),
                     "business_entity_type": business_entity_type,
                     "refresh_url": safe_refresh_url,
@@ -144,9 +153,8 @@ class BillingConnectActions:
                         bootstrap_context=bootstrap_context,
                     )
             recovery_context = bootstrap_context.recovery_context or {
-                "business_name": self.billing_service._get_studio(studio_id).get("name")
-                or "Koaryu studio",
-                "contact_email": self.billing_service._get_user_email(actor_id),
+                "business_name": self._get_studio(studio_id).get("name") or "Koaryu studio",
+                "contact_email": self._get_user_email(actor_id),
                 "business_entity_type": business_entity_type,
                 "refresh_url": safe_refresh_url,
                 "return_url": safe_return_url,
@@ -234,14 +242,14 @@ class BillingConnectActions:
         studio_id: str,
         delivery_receipt: str,
     ) -> ConnectOnboardingDeliveryAckResponse:
-        stripe_service = self.stripe_service_cls(supabase=self.billing_service.supabase)
+        stripe_service = self.stripe_service_cls(supabase=self.supabase)
         if configured_stripe_mode(stripe_service.settings) != "live":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=LIVE_CONNECT_BOOTSTRAP_SUPPORT_DETAIL,
             )
         acknowledged = StudioLiveBillingAuthorizationStore(
-            self.billing_service.supabase
+            self.supabase
         ).acknowledge_connect_onboarding_initial_link_delivery(
             studio_id=studio_id,
             delivery_receipt=delivery_receipt,
@@ -264,7 +272,7 @@ class BillingConnectActions:
         stripe_account_id = account.get("stripe_connected_account_id")
         if not stripe_account_id:
             return self.connect_accounts.response(account)
-        if self.billing_service._has_stripe_billing_history(studio_id):
+        if self.connect_accounts.has_billing_history(studio_id):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Reconnect requires support because this studio already has Stripe billing history.",
@@ -289,7 +297,8 @@ class BillingConnectActions:
                 "metadata": metadata,
             },
         )
-        self.billing_service._audit(
+        record_billing_audit(
+            self.supabase,
             studio_id,
             actor_id,
             "billing.connect_account_reset",
@@ -316,7 +325,7 @@ class BillingConnectActions:
 
     def audit_onboarding_started(self, studio_id: str, actor_id: str) -> None:
         account = self.connect_accounts.ensure_row(studio_id)
-        self.billing_service._audit_best_effort(
+        self._audit_best_effort(
             studio_id,
             actor_id,
             "billing.connect_onboarding_started",
@@ -326,10 +335,52 @@ class BillingConnectActions:
 
     def audit_dashboard_opened(self, studio_id: str, actor_id: str) -> None:
         account = self.connect_accounts.ensure_row(studio_id)
-        self.billing_service._audit_best_effort(
+        self._audit_best_effort(
             studio_id,
             actor_id,
             "billing.connect_dashboard_opened",
             studio_id,
             {"stripe_account_id": account.get("stripe_connected_account_id")},
         )
+
+    def _get_studio(self, studio_id: str) -> dict[str, Any]:
+        result = (
+            self.supabase.table("studios")
+            .select("id, name, owner_id")
+            .eq("id", studio_id)
+            .single()
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Studio not found.")
+        return result.data
+
+    def _get_user_email(self, user_id: Optional[str]) -> Optional[str]:
+        if not user_id:
+            return None
+        try:
+            result = self.supabase.auth.admin.get_user_by_id(user_id)
+        except Exception:
+            return None
+        user = getattr(result, "user", None)
+        return getattr(user, "email", None)
+
+    def _audit_best_effort(
+        self,
+        studio_id: str,
+        actor_id: str,
+        action: str,
+        entity_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        try:
+            record_billing_audit(
+                self.supabase,
+                studio_id,
+                actor_id,
+                action,
+                entity_id,
+                metadata,
+            )
+        except Exception:
+            return

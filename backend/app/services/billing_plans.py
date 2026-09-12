@@ -14,6 +14,7 @@ from app.schemas.billing import (
     BillingPlanResponse,
     BillingPlanUpdate,
 )
+from app.services.billing_audit import record_billing_audit
 from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_currency_policy import NEW_TUITION_CURRENCY_DETAIL, is_usd_currency
 from app.services.billing_invoice_projection import _stripe_id
@@ -1677,7 +1678,9 @@ class BillingPlanManager:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Billing plan not found.")
-        self._audit(studio_id, actor_id, "billing.plan_archived", plan_id, {})
+        record_billing_audit(
+            self.supabase, studio_id, actor_id, "billing.plan_archived", plan_id, {}
+        )
         return self._plan_response(result.data[0], self.connect_accounts.ensure_row(studio_id))
 
     def _get_plan_or_404(self, plan_id: str, studio_id: str) -> dict[str, Any]:
@@ -1692,20 +1695,6 @@ class BillingPlanManager:
         if not result.data:
             raise HTTPException(status_code=404, detail="Billing plan not found.")
         return result.data
-
-    def _audit(
-        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
-    ) -> None:
-        self.supabase.table("audit_logs").insert(
-            {
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": action,
-                "entity_type": "billing",
-                "entity_id": entity_id,
-                "metadata": metadata,
-            }
-        ).execute()
 
     def _stripe_recurring_for_interval(
         self, billing_interval: str
