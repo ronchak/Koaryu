@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from supabase import Client
 
@@ -66,7 +66,15 @@ class BillingService(BillingPrivateFacadeMixin):
         return self._connect_account_store
 
     def _webhook_projector(self) -> BillingWebhookProjector:
-        return BillingWebhookProjector(self, stripe_service_cls=StripeService)
+        connect_accounts = self._connect_accounts()
+        return BillingWebhookProjector(
+            self.supabase,
+            connect_accounts,
+            stripe_service_cls=StripeService,
+        )
+
+    def project_connect_event(self, event: dict[str, Any]) -> None:
+        self._webhook_projector().project_connect_event(event)
 
     def _connect_actions(self) -> BillingConnectActions:
         return BillingConnectActions(

@@ -20,6 +20,7 @@ from tests.billing_lifecycle_helpers import (
 from stripe import CardError as StripeCardError, IdempotencyError as StripeIdempotencyError
 from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_payment_projection import BillingPaymentEventProjector
+from app.services.billing_payers import payment_method_fields_from_payment_method
 from app.services.billing_plans import BillingPlanManager
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
@@ -182,9 +183,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertNotIn("application_fee_amount_cents", projection)
 
     def test_non_card_payment_method_summary_uses_method_type(self):
-        service = self.service()
-
-        fields = service._payment_method_fields_from_payment_method(
+        fields = payment_method_fields_from_payment_method(
             {
                 "id": "pm_link",
                 "type": "link",
@@ -1744,7 +1743,10 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         ]
         service.supabase = _FakeSupabase(tables)
 
-        payment = BillingPaymentEventProjector(service)._reconcile_payment_adjustments(
+        payment = BillingPaymentEventProjector(
+            service.supabase,
+            service._connect_accounts(),
+        )._reconcile_payment_adjustments(
             service.supabase.tables["billing_payments"][0],
             "acct_1",
         )

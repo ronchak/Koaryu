@@ -10,20 +10,11 @@ from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
     BillingProviderOperationCoordinator,
 )
-from app.services.billing_invoice_projection import _object_get
-from app.services.billing_payers import (
-    payer_id_for_customer,
-    payment_method_fields_from_customer,
-    payment_method_fields_from_payment_method,
-    recompute_payer_balance,
-)
+from app.services.billing_payers import recompute_payer_balance
 from app.services.platform_billing_helpers import build_idempotency_key
 
 
 class BillingPrivateFacadeMixin:
-    def project_connect_event(self, event: dict[str, Any]) -> None:
-        self._webhook_projector().project_connect_event(event)
-
     def _ensure_connect_ready(self, studio_id: str) -> dict[str, Any]:
         account = self._connect_accounts().ensure_row(studio_id)
         if not account.get("stripe_connected_account_id"):
@@ -134,16 +125,6 @@ class BillingPrivateFacadeMixin:
             account_id, object_id, event_types
         )
 
-    def _payer_id_for_customer(
-        self, studio_id: str, account_id: Optional[str], customer_id: Optional[str]
-    ) -> Optional[str]:
-        return payer_id_for_customer(
-            self.supabase,
-            studio_id,
-            account_id,
-            customer_id,
-        )
-
     def _has_stripe_billing_history(self, studio_id: str) -> bool:
         checks = (
             ("billing_plans", "stripe_price_id"),
@@ -166,26 +147,6 @@ class BillingPrivateFacadeMixin:
             if result.data:
                 return True
         return False
-
-    def _payment_method_fields_from_customer(self, customer: Any) -> dict[str, Any]:
-        return payment_method_fields_from_customer(customer)
-
-    def _payment_method_fields_from_payment_method(self, payment_method: Any) -> dict[str, Any]:
-        return payment_method_fields_from_payment_method(payment_method)
-
-    def _latest_charge(self, intent: dict[str, Any]) -> Any:
-        latest = intent.get("latest_charge")
-        if latest:
-            return latest
-        charges = (intent.get("charges") or {}).get("data") or []
-        return charges[0] if charges else None
-
-    def _payment_method_type(self, intent: dict[str, Any], charge: Any) -> Optional[str]:
-        payment_method_types = intent.get("payment_method_types") or []
-        if payment_method_types:
-            return payment_method_types[0]
-        payment_method_details = _object_get(charge, "payment_method_details") or {}
-        return _object_get(payment_method_details, "type")
 
     def _application_fee_percent(self, account: dict[str, Any]) -> float:
         return application_fee_percent(
@@ -260,35 +221,6 @@ class BillingPrivateFacadeMixin:
             alternate_host = "127.0.0.1" if parsed.hostname == "localhost" else "localhost"
             origins.add(f"http://{alternate_host}:{parsed.port}")
         return origins
-
-    def _resolve_stripe_event_studio_id(
-        self,
-        account_id: Optional[str],
-        *,
-        metadata_studio_id: Optional[str] = None,
-        local_studio_id: Optional[str] = None,
-    ) -> Optional[str]:
-        account = self._connect_accounts().by_stripe_account(account_id) if account_id else None
-        account_studio_id = (account or {}).get("studio_id")
-
-        if account_id:
-            trusted_studio_id = account_studio_id or local_studio_id
-        else:
-            trusted_studio_id = local_studio_id or metadata_studio_id
-
-        if not trusted_studio_id:
-            return None
-        for candidate in (account_studio_id, local_studio_id, metadata_studio_id):
-            if candidate and candidate != trusted_studio_id:
-                return None
-        return trusted_studio_id
-
-    @staticmethod
-    def _row_matches_stripe_account(row: dict[str, Any], account_id: Optional[str]) -> bool:
-        row_account_id = row.get("stripe_account_id")
-        if account_id:
-            return row_account_id == account_id
-        return row_account_id is None
 
     def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
         recompute_payer_balance(self.supabase, studio_id, payer_id)

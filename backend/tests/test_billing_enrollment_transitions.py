@@ -998,7 +998,10 @@ def test_shared_item_rotation_webhook_does_not_split_family_before_due_cas():
 
     _apply_scheduled_item_phase(rotate_items=True)
     provider = copy.deepcopy(_TransitionStripe.subscriptions["sub_1"])
-    BillingSubscriptionWebhookProjector(facade).project_subscription_items(
+    BillingSubscriptionWebhookProjector(
+        facade.supabase,
+        facade._connect_accounts(),
+    ).project_subscription_items(
         provider,
         facade.supabase.tables["billing_subscriptions"][0],
     )
