@@ -8,7 +8,6 @@ import {
   buildPreviewValidationResult,
   formatRowNumbers,
   getCsvImportFileRejection,
-  getKoaryuFieldLabel,
   getRowDisplayValue,
   getStudentImportStageIndex,
   getStudentImportErrorMessage,
@@ -113,11 +112,6 @@ describe("student import page model", () => {
     } finally {
       globalThis.FileReader = previousFileReader;
     }
-  });
-
-  it("returns owner-facing labels for mapped Koaryu fields", () => {
-    assert.equal(getKoaryuFieldLabel("guardian_email"), "Guardian Email");
-    assert.equal(getKoaryuFieldLabel("unknown_field"), "unknown_field");
   });
 
   it("normalizes import errors for page messaging", () => {

@@ -431,6 +431,10 @@ describe("roster presentation behavior", () => {
     assert.equal(new Set(ids).size, 4);
     assert.equal(await page.getByLabel("Koaryu field for First Name").count(), 2);
     assert.equal(await page.getByLabel("Koaryu field for First-Name").count(), 2);
+    const optionLabels = await selects.first().locator("option").allTextContents();
+    for (const label of ["— Skip this column —", "First Name", "Last Name", "Guardian Email"]) {
+      assert.equal(optionLabels.includes(label), true, label);
+    }
     await selects.first().selectOption("preferred_name");
     assert.deepEqual(await page.evaluate(() => window.fixture.mappingChanges), [
       ["one", "First Name", "preferred_name"],
