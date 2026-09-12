@@ -9,11 +9,11 @@ import {
 
 const archivedLayoutSource = readFileSync(
   new URL("../src/app/account-archived/layout.tsx", import.meta.url),
-  "utf8"
+  "utf8",
 );
 const archivedPageSource = readFileSync(
   new URL("../src/app/account-archived/page.tsx", import.meta.url),
-  "utf8"
+  "utf8",
 );
 
 describe("auth noindex coverage", () => {

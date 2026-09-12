@@ -35,9 +35,7 @@ export function DemotionConfirmModal({
   reason,
   targetRank,
 }: DemotionConfirmModalProps) {
-  const currentRank = entry.current_rank_id
-    ? rankById.get(entry.current_rank_id)
-    : undefined;
+  const currentRank = entry.current_rank_id ? rankById.get(entry.current_rank_id) : undefined;
 
   return (
     <ModalFrame

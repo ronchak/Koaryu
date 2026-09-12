@@ -44,7 +44,6 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     lastName: legalLastName,
   });
 
-
   async function handleSignOut() {
     if (isSigningOut) return;
 
@@ -59,7 +58,9 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       router.push("/login");
       router.refresh();
     } catch (error) {
-      setSignOutError(error instanceof Error ? error.message : "Could not sign out. Please try again.");
+      setSignOutError(
+        error instanceof Error ? error.message : "Could not sign out. Please try again.",
+      );
       setIsSigningOut(false);
     }
   }
@@ -71,8 +72,14 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       data-navigation-placement={navigationPlacement}
       data-spine-collapsed={navigationPlacement === "side" && isSidebarCollapsed ? "true" : "false"}
     >
-      <a href="#main-content" className={styles.skipLink}>Skip to main content</a>
-      <DashboardShellReadiness identityGeneration={identityGeneration} identityReady={identityReady} shellVisible={!isLegalNameBlocked} />
+      <a href="#main-content" className={styles.skipLink}>
+        Skip to main content
+      </a>
+      <DashboardShellReadiness
+        identityGeneration={identityGeneration}
+        identityReady={identityReady}
+        shellVisible={!isLegalNameBlocked}
+      />
       {signOutError && (
         <div className="fixed bottom-4 left-1/2 z-[70] w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 rounded-[6px] border border-danger/25 bg-surface px-4 py-3 text-sm text-text-primary shadow-2xl shadow-black/30">
           <div className="flex items-start justify-between gap-3">
@@ -88,7 +95,11 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
         </div>
       )}
       {!identityReady ? (
-        <DashboardIdentitySkeleton placement={navigationPlacement} error={identityLoadError} onRetry={retryInitialization} />
+        <DashboardIdentitySkeleton
+          placement={navigationPlacement}
+          error={identityLoadError}
+          onRetry={retryInitialization}
+        />
       ) : isLegalNameBlocked ? (
         <LegalNameBlockingScreen onSignOut={handleSignOut} isSigningOut={isSigningOut} />
       ) : (
@@ -104,25 +115,32 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             isCollapsed={isSidebarCollapsed}
             onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
           />
-          <main
-            id="main-content"
-            tabIndex={-1}
-            className={styles.main}
-          >
-            <DashboardSlugBand
-              role={currentRole}
-              studioName={studioName}
-            />
+          <main id="main-content" tabIndex={-1} className={styles.main}>
+            <DashboardSlugBand role={currentRole} studioName={studioName} />
             {studioLoadError && (
               <div role="alert" className="p-4 text-sm">
                 <p>{studioLoadError}</p>
-                <button type="button" onClick={retryInitialization} className="mt-2 rounded border border-border px-3 py-2">Retry studio details</button>
+                <button
+                  type="button"
+                  onClick={retryInitialization}
+                  className="mt-2 rounded border border-border px-3 py-2"
+                >
+                  Retry studio details
+                </button>
               </div>
             )}
             {!programsLoaded && programsLoadError && (
               <div role="alert" className="p-4 text-sm">
                 <p>Program options are unavailable. {programsLoadError}</p>
-                <button type="button" onClick={() => void refreshPrograms({ includeArchived: true }).catch(() => undefined)} className="mt-2 rounded border border-border px-3 py-2">Retry programs</button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void refreshPrograms({ includeArchived: true }).catch(() => undefined)
+                  }
+                  className="mt-2 rounded border border-border px-3 py-2"
+                >
+                  Retry programs
+                </button>
               </div>
             )}
             <DashboardRouteTransition>{children}</DashboardRouteTransition>
@@ -133,11 +151,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <StoreProvider>
       <DashboardInner>{children}</DashboardInner>

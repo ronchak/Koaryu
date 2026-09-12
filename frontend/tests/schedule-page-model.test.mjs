@@ -43,18 +43,15 @@ describe("schedule page model", () => {
     const base = new Date(2026, 4, 20, 15);
 
     assert.equal(formatScheduleDateKey(base), "2026-05-20");
-    assert.deepEqual(
-      getScheduleWeekDates(base).map(formatScheduleDateKey),
-      [
-        "2026-05-17",
-        "2026-05-18",
-        "2026-05-19",
-        "2026-05-20",
-        "2026-05-21",
-        "2026-05-22",
-        "2026-05-23",
-      ]
-    );
+    assert.deepEqual(getScheduleWeekDates(base).map(formatScheduleDateKey), [
+      "2026-05-17",
+      "2026-05-18",
+      "2026-05-19",
+      "2026-05-20",
+      "2026-05-21",
+      "2026-05-22",
+      "2026-05-23",
+    ]);
     assert.deepEqual(getVisibleScheduleRange(base, "day"), {
       start: "2026-05-20",
       end: "2026-05-20",
@@ -77,11 +74,11 @@ describe("schedule page model", () => {
     assert.equal(formatScheduleDateKey(navigateScheduleDate(base, "month", 1)), "2026-06-20");
     assert.equal(
       formatScheduleDateKey(navigateScheduleDate(new Date(2026, 0, 31, 12), "month", 1)),
-      "2026-02-28"
+      "2026-02-28",
     );
     assert.equal(
       formatScheduleDateKey(navigateScheduleDate(new Date(2026, 11, 31, 12), "month", -1)),
-      "2026-11-30"
+      "2026-11-30",
     );
   });
 
@@ -116,11 +113,11 @@ describe("schedule page model", () => {
 
     assert.equal(
       recurringClassOverlapsRange({ startDate: "2026-05-01", endDate: "2026-05-18" }, visibleRange),
-      true
+      true,
     );
     assert.equal(
       recurringClassOverlapsRange({ startDate: "2026-05-24", endDate: null }, visibleRange),
-      false
+      false,
     );
     assert.deepEqual(
       getScheduleSessionAttendance(
@@ -128,11 +125,14 @@ describe("schedule page model", () => {
           { id: "att-1", session_id: "session-1" },
           { id: "att-2", session_id: "session-2" },
         ],
-        { id: "session-1" }
+        { id: "session-1" },
       ),
-      [{ id: "att-1", session_id: "session-1" }]
+      [{ id: "att-1", session_id: "session-1" }],
     );
-    assert.deepEqual(getScheduleSessionAttendance([{ id: "att-1", session_id: "session-1" }], null), []);
+    assert.deepEqual(
+      getScheduleSessionAttendance([{ id: "att-1", session_id: "session-1" }], null),
+      [],
+    );
   });
 
   it("keeps only active and trialing students available for attendance", () => {
@@ -143,7 +143,7 @@ describe("schedule page model", () => {
         student("inactive", "inactive"),
         student("paused", "paused"),
       ]).map((item) => item.id),
-      ["active", "trialing"]
+      ["active", "trialing"],
     );
   });
 
@@ -178,18 +178,27 @@ describe("schedule page model", () => {
   });
 
   it("requires the roster load to finish before attendance is complete", () => {
-    assert.equal(isCompleteScheduleRoster({
-      studentsLoaded: false,
-      studentsMayBePartial: false,
-    }), false);
-    assert.equal(isCompleteScheduleRoster({
-      studentsLoaded: true,
-      studentsMayBePartial: true,
-    }), false);
-    assert.equal(isCompleteScheduleRoster({
-      studentsLoaded: true,
-      studentsMayBePartial: false,
-    }), true);
+    assert.equal(
+      isCompleteScheduleRoster({
+        studentsLoaded: false,
+        studentsMayBePartial: false,
+      }),
+      false,
+    );
+    assert.equal(
+      isCompleteScheduleRoster({
+        studentsLoaded: true,
+        studentsMayBePartial: true,
+      }),
+      false,
+    );
+    assert.equal(
+      isCompleteScheduleRoster({
+        studentsLoaded: true,
+        studentsMayBePartial: false,
+      }),
+      true,
+    );
   });
 
   it("keeps session attendance unavailable after refresh failure", async () => {
@@ -204,7 +213,7 @@ describe("schedule page model", () => {
         },
         sessionId: "session-1",
       }),
-      /load failed/
+      /load failed/,
     );
     assert.deepEqual(states, [
       { sessionId: "session-1", status: "pending" },
@@ -222,9 +231,7 @@ describe("schedule page model", () => {
       onStateChange: (state) => states.push(state),
       refresh: async () => {
         attempts += 1;
-        return attempts === 1
-          ? { committed: false }
-          : authoritativeRetry.promise;
+        return attempts === 1 ? { committed: false } : authoritativeRetry.promise;
       },
       sessionId: "session-1",
     });

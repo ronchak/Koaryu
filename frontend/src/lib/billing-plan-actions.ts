@@ -45,14 +45,11 @@ export function useBillingPlanActions({
     setPlanProgramIds((current) =>
       current.includes(programId)
         ? current.filter((id) => id !== programId)
-        : [...current, programId]
+        : [...current, programId],
     );
   }
 
-  async function handlePlanSync(
-    planId: string,
-    options: { startNewRequest?: boolean } = {},
-  ) {
+  async function handlePlanSync(planId: string, options: { startNewRequest?: boolean } = {}) {
     const requestKey = resolvePlanSyncRequestKey({
       identity: operationIdentity,
       keysByPlan: planSyncKeysRef.current,
@@ -63,11 +60,12 @@ export function useBillingPlanActions({
     const result = await runtime.postBillingAction<BillingPlan>({
       action: `plan-sync:${planId}`,
       path: `/billing/plans/${planId}/sync`,
-      onTerminalIdempotencyError: () => clearPlanSyncRequestKey({
-        identity: operationIdentity,
-        keysByPlan: planSyncKeysRef.current,
-        planId,
-      }),
+      onTerminalIdempotencyError: () =>
+        clearPlanSyncRequestKey({
+          identity: operationIdentity,
+          keysByPlan: planSyncKeysRef.current,
+          planId,
+        }),
       refresh: false,
       requestOptions: { headers: request.headers },
       successMessage: "Plan sync requested.",
@@ -106,7 +104,9 @@ export function useBillingPlanActions({
       return;
     }
     if (runtime.isPreviewMode) {
-      runtime.setMessage("Demo plan drafted. Live studios save this to Supabase and Stripe when payments are enabled.");
+      runtime.setMessage(
+        "Demo plan drafted. Live studios save this to Supabase and Stripe when payments are enabled.",
+      );
       resetPlanForm();
       return;
     }
@@ -122,7 +122,7 @@ export function useBillingPlanActions({
       runtime.setMessage(
         billingConnect?.charges_enabled
           ? "Billing plan created."
-          : "Billing plan drafted. It will stay pending until Stripe charges are enabled."
+          : "Billing plan drafted. It will stay pending until Stripe charges are enabled.",
       );
       resetPlanForm();
       await runtime.refreshBilling();

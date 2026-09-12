@@ -43,21 +43,23 @@ def _report(*, schema_version: int = 3) -> dict:
 
 class LiveBillingAuthorizationCliTest(unittest.TestCase):
     def test_grant_is_dry_run_by_default_and_requires_expiry(self):
-        args = build_parser().parse_args([
-            "grant",
-            "--studio-id",
-            "00000000-0000-0000-0000-000000000001",
-            "--scope",
-            "connect_payments",
-            "--expires-at",
-            "2027-02-15T13:00:00Z",
-            "--reason",
-            "One-studio canary",
-            "--actor",
-            "operator@example.invalid",
-            "--operation",
-            "connected_invoice.create",
-        ])
+        args = build_parser().parse_args(
+            [
+                "grant",
+                "--studio-id",
+                "00000000-0000-0000-0000-000000000001",
+                "--scope",
+                "connect_payments",
+                "--expires-at",
+                "2027-02-15T13:00:00Z",
+                "--reason",
+                "One-studio canary",
+                "--actor",
+                "operator@example.invalid",
+                "--operation",
+                "connected_invoice.create",
+            ]
+        )
 
         self.assertFalse(args.execute)
         self.assertEqual(args.scope, "connect_payments")
@@ -69,27 +71,33 @@ class LiveBillingAuthorizationCliTest(unittest.TestCase):
 
     def test_drift_reports_expiry_reconnect_staleness_and_readiness(self):
         now = datetime.now(timezone.utc)
-        supabase = TableBackedSupabase({
-            "studio_live_billing_authorizations": [{
-                "studio_id": "studio_1",
-                "scope": "connect_payments",
-                "enabled": True,
-                "stripe_connected_account_id": "acct_old",
-                "connect_account_generation": 1,
-                "expires_at": (now - timedelta(minutes=1)).isoformat(),
-                "revision": 2,
-            }],
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_new",
-                "status": "onboarding_incomplete",
-                "charges_enabled": False,
-                "payouts_enabled": False,
-                "details_submitted": False,
-                "requirements_due": ["company.tax_id"],
-                "metadata": {"connect_account_generation": 2},
-            }],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "studio_live_billing_authorizations": [
+                    {
+                        "studio_id": "studio_1",
+                        "scope": "connect_payments",
+                        "enabled": True,
+                        "stripe_connected_account_id": "acct_old",
+                        "connect_account_generation": 1,
+                        "expires_at": (now - timedelta(minutes=1)).isoformat(),
+                        "revision": 2,
+                    }
+                ],
+                "studio_payment_accounts": [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_connected_account_id": "acct_new",
+                        "status": "onboarding_incomplete",
+                        "charges_enabled": False,
+                        "payouts_enabled": False,
+                        "details_submitted": False,
+                        "requirements_due": ["company.tax_id"],
+                        "metadata": {"connect_account_generation": 2},
+                    }
+                ],
+            }
+        )
 
         drift = _drift(supabase)
 

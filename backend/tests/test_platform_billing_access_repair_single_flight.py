@@ -246,9 +246,7 @@ class SingleFlightTest(TestCase):
 
         with patch.object(platform_billing_service, "StripeService", BlockingStripe):
             executor = ThreadPoolExecutor(max_workers=2)
-            first = executor.submit(
-                service.get_access_status_row, "studio_A", strict_repairs=True
-            )
+            first = executor.submit(service.get_access_status_row, "studio_A", strict_repairs=True)
             try:
                 self.assertTrue(BlockingStripe.started.wait(5))
                 second = executor.submit(
@@ -331,7 +329,9 @@ class SingleFlightTest(TestCase):
             )
 
         executor = ThreadPoolExecutor(max_workers=8)
-        with patch.object(platform_billing_service, "ACCESS_REPAIR_STEPS", ((_always_pending, repair),)):
+        with patch.object(
+            platform_billing_service, "ACCESS_REPAIR_STEPS", ((_always_pending, repair),)
+        ):
             futures = [executor.submit(call) for _ in range(8)]
             try:
                 start.wait(5)
@@ -383,8 +383,7 @@ class SingleFlightTest(TestCase):
             leader = asyncio.create_task(run_supabase_operation(runtime, repair))
             self.assertTrue(await asyncio.to_thread(BlockingStripe.started.wait, 1))
             followers = [
-                asyncio.create_task(run_supabase_operation(runtime, repair))
-                for _ in range(3)
+                asyncio.create_task(run_supabase_operation(runtime, repair)) for _ in range(3)
             ]
 
             for _ in range(100):

@@ -28,9 +28,7 @@ def _install_scheduled_transition_list_rpc(facade: _TransitionFacade) -> None:
             and intent["state"] == "scheduled"
         ]
 
-    facade.supabase._rpc_list_billing_enrollment_scheduled_transitions_v1 = (
-        list_scheduled
-    )
+    facade.supabase._rpc_list_billing_enrollment_scheduled_transitions_v1 = list_scheduled
 
 
 def test_scheduled_transition_survives_reload_and_disappears_after_revoke():
@@ -39,13 +37,15 @@ def test_scheduled_transition_survives_reload_and_disappears_after_revoke():
     _install_scheduled_transition_list_rpc(facade)
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
 
-    scheduled = asyncio.run(_manager(facade).schedule_period_end(
-        "enrollment_1",
-        "studio_1",
-        "actor_1",
-        "schedule-before-reload",
-        "staff_requested",
-    ))
+    scheduled = asyncio.run(
+        _manager(facade).schedule_period_end(
+            "enrollment_1",
+            "studio_1",
+            "actor_1",
+            "schedule-before-reload",
+            "staff_requested",
+        )
+    )
 
     reloaded = asyncio.run(_manager(facade).list_enrollments("studio_1"))
     durable_transition = reloaded[0].scheduled_period_end_transition
@@ -53,20 +53,21 @@ def test_scheduled_transition_survives_reload_and_disappears_after_revoke():
     assert durable_transition.intent_id == scheduled["intent"]["id"]
     assert durable_transition.revision == scheduled["intent"]["revision"]
 
-    asyncio.run(_manager(facade).revoke_scheduled_transition(
-        durable_transition.intent_id,
-        durable_transition.revision,
-        "studio_1",
-        "actor_1",
-        "revoke-after-reload",
-        "staff_requested",
-    ))
+    asyncio.run(
+        _manager(facade).revoke_scheduled_transition(
+            durable_transition.intent_id,
+            durable_transition.revision,
+            "studio_1",
+            "actor_1",
+            "revoke-after-reload",
+            "staff_requested",
+        )
+    )
 
     after_revoke = asyncio.run(_manager(facade).list_enrollments("studio_1"))
     assert after_revoke[0].scheduled_period_end_transition is None
     assert [
-        call["cancel_at_period_end"]
-        for call in _TransitionStripe.subscription_update_calls
+        call["cancel_at_period_end"] for call in _TransitionStripe.subscription_update_calls
     ] == [True, False]
 
     list_calls = [

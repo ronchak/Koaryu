@@ -26,7 +26,10 @@ describe("records workspace policies", () => {
     assert.match(detail, /inspectorRef\.current\?\.focus\(\)/);
     assert.match(detail, /event\.key !== "Escape"[\s\S]*handleClose\(\)/);
     assert.match(detail, /\[data-lead-id=\"\$\{CSS\.escape\(lead\.id\)\}\"\]/);
-    assert.doesNotMatch(`${add}\n${detail}\n${controller}`, /deleteLead|api\.delete|>\s*Delete\s*</);
+    assert.doesNotMatch(
+      `${add}\n${detail}\n${controller}`,
+      /deleteLead|api\.delete|>\s*Delete\s*</,
+    );
   });
 
   it("keeps loading and failure announcements singular", async () => {
@@ -41,7 +44,10 @@ describe("records workspace policies", () => {
     const resetControl = mapping.slice(resetStart, mapping.indexOf("</button>", resetStart));
 
     assert.doesNotMatch(leadErrorState, /LeadLedgerIntroLoading/);
-    assert.match(leadErrorState, /role="alert"[\s\S]*\{error\}[\s\S]*<Button[\s\S]*onClick=\{onRetry\}/);
+    assert.match(
+      leadErrorState,
+      /role="alert"[\s\S]*\{error\}[\s\S]*<Button[\s\S]*onClick=\{onRetry\}/,
+    );
     assert.equal((loading.match(/role="status"/g) ?? []).length, 1);
     assert.equal((loading.match(/aria-live="polite"/g) ?? []).length, 1);
     assert.match(resetControl, /aria-label="[^"]+"/);
@@ -62,7 +68,10 @@ describe("records workspace policies", () => {
     assert.match(eligibility, /role="tabpanel"[\s\S]*aria-labelledby="belt-tab-eligibility"/);
     assert.match(rankPlan, /role="tabpanel"[\s\S]*aria-labelledby="belt-tab-ladder"/);
     assert.match(visuals, /if \(required <= 0\)[\s\S]*Not required/);
-    assert.match(visuals, /role="progressbar"[\s\S]*aria-valuetext=\{`\$\{current\} of \$\{required\}`\}/);
+    assert.match(
+      visuals,
+      /role="progressbar"[\s\S]*aria-valuetext=\{`\$\{current\} of \$\{required\}`\}/,
+    );
   });
 
   it("keeps records workbenches touch, focus, motion, and print accessible", async () => {
@@ -74,7 +83,10 @@ describe("records workspace policies", () => {
 
     for (const styles of stylesheets) {
       assert.match(styles, /button(?:,| \{)[\s\S]*min-width: 45px;[^}]*min-height: 45px/);
-      assert.match(styles, /label:has\(input:is\(\[type="checkbox"\], \[type="radio"\]\)\)[\s\S]*display: flex;[^}]*min-width: 45px;[^}]*min-height: 45px/);
+      assert.match(
+        styles,
+        /label:has\(input:is\(\[type="checkbox"\], \[type="radio"\]\)\)[\s\S]*display: flex;[^}]*min-width: 45px;[^}]*min-height: 45px/,
+      );
       assert.match(styles, /:focus-visible[\s\S]*outline: 2px solid var\(--product-focus\)/);
       assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
       assert.match(styles, /@media print/);

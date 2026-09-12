@@ -179,9 +179,7 @@ class ProcessRSSObserver:
                 self._state.last_alert_monotonic = now
         self._state.last_threshold_state = threshold_state
 
-    def _record_unavailable_locked(
-        self, now: float, *, due_already_checked: bool = False
-    ) -> None:
+    def _record_unavailable_locked(self, now: float, *, due_already_checked: bool = False) -> None:
         if not due_already_checked and not self._sample_is_due(now):
             return
         self._state.last_sample_monotonic = now

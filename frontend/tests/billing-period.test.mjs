@@ -22,17 +22,27 @@ describe("subscriptionPeriodCopy", () => {
   });
 
   it("uses milestone copy for active renewals", () => {
-    assert.deepEqual(subscriptionPeriodCopy({ status: "active", current_period_end: "2026-05-01T00:00:00Z" }), {
-      label: "Current period",
-      value: "Renews May 1, 2026",
-    });
+    assert.deepEqual(
+      subscriptionPeriodCopy({ status: "active", current_period_end: "2026-05-01T00:00:00Z" }),
+      {
+        label: "Current period",
+        value: "Renews May 1, 2026",
+      },
+    );
   });
 
   it("uses access ending copy when cancellation is scheduled", () => {
-    assert.deepEqual(subscriptionPeriodCopy({ status: "active", cancel_at_period_end: true, current_period_end: "2026-05-01" }), {
-      label: "Current period",
-      value: "Access ends May 1, 2026",
-    });
+    assert.deepEqual(
+      subscriptionPeriodCopy({
+        status: "active",
+        cancel_at_period_end: true,
+        current_period_end: "2026-05-01",
+      }),
+      {
+        label: "Current period",
+        value: "Access ends May 1, 2026",
+      },
+    );
   });
 
   it("uses comped account copy", () => {

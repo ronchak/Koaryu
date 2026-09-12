@@ -19,8 +19,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "https://koaryu.app/features" },
   openGraph: {
     title: "Martial Arts Studio Software Features | Koaryu",
-    description:
-      "Feature pages for Koaryu's martial-arts-native studio operating system.",
+    description: "Feature pages for Koaryu's martial-arts-native studio operating system.",
     url: "https://koaryu.app/features",
   },
 };

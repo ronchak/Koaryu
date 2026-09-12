@@ -53,7 +53,7 @@ function previewStudentListName(student: Student) {
 
 export function buildPreviewStudentListPage(
   students: Student[],
-  query: StudentListQuery = {}
+  query: StudentListQuery = {},
 ): StudentListResponse {
   const page = Math.max(1, query.page || 1);
   const pageSize = Math.min(200, Math.max(1, query.pageSize || 50));
@@ -85,12 +85,14 @@ export function buildPreviewStudentListPage(
   }
 
   if (query.programId) {
-    list = list.filter((student) =>
-      (student.program_memberships || []).some((membership) =>
-        membership.program_id === query.programId &&
-        membership.status !== "ended" &&
-        !membership.ended_at
-      ) || student.program_id === query.programId
+    list = list.filter(
+      (student) =>
+        (student.program_memberships || []).some(
+          (membership) =>
+            membership.program_id === query.programId &&
+            membership.status !== "ended" &&
+            !membership.ended_at,
+        ) || student.program_id === query.programId,
     );
   }
 
@@ -99,7 +101,9 @@ export function buildPreviewStudentListPage(
     if (sortKey === "name") {
       cmp = previewStudentListName(a).localeCompare(previewStudentListName(b));
     } else if (sortKey === "status") {
-      cmp = a.status.localeCompare(b.status) || previewStudentListName(a).localeCompare(previewStudentListName(b));
+      cmp =
+        a.status.localeCompare(b.status) ||
+        previewStudentListName(a).localeCompare(previewStudentListName(b));
     } else if (sortKey === "membership_start_date") {
       cmp =
         (a.membership_start_date || "").localeCompare(b.membership_start_date || "") ||

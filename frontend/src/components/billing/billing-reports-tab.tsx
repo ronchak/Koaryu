@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatMoney } from "@/lib/billing-page-utils";
 import { paymentAdjustmentNotice } from "@/lib/billing-page-model";
-import { isPaymentRefundEligible, parseRefundAmount, type RefundReason } from "@/lib/billing-refund-model";
+import {
+  isPaymentRefundEligible,
+  parseRefundAmount,
+  type RefundReason,
+} from "@/lib/billing-refund-model";
 import type { BillingRefundController } from "@/lib/billing-refund-controller";
 import type { BillingPayer, BillingPayment, ExportJob } from "@/types";
 import { Metric, SectionHeader, StatusPill } from "./billing-page-sections";
@@ -68,22 +72,40 @@ export function BillingReportsTab({
   return (
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-2">
-        <Metric label="UTC-month Stripe cohort" value={paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"} hint="Net collected after confirmed refunds and balance-reversing disputes" />
-        <Metric label="UTC-month external cohort" value={paymentCohortAvailable ? formatMoney(externalPaymentTotal) : "Unavailable"} hint="External payments processed this UTC month" />
+        <Metric
+          label="UTC-month Stripe cohort"
+          value={paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"}
+          hint="Net collected after confirmed refunds and balance-reversing disputes"
+        />
+        <Metric
+          label="UTC-month external cohort"
+          value={paymentCohortAvailable ? formatMoney(externalPaymentTotal) : "Unavailable"}
+          hint="External payments processed this UTC month"
+        />
       </div>
       <p className="text-xs text-muted">
         These figures are the current UTC month payment cohort net of provider-confirmed refunds and
-        balance-reversing disputes. Adjustment event dates are outside this cohort, so this is not cash movement or recognized revenue.
+        balance-reversing disputes. Adjustment event dates are outside this cohort, so this is not
+        cash movement or recognized revenue.
       </p>
 
       <section className="rounded-[14px] border border-border bg-surface p-4">
-        <SectionHeader icon={Download} title="Billing exports are read-only" description="New CSV exports are currently unavailable. Existing job history remains visible for operational context." />
+        <SectionHeader
+          icon={Download}
+          title="Billing exports are read-only"
+          description="New CSV exports are currently unavailable. Existing job history remains visible for operational context."
+        />
         {exportJobs.length ? (
           <div className="mt-4 divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/30">
             {exportJobs.map((job) => (
-              <div key={job.id} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+              <div
+                key={job.id}
+                className="flex items-center justify-between gap-4 px-4 py-3 text-sm"
+              >
                 <div>
-                  <p className="font-medium text-text-primary">{job.export_type.replace(/_/g, " ")}</p>
+                  <p className="font-medium text-text-primary">
+                    {job.export_type.replace(/_/g, " ")}
+                  </p>
                   <p className="text-xs text-muted">Queued {formatDate(job.created_at)}</p>
                 </div>
                 <StatusPill status={job.status} />
@@ -96,36 +118,89 @@ export function BillingReportsTab({
       </section>
 
       <section className="rounded-[14px] border border-border bg-surface p-4">
-        <SectionHeader icon={Banknote} title="Record external payment" description="Track cash, check, Zelle, Venmo, or outside-processor payments without charging a Koaryu platform fee." />
-        {externalPaymentRecoveryMessage && <p className="mb-3 text-sm text-text-secondary" role="status">{externalPaymentRecoveryMessage}</p>}
-        <form onSubmit={onRecordExternalPayment} className="grid gap-3 md:grid-cols-[1fr_0.6fr_0.7fr_1fr_auto] md:items-end">
+        <SectionHeader
+          icon={Banknote}
+          title="Record external payment"
+          description="Track cash, check, Zelle, Venmo, or outside-processor payments without charging a Koaryu platform fee."
+        />
+        {externalPaymentRecoveryMessage && (
+          <p className="mb-3 text-sm text-text-secondary" role="status">
+            {externalPaymentRecoveryMessage}
+          </p>
+        )}
+        <form
+          onSubmit={onRecordExternalPayment}
+          className="grid gap-3 md:grid-cols-[1fr_0.6fr_0.7fr_1fr_auto] md:items-end"
+        >
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm text-text-secondary font-medium" htmlFor="external-payer">Payer</label>
+            <label className="text-sm text-text-secondary font-medium" htmlFor="external-payer">
+              Payer
+            </label>
             <select
               id="external-payer"
               value={externalPayerId}
               onChange={(event) => onExternalPayerChange(event.target.value)}
-              disabled={!canManageRoutineBilling || externalPaymentFormLocked || billingPayers.length === 0}
+              disabled={
+                !canManageRoutineBilling || externalPaymentFormLocked || billingPayers.length === 0
+              }
               className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary"
             >
               <option value="">Choose payer</option>
               {billingPayers.map((payer) => (
-                <option key={payer.id} value={payer.id}>{payer.display_name}</option>
+                <option key={payer.id} value={payer.id}>
+                  {payer.display_name}
+                </option>
               ))}
             </select>
           </div>
-          <Input label="Amount" value={externalAmount} onChange={(event) => onExternalAmountChange(event.target.value)} placeholder="129" inputMode="decimal" disabled={!canManageRoutineBilling || externalPaymentFormLocked} />
-          <Input label="Method" maxLength={80} value={externalMethod} onChange={(event) => onExternalMethodChange(event.target.value)} placeholder="Zelle" disabled={!canManageRoutineBilling || externalPaymentFormLocked} />
-          <Input label="Note" value={externalNote} onChange={(event) => onExternalNoteChange(event.target.value)} placeholder="Optional" disabled={!canManageRoutineBilling || externalPaymentFormLocked} />
-          <Button type="submit" size="sm" disabled={!canManageRoutineBilling || !externalPaymentReady || isActionLoading || billingPayers.length === 0} isLoading={isLoadingAction("record-external")}>
+          <Input
+            label="Amount"
+            value={externalAmount}
+            onChange={(event) => onExternalAmountChange(event.target.value)}
+            placeholder="129"
+            inputMode="decimal"
+            disabled={!canManageRoutineBilling || externalPaymentFormLocked}
+          />
+          <Input
+            label="Method"
+            maxLength={80}
+            value={externalMethod}
+            onChange={(event) => onExternalMethodChange(event.target.value)}
+            placeholder="Zelle"
+            disabled={!canManageRoutineBilling || externalPaymentFormLocked}
+          />
+          <Input
+            label="Note"
+            value={externalNote}
+            onChange={(event) => onExternalNoteChange(event.target.value)}
+            placeholder="Optional"
+            disabled={!canManageRoutineBilling || externalPaymentFormLocked}
+          />
+          <Button
+            type="submit"
+            size="sm"
+            disabled={
+              !canManageRoutineBilling ||
+              !externalPaymentReady ||
+              isActionLoading ||
+              billingPayers.length === 0
+            }
+            isLoading={isLoadingAction("record-external")}
+          >
             <Plus className="h-3.5 w-3.5" />
-            {isLoadingAction("record-external") ? "Recording..." : externalPaymentIsRetry ? "Retry payment" : "Record"}
+            {isLoadingAction("record-external")
+              ? "Recording..."
+              : externalPaymentIsRetry
+                ? "Retry payment"
+                : "Record"}
           </Button>
         </form>
       </section>
 
       <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
-        <div className={`hidden gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted sm:grid ${paymentGridColumns}`}>
+        <div
+          className={`hidden gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted sm:grid ${paymentGridColumns}`}
+        >
           <span>Payment</span>
           <span>Payment accounting</span>
           <span>Status</span>
@@ -133,92 +208,189 @@ export function BillingReportsTab({
         </div>
         {billingPayments.length === 0 ? (
           <p className="p-4 text-sm text-muted">No payments recorded yet.</p>
-        ) : billingPayments.map((payment) => {
-          const adjustmentNotice = paymentAdjustmentNotice(payment);
-          const refundEligible = isPaymentRefundEligible(payment);
-          const refundBlocked = refundController.isPaymentRefundBlocked(payment.id);
-          const refundRecovery = refundController.getPaymentRefundRecovery(payment.id);
-          const refundAmount = refundAmounts[payment.id] ?? (payment.refundable_amount_cents / 100).toFixed(2);
-          const refundAmountCents = parseRefundAmount(refundAmount, payment.refundable_amount_cents);
-          const refundReason = refundReasons[payment.id] ?? "requested_by_customer";
-          return <div key={payment.id} className={`grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 sm:min-h-14 sm:items-center sm:gap-4 sm:py-1.5 ${paymentGridColumns}`}>
-            <div>
-              <p className="mb-1 text-xs font-medium text-muted sm:hidden">Payment</p>
-              <p className="font-medium text-text-primary">{payment.external_method || payment.payment_method_type || "Payment"}</p>
-              <p className="text-xs text-muted">{payment.note || formatDate(payment.processed_at)}</p>
-              {adjustmentNotice ? <p className="mt-1 text-xs font-medium text-warning">{adjustmentNotice}</p> : null}
-            </div>
-            <div className="text-left sm:text-right">
-              <p className="mb-1 text-xs font-medium text-muted sm:hidden">Payment accounting</p>
-              <p className="font-medium text-text-primary">Net collected {formatMoney(payment.net_collected_amount_cents, payment.currency)}</p>
-              <p className="text-xs text-muted">Gross paid {formatMoney(payment.gross_paid_amount_cents, payment.currency)}</p>
-              {payment.refunded_amount_cents > 0 ? <p className="text-xs text-muted">Refunded {formatMoney(payment.refunded_amount_cents, payment.currency)}</p> : null}
-              {payment.disputed_amount_cents > 0 ? <p className="text-xs text-muted">Disputed {formatMoney(payment.disputed_amount_cents, payment.currency)}</p> : null}
-              {payment.stripe_charge_id ? <p className="text-xs text-muted">Refundable {formatMoney(payment.refundable_amount_cents, payment.currency)}</p> : null}
-            </div>
-            <div><p className="mb-1 text-xs font-medium text-muted sm:hidden">Status</p><StatusPill status={payment.status} /></div>
-            {refundController.canRefundPayments ? (
-              <div className="flex min-w-[260px] flex-col gap-2">
-                {!refundController.refundActionReady && !refundController.refundStorageReady ? (
-                  <p className="text-xs text-muted">Checking refund status...</p>
-                ) : !refundController.refundActionReady ? (
-                  <p className="text-xs font-medium text-warning">
-                    Refunds are unavailable because this browser cannot safely save the request. Enable browser storage and reload this page.
+        ) : (
+          billingPayments.map((payment) => {
+            const adjustmentNotice = paymentAdjustmentNotice(payment);
+            const refundEligible = isPaymentRefundEligible(payment);
+            const refundBlocked = refundController.isPaymentRefundBlocked(payment.id);
+            const refundRecovery = refundController.getPaymentRefundRecovery(payment.id);
+            const refundAmount =
+              refundAmounts[payment.id] ?? (payment.refundable_amount_cents / 100).toFixed(2);
+            const refundAmountCents = parseRefundAmount(
+              refundAmount,
+              payment.refundable_amount_cents,
+            );
+            const refundReason = refundReasons[payment.id] ?? "requested_by_customer";
+            return (
+              <div
+                key={payment.id}
+                className={`grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 sm:min-h-14 sm:items-center sm:gap-4 sm:py-1.5 ${paymentGridColumns}`}
+              >
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted sm:hidden">Payment</p>
+                  <p className="font-medium text-text-primary">
+                    {payment.external_method || payment.payment_method_type || "Payment"}
                   </p>
-                ) : refundBlocked ? (
-                  <p className="text-xs font-medium text-warning">
-                    This refund needs reconciliation outside Koaryu. Refund retry is disabled for this payment.
+                  <p className="text-xs text-muted">
+                    {payment.note || formatDate(payment.processed_at)}
                   </p>
-                ) : refundRecovery === "unavailable" ? (
-                  <p className="text-xs font-medium text-warning">The saved refund request could not be read. Reload Billing before taking another action.</p>
-                ) : refundRecovery ? (
-                  <>
-                    <p className="text-xs text-muted">{refundRecovery === "refresh" ? "The refund request is recorded. Refresh its balance before another refund." : "An earlier refund request needs confirmation. Recover its original amount and reason."}</p>
-                    <Button size="sm" disabled={Boolean(refundController.activePaymentId) || isActionLoading} isLoading={refundController.activePaymentId === payment.id}
-                      onClick={() => {
-                        if (refundRecovery === "refresh" || window.confirm("Check the original refund request again? This may finish a refund whose result was not confirmed.")) void refundController.recoverRefund(payment);
-                      }}>
-                      {refundRecovery === "refresh" ? "Refresh payment" : "Retry original refund"}
-                    </Button>
-                  </>
-                ) : refundEligible ? (
-                  <>
-                    <Input
-                      label="Refund amount"
-                      inputMode="decimal"
-                      value={refundAmount}
-                      onChange={(event) => setRefundAmounts((current) => ({ ...current, [payment.id]: event.target.value }))}
-                    />
-                    {refundAmountCents === null ? <p className="text-xs text-danger">Enter an amount from $0.01 through {formatMoney(payment.refundable_amount_cents, payment.currency)}.</p> : null}
-                    <label className="text-xs font-medium text-text-secondary" htmlFor={`refund-reason-${payment.id}`}>Reason</label>
-                    <select
-                      id={`refund-reason-${payment.id}`}
-                      value={refundReason}
-                      onChange={(event) => setRefundReasons((current) => ({ ...current, [payment.id]: event.target.value as RefundReason }))}
-                      className="rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary"
-                    >
-                      <option value="requested_by_customer">Requested by customer</option>
-                      <option value="duplicate">Duplicate</option>
-                      <option value="fraudulent">Fraudulent</option>
-                    </select>
-                    <Button
-                      size="sm"
-                      disabled={refundAmountCents === null || Boolean(refundController.activePaymentId) || isActionLoading}
-                      isLoading={refundController.activePaymentId === payment.id}
-                      onClick={() => {
-                        if (refundAmountCents !== null && window.confirm(`Refund ${formatMoney(refundAmountCents, payment.currency)}? The provider will receive this request immediately.`)) {
-                          void refundController.refundPayment(payment, refundAmount, refundReason);
-                        }
-                      }}
-                    >
-                      {refundController.activePaymentId === payment.id ? "Refunding..." : "Issue refund"}
-                    </Button>
-                  </>
-                ) : <p className="text-xs text-muted">Not eligible for refund.</p>}
+                  {adjustmentNotice ? (
+                    <p className="mt-1 text-xs font-medium text-warning">{adjustmentNotice}</p>
+                  ) : null}
+                </div>
+                <div className="text-left sm:text-right">
+                  <p className="mb-1 text-xs font-medium text-muted sm:hidden">
+                    Payment accounting
+                  </p>
+                  <p className="font-medium text-text-primary">
+                    Net collected{" "}
+                    {formatMoney(payment.net_collected_amount_cents, payment.currency)}
+                  </p>
+                  <p className="text-xs text-muted">
+                    Gross paid {formatMoney(payment.gross_paid_amount_cents, payment.currency)}
+                  </p>
+                  {payment.refunded_amount_cents > 0 ? (
+                    <p className="text-xs text-muted">
+                      Refunded {formatMoney(payment.refunded_amount_cents, payment.currency)}
+                    </p>
+                  ) : null}
+                  {payment.disputed_amount_cents > 0 ? (
+                    <p className="text-xs text-muted">
+                      Disputed {formatMoney(payment.disputed_amount_cents, payment.currency)}
+                    </p>
+                  ) : null}
+                  {payment.stripe_charge_id ? (
+                    <p className="text-xs text-muted">
+                      Refundable {formatMoney(payment.refundable_amount_cents, payment.currency)}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted sm:hidden">Status</p>
+                  <StatusPill status={payment.status} />
+                </div>
+                {refundController.canRefundPayments ? (
+                  <div className="flex min-w-[260px] flex-col gap-2">
+                    {!refundController.refundActionReady && !refundController.refundStorageReady ? (
+                      <p className="text-xs text-muted">Checking refund status...</p>
+                    ) : !refundController.refundActionReady ? (
+                      <p className="text-xs font-medium text-warning">
+                        Refunds are unavailable because this browser cannot safely save the request.
+                        Enable browser storage and reload this page.
+                      </p>
+                    ) : refundBlocked ? (
+                      <p className="text-xs font-medium text-warning">
+                        This refund needs reconciliation outside Koaryu. Refund retry is disabled
+                        for this payment.
+                      </p>
+                    ) : refundRecovery === "unavailable" ? (
+                      <p className="text-xs font-medium text-warning">
+                        The saved refund request could not be read. Reload Billing before taking
+                        another action.
+                      </p>
+                    ) : refundRecovery ? (
+                      <>
+                        <p className="text-xs text-muted">
+                          {refundRecovery === "refresh"
+                            ? "The refund request is recorded. Refresh its balance before another refund."
+                            : "An earlier refund request needs confirmation. Recover its original amount and reason."}
+                        </p>
+                        <Button
+                          size="sm"
+                          disabled={Boolean(refundController.activePaymentId) || isActionLoading}
+                          isLoading={refundController.activePaymentId === payment.id}
+                          onClick={() => {
+                            if (
+                              refundRecovery === "refresh" ||
+                              window.confirm(
+                                "Check the original refund request again? This may finish a refund whose result was not confirmed.",
+                              )
+                            )
+                              void refundController.recoverRefund(payment);
+                          }}
+                        >
+                          {refundRecovery === "refresh"
+                            ? "Refresh payment"
+                            : "Retry original refund"}
+                        </Button>
+                      </>
+                    ) : refundEligible ? (
+                      <>
+                        <Input
+                          label="Refund amount"
+                          inputMode="decimal"
+                          value={refundAmount}
+                          onChange={(event) =>
+                            setRefundAmounts((current) => ({
+                              ...current,
+                              [payment.id]: event.target.value,
+                            }))
+                          }
+                        />
+                        {refundAmountCents === null ? (
+                          <p className="text-xs text-danger">
+                            Enter an amount from $0.01 through{" "}
+                            {formatMoney(payment.refundable_amount_cents, payment.currency)}.
+                          </p>
+                        ) : null}
+                        <label
+                          className="text-xs font-medium text-text-secondary"
+                          htmlFor={`refund-reason-${payment.id}`}
+                        >
+                          Reason
+                        </label>
+                        <select
+                          id={`refund-reason-${payment.id}`}
+                          value={refundReason}
+                          onChange={(event) =>
+                            setRefundReasons((current) => ({
+                              ...current,
+                              [payment.id]: event.target.value as RefundReason,
+                            }))
+                          }
+                          className="rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary"
+                        >
+                          <option value="requested_by_customer">Requested by customer</option>
+                          <option value="duplicate">Duplicate</option>
+                          <option value="fraudulent">Fraudulent</option>
+                        </select>
+                        <Button
+                          size="sm"
+                          disabled={
+                            refundAmountCents === null ||
+                            Boolean(refundController.activePaymentId) ||
+                            isActionLoading
+                          }
+                          isLoading={refundController.activePaymentId === payment.id}
+                          onClick={() => {
+                            if (
+                              refundAmountCents !== null &&
+                              window.confirm(
+                                `Refund ${formatMoney(refundAmountCents, payment.currency)}? The provider will receive this request immediately.`,
+                              )
+                            ) {
+                              void refundController.refundPayment(
+                                payment,
+                                refundAmount,
+                                refundReason,
+                              );
+                            }
+                          }}
+                        >
+                          {refundController.activePaymentId === payment.id
+                            ? "Refunding..."
+                            : "Issue refund"}
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted">Not eligible for refund.</p>
+                    )}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>;
-        })}
+            );
+          })
+        )}
       </section>
     </div>
   );

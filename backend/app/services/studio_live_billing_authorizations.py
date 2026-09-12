@@ -32,10 +32,14 @@ LiveBillingScope = Literal[
 ConnectOnboardingPreflightState = Literal["eligible", "none", "support_required", "denied"]
 
 LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL = "Live Stripe authorization state is unavailable."
-LIVE_SCOPE_REQUIRED_DETAIL = "Live Stripe mutations require an explicit studio or connected-account scope."
+LIVE_SCOPE_REQUIRED_DETAIL = (
+    "Live Stripe mutations require an explicit studio or connected-account scope."
+)
 LIVE_SCOPE_DENIED_DETAIL = "This studio is not authorized for the requested live Stripe operation."
 LIVE_SCOPE_EXPIRED_DETAIL = "This studio's live Stripe authorization has expired."
-LIVE_CONNECT_ACCOUNT_NOT_READY_DETAIL = "This Stripe Connect account is not currently ready for live payments."
+LIVE_CONNECT_ACCOUNT_NOT_READY_DETAIL = (
+    "This Stripe Connect account is not currently ready for live payments."
+)
 LIVE_WEBHOOK_NOT_READY_DETAIL = "Live Stripe webhook delivery proof is not current."
 LIVE_CONNECT_BOOTSTRAP_SUPPORT_DETAIL = (
     "Stripe onboarding recovery requires support before this studio can continue."
@@ -55,15 +59,17 @@ def connect_initial_link_context_sha256(
     refresh_url: str,
     return_url: str,
 ) -> str:
-    return stripe_payload_sha256({
-        "operation": "connect_onboarding_link.create",
-        "studio_id": studio_id,
-        "connect_account_generation": account_generation,
-        "configurations": ["merchant"],
-        "collection_options": {"fields": "eventually_due"},
-        "refresh_url": refresh_url,
-        "return_url": return_url,
-    })
+    return stripe_payload_sha256(
+        {
+            "operation": "connect_onboarding_link.create",
+            "studio_id": studio_id,
+            "connect_account_generation": account_generation,
+            "configurations": ["merchant"],
+            "collection_options": {"fields": "eventually_due"},
+            "refresh_url": refresh_url,
+            "return_url": return_url,
+        }
+    )
 
 
 @dataclass(frozen=True)
@@ -141,8 +147,10 @@ class StudioLiveBillingAuthorizationStore:
             "connect_onboarding_link.create",
         }:
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
-        if operation == "connect_onboarding_link.create" and bootstrap_context and (
-            not bootstrap_context.bootstrap_id or not account_id or not payload_sha256
+        if (
+            operation == "connect_onboarding_link.create"
+            and bootstrap_context
+            and (not bootstrap_context.bootstrap_id or not account_id or not payload_sha256)
         ):
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
         try:
@@ -386,9 +394,8 @@ class StudioLiveBillingAuthorizationStore:
         studio_id: str,
         delivery_receipt: str,
     ) -> bool:
-        if (
-            self.expected_candidate_sha is None
-            or not re.fullmatch(r"[A-Za-z0-9_-]{43,128}", delivery_receipt)
+        if self.expected_candidate_sha is None or not re.fullmatch(
+            r"[A-Za-z0-9_-]{43,128}", delivery_receipt
         ):
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
         receipt_sha256 = hashlib.sha256(delivery_receipt.encode("utf-8")).hexdigest()
@@ -523,11 +530,17 @@ class StudioLiveBillingAuthorizationStore:
         except Exception:
             self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
         row = result.data[0] if result.data else None
-        if not row or row.get("studio_id") != studio_id or row.get("stripe_connected_account_id") != account_id:
+        if (
+            not row
+            or row.get("studio_id") != studio_id
+            or row.get("stripe_connected_account_id") != account_id
+        ):
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
         return row
 
-    def _payment_account(self, *, studio_id: Optional[str], account_id: Optional[str]) -> Optional[dict[str, Any]]:
+    def _payment_account(
+        self, *, studio_id: Optional[str], account_id: Optional[str]
+    ) -> Optional[dict[str, Any]]:
         """Read-only helper retained for studio-specific capability reporting."""
         if not studio_id and not account_id:
             return None
@@ -536,7 +549,11 @@ class StudioLiveBillingAuthorizationStore:
                 "studio_id, stripe_connected_account_id, status, charges_enabled, payouts_enabled, "
                 "details_submitted, requirements_due, metadata"
             )
-            query = query.eq("studio_id", studio_id) if studio_id else query.eq("stripe_connected_account_id", account_id)
+            query = (
+                query.eq("studio_id", studio_id)
+                if studio_id
+                else query.eq("stripe_connected_account_id", account_id)
+            )
             result = query.limit(1).execute()
         except Exception:
             self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)

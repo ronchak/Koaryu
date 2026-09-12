@@ -34,8 +34,7 @@ export default function UseCasesPage() {
           "@context": "https://schema.org",
           "@type": "CollectionPage",
           name: "Koaryu use cases",
-          description:
-            "Practical workflows for martial arts studios switching to Koaryu.",
+          description: "Practical workflows for martial arts studios switching to Koaryu.",
           url: "https://koaryu.app/use-cases",
         }}
       />

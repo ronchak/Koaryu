@@ -19,6 +19,7 @@ async def get_me(
         """Get the current authenticated user's profile and studio association."""
         service = AuthService(client)
         return service._get_user_profile_sync(user_id, requested_studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

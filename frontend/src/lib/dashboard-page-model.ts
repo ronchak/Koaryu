@@ -1,9 +1,16 @@
-import type { AttendanceRecord, BeltRank, ClassSession, EligibilityEntry, Lead, Student } from "@/types";
+import type {
+  AttendanceRecord,
+  BeltRank,
+  ClassSession,
+  EligibilityEntry,
+  Lead,
+  Student,
+} from "@/types";
 import type { DashboardSummaryRecentStudent } from "@/types/dashboard";
 
 export function isDashboardSetupStepComplete(
   summaryValue: boolean | null | undefined,
-  liveValue: boolean
+  liveValue: boolean,
 ) {
   return summaryValue === true || liveValue;
 }
@@ -11,21 +18,21 @@ export function isDashboardSetupStepComplete(
 export function isDashboardBeltSetupComplete(
   summaryValue: boolean | null | undefined,
   displayedBeltCount: number,
-  localBeltCount: number
+  localBeltCount: number,
 ) {
-  return isDashboardSetupStepComplete(
-    summaryValue,
-    displayedBeltCount > 0 || localBeltCount > 0
-  );
+  return isDashboardSetupStepComplete(summaryValue, displayedBeltCount > 0 || localBeltCount > 0);
 }
 
-function dashboardStudentStartDate(student: { membership_start_date?: string | null; created_at: string }) {
+function dashboardStudentStartDate(student: {
+  membership_start_date?: string | null;
+  created_at: string;
+}) {
   return student.membership_start_date || student.created_at.slice(0, 10);
 }
 
 function isDashboardStudentOnHoldNow(
   student: Pick<Student, "status" | "hold_start_date" | "hold_end_date">,
-  today: string
+  today: string,
 ) {
   if (student.status === "paused") {
     return true;
@@ -117,7 +124,9 @@ export function buildDashboardBeltStats(beltRanks: BeltRank[]) {
   return { beltCount, tipCount };
 }
 
-export function buildDashboardInactivityStats<T extends { daysInactive: number }>(inactivityRows: T[]) {
+export function buildDashboardInactivityStats<T extends { daysInactive: number }>(
+  inactivityRows: T[],
+) {
   let watch14 = 0;
   let watch30 = 0;
   let watch90 = 0;
@@ -150,7 +159,7 @@ export function buildDashboardNewStudentStats(
   lookback14: string,
   lookback30: string,
   lookback90: string,
-  yearStart: string
+  yearStart: string,
 ) {
   let new14 = 0;
   let new30 = 0;
@@ -158,7 +167,11 @@ export function buildDashboardNewStudentStats(
   let newYearToDate = 0;
 
   for (const student of students) {
-    if (student.status !== "active" && student.status !== "trialing" && student.status !== "paused") {
+    if (
+      student.status !== "active" &&
+      student.status !== "trialing" &&
+      student.status !== "paused"
+    ) {
       continue;
     }
 
@@ -191,7 +204,7 @@ export function buildDashboardOperationalStats(
   attendance: AttendanceRecord[],
   sessions: ClassSession[],
   lookback30: string,
-  today: string
+  today: string,
 ) {
   const attendanceBySession = new Map<string, number>();
 
@@ -202,7 +215,7 @@ export function buildDashboardOperationalStats(
 
     attendanceBySession.set(
       record.session_id,
-      (attendanceBySession.get(record.session_id) ?? 0) + 1
+      (attendanceBySession.get(record.session_id) ?? 0) + 1,
     );
   }
 
@@ -213,11 +226,7 @@ export function buildDashboardOperationalStats(
   let sessionsWithCapacity = 0;
 
   for (const session of sessions) {
-    if (
-      session.status === "canceled" ||
-      session.date < lookback30 ||
-      session.date > today
-    ) {
+    if (session.status === "canceled" || session.date < lookback30 || session.date > today) {
       continue;
     }
 
@@ -282,7 +291,7 @@ export function buildDashboardTestReadinessStats(eligibility: EligibilityEntry[]
 export function buildDashboardRecentStudentRows(
   summaryRows: DashboardSummaryRecentStudent[] | null | undefined,
   students: Student[],
-  hasPartialStudentSample: boolean
+  hasPartialStudentSample: boolean,
 ) {
   if (summaryRows) {
     return summaryRows.map((student) => ({
@@ -299,7 +308,8 @@ export function buildDashboardRecentStudentRows(
 
   return students.slice(0, 5).map((student) => ({
     id: student.id,
-    displayName: `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`.trim(),
+    displayName:
+      `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`.trim(),
     status: student.status,
     startedOn: dashboardStudentStartDate(student),
   }));

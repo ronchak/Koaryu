@@ -3,7 +3,12 @@
 import type { BeltRank } from "@/types";
 import { getRankColorTreatment, prefersDarkRankText } from "@/lib/rank-color-treatment";
 
-export function ProgressBar({ current, label, required, met }: {
+export function ProgressBar({
+  current,
+  label,
+  required,
+  met,
+}: {
   current: number;
   label: string;
   required: number;
@@ -30,14 +35,21 @@ export function ProgressBar({ current, label, required, met }: {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className={`text-xs font-mono w-14 text-right ${met ? "text-success" : "text-text-secondary"}`}>
+      <span
+        className={`text-xs font-mono w-14 text-right ${met ? "text-success" : "text-text-secondary"}`}
+      >
         {current}/{required}
       </span>
     </div>
   );
 }
 
-export function RankBadge({ name, color, isTip, tipColor }: {
+export function RankBadge({
+  name,
+  color,
+  isTip,
+  tipColor,
+}: {
   name: string;
   color: string;
   isTip?: boolean;
@@ -56,7 +68,10 @@ export function RankBadge({ name, color, isTip, tipColor }: {
           style={{ backgroundColor: color }}
         />
         {name}
-        <span className="ml-0.5 w-1.5 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: tipColor }} />
+        <span
+          className="ml-0.5 w-1.5 h-3 rounded-sm flex-shrink-0"
+          style={{ backgroundColor: tipColor }}
+        />
       </span>
     );
   }
@@ -66,7 +81,10 @@ export function RankBadge({ name, color, isTip, tipColor }: {
       className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[10px] text-xs font-medium"
       style={treatment}
     >
-      <span className="w-2 h-2 rounded-full border border-white/30" style={{ backgroundColor: color }} />
+      <span
+        className="w-2 h-2 rounded-full border border-white/30"
+        style={{ backgroundColor: color }}
+      />
       {name}
     </span>
   );
@@ -86,7 +104,10 @@ export function BeltVisual({ rank, size = "md" }: { rank: BeltRank; size?: "sm" 
     >
       <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] bg-black/20" />
       {rank.is_tip && rank.tip_color_hex && (
-        <div className="absolute right-0 inset-y-0 w-2.5" style={{ backgroundColor: rank.tip_color_hex }} />
+        <div
+          className="absolute right-0 inset-y-0 w-2.5"
+          style={{ backgroundColor: rank.tip_color_hex }}
+        />
       )}
     </div>
   );

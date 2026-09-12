@@ -762,9 +762,7 @@
   opacity: 1;
 }
 
-.journey[data-enhanced="true"]
-  .faqQuestion[aria-expanded="true"]
-  .faqIcon {
+.journey[data-enhanced="true"] .faqQuestion[aria-expanded="true"] .faqIcon {
   transform: rotate(45deg);
 }
 
@@ -939,8 +937,7 @@
   }
 
   .journey[data-enhanced="true"] .chapter {
-    padding: max(82px, env(safe-area-inset-top)) 20px
-      max(66px, env(safe-area-inset-bottom));
+    padding: max(82px, env(safe-area-inset-top)) 20px max(66px, env(safe-area-inset-bottom));
   }
 
   .journey[data-enhanced="true"] .ledgerPlane,
@@ -1115,8 +1112,7 @@
     padding-block: 16px;
   }
 
-  .journey[data-enhanced="true"]
-    .chapter[data-chapter-id="features"] {
+  .journey[data-enhanced="true"] .chapter[data-chapter-id="features"] {
     padding-top: max(72px, env(safe-area-inset-top));
   }
 

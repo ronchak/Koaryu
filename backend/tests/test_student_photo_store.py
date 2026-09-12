@@ -74,10 +74,12 @@ class StudentPhotoStoreTests(unittest.TestCase):
 
             def execute(self):
                 Query.calls += 1
-                raise PostgrestAPIError({
-                    "message": "column students.photo_path does not exist",
-                    "code": "42703",
-                })
+                raise PostgrestAPIError(
+                    {
+                        "message": "column students.photo_path does not exist",
+                        "code": "42703",
+                    }
+                )
 
         class Supabase(FakeSupabase):
             def table(self, name):
@@ -122,13 +124,17 @@ class StudentPhotoStoreTests(unittest.TestCase):
         bucket = Bucket()
         store = StudentPhotoStore(FakeSupabase(bucket))
 
-        result = store.create_signed_urls([
-            "studio/students/one/profile",
-            "studio/students/one/profile",
-            "studio/students/two/profile",
-        ])
+        result = store.create_signed_urls(
+            [
+                "studio/students/one/profile",
+                "studio/students/one/profile",
+                "studio/students/two/profile",
+            ]
+        )
 
-        self.assertEqual(bucket.paths, ["studio/students/one/profile", "studio/students/two/profile"])
+        self.assertEqual(
+            bucket.paths, ["studio/students/one/profile", "studio/students/two/profile"]
+        )
         self.assertEqual(result["studio/students/one/profile"], "url-one")
         self.assertEqual(result["studio/students/two/profile"], "url-two")
 

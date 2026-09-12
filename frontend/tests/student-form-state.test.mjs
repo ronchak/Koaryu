@@ -73,26 +73,32 @@ describe("student form state", () => {
       tab: "info",
     });
 
-    assert.deepEqual(validateStudentFormFields({
-      ...fields,
-      legalFirst: "Aiko",
-      legalLast: "Tanaka",
-      holdEnd: "2026-06-01",
-    }), {
-      message: "Add a hold start date before setting a hold end date.",
-      tab: "info",
-    });
+    assert.deepEqual(
+      validateStudentFormFields({
+        ...fields,
+        legalFirst: "Aiko",
+        legalLast: "Tanaka",
+        holdEnd: "2026-06-01",
+      }),
+      {
+        message: "Add a hold start date before setting a hold end date.",
+        tab: "info",
+      },
+    );
 
-    assert.deepEqual(validateStudentFormFields({
-      ...fields,
-      legalFirst: "Aiko",
-      legalLast: "Tanaka",
-      holdStart: "2026-06-10",
-      holdEnd: "2026-06-01",
-    }), {
-      message: "Hold end date cannot be before the hold start date.",
-      tab: "info",
-    });
+    assert.deepEqual(
+      validateStudentFormFields({
+        ...fields,
+        legalFirst: "Aiko",
+        legalLast: "Tanaka",
+        holdStart: "2026-06-10",
+        holdEnd: "2026-06-01",
+      }),
+      {
+        message: "Hold end date cannot be before the hold start date.",
+        tab: "info",
+      },
+    );
   });
 
   it("builds the submitted StudentCreate payload", () => {
@@ -109,7 +115,7 @@ describe("student form state", () => {
         guardianLast: " Tanaka ",
         guardianEmail: " kenji@example.com ",
       },
-      { current_belt_rank_id: "rank-a" }
+      { current_belt_rank_id: "rank-a" },
     );
 
     assert.equal(payload.legal_first_name, "Aiko");
@@ -156,7 +162,7 @@ describe("student form state", () => {
         email: "",
         phone: " 555-0100 ",
       },
-      { current_belt_rank_id: "rank-a" }
+      { current_belt_rank_id: "rank-a" },
     );
 
     assert.equal(payload.legal_first_name, "Aiko");
@@ -184,7 +190,7 @@ describe("student form state", () => {
     const payload = buildStudentUpdatePayload(
       fields,
       { current_belt_rank_id: "rank-a" },
-      { includeLifecycleFields: false }
+      { includeLifecycleFields: false },
     );
 
     for (const field of [
@@ -199,10 +205,7 @@ describe("student form state", () => {
       assert.equal(Object.hasOwn(payload, field), false, field);
     }
     assert.equal(payload.legal_first_name, "Aiko");
-    assert.equal(
-      validateStudentFormFields(fields, { includeLifecycleFields: false }),
-      null
-    );
+    assert.equal(validateStudentFormFields(fields, { includeLifecycleFields: false }), null);
   });
 
   it("selects create or update payloads from the same submit decision as the form hook", () => {
@@ -219,7 +222,7 @@ describe("student form state", () => {
         legalLast: " Tanaka ",
         preferredName: "",
       },
-      { current_belt_rank_id: "rank-a" }
+      { current_belt_rank_id: "rank-a" },
     );
 
     assert.deepEqual(createPayload.guardians, [

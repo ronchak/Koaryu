@@ -69,12 +69,12 @@ def test_every_connected_stripe_sink_is_explicitly_classified():
 
     assert set(CONNECTED_STRIPE_SINKS) == decorated
     assert set(CONNECTED_STRIPE_SINKS) == (
-        set(LIVE_SCOPE_OPERATIONS["connect_payments"])
-        - {"connected_capability.readiness"}
+        set(LIVE_SCOPE_OPERATIONS["connect_payments"]) - {"connected_capability.readiness"}
     )
-    assert CONNECTED_STRIPE_SINKS[
-        "connected_customer.default_payment_method.update"
-    ].classification == "unsupported"
+    assert (
+        CONNECTED_STRIPE_SINKS["connected_customer.default_payment_method.update"].classification
+        == "unsupported"
+    )
     assert all(
         sink.workflow_ids or sink.classification == "unsupported"
         for sink in CONNECTED_STRIPE_SINKS.values()
@@ -113,24 +113,37 @@ def test_role_capabilities_are_sanitized_and_fail_closed():
     ready = {scope: True for scope in LIVE_SCOPE_OPERATIONS}
 
     admin = workflow_capabilities_for_role(
-        "admin", stripe_mode="live", scope_ready=ready, allowed_operations=allowed,
+        "admin",
+        stripe_mode="live",
+        scope_ready=ready,
+        allowed_operations=allowed,
         transition_scheduler_ready=True,
     )
     front_desk = workflow_capabilities_for_role(
-        "front_desk", stripe_mode="live", scope_ready=ready, allowed_operations=allowed,
+        "front_desk",
+        stripe_mode="live",
+        scope_ready=ready,
+        allowed_operations=allowed,
         transition_scheduler_ready=True,
     )
 
-    assert workflow_capabilities_for_role(
-        "instructor", stripe_mode="live", scope_ready=ready, allowed_operations=allowed,
-        transition_scheduler_ready=True,
-    ) == []
+    assert (
+        workflow_capabilities_for_role(
+            "instructor",
+            stripe_mode="live",
+            scope_ready=ready,
+            allowed_operations=allowed,
+            transition_scheduler_ready=True,
+        )
+        == []
+    )
     assert {tuple(sorted(capability)) for capability in admin} == {
         ("denial_reason_code", "enabled", "workflow_id")
     }
     assert all(capability["workflow_id"] != "billing.reconcile" for capability in admin)
     assert all(
-        "front_desk" in next(
+        "front_desk"
+        in next(
             workflow.roles
             for workflow in BILLING_WORKFLOWS
             if workflow.workflow_id == capability["workflow_id"]
@@ -175,7 +188,11 @@ def test_role_capabilities_are_sanitized_and_fail_closed():
 
 
 def test_catalog_is_immutable_data_without_callable_provider_logic():
-    assert all(not inspect.isroutine(value) for workflow in BILLING_WORKFLOWS for value in workflow.stripe_operations)
+    assert all(
+        not inspect.isroutine(value)
+        for workflow in BILLING_WORKFLOWS
+        for value in workflow.stripe_operations
+    )
 
 
 def test_period_end_execute_declares_schedule_release_owned_by_due_worker():
@@ -201,14 +218,9 @@ def test_period_end_execute_declares_schedule_release_owned_by_due_worker():
 def test_period_end_schedule_capability_requires_every_provider_side_schedule_operation(
     missing_operation,
 ):
-    allowed = {
-        scope: frozenset(operations)
-        for scope, operations in LIVE_SCOPE_OPERATIONS.items()
-    }
+    allowed = {scope: frozenset(operations) for scope, operations in LIVE_SCOPE_OPERATIONS.items()}
     allowed["connect_payments"] = frozenset(
-        operation
-        for operation in allowed["connect_payments"]
-        if operation != missing_operation
+        operation for operation in allowed["connect_payments"] if operation != missing_operation
     )
     capabilities = workflow_capabilities_for_role(
         "admin",

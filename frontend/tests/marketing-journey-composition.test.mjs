@@ -9,15 +9,9 @@ function source(path) {
 }
 
 const landingSource = source("../src/components/marketing/landing-page.tsx");
-const chapterSource = source(
-  "../src/components/marketing/journey/journey-chapters.tsx"
-);
-const controllerSource = source(
-  "../src/components/marketing/journey/journey-controller.tsx"
-);
-const journeyCss = source(
-  "../src/components/marketing/journey/journey.module.css"
-);
+const chapterSource = source("../src/components/marketing/journey/journey-chapters.tsx");
+const controllerSource = source("../src/components/marketing/journey/journey-controller.tsx");
+const journeyCss = source("../src/components/marketing/journey/journey.module.css");
 describe("Journey server composition", () => {
   it("maps the canonical 14 chapters once into semantic initial HTML", () => {
     assert.equal(landingPageContent.chapters.length, 14);
@@ -38,7 +32,7 @@ describe("Journey server composition", () => {
         "faq",
         "stillness",
         "begin",
-      ]
+      ],
     );
     assert.match(chapterSource, /landingPageContent\.chapters\.map/);
     assert.match(chapterSource, /<section[\s\S]*id=\{chapter\.id\}/);
@@ -50,7 +44,6 @@ describe("Journey server composition", () => {
     assert.match(chapterSource, /<nav/);
     assert.doesNotMatch(chapterSource, /const\s+(?:FEATURE|FAQ|PRICE|ABOUT)_/);
   });
-
 });
 
 describe("Journey progressive enhancement and accessibility", () => {
@@ -60,23 +53,20 @@ describe("Journey progressive enhancement and accessibility", () => {
     assert.match(defaultChapter.groups.body, /position:\s*relative/);
     assert.doesNotMatch(
       defaultChapter.groups.body,
-      /position:\s*(?:fixed|absolute)|opacity:\s*0|visibility:\s*hidden|pointer-events:\s*none/
+      /position:\s*(?:fixed|absolute)|opacity:\s*0|visibility:\s*hidden|pointer-events:\s*none/,
     );
 
     const enhancedRoot = journeyCss.match(
-      /\.journey\[data-enhanced="true"\]\s*\{(?<body>[\s\S]*?)\n\}/
+      /\.journey\[data-enhanced="true"\]\s*\{(?<body>[\s\S]*?)\n\}/,
     );
     assert.ok(enhancedRoot?.groups?.body);
     assert.match(enhancedRoot.groups.body, /height:\s*100dvh/);
     assert.match(enhancedRoot.groups.body, /overflow:\s*hidden/);
     assert.match(
       journeyCss,
-      /\.journey\[data-enhanced="true"\] \.chapter\s*\{[\s\S]*position:\s*absolute;[\s\S]*visibility:\s*hidden;/
+      /\.journey\[data-enhanced="true"\] \.chapter\s*\{[\s\S]*position:\s*absolute;[\s\S]*visibility:\s*hidden;/,
     );
-    assert.match(
-      journeyCss,
-      /\.journey\[data-enhanced="true"\] \.chapter\[aria-hidden="false"\]/
-    );
+    assert.match(journeyCss, /\.journey\[data-enhanced="true"\] \.chapter\[aria-hidden="false"\]/);
     assert.doesNotMatch(chapterSource, /\binert(?:=|\s)/);
   });
 
@@ -98,38 +88,29 @@ describe("Journey progressive enhancement and accessibility", () => {
     assert.match(controllerSource, /topic\.tabIndex = active \? 0 : -1/);
     assert.match(controllerSource, /nextFaqTopicIndex\(/);
     assert.match(controllerSource, /\.querySelector<HTMLElement>\(`\[data-faq-topic=/);
+    assert.match(journeyCss, /\.faqIndex a\s*\{[^}]*min-width:\s*24px;[^}]*min-height:\s*44px;/s);
     assert.match(
       journeyCss,
-      /\.faqIndex a\s*\{[^}]*min-width:\s*24px;[^}]*min-height:\s*44px;/s
+      /@media \(max-width: 560px\)[\s\S]*\.journey\[data-enhanced="true"\] \.chapter\s*\{[\s\S]*padding-inline:\s*20px 48px;/,
     );
-    assert.match(
-      journeyCss,
-      /@media \(max-width: 560px\)[\s\S]*\.journey\[data-enhanced="true"\] \.chapter\s*\{[\s\S]*padding-inline:\s*20px 48px;/
-    );
-    assert.match(
-      journeyCss,
-      /\.rail button\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*24px;/
-    );
+    assert.match(journeyCss, /\.rail button\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*24px;/);
   });
 
   it("uses only scoped marketing materials and no external runtime", () => {
     const completeSource = `${landingSource}\n${chapterSource}\n${controllerSource}\n${journeyCss}`;
     assert.doesNotMatch(
       completeSource,
-      /var\(--(?:bg|surface|border|text-[\w-]+|accent)|\b(?:bg-bg|bg-surface|text-text-primary|text-text-secondary|border-border|text-accent)\b/
+      /var\(--(?:bg|surface|border|text-[\w-]+|accent)|\b(?:bg-bg|bg-surface|text-text-primary|text-text-secondary|border-border|text-accent)\b/,
     );
     assert.doesNotMatch(
       completeSource,
-      /from\s+["']https?:|\bsrc=["']https?:|unpkg|<script|@font-face|url\(["']?https?:/i
+      /from\s+["']https?:|\bsrc=["']https?:|unpkg|<script|@font-face|url\(["']?https?:/i,
     );
-    assert.match(
-      journeyCss,
-      /chapter\[data-chapter-id="stillness"\]::before/
-    );
+    assert.match(journeyCss, /chapter\[data-chapter-id="stillness"\]::before/);
     assert.equal(
       journeyCss.match(/radial-gradient\(/g)?.length,
       1,
-      "closing stillness is the only full-frame wash"
+      "closing stillness is the only full-frame wash",
     );
   });
 });

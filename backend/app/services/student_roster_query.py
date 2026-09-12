@@ -133,7 +133,9 @@ class StudentRosterQuery:
 
 
 def _canonical_json(value: Any) -> bytes:
-    return json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _cursor_key() -> bytes:
@@ -172,18 +174,27 @@ def encode_roster_cursor(
             "revision": str(anchor["revision"]),
         },
     }
-    encoded_payload = base64.urlsafe_b64encode(_canonical_json(payload)).rstrip(b"=").decode("ascii")
+    encoded_payload = (
+        base64.urlsafe_b64encode(_canonical_json(payload)).rstrip(b"=").decode("ascii")
+    )
     signature = hmac.new(_cursor_key(), encoded_payload.encode("ascii"), hashlib.sha256).hexdigest()
     return f"{encoded_payload}.{signature}"
 
 
 def decode_roster_cursor(token: str, query: StudentRosterQuery) -> dict[str, Any]:
-    if not isinstance(token, str) or not token or len(token) > _MAX_CURSOR_LENGTH or token.count(".") != 1:
+    if (
+        not isinstance(token, str)
+        or not token
+        or len(token) > _MAX_CURSOR_LENGTH
+        or token.count(".") != 1
+    ):
         raise StudentRosterCursorError("invalid_cursor", "Roster cursor is malformed.")
 
     encoded_payload, signature = token.split(".", 1)
     try:
-        expected = hmac.new(_cursor_key(), encoded_payload.encode("ascii"), hashlib.sha256).hexdigest()
+        expected = hmac.new(
+            _cursor_key(), encoded_payload.encode("ascii"), hashlib.sha256
+        ).hexdigest()
     except UnicodeEncodeError as exc:
         raise StudentRosterCursorError("invalid_cursor", "Roster cursor is malformed.") from exc
     if not hmac.compare_digest(signature, expected):
@@ -195,9 +206,11 @@ def decode_roster_cursor(token: str, query: StudentRosterQuery) -> dict[str, Any
     except (ValueError, UnicodeDecodeError, UnicodeEncodeError, json.JSONDecodeError) as exc:
         raise StudentRosterCursorError("invalid_cursor", "Roster cursor is malformed.") from exc
 
-    if not isinstance(payload, dict) or set(payload) != {
-        "version", "query_fingerprint", "ordinal", "direction", "anchor"
-    } or payload.get("version") != CURSOR_VERSION:
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"version", "query_fingerprint", "ordinal", "direction", "anchor"}
+        or payload.get("version") != CURSOR_VERSION
+    ):
         raise StudentRosterCursorError("invalid_cursor", "Roster cursor version is unsupported.")
     if payload.get("query_fingerprint") != _query_fingerprint(query):
         raise StudentRosterCursorError(
@@ -215,7 +228,9 @@ def decode_roster_cursor(token: str, query: StudentRosterQuery) -> dict[str, Any
     try:
         uuid.UUID(str(anchor["id"]))
     except (KeyError, TypeError, ValueError) as exc:
-        raise StudentRosterCursorError("invalid_cursor", "Roster cursor boundary is invalid.") from exc
+        raise StudentRosterCursorError(
+            "invalid_cursor", "Roster cursor boundary is invalid."
+        ) from exc
     if not isinstance(anchor.get("revision"), str) or not anchor["revision"]:
         raise StudentRosterCursorError("invalid_cursor", "Roster cursor revision is invalid.")
     return payload
@@ -291,7 +306,9 @@ def fetch_student_roster_page(
         else None
     )
     previous_cursor = (
-        encode_roster_cursor(query, ordinal=page_ordinal - 1, direction="previous", anchor=previous_anchor)
+        encode_roster_cursor(
+            query, ordinal=page_ordinal - 1, direction="previous", anchor=previous_anchor
+        )
         if has_previous and previous_anchor
         else None
     )

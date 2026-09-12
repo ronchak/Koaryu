@@ -16,7 +16,10 @@ describe("Appearance preference contracts", () => {
   it("uses light consistently when the theme preference is missing, invalid, or unavailable", () => {
     assert.match(rootLayoutSource, /data-theme="light"/);
     assert.match(rootLayoutSource, /\? stored : "light"/);
-    assert.match(rootLayoutSource, /catch \{[\s\S]*?dataset\.theme = "light";[\s\S]*?colorScheme = "light";/);
+    assert.match(
+      rootLayoutSource,
+      /catch \{[\s\S]*?dataset\.theme = "light";[\s\S]*?colorScheme = "light";/,
+    );
     assert.match(providerSource, /const DEFAULT_THEME: ThemePreference = "light"/);
     assert.match(providerSource, /useState<ResolvedTheme>\("light"\)/);
     assert.match(providerSource, /catch \{[\s\S]*?return DEFAULT_THEME;/);
@@ -35,12 +38,18 @@ describe("Appearance preference contracts", () => {
     assert.match(providerSource, /export type NavigationPlacement = "side" \| "top"/);
     assert.match(providerSource, /NAVIGATION_STORAGE_KEY = "koaryu-navigation-placement"/);
     assert.match(providerSource, /DEFAULT_NAVIGATION_PLACEMENT: NavigationPlacement = "side"/);
-    assert.match(providerSource, /value === "side" \|\| value === "top" \? value : DEFAULT_NAVIGATION_PLACEMENT/);
+    assert.match(
+      providerSource,
+      /value === "side" \|\| value === "top" \? value : DEFAULT_NAVIGATION_PLACEMENT/,
+    );
     assert.match(providerSource, /catch \{[\s\S]*?return DEFAULT_NAVIGATION_PLACEMENT;/);
     assert.match(providerSource, /localStorage\.setItem\(NAVIGATION_STORAGE_KEY, nextPlacement\)/);
     assert.match(providerSource, /setNavigationPlacementState\(nextPlacement\)/);
     assert.match(providerSource, /addEventListener\("storage", handleStorageChange\)/);
-    assert.match(providerSource, /event\.key === NAVIGATION_STORAGE_KEY[\s\S]*?parseNavigationPlacement\(event\.newValue\)/);
+    assert.match(
+      providerSource,
+      /event\.key === NAVIGATION_STORAGE_KEY[\s\S]*?parseNavigationPlacement\(event\.newValue\)/,
+    );
   });
 
   it("offers accessible, honest controls and reports the active navigation placement", () => {
@@ -57,11 +66,17 @@ describe("Appearance preference contracts", () => {
 describe("authenticated navigation placement contracts", () => {
   it("uses one exact NAV_ITEMS mapping for mobile, side, and top route inventory", () => {
     assert.equal(navigationSource.match(/NAV_ITEMS\.filter\(/g)?.length, 1);
-    assert.equal(navigationSource.match(/<NavigationLinks pathname=\{pathname\} role=\{role\} \/>/g)?.length, 3);
+    assert.equal(
+      navigationSource.match(/<NavigationLinks pathname=\{pathname\} role=\{role\} \/>/g)?.length,
+      3,
+    );
     assert.match(navigationSource, /prefetch=\{item\.prefetch\}/);
     assert.match(navigationSource, /pathname === href \|\| pathname\.startsWith\(`\$\{href\}\//);
     assert.equal(NAV_ITEMS.find(({ href }) => href === "/belt-tracker")?.icon, "MartialArtsBelt");
-    assert.match(navigationSource, /import \{ MartialArtsBelt \} from "@\/components\/icons\/martial-arts-belt"/);
+    assert.match(
+      navigationSource,
+      /import \{ MartialArtsBelt \} from "@\/components\/icons\/martial-arts-belt"/,
+    );
     assert.deepEqual(
       NAV_ITEMS.map(({ href, prefetch }) => [href, prefetch]),
       [
@@ -73,7 +88,7 @@ describe("authenticated navigation placement contracts", () => {
         ["/billing", false],
         ["/reports", false],
         ["/settings", false],
-      ]
+      ],
     );
   });
 
@@ -87,7 +102,10 @@ describe("authenticated navigation placement contracts", () => {
     assert.match(topBranch, /<AccountMenu/);
     assert.doesNotMatch(topBranch, /onToggleCollapsed|ToggleIcon|spineToggle|aria-expanded/);
     assert.match(dashboardLayoutSource, /data-navigation-placement=\{navigationPlacement\}/);
-    assert.match(shellStyles, /data-navigation-placement="top"\] \.main \{[\s\S]*?margin-left:\s*0;/);
+    assert.match(
+      shellStyles,
+      /data-navigation-placement="top"\] \.main \{[\s\S]*?margin-left:\s*0;/,
+    );
   });
 
   it("shows only the existing mobile shell below the desktop breakpoint", () => {

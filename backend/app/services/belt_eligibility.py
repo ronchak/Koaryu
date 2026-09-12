@@ -15,7 +15,7 @@ class BeltEligibilityCalculator:
 
     @staticmethod
     def _chunked(values: list[str], size: int = 100) -> list[list[str]]:
-        return [values[index:index + size] for index in range(0, len(values), size)]
+        return [values[index : index + size] for index in range(0, len(values), size)]
 
     @staticmethod
     def _parse_datetime(value: Any) -> datetime:
@@ -40,7 +40,9 @@ class BeltEligibilityCalculator:
                 timezone_suffix = match.group("tz") or ""
                 if timezone_suffix and ":" not in timezone_suffix:
                     timezone_suffix = f"{timezone_suffix[:3]}:{timezone_suffix[3:]}"
-                parsed = datetime.fromisoformat(f"{match.group('head')}.{fraction}{timezone_suffix}")
+                parsed = datetime.fromisoformat(
+                    f"{match.group('head')}.{fraction}{timezone_suffix}"
+                )
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed
@@ -67,11 +69,13 @@ class BeltEligibilityCalculator:
         eligibility_contexts: list[dict[str, Any]],
     ) -> dict[str, Optional[str]]:
         latest_promotions: dict[str, Optional[str]] = {}
-        unique_student_ids = sorted({
-            context["student"]["id"]
-            for context in eligibility_contexts
-            if context.get("student", {}).get("id")
-        })
+        unique_student_ids = sorted(
+            {
+                context["student"]["id"]
+                for context in eligibility_contexts
+                if context.get("student", {}).get("id")
+            }
+        )
 
         for student_id_chunk in self._chunked(unique_student_ids):
             promotion_rows = self._fetch_paged(
@@ -129,21 +133,29 @@ class BeltEligibilityCalculator:
             if promoted_at
         }
         student_ids_with_promotions = [
-            student_id for student_id in student_ids
-            if any(context["context_key"] in parsed_promotion_dates for context in contexts_by_student[student_id])
+            student_id
+            for student_id in student_ids
+            if any(
+                context["context_key"] in parsed_promotion_dates
+                for context in contexts_by_student[student_id]
+            )
         ]
         student_ids_with_promotion_set = set(student_ids_with_promotions)
         student_ids_without_promotions = [
-            student_id for student_id in student_ids if student_id not in student_ids_with_promotion_set
+            student_id
+            for student_id in student_ids
+            if student_id not in student_ids_with_promotion_set
         ]
 
-        def build_attendance_query(student_id_chunk: list[str], lower_bound: Optional[str] = None) -> Any:
+        def build_attendance_query(
+            student_id_chunk: list[str], lower_bound: Optional[str] = None
+        ) -> Any:
             query = (
                 self.supabase.table("attendance")
-                    .select(
-                        "student_id, checked_in_at, counts_toward_eligibility, "
-                        "class_sessions!inner(program_id, status, deleted_at)"
-                    )
+                .select(
+                    "student_id, checked_in_at, counts_toward_eligibility, "
+                    "class_sessions!inner(program_id, status, deleted_at)"
+                )
                 .eq("studio_id", studio_id)
                 .in_("student_id", student_id_chunk)
                 .neq("status", "absent")
@@ -171,12 +183,15 @@ class BeltEligibilityCalculator:
                     promotion_date = parsed_promotion_dates.get(context["context_key"])
                     if promotion_date:
                         checked_in_at = row.get("checked_in_at")
-                        if not checked_in_at or self._parse_datetime(checked_in_at) < promotion_date:
+                        if (
+                            not checked_in_at
+                            or self._parse_datetime(checked_in_at) < promotion_date
+                        ):
                             continue
 
-                    ladder_program_id = (
-                        ladder_meta.get(context["target_ladder_id"]) or {}
-                    ).get("program_id")
+                    ladder_program_id = (ladder_meta.get(context["target_ladder_id"]) or {}).get(
+                        "program_id"
+                    )
                     if ladder_program_id and class_session.get("program_id") != ladder_program_id:
                         continue
 
@@ -185,14 +200,14 @@ class BeltEligibilityCalculator:
         for student_id_chunk in self._chunked(student_ids_without_promotions):
             process_attendance_rows(
                 self._fetch_paged(
-                    lambda student_id_chunk=student_id_chunk: build_attendance_query(student_id_chunk)
+                    lambda student_id_chunk=student_id_chunk: build_attendance_query(
+                        student_id_chunk
+                    )
                 )
             )
 
         if student_ids_with_promotions:
-            lower_bound = min(
-                parsed_promotion_dates.values()
-            ).isoformat()
+            lower_bound = min(parsed_promotion_dates.values()).isoformat()
             for student_id_chunk in self._chunked(student_ids_with_promotions):
                 process_attendance_rows(
                     self._fetch_paged(
@@ -216,11 +231,7 @@ class BeltEligibilityCalculator:
             .execute()
         )
         ladder_rows = ladders_result.data or []
-        ladder_meta = {
-            row["id"]: row
-            for row in ladder_rows
-            if row.get("id")
-        }
+        ladder_meta = {row["id"]: row for row in ladder_rows if row.get("id")}
 
         if ladder_id and ladder_id not in ladder_meta:
             raise HTTPException(status_code=404, detail="Belt ladder not found")
@@ -270,7 +281,9 @@ class BeltEligibilityCalculator:
         students = self._fetch_paged(
             lambda: (
                 self.supabase.table("students")
-                .select("id, legal_first_name, legal_last_name, preferred_name, membership_start_date, program_id, current_belt_rank_id")
+                .select(
+                    "id, legal_first_name, legal_last_name, preferred_name, membership_start_date, program_id, current_belt_rank_id"
+                )
                 .eq("studio_id", studio_id)
                 .eq("status", "active")
                 .is_("deleted_at", "null")
@@ -282,7 +295,9 @@ class BeltEligibilityCalculator:
             membership_rows = self._fetch_paged(
                 lambda student_id_chunk=student_id_chunk: (
                     self.supabase.table("student_program_memberships")
-                    .select("id, student_id, program_id, status, ended_at, started_at, current_belt_rank_id")
+                    .select(
+                        "id, student_id, program_id, status, ended_at, started_at, current_belt_rank_id"
+                    )
                     .eq("studio_id", studio_id)
                     .in_("student_id", student_id_chunk)
                     .in_("status", ["active", "paused"])
@@ -361,7 +376,8 @@ class BeltEligibilityCalculator:
                 "program_id": student_program_id,
                 "target_ladder_id": target_ladder_id,
                 "started_at": started_at,
-                "context_key": membership_id or f"{s['id']}:{student_program_id or 'legacy'}:{target_ladder_id}",
+                "context_key": membership_id
+                or f"{s['id']}:{student_program_id or 'legacy'}:{target_ladder_id}",
             }
 
             # If no rank, the next rank is the first one
@@ -369,24 +385,28 @@ class BeltEligibilityCalculator:
                 next_rank = ladder_ranks[0]
                 if not next_rank:
                     return
-                eligibility_contexts.append({
-                    **context_base,
-                    "current_rank_id": None,
-                    "current_rank": None,
-                    "next_rank": next_rank,
-                })
+                eligibility_contexts.append(
+                    {
+                        **context_base,
+                        "current_rank_id": None,
+                        "current_rank": None,
+                        "next_rank": next_rank,
+                    }
+                )
                 return
 
             next_rank = next_rank_map_by_ladder.get(target_ladder_id, {}).get(current_rank_id)
             if not next_rank:
                 return  # Already at highest rank
 
-            eligibility_contexts.append({
-                **context_base,
-                "current_rank_id": current_rank_id,
-                "current_rank": current_rank,
-                "next_rank": next_rank,
-            })
+            eligibility_contexts.append(
+                {
+                    **context_base,
+                    "current_rank_id": current_rank_id,
+                    "current_rank": current_rank,
+                    "next_rank": next_rank,
+                }
+            )
 
         for s in students:
             memberships = memberships_by_student.get(s["id"]) or []
@@ -430,34 +450,42 @@ class BeltEligibilityCalculator:
             classes_since = attendance_counts_by_student.get(context_key, 0)
 
             if not current_rank:
-                anchor_date = latest_promo_date or context.get("started_at") or s.get("membership_start_date")
-                days_at = max(0, (now - self._parse_datetime(anchor_date)).days) if anchor_date else 0
+                anchor_date = (
+                    latest_promo_date or context.get("started_at") or s.get("membership_start_date")
+                )
+                days_at = (
+                    max(0, (now - self._parse_datetime(anchor_date)).days) if anchor_date else 0
+                )
                 classes_met = classes_since >= next_rank["min_classes"]
                 time_met = days_at >= next_rank["min_months"] * 30
-                entries.append(EligibilityEntry(
-                    student_id=s["id"],
-                    student_program_membership_id=context.get("membership_id"),
-                    program_id=context.get("program_id"),
-                    student_name=f"{s.get('preferred_name') or s['legal_first_name']} {s['legal_last_name']}",
-                    current_rank_id=None,
-                    current_rank_name=None,
-                    current_rank_color=None,
-                    next_rank_id=next_rank["id"],
-                    next_rank_name=next_rank["name"],
-                    next_rank_color=next_rank["color_hex"],
-                    classes_since_promo=classes_since,
-                    classes_required=next_rank["min_classes"],
-                    days_at_rank=days_at,
-                    days_required=next_rank["min_months"] * 30,
-                    classes_met=classes_met,
-                    time_met=time_met,
-                    needs_approval=next_rank["requires_approval"],
-                    is_eligible=classes_met and time_met and not next_rank["requires_approval"],
-                ))
+                entries.append(
+                    EligibilityEntry(
+                        student_id=s["id"],
+                        student_program_membership_id=context.get("membership_id"),
+                        program_id=context.get("program_id"),
+                        student_name=f"{s.get('preferred_name') or s['legal_first_name']} {s['legal_last_name']}",
+                        current_rank_id=None,
+                        current_rank_name=None,
+                        current_rank_color=None,
+                        next_rank_id=next_rank["id"],
+                        next_rank_name=next_rank["name"],
+                        next_rank_color=next_rank["color_hex"],
+                        classes_since_promo=classes_since,
+                        classes_required=next_rank["min_classes"],
+                        days_at_rank=days_at,
+                        days_required=next_rank["min_months"] * 30,
+                        classes_met=classes_met,
+                        time_met=time_met,
+                        needs_approval=next_rank["requires_approval"],
+                        is_eligible=classes_met and time_met and not next_rank["requires_approval"],
+                    )
+                )
                 continue
 
             # Days at current rank
-            anchor_date = latest_promo_date or context.get("started_at") or s.get("membership_start_date")
+            anchor_date = (
+                latest_promo_date or context.get("started_at") or s.get("membership_start_date")
+            )
             if anchor_date:
                 anchor_dt = self._parse_datetime(anchor_date)
                 days_at = max(0, (now - anchor_dt).days)
@@ -470,26 +498,28 @@ class BeltEligibilityCalculator:
             time_met = days_at >= days_req
             needs_approval = next_rank["requires_approval"]
 
-            entries.append(EligibilityEntry(
-                student_id=s["id"],
-                student_program_membership_id=context.get("membership_id"),
-                program_id=context.get("program_id"),
-                student_name=f"{s.get('preferred_name') or s['legal_first_name']} {s['legal_last_name']}",
-                current_rank_id=current_rank_id,
-                current_rank_name=current_rank["name"],
-                current_rank_color=current_rank["color_hex"],
-                next_rank_id=next_rank["id"],
-                next_rank_name=next_rank["name"],
-                next_rank_color=next_rank["color_hex"],
-                classes_since_promo=classes_since,
-                classes_required=classes_req,
-                days_at_rank=days_at,
-                days_required=days_req,
-                classes_met=classes_met,
-                time_met=time_met,
-                needs_approval=needs_approval,
-                is_eligible=classes_met and time_met and not needs_approval,
-            ))
+            entries.append(
+                EligibilityEntry(
+                    student_id=s["id"],
+                    student_program_membership_id=context.get("membership_id"),
+                    program_id=context.get("program_id"),
+                    student_name=f"{s.get('preferred_name') or s['legal_first_name']} {s['legal_last_name']}",
+                    current_rank_id=current_rank_id,
+                    current_rank_name=current_rank["name"],
+                    current_rank_color=current_rank["color_hex"],
+                    next_rank_id=next_rank["id"],
+                    next_rank_name=next_rank["name"],
+                    next_rank_color=next_rank["color_hex"],
+                    classes_since_promo=classes_since,
+                    classes_required=classes_req,
+                    days_at_rank=days_at,
+                    days_required=days_req,
+                    classes_met=classes_met,
+                    time_met=time_met,
+                    needs_approval=needs_approval,
+                    is_eligible=classes_met and time_met and not needs_approval,
+                )
+            )
 
         return entries
 

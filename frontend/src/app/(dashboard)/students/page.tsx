@@ -23,12 +23,18 @@ export default function StudentsPage() {
   });
 
   const { identityGeneration, identityReady } = studioStore;
-  const { activeLoadError, isInitialRosterLoading, isPagedLoading, isRosterRefreshing } = controller.contentProps;
+  const { activeLoadError, isInitialRosterLoading, isPagedLoading, isRosterRefreshing } =
+    controller.contentProps;
   const usefulReady = identityReady && !isInitialRosterLoading && !activeLoadError;
   const completeReady = usefulReady && !isPagedLoading && !isRosterRefreshing;
-  useEffect(() => markDashboardReadiness("students", identityGeneration, {
-    useful: usefulReady, complete: completeReady,
-  }), [identityGeneration, usefulReady, completeReady]);
+  useEffect(
+    () =>
+      markDashboardReadiness("students", identityGeneration, {
+        useful: usefulReady,
+        complete: completeReady,
+      }),
+    [identityGeneration, usefulReady, completeReady],
+  );
 
   return <StudentRosterPageContent {...controller.contentProps} />;
 }

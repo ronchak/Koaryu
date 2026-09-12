@@ -1,10 +1,5 @@
 import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
-import type {
-  Program,
-  Student,
-  StudentListQueryContract,
-  StudentRosterRowResponse,
-} from "@/types";
+import type { Program, Student, StudentListQueryContract, StudentRosterRowResponse } from "@/types";
 
 export type SortKey = NonNullable<StudentListQueryContract["sort_by"]>;
 export type SortDir = NonNullable<StudentListQueryContract["sort_dir"]>;
@@ -143,9 +138,7 @@ export function buildStudentQueryFilterState({
   const inactivityThreshold = [14, 30, 90].includes(parsedInactivityDays)
     ? parsedInactivityDays
     : null;
-  const newStudentDays = [14, 30, 90].includes(parsedNewStudentDays)
-    ? parsedNewStudentDays
-    : null;
+  const newStudentDays = [14, 30, 90].includes(parsedNewStudentDays) ? parsedNewStudentDays : null;
   const isNewStudentYtd = newStudentsParam === "ytd";
   const hasNewStudentFilter = Boolean(newStudentDays || isNewStudentYtd);
 
@@ -186,7 +179,7 @@ export function buildServerInactivityByStudentId(
       typeof student.inactivity_days === "number"
         ? String(student.inactivity_days)
         : `${inactivityThreshold}+`,
-    ])
+    ]),
   );
 }
 
@@ -209,18 +202,17 @@ export function buildStudentRosterLoadState({
   studentsMayBePartial,
   usesDerivedRosterFilters,
 }: StudentRosterLoadStateInput) {
-  const dependencyLoadError = programsLoadError
-    || (scheduleRequired && scheduleStatus === "error"
+  const dependencyLoadError =
+    programsLoadError ||
+    (scheduleRequired && scheduleStatus === "error"
       ? scheduleLoadError || "Schedule could not be loaded."
       : null);
-  const dependenciesLoading = !programsLoaded
-    || (scheduleRequired && scheduleStatus !== "ready");
+  const dependenciesLoading = !programsLoaded || (scheduleRequired && scheduleStatus !== "ready");
   const rosterLoadError = usesDerivedRosterFilters ? studentsLoadError : pagedLoadError;
   const activeLoadError = dependencyLoadError || rosterLoadError;
   const isInitialRosterLoading = usesDerivedRosterFilters
-    ? !activeLoadError && (
-      dependenciesLoading || !studentsLoaded || studentsMayBePartial || isDerivedRosterRefreshing
-    )
+    ? !activeLoadError &&
+      (dependenciesLoading || !studentsLoaded || studentsMayBePartial || isDerivedRosterRefreshing)
     : !activeLoadError && (dependenciesLoading || !pagedLoaded);
   const isRosterRefreshing = !usesDerivedRosterFilters && isPagedLoading && pagedLoaded;
   const visibleTotal = usesDerivedRosterFilters ? studentsCount : pagedTotal;
@@ -262,13 +254,14 @@ export function parseBulkTagsInput(value: string) {
       value
         .split(",")
         .map((tag) => tag.trim())
-        .filter(Boolean)
-    )
+        .filter(Boolean),
+    ),
   );
 }
 
 export function withStudentRosterRefreshWarning(currentMessage: string | null) {
-  const warning = "Koaryu could not refresh the visible roster automatically; refresh the page if the list looks stale.";
+  const warning =
+    "Koaryu could not refresh the visible roster automatically; refresh the page if the list looks stale.";
   return currentMessage ? `${currentMessage} ${warning}` : warning;
 }
 
@@ -277,7 +270,9 @@ export function studentStartDate(student: Student) {
 }
 
 export function isCurrentStudent(student: Student) {
-  return student.status === "active" || student.status === "trialing" || student.status === "paused";
+  return (
+    student.status === "active" || student.status === "trialing" || student.status === "paused"
+  );
 }
 
 export function buildStudentRows(students: Student[], programs: Program[]): StudentRosterRow[] {
@@ -324,7 +319,7 @@ export function filterStudentRows(
     sortKey,
     sortDir,
     usesDerivedRosterFilters,
-  }: StudentRosterFilterOptions
+  }: StudentRosterFilterOptions,
 ) {
   let list = [...studentRows];
 
@@ -340,7 +335,7 @@ export function filterStudentRows(
         row.searchFields.legalLastName.includes(q) ||
         row.searchFields.preferredName.includes(q) ||
         row.searchFields.email.includes(q) ||
-        row.searchFields.programs.includes(q)
+        row.searchFields.programs.includes(q),
     );
   }
 
@@ -349,18 +344,20 @@ export function filterStudentRows(
   }
 
   if (programFilter) {
-    list = list.filter((row) =>
-      (row.student.program_memberships || []).some((membership) =>
-        membership.program_id === programFilter &&
-        membership.status !== "ended" &&
-        !membership.ended_at
-      ) || row.student.program_id === programFilter
+    list = list.filter(
+      (row) =>
+        (row.student.program_memberships || []).some(
+          (membership) =>
+            membership.program_id === programFilter &&
+            membership.status !== "ended" &&
+            !membership.ended_at,
+        ) || row.student.program_id === programFilter,
     );
   }
 
   if (inactivityThreshold) {
     list = list.filter(
-      (row) => (inactivityByStudentId.get(row.student.id) || 0) >= inactivityThreshold
+      (row) => (inactivityByStudentId.get(row.student.id) || 0) >= inactivityThreshold,
     );
   }
 
@@ -382,10 +379,9 @@ export function filterStudentRows(
     } else if (sortKey === "status") {
       cmp = a.student.status.localeCompare(b.student.status);
     } else if (sortKey === "membership_start_date") {
-      cmp =
-        (a.student.membership_start_date || "").localeCompare(
-          b.student.membership_start_date || ""
-        );
+      cmp = (a.student.membership_start_date || "").localeCompare(
+        b.student.membership_start_date || "",
+      );
     } else if (sortKey === "created_at") {
       cmp = a.student.created_at.localeCompare(b.student.created_at);
     }

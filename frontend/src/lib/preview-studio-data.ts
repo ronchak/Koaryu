@@ -15,7 +15,14 @@ export const MOCK_PROGRAMS: Program[] = [
     archived_at: null,
     created_at: "2026-04-21T09:00:00Z",
     updated_at: "2026-04-21T09:00:00Z",
-    usage: { student_count: 18, active_student_count: 17, class_count: 4, active_class_count: 4, lead_count: 5, belt_ladder_count: 1 },
+    usage: {
+      student_count: 18,
+      active_student_count: 17,
+      class_count: 4,
+      active_class_count: 4,
+      lead_count: 5,
+      belt_ladder_count: 1,
+    },
   },
   {
     id: "program-tae-kwon-do",
@@ -28,7 +35,14 @@ export const MOCK_PROGRAMS: Program[] = [
     archived_at: null,
     created_at: "2026-04-21T09:00:00Z",
     updated_at: "2026-04-21T09:00:00Z",
-    usage: { student_count: 4, active_student_count: 4, class_count: 1, active_class_count: 1, lead_count: 1, belt_ladder_count: 1 },
+    usage: {
+      student_count: 4,
+      active_student_count: 4,
+      class_count: 1,
+      active_class_count: 1,
+      lead_count: 1,
+      belt_ladder_count: 1,
+    },
   },
   {
     id: "program-unassigned",
@@ -41,7 +55,14 @@ export const MOCK_PROGRAMS: Program[] = [
     archived_at: null,
     created_at: "2026-04-21T09:00:00Z",
     updated_at: "2026-04-21T09:00:00Z",
-    usage: { student_count: 0, active_student_count: 0, class_count: 0, active_class_count: 0, lead_count: 0, belt_ladder_count: 0 },
+    usage: {
+      student_count: 0,
+      active_student_count: 0,
+      class_count: 0,
+      active_class_count: 0,
+      lead_count: 0,
+      belt_ladder_count: 0,
+    },
   },
 ];
 

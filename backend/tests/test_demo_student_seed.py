@@ -58,8 +58,14 @@ class DemoStudentSeederTests(unittest.TestCase):
         ).seed_students("studio", program_ids, rank_ids)
 
         self.assertEqual(len(student_ids), 32)
-        self.assertEqual(insert_order, ["students", "student_program_memberships", "guardians", "student_guardians"])
-        self.assertEqual(set(inserted), {"students", "student_program_memberships", "guardians", "student_guardians"})
+        self.assertEqual(
+            insert_order,
+            ["students", "student_program_memberships", "guardians", "student_guardians"],
+        )
+        self.assertEqual(
+            set(inserted),
+            {"students", "student_program_memberships", "guardians", "student_guardians"},
+        )
         self.assertEqual(len(inserted["students"]), 32)
         self.assertEqual(len(inserted["student_program_memberships"]), 34)
         self.assertEqual(len(inserted["guardians"]), 20)
@@ -76,7 +82,9 @@ class DemoStudentSeederTests(unittest.TestCase):
             if row["student_id"] == student_ids["amara"]
         ]
         self.assertEqual(len(amara_memberships), 2)
-        self.assertEqual({row["program_id"] for row in amara_memberships}, {"program:bjj", "program:tkd"})
+        self.assertEqual(
+            {row["program_id"] for row in amara_memberships}, {"program:bjj", "program:tkd"}
+        )
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ function normalizedOptionalValue(value: string | null | undefined) {
 
 export function buildUpstreamProxyRequestHeaders(
   requestHeaders: Headers,
-  activeStudioCookieValue: string | null | undefined
+  activeStudioCookieValue: string | null | undefined,
 ) {
   const headers = new Headers();
 

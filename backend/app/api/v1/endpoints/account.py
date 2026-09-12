@@ -17,6 +17,7 @@ async def get_account_deletion_request(
 ):
     async def _provider_operation(client):
         return await AccountService(client).get_deletion_request(user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -33,6 +34,7 @@ async def schedule_account_deletion(
 ):
     async def _provider_operation(client):
         return await AccountService(client).schedule_deletion(data, user_id, requested_studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -48,6 +50,7 @@ async def cancel_account_deletion(
 ):
     async def _provider_operation(client):
         return await AccountService(client).cancel_deletion(user_id, requested_studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

@@ -122,7 +122,9 @@ class ApiContractSchemaTest(unittest.TestCase):
 
         self.assertEqual(created.status, "trialing")
         self.assertEqual(StudentUpdate(status="paused").status, "paused")
-        self.assertEqual(BulkStatusUpdate(student_ids=["student-1"], status="canceled").status, "canceled")
+        self.assertEqual(
+            BulkStatusUpdate(student_ids=["student-1"], status="canceled").status, "canceled"
+        )
         self.assertEqual(
             StudentResponse(
                 id="student-1",
@@ -239,8 +241,12 @@ class ApiContractSchemaTest(unittest.TestCase):
         )
 
         self.assertEqual(lead.source, "referral")
-        self.assertEqual(LeadCreate(first_name="Aiko", last_name="Tanaka", source="website").source, "website")
-        self.assertEqual(LeadUpdate(stage="closed_lost", lost_reason="price_objection").stage, "closed_lost")
+        self.assertEqual(
+            LeadCreate(first_name="Aiko", last_name="Tanaka", source="website").source, "website"
+        )
+        self.assertEqual(
+            LeadUpdate(stage="closed_lost", lost_reason="price_objection").stage, "closed_lost"
+        )
         with self.assertRaises(ValidationError):
             LeadCreate(first_name="Aiko", last_name="Tanaka", source="instagram")
         with self.assertRaises(ValidationError):
@@ -271,7 +277,10 @@ class ApiContractSchemaTest(unittest.TestCase):
         )
 
         self.assertEqual(session.status, "scheduled")
-        self.assertEqual(AttendanceCheckIn(session_id="session-1", student_id="student-1", status="late").status, "late")
+        self.assertEqual(
+            AttendanceCheckIn(session_id="session-1", student_id="student-1", status="late").status,
+            "late",
+        )
         with self.assertRaises(ValidationError):
             ClassSessionResponse(
                 id="session-1",

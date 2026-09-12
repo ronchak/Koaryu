@@ -39,11 +39,13 @@ class StudentBulkArchiveTest(unittest.TestCase):
 
     def test_service_deduplicates_and_uses_one_archive_rpc(self):
         supabase = ArchiveSupabase(result=2)
-        count = asyncio.run(StudentBulkActions(supabase).archive_students(
-            BulkStudentArchiveRequest(student_ids=[STUDENT_TWO, STUDENT_ONE, STUDENT_TWO]),
-            "studio-1",
-            "actor-1",
-        ))
+        count = asyncio.run(
+            StudentBulkActions(supabase).archive_students(
+                BulkStudentArchiveRequest(student_ids=[STUDENT_TWO, STUDENT_ONE, STUDENT_TWO]),
+                "studio-1",
+                "actor-1",
+            )
+        )
         self.assertEqual(count, 2)
         self.assertEqual(len(supabase.rpc_calls), 1)
         self.assertEqual(
@@ -65,37 +67,47 @@ class StudentBulkArchiveTest(unittest.TestCase):
         ):
             error = PostgrestAPIError({"code": code, "message": "provider detail"})
             with self.subTest(code=code), self.assertRaises(HTTPException) as raised:
-                asyncio.run(StudentBulkActions(ArchiveSupabase(error=error)).archive_students(
-                    BulkStudentArchiveRequest(student_ids=[STUDENT_ONE]),
-                    "studio-1",
-                    "actor-1",
-                ))
+                asyncio.run(
+                    StudentBulkActions(ArchiveSupabase(error=error)).archive_students(
+                        BulkStudentArchiveRequest(student_ids=[STUDENT_ONE]),
+                        "studio-1",
+                        "actor-1",
+                    )
+                )
             self.assertEqual(raised.exception.status_code, status)
             self.assertEqual(raised.exception.detail, detail)
             self.assertNotIn("provider detail", str(raised.exception.detail))
 
     def test_endpoint_returns_updated_and_invalidates_dashboard_after_success(self):
         supabase = ArchiveSupabase(result=1)
-        with patch("app.api.v1.endpoints.students.dashboard_summary_fact_cache.invalidate") as invalidate:
-            response = asyncio.run(bulk_archive_students(
-                BulkStudentArchiveRequest(student_ids=[STUDENT_ONE]),
-                user_id="actor-1",
-                studio_id="studio-1",
-                supabase=supabase,
-            ))
+        with patch(
+            "app.api.v1.endpoints.students.dashboard_summary_fact_cache.invalidate"
+        ) as invalidate:
+            response = asyncio.run(
+                bulk_archive_students(
+                    BulkStudentArchiveRequest(student_ids=[STUDENT_ONE]),
+                    user_id="actor-1",
+                    studio_id="studio-1",
+                    supabase=supabase,
+                )
+            )
         self.assertEqual(response, {"updated": 1})
         invalidate.assert_called_once_with("studio-1", domain="dashboard")
         self.assertEqual(len(supabase.rpc_calls), 1)
 
     def test_endpoint_does_not_invalidate_when_rpc_fails(self):
         error = PostgrestAPIError({"code": "P0002", "message": "provider detail"})
-        with patch("app.api.v1.endpoints.students.dashboard_summary_fact_cache.invalidate") as invalidate:
+        with patch(
+            "app.api.v1.endpoints.students.dashboard_summary_fact_cache.invalidate"
+        ) as invalidate:
             with self.assertRaises(HTTPException) as raised:
-                asyncio.run(bulk_archive_students(
-                    BulkStudentArchiveRequest(student_ids=[STUDENT_ONE]),
-                    user_id="actor-1",
-                    studio_id="studio-1",
-                    supabase=ArchiveSupabase(error=error),
-                ))
+                asyncio.run(
+                    bulk_archive_students(
+                        BulkStudentArchiveRequest(student_ids=[STUDENT_ONE]),
+                        user_id="actor-1",
+                        studio_id="studio-1",
+                        supabase=ArchiveSupabase(error=error),
+                    )
+                )
         self.assertEqual(raised.exception.status_code, 404)
         invalidate.assert_not_called()

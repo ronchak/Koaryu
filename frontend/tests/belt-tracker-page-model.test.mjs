@@ -92,30 +92,42 @@ function ladder(id, overrides = {}) {
 
 describe("belt tracker page model", () => {
   it("defaults new full-belt names from presets without overwriting manual names", () => {
-    assert.equal(resolvePresetBeltName({
-      currentName: "",
-      isTip: false,
-      nameWasEdited: false,
-      presetLabel: "White",
-    }), "White Belt");
-    assert.equal(resolvePresetBeltName({
-      currentName: "White Belt",
-      isTip: false,
-      nameWasEdited: false,
-      presetLabel: "Brown",
-    }), "Brown Belt");
-    assert.equal(resolvePresetBeltName({
-      currentName: "Beginner Rank",
-      isTip: false,
-      nameWasEdited: true,
-      presetLabel: "Black",
-    }), "Beginner Rank");
-    assert.equal(resolvePresetBeltName({
-      currentName: "1 Stripe",
-      isTip: true,
-      nameWasEdited: false,
-      presetLabel: "Red",
-    }), "1 Stripe");
+    assert.equal(
+      resolvePresetBeltName({
+        currentName: "",
+        isTip: false,
+        nameWasEdited: false,
+        presetLabel: "White",
+      }),
+      "White Belt",
+    );
+    assert.equal(
+      resolvePresetBeltName({
+        currentName: "White Belt",
+        isTip: false,
+        nameWasEdited: false,
+        presetLabel: "Brown",
+      }),
+      "Brown Belt",
+    );
+    assert.equal(
+      resolvePresetBeltName({
+        currentName: "Beginner Rank",
+        isTip: false,
+        nameWasEdited: true,
+        presetLabel: "Black",
+      }),
+      "Beginner Rank",
+    );
+    assert.equal(
+      resolvePresetBeltName({
+        currentName: "1 Stripe",
+        isTip: true,
+        nameWasEdited: false,
+        presetLabel: "Red",
+      }),
+      "1 Stripe",
+    );
   });
 
   it("groups tips under the preceding full belt and ignores leading tips", () => {
@@ -133,7 +145,7 @@ describe("belt tracker page model", () => {
       [
         ["white", ["white-stripe"], false],
         ["blue", ["blue-stripe-1", "blue-stripe-2"], false],
-      ]
+      ],
     );
   });
 
@@ -153,7 +165,11 @@ describe("belt tracker page model", () => {
 
     assert.deepEqual(
       flat.map((item) => [item.id, item.display_order]),
-      [["white", 0], ["white-stripe", 1], ["blue", 2]]
+      [
+        ["white", 0],
+        ["white-stripe", 1],
+        ["blue", 2],
+      ],
     );
   });
 
@@ -169,7 +185,12 @@ describe("belt tracker page model", () => {
 
     assert.deepEqual(
       flat?.map((item) => [item.id, item.display_order]),
-      [["blue", 0], ["blue-tip", 1], ["white", 2], ["white-tip", 3]]
+      [
+        ["blue", 0],
+        ["blue-tip", 1],
+        ["white", 2],
+        ["white-tip", 3],
+      ],
     );
     assert.equal(moveBeltGroup(groups, 0, 0), null);
   });
@@ -186,13 +207,13 @@ describe("belt tracker page model", () => {
     const reordered = moveTipWithinGroup(groups, { gIdx: 0, tIdx: 0 }, 0, 1);
     assert.deepEqual(
       reordered?.map((item) => item.id),
-      ["white", "white-tip-2", "white-tip-1", "blue", "blue-tip"]
+      ["white", "white-tip-2", "white-tip-1", "blue", "blue-tip"],
     );
 
     const crossGroupDrop = moveTipWithinGroup(groups, { gIdx: 0, tIdx: 0 }, 1, 0);
     assert.deepEqual(
       crossGroupDrop?.map((item) => item.id),
-      ["white", "white-tip-1", "white-tip-2", "blue", "blue-tip"]
+      ["white", "white-tip-1", "white-tip-2", "blue", "blue-tip"],
     );
     assert.equal(moveTipWithinGroup(groups, { gIdx: 0, tIdx: 0 }, 0, 0), null);
   });
@@ -235,7 +256,10 @@ describe("belt tracker page model", () => {
     const withTip = appendTipToGroup(groupRanks([belt]), 0, tip);
     assert.deepEqual(
       withTip?.map((item) => [item.id, item.display_order]),
-      [["rank-blue", 0], ["rank-blue-tip", 1]]
+      [
+        ["rank-blue", 0],
+        ["rank-blue-tip", 1],
+      ],
     );
     assert.equal(appendTipToGroup(groupRanks([belt]), 4, tip), null);
 
@@ -279,8 +303,14 @@ describe("belt tracker page model", () => {
     assert.equal(state.selectedProgram?.id, "adults");
     assert.equal(state.currentLadder?.id, "adult-ladder");
     assert.equal(state.currentProgramReady, true);
-    assert.deepEqual(state.activeLadderRanks.map((item) => item.id), ["live-adult-rank"]);
-    assert.deepEqual(state.beltPrograms.map((item) => item.id), ["kids", "adults"]);
+    assert.deepEqual(
+      state.activeLadderRanks.map((item) => item.id),
+      ["live-adult-rank"],
+    );
+    assert.deepEqual(
+      state.beltPrograms.map((item) => item.id),
+      ["kids", "adults"],
+    );
   });
 
   it("keeps selected program ladder ranks local until the store switches ladders", () => {
@@ -298,7 +328,10 @@ describe("belt tracker page model", () => {
     assert.equal(state.selectedProgram?.id, "kids");
     assert.equal(state.currentLadder?.id, "kids-ladder");
     assert.equal(state.currentProgramReady, false);
-    assert.deepEqual(state.activeLadderRanks.map((item) => item.id), ["kids-rank"]);
+    assert.deepEqual(
+      state.activeLadderRanks.map((item) => item.id),
+      ["kids-rank"],
+    );
   });
 
   it("deletes a full belt with following tips and rewrites display order", () => {
@@ -312,11 +345,19 @@ describe("belt tracker page model", () => {
 
     assert.deepEqual(
       deleteRankAndFollowingTips(ranks, "white").map((item) => [item.id, item.display_order]),
-      [["blue", 0], ["blue-tip", 1]]
+      [
+        ["blue", 0],
+        ["blue-tip", 1],
+      ],
     );
     assert.deepEqual(
       deleteRankAndFollowingTips(ranks, "blue-tip").map((item) => [item.id, item.display_order]),
-      [["white", 0], ["white-tip-1", 1], ["white-tip-2", 2], ["blue", 3]]
+      [
+        ["white", 0],
+        ["white-tip-1", 1],
+        ["white-tip-2", 2],
+        ["blue", 3],
+      ],
     );
     assert.strictEqual(deleteRankAndFollowingTips(ranks, "missing"), ranks);
   });
@@ -361,16 +402,18 @@ describe("belt tracker page model", () => {
           current_rank_color: undefined,
         }),
       ],
-      ranks
+      ranks,
     );
 
-    assert.deepEqual(groups.map((group) => group.key), ["unranked", "white"]);
+    assert.deepEqual(
+      groups.map((group) => group.key),
+      ["unranked", "white"],
+    );
     assert.equal(groups[0].label, "Unranked");
-    assert.deepEqual(groups[1].entries.map((entry) => entry.student_id), [
-      "approval",
-      "ready",
-      "progress",
-    ]);
+    assert.deepEqual(
+      groups[1].entries.map((entry) => entry.student_id),
+      ["approval", "ready", "progress"],
+    );
     assert.equal(groups[1].eligibleCount, 1);
     assert.equal(groups[1].approvalCount, 1);
     assert.equal(isEligibilityEntryReady(groups[1].entries[0]), true);
@@ -389,11 +432,14 @@ describe("belt tracker page model", () => {
       student_program_membership_id: "membership-1",
     });
 
-    assert.equal(validatePromotionTarget({
-      currentLadder,
-      promoteEntry: entry,
-      selectedProgram,
-    }), null);
+    assert.equal(
+      validatePromotionTarget({
+        currentLadder,
+        promoteEntry: entry,
+        selectedProgram,
+      }),
+      null,
+    );
     assert.deepEqual(buildPromotionRequestBody(entry, "blue", "  Strong basics  "), {
       student_id: "student-1",
       to_rank_id: "blue",
@@ -402,20 +448,29 @@ describe("belt tracker page model", () => {
       notes: "Strong basics",
     });
     assert.equal(buildPromotionRequestBody(entry, "blue", "   ").notes, undefined);
-    assert.equal(validatePromotionTarget({
-      currentLadder,
-      promoteEntry: eligibilityEntry({ next_rank_id: null }),
-      selectedProgram,
-    }), "Could not determine the next rank for this promotion.");
-    assert.equal(validatePromotionTarget({
-      currentLadder,
-      promoteEntry: eligibilityEntry({ next_rank_id: "purple" }),
-      selectedProgram,
-    }), "This promotion target is not part of the current belt ladder.");
-    assert.equal(validatePromotionTarget({
-      currentLadder,
-      promoteEntry: eligibilityEntry({ next_rank_id: "blue", program_id: "adults" }),
-      selectedProgram,
-    }), "This student is queued in a different program. Switch programs before promoting.");
+    assert.equal(
+      validatePromotionTarget({
+        currentLadder,
+        promoteEntry: eligibilityEntry({ next_rank_id: null }),
+        selectedProgram,
+      }),
+      "Could not determine the next rank for this promotion.",
+    );
+    assert.equal(
+      validatePromotionTarget({
+        currentLadder,
+        promoteEntry: eligibilityEntry({ next_rank_id: "purple" }),
+        selectedProgram,
+      }),
+      "This promotion target is not part of the current belt ladder.",
+    );
+    assert.equal(
+      validatePromotionTarget({
+        currentLadder,
+        promoteEntry: eligibilityEntry({ next_rank_id: "blue", program_id: "adults" }),
+        selectedProgram,
+      }),
+      "This student is queued in a different program. Switch programs before promoting.",
+    );
   });
 });

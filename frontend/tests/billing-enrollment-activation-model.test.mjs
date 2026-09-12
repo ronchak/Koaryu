@@ -71,9 +71,15 @@ describe("hidden enrollment activation adapter", () => {
 
   it("keeps a scoped memory key when storage is blocked", () => {
     const blocked = {
-      getItem: () => { throw new Error("blocked"); },
-      removeItem: () => { throw new Error("blocked"); },
-      setItem: () => { throw new Error("blocked"); },
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
     };
     const memory = new Map();
     const options = {
@@ -91,13 +97,16 @@ describe("hidden enrollment activation adapter", () => {
 
   it("forwards a stable key into the capability-gated activation control", () => {
     const actions = fs.readFileSync(
-      path.join(root, "src/lib/billing-enrollment-actions.ts"), "utf8",
+      path.join(root, "src/lib/billing-enrollment-actions.ts"),
+      "utf8",
     );
     const tab = fs.readFileSync(
-      path.join(root, "src/components/billing/billing-enrollments-tab.tsx"), "utf8",
+      path.join(root, "src/components/billing/billing-enrollments-tab.tsx"),
+      "utf8",
     );
     const model = fs.readFileSync(
-      path.join(root, "src/lib/billing-enrollment-activation-model.ts"), "utf8",
+      path.join(root, "src/lib/billing-enrollment-activation-model.ts"),
+      "utf8",
     );
     assert.match(actions, /buildEnrollmentActivationRequest\(requestKey\)/);
     assert.match(actions, /if \(result\) \{[\s\S]*clearEnrollmentActivationRequestKey/);

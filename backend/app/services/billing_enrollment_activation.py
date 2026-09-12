@@ -53,29 +53,39 @@ class BillingEnrollmentActivationWorkflow:
     ) -> StudentBillingEnrollmentResponse:
         request_key = normalize_idempotency_key(idempotency_key)
         if not request_key:
-            raise HTTPException(status_code=400, detail="Idempotency-Key is required for enrollment activation.")
+            raise HTTPException(
+                status_code=400, detail="Idempotency-Key is required for enrollment activation."
+            )
         enrollment = self.owner._get_row_or_404(
-            "student_billing_enrollments", enrollment_id, studio_id,
+            "student_billing_enrollments",
+            enrollment_id,
+            studio_id,
             "Billing enrollment not found.",
         )
         activation_intent = (enrollment.get("metadata") or {}).get(ACTIVATION_INTENT_KEY)
         if enrollment.get("status") not in {"pending", "active"}:
-            raise HTTPException(status_code=409, detail="Enrollment is not eligible for activation.")
+            raise HTTPException(
+                status_code=409, detail="Enrollment is not eligible for activation."
+            )
         if (
-            (enrollment.get("stripe_subscription_id") or enrollment.get("stripe_subscription_item_id"))
-            and not isinstance(activation_intent, dict)
-        ):
+            enrollment.get("stripe_subscription_id")
+            or enrollment.get("stripe_subscription_item_id")
+        ) and not isinstance(activation_intent, dict):
             raise HTTPException(
                 status_code=409,
                 detail="Enrollment provider identity requires reconciliation before activation.",
             )
         collection_mode = str(enrollment.get("collection_mode") or "")
         if collection_mode not in {"autopay", "invoice_link"}:
-            raise HTTPException(status_code=409, detail="Only recurring provider enrollments can be activated.")
+            raise HTTPException(
+                status_code=409, detail="Only recurring provider enrollments can be activated."
+            )
         if not enrollment.get("payer_id"):
             raise HTTPException(status_code=409, detail="Assign a payer before activation.")
         plan = self.owner._get_row_or_404(
-            "billing_plans", enrollment["billing_plan_id"], studio_id,
+            "billing_plans",
+            enrollment["billing_plan_id"],
+            studio_id,
             "Billing plan not found.",
         )
         if plan.get("billing_interval") == "paid_in_full":
@@ -99,9 +109,11 @@ class BillingEnrollmentActivationWorkflow:
             else ENROLLMENT_ACTIVATE_INVOICE_OPERATION_TYPE
         )
         operations = BillingProviderOperationCoordinator(self.supabase)
-        caller_request_key_sha256 = stable_hash({
-            "caller_request_key": request_key,
-        })
+        caller_request_key_sha256 = stable_hash(
+            {
+                "caller_request_key": request_key,
+            }
+        )
         reservation_created = False
         if collection_mode == "autopay":
             try:
@@ -113,9 +125,7 @@ class BillingEnrollmentActivationWorkflow:
                     billing_plan_id=str(plan["id"]),
                     stripe_connected_account_id=account_id,
                     connect_account_generation=generation,
-                    application_fee_percent=self.owner._application_fee_percent(
-                        account
-                    ),
+                    application_fee_percent=self.owner._application_fee_percent(account),
                     caller_request_key_sha256=caller_request_key_sha256,
                 )
             except PostgrestAPIError as exc:
@@ -144,14 +154,17 @@ class BillingEnrollmentActivationWorkflow:
                 enrollment, plan, payer, account
             )
         group = self._bind_local_group_generation(
-            group, account_id=account_id, generation=generation, payer=payer,
+            group,
+            account_id=account_id,
+            generation=generation,
+            payer=payer,
         )
-        lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(
-            studio_id, group["id"]
-        )
+        lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(studio_id, group["id"])
         try:
             enrollment = self.owner._get_row_or_404(
-                "student_billing_enrollments", enrollment_id, studio_id,
+                "student_billing_enrollments",
+                enrollment_id,
+                studio_id,
                 "Billing enrollment not found.",
             )
             intent = self._prepare_activation_intent(
@@ -207,11 +220,16 @@ class BillingEnrollmentActivationWorkflow:
                 return StudentBillingEnrollmentResponse(**result)
             if state == "projected":
                 try:
-                    result = self._load_projected_activation(enrollment_id, context, operation, intent)
+                    result = self._load_projected_activation(
+                        enrollment_id, context, operation, intent
+                    )
                 except Exception as exc:
                     self._mark_reconciliation(
-                        operations, context, operation,
-                        "enrollment_activation_projection_unverified", exc,
+                        operations,
+                        context,
+                        operation,
+                        "enrollment_activation_projection_unverified",
+                        exc,
                     )
                 self._recompute_balance_or_raise(studio_id, payer["id"])
                 operations.complete(
@@ -221,7 +239,9 @@ class BillingEnrollmentActivationWorkflow:
                 return StudentBillingEnrollmentResponse(**result)
             if state == "reconciliation_required" or outcome == "reconciliation_required":
                 if not operation.get("provider_object_id"):
-                    raise HTTPException(status_code=409, detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL)
+                    raise HTTPException(
+                        status_code=409, detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL
+                    )
                 operation = operations.transition(
                     context,
                     operation,
@@ -238,7 +258,8 @@ class BillingEnrollmentActivationWorkflow:
                     enrollment, context, operation, intent, plan=plan, payer=payer, group=group
                 )
             elif state in {"provider_request_in_flight"} or outcome in {
-                "busy", "provider_request_in_flight"
+                "busy",
+                "provider_request_in_flight",
             }:
                 raise HTTPException(status_code=409, detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL)
             elif state in {"definitive_failed", "definitive_rejected"}:
@@ -269,23 +290,23 @@ class BillingEnrollmentActivationWorkflow:
                 result_summary=self._result_summary(intent),
             )
             self._recompute_balance_or_raise(studio_id, payer["id"])
-            operations.complete(
-                context, operation, result_code="enrollment_activation_completed"
-            )
+            operations.complete(context, operation, result_code="enrollment_activation_completed")
             self._audit_once(context, result)
             return StudentBillingEnrollmentResponse(**result)
         finally:
             cleanup_attempted = group.get("_policy_rejection_cleanup_attempted")
             group_exists = True
             if cleanup_attempted:
-                group_exists = bool((
-                    self.supabase.table("billing_subscriptions")
-                    .select("id")
-                    .eq("id", group["id"])
-                    .eq("studio_id", studio_id)
-                    .limit(1)
-                    .execute()
-                ).data)
+                group_exists = bool(
+                    (
+                        self.supabase.table("billing_subscriptions")
+                        .select("id")
+                        .eq("id", group["id"])
+                        .eq("studio_id", studio_id)
+                        .limit(1)
+                        .execute()
+                    ).data
+                )
             if group_exists:
                 self.lifecycle._release_subscription_quantity_sync_lock(
                     studio_id, group["id"], lock_token
@@ -307,12 +328,13 @@ class BillingEnrollmentActivationWorkflow:
         quantity_lock_token: str,
         caller_request_key_sha256: str,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        if (
-            int(operation.get("provider_request_attempt_count") or 0) == 0
-            and not is_usd_currency(plan.get("currency"))
+        if int(operation.get("provider_request_attempt_count") or 0) == 0 and not is_usd_currency(
+            plan.get("currency")
         ):
             operations.transition(
-                context, operation, "definitive_rejected",
+                context,
+                operation,
+                "definitive_rejected",
                 error_code="tuition_currency_requires_usd",
             )
             raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
@@ -328,7 +350,10 @@ class BillingEnrollmentActivationWorkflow:
                 )
             except Exception as exc:
                 self._reject_scheduled_subscription_activation(
-                    operations, context, operation, exc,
+                    operations,
+                    context,
+                    operation,
+                    exc,
                 )
         if branch == "create_subscription" and reservation_created:
             mutation_authorizer = getattr(
@@ -356,10 +381,7 @@ class BillingEnrollmentActivationWorkflow:
                     )
                     raise HTTPException(
                         status_code=409,
-                        detail=(
-                            "Enrollment activation was rejected. "
-                            "Use a new Idempotency-Key."
-                        ),
+                        detail=("Enrollment activation was rejected. Use a new Idempotency-Key."),
                     ) from exc
         operation = operations.transition(
             context,
@@ -378,7 +400,10 @@ class BillingEnrollmentActivationWorkflow:
                 )
             except Exception as exc:
                 self._reject_scheduled_subscription_activation(
-                    operations, context, operation, exc,
+                    operations,
+                    context,
+                    operation,
+                    exc,
                 )
         key = self.owner._idempotency_key(
             "enrollment-activate", context.operation_id, branch.replace("_", "-")
@@ -447,18 +472,25 @@ class BillingEnrollmentActivationWorkflow:
                 )
             else:
                 operations.transition(
-                    context, operation, "definitive_rejected",
+                    context,
+                    operation,
+                    "definitive_rejected",
                     error_code="provider_mutation_blocked",
                 )
             raise
         except Exception as exc:
             self._mark_reconciliation(
-                operations, context, operation,
-                "enrollment_activation_provider_outcome_ambiguous", exc,
+                operations,
+                context,
+                operation,
+                "enrollment_activation_provider_outcome_ambiguous",
+                exc,
             )
         if not subscription_id or not item_id:
             self._mark_reconciliation(
-                operations, context, operation,
+                operations,
+                context,
+                operation,
                 "enrollment_activation_provider_identity_ambiguous",
                 RuntimeError("enrollment_activation_provider_identity_ambiguous"),
             )
@@ -472,7 +504,9 @@ class BillingEnrollmentActivationWorkflow:
                 result_code="enrollment_activation_provider_succeeded",
             )
         except Exception as exc:
-            raise HTTPException(status_code=503, detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL) from exc
+            raise HTTPException(
+                status_code=503, detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL
+            ) from exc
         result = self._readback_and_project(
             enrollment, context, operation, intent, plan=plan, payer=payer, group=group
         )
@@ -521,8 +555,7 @@ class BillingEnrollmentActivationWorkflow:
             ) from last_error
         if (
             rejected.get("outcome") not in {"rejected", "replay"}
-            or (rejected.get("operation") or {}).get("state")
-            != "definitive_rejected"
+            or (rejected.get("operation") or {}).get("state") != "definitive_rejected"
         ):
             raise RuntimeError("autopay_activation_policy_rejection_not_converged")
         if rejected.get("subscription_deleted") is True:
@@ -568,8 +601,7 @@ class BillingEnrollmentActivationWorkflow:
             or str(metadata.get("studio_id") or "") != context.studio_id
             or str(metadata.get("payer_id") or "") != str(intent["payer_id"])
             or str(metadata.get("billing_subscription_id") or "") != str(group["id"])
-            or str(_object_get(provider, "status") or "")
-            not in ACTIVATABLE_SUBSCRIPTION_STATUSES
+            or str(_object_get(provider, "status") or "") not in ACTIVATABLE_SUBSCRIPTION_STATUSES
             or bool(_object_get(provider, "cancel_at_period_end"))
             or bool(_stripe_id(_object_get(provider, "schedule")))
         ):
@@ -622,9 +654,10 @@ class BillingEnrollmentActivationWorkflow:
                 payer=payer,
                 group=group,
             )
-            projected_group = self.owner._project_subscription(
-                provider, context.stripe_connected_account_id
-            ) or group
+            projected_group = (
+                self.owner._project_subscription(provider, context.stripe_connected_account_id)
+                or group
+            )
             if projected_group.get("id") != group.get("id"):
                 raise RuntimeError("enrollment_activation_group_projection_mismatch")
             metadata = dict(enrollment.get("metadata") or {})
@@ -638,9 +671,7 @@ class BillingEnrollmentActivationWorkflow:
                 "stripe_subscription_item_id": operation["provider_secondary_object_id"],
                 "status": "active",
                 "billing_status": (
-                    "current"
-                    if provider_status in {"active", "trialing"}
-                    else "past_due"
+                    "current" if provider_status in {"active", "trialing"} else "past_due"
                 ),
                 "metadata": metadata,
             }
@@ -694,19 +725,23 @@ class BillingEnrollmentActivationWorkflow:
                 "group_id": group["id"],
             }
             if any(existing.get(key) != value for key, value in expected.items()):
-                raise HTTPException(status_code=409, detail="Enrollment activation intent conflicts with current identity.")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Enrollment activation intent conflicts with current identity.",
+                )
             hash_payload = {
                 key: value
                 for key, value in existing.items()
                 if key not in {"desired_sha256", "operation_id"}
             }
             if (
-                existing.get("branch")
-                not in {"create_subscription", "add_item", "update_quantity"}
+                existing.get("branch") not in {"create_subscription", "add_item", "update_quantity"}
                 or int(existing.get("expected_quantity") or 0) <= 0
                 or stable_hash(hash_payload) != existing.get("desired_sha256")
             ):
-                raise HTTPException(status_code=409, detail="Enrollment activation intent is invalid.")
+                raise HTTPException(
+                    status_code=409, detail="Enrollment activation intent is invalid."
+                )
             return existing
         subscription_id = group.get("stripe_subscription_id")
         item_id = (
@@ -724,10 +759,15 @@ class BillingEnrollmentActivationWorkflow:
             quantity = 1
         else:
             branch = "update_quantity"
-            quantity = self.owner._active_enrollment_count_for_subscription_item(
-                enrollment["studio_id"], group["id"], item_id,
-                exclude_enrollment_id=enrollment["id"],
-            ) + 1
+            quantity = (
+                self.owner._active_enrollment_count_for_subscription_item(
+                    enrollment["studio_id"],
+                    group["id"],
+                    item_id,
+                    exclude_enrollment_id=enrollment["id"],
+                )
+                + 1
+            )
         intent = {
             "version": 1,
             "operation_type": operation_type,
@@ -757,7 +797,9 @@ class BillingEnrollmentActivationWorkflow:
             .execute()
         )
         if not result.data:
-            raise HTTPException(status_code=503, detail="Enrollment activation intent could not be stored.")
+            raise HTTPException(
+                status_code=503, detail="Enrollment activation intent could not be stored."
+            )
         return intent
 
     def _exact_active_plan_price(
@@ -879,7 +921,10 @@ class BillingEnrollmentActivationWorkflow:
             not payer.get("default_payment_method_id")
             or not self.owner._payer_autopay_authorized(payer)
         ):
-            raise HTTPException(status_code=409, detail="Autopay requires verified payer consent and payment method.")
+            raise HTTPException(
+                status_code=409,
+                detail="Autopay requires verified payer consent and payment method.",
+            )
 
     def _bind_local_group_generation(
         self,
@@ -915,9 +960,7 @@ class BillingEnrollmentActivationWorkflow:
                 .is_("metadata->connect_account_generation", "null")
             )
             if group.get("stripe_subscription_id"):
-                update = update.eq(
-                    "stripe_subscription_id", group["stripe_subscription_id"]
-                )
+                update = update.eq("stripe_subscription_id", group["stripe_subscription_id"])
             else:
                 update = update.is_("stripe_subscription_id", "null")
             result = update.execute()
@@ -948,7 +991,9 @@ class BillingEnrollmentActivationWorkflow:
         intent: dict[str, Any],
     ) -> dict[str, Any]:
         enrollment = self.owner._get_row_or_404(
-            "student_billing_enrollments", enrollment_id, context.studio_id,
+            "student_billing_enrollments",
+            enrollment_id,
+            context.studio_id,
             "Billing enrollment not found.",
         )
         saved = (enrollment.get("metadata") or {}).get(ACTIVATION_INTENT_KEY)
@@ -985,44 +1030,47 @@ class BillingEnrollmentActivationWorkflow:
             or str(metadata.get("studio_id") or "") != context.studio_id
             or str(metadata.get("payer_id") or "") != str(payer["id"])
             or str(metadata.get("billing_subscription_id") or "") != str(group["id"])
-            or str(_object_get(provider, "status") or "")
-            not in ACTIVATABLE_SUBSCRIPTION_STATUSES
+            or str(_object_get(provider, "status") or "") not in ACTIVATABLE_SUBSCRIPTION_STATUSES
             or (
                 branch in {"add_item", "update_quantity"}
                 and bool(_object_get(provider, "cancel_at_period_end"))
             )
             or (
                 branch in {"add_item", "update_quantity"}
-                and operation.get("provider_object_id")
-                != intent.get("expected_subscription_id")
+                and operation.get("provider_object_id") != intent.get("expected_subscription_id")
             )
             or (
                 branch == "update_quantity"
-                and operation.get("provider_secondary_object_id")
-                != intent.get("expected_item_id")
+                and operation.get("provider_secondary_object_id") != intent.get("expected_item_id")
             )
         ):
             raise RuntimeError("enrollment_activation_subscription_readback_mismatch")
         items = _object_get(_object_get(provider, "items") or {}, "data", []) or []
         matched = next(
-            (item for item in items if _stripe_id(item) == operation.get("provider_secondary_object_id")),
+            (
+                item
+                for item in items
+                if _stripe_id(item) == operation.get("provider_secondary_object_id")
+            ),
             None,
         )
         if matched is None:
             raise RuntimeError("enrollment_activation_item_missing")
         price_id = _stripe_id(_object_get(matched, "price"))
         item_metadata = _object_get(matched, "metadata") or {}
-        if price_id != plan.get("stripe_price_id") or int(
-            _object_get(matched, "quantity", 0) or 0
-        ) != int(intent["expected_quantity"]) or (
-            str(item_metadata.get("studio_id") or "") != context.studio_id
-            or str(item_metadata.get("payer_id") or "") != str(payer["id"])
-            or str(item_metadata.get("billing_plan_id") or "") != str(plan["id"])
-            or str(item_metadata.get("billing_subscription_id") or "") != str(group["id"])
+        if (
+            price_id != plan.get("stripe_price_id")
+            or int(_object_get(matched, "quantity", 0) or 0) != int(intent["expected_quantity"])
             or (
-                branch in {"create_subscription", "add_item"}
-                and str(item_metadata.get("enrollment_id") or "")
-                != str(intent["enrollment_id"])
+                str(item_metadata.get("studio_id") or "") != context.studio_id
+                or str(item_metadata.get("payer_id") or "") != str(payer["id"])
+                or str(item_metadata.get("billing_plan_id") or "") != str(plan["id"])
+                or str(item_metadata.get("billing_subscription_id") or "") != str(group["id"])
+                or (
+                    branch in {"create_subscription", "add_item"}
+                    and str(item_metadata.get("enrollment_id") or "")
+                    != str(intent["enrollment_id"])
+                )
             )
         ):
             raise RuntimeError("enrollment_activation_item_readback_mismatch")
@@ -1035,7 +1083,9 @@ class BillingEnrollmentActivationWorkflow:
             or not account.get("charges_enabled")
             or account.get("status") == "deauthorized"
         ):
-            raise HTTPException(status_code=409, detail="Stripe Connect charges are not enabled yet.")
+            raise HTTPException(
+                status_code=409, detail="Stripe Connect charges are not enabled yet."
+            )
         return account
 
     @staticmethod
@@ -1049,9 +1099,7 @@ class BillingEnrollmentActivationWorkflow:
         return generation
 
     @staticmethod
-    def _subscription_metadata(
-        enrollment: dict[str, Any], group: dict[str, Any]
-    ) -> dict[str, str]:
+    def _subscription_metadata(enrollment: dict[str, Any], group: dict[str, Any]) -> dict[str, str]:
         return {
             "studio_id": str(enrollment["studio_id"]),
             "payer_id": str(enrollment["payer_id"]),
@@ -1075,10 +1123,7 @@ class BillingEnrollmentActivationWorkflow:
 
     @staticmethod
     def _result_summary(intent: dict[str, Any]) -> str:
-        return (
-            f"enrollment_branch:{intent['branch']}:quantity:"
-            f"{int(intent['expected_quantity'])}"
-        )
+        return f"enrollment_branch:{intent['branch']}:quantity:{int(intent['expected_quantity'])}"
 
     @staticmethod
     def _mark_reconciliation(
@@ -1090,7 +1135,9 @@ class BillingEnrollmentActivationWorkflow:
     ) -> None:
         try:
             operations.transition(
-                context, operation, "reconciliation_required",
+                context,
+                operation,
+                "reconciliation_required",
                 reconciliation_reason_code=reason,
             )
         except Exception:
@@ -1100,29 +1147,37 @@ class BillingEnrollmentActivationWorkflow:
     def _audit_once(
         self, context: BillingProviderOperationContext, enrollment: dict[str, Any]
     ) -> None:
-        audit_id = str(uuid5(
-            NAMESPACE_URL,
-            f"koaryu:billing.student_enrollment_activated:{context.operation_id}",
-        ))
+        audit_id = str(
+            uuid5(
+                NAMESPACE_URL,
+                f"koaryu:billing.student_enrollment_activated:{context.operation_id}",
+            )
+        )
         existing = (
-            self.supabase.table("audit_logs").select("id")
-            .eq("id", audit_id).eq("studio_id", context.studio_id).limit(1).execute()
+            self.supabase.table("audit_logs")
+            .select("id")
+            .eq("id", audit_id)
+            .eq("studio_id", context.studio_id)
+            .limit(1)
+            .execute()
         )
         if existing.data:
             return
         try:
-            self.supabase.table("audit_logs").insert({
-                "id": audit_id,
-                "studio_id": context.studio_id,
-                "actor_id": context.actor_id,
-                "action": "billing.student_enrollment_activated",
-                "entity_type": "billing",
-                "entity_id": enrollment["id"],
-                "metadata": {
-                    "operation_id": context.operation_id,
-                    "billing_subscription_id": enrollment.get("billing_subscription_id"),
-                },
-            }).execute()
+            self.supabase.table("audit_logs").insert(
+                {
+                    "id": audit_id,
+                    "studio_id": context.studio_id,
+                    "actor_id": context.actor_id,
+                    "action": "billing.student_enrollment_activated",
+                    "entity_type": "billing",
+                    "entity_id": enrollment["id"],
+                    "metadata": {
+                        "operation_id": context.operation_id,
+                        "billing_subscription_id": enrollment.get("billing_subscription_id"),
+                    },
+                }
+            ).execute()
         except PostgrestAPIError as exc:
             if getattr(exc, "code", None) != "23505":
                 raise

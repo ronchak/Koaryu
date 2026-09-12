@@ -53,7 +53,8 @@
   font-size: 0.8125rem;
 }
 
-.surface :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
+.surface
+  :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
   min-width: 44px;
   min-height: 44px;
   padding: 0.625rem 0.75rem;
@@ -139,7 +140,9 @@
   border-radius: 10px;
   color: var(--text-primary);
   text-decoration: none;
-  transition: color 120ms ease, background-color 120ms ease;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
 }
 
 .index a:hover {
@@ -193,20 +196,23 @@
 }
 
 /* Automations remain an honest read-only catalog. */
-.surface[data-operations-page="automations"] :global([data-automation-catalog="live-queues-and-proposals"] [data-automation-sheet="true"]) {
+.surface[data-operations-page="automations"]
+  :global([data-automation-catalog="live-queues-and-proposals"] [data-automation-sheet="true"]) {
   border: 0 !important;
   border-radius: 14px;
   background: var(--product-paper);
   box-shadow: var(--product-shadow-card);
 }
 
-.surface[data-operations-page="automations"] :global([data-automation-catalog="live-queues-and-proposals"] [data-automation-inset="true"]) {
+.surface[data-operations-page="automations"]
+  :global([data-automation-catalog="live-queues-and-proposals"] [data-automation-inset="true"]) {
   border: 1px solid var(--product-rule);
   border-radius: 10px;
   background: var(--product-card-stock);
 }
 
-.surface[data-operations-page="automations"] :global([data-automation-live-target="true"]:focus-visible) {
+.surface[data-operations-page="automations"]
+  :global([data-automation-live-target="true"]:focus-visible) {
   outline-color: var(--product-focus) !important;
 }
 
@@ -335,7 +341,8 @@
   border-radius: 8px;
   background: var(--product-card-stock, var(--surface-raised));
   opacity: 0.72;
-  animation: operations-settle var(--product-motion-settle-duration, 220ms) var(--product-motion-ease, ease-out) both;
+  animation: operations-settle var(--product-motion-settle-duration, 220ms)
+    var(--product-motion-ease, ease-out) both;
 }
 
 .loading[data-loading-family="schedule"] .loadingWorkbench {
@@ -347,8 +354,12 @@
 }
 
 @keyframes operations-settle {
-  from { opacity: 0.25; }
-  to { opacity: 0.72; }
+  from {
+    opacity: 0.25;
+  }
+  to {
+    opacity: 0.72;
+  }
 }
 
 @media (max-width: 1023px) {

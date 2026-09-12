@@ -52,19 +52,29 @@ def test_demo_billing_seed_writes_coherent_fixture_rows():
     assert len(supabase.tables["billing_invoice_items"]) == 11
     assert len(supabase.tables["billing_payments"]) == 7
 
-    kids_plan = next(row for row in supabase.tables["billing_plans"] if row["name"] == "Kids Unlimited")
+    kids_plan = next(
+        row for row in supabase.tables["billing_plans"] if row["name"] == "Kids Unlimited"
+    )
     assert kids_plan["id"] == demo_seed_id(studio_id, "billing-plan:kids-unlimited")
     assert kids_plan["stripe_account_id"] == DEMO_CONNECT_ACCOUNT_ID
 
-    external_payer = next(row for row in supabase.tables["billing_payers"] if row["display_name"] == "Omar Haddad")
+    external_payer = next(
+        row for row in supabase.tables["billing_payers"] if row["display_name"] == "Omar Haddad"
+    )
     assert external_payer["stripe_account_id"] is None
     assert external_payer["billing_status"] == "externally_paid"
 
-    paid_invoice = next(row for row in supabase.tables["billing_invoices"] if row["invoice_number"] == "KOA-DEMO-101")
+    paid_invoice = next(
+        row
+        for row in supabase.tables["billing_invoices"]
+        if row["invoice_number"] == "KOA-DEMO-101"
+    )
     assert paid_invoice["amount_remaining_cents"] == 0
     assert paid_invoice["paid_at"] is not None
 
-    external_payment = next(row for row in supabase.tables["billing_payments"] if row["external_method"] == "Zelle")
+    external_payment = next(
+        row for row in supabase.tables["billing_payments"] if row["external_method"] == "Zelle"
+    )
     assert external_payment["stripe_account_id"] is None
     assert external_payment["status"] == "externally_recorded"
     assert external_payment["idempotency_key"].startswith("demo-external-payment:")
@@ -88,6 +98,8 @@ def test_demo_billing_seed_writes_coherent_fixture_rows():
         expected_refundable = payment["amount_cents"] if payment["stripe_charge_id"] else 0
         assert payment["refundable_amount_cents"] == expected_refundable
 
-    stripe_payment = next(row for row in supabase.tables["billing_payments"] if row["external_method"] is None)
+    stripe_payment = next(
+        row for row in supabase.tables["billing_payments"] if row["external_method"] is None
+    )
     assert stripe_payment["idempotency_key"] is None
     assert stripe_payment["request_hash"] is None

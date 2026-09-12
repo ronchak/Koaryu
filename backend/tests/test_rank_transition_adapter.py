@@ -1,4 +1,5 @@
 """The adapter owns transport/errors; real SQL contracts own rank mutations."""
+
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -33,32 +34,56 @@ def rpc_client(*, row=None, error=None):
 
 def receipt(kind):
     return {
-        "id": "88888888-8888-4888-8888-888888888888", "studio_id": STUDIO,
-        "student_id": STUDENT, "operation_id": OPERATION, "transition_kind": kind,
-        "to_rank_id": None, "promoted_by": None, "promoted_at": "2026-09-08T00:00:00Z",
-        "from_rank_name_snapshot": "White", "to_rank_name_snapshot": "Yellow",
+        "id": "88888888-8888-4888-8888-888888888888",
+        "studio_id": STUDIO,
+        "student_id": STUDENT,
+        "operation_id": OPERATION,
+        "transition_kind": kind,
+        "to_rank_id": None,
+        "promoted_by": None,
+        "promoted_at": "2026-09-08T00:00:00Z",
+        "from_rank_name_snapshot": "White",
+        "to_rank_name_snapshot": "Yellow",
         "command_fingerprint": "internal evidence is not an API field",
     }
 
 
-@pytest.mark.parametrize("kind,context,as_list", [
-    ("promotion", {}, False),
-    ("demotion", {"program_id": PROGRAM, "student_program_membership_id": MEMBERSHIP}, True),
-])
+@pytest.mark.parametrize(
+    "kind,context,as_list",
+    [
+        ("promotion", {}, False),
+        ("demotion", {"program_id": PROGRAM, "student_program_membership_id": MEMBERSHIP}, True),
+    ],
+)
 def test_one_rpc_receives_original_command_and_returns_retained_history(kind, context, as_list):
     row = receipt(kind)
     client = rpc_client(row=[row] if as_list else row)
     payload = dict(student_id=STUDENT, to_rank_id=TARGET, operation_id=OPERATION, **context)
-    data = PromoteStudent(**payload, notes=None) if kind == "promotion" else DemoteStudent(**payload, reason="  Correction  ")
-    method = BeltService(client).promote_student if kind == "promotion" else BeltService(client).demote_student
+    data = (
+        PromoteStudent(**payload, notes=None)
+        if kind == "promotion"
+        else DemoteStudent(**payload, reason="  Correction  ")
+    )
+    method = (
+        BeltService(client).promote_student
+        if kind == "promotion"
+        else BeltService(client).demote_student
+    )
     result = asyncio.run(method(data, STUDIO, ACTOR))
-    client.rpc.assert_called_once_with("record_student_rank_transition_v3", {
-        "p_studio_id": STUDIO, "p_actor_id": ACTOR, "p_student_id": STUDENT,
-        "p_to_rank_id": TARGET, "p_operation_id": OPERATION, "p_transition_kind": kind,
-        "p_program_id": context.get("program_id"),
-        "p_student_program_membership_id": context.get("student_program_membership_id"),
-        "p_notes": None if kind == "promotion" else "Correction",
-    })
+    client.rpc.assert_called_once_with(
+        "record_student_rank_transition_v3",
+        {
+            "p_studio_id": STUDIO,
+            "p_actor_id": ACTOR,
+            "p_student_id": STUDENT,
+            "p_to_rank_id": TARGET,
+            "p_operation_id": OPERATION,
+            "p_transition_kind": kind,
+            "p_program_id": context.get("program_id"),
+            "p_student_program_membership_id": context.get("student_program_membership_id"),
+            "p_notes": None if kind == "promotion" else "Correction",
+        },
+    )
     client.rpc.return_value.execute.assert_called_once_with()
     assert (result.id, result.from_rank_name, result.to_rank_name) == (row["id"], "White", "Yellow")
     assert result.to_rank_id is None and result.promoted_by is None
@@ -68,28 +93,41 @@ def test_one_rpc_receives_original_command_and_returns_retained_history(kind, co
 def test_absent_operation_gets_one_key_and_empty_result_is_not_success():
     client = rpc_client(row=[])
     with pytest.raises(HTTPException) as error:
-        asyncio.run(BeltService(client).promote_student(
-            PromoteStudent(student_id=STUDENT, to_rank_id=TARGET), STUDIO, ACTOR,
-        ))
+        asyncio.run(
+            BeltService(client).promote_student(
+                PromoteStudent(student_id=STUDENT, to_rank_id=TARGET),
+                STUDIO,
+                ACTOR,
+            )
+        )
     assert error.value.status_code == 500
     assert client.rpc.call_count == 1
     assert UUID(client.rpc.call_args.args[1]["p_operation_id"]).version == 4
 
 
-@pytest.mark.parametrize("code,detail,expected", [
-    ("22023", "rank_transition_conflict", 409),
-    ("22023", "rank_transition_invalid", 400),
-    ("P0001", "rank_transition_invalid", 400),
-    ("P0002", "rank_transition_not_found", 404),
-    ("22023", "unowned internal failure", 500),
-    ("P0001", "unowned trigger failure", 500),
-    ("XX000", "rank_transition_conflict", 500),
-])
+@pytest.mark.parametrize(
+    "code,detail,expected",
+    [
+        ("22023", "rank_transition_conflict", 409),
+        ("22023", "rank_transition_invalid", 400),
+        ("P0001", "rank_transition_invalid", 400),
+        ("P0002", "rank_transition_not_found", 404),
+        ("22023", "unowned internal failure", 500),
+        ("P0001", "unowned trigger failure", 500),
+        ("XX000", "rank_transition_conflict", 500),
+    ],
+)
 def test_real_http_path_maps_only_owned_domain_errors(code, detail, expected):
-    provider_error = PostgrestAPIError({
-        "code": code, "details": detail, "hint": None,
-        "message": "Rank command was rejected." if expected != 500 else "private SQL diagnostic",
-    })
+    provider_error = PostgrestAPIError(
+        {
+            "code": code,
+            "details": detail,
+            "hint": None,
+            "message": "Rank command was rejected."
+            if expected != 500
+            else "private SQL diagnostic",
+        }
+    )
     db = rpc_client(error=provider_error)
     app = FastAPI()
     register_error_handlers(app)
@@ -98,13 +136,21 @@ def test_real_http_path_maps_only_owned_domain_errors(code, detail, expected):
     app.dependency_overrides[get_promotion_manager_studio_id] = lambda: STUDIO
     app.dependency_overrides[get_supabase] = lambda: db
     with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.post("/belts/promote", json={
-            "student_id": STUDENT, "to_rank_id": TARGET, "operation_id": OPERATION,
-        })
+        response = client.post(
+            "/belts/promote",
+            json={
+                "student_id": STUDENT,
+                "to_rank_id": TARGET,
+                "operation_id": OPERATION,
+            },
+        )
     assert response.status_code == expected, response.text
     assert response.json()["error"]["status_code"] == expected
     assert response.json()["detail"] == (
         "This rank change could not be verified against the recorded history. Check the student's history before trying again."
-        if expected == 409 else "Internal server error." if expected == 500 else "Rank command was rejected."
+        if expected == 409
+        else "Internal server error."
+        if expected == 500
+        else "Rank command was rejected."
     )
     assert db.rpc.call_count == 1

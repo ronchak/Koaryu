@@ -6,7 +6,9 @@ export type ResourceScope = ReturnType<typeof createResourceScope>;
 
 export function beginResourceMutation(scope: ResourceScope): () => void {
   if (scope.pending === 0) {
-    scope.settled = new Promise<void>((resolve) => { scope.settle = resolve; });
+    scope.settled = new Promise<void>((resolve) => {
+      scope.settle = resolve;
+    });
   }
   scope.revision += 1;
   scope.pending += 1;

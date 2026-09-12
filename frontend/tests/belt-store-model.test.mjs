@@ -64,14 +64,19 @@ describe("belt store model", () => {
 
     assert.equal(selectBeltLadder([late, early], "early")?.id, "early");
     assert.equal(selectBeltLadder([late, early], "missing")?.id, "late");
-    assert.deepEqual(sortBeltLadders([late, early]).map((item) => item.id), ["early", "late"]);
     assert.deepEqual(
-      upsertBeltLadder([late, early], ladder("late", { name: "Updated", created_at: "2026-05-02T00:00:00.000Z" }))
-        .map((item) => [item.id, item.name]),
+      sortBeltLadders([late, early]).map((item) => item.id),
+      ["early", "late"],
+    );
+    assert.deepEqual(
+      upsertBeltLadder(
+        [late, early],
+        ladder("late", { name: "Updated", created_at: "2026-05-02T00:00:00.000Z" }),
+      ).map((item) => [item.id, item.name]),
       [
         ["early", "early"],
         ["late", "Updated"],
-      ]
+      ],
     );
   });
 
@@ -88,12 +93,17 @@ describe("belt store model", () => {
         ladderName: "Current Name",
         subRankTerm: "Stripe",
         requestedSubRankTerm: " Tape ",
-      }
+      },
     );
 
     assert.deepEqual(
-      [builtFromSelected.id, builtFromSelected.name, builtFromSelected.sub_rank_term, builtFromSelected.ranks[0].id],
-      ["kids", "Kids", "Tape", "white"]
+      [
+        builtFromSelected.id,
+        builtFromSelected.name,
+        builtFromSelected.sub_rank_term,
+        builtFromSelected.ranks[0].id,
+      ],
+      ["kids", "Kids", "Tape", "white"],
     );
 
     const builtFromFallback = buildPreviewBeltLadderFromRanks([], [rank("blue")], {
@@ -102,18 +112,33 @@ describe("belt store model", () => {
       subRankTerm: "Stripe",
     });
     assert.deepEqual(
-      [builtFromFallback.id, builtFromFallback.name, builtFromFallback.sub_rank_term, builtFromFallback.ranks[0].id],
-      ["mock-ladder", "Display Name", "Stripe", "blue"]
+      [
+        builtFromFallback.id,
+        builtFromFallback.name,
+        builtFromFallback.sub_rank_term,
+        builtFromFallback.ranks[0].id,
+      ],
+      ["mock-ladder", "Display Name", "Stripe", "blue"],
     );
   });
 
   it("builds the live belt sync payload without sending local-only rank ids", () => {
     const payload = buildBeltLadderSyncPayload(
       [
-        rank("rank-1", { name: "White", display_order: 9, is_tip: false, tip_color_hex: "#000000" }),
-        rank("local-rank-2", { name: "Black Tip", is_tip: true, tip_color_hex: "#111111", requires_approval: true }),
+        rank("rank-1", {
+          name: "White",
+          display_order: 9,
+          is_tip: false,
+          tip_color_hex: "#000000",
+        }),
+        rank("local-rank-2", {
+          name: "Black Tip",
+          is_tip: true,
+          tip_color_hex: "#111111",
+          requires_approval: true,
+        }),
       ],
-      "Stripe"
+      "Stripe",
     );
 
     assert.deepEqual(payload, {
@@ -148,11 +173,14 @@ describe("belt store model", () => {
     const updated = updatePreviewLadderSubRankTerm(
       [ladder("adults", { sub_rank_term: "Stripe" })],
       "adults",
-      "Tip"
+      "Tip",
     );
 
     assert.equal(updated.selectedLadder?.id, "adults");
-    assert.deepEqual(updated.ladders?.map((item) => [item.id, item.sub_rank_term]), [["adults", "Tip"]]);
+    assert.deepEqual(
+      updated.ladders?.map((item) => [item.id, item.sub_rank_term]),
+      [["adults", "Tip"]],
+    );
 
     const missing = updatePreviewLadderSubRankTerm([], null, "Tip");
     assert.equal(missing.selectedLadder, null);
@@ -189,7 +217,7 @@ describe("belt store model", () => {
         notes: "Ready",
         idFactory: () => "promotion-1",
         now: new Date("2026-05-24T12:00:00.000Z"),
-      }
+      },
     );
 
     assert.deepEqual(
@@ -214,73 +242,80 @@ describe("belt store model", () => {
         to_rank_name: "Blue",
         notes: "Ready",
         promoted_at: "2026-05-24T12:00:00.000Z",
-      }
+      },
     );
-    assert.deepEqual(result.students.map((item) => [item.id, item.current_belt_rank_id, item.updated_at]), [
-      ["student-1", "blue", "2026-05-24T12:00:00.000Z"],
-      ["student-2", "white", "2026-05-01T00:00:00.000Z"],
-    ]);
+    assert.deepEqual(
+      result.students.map((item) => [item.id, item.current_belt_rank_id, item.updated_at]),
+      [
+        ["student-1", "blue", "2026-05-24T12:00:00.000Z"],
+        ["student-2", "white", "2026-05-01T00:00:00.000Z"],
+      ],
+    );
     assert.deepEqual(
       result.students[0].program_memberships?.map((membership) => [
         membership.id,
         membership.current_belt_rank_id,
         membership.updated_at,
       ]),
-      [["membership-1", "blue", "2026-05-24T12:00:00.000Z"]]
+      [["membership-1", "blue", "2026-05-24T12:00:00.000Z"]],
     );
     assert.equal(result.students[0].program_memberships?.[0]?.status, "paused");
   });
 
   it("keeps preview promotion validation errors explicit", () => {
     assert.throws(
-      () => buildPreviewPromotion([], [rank("blue")], {
-        studentId: "missing",
-        toRankId: "blue",
-        idFactory: () => "promotion-1",
-      }),
-      /Student not found/
+      () =>
+        buildPreviewPromotion([], [rank("blue")], {
+          studentId: "missing",
+          toRankId: "blue",
+          idFactory: () => "promotion-1",
+        }),
+      /Student not found/,
     );
 
     assert.throws(
-      () => buildPreviewPromotion([student("student-1")], [], {
-        studentId: "student-1",
-        toRankId: "missing",
-        idFactory: () => "promotion-1",
-      }),
-      /Target rank not found/
+      () =>
+        buildPreviewPromotion([student("student-1")], [], {
+          studentId: "student-1",
+          toRankId: "missing",
+          idFactory: () => "promotion-1",
+        }),
+      /Target rank not found/,
     );
   });
 
   it("promotes the exact unranked secondary program membership", () => {
     const result = buildPreviewPromotion(
-      [student("student-1", {
-        program_id: "primary-program",
-        current_belt_rank_id: "primary-white",
-        program_memberships: [
-          {
-            id: "primary-membership",
-            studio_id: "mock-studio",
-            student_id: "student-1",
-            program_id: "primary-program",
-            status: "active",
-            started_at: "2026-05-01",
-            current_belt_rank_id: "primary-white",
-            created_at: "2026-05-01T00:00:00.000Z",
-            updated_at: "2026-05-01T00:00:00.000Z",
-          },
-          {
-            id: "secondary-membership",
-            studio_id: "mock-studio",
-            student_id: "student-1",
-            program_id: "secondary-program",
-            status: "active",
-            started_at: "2026-05-10",
-            current_belt_rank_id: null,
-            created_at: "2026-05-10T00:00:00.000Z",
-            updated_at: "2026-05-10T00:00:00.000Z",
-          },
-        ],
-      })],
+      [
+        student("student-1", {
+          program_id: "primary-program",
+          current_belt_rank_id: "primary-white",
+          program_memberships: [
+            {
+              id: "primary-membership",
+              studio_id: "mock-studio",
+              student_id: "student-1",
+              program_id: "primary-program",
+              status: "active",
+              started_at: "2026-05-01",
+              current_belt_rank_id: "primary-white",
+              created_at: "2026-05-01T00:00:00.000Z",
+              updated_at: "2026-05-01T00:00:00.000Z",
+            },
+            {
+              id: "secondary-membership",
+              studio_id: "mock-studio",
+              student_id: "student-1",
+              program_id: "secondary-program",
+              status: "active",
+              started_at: "2026-05-10",
+              current_belt_rank_id: null,
+              created_at: "2026-05-10T00:00:00.000Z",
+              updated_at: "2026-05-10T00:00:00.000Z",
+            },
+          ],
+        }),
+      ],
       [
         rank("primary-white", { ladder_id: "primary-ladder", name: "White" }),
         rank("secondary-white", { ladder_id: "secondary-ladder", name: "Secondary White" }),
@@ -291,7 +326,7 @@ describe("belt store model", () => {
         studentProgramMembershipId: "secondary-membership",
         programId: "secondary-program",
         idFactory: () => "promotion-1",
-      }
+      },
     );
 
     assert.equal(result.promotion.student_program_membership_id, "secondary-membership");
@@ -306,7 +341,7 @@ describe("belt store model", () => {
       [
         ["primary-membership", "primary-white"],
         ["secondary-membership", "secondary-white"],
-      ]
+      ],
     );
   });
 
@@ -315,21 +350,25 @@ describe("belt store model", () => {
     const white = rank("white", { display_order: 0 });
     const yellow = rank("yellow", { display_order: 1 });
     const repaired = repairPreviewStudentRanksForLadder(
-      [student("student-1", {
-        program_id: "bjj",
-        current_belt_rank_id: "yellow",
-        program_memberships: [{
-          id: "membership-1",
-          studio_id: "mock-studio",
-          student_id: "student-1",
+      [
+        student("student-1", {
           program_id: "bjj",
-          status: "active",
-          started_at: "2026-05-01",
           current_belt_rank_id: "yellow",
-          created_at: "2026-05-01T00:00:00.000Z",
-          updated_at: "2026-05-01T00:00:00.000Z",
-        }],
-      })],
+          program_memberships: [
+            {
+              id: "membership-1",
+              studio_id: "mock-studio",
+              student_id: "student-1",
+              program_id: "bjj",
+              status: "active",
+              started_at: "2026-05-01",
+              current_belt_rank_id: "yellow",
+              created_at: "2026-05-01T00:00:00.000Z",
+              updated_at: "2026-05-01T00:00:00.000Z",
+            },
+          ],
+        }),
+      ],
       previewLadder,
       [white, yellow],
       [white],
@@ -347,17 +386,19 @@ describe("belt store model", () => {
     const unrankedStudent = student("student-1", {
       program_id: "bjj",
       current_belt_rank_id: null,
-      program_memberships: [{
-        id: "membership-1",
-        studio_id: "mock-studio",
-        student_id: "student-1",
-        program_id: "bjj",
-        status: "active",
-        started_at: "2026-05-01",
-        current_belt_rank_id: null,
-        created_at: "2026-05-01T00:00:00.000Z",
-        updated_at: "2026-05-01T00:00:00.000Z",
-      }],
+      program_memberships: [
+        {
+          id: "membership-1",
+          studio_id: "mock-studio",
+          student_id: "student-1",
+          program_id: "bjj",
+          status: "active",
+          started_at: "2026-05-01",
+          current_belt_rank_id: null,
+          created_at: "2026-05-01T00:00:00.000Z",
+          updated_at: "2026-05-01T00:00:00.000Z",
+        },
+      ],
     });
 
     const initiallyAssigned = repairPreviewStudentRanksForLadder(

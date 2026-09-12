@@ -14,8 +14,7 @@ interface StatusActionProps {
 
 const actionStyles: Record<ActionVariant, string> = {
   primary: "bg-accent text-accent-contrast hover:bg-accent-hover",
-  secondary:
-    "border border-border bg-surface-raised text-text-primary hover:bg-surface-hover",
+  secondary: "border border-border bg-surface-raised text-text-primary hover:bg-surface-hover",
   ghost: "text-text-secondary hover:bg-surface-raised hover:text-text-primary",
 };
 

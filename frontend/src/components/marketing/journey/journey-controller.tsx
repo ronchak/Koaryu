@@ -13,11 +13,7 @@ import {
 
 import { landingPageContent } from "../../../lib/landing-page-content.ts";
 import { publicNavLinks } from "../../../lib/public-navigation.ts";
-import {
-  MarketingBrandLink,
-  MarketingMenuButton,
-  MarketingNavLink,
-} from "../marketing-primitives";
+import { MarketingBrandLink, MarketingMenuButton, MarketingNavLink } from "../marketing-primitives";
 import {
   FAQ_HASHES,
   INITIAL_WHEEL_GESTURE_STATE,
@@ -109,9 +105,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
     return false;
   }
   return Boolean(
-    target.closest(
-      "a, button, input, textarea, select, summary, [contenteditable='true']"
-    )
+    target.closest("a, button, input, textarea, select, summary, [contenteditable='true']"),
   );
 }
 
@@ -124,9 +118,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
   const [enhanced, setEnhanced] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const [sceneProgress, setSceneProgress] = useState<number>(firstChapter.scene);
-  const [frame, setFrame] = useState(() =>
-    frameForDimensions(SCENE_WIDTH, SCENE_HEIGHT)
-  );
+  const [frame, setFrame] = useState(() => frameForDimensions(SCENE_WIDTH, SCENE_HEIGHT));
   const [menuOpen, setMenuOpen] = useState(false);
   const [faqGroup, setFaqGroup] = useState(0);
   const [openFaq, setOpenFaq] = useState(0);
@@ -147,10 +139,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
       stopAnimation();
       const origin = progressRef.current;
-      if (
-        reducedMotionRef.current ||
-        Math.abs(destination - origin) < 0.0001
-      ) {
+      if (reducedMotionRef.current || Math.abs(destination - origin) < 0.0001) {
         progressRef.current = destination;
         setSceneProgress(destination);
         return;
@@ -173,7 +162,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       };
       animationRef.current = window.requestAnimationFrame(tick);
     },
-    [stopAnimation]
+    [stopAnimation],
   );
 
   const navigateTo = useCallback(
@@ -191,9 +180,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (nextChapter.id !== "faq") {
         setFaqGroup(0);
       } else if (options.faqGroup != null) {
-        setFaqGroup(
-          Math.round(clamp(options.faqGroup, 0, FAQ_HASHES.length - 1))
-        );
+        setFaqGroup(Math.round(clamp(options.faqGroup, 0, FAQ_HASHES.length - 1)));
       }
       animateScene(nextChapter.scene);
 
@@ -202,15 +189,11 @@ export function JourneyController({ children }: JourneyControllerProps) {
         writeJourneyUrl(`#${nextHash}`, options.historyMode ?? "replace");
       }
     },
-    [animateScene]
+    [animateScene],
   );
 
   const applyResolvedHash = useCallback(
-    (
-      resolved: ResolvedJourneyHash,
-      animate: boolean,
-      historyMode: HistoryMode = "replace"
-    ) => {
+    (resolved: ResolvedJourneyHash, animate: boolean, historyMode: HistoryMode = "replace") => {
       const chapter = chapters[resolved.chapterIndex];
       if (!chapter) {
         return;
@@ -236,13 +219,11 @@ export function JourneyController({ children }: JourneyControllerProps) {
         writeJourneyUrl(`#${resolved.canonicalHash}`, "replace");
       }
     },
-    [navigateTo, stopAnimation]
+    [navigateTo, stopAnimation],
   );
 
   const selectFaqGroup = useCallback((requestedGroup: number) => {
-    const nextGroup = Math.round(
-      clamp(requestedGroup, 0, FAQ_HASHES.length - 1)
-    );
+    const nextGroup = Math.round(clamp(requestedGroup, 0, FAQ_HASHES.length - 1));
     setFaqGroup(nextGroup);
     setOpenFaq(0);
     if (typeof window !== "undefined" && pageRef.current === faqChapterIndex) {
@@ -308,9 +289,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       return;
     }
 
-    for (const chapter of root.querySelectorAll<HTMLElement>(
-      "[data-journey-chapter]"
-    )) {
+    for (const chapter of root.querySelectorAll<HTMLElement>("[data-journey-chapter]")) {
       const active = Number(chapter.dataset.chapterIndex) === pageIndex;
       chapter.inert = !active;
       chapter.setAttribute("aria-hidden", active ? "false" : "true");
@@ -374,16 +353,10 @@ export function JourneyController({ children }: JourneyControllerProps) {
         return;
       }
 
-      const delta = normalizeWheelDelta(
-        event.deltaY,
-        event.deltaMode,
-        window.innerHeight
-      );
+      const delta = normalizeWheelDelta(event.deltaY, event.deltaMode, window.innerHeight);
       const direction = delta > 0 ? 1 : -1;
       const panel = closestFaqPanel(event.target);
-      const faqCanScroll = panel
-        ? canScrollablePanelMove(metricsFor(panel), direction)
-        : false;
+      const faqCanScroll = panel ? canScrollablePanelMove(metricsFor(panel), direction) : false;
       const result = reduceWheelGesture(wheelState, {
         delta,
         now: event.timeStamp,
@@ -409,12 +382,14 @@ export function JourneyController({ children }: JourneyControllerProps) {
         return;
       }
       const activeElement = document.activeElement;
-      if (!shouldHandleJourneyKeyboardFocus({
-        hasActiveElement: Boolean(activeElement),
-        activeIsBody: activeElement === document.body,
-        activeIsDocumentElement: activeElement === document.documentElement,
-        rootContainsActive: Boolean(activeElement && root.contains(activeElement)),
-      })) {
+      if (
+        !shouldHandleJourneyKeyboardFocus({
+          hasActiveElement: Boolean(activeElement),
+          activeIsBody: activeElement === document.body,
+          activeIsDocumentElement: activeElement === document.documentElement,
+          rootContainsActive: Boolean(activeElement && root.contains(activeElement)),
+        })
+      ) {
         return;
       }
 
@@ -424,18 +399,12 @@ export function JourneyController({ children }: JourneyControllerProps) {
           : null;
       if (activeTopic) {
         const currentTopic = Number(activeTopic.dataset.faqTopic);
-        const nextTopic = nextFaqTopicIndex(
-          currentTopic,
-          event.key,
-          FAQ_HASHES.length
-        );
+        const nextTopic = nextFaqTopicIndex(currentTopic, event.key, FAQ_HASHES.length);
         if (nextTopic != null) {
           event.preventDefault();
           selectFaqGroup(nextTopic);
           window.requestAnimationFrame(() => {
-            root
-              .querySelector<HTMLElement>(`[data-faq-topic="${nextTopic}"]`)
-              ?.focus();
+            root.querySelector<HTMLElement>(`[data-faq-topic="${nextTopic}"]`)?.focus();
           });
           return;
         }
@@ -488,18 +457,12 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
     const onTouchEnd = (event: TouchEvent) => {
       const touch = event.changedTouches[0];
-      if (
-        touchStartY === null ||
-        !touch ||
-        !eventBelongsToJourney(event.target)
-      ) {
+      if (touchStartY === null || !touch || !eventBelongsToJourney(event.target)) {
         return;
       }
 
       const direction = touchStartY - touch.clientY > 0 ? 1 : -1;
-      const panelMoved = touchPanel
-        ? Math.abs(touchPanel.scrollTop - touchPanelStart) > 4
-        : false;
+      const panelMoved = touchPanel ? Math.abs(touchPanel.scrollTop - touchPanelStart) > 4 : false;
       const panelCanScroll = touchPanel
         ? canScrollablePanelMove(metricsFor(touchPanel), direction)
         : false;
@@ -541,27 +504,17 @@ export function JourneyController({ children }: JourneyControllerProps) {
     const faqQuestion = event.target.closest<HTMLElement>("[data-faq-question]");
     if (faqQuestion) {
       event.preventDefault();
-      const [groupValue, itemValue] = (
-        faqQuestion.dataset.faqQuestion ?? ""
-      ).split("-");
+      const [groupValue, itemValue] = (faqQuestion.dataset.faqQuestion ?? "").split("-");
       const nextGroup = Number(groupValue);
       const nextItem = Number(itemValue);
       if (Number.isInteger(nextGroup) && Number.isInteger(nextItem)) {
         setFaqGroup(nextGroup);
-        setOpenFaq((current) =>
-          current === nextItem && faqGroup === nextGroup ? -1 : nextItem
-        );
+        setOpenFaq((current) => (current === nextItem && faqGroup === nextGroup ? -1 : nextItem));
       }
       return;
     }
 
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
       return;
     }
 
@@ -583,10 +536,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     }
     event.preventDefault();
     if (decision.action === "reset") {
-      writeJourneyUrl(
-        `${destination.pathname}${destination.search}`,
-        "push"
-      );
+      writeJourneyUrl(`${destination.pathname}${destination.search}`, "push");
       navigateTo(decision.chapterIndex, { writeHash: decision.writeHash });
       return;
     }
@@ -596,12 +546,11 @@ export function JourneyController({ children }: JourneyControllerProps) {
   const activeChapter = chapters[pageIndex] ?? firstChapter;
   const activeInk = activeChapter.ink;
   const chromeLightMix = clamp(
-    rangeProgress(sceneProgress, 0.048, 0.096) -
-      rangeProgress(sceneProgress, 0.48, 0.52)
+    rangeProgress(sceneProgress, 0.048, 0.096) - rangeProgress(sceneProgress, 0.48, 0.52),
   );
   const journeyStyle = {
     "--journey-chrome-color": `color-mix(in srgb, var(--koaryu-ink-light) ${Math.round(
-      chromeLightMix * 100
+      chromeLightMix * 100,
     )}%, var(--koaryu-ink))`,
   } as CSSProperties;
 
@@ -694,7 +643,6 @@ export function JourneyController({ children }: JourneyControllerProps) {
       <p className={styles.liveStatus} aria-live="polite" aria-atomic="true">
         Chapter {pageIndex + 1} of {chapters.length}: {activeChapter.title}
       </p>
-
     </div>
   );
 }

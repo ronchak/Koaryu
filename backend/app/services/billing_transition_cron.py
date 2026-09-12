@@ -15,9 +15,7 @@ _TARGETS = {
 _MAX_RESPONSE_BYTES = 4096
 _BATCH_LIMIT = 25
 _REQUEST_TIMEOUT_SECONDS = 130.0
-_ZERO_WORK_OUTPUT = (
-    '{"claimed":0,"completed":0,"reconciliation_required":0,"failed":0}'
-)
+_ZERO_WORK_OUTPUT = '{"claimed":0,"completed":0,"reconciliation_required":0,"failed":0}'
 _NONZERO_WORK_OUTPUT = "Billing transition cron completed nonzero work."
 
 
@@ -103,9 +101,7 @@ def process_due_billing_transitions(
         not isinstance(payload, dict)
         or set(payload) != expected_keys
         or any(
-            not isinstance(payload[key], int)
-            or isinstance(payload[key], bool)
-            or payload[key] < 0
+            not isinstance(payload[key], int) or isinstance(payload[key], bool) or payload[key] < 0
             for key in expected_keys
         )
     ):

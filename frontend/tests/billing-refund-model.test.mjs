@@ -46,7 +46,10 @@ describe("billing payment refunds", () => {
     assert.equal(isPaymentRefundEligible(payment), true);
     assert.equal(isPaymentRefundEligible({ ...payment, stripe_charge_id: null }), false);
     assert.equal(isPaymentRefundEligible({ ...payment, refundable_amount_cents: 0 }), false);
-    assert.equal(isPaymentRefundEligible({ ...payment, adjustment_reconciliation_required: true }), false);
+    assert.equal(
+      isPaymentRefundEligible({ ...payment, adjustment_reconciliation_required: true }),
+      false,
+    );
   });
 
   it("rejects malformed, zero, and over-refund amounts", () => {
@@ -61,15 +64,32 @@ describe("billing payment refunds", () => {
     const identity = { userId: "admin-1", studioId: "studio-1" };
     let sequence = 0;
     const createKey = () => `refund-${++sequence}`;
-    const first = resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", createKey, storage);
-    const replay = resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", createKey, storage);
+    const first = resolveRefundRequestKey(
+      identity,
+      payment.id,
+      1250,
+      "duplicate",
+      createKey,
+      storage,
+    );
+    const replay = resolveRefundRequestKey(
+      identity,
+      payment.id,
+      1250,
+      "duplicate",
+      createKey,
+      storage,
+    );
     assert.equal(replay, first);
     assert.throws(
       () => resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", createKey, storage),
       /unresolved earlier attempt/,
     );
     assert.equal(clearRefundRequestKey(identity, payment.id, storage, first), true);
-    assert.notEqual(resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", createKey, storage), first);
+    assert.notEqual(
+      resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", createKey, storage),
+      first,
+    );
   });
 
   it("fails closed for malformed attempts, null storage, and throwing storage access", () => {
@@ -78,34 +98,100 @@ describe("billing payment refunds", () => {
     const storageEntries = [];
     const trackingStorage = {
       getItem: storage.getItem,
-      setItem: (key, value) => { storageEntries.push(key); storage.setItem(key, value); },
+      setItem: (key, value) => {
+        storageEntries.push(key);
+        storage.setItem(key, value);
+      },
       removeItem: storage.removeItem,
     };
-    const initial = resolveRefundRequestKey(identity, payment.id, 900, "duplicate", () => "bounded-key", trackingStorage);
+    const initial = resolveRefundRequestKey(
+      identity,
+      payment.id,
+      900,
+      "duplicate",
+      () => "bounded-key",
+      trackingStorage,
+    );
     assert.equal(initial, "bounded-key");
     const storedKey = storageEntries[0];
-    storage.setItem(storedKey, JSON.stringify({ amountCents: -1, reason: "invented", requestKey: "" }));
+    storage.setItem(
+      storedKey,
+      JSON.stringify({ amountCents: -1, reason: "invented", requestKey: "" }),
+    );
     const reloadedIdentity = { userId: "malformed-admin-2", studioId: "studio-1" };
     const malformedKey = storedKey.replace("malformed-admin", "malformed-admin-2");
-    storage.setItem(malformedKey, JSON.stringify({ amountCents: 900, reason: "invented", requestKey: "bad" }));
+    storage.setItem(
+      malformedKey,
+      JSON.stringify({ amountCents: 900, reason: "invented", requestKey: "bad" }),
+    );
     assert.throws(
-      () => resolveRefundRequestKey(reloadedIdentity, payment.id, 900, "duplicate", () => "replacement-key", storage),
+      () =>
+        resolveRefundRequestKey(
+          reloadedIdentity,
+          payment.id,
+          900,
+          "duplicate",
+          () => "replacement-key",
+          storage,
+        ),
       /browser cannot safely save the request/,
     );
-    const throwingWindow = Object.defineProperty({}, "localStorage", { get() { throw new Error("blocked"); } });
+    const throwingWindow = Object.defineProperty({}, "localStorage", {
+      get() {
+        throw new Error("blocked");
+      },
+    });
     assert.equal(safeBrowserRefundStorage(throwingWindow), null);
     assert.throws(
-      () => resolveRefundRequestKey({ userId: "memory-admin", studioId: "studio-1" }, payment.id, 900, "duplicate", () => "memory-key", null),
+      () =>
+        resolveRefundRequestKey(
+          { userId: "memory-admin", studioId: "studio-1" },
+          payment.id,
+          900,
+          "duplicate",
+          () => "memory-key",
+          null,
+        ),
       /browser cannot safely save the request/,
     );
-    const throwingGet = { getItem() { throw new Error("blocked"); }, setItem() {}, removeItem() {} };
+    const throwingGet = {
+      getItem() {
+        throw new Error("blocked");
+      },
+      setItem() {},
+      removeItem() {},
+    };
     assert.throws(
-      () => resolveRefundRequestKey({ userId: "get-admin", studioId: "studio-1" }, payment.id, 900, "duplicate", () => "get-key", throwingGet),
+      () =>
+        resolveRefundRequestKey(
+          { userId: "get-admin", studioId: "studio-1" },
+          payment.id,
+          900,
+          "duplicate",
+          () => "get-key",
+          throwingGet,
+        ),
       /browser cannot safely save the request/,
     );
-    const throwingSet = { getItem() { return null; }, setItem() { throw new Error("full"); }, removeItem() {} };
+    const throwingSet = {
+      getItem() {
+        return null;
+      },
+      setItem() {
+        throw new Error("full");
+      },
+      removeItem() {},
+    };
     assert.throws(
-      () => resolveRefundRequestKey({ userId: "set-admin", studioId: "studio-1" }, payment.id, 900, "duplicate", () => "set-key", throwingSet),
+      () =>
+        resolveRefundRequestKey(
+          { userId: "set-admin", studioId: "studio-1" },
+          payment.id,
+          900,
+          "duplicate",
+          () => "set-key",
+          throwingSet,
+        ),
       /browser cannot safely save the request/,
     );
   });
@@ -123,14 +209,15 @@ describe("billing payment refunds", () => {
       removeItem() {},
     };
     assert.throws(
-      () => resolveRefundRequestKey(
-        { userId: "mismatch-admin", studioId: "studio-1" },
-        payment.id,
-        900,
-        "duplicate",
-        () => "expected-key",
-        mismatchedStorage,
-      ),
+      () =>
+        resolveRefundRequestKey(
+          { userId: "mismatch-admin", studioId: "studio-1" },
+          payment.id,
+          900,
+          "duplicate",
+          () => "expected-key",
+          mismatchedStorage,
+        ),
       /browser cannot safely save the request/,
     );
   });
@@ -142,7 +229,15 @@ describe("billing payment refunds", () => {
     const storageKey = [...storage.values.keys()][0];
     storage.values.delete(storageKey);
     assert.throws(
-      () => resolveRefundRequestKey(identity, payment.id, 900, "duplicate", () => "replacement-key", storage),
+      () =>
+        resolveRefundRequestKey(
+          identity,
+          payment.id,
+          900,
+          "duplicate",
+          () => "replacement-key",
+          storage,
+        ),
       /browser cannot safely save the request/,
     );
   });
@@ -151,7 +246,10 @@ describe("billing payment refunds", () => {
     assert.equal(isTerminalBillingIdempotencyError(new Error("network failure")), false);
     const ambiguous = Object.assign(new Error("still processing"), { status: 409 });
     assert.equal(isTerminalBillingIdempotencyError(ambiguous), false);
-    const terminal = Object.assign(new Error("Use a new Idempotency-Key after correcting the request."), { status: 409 });
+    const terminal = Object.assign(
+      new Error("Use a new Idempotency-Key after correcting the request."),
+      { status: 409 },
+    );
     assert.equal(isTerminalBillingIdempotencyError(terminal), true);
   });
 
@@ -180,8 +278,14 @@ describe("billing payment refunds", () => {
         detail,
       );
     }
-    assert.equal(isDefinitiveRefundRejection(Object.assign(new Error("invalid amount"), { status: 422 })), true);
-    assert.equal(isDefinitiveRefundRejection(Object.assign(new Error("not allowed"), { status: 403 })), true);
+    assert.equal(
+      isDefinitiveRefundRejection(Object.assign(new Error("invalid amount"), { status: 422 })),
+      true,
+    );
+    assert.equal(
+      isDefinitiveRefundRejection(Object.assign(new Error("not allowed"), { status: 403 })),
+      true,
+    );
     for (const status of [408, 425, 429, 500, 503]) {
       assert.equal(
         isDefinitiveRefundRejection(Object.assign(new Error("retry or inspect"), { status })),
@@ -194,24 +298,55 @@ describe("billing payment refunds", () => {
   it("keeps memory and durable state when removal fails, then allows a corrected retry after verified removal", () => {
     const identity = { userId: "removal-admin", studioId: "studio-1" };
     const storage = memoryStorage();
-    const first = resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "removal-key-1", storage);
+    const first = resolveRefundRequestKey(
+      identity,
+      payment.id,
+      1250,
+      "duplicate",
+      () => "removal-key-1",
+      storage,
+    );
     const refusingStorage = {
       getItem: storage.getItem,
       setItem: storage.setItem,
-      removeItem() { throw new Error("blocked"); },
+      removeItem() {
+        throw new Error("blocked");
+      },
     };
     assert.equal(clearRefundRequestKey(identity, payment.id, refusingStorage, first), false);
     assert.equal(
-      resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "must-not-run", storage),
+      resolveRefundRequestKey(
+        identity,
+        payment.id,
+        1250,
+        "duplicate",
+        () => "must-not-run",
+        storage,
+      ),
       first,
     );
     assert.throws(
-      () => resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", () => "must-not-run", storage),
+      () =>
+        resolveRefundRequestKey(
+          identity,
+          payment.id,
+          1300,
+          "duplicate",
+          () => "must-not-run",
+          storage,
+        ),
       /unresolved earlier attempt/,
     );
     assert.equal(clearRefundRequestKey(identity, payment.id, storage, first), true);
     assert.equal(
-      resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", () => "removal-key-2", storage),
+      resolveRefundRequestKey(
+        identity,
+        payment.id,
+        1300,
+        "duplicate",
+        () => "removal-key-2",
+        storage,
+      ),
       "removal-key-2",
     );
   });
@@ -223,32 +358,65 @@ describe("billing payment refunds", () => {
     const noOpStorage = { ...storage, removeItem() {} };
     assert.equal(clearRefundRequestKey(identity, payment.id, noOpStorage, "noop-key"), false);
     assert.equal(
-      resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "must-not-run", storage),
+      resolveRefundRequestKey(
+        identity,
+        payment.id,
+        1250,
+        "duplicate",
+        () => "must-not-run",
+        storage,
+      ),
       "noop-key",
     );
   });
 
   it("classifies only the exact reconciliation-required 409 contract", () => {
     const reconciliation = Object.assign(
-      new Error("This billing operation requires reconciliation and will not be retried automatically."),
+      new Error(
+        "This billing operation requires reconciliation and will not be retried automatically.",
+      ),
       { status: 409 },
     );
     assert.equal(isRefundReconciliationRequiredError(reconciliation), true);
-    assert.equal(isRefundReconciliationRequiredError(Object.assign(new Error(reconciliation.message), { status: 503 })), false);
-    assert.equal(isRefundReconciliationRequiredError(Object.assign(new Error("still processing"), { status: 409 })), false);
+    assert.equal(
+      isRefundReconciliationRequiredError(
+        Object.assign(new Error(reconciliation.message), { status: 503 }),
+      ),
+      false,
+    );
+    assert.equal(
+      isRefundReconciliationRequiredError(
+        Object.assign(new Error("still processing"), { status: 409 }),
+      ),
+      false,
+    );
     assert.equal(isTerminalBillingIdempotencyError(reconciliation), false);
   });
 
   it("persists a reconciliation block across reload without rotating the refund key", async () => {
     const storage = memoryStorage();
     const identity = { userId: "reconciliation-admin", studioId: "studio-1" };
-    const requestKey = resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "refund-key-stable", storage);
+    const requestKey = resolveRefundRequestKey(
+      identity,
+      payment.id,
+      1250,
+      "duplicate",
+      () => "refund-key-stable",
+      storage,
+    );
     assert.equal(markRefundReconciliationRequired(identity, payment.id, storage), true);
     assert.equal(isRefundReconciliationBlocked(identity, payment.id, storage), true);
     const reloadedModel = await import(`../src/lib/billing-refund-model.ts?reload=${Date.now()}`);
     assert.equal(reloadedModel.isRefundReconciliationBlocked(identity, payment.id, storage), true);
     assert.equal(
-      resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "must-not-run", storage),
+      resolveRefundRequestKey(
+        identity,
+        payment.id,
+        1250,
+        "duplicate",
+        () => "must-not-run",
+        storage,
+      ),
       requestKey,
     );
   });
@@ -258,8 +426,12 @@ describe("billing payment refunds", () => {
     let stored = null;
     const storage = {
       getItem: () => stored,
-      setItem: (_key, value) => { stored = value; },
-      removeItem: () => { stored = null; },
+      setItem: (_key, value) => {
+        stored = value;
+      },
+      removeItem: () => {
+        stored = null;
+      },
     };
     resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "marker-key", storage);
     const original = stored;
@@ -274,10 +446,24 @@ describe("billing payment refunds", () => {
   it("does not treat a persisted generic ambiguous attempt as reconciliation-required", () => {
     const storage = memoryStorage();
     const identity = { userId: "ambiguous-admin", studioId: "studio-1" };
-    resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "ambiguous-key", storage);
+    resolveRefundRequestKey(
+      identity,
+      payment.id,
+      1250,
+      "duplicate",
+      () => "ambiguous-key",
+      storage,
+    );
     assert.equal(isRefundReconciliationBlocked(identity, payment.id, storage), false);
     assert.equal(
-      resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "must-not-rotate", storage),
+      resolveRefundRequestKey(
+        identity,
+        payment.id,
+        1250,
+        "duplicate",
+        () => "must-not-rotate",
+        storage,
+      ),
       "ambiguous-key",
     );
   });
@@ -285,14 +471,30 @@ describe("billing payment refunds", () => {
   it("rotates only after a definitive terminal correction error", () => {
     const storage = memoryStorage();
     const identity = { userId: "terminal-admin", studioId: "studio-1" };
-    const first = resolveRefundRequestKey(identity, payment.id, 1250, "duplicate", () => "terminal-key-1", storage);
+    const first = resolveRefundRequestKey(
+      identity,
+      payment.id,
+      1250,
+      "duplicate",
+      () => "terminal-key-1",
+      storage,
+    );
     const terminal = Object.assign(
-      new Error("This billing operation was rejected. Use a new Idempotency-Key after correcting the request."),
+      new Error(
+        "This billing operation was rejected. Use a new Idempotency-Key after correcting the request.",
+      ),
       { status: 409 },
     );
     assert.equal(isTerminalBillingIdempotencyError(terminal), true);
     assert.equal(clearRefundRequestKey(identity, payment.id, storage, first), true);
-    const corrected = resolveRefundRequestKey(identity, payment.id, 1300, "duplicate", () => "terminal-key-2", storage);
+    const corrected = resolveRefundRequestKey(
+      identity,
+      payment.id,
+      1300,
+      "duplicate",
+      () => "terminal-key-2",
+      storage,
+    );
     assert.notEqual(corrected, first);
   });
 
@@ -301,18 +503,22 @@ describe("billing payment refunds", () => {
     const result = await postPaymentRefund({
       amountCents: 1250,
       paymentId: "payment/one",
-      post: async (...args) => { calls.push(args); return { id: "refund-1" }; },
+      post: async (...args) => {
+        calls.push(args);
+        return { id: "refund-1" };
+      },
       reason: "duplicate",
       requestKey: "refund-key-1",
       token: "token-1",
     });
     assert.deepEqual(result, { id: "refund-1" });
-    assert.deepEqual(calls, [[
-      "/billing/payments/payment%2Fone/refund",
-      { amount_cents: 1250, reason: "duplicate" },
-      "token-1",
-      { headers: { "Idempotency-Key": "refund-key-1" } },
-    ]]);
+    assert.deepEqual(calls, [
+      [
+        "/billing/payments/payment%2Fone/refund",
+        { amount_cents: 1250, reason: "duplicate" },
+        "token-1",
+        { headers: { "Idempotency-Key": "refund-key-1" } },
+      ],
+    ]);
   });
-
 });

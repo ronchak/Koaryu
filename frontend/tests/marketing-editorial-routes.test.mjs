@@ -2,26 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import {
-  exploreSections,
-  getMarketingPageByRef,
-} from "../src/lib/marketing-pages.ts";
+import { exploreSections, getMarketingPageByRef } from "../src/lib/marketing-pages.ts";
 
-const exploreSource = readFileSync(
-  new URL("../src/app/explore/page.tsx", import.meta.url),
-  "utf8"
-);
-const aboutSource = readFileSync(
-  new URL("../src/app/about/page.tsx", import.meta.url),
-  "utf8"
-);
+const exploreSource = readFileSync(new URL("../src/app/explore/page.tsx", import.meta.url), "utf8");
+const aboutSource = readFileSync(new URL("../src/app/about/page.tsx", import.meta.url), "utf8");
 const publicPagesSource = readFileSync(
   new URL("../src/components/marketing/public-pages.tsx", import.meta.url),
-  "utf8"
+  "utf8",
 );
 const css = readFileSync(
   new URL("../src/components/marketing/public-pages.module.css", import.meta.url),
-  "utf8"
+  "utf8",
 );
 
 const routeSources = `${exploreSource}\n${aboutSource}`;
@@ -72,7 +63,10 @@ describe("Explore and About editorial routes", () => {
       assert.ok(normalizedSource.includes(`"@type": "${expectations.type}"`));
       assert.ok(normalizedSource.includes(`name: "${expectations.name}"`));
       assert.ok(normalizedSource.includes(expectations.structuredDescription));
-      assert.match(source, /isPartOf:\s*\{\s*"@type": "WebSite",\s*name: APP_NAME,\s*url: "https:\/\/koaryu\.app\/"/s);
+      assert.match(
+        source,
+        /isPartOf:\s*\{\s*"@type": "WebSite",\s*name: APP_NAME,\s*url: "https:\/\/koaryu\.app\/"/s,
+      );
       assert.match(source, /<BreadcrumbJsonLd\s+items=\{\[/);
     }
   });
@@ -126,7 +120,10 @@ describe("Explore and About editorial routes", () => {
     }
 
     assert.match(aboutSource, /<MarketingActionLink href="\/features">\s*Explore features/);
-    assert.match(aboutSource, /<MarketingActionLink href="\/use-cases" variant="secondary">\s*See use cases/);
+    assert.match(
+      aboutSource,
+      /<MarketingActionLink href="\/use-cases" variant="secondary">\s*See use cases/,
+    );
     assert.match(aboutSource, /steps=\{detailNextSteps\}/);
     assert.match(exploreSource, /steps=\{detailNextSteps\}/);
   });
@@ -134,27 +131,31 @@ describe("Explore and About editorial routes", () => {
   it("uses server-rendered route maps and paper statements without legacy UI seams", () => {
     assert.doesNotMatch(
       routeSources,
-      /["']use client["']|ScrollReveal|lucide-react|@\/components\/ui\/|\bButton\b|ProductScene|iconMap|use(?:State|Effect|Ref)\s*\(|\b(?:window|document|navigator)\s*\.|onWheel|onTouch|preventDefault|\.slice\(0,\s*4\)/
+      /["']use client["']|ScrollReveal|lucide-react|@\/components\/ui\/|\bButton\b|ProductScene|iconMap|use(?:State|Effect|Ref)\s*\(|\b(?:window|document|navigator)\s*\.|onWheel|onTouch|preventDefault|\.slice\(0,\s*4\)/,
     );
     assert.doesNotMatch(
       routeSources,
-      /(?:bg-bg|bg-surface|text-text|border-border|text-accent)|var\(--(?:bg|surface|border|text-[\w-]+|accent)\b/
+      /(?:bg-bg|bg-surface|text-text|border-border|text-accent)|var\(--(?:bg|surface|border|text-[\w-]+|accent)\b/,
     );
     assert.doesNotMatch(routeSources, /card|badge|pill|rounded|shadow|translate-y/i);
     assert.doesNotMatch(
       routeCss,
-      /gradient|backdrop|glass|#[fF]{6}|#[0]{6}|position:\s*fixed|height:\s*100dvh|overflow:\s*hidden/i
+      /gradient|backdrop|glass|#[fF]{6}|#[0]{6}|position:\s*fixed|height:\s*100dvh|overflow:\s*hidden/i,
     );
-    assert.match(routeCss, /\.aboutScope\s*\{[^}]*color:\s*var\(--koaryu-ink-light\);[^}]*background:\s*var\(--koaryu-deep-brown\)/s);
+    assert.match(
+      routeCss,
+      /\.aboutScope\s*\{[^}]*color:\s*var\(--koaryu-ink-light\);[^}]*background:\s*var\(--koaryu-deep-brown\)/s,
+    );
     assert.match(routeCss, /\.exploreRouteLink\s*\{[^}]*min-height:\s*132px/s);
-    assert.match(routeCss, /\.exploreRouteLink:hover \.exploreRouteAction > span\s*\{[^}]*translateX\(3px\)/s);
+    assert.match(
+      routeCss,
+      /\.exploreRouteLink:hover \.exploreRouteAction > span\s*\{[^}]*translateX\(3px\)/s,
+    );
 
     const includedTitleRule = routeCss.match(
-      /\.exploreIncludedList > span > span:last-child\s*\{([^}]*)\}/
+      /\.exploreIncludedList > span > span:last-child\s*\{([^}]*)\}/,
     )?.[1];
-    const includedTitleOpacity = Number(
-      includedTitleRule?.match(/opacity:\s*([\d.]+)/)?.[1]
-    );
+    const includedTitleOpacity = Number(includedTitleRule?.match(/opacity:\s*([\d.]+)/)?.[1]);
 
     assert.ok(Number.isFinite(includedTitleOpacity));
     assert.ok(includedTitleOpacity >= 0.72);
@@ -163,11 +164,17 @@ describe("Explore and About editorial routes", () => {
   it("keeps the feature ledger calm and gives use cases a separate workflow rail", () => {
     const indexSection = css.match(/\.indexSection\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
 
-    assert.match(indexSection, /grid-template-columns:\s*minmax\(230px, 0\.55fr\) minmax\(0, 1\.45fr\)/);
+    assert.match(
+      indexSection,
+      /grid-template-columns:\s*minmax\(230px, 0\.55fr\) minmax\(0, 1\.45fr\)/,
+    );
     assert.doesNotMatch(css, /\.indexSection::before/);
     assert.match(css, /\.featureIndex \.indexHeading\s*\{[^}]*max-width:\s*34ch/s);
     assert.match(css, /\.useCaseIndex\s*\{[^}]*grid-template-columns:\s*1fr/s);
-    assert.match(css, /\.useCaseIndex \.ledger li::before\s*\{[^}]*position:\s*absolute[^}]*background:\s*var\(--koaryu-rule-soft\)/s);
+    assert.match(
+      css,
+      /\.useCaseIndex \.ledger li::before\s*\{[^}]*position:\s*absolute[^}]*background:\s*var\(--koaryu-rule-soft\)/s,
+    );
     assert.match(css, /\.useCaseIndex \.ledger li::after\s*\{[^}]*border-radius:\s*50%/s);
   });
 });

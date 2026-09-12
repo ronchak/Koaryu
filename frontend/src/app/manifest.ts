@@ -5,8 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: `${APP_NAME} — Martial Arts Studio OS`,
     short_name: APP_NAME,
-    description:
-      `${APP_DESCRIPTION} Student CRM, belt progression, scheduling, billing, and more.`,
+    description: `${APP_DESCRIPTION} Student CRM, belt progression, scheduling, billing, and more.`,
     start_url: "/",
     display: "standalone",
     background_color: "#0B0D10",

@@ -18,16 +18,20 @@ from app.services.studio_live_billing_authorizations import (
 StripeMode = Literal["test", "live"]
 
 LIVE_MUTATIONS_DISABLED_DETAIL = "Live Stripe mutations are disabled for this environment."
-STRIPE_OPERATION_UNSUPPORTED_DETAIL = "This Stripe mutation is not owned by a supported billing workflow."
+STRIPE_OPERATION_UNSUPPORTED_DETAIL = (
+    "This Stripe mutation is not owned by a supported billing workflow."
+)
 STRIPE_MODE_MISMATCH_DETAIL = "Stripe mode does not match the configured Stripe API key."
 LIVE_AUTHORIZATION_POSTGREST_TIMEOUT_SECONDS = 10.0
-CORE_SELF_CHECKOUT_OPERATIONS = frozenset({
-    "customer.create",
-    "core_checkout_session.create",
-    "core_checkout_session.expire",
-    "core_subscription.cancel",
-    "customer_portal_session.create",
-})
+CORE_SELF_CHECKOUT_OPERATIONS = frozenset(
+    {
+        "customer.create",
+        "core_checkout_session.create",
+        "core_checkout_session.expire",
+        "core_subscription.cancel",
+        "customer_portal_session.create",
+    }
+)
 
 
 class StripeMutationBlocked(HTTPException):
@@ -77,9 +81,9 @@ def expected_stripe_livemode(settings: Any) -> Optional[bool]:
 class StripeMutationPermit:
     operation: str
     mode: StripeMode
-    authorization_source: Literal[
-        "test_mode", "core_self_checkout", "durable_live_scope"
-    ] = "test_mode"
+    authorization_source: Literal["test_mode", "core_self_checkout", "durable_live_scope"] = (
+        "test_mode"
+    )
     studio_id: Optional[str] = None
 
 
@@ -91,7 +95,12 @@ class StripeMutationPolicy:
     per-studio scope check.
     """
 
-    def __init__(self, settings: Any, *, authorization_store: Optional[StudioLiveBillingAuthorizationStore] = None):
+    def __init__(
+        self,
+        settings: Any,
+        *,
+        authorization_store: Optional[StudioLiveBillingAuthorizationStore] = None,
+    ):
         self.settings = settings
         self.authorization_store = authorization_store
 
@@ -131,10 +140,15 @@ class StripeMutationPolicy:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=LIVE_SCOPE_REQUIRED_DETAIL,
             )
-        if live_scope == "connect_onboarding" and account_id is None and operation not in {
-            "connect_account.create",
-            "connect_branding_file.create",
-        }:
+        if (
+            live_scope == "connect_onboarding"
+            and account_id is None
+            and operation
+            not in {
+                "connect_account.create",
+                "connect_branding_file.create",
+            }
+        ):
             raise StripeMutationBlocked(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=LIVE_SCOPE_REQUIRED_DETAIL,
@@ -193,11 +207,14 @@ class StripeMutationPolicy:
         This is deliberately studio-specific. A global enabled flag, or a grant
         for another studio, must never light up a tenant's UI capability.
         """
-        if configured_stripe_mode(self.settings) != "live" or not bool(
-            getattr(self.settings, "LIVE_BILLING_ENABLED", False)
-        ) or not studio_id:
+        if (
+            configured_stripe_mode(self.settings) != "live"
+            or not bool(getattr(self.settings, "LIVE_BILLING_ENABLED", False))
+            or not studio_id
+        ):
             return False
         try:
+
             def check(store: StudioLiveBillingAuthorizationStore) -> bool:
                 account = store._payment_account(studio_id=studio_id, account_id=None)
                 return bool(

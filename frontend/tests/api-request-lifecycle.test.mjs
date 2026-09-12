@@ -16,8 +16,14 @@ before(async () => {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
 });
-afterEach(() => { globalThis.fetch = nativeFetch; onHeaders = undefined; });
-after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+afterEach(() => {
+  globalThis.fetch = nativeFetch;
+  onHeaders = undefined;
+});
+after(async () => {
+  server.closeAllConnections();
+  await new Promise((resolve) => server.close(resolve));
+});
 
 function useServer(handler) {
   handle = handler;
@@ -31,16 +37,24 @@ function useServer(handler) {
 for (const kind of ["json", "error", "download", "form"]) {
   test(`${kind} stalled body remains subject to the timeout`, { timeout: 3000 }, async () => {
     let receivedHeaders = false;
-    onHeaders = () => { receivedHeaders = true; };
+    onHeaders = () => {
+      receivedHeaders = true;
+    };
     useServer((_request, response) => {
       response.writeHead(kind === "error" ? 503 : 200, { "content-type": "application/json" });
       response.write('{"partial":');
     });
     const options = { timeoutMs: 250, timeoutMessage: "Deadline reached" };
-    const work = kind === "download" ? api.download("/test", undefined, options)
-      : kind === "form" ? api.postForm("/test", new FormData(), undefined, options)
-      : api.get("/test", undefined, options);
-    await assert.rejects(work, kind === "form" ? CommandOutcomeUnknown : { message: "Deadline reached" });
+    const work =
+      kind === "download"
+        ? api.download("/test", undefined, options)
+        : kind === "form"
+          ? api.postForm("/test", new FormData(), undefined, options)
+          : api.get("/test", undefined, options);
+    await assert.rejects(
+      work,
+      kind === "form" ? CommandOutcomeUnknown : { message: "Deadline reached" },
+    );
     assert.equal(receivedHeaders, true);
   });
 }
@@ -59,8 +73,10 @@ for (const phase of ["before fetch", "before headers", "after headers"]) {
     });
     if (phase === "before fetch") caller.abort();
     if (phase === "after headers") onHeaders = () => caller.abort();
-    await assert.rejects(api.download("/test", undefined, { signal: caller.signal, timeoutMs: 500 }),
-      { name: "AbortError", message: "Request was canceled." });
+    await assert.rejects(
+      api.download("/test", undefined, { signal: caller.signal, timeoutMs: 500 }),
+      { name: "AbortError", message: "Request was canceled." },
+    );
   });
 }
 
@@ -84,27 +100,54 @@ test("null disables the request timer while retaining cancellation and normal er
     response.write('{"detail":');
     setTimeout(() => response.end('"Forbidden"}'), 40);
   });
-  await assert.rejects(api.get("/test", undefined, { timeoutMs: null }),
-    error => error instanceof ApiError && error.status === 403 && error.message === "Forbidden");
+  await assert.rejects(
+    api.get("/test", undefined, { timeoutMs: null }),
+    (error) => error instanceof ApiError && error.status === 403 && error.message === "Forbidden",
+  );
 });
-
 
 test("a command accepted before timeout is unknown and never automatically replayed", async () => {
   let writes = 0;
-  useServer((_request, response) => { writes += 1; response.writeHead(200, { "content-type": "application/json", "x-request-id": "synthetic-command" }); response.write('{'); });
-  await assert.rejects(api.post("/students", { legal_first_name: "Synthetic" }, undefined, { timeoutMs: 50 }),
-    error => error instanceof CommandOutcomeUnknown && error.outcome === "unknown" && error.requestId === "synthetic-command");
+  useServer((_request, response) => {
+    writes += 1;
+    response.writeHead(200, {
+      "content-type": "application/json",
+      "x-request-id": "synthetic-command",
+    });
+    response.write("{");
+  });
+  await assert.rejects(
+    api.post("/students", { legal_first_name: "Synthetic" }, undefined, { timeoutMs: 50 }),
+    (error) =>
+      error instanceof CommandOutcomeUnknown &&
+      error.outcome === "unknown" &&
+      error.requestId === "synthetic-command",
+  );
   assert.equal(writes, 1);
 });
 test("a definite command rejection retains its status", async () => {
-  useServer((_request, response) => { response.writeHead(422, { "content-type": "application/json" }); response.end('{"detail":"Invalid input"}'); });
-  await assert.rejects(api.post("/students", {}), error => error instanceof ApiError && error.status === 422);
+  useServer((_request, response) => {
+    response.writeHead(422, { "content-type": "application/json" });
+    response.end('{"detail":"Invalid input"}');
+  });
+  await assert.rejects(
+    api.post("/students", {}),
+    (error) => error instanceof ApiError && error.status === 422,
+  );
 });
-
 
 test("idempotent import recovery copy survives an unknown command timeout", async () => {
   useServer(() => {});
-  const message = "Confirmation was lost. Retry this same file and options with the same import key.";
-  await assert.rejects(api.postForm("/students/import", new FormData(), undefined, { timeoutMs: 40, timeoutMessage: message }),
-    error => error instanceof CommandOutcomeUnknown && error.outcome === "unknown" && error.message === message);
+  const message =
+    "Confirmation was lost. Retry this same file and options with the same import key.";
+  await assert.rejects(
+    api.postForm("/students/import", new FormData(), undefined, {
+      timeoutMs: 40,
+      timeoutMessage: message,
+    }),
+    (error) =>
+      error instanceof CommandOutcomeUnknown &&
+      error.outcome === "unknown" &&
+      error.message === message,
+  );
 });

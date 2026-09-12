@@ -1,7 +1,4 @@
-import {
-  normalizeStudentListSearch,
-  type StudentListQuery,
-} from "./student-list-page.ts";
+import { normalizeStudentListSearch, type StudentListQuery } from "./student-list-page.ts";
 
 export function buildStudentPagePath(query: StudentListQuery = {}): string {
   const params = new URLSearchParams();

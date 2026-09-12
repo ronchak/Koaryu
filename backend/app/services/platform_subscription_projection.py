@@ -29,7 +29,9 @@ class PlatformSubscriptionProjector:
         if self.object_has(subscription, "trial_end"):
             update["trial_end"] = self.timestamp(self.object_get(subscription, "trial_end"))
         if self.object_has(subscription, "cancel_at_period_end"):
-            update["cancel_at_period_end"] = bool(self.object_get(subscription, "cancel_at_period_end"))
+            update["cancel_at_period_end"] = bool(
+                self.object_get(subscription, "cancel_at_period_end")
+            )
 
         current_period_start = self.subscription_period(subscription, "current_period_start", min)
         if current_period_start is not MISSING:

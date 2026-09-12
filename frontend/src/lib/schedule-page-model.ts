@@ -47,7 +47,7 @@ export function getScheduleTimeCanvasBounds(items: ReadonlyArray<ScheduleTimeIte
 }
 
 export function layoutScheduleTimeItems<T extends ScheduleTimeItem>(
-  items: ReadonlyArray<T>
+  items: ReadonlyArray<T>,
 ): ScheduleTimeBlock<T>[] {
   const sorted: ScheduleTimeBlock<T>[] = items
     .map((item) => {
@@ -61,7 +61,12 @@ export function layoutScheduleTimeItems<T extends ScheduleTimeItem>(
         overlaps: false,
       };
     })
-    .sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute || a.item.id.localeCompare(b.item.id));
+    .sort(
+      (a, b) =>
+        a.startMinute - b.startMinute ||
+        a.endMinute - b.endMinute ||
+        a.item.id.localeCompare(b.item.id),
+    );
 
   let groupStart = 0;
   while (groupStart < sorted.length) {
@@ -104,12 +109,10 @@ export function clearSessionAttendanceRefresh(): SessionAttendanceRefreshState {
 
 export function isSessionAttendanceReady(
   state: SessionAttendanceRefreshState,
-  selectedSessionId: string | null
+  selectedSessionId: string | null,
 ) {
   return Boolean(
-    selectedSessionId &&
-    state.sessionId === selectedSessionId &&
-    state.status === "ready"
+    selectedSessionId && state.sessionId === selectedSessionId && state.status === "ready",
   );
 }
 
@@ -155,7 +158,7 @@ export async function runSessionAttendanceRefresh({
 }
 
 export function createAttendanceToggleQueue(
-  onPendingChange: (pendingIds: ReadonlySet<string>) => void
+  onPendingChange: (pendingIds: ReadonlySet<string>) => void,
 ) {
   const tails = new Map<string, Promise<void>>();
 
@@ -254,10 +257,12 @@ export function navigateScheduleDate(currentDate: Date, view: SchedulePageView, 
 
 export function recurringClassOverlapsRange(
   recurrence: { startDate: string; endDate?: string | null },
-  visibleRange: { start: string; end: string }
+  visibleRange: { start: string; end: string },
 ) {
-  return recurrence.startDate <= visibleRange.end
-    && (!recurrence.endDate || recurrence.endDate >= visibleRange.start);
+  return (
+    recurrence.startDate <= visibleRange.end &&
+    (!recurrence.endDate || recurrence.endDate >= visibleRange.start)
+  );
 }
 
 export function getActiveScheduleStudents(students: Student[]) {
@@ -266,7 +271,7 @@ export function getActiveScheduleStudents(students: Student[]) {
 
 export function getScheduleSessionAttendance(
   attendance: AttendanceRecord[],
-  session: Pick<ClassSession, "id"> | null
+  session: Pick<ClassSession, "id"> | null,
 ) {
   if (!session) {
     return [];

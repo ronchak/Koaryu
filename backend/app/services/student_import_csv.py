@@ -327,7 +327,9 @@ def parse_student_csv(content: bytes) -> tuple[list[str], list[dict]]:
     headers: list[str] = []
     seen_headers: set[str] = set()
     for index, raw_header in enumerate(raw_headers, start=1):
-        header = validate_csv_import_cell(raw_header, line_number=1, column_name=f"column {index}").strip()
+        header = validate_csv_import_cell(
+            raw_header, line_number=1, column_name=f"column {index}"
+        ).strip()
         if not header:
             raise csv_import_error(
                 status.HTTP_400_BAD_REQUEST,
@@ -358,10 +360,14 @@ def parse_student_csv(content: bytes) -> tuple[list[str], list[dict]]:
                     f"Row {line_number} has more values than the header row. Check for an extra comma or missing quote.",
                 )
             padded_row = raw_row + [""] * (len(headers) - len(raw_row))
-            rows.append({
-                header: validate_csv_import_cell(value, line_number=line_number, column_name=header).strip()
-                for header, value in zip(headers, padded_row)
-            })
+            rows.append(
+                {
+                    header: validate_csv_import_cell(
+                        value, line_number=line_number, column_name=header
+                    ).strip()
+                    for header, value in zip(headers, padded_row)
+                }
+            )
     except csv.Error as exc:
         raise csv_import_error(
             status.HTTP_400_BAD_REQUEST,

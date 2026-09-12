@@ -34,11 +34,16 @@ function getLeadNextAction(lead: Lead) {
   if (lead.stage === "enrolled") return "Enrollment complete";
   if (!lead.follow_up_date) return "Schedule the next contact";
   switch (lead.stage) {
-    case "inquiry": return "Make first contact";
-    case "trial_scheduled": return "Confirm trial attendance";
-    case "trial_completed": return "Review trial and next step";
-    case "offer_sent": return "Follow up on the offer";
-    case "closed_lost": return "Review closed record";
+    case "inquiry":
+      return "Make first contact";
+    case "trial_scheduled":
+      return "Confirm trial attendance";
+    case "trial_completed":
+      return "Review trial and next step";
+    case "offer_sent":
+      return "Follow up on the offer";
+    case "closed_lost":
+      return "Review closed record";
   }
 }
 
@@ -50,9 +55,18 @@ function LeadLedgerErrorIntro() {
         <p>Review the error below, then retry.</p>
       </div>
       <dl className={styles.totals} aria-hidden="true">
-        <div><dt>Overdue</dt><dd>—</dd></div>
-        <div><dt>Due today</dt><dd>—</dd></div>
-        <div><dt>Unassigned</dt><dd>—</dd></div>
+        <div>
+          <dt>Overdue</dt>
+          <dd>—</dd>
+        </div>
+        <div>
+          <dt>Due today</dt>
+          <dd>—</dd>
+        </div>
+        <div>
+          <dt>Unassigned</dt>
+          <dd>—</dd>
+        </div>
       </dl>
     </div>
   );
@@ -114,9 +128,18 @@ export function LeadPipelineBoard({
     <section className={styles.workspace} aria-label="Open lead obligations">
       <div className={styles.intro}>
         <dl className={styles.totals}>
-          <div><dt>Overdue</dt><dd>{overdue}</dd></div>
-          <div><dt>Due today</dt><dd>{dueToday}</dd></div>
-          <div><dt>Unassigned</dt><dd>{unassigned}</dd></div>
+          <div>
+            <dt>Overdue</dt>
+            <dd>{overdue}</dd>
+          </div>
+          <div>
+            <dt>Due today</dt>
+            <dd>{dueToday}</dd>
+          </div>
+          <div>
+            <dt>Unassigned</dt>
+            <dd>{unassigned}</dd>
+          </div>
         </dl>
       </div>
 
@@ -145,7 +168,9 @@ export function LeadPipelineBoard({
               <ol>
                 {bandLeads.map((lead) => {
                   const stageIndex = PIPELINE_STAGES.findIndex((stage) => stage.id === lead.stage);
-                  const owner = lead.assigned_staff_id ? staffById.get(lead.assigned_staff_id) : null;
+                  const owner = lead.assigned_staff_id
+                    ? staffById.get(lead.assigned_staff_id)
+                    : null;
                   const isPending = pendingLeadId === lead.id;
                   const isSelected = selectedLeadId === lead.id;
                   return (
@@ -164,32 +189,56 @@ export function LeadPipelineBoard({
                         onClick={() => onSelectLead(lead.id)}
                       >
                         <strong>{fullName(lead)}</strong>
-                        <span>{getStageLabel(lead.stage)} · {getProgramLabel(lead, lead.program_id ? programById.get(lead.program_id) : null)}</span>
+                        <span>
+                          {getStageLabel(lead.stage)} ·{" "}
+                          {getProgramLabel(
+                            lead,
+                            lead.program_id ? programById.get(lead.program_id) : null,
+                          )}
+                        </span>
                       </button>
                       <div className={styles.queueAction}>
                         <strong>{getLeadNextAction(lead)}</strong>
                         <span>
-                          {lead.follow_up_date ? `${getFollowUpStatusLabel(lead.follow_up_date, today)} · ${formatDate(lead.follow_up_date, true)}` : "No follow-up date"}
+                          {lead.follow_up_date
+                            ? `${getFollowUpStatusLabel(lead.follow_up_date, today)} · ${formatDate(lead.follow_up_date, true)}`
+                            : "No follow-up date"}
                         </span>
                       </div>
                       <div className={styles.queueContext}>
                         <span>{owner?.full_name || owner?.email || "Unassigned"}</span>
-                        <small>{SOURCE_LABELS[lead.source]}{lead.is_minor ? " · Minor" : ""}</small>
+                        <small>
+                          {SOURCE_LABELS[lead.source]}
+                          {lead.is_minor ? " · Minor" : ""}
+                        </small>
                       </div>
                       {canManageLeads ? (
-                        <div className={styles.stageMoves} aria-label={`Move ${fullName(lead)} one stage`}>
+                        <div
+                          className={styles.stageMoves}
+                          aria-label={`Move ${fullName(lead)} one stage`}
+                        >
                           <button
                             type="button"
                             aria-label={`Move ${fullName(lead)} to the previous stage`}
                             disabled={stageIndex <= 0 || isPending}
                             onClick={() => void onKeyboardMoveLead(lead, -1)}
-                          ><ChevronLeft aria-hidden="true" /></button>
+                          >
+                            <ChevronLeft aria-hidden="true" />
+                          </button>
                           <button
                             type="button"
                             aria-label={`Move ${fullName(lead)} to the next stage`}
-                            disabled={stageIndex < 0 || stageIndex >= PIPELINE_STAGES.length - 1 || isPending || (PIPELINE_STAGES[stageIndex + 1]?.id === "enrolled" && !canConvertLeads)}
+                            disabled={
+                              stageIndex < 0 ||
+                              stageIndex >= PIPELINE_STAGES.length - 1 ||
+                              isPending ||
+                              (PIPELINE_STAGES[stageIndex + 1]?.id === "enrolled" &&
+                                !canConvertLeads)
+                            }
                             onClick={() => void onKeyboardMoveLead(lead, 1)}
-                          ><ChevronRight aria-hidden="true" /></button>
+                          >
+                            <ChevronRight aria-hidden="true" />
+                          </button>
                         </div>
                       ) : null}
                     </li>

@@ -17,7 +17,9 @@ class TableBackedSupabase:
         self.required_eq_filters: dict[str, set[str]] = {}
         self.select_assertions: dict[str, Callable[[str], None]] = {}
         self.unique_constraints: dict[str, list[tuple[str, ...]]] = {}
-        self.unique_conflict_error_factory: Optional[Callable[[str, tuple[str, ...]], Exception]] = None
+        self.unique_conflict_error_factory: Optional[
+            Callable[[str, tuple[str, ...]], Exception]
+        ] = None
         self.before_insert = None
         self.before_update = None
         self.on_update_query = None
@@ -153,19 +155,21 @@ class FakeTableQuery:
         return self
 
     def execute(self):
-        self.supabase.query_log.append({
-            "table": self.name,
-            "columns": self.columns,
-            "filters": tuple(self.filters),
-            "or_filters": tuple(self.or_filters),
-            "orders": tuple(self.orders),
-            "range": self.range_bounds,
-            "limit": self.limit_value,
-            "insert": self.insert_payload,
-            "upsert": self.upsert_payload,
-            "update": self.update_payload,
-            "delete": self.delete_requested,
-        })
+        self.supabase.query_log.append(
+            {
+                "table": self.name,
+                "columns": self.columns,
+                "filters": tuple(self.filters),
+                "or_filters": tuple(self.or_filters),
+                "orders": tuple(self.orders),
+                "range": self.range_bounds,
+                "limit": self.limit_value,
+                "insert": self.insert_payload,
+                "upsert": self.upsert_payload,
+                "update": self.update_payload,
+                "delete": self.delete_requested,
+            }
+        )
         failure = self.supabase.table_failures.get(self.name)
         if failure:
             raise failure
@@ -221,7 +225,9 @@ class FakeTableQuery:
             raise AssertionError(f"{self.name} query omitted required filters: {sorted(missing)}")
 
     def _insert_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        payloads = self.insert_payload if isinstance(self.insert_payload, list) else [self.insert_payload]
+        payloads = (
+            self.insert_payload if isinstance(self.insert_payload, list) else [self.insert_payload]
+        )
         before_insert = getattr(self.supabase, "before_insert", None)
         if before_insert:
             before_insert(self.name, payloads, rows)
@@ -229,7 +235,11 @@ class FakeTableQuery:
         inserted = []
         for payload in payloads:
             defaults_factory = self.supabase.insert_defaults.get(self.name)
-            defaults = defaults_factory(self.name) if callable(defaults_factory) else (defaults_factory or {})
+            defaults = (
+                defaults_factory(self.name)
+                if callable(defaults_factory)
+                else (defaults_factory or {})
+            )
             row = {
                 "id": f"{self.name}_{len(rows) + 1}",
                 **defaults,
@@ -259,18 +269,24 @@ class FakeTableQuery:
                     factory = self.supabase.unique_conflict_error_factory
                     if factory is not None:
                         raise factory(self.name, columns)
-                    raise AssertionError(f"Unique constraint conflict on {self.name}({', '.join(columns)})")
+                    raise AssertionError(
+                        f"Unique constraint conflict on {self.name}({', '.join(columns)})"
+                    )
                 pending_keys.add(key)
 
     def _upsert_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        payloads = self.upsert_payload if isinstance(self.upsert_payload, list) else [self.upsert_payload]
+        payloads = (
+            self.upsert_payload if isinstance(self.upsert_payload, list) else [self.upsert_payload]
+        )
         upserted = []
         conflict_keys = [key.strip() for key in self.upsert_conflict_key.split(",") if key.strip()]
         for payload in payloads:
             match = next(
                 (
-                    row for row in rows
-                    if conflict_keys and all(row.get(key) == payload.get(key) for key in conflict_keys)
+                    row
+                    for row in rows
+                    if conflict_keys
+                    and all(row.get(key) == payload.get(key) for key in conflict_keys)
                 ),
                 None,
             )
@@ -286,7 +302,8 @@ class FakeTableQuery:
 
     def _matched_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         matched = [
-            row for row in rows
+            row
+            for row in rows
             if all(self._matches(row, op, key, value) for op, key, value in self.filters)
             and all(self._matches_any_or_filter(row, value) for value in self.or_filters)
         ]
@@ -298,7 +315,7 @@ class FakeTableQuery:
         bounded = rows
         if self.range_bounds is not None:
             start, end = self.range_bounds
-            bounded = bounded[start:end + 1]
+            bounded = bounded[start : end + 1]
         if self.limit_value is not None:
             bounded = bounded[: self.limit_value]
         return bounded

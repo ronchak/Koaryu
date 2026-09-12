@@ -17,13 +17,9 @@ frontend_origin = settings.validated_frontend_origin()
 allowed_origins = {frontend_origin}
 
 if frontend_origin.startswith("http://localhost:"):
-    allowed_origins.add(
-        frontend_origin.replace("http://localhost:", "http://127.0.0.1:")
-    )
+    allowed_origins.add(frontend_origin.replace("http://localhost:", "http://127.0.0.1:"))
 elif frontend_origin.startswith("http://127.0.0.1:"):
-    allowed_origins.add(
-        frontend_origin.replace("http://127.0.0.1:", "http://localhost:")
-    )
+    allowed_origins.add(frontend_origin.replace("http://127.0.0.1:", "http://localhost:"))
 
 
 INTERACTIVE_PROVIDER_CONFIG = SupabaseLaneConfig(

@@ -253,7 +253,7 @@ export const DASHBOARD_WIDGET_CATALOG: readonly DashboardWidgetCatalogEntry[] = 
 ] as const;
 
 export const DASHBOARD_WIDGET_BY_ID = new Map(
-  DASHBOARD_WIDGET_CATALOG.map((entry) => [entry.id, entry])
+  DASHBOARD_WIDGET_CATALOG.map((entry) => [entry.id, entry]),
 );
 
 export function normalizeDashboardWidgetRole(role: unknown): DashboardWidgetRole | null {
@@ -262,7 +262,7 @@ export function normalizeDashboardWidgetRole(role: unknown): DashboardWidgetRole
 
 export function isDashboardWidgetEntitled(
   entry: DashboardWidgetCatalogEntry,
-  role: unknown
+  role: unknown,
 ): boolean {
   if (entry.fixed) {
     return true;

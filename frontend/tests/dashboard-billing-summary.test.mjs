@@ -40,7 +40,7 @@ describe("dashboard billing summary", () => {
         paymentAttentionCount: 2,
         hasPlans: false,
         paymentsReady: false,
-      }
+      },
     );
   });
 
@@ -59,14 +59,14 @@ describe("dashboard billing summary", () => {
         currentRole: "admin",
         summary: hiddenSummary,
       }),
-      false
+      false,
     );
     assert.equal(
       canViewDashboardBilling({
         currentRole: "front_desk",
         summary: null,
       }),
-      true
+      true,
     );
     assert.deepEqual(
       selectDashboardBillingSummary({
@@ -77,7 +77,7 @@ describe("dashboard billing summary", () => {
         paymentAttentionCount: null,
         hasPlans: null,
         paymentsReady: null,
-      }
+      },
     );
   });
 
@@ -91,7 +91,7 @@ describe("dashboard billing summary", () => {
         paymentAttentionCount: 1,
         hasPlans: true,
         paymentsReady: true,
-      }
+      },
     );
     assert.deepEqual(
       selectDashboardBillingSummary({
@@ -102,7 +102,7 @@ describe("dashboard billing summary", () => {
         paymentAttentionCount: null,
         hasPlans: null,
         paymentsReady: null,
-      }
+      },
     );
   });
 
@@ -120,7 +120,7 @@ describe("dashboard billing summary", () => {
           },
         }),
       }),
-      false
+      false,
     );
     assert.equal(
       isDashboardBillingSetupComplete({
@@ -131,7 +131,7 @@ describe("dashboard billing summary", () => {
         },
         summary: null,
       }),
-      true
+      true,
     );
   });
 });

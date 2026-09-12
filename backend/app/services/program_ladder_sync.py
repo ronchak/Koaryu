@@ -49,12 +49,14 @@ class ProgramLadderSync:
     def _insert_ladder_for_program(self, program: dict, actor_id: Optional[str] = None) -> dict:
         result = (
             self.supabase.table("belt_ladders")
-            .insert({
-                "studio_id": program["studio_id"],
-                "name": program["name"],
-                "program_id": program["id"],
-                "sub_rank_term": "Stripe",
-            })
+            .insert(
+                {
+                    "studio_id": program["studio_id"],
+                    "name": program["name"],
+                    "program_id": program["id"],
+                    "sub_rank_term": "Stripe",
+                }
+            )
             .execute()
         )
         if not result.data:

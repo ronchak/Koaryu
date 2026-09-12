@@ -34,10 +34,7 @@ describe("getBillingUrlForTab", () => {
 
   it("uses the canonical URL for overview without damaging other parameters", () => {
     assert.equal(getBillingUrlForTab("?tab=reports", "overview"), "/billing");
-    assert.equal(
-      getBillingUrlForTab("?tab=reports&notice=1", "overview"),
-      "/billing?notice=1",
-    );
+    assert.equal(getBillingUrlForTab("?tab=reports&notice=1", "overview"), "/billing?notice=1");
   });
 });
 
@@ -58,7 +55,7 @@ describe("getBillingUrlAfterConnectReturn", () => {
     assert.equal(getBillingUrlAfterConnectReturn("?connect=return"), "/billing");
     assert.equal(
       getBillingUrlAfterConnectReturn("?tab=plans&connect=return&notice=1"),
-      "/billing?tab=plans&notice=1"
+      "/billing?tab=plans&notice=1",
     );
   });
 });
@@ -76,47 +73,70 @@ describe("resolveBillingAuxiliaryReadiness", () => {
 
   it("declares only the dataset consumed by the active billing tab", () => {
     assert.equal(resolveBillingAuxiliaryReadiness(ready).status, "ready");
-    assert.equal(resolveBillingAuxiliaryReadiness({
-      ...ready,
-      programsLoaded: false,
-    }).status, "ready", "overview does not consume programs");
-    assert.equal(resolveBillingAuxiliaryReadiness({
-      ...ready,
-      studentsLoadError: "Roster timed out",
-    }).status, "ready", "overview uses landing counts even if roster fails");
-    assert.equal(resolveBillingAuxiliaryReadiness({
-      ...ready,
-      activeTab: "plans",
-      programsLoaded: false,
-      studentsLoadError: "Roster timed out",
-    }).status, "loading", "plans consume programs but not students");
-    assert.equal(resolveBillingAuxiliaryReadiness({
-      ...ready,
-      activeTab: "families",
-      programsLoadError: "Programs failed",
-      programsLoaded: false,
-      studentsLoadError: "Roster failed",
-      studentsLoaded: false,
-    }).status, "ready", "families use billing data only");
+    assert.equal(
+      resolveBillingAuxiliaryReadiness({
+        ...ready,
+        programsLoaded: false,
+      }).status,
+      "ready",
+      "overview does not consume programs",
+    );
+    assert.equal(
+      resolveBillingAuxiliaryReadiness({
+        ...ready,
+        studentsLoadError: "Roster timed out",
+      }).status,
+      "ready",
+      "overview uses landing counts even if roster fails",
+    );
+    assert.equal(
+      resolveBillingAuxiliaryReadiness({
+        ...ready,
+        activeTab: "plans",
+        programsLoaded: false,
+        studentsLoadError: "Roster timed out",
+      }).status,
+      "loading",
+      "plans consume programs but not students",
+    );
+    assert.equal(
+      resolveBillingAuxiliaryReadiness({
+        ...ready,
+        activeTab: "families",
+        programsLoadError: "Programs failed",
+        programsLoaded: false,
+        studentsLoadError: "Roster failed",
+        studentsLoaded: false,
+      }).status,
+      "ready",
+      "families use billing data only",
+    );
   });
 
   it("keeps Connect return synchronization independent from auxiliary datasets", () => {
-    assert.deepEqual(resolveBillingAuxiliaryReadiness({
-      ...ready,
-      bypassForConnectReturn: true,
-      programsLoadError: "Programs failed",
-      programsLoaded: false,
-      studentsLoadError: "Roster failed",
-      studentsLoaded: false,
-    }), { error: null, status: "ready" });
+    assert.deepEqual(
+      resolveBillingAuxiliaryReadiness({
+        ...ready,
+        bypassForConnectReturn: true,
+        programsLoadError: "Programs failed",
+        programsLoaded: false,
+        studentsLoadError: "Roster failed",
+        studentsLoaded: false,
+      }),
+      { error: null, status: "ready" },
+    );
 
-    assert.equal(resolveBillingAuxiliaryReadiness({
-      ...ready,
-      activeTab: "plans",
-      bypassForConnectReturn: false,
-      programsLoadError: "Programs failed",
-      programsLoaded: false,
-    }).status, "error", "tab readiness resumes after Connect synchronization");
+    assert.equal(
+      resolveBillingAuxiliaryReadiness({
+        ...ready,
+        activeTab: "plans",
+        bypassForConnectReturn: false,
+        programsLoadError: "Programs failed",
+        programsLoaded: false,
+      }).status,
+      "error",
+      "tab readiness resumes after Connect synchronization",
+    );
   });
 });
 

@@ -33,7 +33,11 @@ class DashboardSummaryAttendanceMetrics:
             zone = ZoneInfo(timezone_name or "UTC")
         except (ZoneInfoNotFoundError, ValueError):
             zone = timezone.utc
-        return datetime.combine(value, datetime_time.min, tzinfo=zone).astimezone(timezone.utc).isoformat()
+        return (
+            datetime.combine(value, datetime_time.min, tzinfo=zone)
+            .astimezone(timezone.utc)
+            .isoformat()
+        )
 
     @staticmethod
     def _timestamp_to_studio_date(value: Any, timezone_name: Optional[str]) -> Optional[date]:
@@ -54,7 +58,7 @@ class DashboardSummaryAttendanceMetrics:
 
     @staticmethod
     def _chunked(values: list[str], size: int = 100) -> list[list[str]]:
-        return [values[index:index + size] for index in range(0, len(values), size)]
+        return [values[index : index + size] for index in range(0, len(values), size)]
 
     @staticmethod
     def _is_student_on_hold_now(row: dict[str, Any], today: date) -> bool:
@@ -70,10 +74,9 @@ class DashboardSummaryAttendanceMetrics:
 
     @staticmethod
     def _student_start_date(row: dict[str, Any]) -> Optional[date]:
-        return (
-            DashboardSummaryAttendanceMetrics._parse_date(row.get("membership_start_date"))
-            or DashboardSummaryAttendanceMetrics._parse_date(row.get("created_at"))
-        )
+        return DashboardSummaryAttendanceMetrics._parse_date(
+            row.get("membership_start_date")
+        ) or DashboardSummaryAttendanceMetrics._parse_date(row.get("created_at"))
 
     @staticmethod
     def _session_time(value: Any) -> Optional[datetime_time]:
@@ -94,15 +97,12 @@ class DashboardSummaryAttendanceMetrics:
         session_rows = self.store.fetch_rows(
             "class_sessions",
             "id, template_id, name, start_time, end_time, capacity, status, deleted_at",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .gte("date", today_text)
-            .lt("date", tomorrow_text),
+            lambda query: (
+                query.eq("studio_id", studio_id).gte("date", today_text).lt("date", tomorrow_text)
+            ),
         )
         represented_template_ids = {
-            row["template_id"]
-            for row in session_rows
-            if row.get("template_id")
+            row["template_id"] for row in session_rows if row.get("template_id")
         }
         live_session_rows = [
             row
@@ -113,10 +113,11 @@ class DashboardSummaryAttendanceMetrics:
         template_rows = self.store.fetch_rows(
             "class_templates",
             "id, day_of_week, start_date, end_date, is_active",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .eq("is_active", True)
-            .eq("day_of_week", self._studio_weekday(today)),
+            lambda query: (
+                query.eq("studio_id", studio_id)
+                .eq("is_active", True)
+                .eq("day_of_week", self._studio_weekday(today))
+            ),
         )
         applicable_template_ids: set[str] = set()
         for row in template_rows:
@@ -204,7 +205,8 @@ class DashboardSummaryAttendanceMetrics:
         eligible_students = [
             row
             for row in student_rows
-            if row.get("status") in ACTIVE_STUDENT_STATUSES and not self._is_student_on_hold_now(row, today)
+            if row.get("status") in ACTIVE_STUDENT_STATUSES
+            and not self._is_student_on_hold_now(row, today)
         ]
         student_ids = [row["id"] for row in eligible_students if row.get("id")]
         last_attendance_by_student: dict[str, date] = {}
@@ -213,16 +215,19 @@ class DashboardSummaryAttendanceMetrics:
             attendance_rows = self.store.fetch_rows(
                 "attendance",
                 "student_id, checked_in_at",
-                lambda query, student_id_chunk=student_id_chunk: query
-                .eq("studio_id", studio_id)
-                .in_("student_id", student_id_chunk)
-                .neq("status", "absent")
-                .gte("checked_in_at", self._as_start_of_day(lookback_90, timezone_name))
-                .order("checked_in_at", desc=True),
+                lambda query, student_id_chunk=student_id_chunk: (
+                    query.eq("studio_id", studio_id)
+                    .in_("student_id", student_id_chunk)
+                    .neq("status", "absent")
+                    .gte("checked_in_at", self._as_start_of_day(lookback_90, timezone_name))
+                    .order("checked_in_at", desc=True)
+                ),
             )
             for row in attendance_rows:
                 student_id = row.get("student_id")
-                checked_in_on = self._timestamp_to_studio_date(row.get("checked_in_at"), timezone_name)
+                checked_in_on = self._timestamp_to_studio_date(
+                    row.get("checked_in_at"), timezone_name
+                )
                 if student_id and checked_in_on and student_id not in last_attendance_by_student:
                     last_attendance_by_student[student_id] = checked_in_on
 
@@ -230,7 +235,9 @@ class DashboardSummaryAttendanceMetrics:
         watch_30 = 0
         watch_90 = 0
         for row in eligible_students:
-            reference_date = last_attendance_by_student.get(row["id"]) or self._student_start_date(row)
+            reference_date = last_attendance_by_student.get(row["id"]) or self._student_start_date(
+                row
+            )
             if not reference_date or reference_date > today:
                 continue
             if reference_date <= lookback_14:
@@ -255,11 +262,12 @@ class DashboardSummaryAttendanceMetrics:
         session_rows = self.store.fetch_rows(
             "class_sessions",
             "id, capacity, status, deleted_at",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .is_("deleted_at", "null")
-            .gte("date", lookback_30.isoformat())
-            .lte("date", today.isoformat()),
+            lambda query: (
+                query.eq("studio_id", studio_id)
+                .is_("deleted_at", "null")
+                .gte("date", lookback_30.isoformat())
+                .lte("date", today.isoformat())
+            ),
         )
         session_rows = [row for row in session_rows if row.get("status") != "canceled"]
         session_ids = [row["id"] for row in session_rows if row.get("id")]
@@ -269,10 +277,11 @@ class DashboardSummaryAttendanceMetrics:
             attendance_rows = self.store.fetch_rows(
                 "attendance",
                 "session_id",
-                lambda query, session_id_chunk=session_id_chunk: query
-                .eq("studio_id", studio_id)
-                .in_("session_id", session_id_chunk)
-                .neq("status", "absent"),
+                lambda query, session_id_chunk=session_id_chunk: (
+                    query.eq("studio_id", studio_id)
+                    .in_("session_id", session_id_chunk)
+                    .neq("status", "absent")
+                ),
             )
             for row in attendance_rows:
                 session_id = row.get("session_id")

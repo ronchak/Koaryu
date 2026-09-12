@@ -8,10 +8,7 @@ import { LeadLedgerLoading } from "@/components/leads/lead-ledger-loading";
 import { Header } from "@/components/header";
 import { AddLeadModal } from "@/components/leads/add-lead-modal";
 import { LeadDetailInspector } from "@/components/leads/lead-detail-modal";
-import {
-  LeadLedgerLoadError,
-  LeadPipelineBoard,
-} from "@/components/leads/lead-pipeline-board";
+import { LeadLedgerLoadError, LeadPipelineBoard } from "@/components/leads/lead-pipeline-board";
 import { LostLeadsSection } from "@/components/leads/lost-leads-section";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
@@ -23,7 +20,14 @@ import styles from "@/components/leads/leads-ledger.module.css";
 export default function LeadsPage() {
   const { currentRole, isPreviewMode, token, businessDate } = useConfigStore();
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = useProgramStore();
-  const { staffMembers, staffLoaded, staffLoadError, refreshStaff, identityReady, identityGeneration } = useStudioStore();
+  const {
+    staffMembers,
+    staffLoaded,
+    staffLoadError,
+    refreshStaff,
+    identityReady,
+    identityGeneration,
+  } = useStudioStore();
   const {
     leads: baseLeads,
     addLead,
@@ -41,11 +45,19 @@ export default function LeadsPage() {
     void refreshStaff().catch(() => undefined);
   }, [identityReady, isPreviewMode, requiresStaff, staffLoaded, staffLoadError, refreshStaff]);
   const usefulReady = identityReady && leadsLoaded && !leadsLoadError;
-  const completeReady = usefulReady && programsLoaded && !programsLoadError
-    && (!requiresStaff || (staffLoaded && !staffLoadError));
-  useEffect(() => markDashboardReadiness("leads", identityGeneration, {
-    useful: usefulReady, complete: completeReady,
-  }), [identityGeneration, usefulReady, completeReady]);
+  const completeReady =
+    usefulReady &&
+    programsLoaded &&
+    !programsLoadError &&
+    (!requiresStaff || (staffLoaded && !staffLoadError));
+  useEffect(
+    () =>
+      markDashboardReadiness("leads", identityGeneration, {
+        useful: usefulReady,
+        complete: completeReady,
+      }),
+    [identityGeneration, usefulReady, completeReady],
+  );
   const today = businessDate;
   const controller = useLeadsPageController({
     addLead,
@@ -60,29 +72,31 @@ export default function LeadsPage() {
   });
   useResumeRefresh(() => {
     controller.retrySelectedLeadActivities();
-    return Promise.allSettled([refreshLeads(), refreshPrograms({ includeArchived: true }), ...(currentRole === "admin" ? [refreshStaff()] : [])]);
+    return Promise.allSettled([
+      refreshLeads(),
+      refreshPrograms({ includeArchived: true }),
+      ...(currentRole === "admin" ? [refreshStaff()] : []),
+    ]);
   });
-  const {
-    activePrograms,
-    enrolledCount,
-    lostLeads,
-    programById,
-    selectedLead,
-    totalActive,
-  } = controller.model;
+  const { activePrograms, enrolledCount, lostLeads, programById, selectedLead, totalActive } =
+    controller.model;
   const activeStaff = staffMembers.filter((member) => member.status === "active");
   const staffById = new Map(staffMembers.map((member) => [member.id, member]));
   const currentAssignedStaff = selectedLead?.assigned_staff_id
-    ? staffById.get(selectedLead.assigned_staff_id) ?? null
+    ? (staffById.get(selectedLead.assigned_staff_id) ?? null)
     : null;
 
   return (
     <div className={`flex min-h-0 flex-1 flex-col ${styles.pageRoot}`}>
       <Header
         title="Leads"
-        description={leadsLoaded
-          ? `${totalActive} active · ${enrolledCount} enrolled · ${lostLeads.length} lost`
-          : leadsLoadError ? "Lead totals unavailable" : "Loading lead totals"}
+        description={
+          leadsLoaded
+            ? `${totalActive} active · ${enrolledCount} enrolled · ${lostLeads.length} lost`
+            : leadsLoadError
+              ? "Lead totals unavailable"
+              : "Loading lead totals"
+        }
       >
         <Button
           variant={controller.showLost ? "secondary" : "ghost"}
@@ -92,11 +106,7 @@ export default function LeadsPage() {
           {leadsLoaded ? `Lost (${lostLeads.length})` : "Lost"}
         </Button>
         {controller.canManageLeads ? (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={controller.openAddLeadModal}
-          >
+          <Button variant="primary" size="sm" onClick={controller.openAddLeadModal}>
             <UserPlus className="w-3.5 h-3.5" />
             Add lead
           </Button>
@@ -106,12 +116,18 @@ export default function LeadsPage() {
       {requiresStaff && staffLoadError ? (
         <div role="alert" className="px-4 pt-4 sm:px-6 lg:px-8">
           <p className="text-sm text-danger">Staff assignments are unavailable. {staffLoadError}</p>
-          <Button variant="secondary" size="sm" onClick={() => void refreshStaff().catch(() => undefined)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void refreshStaff().catch(() => undefined)}
+          >
             Retry staff assignments
           </Button>
         </div>
       ) : requiresStaff && !staffLoaded ? (
-        <p role="status" className="px-4 pt-4 text-sm text-muted sm:px-6 lg:px-8">Loading staff assignments...</p>
+        <p role="status" className="px-4 pt-4 text-sm text-muted sm:px-6 lg:px-8">
+          Loading staff assignments...
+        </p>
       ) : null}
 
       {controller.leadActionError && !selectedLead && (

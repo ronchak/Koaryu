@@ -11,10 +11,7 @@ import {
 } from "@/components/marketing/public-pages";
 import styles from "@/components/marketing/public-pages.module.css";
 import { APP_NAME } from "@/lib/constants";
-import {
-  exploreSections,
-  getMarketingPageByRef,
-} from "@/lib/marketing-pages";
+import { exploreSections, getMarketingPageByRef } from "@/lib/marketing-pages";
 
 export const metadata: Metadata = {
   title: "Explore Koaryu | Martial Arts Studio Software Guide",
@@ -43,8 +40,7 @@ export default function ExplorePage() {
           "@context": "https://schema.org",
           "@type": "CollectionPage",
           name: "Explore Koaryu",
-          description:
-            "A guide to Koaryu feature pages, use cases, and studio-fit pages.",
+          description: "A guide to Koaryu feature pages, use cases, and studio-fit pages.",
           url: "https://koaryu.app/explore",
           isPartOf: {
             "@type": "WebSite",
@@ -62,14 +58,12 @@ export default function ExplorePage() {
           </div>
           <div className={styles.exploreHeroSupport}>
             <p className={styles.exploreHeroDescription}>
-              Koaryu has product pages, use-case pages, and studio-fit pages.
-              This guide keeps them in one place so an owner can start with a
-              question instead of guessing which page matters.
+              Koaryu has product pages, use-case pages, and studio-fit pages. This guide keeps them
+              in one place so an owner can start with a question instead of guessing which page
+              matters.
             </p>
             <div className={styles.editorialActions}>
-              <MarketingActionLink href="/features">
-                Compare features
-              </MarketingActionLink>
+              <MarketingActionLink href="/features">Compare features</MarketingActionLink>
               <MarketingActionLink href="/use-cases" variant="secondary">
                 Browse use cases
               </MarketingActionLink>
@@ -99,9 +93,7 @@ export default function ExplorePage() {
                 return (
                   <li key={path.href}>
                     <Link href={path.href} className={styles.exploreRouteLink}>
-                      <span className={styles.exploreRouteMeta}>
-                        {path.eyebrow}
-                      </span>
+                      <span className={styles.exploreRouteMeta}>{path.eyebrow}</span>
                       <span className={styles.exploreRouteCopy}>
                         <strong>{path.title}</strong>
                         <span>{path.description}</span>
@@ -109,9 +101,7 @@ export default function ExplorePage() {
                       <span className={styles.exploreRouteContext}>
                         {includedPages.length > 0 ? (
                           <span className={styles.exploreIncludedBlock}>
-                            <span className={styles.exploreIncludedLabel}>
-                              Included pages
-                            </span>
+                            <span className={styles.exploreIncludedLabel}>Included pages</span>
                             <span className={styles.exploreIncludedList}>
                               {includedPages.map((page) => (
                                 <span key={page.href}>

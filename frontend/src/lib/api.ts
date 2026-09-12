@@ -10,8 +10,7 @@ import { buildApiUrl } from "@/lib/api-url";
 
 const SERVER_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api/v1";
 const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY === "true";
-const BROWSER_API_BASE =
-  USE_API_PROXY ? "/api/proxy" : SERVER_API_BASE;
+const BROWSER_API_BASE = USE_API_PROXY ? "/api/proxy" : SERVER_API_BASE;
 
 function apiUrl(path: string) {
   return buildApiUrl(path, {
@@ -45,9 +44,9 @@ export function isSubscriptionRequiredError(error: unknown) {
 }
 
 export function isStaffArchivedError(error: unknown) {
-  return error instanceof ApiError && (
-    /\bSTAFF_ARCHIVED\b/.test(error.message)
-    || /staff account is archived/i.test(error.message)
+  return (
+    error instanceof ApiError &&
+    (/\bSTAFF_ARCHIVED\b/.test(error.message) || /staff account is archived/i.test(error.message))
   );
 }
 
@@ -128,12 +127,13 @@ async function executeApiRequest<T>(
 ): Promise<T> {
   const controller = new AbortController();
   let abortReason: AbortReason = null;
-  const timeout = timeoutMs == null
-    ? null
-    : setTimeout(() => {
-        abortReason ??= "timeout";
-        controller.abort();
-      }, timeoutMs);
+  const timeout =
+    timeoutMs == null
+      ? null
+      : setTimeout(() => {
+          abortReason ??= "timeout";
+          controller.abort();
+        }, timeoutMs);
   const abortFromCaller = () => {
     abortReason ??= "caller";
     controller.abort();
@@ -166,9 +166,14 @@ async function executeApiRequest<T>(
   } catch (error) {
     // A transport abort, 5xx response, or lost success body cannot prove rollback.
     if (isCommand && dispatched && (!(error instanceof ApiError) || error.status >= 500)) {
-      throw new CommandOutcomeUnknown(requestId, abortReason === "timeout"
-        ? commandTimeoutMessage
-        : !receivedHeaders && abortReason === null ? commandNetworkMessage : undefined);
+      throw new CommandOutcomeUnknown(
+        requestId,
+        abortReason === "timeout"
+          ? commandTimeoutMessage
+          : !receivedHeaders && abortReason === null
+            ? commandNetworkMessage
+            : undefined,
+      );
     }
     if (abortReason !== null || (error instanceof Error && error.name === "AbortError")) {
       if (abortReason === "timeout") {
@@ -384,7 +389,10 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
   );
 }
 
-async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ blob: Blob; filename: string | null }> {
+async function apiDownload(
+  path: string,
+  options: ApiOptions = {},
+): Promise<{ blob: Blob; filename: string | null }> {
   const {
     token,
     headers: extraHeaders,
@@ -436,23 +444,36 @@ export const api = {
   get: <T>(path: string, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
     apiFetch<T>(path, { ...options, token }),
 
-  post: <T>(path: string, body: unknown, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
-    apiFetch<T>(path, { ...options, method: "POST", body, token }),
+  post: <T>(
+    path: string,
+    body: unknown,
+    token?: string,
+    options?: Omit<ApiOptions, "token" | "method" | "body">,
+  ) => apiFetch<T>(path, { ...options, method: "POST", body, token }),
 
-  patch: <T>(path: string, body: unknown, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
-    apiFetch<T>(path, { ...options, method: "PATCH", body, token }),
+  patch: <T>(
+    path: string,
+    body: unknown,
+    token?: string,
+    options?: Omit<ApiOptions, "token" | "method" | "body">,
+  ) => apiFetch<T>(path, { ...options, method: "PATCH", body, token }),
 
-  delete: <T>(path: string, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
-    apiFetch<T>(path, { ...options, method: "DELETE", token }),
+  delete: <T>(
+    path: string,
+    token?: string,
+    options?: Omit<ApiOptions, "token" | "method" | "body">,
+  ) => apiFetch<T>(path, { ...options, method: "DELETE", token }),
 
   postForm: <T>(
     path: string,
     body: FormData,
     token?: string,
-    options?: Omit<FormApiOptions, "token" | "method" | "body">
-  ) =>
-    apiFormFetch<T>(path, { ...options, method: "POST", body, token }),
+    options?: Omit<FormApiOptions, "token" | "method" | "body">,
+  ) => apiFormFetch<T>(path, { ...options, method: "POST", body, token }),
 
-  download: (path: string, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
-    apiDownload(path, { ...options, token }),
+  download: (
+    path: string,
+    token?: string,
+    options?: Omit<ApiOptions, "token" | "method" | "body">,
+  ) => apiDownload(path, { ...options, token }),
 };

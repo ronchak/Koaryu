@@ -17,7 +17,7 @@ export interface BeltLadderSyncPayload {
 
 export function selectBeltLadder(
   ladders: BeltLadder[],
-  preferredLadderId?: string | null
+  preferredLadderId?: string | null,
 ): BeltLadder | null {
   if (preferredLadderId) {
     const matched = ladders.find((ladder) => ladder.id === preferredLadderId);
@@ -54,10 +54,11 @@ export function buildPreviewBeltLadderFromRanks(
     ladderName: string;
     subRankTerm: string;
     requestedSubRankTerm?: string;
-  }
+  },
 ): BeltLadder {
   const selectedLadder = selectBeltLadder(currentLadders, preferredLadderId);
-  const nextSubRankTerm = requestedSubRankTerm?.trim() || selectedLadder?.sub_rank_term || subRankTerm;
+  const nextSubRankTerm =
+    requestedSubRankTerm?.trim() || selectedLadder?.sub_rank_term || subRankTerm;
 
   return {
     ...(selectedLadder || fallbackLadder),
@@ -70,7 +71,7 @@ export function buildPreviewBeltLadderFromRanks(
 
 export function buildBeltLadderSyncPayload(
   ranks: BeltRank[],
-  subRankTerm: string
+  subRankTerm: string,
 ): BeltLadderSyncPayload {
   return {
     sub_rank_term: subRankTerm,
@@ -83,7 +84,7 @@ export function buildBeltLadderSyncPayload(
       min_months: rank.min_months,
       requires_approval: rank.requires_approval,
       is_tip: rank.is_tip,
-      tip_color_hex: rank.is_tip ? rank.tip_color_hex ?? null : null,
+      tip_color_hex: rank.is_tip ? (rank.tip_color_hex ?? null) : null,
     })),
   };
 }
@@ -91,7 +92,7 @@ export function buildBeltLadderSyncPayload(
 export function updatePreviewLadderSubRankTerm(
   currentLadders: BeltLadder[],
   preferredLadderId: string | null | undefined,
-  nextTerm: string
+  nextTerm: string,
 ): { selectedLadder: BeltLadder | null; ladders: BeltLadder[] | null } {
   const selectedLadder = selectBeltLadder(currentLadders, preferredLadderId);
   if (!selectedLadder) {
@@ -126,7 +127,7 @@ export function buildPreviewPromotion(
     notes?: string;
     idFactory: () => string;
     now?: Date;
-  }
+  },
 ): { students: Student[]; promotion: Promotion } {
   const student = students.find((item) => item.id === studentId);
   if (!student) {
@@ -140,9 +141,9 @@ export function buildPreviewPromotion(
 
   const nowIso = now.toISOString();
   const rankById = new Map(ranks.map((rank) => [rank.id, rank]));
-  const currentMemberships = (student.program_memberships || []).filter((membership) =>
-    (membership.status === "active" || membership.status === "paused") &&
-    !membership.ended_at
+  const currentMemberships = (student.program_memberships || []).filter(
+    (membership) =>
+      (membership.status === "active" || membership.status === "paused") && !membership.ended_at,
   );
   let targetMembership = studentProgramMembershipId
     ? currentMemberships.find((membership) => membership.id === studentProgramMembershipId)
@@ -161,18 +162,21 @@ export function buildPreviewPromotion(
     throw new Error("Student program membership does not match program");
   }
   if (!targetMembership && !studentProgramMembershipId && !programId) {
-    targetMembership = currentMemberships.find((membership) => {
-      const currentRank = membership.current_belt_rank_id
-        ? rankById.get(membership.current_belt_rank_id)
-        : null;
-      return currentRank?.ladder_id === targetRank.ladder_id;
-    }) ?? currentMemberships.find((membership) =>
-      !membership.current_belt_rank_id && membership.program_id === student.program_id
-    );
+    targetMembership =
+      currentMemberships.find((membership) => {
+        const currentRank = membership.current_belt_rank_id
+          ? rankById.get(membership.current_belt_rank_id)
+          : null;
+        return currentRank?.ladder_id === targetRank.ladder_id;
+      }) ??
+      currentMemberships.find(
+        (membership) =>
+          !membership.current_belt_rank_id && membership.program_id === student.program_id,
+      );
   }
 
   const fromRankId = targetMembership
-    ? targetMembership.current_belt_rank_id ?? null
+    ? (targetMembership.current_belt_rank_id ?? null)
     : student.current_belt_rank_id;
   const targetProgramId = targetMembership?.program_id ?? programId ?? student.program_id;
   const promotion: Promotion = {
@@ -186,7 +190,8 @@ export function buildPreviewPromotion(
     promoted_by: "preview-user",
     notes,
     promoted_at: nowIso,
-    student_name: student.preferred_name || `${student.legal_first_name} ${student.legal_last_name}`,
+    student_name:
+      student.preferred_name || `${student.legal_first_name} ${student.legal_last_name}`,
     from_rank_name: ranks.find((rank) => rank.id === fromRankId)?.name,
     to_rank_name: targetRank.name,
   };
@@ -196,7 +201,8 @@ export function buildPreviewPromotion(
     students: students.map((item) => {
       if (item.id !== studentId) return item;
 
-      const updatesPrimaryRank = !targetMembership || targetMembership.program_id === item.program_id;
+      const updatesPrimaryRank =
+        !targetMembership || targetMembership.program_id === item.program_id;
       return {
         ...item,
         current_belt_rank_id: updatesPrimaryRank ? toRankId : item.current_belt_rank_id,
@@ -209,7 +215,7 @@ export function buildPreviewPromotion(
                 current_belt_rank_color: targetRank.color_hex,
                 updated_at: nowIso,
               }
-            : membership
+            : membership,
         ),
         updated_at: nowIso,
       };
@@ -218,8 +224,8 @@ export function buildPreviewPromotion(
 }
 
 function sortRanksForRepair(ranks: BeltRank[]): BeltRank[] {
-  return [...ranks].sort((left, right) =>
-    left.display_order - right.display_order || left.id.localeCompare(right.id)
+  return [...ranks].sort(
+    (left, right) => left.display_order - right.display_order || left.id.localeCompare(right.id),
   );
 }
 
@@ -228,7 +234,7 @@ export function repairPreviewStudentRanksForLadder(
   ladder: BeltLadder,
   previousRanks: BeltRank[],
   nextRanks: BeltRank[],
-  now = new Date()
+  now = new Date(),
 ): Student[] {
   if (!ladder.program_id) return students;
 
@@ -262,7 +268,8 @@ export function repairPreviewStudentRanksForLadder(
     let primaryRankId = student.current_belt_rank_id;
     let changed = false;
     const programMemberships = student.program_memberships?.map((membership) => {
-      const isTargetMembership = membership.program_id === ladder.program_id &&
+      const isTargetMembership =
+        membership.program_id === ladder.program_id &&
         (membership.status === "active" || membership.status === "paused") &&
         !membership.ended_at;
       if (!isTargetMembership) return membership;
@@ -270,11 +277,17 @@ export function repairPreviewStudentRanksForLadder(
       let nextRank: BeltRank | null | undefined;
       if (!membership.current_belt_rank_id) {
         nextRank = previousFullRanks.length === 0 ? nextFullRanks[0] : undefined;
-      } else if (!nextById.has(membership.current_belt_rank_id) && previousById.has(membership.current_belt_rank_id)) {
+      } else if (
+        !nextById.has(membership.current_belt_rank_id) &&
+        previousById.has(membership.current_belt_rank_id)
+      ) {
         nextRank = replacementForDeletedRank(membership.current_belt_rank_id);
       }
 
-      if (nextRank === undefined || (nextRank?.id ?? null) === (membership.current_belt_rank_id ?? null)) {
+      if (
+        nextRank === undefined ||
+        (nextRank?.id ?? null) === (membership.current_belt_rank_id ?? null)
+      ) {
         return membership;
       }
 

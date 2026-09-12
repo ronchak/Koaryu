@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  acknowledgeConnectOnboardingBeforeNavigation,
-} from "../src/lib/billing-connect-delivery.ts";
+import { acknowledgeConnectOnboardingBeforeNavigation } from "../src/lib/billing-connect-delivery.ts";
 
 test("acknowledges an initial-link receipt before navigating", async () => {
   const calls = [];
@@ -24,7 +22,9 @@ test("never navigates when delivery acknowledgement fails", async () => {
   await assert.rejects(
     acknowledgeConnectOnboardingBeforeNavigation(
       { pending_url: "https://connect.stripe.test/link", delivery_receipt: "receipt" },
-      async () => { throw new Error("support required"); },
+      async () => {
+        throw new Error("support required");
+      },
       (url) => navigations.push(url),
     ),
     /support required/,

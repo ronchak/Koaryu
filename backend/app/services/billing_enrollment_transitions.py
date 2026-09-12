@@ -7,7 +7,11 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
-from app.services.billing_invoice_projection import _object_get, _stripe_id, subscription_period_bounds
+from app.services.billing_invoice_projection import (
+    _object_get,
+    _stripe_id,
+    subscription_period_bounds,
+)
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
@@ -76,9 +80,8 @@ class BillingEnrollmentTransitionWorkflow:
         if existing is not None:
             return self._resume_existing(existing, actor_id=actor_id, mutation="schedule")
         snapshot = self._snapshot(enrollment_id, studio_id, immediate=False)
-        if (
-            snapshot["mutation_strategy"] == "subscription_item_delete_at_period_end"
-            and _stripe_id(_object_get(snapshot["provider"], "schedule"))
+        if snapshot["mutation_strategy"] == "subscription_item_delete_at_period_end" and _stripe_id(
+            _object_get(snapshot["provider"], "schedule")
         ):
             raise HTTPException(
                 status_code=409,
@@ -87,7 +90,8 @@ class BillingEnrollmentTransitionWorkflow:
         if snapshot["mutation_strategy"] == "subscription_cancel_at_period_end":
             group_id = str(snapshot["group"]["id"])
             lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(
-                studio_id, group_id,
+                studio_id,
+                group_id,
             )
             try:
                 snapshot = self._snapshot(enrollment_id, studio_id, immediate=False)
@@ -100,7 +104,9 @@ class BillingEnrollmentTransitionWorkflow:
                 )
             finally:
                 self.lifecycle._release_subscription_quantity_sync_lock(
-                    studio_id, group_id, lock_token,
+                    studio_id,
+                    group_id,
+                    lock_token,
                 )
         return self._claim_schedule(
             snapshot,
@@ -207,12 +213,14 @@ class BillingEnrollmentTransitionWorkflow:
         reason_code: str,
     ) -> dict[str, Any]:
         request_key = self._request_key(idempotency_key)
-        request_sha256 = stable_hash({
-            "version": 1,
-            "studio_id": studio_id,
-            "source_intent_id": transition_intent_id,
-            "reason_code": reason_code,
-        })
+        request_sha256 = stable_hash(
+            {
+                "version": 1,
+                "studio_id": studio_id,
+                "source_intent_id": transition_intent_id,
+                "reason_code": reason_code,
+            }
+        )
         lease_owner = str(uuid4())
         envelope = self.operations.revoke_enrollment_transition(
             intent_id=transition_intent_id,
@@ -225,9 +233,7 @@ class BillingEnrollmentTransitionWorkflow:
             lease_owner=lease_owner,
         )
         intent = envelope["intent"]
-        if intent["state"] in {"completed", "revoked"} and intent.get(
-            "provider_operation_id"
-        ):
+        if intent["state"] in {"completed", "revoked"} and intent.get("provider_operation_id"):
             operation = envelope.get("operation")
             if not isinstance(operation, dict):
                 operation = self._read_operation(intent, lease_owner=lease_owner)
@@ -259,27 +265,37 @@ class BillingEnrollmentTransitionWorkflow:
 
     def process_due(self, *, worker_id: str, limit: int = 25) -> dict[str, int]:
         if not 1 <= limit <= 100:
-            raise HTTPException(status_code=400, detail="Due transition limit must be between 1 and 100.")
+            raise HTTPException(
+                status_code=400, detail="Due transition limit must be between 1 and 100."
+            )
         intents = self.operations.claim_due_enrollment_transitions(
             worker_id=worker_id,
             limit=limit,
         )
-        result = {"claimed": len(intents), "completed": 0, "reconciliation_required": 0, "failed": 0}
+        result = {
+            "claimed": len(intents),
+            "completed": 0,
+            "reconciliation_required": 0,
+            "failed": 0,
+        }
         for intent in intents:
             try:
                 try:
                     snapshot = self._snapshot_for_replay(intent)
                 except Exception as exc:
-                    if (
-                        intent.get("mutation_strategy") == "subscription_item_delete_at_period_end"
-                        and not intent.get("provider_operation_id")
+                    if intent.get(
+                        "mutation_strategy"
+                    ) == "subscription_item_delete_at_period_end" and not intent.get(
+                        "provider_operation_id"
                     ):
                         reason = "item_due_pre_provider_identity_drift"
-                        proof = stable_hash({
-                            "intent_id": str(intent["id"]),
-                            "reason": reason,
-                            "exception_type": type(exc).__name__,
-                        })
+                        proof = stable_hash(
+                            {
+                                "intent_id": str(intent["id"]),
+                                "reason": reason,
+                                "exception_type": type(exc).__name__,
+                            }
+                        )
                         self.operations.mark_due_enrollment_pre_provider_reconciliation(
                             intent_id=str(intent["id"]),
                             studio_id=str(intent["studio_id"]),
@@ -292,8 +308,7 @@ class BillingEnrollmentTransitionWorkflow:
                         continue
                     raise
                 if (
-                    intent["mutation_strategy"]
-                    == "subscription_item_delete_at_period_end"
+                    intent["mutation_strategy"] == "subscription_item_delete_at_period_end"
                     and intent.get("provider_caller_request_key") is None
                     and intent.get("provider_request_sha256") is None
                 ):
@@ -329,11 +344,13 @@ class BillingEnrollmentTransitionWorkflow:
                         )
                         result["completed"] += 1
                     except Exception as exc:
-                        proof = stable_hash({
-                            "intent_id": str(intent["id"]),
-                            "reason": "item_schedule_due_readback_unconfirmed",
-                            "exception_type": type(exc).__name__,
-                        })
+                        proof = stable_hash(
+                            {
+                                "intent_id": str(intent["id"]),
+                                "reason": "item_schedule_due_readback_unconfirmed",
+                                "exception_type": type(exc).__name__,
+                            }
+                        )
                         self.operations.mark_due_enrollment_readback_reconciliation(
                             intent_id=str(intent["id"]),
                             studio_id=str(intent["studio_id"]),
@@ -370,11 +387,13 @@ class BillingEnrollmentTransitionWorkflow:
                         )
                         result["completed"] += 1
                     except Exception as exc:
-                        proof = stable_hash({
-                            "intent_id": str(intent["id"]),
-                            "reason": "whole_subscription_due_readback_unconfirmed",
-                            "exception_type": type(exc).__name__,
-                        })
+                        proof = stable_hash(
+                            {
+                                "intent_id": str(intent["id"]),
+                                "reason": "whole_subscription_due_readback_unconfirmed",
+                                "exception_type": type(exc).__name__,
+                            }
+                        )
                         self.operations.mark_due_enrollment_readback_reconciliation(
                             intent_id=str(intent["id"]),
                             studio_id=str(intent["studio_id"]),
@@ -425,7 +444,9 @@ class BillingEnrollmentTransitionWorkflow:
             operation = envelope.get("operation")
             if not isinstance(operation, dict):
                 operation = self._read_operation(intent, lease_owner=str(uuid4()))
-            self._audit_completed_transition(intent, operation, actor_id=actor_id, mutation=mutation)
+            self._audit_completed_transition(
+                intent, operation, actor_id=actor_id, mutation=mutation
+            )
             return {**envelope, "operation": operation}
         if not intent.get("provider_operation_id"):
             return envelope
@@ -459,7 +480,8 @@ class BillingEnrollmentTransitionWorkflow:
         )
         if needs_quantity_lock:
             lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(
-                str(snapshot["enrollment"]["studio_id"]), group_id,
+                str(snapshot["enrollment"]["studio_id"]),
+                group_id,
             )
             try:
                 refreshed = self._snapshot(
@@ -468,9 +490,8 @@ class BillingEnrollmentTransitionWorkflow:
                     immediate=mutation in {"immediate", "execute_due"},
                 )
                 intent = envelope["intent"]
-                if (
-                    mutation == "immediate"
-                    and _stripe_id(_object_get(refreshed["provider"], "schedule"))
+                if mutation == "immediate" and _stripe_id(
+                    _object_get(refreshed["provider"], "schedule")
                 ):
                     raise HTTPException(
                         status_code=409,
@@ -489,7 +510,9 @@ class BillingEnrollmentTransitionWorkflow:
                 )
             finally:
                 self.lifecycle._release_subscription_quantity_sync_lock(
-                    str(snapshot["enrollment"]["studio_id"]), group_id, lock_token,
+                    str(snapshot["enrollment"]["studio_id"]),
+                    group_id,
+                    lock_token,
                 )
         return self._drive_provider_operation_locked(
             envelope,
@@ -520,8 +543,7 @@ class BillingEnrollmentTransitionWorkflow:
         if state == "reconciliation_required":
             if not (
                 mutation == "schedule"
-                and snapshot["mutation_strategy"]
-                == "subscription_item_delete_at_period_end"
+                and snapshot["mutation_strategy"] == "subscription_item_delete_at_period_end"
                 and self._item_schedule_step_recovery_is_authorized(
                     intent,
                     operation,
@@ -556,7 +578,9 @@ class BillingEnrollmentTransitionWorkflow:
                     actor_id=context.actor_id,
                     provider_evidence_sha256=str(intent["provider_evidence_sha256"]),
                 )["intent"]
-            self._audit_completed_transition(intent, operation, actor_id=actor_id, mutation=mutation)
+            self._audit_completed_transition(
+                intent, operation, actor_id=actor_id, mutation=mutation
+            )
             return {**envelope, "intent": intent, "operation": operation}
         recovery_outcome = operation.get("recovery_outcome")
         if state == "recovery_authorized" and (
@@ -650,12 +674,24 @@ class BillingEnrollmentTransitionWorkflow:
                 )
                 raise HTTPException(status_code=409, detail=TRANSITION_REJECTED_DETAIL) from exc
             except Exception as exc:
-                self._mark_reconciliation(intent, operation, context, "enrollment_transition_provider_outcome_ambiguous", exc)
+                self._mark_reconciliation(
+                    intent,
+                    operation,
+                    context,
+                    "enrollment_transition_provider_outcome_ambiguous",
+                    exc,
+                )
             try:
                 provider = self._retrieve_subscription(snapshot)
                 self._verify_after_mutation(snapshot, provider, mutation=mutation)
             except Exception as exc:
-                self._mark_reconciliation(intent, operation, context, "enrollment_transition_provider_readback_failed", exc)
+                self._mark_reconciliation(
+                    intent,
+                    operation,
+                    context,
+                    "enrollment_transition_provider_readback_failed",
+                    exc,
+                )
             proof = self._provider_proof(snapshot, provider)
             operation = self.operations.transition(
                 context,
@@ -676,14 +712,22 @@ class BillingEnrollmentTransitionWorkflow:
                 provider = self._retrieve_subscription(snapshot)
                 self._verify_after_mutation(snapshot, provider, mutation=mutation)
             except Exception as exc:
-                self._mark_reconciliation(intent, operation, context, "enrollment_transition_provider_readback_failed", exc)
+                self._mark_reconciliation(
+                    intent,
+                    operation,
+                    context,
+                    "enrollment_transition_provider_readback_failed",
+                    exc,
+                )
             proof = self._provider_proof(snapshot, provider)
 
         if operation["state"] == "provider_succeeded":
             try:
                 self._project_local(snapshot, provider, mutation=mutation)
             except Exception as exc:
-                self._mark_reconciliation(intent, operation, context, "enrollment_transition_local_projection_failed", exc)
+                self._mark_reconciliation(
+                    intent, operation, context, "enrollment_transition_local_projection_failed", exc
+                )
             operation = self.operations.transition(
                 context,
                 operation,
@@ -710,7 +754,9 @@ class BillingEnrollmentTransitionWorkflow:
                 actor_id=context.actor_id,
                 provider_evidence_sha256=proof,
             )["intent"]
-        self._audit_completed_transition(intent, operation, actor_id=context.actor_id, mutation=mutation)
+        self._audit_completed_transition(
+            intent, operation, actor_id=context.actor_id, mutation=mutation
+        )
         return {**envelope, "intent": intent, "operation": operation}
 
     def _drive_item_schedule_provider_plan(
@@ -769,8 +815,7 @@ class BillingEnrollmentTransitionWorkflow:
         operation = completed["operation"]
         if (
             operation.get("state") != "provider_succeeded"
-            or operation.get("provider_object_id")
-            != intent["stripe_subscription_item_id"]
+            or operation.get("provider_object_id") != intent["stripe_subscription_item_id"]
             or operation.get("provider_secondary_object_id") != schedule_id
             or operation.get("lease_owner") != context.lease_owner
         ):
@@ -792,16 +837,12 @@ class BillingEnrollmentTransitionWorkflow:
                 context,
                 plan_sha256=str(plan["plan_sha256"]),
             )
-            if (
-                (envelope.get("operation") or {}).get("id") != operation.get("id")
-                or (envelope.get("operation") or {}).get("state")
-                != "reconciliation_required"
-            ):
+            if (envelope.get("operation") or {}).get("id") != operation.get("id") or (
+                envelope.get("operation") or {}
+            ).get("state") != "reconciliation_required":
                 return False
             steps = list(envelope.get("steps") or [])
-            authorized = [
-                step for step in steps if step.get("state") == "recovery_authorized"
-            ]
+            authorized = [step for step in steps if step.get("state") == "recovery_authorized"]
             if len(steps) != 2 or len(authorized) != 1:
                 return False
             recovered = authorized[0]
@@ -883,9 +924,7 @@ class BillingEnrollmentTransitionWorkflow:
             )
             schedule_id = _stripe_id(schedule)
             self._verify_new_item_schedule(intent, schedule)
-            if not schedule_id or (
-                attached_schedule_id and schedule_id != attached_schedule_id
-            ):
+            if not schedule_id or (attached_schedule_id and schedule_id != attached_schedule_id):
                 raise RuntimeError("enrollment_item_schedule_create_identity_missing")
         except StripeMutationBlocked as exc:
             self._reject_provider_step(
@@ -932,8 +971,7 @@ class BillingEnrollmentTransitionWorkflow:
         state = str(current.get("state") or "")
         if state == "provider_succeeded":
             if (
-                current.get("provider_object_id")
-                != intent["stripe_subscription_item_id"]
+                current.get("provider_object_id") != intent["stripe_subscription_item_id"]
                 or current.get("provider_secondary_object_id") != schedule_id
             ):
                 raise HTTPException(status_code=503, detail=TRANSITION_AMBIGUOUS_DETAIL)
@@ -1048,12 +1086,14 @@ class BillingEnrollmentTransitionWorkflow:
                 expected_step_count=2,
             )
             parent = completed["operation"]
-        proof = stable_hash({
-            "operation_id": step.parent.operation_id,
-            "step_name": step.step_name,
-            "reason": reason,
-            "exception_type": type(exc).__name__,
-        })
+        proof = stable_hash(
+            {
+                "operation_id": step.parent.operation_id,
+                "step_name": step.step_name,
+                "reason": reason,
+                "exception_type": type(exc).__name__,
+            }
+        )
         try:
             self.operations.transition_enrollment_transition(
                 intent=intent,
@@ -1115,15 +1155,17 @@ class BillingEnrollmentTransitionWorkflow:
                 expected_step_count=2,
             )
             parent = completed["operation"]
-        proof = stable_hash({
-            "operation_id": step.parent.operation_id,
-            "step_name": step.step_name,
-            "reason": (
-                "provider_mutation_blocked_after_partial_provider_success"
-                if partial_provider_success
-                else "provider_mutation_blocked"
-            ),
-        })
+        proof = stable_hash(
+            {
+                "operation_id": step.parent.operation_id,
+                "step_name": step.step_name,
+                "reason": (
+                    "provider_mutation_blocked_after_partial_provider_success"
+                    if partial_provider_success
+                    else "provider_mutation_blocked"
+                ),
+            }
+        )
         try:
             self.operations.transition_enrollment_transition(
                 intent=intent,
@@ -1184,32 +1226,36 @@ class BillingEnrollmentTransitionWorkflow:
             {
                 "step_name": "schedule_create",
                 "provider_operation": "connected_subscription_schedule.create",
-                "request_sha256": stable_hash({
-                    "provider_operation": "connected_subscription_schedule.create",
-                    "from_subscription": intent["stripe_subscription_id"],
-                    "account_id": context.stripe_connected_account_id,
-                    "generation": context.connect_account_generation,
-                }),
+                "request_sha256": stable_hash(
+                    {
+                        "provider_operation": "connected_subscription_schedule.create",
+                        "from_subscription": intent["stripe_subscription_id"],
+                        "account_id": context.stripe_connected_account_id,
+                        "generation": context.connect_account_generation,
+                    }
+                ),
                 "stripe_idempotency_key": create_key,
             },
             {
                 "step_name": "schedule_update",
                 "provider_operation": "connected_subscription_schedule.update",
-                "request_sha256": stable_hash({
-                    "provider_operation": "connected_subscription_schedule.update",
-                    "schedule_source": "step:schedule_create",
-                    "subscription_id": intent["stripe_subscription_id"],
-                    "subscription_item_id": intent["stripe_subscription_item_id"],
-                    "period_boundary": intent["period_boundary"],
-                    "provider_quantity": intent["provider_quantity"],
-                    "expected_quantity": intent["expected_quantity"],
-                    "expected_subscription_item_count": intent[
-                        "expected_subscription_item_count"
-                    ],
-                    "metadata": self._item_schedule_metadata(intent),
-                    "account_id": context.stripe_connected_account_id,
-                    "generation": context.connect_account_generation,
-                }),
+                "request_sha256": stable_hash(
+                    {
+                        "provider_operation": "connected_subscription_schedule.update",
+                        "schedule_source": "step:schedule_create",
+                        "subscription_id": intent["stripe_subscription_id"],
+                        "subscription_item_id": intent["stripe_subscription_item_id"],
+                        "period_boundary": intent["period_boundary"],
+                        "provider_quantity": intent["provider_quantity"],
+                        "expected_quantity": intent["expected_quantity"],
+                        "expected_subscription_item_count": intent[
+                            "expected_subscription_item_count"
+                        ],
+                        "metadata": self._item_schedule_metadata(intent),
+                        "account_id": context.stripe_connected_account_id,
+                        "generation": context.connect_account_generation,
+                    }
+                ),
                 "stripe_idempotency_key": update_key,
             },
         ]
@@ -1222,9 +1268,7 @@ class BillingEnrollmentTransitionWorkflow:
     def _item_schedule_metadata(intent: dict[str, Any]) -> dict[str, str]:
         return {
             "koaryu_workflow": ITEM_SCHEDULE_METADATA_WORKFLOW,
-            "koaryu_transition_intent_id": str(
-                intent.get("source_intent_id") or intent["id"]
-            ),
+            "koaryu_transition_intent_id": str(intent.get("source_intent_id") or intent["id"]),
             "studio_id": str(intent["studio_id"]),
             "billing_subscription_id": str(intent["billing_subscription_id"]),
             "connect_account_generation": str(intent["connect_account_generation"]),
@@ -1250,9 +1294,7 @@ class BillingEnrollmentTransitionWorkflow:
                 raise RuntimeError("enrollment_item_schedule_item_metadata_invalid")
             signature[price_id] = {
                 "quantity": quantity,
-                "metadata": {
-                    str(key): str(value) for key, value in metadata.items()
-                },
+                "metadata": {str(key): str(value) for key, value in metadata.items()},
             }
         return signature
 
@@ -1265,9 +1307,7 @@ class BillingEnrollmentTransitionWorkflow:
         provider = snapshot["provider"]
         target_id = str(snapshot["enrollment"]["stripe_subscription_item_id"])
         payloads: list[dict[str, Any]] = []
-        for item in list(
-            _object_get(_object_get(provider, "items") or {}, "data", []) or []
-        ):
+        for item in list(_object_get(_object_get(provider, "items") or {}, "data", []) or []):
             item_id = _stripe_id(item)
             price_id = _stripe_id(_object_get(item, "price"))
             quantity = int(_object_get(item, "quantity", 0) or 0)
@@ -1284,9 +1324,7 @@ class BillingEnrollmentTransitionWorkflow:
             payload: dict[str, Any] = {"price": price_id, "quantity": quantity}
             metadata = _object_get(item, "metadata")
             if isinstance(metadata, dict) and metadata:
-                phase_metadata = {
-                    str(key): str(value) for key, value in metadata.items()
-                }
+                phase_metadata = {str(key): str(value) for key, value in metadata.items()}
                 if future:
                     # A shared provider item can represent multiple local rows.
                     # Carrying one row's identity into the replacement phase lets
@@ -1405,25 +1443,19 @@ class BillingEnrollmentTransitionWorkflow:
             value = effective(field)
             if value is not None:
                 payload[field] = value
-        default_payment_method = _stripe_id(
-            effective("default_payment_method")
-        )
+        default_payment_method = _stripe_id(effective("default_payment_method"))
         if default_payment_method:
             payload["default_payment_method"] = default_payment_method
         billing_cycle_anchor = effective("billing_cycle_anchor")
         if billing_cycle_anchor is not None and not subscription_source:
             if billing_cycle_anchor not in {"automatic", "phase_start"}:
-                raise RuntimeError(
-                    "enrollment_item_schedule_billing_cycle_anchor_invalid"
-                )
+                raise RuntimeError("enrollment_item_schedule_billing_cycle_anchor_invalid")
             payload["billing_cycle_anchor"] = billing_cycle_anchor
         metadata = _object_get(phase, "metadata")
         if metadata:
             if not isinstance(metadata, dict):
                 raise RuntimeError("enrollment_item_schedule_phase_metadata_invalid")
-            payload["metadata"] = {
-                str(key): str(value) for key, value in metadata.items()
-            }
+            payload["metadata"] = {str(key): str(value) for key, value in metadata.items()}
         days_until_due = _object_get(invoice_settings, "days_until_due")
         if days_until_due is None:
             # Subscription exposes this at top level; Schedule Phase exposes it
@@ -1445,8 +1477,7 @@ class BillingEnrollmentTransitionWorkflow:
         phases = self._schedule_phases(schedule)
         if (
             not _stripe_id(schedule)
-            or _stripe_id(_object_get(schedule, "subscription"))
-            != intent["stripe_subscription_id"]
+            or _stripe_id(_object_get(schedule, "subscription")) != intent["stripe_subscription_id"]
             or str(_object_get(schedule, "status") or "") != "active"
             or len(phases) != 1
         ):
@@ -1461,12 +1492,9 @@ class BillingEnrollmentTransitionWorkflow:
         subscription_id = _stripe_id(_object_get(schedule, "subscription")) or _stripe_id(
             _object_get(schedule, "released_subscription")
         )
-        if (
-            subscription_id != intent["stripe_subscription_id"]
-            or any(
-                str(metadata.get(key) or "") != value
-                for key, value in self._item_schedule_metadata(intent).items()
-            )
+        if subscription_id != intent["stripe_subscription_id"] or any(
+            str(metadata.get(key) or "") != value
+            for key, value in self._item_schedule_metadata(intent).items()
         ):
             raise RuntimeError("enrollment_item_schedule_owner_mismatch")
 
@@ -1529,18 +1557,12 @@ class BillingEnrollmentTransitionWorkflow:
             or str(_object_get(phases[1], "proration_behavior") or "") != "none"
             or actual_current_settings != expected_current_settings
             or actual_future_settings != expected_future_settings
-            or self._phase_item_signature(
-                list(_object_get(phases[0], "items") or [])
-            )
+            or self._phase_item_signature(list(_object_get(phases[0], "items") or []))
             != self._phase_item_signature(
                 self._provider_item_phase_payloads(snapshot, future=False)
             )
-            or self._phase_item_signature(
-                list(_object_get(phases[1], "items") or [])
-            )
-            != self._phase_item_signature(
-                self._provider_item_phase_payloads(snapshot, future=True)
-            )
+            or self._phase_item_signature(list(_object_get(phases[1], "items") or []))
+            != self._phase_item_signature(self._provider_item_phase_payloads(snapshot, future=True))
         ):
             raise RuntimeError("enrollment_item_schedule_transition_mismatch")
 
@@ -1598,14 +1620,11 @@ class BillingEnrollmentTransitionWorkflow:
             or not target_family
             or int(target_family["count"]) != int(intent["same_item_active_count"])
             or str(intent["enrollment_id"]) not in target_family["row_ids"]
-            or int(intent["expected_quantity"])
-            != int(intent["same_item_active_count"]) - 1
+            or int(intent["expected_quantity"]) != int(intent["same_item_active_count"]) - 1
         ):
             raise RuntimeError("enrollment_item_schedule_local_family_drift")
 
-        provider_items = list(
-            _object_get(_object_get(provider, "items") or {}, "data", []) or []
-        )
+        provider_items = list(_object_get(_object_get(provider, "items") or {}, "data", []) or [])
         provider_by_plan: dict[str, Any] = {}
         provider_by_id: dict[str, Any] = {}
         for item in provider_items:
@@ -1617,10 +1636,8 @@ class BillingEnrollmentTransitionWorkflow:
                 or not plan_id
                 or plan_id in provider_by_plan
                 or item_id in provider_by_id
-                or str(item_metadata.get("studio_id") or "")
-                != str(intent["studio_id"])
-                or str(item_metadata.get("payer_id") or "")
-                != str(intent["payer_id"])
+                or str(item_metadata.get("studio_id") or "") != str(intent["studio_id"])
+                or str(item_metadata.get("payer_id") or "") != str(intent["payer_id"])
                 or str(item_metadata.get("billing_subscription_id") or "")
                 != str(intent["billing_subscription_id"])
                 or item_metadata.get("product") != "koaryu_payments"
@@ -1640,24 +1657,19 @@ class BillingEnrollmentTransitionWorkflow:
             )
             if (
                 not plan.get("stripe_price_id")
-                or plan.get("stripe_account_id")
-                != intent["stripe_connected_account_id"]
+                or plan.get("stripe_account_id") != intent["stripe_connected_account_id"]
             ):
                 raise RuntimeError("enrollment_item_schedule_plan_identity_drift")
             plans[plan_id] = plan
 
-        pre_transition = (
-            len(provider_items) == len(families)
-            and all(
-                (
-                    (item := provider_by_id.get(old_item_id)) is not None
-                    and _stripe_id(_object_get(item, "price"))
-                    == plans[str(family["plan_id"])]["stripe_price_id"]
-                    and int(_object_get(item, "quantity", 0) or 0)
-                    == int(family["count"])
-                )
-                for old_item_id, family in families.items()
+        pre_transition = len(provider_items) == len(families) and all(
+            (
+                (item := provider_by_id.get(old_item_id)) is not None
+                and _stripe_id(_object_get(item, "price"))
+                == plans[str(family["plan_id"])]["stripe_price_id"]
+                and int(_object_get(item, "quantity", 0) or 0) == int(family["count"])
             )
+            for old_item_id, family in families.items()
         )
         boundary = epoch_seconds(intent["period_boundary"])
         if boundary is None:
@@ -1685,16 +1697,17 @@ class BillingEnrollmentTransitionWorkflow:
                     provider_item is None
                     or _stripe_id(_object_get(provider_item, "price"))
                     != plans[plan_id]["stripe_price_id"]
-                    or int(_object_get(provider_item, "quantity", 0) or 0)
-                    != expected_active_count
+                    or int(_object_get(provider_item, "quantity", 0) or 0) != expected_active_count
                 ):
                     raise RuntimeError("enrollment_item_schedule_provider_family_drift")
                 replacement_item_id = _stripe_id(provider_item)
-            transitions.append({
-                "old_item_id": old_item_id,
-                "new_item_id": replacement_item_id,
-                "expected_active_count": expected_active_count,
-            })
+            transitions.append(
+                {
+                    "old_item_id": old_item_id,
+                    "new_item_id": replacement_item_id,
+                    "expected_active_count": expected_active_count,
+                }
+            )
 
         expected_provider_count = sum(
             1 for transition in transitions if transition["new_item_id"] is not None
@@ -1780,23 +1793,17 @@ class BillingEnrollmentTransitionWorkflow:
         boundary = epoch_seconds(intent["period_boundary"])
         phases = self._schedule_phases(schedule)
         due_phases = [
-            phase
-            for phase in phases
-            if epoch_seconds(_object_get(phase, "start_date")) == boundary
+            phase for phase in phases if epoch_seconds(_object_get(phase, "start_date")) == boundary
         ]
         current_phase = _object_get(schedule, "current_phase") or {}
-        provider_items = list(
-            _object_get(_object_get(provider, "items") or {}, "data", []) or []
-        )
+        provider_items = list(_object_get(_object_get(provider, "items") or {}, "data", []) or [])
         if (
             boundary is None
             or len(due_phases) != 1
             or str(_object_get(schedule, "status") or "") != "active"
             or str(_object_get(schedule, "end_behavior") or "") != "release"
             or epoch_seconds(_object_get(current_phase, "start_date")) != boundary
-            or self._phase_item_signature(
-                list(_object_get(due_phases[0], "items") or [])
-            )
+            or self._phase_item_signature(list(_object_get(due_phases[0], "items") or []))
             != self._phase_item_signature(provider_items)
         ):
             raise RuntimeError("enrollment_item_schedule_due_phase_mismatch")
@@ -1873,7 +1880,8 @@ class BillingEnrollmentTransitionWorkflow:
             else intent.get("source_intent_id") or ""
         )
         if (
-            set(identity) != {
+            set(identity)
+            != {
                 "source_intent_id",
                 "provider_operation_id",
                 "schedule_id",
@@ -1894,10 +1902,10 @@ class BillingEnrollmentTransitionWorkflow:
         snapshot: dict[str, Any],
         provider: Any,
     ) -> bool:
-        if (
-            str(_object_get(provider, "status") or "")
-            not in PERIOD_END_SCHEDULABLE_PROVIDER_STATUSES
-            or not bool(_object_get(provider, "cancel_at_period_end"))
+        if str(
+            _object_get(provider, "status") or ""
+        ) not in PERIOD_END_SCHEDULABLE_PROVIDER_STATUSES or not bool(
+            _object_get(provider, "cancel_at_period_end")
         ):
             return False
         boundary_epoch = epoch_seconds(snapshot.get("period_boundary"))
@@ -1912,21 +1920,32 @@ class BillingEnrollmentTransitionWorkflow:
             "student_billing_enrollments", enrollment_id, studio_id, "Billing enrollment not found."
         )
         if enrollment.get("status") not in {"pending", "active"}:
-            raise HTTPException(status_code=409, detail="Enrollment is not eligible for cancellation.")
+            raise HTTPException(
+                status_code=409, detail="Enrollment is not eligible for cancellation."
+            )
         if enrollment.get("collection_mode") not in {"autopay", "invoice_link"}:
-            raise HTTPException(status_code=409, detail="External enrollment cancellation is local-only.")
+            raise HTTPException(
+                status_code=409, detail="External enrollment cancellation is local-only."
+            )
         if not enrollment.get("payer_id") or not enrollment.get("billing_subscription_id"):
-            raise HTTPException(status_code=409, detail="Enrollment provider identity is incomplete.")
+            raise HTTPException(
+                status_code=409, detail="Enrollment provider identity is incomplete."
+            )
         plan = self.owner._get_row_or_404(
             "billing_plans", enrollment["billing_plan_id"], studio_id, "Billing plan not found."
         )
         if plan.get("billing_interval") == "paid_in_full":
-            raise HTTPException(status_code=409, detail="Paid-in-full cancellation requires the separate invoice workflow.")
+            raise HTTPException(
+                status_code=409,
+                detail="Paid-in-full cancellation requires the separate invoice workflow.",
+            )
         payer = self.owner._get_row_or_404(
             "billing_payers", enrollment["payer_id"], studio_id, "Billing payer not found."
         )
         group = self.owner._get_row_or_404(
-            "billing_subscriptions", enrollment["billing_subscription_id"], studio_id,
+            "billing_subscriptions",
+            enrollment["billing_subscription_id"],
+            studio_id,
             "Billing subscription not found.",
         )
         account = self.owner._connect_accounts().ensure_row(studio_id)
@@ -1946,7 +1965,9 @@ class BillingEnrollmentTransitionWorkflow:
             or enrollment.get("stripe_subscription_id") != group.get("stripe_subscription_id")
             or not enrollment.get("stripe_subscription_item_id")
         ):
-            raise HTTPException(status_code=409, detail="Enrollment provider identity requires reconciliation.")
+            raise HTTPException(
+                status_code=409, detail="Enrollment provider identity requires reconciliation."
+            )
         provider = self.stripe_service_cls().retrieve_connected_subscription(
             account_id=account_id,
             subscription_id=str(group["stripe_subscription_id"]),
@@ -1960,12 +1981,18 @@ class BillingEnrollmentTransitionWorkflow:
             .in_("status", ["pending", "active"])
             .execute()
         ).data or []
-        active_rows = [row for row in rows if not (row.get("metadata") or {}).get("stripe_detach_pending")]
+        active_rows = [
+            row for row in rows if not (row.get("metadata") or {}).get("stripe_detach_pending")
+        ]
         item_ids = {str(row.get("stripe_subscription_item_id") or "") for row in active_rows}
         if "" in item_ids:
-            raise HTTPException(status_code=409, detail="Enrollment item identity requires reconciliation.")
+            raise HTTPException(
+                status_code=409, detail="Enrollment item identity requires reconciliation."
+            )
         target_item_id = str(enrollment["stripe_subscription_item_id"])
-        same_item_count = sum(row.get("stripe_subscription_item_id") == target_item_id for row in active_rows)
+        same_item_count = sum(
+            row.get("stripe_subscription_item_id") == target_item_id for row in active_rows
+        )
         provider_item = self._verify_provider(
             {
                 "enrollment": enrollment,
@@ -1984,15 +2011,27 @@ class BillingEnrollmentTransitionWorkflow:
         provider_quantity = int(_object_get(provider_item, "quantity", 0) or 0)
         _period_start, provider_period_end = subscription_period_bounds(provider)
         if not self._same_instant(timestamp(provider_period_end), group.get("current_period_end")):
-            raise HTTPException(status_code=409, detail="Subscription period boundary requires reconciliation.")
+            raise HTTPException(
+                status_code=409, detail="Subscription period boundary requires reconciliation."
+            )
         if provider_quantity != same_item_count:
-            raise HTTPException(status_code=409, detail="Subscription quantity requires reconciliation.")
+            raise HTTPException(
+                status_code=409, detail="Subscription quantity requires reconciliation."
+            )
         whole = len(item_ids) == 1 and same_item_count == 1
         suffix = "immediate" if immediate else "at_period_end"
-        strategy = f"subscription_cancel_{suffix}" if whole else f"subscription_item_delete_{suffix}"
-        boundary = datetime.now(timezone.utc).isoformat() if immediate else str(group.get("current_period_end") or "")
+        strategy = (
+            f"subscription_cancel_{suffix}" if whole else f"subscription_item_delete_{suffix}"
+        )
+        boundary = (
+            datetime.now(timezone.utc).isoformat()
+            if immediate
+            else str(group.get("current_period_end") or "")
+        )
         if not boundary:
-            raise HTTPException(status_code=409, detail="Subscription period boundary is not ready.")
+            raise HTTPException(
+                status_code=409, detail="Subscription period boundary is not ready."
+            )
         return {
             "enrollment": enrollment,
             "plan": plan,
@@ -2039,12 +2078,14 @@ class BillingEnrollmentTransitionWorkflow:
             or group.get("stripe_subscription_id") != intent["stripe_subscription_id"]
             or group.get("stripe_account_id") != intent["stripe_connected_account_id"]
             or (group.get("metadata") or {}).get("connect_account_generation")
-                != intent["connect_account_generation"]
+            != intent["connect_account_generation"]
             or account.get("stripe_connected_account_id") != intent["stripe_connected_account_id"]
             or (account.get("metadata") or {}).get("connect_account_generation")
-                != intent["connect_account_generation"]
+            != intent["connect_account_generation"]
         ):
-            raise HTTPException(status_code=409, detail="Enrollment transition identity requires reconciliation.")
+            raise HTTPException(
+                status_code=409, detail="Enrollment transition identity requires reconciliation."
+            )
         bound_enrollment = {
             **enrollment,
             "billing_subscription_id": intent["billing_subscription_id"],
@@ -2080,7 +2121,11 @@ class BillingEnrollmentTransitionWorkflow:
         metadata = _object_get(provider, "metadata") or {}
         items = list(_object_get(_object_get(provider, "items") or {}, "data", []) or [])
         target = next(
-            (item for item in items if _stripe_id(item) == enrollment.get("stripe_subscription_item_id")),
+            (
+                item
+                for item in items
+                if _stripe_id(item) == enrollment.get("stripe_subscription_item_id")
+            ),
             None,
         )
         if (
@@ -2093,13 +2138,13 @@ class BillingEnrollmentTransitionWorkflow:
             or len(items) != int(snapshot["expected_subscription_item_count"])
             or (
                 require_cancel_at_period_end is not None
-                and bool(_object_get(provider, "cancel_at_period_end")) is not require_cancel_at_period_end
+                and bool(_object_get(provider, "cancel_at_period_end"))
+                is not require_cancel_at_period_end
             )
         ):
             raise RuntimeError("enrollment_transition_provider_identity_mismatch")
-        if (
-            "provider_quantity" in snapshot
-            and int(_object_get(target, "quantity", 0) or 0) != int(snapshot["provider_quantity"])
+        if "provider_quantity" in snapshot and int(_object_get(target, "quantity", 0) or 0) != int(
+            snapshot["provider_quantity"]
         ):
             raise RuntimeError("enrollment_transition_provider_quantity_mismatch")
         if "plan" in snapshot and not self._item_matches_plan_family(snapshot, target):
@@ -2110,24 +2155,20 @@ class BillingEnrollmentTransitionWorkflow:
     def _item_matches_plan_family(snapshot: dict[str, Any], item: Any) -> bool:
         metadata = _object_get(item, "metadata") or {}
         return (
-            _stripe_id(_object_get(item, "price"))
-            == snapshot["plan"].get("stripe_price_id")
-            and str(metadata.get("studio_id") or "")
-            == str(snapshot["enrollment"]["studio_id"])
-            and str(metadata.get("payer_id") or "")
-            == str(snapshot["payer"]["id"])
-            and str(metadata.get("billing_plan_id") or "")
-            == str(snapshot["plan"]["id"])
-            and str(metadata.get("billing_subscription_id") or "")
-            == str(snapshot["group"]["id"])
+            _stripe_id(_object_get(item, "price")) == snapshot["plan"].get("stripe_price_id")
+            and str(metadata.get("studio_id") or "") == str(snapshot["enrollment"]["studio_id"])
+            and str(metadata.get("payer_id") or "") == str(snapshot["payer"]["id"])
+            and str(metadata.get("billing_plan_id") or "") == str(snapshot["plan"]["id"])
+            and str(metadata.get("billing_subscription_id") or "") == str(snapshot["group"]["id"])
             and str(metadata.get("product") or "") == "koaryu_payments"
         )
 
-    def _verify_before_mutation(self, snapshot: dict[str, Any], provider: Any, *, mutation: str) -> None:
+    def _verify_before_mutation(
+        self, snapshot: dict[str, Any], provider: Any, *, mutation: str
+    ) -> None:
         if (
             mutation == "revoke"
-            and snapshot["mutation_strategy"]
-            == "subscription_item_delete_at_period_end"
+            and snapshot["mutation_strategy"] == "subscription_item_delete_at_period_end"
         ):
             self._verify_item_schedule_revoke_before(snapshot, provider)
             return
@@ -2147,7 +2188,9 @@ class BillingEnrollmentTransitionWorkflow:
         ):
             raise RuntimeError("enrollment_transition_provider_status_not_schedulable")
 
-    def _verify_after_mutation(self, snapshot: dict[str, Any], provider: Any, *, mutation: str) -> None:
+    def _verify_after_mutation(
+        self, snapshot: dict[str, Any], provider: Any, *, mutation: str
+    ) -> None:
         if snapshot["mutation_strategy"] == "subscription_item_delete_at_period_end":
             intent = snapshot.get("_transition_intent")
             if not isinstance(intent, dict):
@@ -2190,19 +2233,25 @@ class BillingEnrollmentTransitionWorkflow:
             self._verify_provider(snapshot, provider, require_cancel_at_period_end=False)
             return
         if snapshot["mutation_strategy"].startswith("subscription_cancel_"):
-            if _stripe_id(provider) != snapshot["group"]["stripe_subscription_id"] or str(
-                _object_get(provider, "status") or ""
-            ) != "canceled":
+            if (
+                _stripe_id(provider) != snapshot["group"]["stripe_subscription_id"]
+                or str(_object_get(provider, "status") or "") != "canceled"
+            ):
                 raise RuntimeError("enrollment_transition_subscription_cancel_readback_mismatch")
             return
         items = list(_object_get(_object_get(provider, "items") or {}, "data", []) or [])
         target = next(
-            (item for item in items if _stripe_id(item) == snapshot["enrollment"]["stripe_subscription_item_id"]),
+            (
+                item
+                for item in items
+                if _stripe_id(item) == snapshot["enrollment"]["stripe_subscription_item_id"]
+            ),
             None,
         )
         expected = int(snapshot["expected_quantity"])
         if (expected == 0 and target is not None) or (
-            expected > 0 and (target is None or int(_object_get(target, "quantity", 0) or 0) != expected)
+            expected > 0
+            and (target is None or int(_object_get(target, "quantity", 0) or 0) != expected)
         ):
             raise RuntimeError("enrollment_transition_item_cancel_readback_mismatch")
 
@@ -2217,8 +2266,7 @@ class BillingEnrollmentTransitionWorkflow:
         key = self.owner._idempotency_key("enrollment-transition", context.operation_id)
         if (
             mutation == "revoke"
-            and snapshot["mutation_strategy"]
-            == "subscription_item_delete_at_period_end"
+            and snapshot["mutation_strategy"] == "subscription_item_delete_at_period_end"
         ):
             if snapshot.get("_released_schedule"):
                 return
@@ -2297,7 +2345,9 @@ class BillingEnrollmentTransitionWorkflow:
         if not result.data:
             raise RuntimeError("enrollment_transition_projection_failed")
         self.owner._project_subscription(provider, snapshot["account_id"])
-        self.owner._recompute_payer_balance(snapshot["enrollment"]["studio_id"], snapshot["payer"]["id"])
+        self.owner._recompute_payer_balance(
+            snapshot["enrollment"]["studio_id"], snapshot["payer"]["id"]
+        )
 
     def _project_whole_cancellation(self, snapshot: dict[str, Any], provider: Any) -> None:
         projected = self.owner._project_subscription(
@@ -2307,7 +2357,9 @@ class BillingEnrollmentTransitionWorkflow:
         )
         if not projected or projected.get("id") != snapshot["group"]["id"]:
             raise RuntimeError("enrollment_transition_subscription_projection_failed")
-        self.owner._recompute_payer_balance(snapshot["enrollment"]["studio_id"], snapshot["payer"]["id"])
+        self.owner._recompute_payer_balance(
+            snapshot["enrollment"]["studio_id"], snapshot["payer"]["id"]
+        )
 
     def _read_operation(self, intent: dict[str, Any], *, lease_owner: str) -> dict[str, Any]:
         context = BillingProviderOperationContext(
@@ -2350,11 +2402,13 @@ class BillingEnrollmentTransitionWorkflow:
         reason: str,
         exc: Exception,
     ) -> None:
-        proof = stable_hash({
-            "operation_id": context.operation_id,
-            "reason": reason,
-            "exception_type": type(exc).__name__,
-        })
+        proof = stable_hash(
+            {
+                "operation_id": context.operation_id,
+                "reason": reason,
+                "exception_type": type(exc).__name__,
+            }
+        )
         try:
             operation = self.operations.transition(
                 context,
@@ -2387,16 +2441,12 @@ class BillingEnrollmentTransitionWorkflow:
             {"id": _stripe_id(item), "quantity": int(_object_get(item, "quantity", 0) or 0)}
             for item in list(_object_get(_object_get(provider, "items") or {}, "data", []) or [])
         ]
-        schedule = snapshot.get("_verified_schedule") or snapshot.get(
-            "_released_schedule"
-        )
+        schedule = snapshot.get("_verified_schedule") or snapshot.get("_released_schedule")
         schedule_proof = None
         if schedule:
             schedule_proof = {
                 "id": _stripe_id(schedule),
-                "subscription_id": _stripe_id(
-                    _object_get(schedule, "subscription")
-                )
+                "subscription_id": _stripe_id(_object_get(schedule, "subscription"))
                 or _stripe_id(_object_get(schedule, "released_subscription")),
                 "status": str(_object_get(schedule, "status") or ""),
                 "metadata": dict(_object_get(schedule, "metadata") or {}),
@@ -2408,32 +2458,28 @@ class BillingEnrollmentTransitionWorkflow:
                             [
                                 {
                                     "price": _stripe_id(_object_get(item, "price")),
-                                    "quantity": int(
-                                        _object_get(item, "quantity", 0) or 0
-                                    ),
+                                    "quantity": int(_object_get(item, "quantity", 0) or 0),
                                 }
-                                for item in list(
-                                    _object_get(phase, "items") or []
-                                )
+                                for item in list(_object_get(phase, "items") or [])
                             ],
                             key=lambda item: str(item["price"]),
                         ),
                     }
-                    for phase in BillingEnrollmentTransitionWorkflow._schedule_phases(
-                        schedule
-                    )
+                    for phase in BillingEnrollmentTransitionWorkflow._schedule_phases(schedule)
                 ],
             }
-        return stable_hash({
-            "account_id": snapshot["account_id"],
-            "generation": snapshot["generation"],
-            "subscription_id": _stripe_id(provider),
-            "customer_id": _stripe_id(_object_get(provider, "customer")),
-            "status": str(_object_get(provider, "status") or ""),
-            "cancel_at_period_end": bool(_object_get(provider, "cancel_at_period_end")),
-            "items": sorted(items, key=lambda item: str(item["id"])),
-            "schedule": schedule_proof,
-        })
+        return stable_hash(
+            {
+                "account_id": snapshot["account_id"],
+                "generation": snapshot["generation"],
+                "subscription_id": _stripe_id(provider),
+                "customer_id": _stripe_id(_object_get(provider, "customer")),
+                "status": str(_object_get(provider, "status") or ""),
+                "cancel_at_period_end": bool(_object_get(provider, "cancel_at_period_end")),
+                "items": sorted(items, key=lambda item: str(item["id"])),
+                "schedule": schedule_proof,
+            }
+        )
 
     @staticmethod
     def _expected_provider_object_id(intent: dict[str, Any]) -> str:
@@ -2454,18 +2500,24 @@ class BillingEnrollmentTransitionWorkflow:
     def _request_key(value: str | None) -> str:
         normalized = normalize_idempotency_key(value)
         if not normalized:
-            raise HTTPException(status_code=400, detail="Idempotency-Key is required for enrollment transitions.")
+            raise HTTPException(
+                status_code=400, detail="Idempotency-Key is required for enrollment transitions."
+            )
         return normalized
 
     @staticmethod
-    def _request_hash(studio_id: str, enrollment_id: str, transition_kind: str, reason_code: str) -> str:
-        return stable_hash({
-            "version": 1,
-            "transition_kind": transition_kind,
-            "studio_id": studio_id,
-            "enrollment_id": enrollment_id,
-            "reason_code": reason_code,
-        })
+    def _request_hash(
+        studio_id: str, enrollment_id: str, transition_kind: str, reason_code: str
+    ) -> str:
+        return stable_hash(
+            {
+                "version": 1,
+                "transition_kind": transition_kind,
+                "studio_id": studio_id,
+                "enrollment_id": enrollment_id,
+                "reason_code": reason_code,
+            }
+        )
 
     @staticmethod
     def _claim_params(
@@ -2516,7 +2568,9 @@ class BillingEnrollmentTransitionWorkflow:
             "stripe_subscription_item_id": enrollment["stripe_subscription_item_id"],
         }
         if any(intent.get(key) != value for key, value in expected.items()):
-            raise HTTPException(status_code=409, detail="Enrollment transition identity requires reconciliation.")
+            raise HTTPException(
+                status_code=409, detail="Enrollment transition identity requires reconciliation."
+            )
 
     @staticmethod
     def _bind_due_intent_snapshot(intent: dict[str, Any], snapshot: dict[str, Any]) -> None:
@@ -2528,11 +2582,12 @@ class BillingEnrollmentTransitionWorkflow:
             "same_item_active_count",
             "provider_quantity",
         )
-        if (
-            intent.get("mutation_strategy") != expected_strategy
-            or any(intent.get(field) != snapshot.get(field) for field in exact_fields)
+        if intent.get("mutation_strategy") != expected_strategy or any(
+            intent.get(field) != snapshot.get(field) for field in exact_fields
         ):
-            raise HTTPException(status_code=409, detail="Enrollment transition facts require reconciliation.")
+            raise HTTPException(
+                status_code=409, detail="Enrollment transition facts require reconciliation."
+            )
         snapshot["mutation_strategy"] = str(intent["mutation_strategy"])
         snapshot["period_boundary"] = str(intent["period_boundary"])
 
@@ -2541,8 +2596,12 @@ class BillingEnrollmentTransitionWorkflow:
         if not left or not right:
             return False
         try:
-            left_value = datetime.fromisoformat(str(left).replace("Z", "+00:00")).astimezone(timezone.utc)
-            right_value = datetime.fromisoformat(str(right).replace("Z", "+00:00")).astimezone(timezone.utc)
+            left_value = datetime.fromisoformat(str(left).replace("Z", "+00:00")).astimezone(
+                timezone.utc
+            )
+            right_value = datetime.fromisoformat(str(right).replace("Z", "+00:00")).astimezone(
+                timezone.utc
+            )
         except (TypeError, ValueError):
             return False
         return left_value == right_value
@@ -2575,12 +2634,14 @@ class BillingEnrollmentTransitionWorkflow:
         expected_state = "scheduled" if mutation == "schedule" else "completed"
         expected_provider_object_id = self._expected_provider_object_id(intent)
         expected_intent_request_sha256 = (
-            stable_hash({
-                "version": 1,
-                "studio_id": studio_id,
-                "source_intent_id": str(intent.get("source_intent_id") or ""),
-                "reason_code": str(intent.get("reason_code") or ""),
-            })
+            stable_hash(
+                {
+                    "version": 1,
+                    "studio_id": studio_id,
+                    "source_intent_id": str(intent.get("source_intent_id") or ""),
+                    "reason_code": str(intent.get("reason_code") or ""),
+                }
+            )
             if mutation == "revoke"
             else self._request_hash(
                 studio_id,
@@ -2603,8 +2664,10 @@ class BillingEnrollmentTransitionWorkflow:
             or operation.get("actor_id") != actor_id
             or operation.get("operation_type") != self._operation_type(expected_kind)
             or operation.get("request_sha256") != request_sha256
-            or operation.get("stripe_connected_account_id") != intent.get("stripe_connected_account_id")
-            or operation.get("connect_account_generation") != intent.get("connect_account_generation")
+            or operation.get("stripe_connected_account_id")
+            != intent.get("stripe_connected_account_id")
+            or operation.get("connect_account_generation")
+            != intent.get("connect_account_generation")
             or operation.get("state") != "completed"
             or operation.get("result_code") != "enrollment_transition_completed"
             or operation.get("provider_object_id") != expected_provider_object_id
@@ -2640,64 +2703,90 @@ class BillingEnrollmentTransitionWorkflow:
     ) -> None:
         audit_id = str(uuid5(NAMESPACE_URL, f"koaryu:{action}:{intent['id']}"))
         expected_metadata = metadata or {"transition_intent_id": intent["id"]}
-        existing = self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
+        existing = (
+            self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
+        )
         if existing.data:
             self._validate_transition_audit_row(
-                existing.data[0], audit_id=audit_id, studio_id=studio_id,
-                actor_id=actor_id, action=action,
-                enrollment_id=str(intent["enrollment_id"]), metadata=expected_metadata,
+                existing.data[0],
+                audit_id=audit_id,
+                studio_id=studio_id,
+                actor_id=actor_id,
+                action=action,
+                enrollment_id=str(intent["enrollment_id"]),
+                metadata=expected_metadata,
             )
             return
         legacy_by_intent = (
-            self.supabase.table("audit_logs").select("*")
+            self.supabase.table("audit_logs")
+            .select("*")
             .eq("metadata->>transition_intent_id", str(intent["id"]))
-            .limit(2).execute()
+            .limit(2)
+            .execute()
         )
         legacy_by_operation = (
-            self.supabase.table("audit_logs").select("*")
+            self.supabase.table("audit_logs")
+            .select("*")
             .eq("metadata->>operation_id", str(expected_metadata.get("operation_id") or ""))
-            .limit(2).execute()
+            .limit(2)
+            .execute()
         )
         legacy_rows = {
             str(row.get("id") or f"missing:{index}"): row
-            for index, row in enumerate([
-                *legacy_by_intent.data,
-                *legacy_by_operation.data,
-            ])
+            for index, row in enumerate(
+                [
+                    *legacy_by_intent.data,
+                    *legacy_by_operation.data,
+                ]
+            )
         }
         if legacy_rows:
             if len(legacy_rows) != 1:
                 raise RuntimeError("enrollment_transition_legacy_audit_ambiguous")
             self._validate_transition_audit_row(
-                next(iter(legacy_rows.values())), audit_id=None, studio_id=studio_id,
-                actor_id=actor_id, action=action,
-                enrollment_id=str(intent["enrollment_id"]), metadata=expected_metadata,
+                next(iter(legacy_rows.values())),
+                audit_id=None,
+                studio_id=studio_id,
+                actor_id=actor_id,
+                action=action,
+                enrollment_id=str(intent["enrollment_id"]),
+                metadata=expected_metadata,
             )
             return
         try:
-            self.supabase.table("audit_logs").insert({
-                "id": audit_id,
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": action,
-                "entity_type": "billing",
-                "entity_id": intent["enrollment_id"],
-                "metadata": expected_metadata,
-            }).execute()
+            self.supabase.table("audit_logs").insert(
+                {
+                    "id": audit_id,
+                    "studio_id": studio_id,
+                    "actor_id": actor_id,
+                    "action": action,
+                    "entity_type": "billing",
+                    "entity_id": intent["enrollment_id"],
+                    "metadata": expected_metadata,
+                }
+            ).execute()
         except PostgrestAPIError as exc:
             if getattr(exc, "code", None) != "23505":
                 raise
-            winner = self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
+            winner = (
+                self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
+            )
             if not winner.data:
                 raise RuntimeError("enrollment_transition_audit_conflict_unverified") from exc
             try:
                 self._validate_transition_audit_row(
-                    winner.data[0], audit_id=audit_id, studio_id=studio_id,
-                    actor_id=actor_id, action=action,
-                    enrollment_id=str(intent["enrollment_id"]), metadata=expected_metadata,
+                    winner.data[0],
+                    audit_id=audit_id,
+                    studio_id=studio_id,
+                    actor_id=actor_id,
+                    action=action,
+                    enrollment_id=str(intent["enrollment_id"]),
+                    metadata=expected_metadata,
                 )
             except RuntimeError as invariant_exc:
-                raise RuntimeError("enrollment_transition_audit_conflict_unverified") from invariant_exc
+                raise RuntimeError(
+                    "enrollment_transition_audit_conflict_unverified"
+                ) from invariant_exc
 
     @staticmethod
     def _validate_transition_audit_row(

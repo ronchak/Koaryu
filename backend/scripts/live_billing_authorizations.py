@@ -82,7 +82,9 @@ def _add_actor_write_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Inspect and manage durable studio live-billing authorization.")
+    parser = argparse.ArgumentParser(
+        description="Inspect and manage durable studio live-billing authorization."
+    )
     commands = parser.add_subparsers(dest="command", required=True)
 
     status_parser = commands.add_parser("status")
@@ -93,7 +95,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_selector(grant)
     _add_actor_write_arguments(grant)
     grant.add_argument("--scope", choices=SCOPES, required=True)
-    grant.add_argument("--expires-at", required=True, help="Future ISO-8601 timestamp, at most 30 days away.")
+    grant.add_argument(
+        "--expires-at", required=True, help="Future ISO-8601 timestamp, at most 30 days away."
+    )
     grant.add_argument("--stripe-account-id")
     grant.add_argument(
         "--operation",
@@ -131,12 +135,14 @@ def _parse_timestamp(value: str, label: str) -> str:
 
 
 def _latest_v3_checkpoint(supabase: Any) -> Optional[dict[str, Any]]:
-    rows = _paginate(lambda: (
-        supabase.table("stripe_live_billing_reconciliation_checkpoints_v3")
-        .select(V3_CHECKPOINT_COLUMNS)
-        .order("checkpoint_sequence", desc=True)
-        .limit(1)
-    ))
+    rows = _paginate(
+        lambda: (
+            supabase.table("stripe_live_billing_reconciliation_checkpoints_v3")
+            .select(V3_CHECKPOINT_COLUMNS)
+            .order("checkpoint_sequence", desc=True)
+            .limit(1)
+        )
+    )
     return rows[0] if rows else None
 
 
@@ -146,29 +152,35 @@ _latest_checkpoint = _latest_v3_checkpoint
 
 
 def _latest_legacy_checkpoint(supabase: Any) -> Optional[dict[str, Any]]:
-    rows = _paginate(lambda: (
-        supabase.table("stripe_live_billing_reconciliation_checkpoints")
-        .select(LEGACY_CHECKPOINT_COLUMNS)
-        .order("verified_at", desc=True)
-        .order("checkpoint_sequence", desc=True)
-        .limit(1)
-    ))
+    rows = _paginate(
+        lambda: (
+            supabase.table("stripe_live_billing_reconciliation_checkpoints")
+            .select(LEGACY_CHECKPOINT_COLUMNS)
+            .order("verified_at", desc=True)
+            .order("checkpoint_sequence", desc=True)
+            .limit(1)
+        )
+    )
     return rows[0] if rows else None
 
 
 def _studio_state(supabase: Any, studio: dict[str, Any]) -> dict[str, Any]:
-    authorizations = _paginate(lambda: (
-        supabase.table("studio_live_billing_authorizations")
-        .select(AUTH_COLUMNS)
-        .eq("studio_id", studio["id"])
-        .order("scope")
-    ))
-    accounts = _paginate(lambda: (
-        supabase.table("studio_payment_accounts")
-        .select(ACCOUNT_COLUMNS)
-        .eq("studio_id", studio["id"])
-        .order("studio_id")
-    ))
+    authorizations = _paginate(
+        lambda: (
+            supabase.table("studio_live_billing_authorizations")
+            .select(AUTH_COLUMNS)
+            .eq("studio_id", studio["id"])
+            .order("scope")
+        )
+    )
+    accounts = _paginate(
+        lambda: (
+            supabase.table("studio_payment_accounts")
+            .select(ACCOUNT_COLUMNS)
+            .eq("studio_id", studio["id"])
+            .order("studio_id")
+        )
+    )
     return {
         "studio": studio,
         "authorizations": authorizations,
@@ -190,17 +202,22 @@ def _generation(account: Optional[dict[str, Any]]) -> Optional[int]:
 
 
 def _drift(supabase: Any) -> list[dict[str, Any]]:
-    authorizations = _paginate(lambda: (
-        supabase.table("studio_live_billing_authorizations")
-        .select(AUTH_COLUMNS)
-        .eq("enabled", True)
-        .order("studio_id")
-        .order("scope")
-    ))
+    authorizations = _paginate(
+        lambda: (
+            supabase.table("studio_live_billing_authorizations")
+            .select(AUTH_COLUMNS)
+            .eq("enabled", True)
+            .order("studio_id")
+            .order("scope")
+        )
+    )
     accounts = {
-        row["studio_id"]: row for row in _paginate(lambda: (
-            supabase.table("studio_payment_accounts").select(ACCOUNT_COLUMNS).order("studio_id")
-        ))
+        row["studio_id"]: row
+        for row in _paginate(
+            lambda: (
+                supabase.table("studio_payment_accounts").select(ACCOUNT_COLUMNS).order("studio_id")
+            )
+        )
     }
     now = datetime.now(timezone.utc)
     drift: list[dict[str, Any]] = []
@@ -232,20 +249,26 @@ def _drift(supabase: Any) -> list[dict[str, Any]]:
             mapped = (account or {}).get("stripe_connected_account_id")
             if bound and bound != mapped:
                 reasons.append("bound Stripe account is not the current mapping")
-        if authorization["scope"] == "connect_payments" and account and not (
-            account.get("charges_enabled")
-            and account.get("payouts_enabled")
-            and account.get("details_submitted")
-            and not (account.get("requirements_due") or [])
-            and account.get("status") == "charges_enabled"
+        if (
+            authorization["scope"] == "connect_payments"
+            and account
+            and not (
+                account.get("charges_enabled")
+                and account.get("payouts_enabled")
+                and account.get("details_submitted")
+                and not (account.get("requirements_due") or [])
+                and account.get("status") == "charges_enabled"
+            )
         ):
             reasons.append("Connect account is not currently payment-ready")
         if reasons:
-            drift.append({
-                "authorization": authorization,
-                "payment_account": account,
-                "drift_reasons": reasons,
-            })
+            drift.append(
+                {
+                    "authorization": authorization,
+                    "payment_account": account,
+                    "drift_reasons": reasons,
+                }
+            )
     return drift
 
 
@@ -332,13 +355,16 @@ def _account_disposition(
         _print_json({"dry_run": True, **plan}, stdout)
         return
     _run_write_confirmation(args, settings, stdin, stdout)
-    result = supabase.rpc("set_stripe_connect_account_exclusion_atomic", {
-        "p_stripe_connected_account_id": args.stripe_account_id,
-        "p_excluded": excluded,
-        "p_reason": args.reason,
-        "p_actor_id": actor_id,
-        "p_actor_email": actor_email,
-    }).execute()
+    result = supabase.rpc(
+        "set_stripe_connect_account_exclusion_atomic",
+        {
+            "p_stripe_connected_account_id": args.stripe_account_id,
+            "p_excluded": excluded,
+            "p_reason": args.reason,
+            "p_actor_id": actor_id,
+            "p_actor_email": actor_email,
+        },
+    ).execute()
     _print_json({"dry_run": False, "result": result.data}, stdout)
 
 
@@ -358,9 +384,8 @@ def _load_report(path: Path) -> tuple[dict[str, Any], str]:
         or report.get("evidence_source") != "provider_read"
         or report.get("probe") != "production"
         or report.get("provider_mode") != "live"
-        or (report.get("deployment_readiness") or {}).get(
-            "production_exact_candidate_verified"
-        ) is not True
+        or (report.get("deployment_readiness") or {}).get("production_exact_candidate_verified")
+        is not True
         or continuity.get("eligible") is not True
         or continuity.get("bootstrap_historical_provider_completeness_claimed") is not False
         or window_policy.get("complete_supported_window") is not True
@@ -403,16 +428,19 @@ def _record_checkpoint(
         "p_actor_email": actor_email,
     }
     if not args.execute:
-        _print_json({
-            "dry_run": True,
-            "rpc": "record_stripe_live_billing_reconciliation_checkpoint_v3",
-            "schema_version": 3,
-            "continuity_mode": (report.get("continuity") or {}).get("mode"),
-            "candidate_sha": candidate_sha,
-            "production_ready_url_verified": True,
-            "report_sha256": digest,
-            "expires_at": params["p_expires_at"],
-        }, stdout)
+        _print_json(
+            {
+                "dry_run": True,
+                "rpc": "record_stripe_live_billing_reconciliation_checkpoint_v3",
+                "schema_version": 3,
+                "continuity_mode": (report.get("continuity") or {}).get("mode"),
+                "candidate_sha": candidate_sha,
+                "production_ready_url_verified": True,
+                "report_sha256": digest,
+                "expires_at": params["p_expires_at"],
+            },
+            stdout,
+        )
         return
     _run_write_confirmation(args, settings, stdin, stdout)
     result = supabase.rpc(
@@ -437,12 +465,15 @@ def main(
             studio = _resolve_studio(supabase, slug=args.slug, studio_id=args.studio_id)
             _print_json(_studio_state(supabase, studio), stdout)
         elif args.command == "drift":
-            _print_json({
-                "drift": _drift(supabase),
-                "latest_reconciliation_checkpoint": _latest_v3_checkpoint(supabase),
-                "latest_reconciliation_checkpoint_v3": _latest_v3_checkpoint(supabase),
-                "latest_legacy_reconciliation_checkpoint": _latest_legacy_checkpoint(supabase),
-            }, stdout)
+            _print_json(
+                {
+                    "drift": _drift(supabase),
+                    "latest_reconciliation_checkpoint": _latest_v3_checkpoint(supabase),
+                    "latest_reconciliation_checkpoint_v3": _latest_v3_checkpoint(supabase),
+                    "latest_legacy_reconciliation_checkpoint": _latest_legacy_checkpoint(supabase),
+                },
+                stdout,
+            )
         elif args.command in {"grant", "revoke"}:
             _authorization_change(supabase, settings, args, stdin, stdout)
         elif args.command == "account-disposition":

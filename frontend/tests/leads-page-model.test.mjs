@@ -95,12 +95,21 @@ describe("leads page model", () => {
     ];
 
     const buckets = groupLeadsByStage(leads);
-    assert.deepEqual(buckets.inquiry.map((item) => item.id), ["future"]);
+    assert.deepEqual(
+      buckets.inquiry.map((item) => item.id),
+      ["future"],
+    );
     assert.equal(buckets.closed_lost, undefined);
-    assert.deepEqual(getLostLeads(leads).map((item) => item.id), ["lost"]);
+    assert.deepEqual(
+      getLostLeads(leads).map((item) => item.id),
+      ["lost"],
+    );
 
     const queue = getDueFollowUpQueue(leads, "2026-05-24");
-    assert.deepEqual(queue.map((item) => item.id), ["overdue", "due"]);
+    assert.deepEqual(
+      queue.map((item) => item.id),
+      ["overdue", "due"],
+    );
     assert.equal(getDueTodayCount(queue, "2026-05-24"), 1);
     assert.equal(getUpcomingFollowUpCount(leads, "2026-05-24"), 1);
   });
@@ -117,7 +126,7 @@ describe("leads page model", () => {
 
     assert.deepEqual(
       ordered.map((item) => item.id),
-      ["overdue", "due-a", "due-b", "future", "unscheduled"]
+      ["overdue", "due-a", "due-b", "future", "unscheduled"],
     );
   });
 
@@ -132,7 +141,10 @@ describe("leads page model", () => {
 
     assert.deepEqual(
       mergeOptimisticLeads(base, optimistic).map((item) => [item.id, item.first_name]),
-      [["lead-1", "Updated"], ["lead-2", "Second"]]
+      [
+        ["lead-1", "Updated"],
+        ["lead-2", "Second"],
+      ],
     );
     assert.equal(getProgramLabel(base[0], null), "Kids BJJ");
     assert.equal(getProgramLabel(base[1], { name: "Competition Team" }), "Competition Team");
@@ -157,21 +169,40 @@ describe("leads page model", () => {
       },
       programs: [
         program({ id: "active-program", name: "Active Program" }),
-        program({ id: "archived-program", name: "Archived Program", archived_at: "2026-05-01T00:00:00.000Z" }),
+        program({
+          id: "archived-program",
+          name: "Archived Program",
+          archived_at: "2026-05-01T00:00:00.000Z",
+        }),
       ],
       today: "2026-05-24",
     });
 
     const model = selectLeadsPageModel(dataset, "lead-1", "lead-2");
 
-    assert.deepEqual(model.activePrograms.map((item) => item.id), ["active-program"]);
+    assert.deepEqual(
+      model.activePrograms.map((item) => item.id),
+      ["active-program"],
+    );
     assert.equal(model.programById.get("archived-program")?.name, "Archived Program");
     assert.equal(model.selectedLead?.first_name, "Optimistic");
     assert.equal(model.draggedLeadRecord?.id, "lead-2");
-    assert.deepEqual(model.leadsByStage.offer_sent?.map((item) => item.id), ["lead-1"]);
-    assert.deepEqual(model.lostLeads.map((item) => item.id), ["lead-4"]);
-    assert.deepEqual(model.followUpQueue.map((item) => item.id), ["lead-2", "lead-1"]);
-    assert.deepEqual(model.obligationLedgerLeads.map((item) => item.id), ["lead-2", "lead-1", "lead-3"]);
+    assert.deepEqual(
+      model.leadsByStage.offer_sent?.map((item) => item.id),
+      ["lead-1"],
+    );
+    assert.deepEqual(
+      model.lostLeads.map((item) => item.id),
+      ["lead-4"],
+    );
+    assert.deepEqual(
+      model.followUpQueue.map((item) => item.id),
+      ["lead-2", "lead-1"],
+    );
+    assert.deepEqual(
+      model.obligationLedgerLeads.map((item) => item.id),
+      ["lead-2", "lead-1", "lead-3"],
+    );
     assert.equal(model.dueTodayCount, 1);
     assert.equal(model.overdueCount, 1);
     assert.equal(model.upcomingFollowUps, 0);
@@ -183,18 +214,18 @@ describe("leads page model", () => {
     const original = lead({ id: "lead-1", follow_up_date: "2026-05-25" });
     assert.equal(
       getLeadFollowUpInputValue(original, { "lead-1": "2026-05-26" }, "2026-05-24"),
-      "2026-05-26"
+      "2026-05-26",
     );
     assert.equal(getLeadFollowUpInputValue(original, {}, "2026-05-24"), "2026-05-25");
     assert.equal(
       getLeadFollowUpInputValue(lead({ id: "lead-2", follow_up_date: null }), {}, "2026-05-24"),
-      "2026-05-24"
+      "2026-05-24",
     );
 
     const optimistic = buildOptimisticLeadUpdate(
       original,
       { stage: "trial_completed", follow_up_date: null },
-      "2026-05-24T18:00:00.000Z"
+      "2026-05-24T18:00:00.000Z",
     );
     assert.equal(optimistic.stage, "trial_completed");
     assert.equal(optimistic.follow_up_date, null);
@@ -211,47 +242,58 @@ describe("leads page model", () => {
     const currentLead = lead({ first_name: "Maya", last_name: "Chen" });
     assert.equal(
       buildLeadUpdateSuccessMessage(currentLead, { stage: "trial_scheduled" }),
-      "Maya Chen moved to Trial Scheduled."
+      "Maya Chen moved to Trial Scheduled.",
     );
     assert.equal(
       buildLeadUpdateSuccessMessage(currentLead, { follow_up_date: null }),
-      "Follow-up updated for Maya Chen."
+      "Follow-up updated for Maya Chen.",
     );
     assert.equal(
       buildLeadUpdateSuccessMessage(currentLead, { notes: "Prefers evenings" }),
-      "Maya Chen updated."
+      "Maya Chen updated.",
     );
   });
 });
 
 it("retains dataset ordering and collections while selection changes; optimistic updates and rollback rebuild them", async () => {
-  const { buildLeadsDatasetModel, selectLeadsPageModel } = await import('../src/lib/leads-page-model.ts');
-  const baseLeads = [lead({ id: 'a', follow_up_date: '2026-05-19' }), lead({ id: 'b', follow_up_date: '2026-05-20' })];
-  const input = { baseLeads, optimisticLeads: {}, programs: [], today: '2026-05-20' };
+  const { buildLeadsDatasetModel, selectLeadsPageModel } =
+    await import("../src/lib/leads-page-model.ts");
+  const baseLeads = [
+    lead({ id: "a", follow_up_date: "2026-05-19" }),
+    lead({ id: "b", follow_up_date: "2026-05-20" }),
+  ];
+  const input = { baseLeads, optimisticLeads: {}, programs: [], today: "2026-05-20" };
   const dataset = buildLeadsDatasetModel(input);
-  const selected = selectLeadsPageModel(dataset, 'b', 'a');
+  const selected = selectLeadsPageModel(dataset, "b", "a");
   assert.equal(selected.selectedLead, baseLeads[1]);
   assert.equal(selected.draggedLeadRecord, baseLeads[0]);
   assert.equal(selected.obligationLedgerLeads, dataset.obligationLedgerLeads);
   assert.equal(selected.followUpQueue, dataset.followUpQueue);
-  const optimistic = buildLeadsDatasetModel({ ...input, optimisticLeads: { a: buildOptimisticLeadUpdate(baseLeads[0], { stage: 'enrolled' }) } });
-  assert.deepEqual(optimistic.followUpQueue.map(row => row.id), ['b']);
+  const optimistic = buildLeadsDatasetModel({
+    ...input,
+    optimisticLeads: { a: buildOptimisticLeadUpdate(baseLeads[0], { stage: "enrolled" }) },
+  });
+  assert.deepEqual(
+    optimistic.followUpQueue.map((row) => row.id),
+    ["b"],
+  );
   assert.deepEqual(buildLeadsDatasetModel(input).followUpQueue, dataset.followUpQueue);
 });
 
 it("classifies each age band once without changing follow-up order or enrolled semantics", async () => {
-  const { groupLeadsByAgeBand } = await import('../src/lib/leads-age-bands.ts');
+  const { groupLeadsByAgeBand } = await import("../src/lib/leads-age-bands.ts");
   const leads = [
-    lead({ id: 'old', follow_up_date: '2026-05-01' }),
-    lead({ id: 'week', follow_up_date: '2026-05-16' }),
-    lead({ id: 'recent', follow_up_date: '2026-05-19' }),
-    lead({ id: 'today', follow_up_date: '2026-05-20' }),
-    lead({ id: 'future', follow_up_date: '2026-05-21' }),
-    lead({ id: 'enrolled', stage: 'enrolled', follow_up_date: '2026-05-01' }),
-    lead({ id: 'unset' }),
+    lead({ id: "old", follow_up_date: "2026-05-01" }),
+    lead({ id: "week", follow_up_date: "2026-05-16" }),
+    lead({ id: "recent", follow_up_date: "2026-05-19" }),
+    lead({ id: "today", follow_up_date: "2026-05-20" }),
+    lead({ id: "future", follow_up_date: "2026-05-21" }),
+    lead({ id: "enrolled", stage: "enrolled", follow_up_date: "2026-05-01" }),
+    lead({ id: "unset" }),
   ];
-  const bands = groupLeadsByAgeBand(leads, '2026-05-20');
-  assert.deepEqual([...bands.values()].map(rows => rows.map(row => row.id)), [
-    ['old'], ['week'], ['recent'], ['today'], ['future'], ['enrolled', 'unset'],
-  ]);
+  const bands = groupLeadsByAgeBand(leads, "2026-05-20");
+  assert.deepEqual(
+    [...bands.values()].map((rows) => rows.map((row) => row.id)),
+    [["old"], ["week"], ["recent"], ["today"], ["future"], ["enrolled", "unset"]],
+  );
 });

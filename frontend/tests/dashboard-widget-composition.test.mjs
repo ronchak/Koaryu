@@ -22,7 +22,7 @@ describe("dashboard widget composition", () => {
             listColumns: composition.listColumns,
           },
           expected[size],
-          `${entry.id}:${size}`
+          `${entry.id}:${size}`,
         );
       }
     }

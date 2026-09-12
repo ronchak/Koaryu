@@ -47,7 +47,8 @@ export const PREVIEW_CONNECT: StudioPaymentAccount = {
   details_submitted: true,
   requirements_due: [],
   platform_fee_bps: 50,
-  liability_note: "Disputes and chargebacks on Connect direct charges remain the studio's liability.",
+  liability_note:
+    "Disputes and chargebacks on Connect direct charges remain the studio's liability.",
   created_at: "2026-03-15T12:00:00Z",
   updated_at: "2026-04-20T12:00:00Z",
 };
@@ -70,7 +71,13 @@ export const PREVIEW_PLANS: BillingPlan[] = [
     tax_behavior: null,
     stripe_product_id: "prod_demo_kids",
     stripe_price_id: "price_demo_kids",
-    programs: [{ program_id: "program-bjj-core", program_name: "Brazilian Jiu-Jitsu Core", program_color_hex: "#38BDF8" }],
+    programs: [
+      {
+        program_id: "program-bjj-core",
+        program_name: "Brazilian Jiu-Jitsu Core",
+        program_color_hex: "#38BDF8",
+      },
+    ],
     can_accept_payments: true,
     pending_reason: null,
     archived_at: null,
@@ -94,7 +101,13 @@ export const PREVIEW_PLANS: BillingPlan[] = [
     tax_behavior: null,
     stripe_product_id: "prod_demo_tkd",
     stripe_price_id: "price_demo_tkd",
-    programs: [{ program_id: "program-tae-kwon-do", program_name: "Tae Kwon Do Fundamentals", program_color_hex: "#F59E0B" }],
+    programs: [
+      {
+        program_id: "program-tae-kwon-do",
+        program_name: "Tae Kwon Do Fundamentals",
+        program_color_hex: "#F59E0B",
+      },
+    ],
     can_accept_payments: true,
     pending_reason: null,
     archived_at: null,
@@ -119,8 +132,16 @@ export const PREVIEW_PLANS: BillingPlan[] = [
     stripe_product_id: "prod_demo_test",
     stripe_price_id: "price_demo_test",
     programs: [
-      { program_id: "program-bjj-core", program_name: "Brazilian Jiu-Jitsu Core", program_color_hex: "#38BDF8" },
-      { program_id: "program-tae-kwon-do", program_name: "Tae Kwon Do Fundamentals", program_color_hex: "#F59E0B" },
+      {
+        program_id: "program-bjj-core",
+        program_name: "Brazilian Jiu-Jitsu Core",
+        program_color_hex: "#38BDF8",
+      },
+      {
+        program_id: "program-tae-kwon-do",
+        program_name: "Tae Kwon Do Fundamentals",
+        program_color_hex: "#F59E0B",
+      },
     ],
     can_accept_payments: true,
     pending_reason: null,

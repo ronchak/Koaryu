@@ -73,7 +73,12 @@ const helpItems: MenuLinkItem[] = [
 
 const personalizationItems: MenuLinkItem[] = [
   { href: "/account/personalization#appearance", label: "Appearance", icon: Palette },
-  { href: "/account/personalization#language", label: "Language", icon: Languages, subtitle: "Default" },
+  {
+    href: "/account/personalization#language",
+    label: "Language",
+    icon: Languages,
+    subtitle: "Default",
+  },
   { href: "/account/notifications", label: "Notifications", icon: Bell },
   { href: "/account/data", label: "Data and export", icon: LayoutList },
 ];
@@ -102,7 +107,10 @@ function billingLabel(status: PlatformBillingStatus | null, canViewSubscription:
     return { label: "Koaryu Core active", subtitle: "See billing information" };
   }
 
-  return { label: status ? "Upgrade plan" : "Billing", subtitle: status ? undefined : "See subscription options" };
+  return {
+    label: status ? "Upgrade plan" : "Billing",
+    subtitle: status ? undefined : "See subscription options",
+  };
 }
 
 export function AccountMenu({
@@ -164,7 +172,7 @@ export function AccountMenu({
           },
         }
       : effectivePlatformBilling,
-    canViewSubscription
+    canViewSubscription,
   );
 
   const triggerClasses = compact
@@ -239,72 +247,86 @@ export function AccountMenu({
                 >
                   <ChevronRight className="h-4 w-4 rotate-180 text-muted" />
                   <span className="text-xs text-muted">Back</span>
-                  <span className="min-w-0 truncate text-text-primary">{submenuTitles[activeSubmenu]}</span>
+                  <span className="min-w-0 truncate text-text-primary">
+                    {submenuTitles[activeSubmenu]}
+                  </span>
                 </button>
               </div>
             )}
             {(!compactLayout || !activeSubmenu) && (
               <>
-            <Link
-              href="/account"
-              prefetch={crmLinkPrefetch("/account")}
-              onClick={closeMenu}
-              className="flex items-center gap-3 border-b border-border px-3 py-3 hover:bg-surface-raised"
-            >
-              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent/20 text-sm font-medium text-accent">
-                {letter}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-text-primary">{displayName}</span>
-                <span className="block truncate text-xs text-muted">{displayEmail}</span>
-              </span>
-              <span className="rounded-[6px] border border-border px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">
-                {accountRole}
-              </span>
-            </Link>
+                <Link
+                  href="/account"
+                  prefetch={crmLinkPrefetch("/account")}
+                  onClick={closeMenu}
+                  className="flex items-center gap-3 border-b border-border px-3 py-3 hover:bg-surface-raised"
+                >
+                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent/20 text-sm font-medium text-accent">
+                    {letter}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-text-primary">
+                      {displayName}
+                    </span>
+                    <span className="block truncate text-xs text-muted">{displayEmail}</span>
+                  </span>
+                  <span className="rounded-[6px] border border-border px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">
+                    {accountRole}
+                  </span>
+                </Link>
 
-            <div className="p-1.5">
-              <MenuLink
-                href="/billing"
-                icon={Sparkles}
-                label={billingCopy.label}
-                subtitle={billingCopy.subtitle}
-                onNavigate={closeMenu}
-              />
-              <MenuButton
-                icon={Palette}
-                label="Personalization"
-                detail={formatTheme(preference)}
-                active={activeSubmenu === "personalization"}
-                expanded={activeSubmenu === "personalization"}
-                onClick={() => toggleSubmenu("personalization")}
-              />
-              <MenuLink href="/account/profile" icon={UserCircle} label="Profile" onNavigate={closeMenu} />
-              <MenuLink href="/account/settings" icon={Settings} label="Account settings" onNavigate={closeMenu} />
-            </div>
+                <div className="p-1.5">
+                  <MenuLink
+                    href="/billing"
+                    icon={Sparkles}
+                    label={billingCopy.label}
+                    subtitle={billingCopy.subtitle}
+                    onNavigate={closeMenu}
+                  />
+                  <MenuButton
+                    icon={Palette}
+                    label="Personalization"
+                    detail={formatTheme(preference)}
+                    active={activeSubmenu === "personalization"}
+                    expanded={activeSubmenu === "personalization"}
+                    onClick={() => toggleSubmenu("personalization")}
+                  />
+                  <MenuLink
+                    href="/account/profile"
+                    icon={UserCircle}
+                    label="Profile"
+                    onNavigate={closeMenu}
+                  />
+                  <MenuLink
+                    href="/account/settings"
+                    icon={Settings}
+                    label="Account settings"
+                    onNavigate={closeMenu}
+                  />
+                </div>
 
-            <div className="border-t border-border p-1.5">
-              <MenuButton
-                icon={CircleHelp}
-                label="Help"
-                active={activeSubmenu === "help"}
-                expanded={activeSubmenu === "help"}
-                onClick={() => toggleSubmenu("help")}
-              />
-              <button
-                type="button"
-                disabled={isSigningOut}
-                onClick={() => {
-                  if (isSigningOut) return;
-                  closeMenu();
-                  onSignOut?.();
-                }}
-                className="group flex h-11 w-full items-center gap-3 rounded-[10px] px-2.5 text-sm text-text-secondary transition-[background-color,color] duration-[120ms] ease-out hover:bg-surface-raised hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--product-focus)] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none"
-              >
-                <LogOut className="h-4 w-4 text-muted transition-colors duration-[120ms] ease-out group-hover:text-danger motion-reduce:transition-none" />
-                <span>{isSigningOut ? "Signing out..." : "Log out"}</span>
-              </button>
-            </div>
+                <div className="border-t border-border p-1.5">
+                  <MenuButton
+                    icon={CircleHelp}
+                    label="Help"
+                    active={activeSubmenu === "help"}
+                    expanded={activeSubmenu === "help"}
+                    onClick={() => toggleSubmenu("help")}
+                  />
+                  <button
+                    type="button"
+                    disabled={isSigningOut}
+                    onClick={() => {
+                      if (isSigningOut) return;
+                      closeMenu();
+                      onSignOut?.();
+                    }}
+                    className="group flex h-11 w-full items-center gap-3 rounded-[10px] px-2.5 text-sm text-text-secondary transition-[background-color,color] duration-[120ms] ease-out hover:bg-surface-raised hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--product-focus)] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none"
+                  >
+                    <LogOut className="h-4 w-4 text-muted transition-colors duration-[120ms] ease-out group-hover:text-danger motion-reduce:transition-none" />
+                    <span>{isSigningOut ? "Signing out..." : "Log out"}</span>
+                  </button>
+                </div>
               </>
             )}
 
@@ -409,13 +431,17 @@ function MenuButton({
         ${active ? "bg-surface-raised text-text-primary" : "text-text-secondary hover:bg-surface-raised hover:text-text-primary"}
       `}
     >
-      <Icon className={`h-4 w-4 flex-shrink-0 text-muted transition-colors duration-[120ms] ease-out motion-reduce:transition-none ${active ? "text-accent" : "group-hover:text-accent"}`} />
+      <Icon
+        className={`h-4 w-4 flex-shrink-0 text-muted transition-colors duration-[120ms] ease-out motion-reduce:transition-none ${active ? "text-accent" : "group-hover:text-accent"}`}
+      />
       <span className="min-w-0 flex-1 text-left">
         <span className="block truncate">{label}</span>
         {detail && <span className="block truncate text-xs text-muted">{detail}</span>}
       </span>
       {expanded ? (
-        <ChevronDown className={`h-4 w-4 flex-shrink-0 text-muted ${active ? "text-text-secondary" : ""}`} />
+        <ChevronDown
+          className={`h-4 w-4 flex-shrink-0 text-muted ${active ? "text-text-secondary" : ""}`}
+        />
       ) : (
         <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted" />
       )}
@@ -434,9 +460,7 @@ function PersonalizationPanel({
 }) {
   return (
     <div className="p-1.5">
-      <div className="px-2.5 py-2 text-xs font-medium text-muted">
-        Theme
-      </div>
+      <div className="px-2.5 py-2 text-xs font-medium text-muted">Theme</div>
       {(["system", "dark", "light"] as ThemePreference[]).map((theme) => (
         <button
           key={theme}
@@ -446,7 +470,11 @@ function PersonalizationPanel({
           className="group flex h-11 w-full items-center gap-3 rounded-[10px] px-2.5 text-sm text-text-secondary transition-[background-color,color] duration-[120ms] ease-out hover:bg-surface-raised hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--product-focus)] motion-reduce:transition-none"
         >
           <span className="flex h-4 w-4 items-center justify-center text-muted transition-colors duration-[120ms] ease-out group-hover:text-accent motion-reduce:transition-none">
-            {theme === "system" ? <ThemeIcon preference={preference} /> : <ThemeIcon preference={theme} />}
+            {theme === "system" ? (
+              <ThemeIcon preference={preference} />
+            ) : (
+              <ThemeIcon preference={theme} />
+            )}
           </span>
           <span className="flex-1 text-left">{formatTheme(theme)}</span>
           {preference === theme && <Check className="h-3.5 w-3.5 text-accent" />}

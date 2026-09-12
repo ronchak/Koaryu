@@ -128,14 +128,12 @@ class StaffArchiveReadTest(unittest.TestCase):
         self.assertEqual([row.id for row in visible], ["active-role"])
         self.assertEqual([row.id for row in included], ["active-role", "archived-role"])
         default_query = next(
-            query for query in supabase.query_log
-            if query["table"] == "staff_roles"
+            query for query in supabase.query_log if query["table"] == "staff_roles"
         )
         self.assertIn(("is", "archived_at", None), default_query["filters"])
-        include_query = [
-            query for query in supabase.query_log
-            if query["table"] == "staff_roles"
-        ][1]
+        include_query = [query for query in supabase.query_log if query["table"] == "staff_roles"][
+            1
+        ]
         self.assertNotIn(("is", "archived_at", None), include_query["filters"])
 
     def test_staff_list_route_passes_include_archived_only_after_admin_resolution(self):
@@ -177,26 +175,29 @@ class StaffArchiveReadTest(unittest.TestCase):
         )
 
     def test_staff_list_does_not_fail_open_when_archive_column_is_unavailable(self):
-        supabase = ArchiveSupabase({
-            "staff_roles": [staff_role("active-role", "active-user")],
-        })
-        supabase.table_failures["staff_roles"] = PostgrestAPIError({
-            "code": "42703",
-            "message": "column staff_roles.archived_at does not exist",
-            "details": "",
-            "hint": "",
-        })
+        supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("active-role", "active-user")],
+            }
+        )
+        supabase.table_failures["staff_roles"] = PostgrestAPIError(
+            {
+                "code": "42703",
+                "message": "column staff_roles.archived_at does not exist",
+                "details": "",
+                "hint": "",
+            }
+        )
 
         with self.assertRaises(PostgrestAPIError) as raised:
             asyncio.run(StaffService(supabase).list_staff("studio-1"))
 
         self.assertEqual(raised.exception.code, "42703")
-        role_queries = [
-            query for query in supabase.query_log
-            if query["table"] == "staff_roles"
-        ]
+        role_queries = [query for query in supabase.query_log if query["table"] == "staff_roles"]
         self.assertEqual(len(role_queries), 2)
-        self.assertTrue(all(("is", "archived_at", None) in query["filters"] for query in role_queries))
+        self.assertTrue(
+            all(("is", "archived_at", None) in query["filters"] for query in role_queries)
+        )
 
 
 class StaffArchiveMutationTest(unittest.TestCase):
@@ -247,7 +248,9 @@ class StaffArchiveMutationTest(unittest.TestCase):
             auth_users={"owner-1": auth_user("owner-1")},
         )
         with self.assertRaises(HTTPException) as owner_error:
-            asyncio.run(StaffService(owner_supabase).archive_staff("owner-role", "studio-1", "admin-1"))
+            asyncio.run(
+                StaffService(owner_supabase).archive_staff("owner-role", "studio-1", "admin-1")
+            )
         self.assertEqual(owner_error.exception.status_code, 409)
         self.assertEqual(owner_error.exception.detail, STAFF_OWNER_ARCHIVE_CONFLICT_DETAIL)
         self.assertFalse(any(query["update"] for query in owner_supabase.query_log))
@@ -262,11 +265,14 @@ class StaffArchiveMutationTest(unittest.TestCase):
             auth_users={"admin-1": auth_user("admin-1")},
         )
         with self.assertRaises(HTTPException) as admin_error:
-            asyncio.run(StaffService(admin_supabase).archive_staff("admin-role", "studio-1", "actor-1"))
+            asyncio.run(
+                StaffService(admin_supabase).archive_staff("admin-role", "studio-1", "actor-1")
+            )
         self.assertEqual(admin_error.exception.status_code, 409)
         self.assertEqual(admin_error.exception.detail, STAFF_ACTIVE_ADMIN_SURVIVOR_DETAIL)
         admin_query = next(
-            query for query in admin_supabase.query_log
+            query
+            for query in admin_supabase.query_log
             if query["table"] == "staff_roles" and query["columns"] == "user_id"
         )
         self.assertIn(("is", "archived_at", None), admin_query["filters"])
@@ -276,7 +282,9 @@ class StaffArchiveMutationTest(unittest.TestCase):
             {
                 "staff_roles": [
                     staff_role("departing", "departing", "admin"),
-                    staff_role("archived-survivor", "archived-survivor", "admin", archived_at=ARCHIVED_AT),
+                    staff_role(
+                        "archived-survivor", "archived-survivor", "admin", archived_at=ARCHIVED_AT
+                    ),
                 ],
                 "studios": [{"id": "studio-1", "owner_id": "owner-1"}],
                 "account_deletion_requests": [],
@@ -299,10 +307,13 @@ class StaffArchiveMutationTest(unittest.TestCase):
                 "audit_logs": [],
             }
         )
-        asyncio.run(StaffService(pending_supabase).remove_staff("pending-role", "studio-1", "admin-1"))
+        asyncio.run(
+            StaffService(pending_supabase).remove_staff("pending-role", "studio-1", "admin-1")
+        )
         self.assertEqual(pending_supabase.tables["staff_roles"], [])
         delete_query = next(
-            query for query in pending_supabase.query_log
+            query
+            for query in pending_supabase.query_log
             if query["table"] == "staff_roles" and query["delete"]
         )
         self.assertIn(("is", "user_id", None), delete_query["filters"])
@@ -323,7 +334,8 @@ class StaffArchiveMutationTest(unittest.TestCase):
         )
         self.assertEqual(linked_pending_supabase.tables["staff_roles"], [])
         linked_delete_query = next(
-            query for query in linked_pending_supabase.query_log
+            query
+            for query in linked_pending_supabase.query_log
             if query["table"] == "staff_roles" and query["delete"]
         )
         self.assertNotIn(("is", "user_id", None), linked_delete_query["filters"])
@@ -363,7 +375,9 @@ class StaffArchiveMutationTest(unittest.TestCase):
             {"staff_roles": [staff_role("failed-role", "user-1")], "audit_logs": []},
         )
         failed_service = StaffService(failed_supabase)
-        with patch.object(failed_service, "_get_auth_user", side_effect=RuntimeError("Auth unavailable")):
+        with patch.object(
+            failed_service, "_get_auth_user", side_effect=RuntimeError("Auth unavailable")
+        ):
             with self.assertRaises(HTTPException) as raised:
                 asyncio.run(failed_service.remove_staff("failed-role", "studio-1", "admin-1"))
         self.assertEqual(raised.exception.status_code, 409)
@@ -382,7 +396,8 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
                 "staff_profiles": [],
                 "studios": studios or [{"id": "studio-1", "owner_id": "owner-1"}],
             },
-            auth_users=auth_users or {
+            auth_users=auth_users
+            or {
                 "admin-1": auth_user("admin-1"),
                 row.get("user_id"): auth_user(row["user_id"]),
             },
@@ -453,24 +468,28 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
     def test_non_archived_and_unlinked_targets_are_refused(self):
         active = self._base_supabase(staff_role("active-role", "target-1"))
         with self.assertRaises(HTTPException) as active_error:
-            asyncio.run(StaffService(active).schedule_staff_deletion(
-                "active-role",
-                StaffDeletionRequestCreate(confirmation_name="Display target-1"),
-                "studio-1",
-                "admin-1",
-            ))
+            asyncio.run(
+                StaffService(active).schedule_staff_deletion(
+                    "active-role",
+                    StaffDeletionRequestCreate(confirmation_name="Display target-1"),
+                    "studio-1",
+                    "admin-1",
+                )
+            )
         self.assertEqual(active_error.exception.status_code, 409)
         self.assertEqual(active_error.exception.detail, STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL)
         self.assertEqual(active.tables["account_deletion_requests"], [])
 
         unlinked = self._base_supabase(staff_role("invite-role", None))
         with self.assertRaises(HTTPException) as unlinked_error:
-            asyncio.run(StaffService(unlinked).schedule_staff_deletion(
-                "invite-role",
-                StaffDeletionRequestCreate(confirmation_name="invite-role@example.com"),
-                "studio-1",
-                "admin-1",
-            ))
+            asyncio.run(
+                StaffService(unlinked).schedule_staff_deletion(
+                    "invite-role",
+                    StaffDeletionRequestCreate(confirmation_name="invite-role@example.com"),
+                    "studio-1",
+                    "admin-1",
+                )
+            )
         self.assertEqual(unlinked_error.exception.status_code, 409)
         self.assertEqual(unlinked_error.exception.detail, STAFF_DELETE_REQUIRES_LINKED_DETAIL)
         self.assertEqual(unlinked.tables["account_deletion_requests"], [])
@@ -490,12 +509,14 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
             auth_users={"admin-1": auth_user("admin-1"), "target-1": target},
         )
 
-        request = asyncio.run(StaffService(supabase).schedule_staff_deletion(
-            "archived-role",
-            StaffDeletionRequestCreate(confirmation_name=" target@example.com "),
-            "studio-1",
-            "admin-1",
-        ))
+        request = asyncio.run(
+            StaffService(supabase).schedule_staff_deletion(
+                "archived-role",
+                StaffDeletionRequestCreate(confirmation_name=" target@example.com "),
+                "studio-1",
+                "admin-1",
+            )
+        )
 
         self.assertEqual(request.user_id, "target-1")
         self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
@@ -520,12 +541,14 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
         self.assertEqual(target_response.email, "invite-target@example.com")
         self.assertEqual(target_response.deletion_confirmation_name, "invite-target@example.com")
 
-        request = asyncio.run(StaffService(supabase).schedule_staff_deletion(
-            "archived-role",
-            StaffDeletionRequestCreate(confirmation_name="invite-target@example.com"),
-            "studio-1",
-            "admin-1",
-        ))
+        request = asyncio.run(
+            StaffService(supabase).schedule_staff_deletion(
+                "archived-role",
+                StaffDeletionRequestCreate(confirmation_name="invite-target@example.com"),
+                "studio-1",
+                "admin-1",
+            )
+        )
 
         self.assertEqual(request.user_id, "target-1")
         self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
@@ -549,12 +572,14 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
         self.assertEqual(target_response.full_name, "Legacy Staff")
         self.assertEqual(target_response.deletion_confirmation_name, "Legacy Staff")
 
-        request = asyncio.run(StaffService(supabase).schedule_staff_deletion(
-            "archived-role",
-            StaffDeletionRequestCreate(confirmation_name="Legacy Staff"),
-            "studio-1",
-            "admin-1",
-        ))
+        request = asyncio.run(
+            StaffService(supabase).schedule_staff_deletion(
+                "archived-role",
+                StaffDeletionRequestCreate(confirmation_name="Legacy Staff"),
+                "studio-1",
+                "admin-1",
+            )
+        )
 
         self.assertEqual(request.user_id, "target-1")
         self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
@@ -577,12 +602,14 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
 
         target_response = StaffService(supabase)._hydrate_staff_member(row, target)
         self.assertEqual(target_response.deletion_confirmation_name, "staff role role-fallback")
-        request = asyncio.run(StaffService(supabase).schedule_staff_deletion(
-            "role-fallback",
-            StaffDeletionRequestCreate(confirmation_name="staff role role-fallback"),
-            "studio-1",
-            "admin-1",
-        ))
+        request = asyncio.run(
+            StaffService(supabase).schedule_staff_deletion(
+                "role-fallback",
+                StaffDeletionRequestCreate(confirmation_name="staff role role-fallback"),
+                "studio-1",
+                "admin-1",
+            )
+        )
 
         self.assertEqual(request.user_id, "target-1")
 
@@ -591,12 +618,14 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
         supabase = self._base_supabase(row)
 
         with self.assertRaises(HTTPException) as raised:
-            asyncio.run(StaffService(supabase).schedule_staff_deletion(
-                "archived-role",
-                StaffDeletionRequestCreate(confirmation_name="display target-1"),
-                "studio-1",
-                "admin-1",
-            ))
+            asyncio.run(
+                StaffService(supabase).schedule_staff_deletion(
+                    "archived-role",
+                    StaffDeletionRequestCreate(confirmation_name="display target-1"),
+                    "studio-1",
+                    "admin-1",
+                )
+            )
 
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail, STAFF_DELETE_CONFIRMATION_MISMATCH_DETAIL)
@@ -610,12 +639,14 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
             studios=[{"id": "studio-1", "owner_id": "owner-1"}],
         )
         with self.assertRaises(HTTPException) as owner_error:
-            asyncio.run(StaffService(owner_supabase).schedule_staff_deletion(
-                "owner-role",
-                StaffDeletionRequestCreate(confirmation_name="Display owner-1"),
-                "studio-1",
-                "admin-1",
-            ))
+            asyncio.run(
+                StaffService(owner_supabase).schedule_staff_deletion(
+                    "owner-role",
+                    StaffDeletionRequestCreate(confirmation_name="Display owner-1"),
+                    "studio-1",
+                    "admin-1",
+                )
+            )
         self.assertEqual(owner_error.exception.status_code, 409)
         self.assertEqual(owner_supabase.tables["account_deletion_requests"], [])
 
@@ -629,29 +660,35 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
             studios=[{"id": "studio-1", "owner_id": "owner-1"}],
         )
         with self.assertRaises(HTTPException) as survivor_error:
-            asyncio.run(StaffService(no_survivor_supabase).schedule_staff_deletion(
-                "admin-role",
-                StaffDeletionRequestCreate(confirmation_name="Display admin-target"),
-                "studio-1",
-                "admin-1",
-            ))
+            asyncio.run(
+                StaffService(no_survivor_supabase).schedule_staff_deletion(
+                    "admin-role",
+                    StaffDeletionRequestCreate(confirmation_name="Display admin-target"),
+                    "studio-1",
+                    "admin-1",
+                )
+            )
         self.assertEqual(survivor_error.exception.status_code, 409)
         self.assertEqual(no_survivor_supabase.tables["account_deletion_requests"], [])
 
 
 class StaffArchiveMembershipTest(unittest.TestCase):
     def test_optional_resolver_rejects_archived_but_retains_active_same_studio_and_none(self):
-        archived_supabase = ArchiveSupabase({
-            "staff_roles": [staff_role("archived-role", "user-1", archived_at=ARCHIVED_AT)],
-        })
+        archived_supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("archived-role", "user-1", archived_at=ARCHIVED_AT)],
+            }
+        )
         with self.assertRaises(HTTPException) as archived_error:
             resolve_optional_staff_role_for_user(archived_supabase, "user-1")
         self.assertEqual(archived_error.exception.status_code, 403)
         self.assertEqual(archived_error.exception.detail, STAFF_ARCHIVED_DETAIL)
 
-        active_supabase = ArchiveSupabase({
-            "staff_roles": [staff_role("active-role", "user-1")],
-        })
+        active_supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("active-role", "user-1")],
+            }
+        )
         active_membership = resolve_optional_staff_role_for_user(
             active_supabase,
             "user-1",
@@ -664,9 +701,11 @@ class StaffArchiveMembershipTest(unittest.TestCase):
         self.assertIsNone(resolve_optional_staff_role_for_user(no_membership_supabase, "user-1"))
 
     def test_archived_membership_is_denied_but_remains_a_same_studio_reservation(self):
-        supabase = ArchiveSupabase({
-            "staff_roles": [staff_role("archived-role", "user-1", archived_at=ARCHIVED_AT)],
-        })
+        supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("archived-role", "user-1", archived_at=ARCHIVED_AT)],
+            }
+        )
 
         with self.assertRaises(HTTPException) as raised:
             resolve_staff_role_for_user(supabase, "user-1")
@@ -682,7 +721,8 @@ class StaffArchiveMembershipTest(unittest.TestCase):
             )
         self.assertEqual(assignment_denial.exception.status_code, 404)
         assignment_query = next(
-            query for query in supabase.query_log
+            query
+            for query in supabase.query_log
             if query["table"] == "staff_roles" and query["columns"] == "id"
         )
         self.assertIn(("is", "archived_at", None), assignment_query["filters"])
@@ -695,7 +735,9 @@ class StaffArchiveMembershipTest(unittest.TestCase):
         supabase = ArchiveSupabase(
             {
                 "studios": [{"id": "studio-1", "owner_id": "owner-1"}],
-                "staff_roles": [staff_role("archived-admin", "admin-2", "admin", archived_at=ARCHIVED_AT)],
+                "staff_roles": [
+                    staff_role("archived-admin", "admin-2", "admin", archived_at=ARCHIVED_AT)
+                ],
             },
             auth_users={"admin-2": auth_user("admin-2")},
         )
@@ -703,10 +745,7 @@ class StaffArchiveMembershipTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as raised:
             StudioService(supabase)._validate_owner_transfer("studio-1", "owner-1", "admin-2")
         self.assertEqual(raised.exception.status_code, 409)
-        staff_query = next(
-            query for query in supabase.query_log
-            if query["table"] == "staff_roles"
-        )
+        staff_query = next(query for query in supabase.query_log if query["table"] == "staff_roles")
         self.assertIn(("is", "archived_at", None), staff_query["filters"])
 
 
@@ -725,9 +764,7 @@ class StaffArchiveAuthAndExportTest(unittest.TestCase):
         self.assertIsNone(archived.role)
 
         with self.assertRaises(HTTPException) as requested_error:
-            asyncio.run(
-                AuthService(archived_supabase).get_user_profile("user-1", "studio-other")
-            )
+            asyncio.run(AuthService(archived_supabase).get_user_profile("user-1", "studio-other"))
         self.assertEqual(requested_error.exception.status_code, 403)
 
         no_membership_supabase = ArchiveSupabase(
@@ -782,10 +819,7 @@ class StaffArchiveAuthAndExportTest(unittest.TestCase):
         rows = list(csv.DictReader(StringIO(csv_text)))
 
         self.assertEqual([row["id"] for row in rows], ["active-role"])
-        role_query = next(
-            query for query in supabase.query_log
-            if query["table"] == "staff_roles"
-        )
+        role_query = next(query for query in supabase.query_log if query["table"] == "staff_roles")
         self.assertIn(("is", "archived_at", None), role_query["filters"])
 
 

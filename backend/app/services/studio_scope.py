@@ -128,10 +128,7 @@ def resolve_staff_membership_state_for_user(
     membership = None
     if requested_studio_id:
         membership = next(
-            (
-                role for role in roles
-                if role.get("studio_id") == requested_studio_id
-            ),
+            (role for role in roles if role.get("studio_id") == requested_studio_id),
             None,
         )
         if membership is None:

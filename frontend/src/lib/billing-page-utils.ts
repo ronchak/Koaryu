@@ -24,7 +24,15 @@ const CONNECT_REQUIREMENT_GROUPS: RequirementGroup[] = [
     id: "identity",
     label: "Owner or representative identity",
     description: "Name, birthday, email, title, phone, and SSN last 4 where required.",
-    matches: ["owners.", "representative.", "individual.first_name", "individual.last_name", "individual.email", "individual.dob.", "individual.ssn_last_4"],
+    matches: [
+      "owners.",
+      "representative.",
+      "individual.first_name",
+      "individual.last_name",
+      "individual.email",
+      "individual.dob.",
+      "individual.ssn_last_4",
+    ],
   },
   {
     id: "payouts",
@@ -56,7 +64,11 @@ export function formatMoney(cents: number, currency = "usd") {
 
 export function formatDate(value?: string | null) {
   if (!value) return "Not set";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
 }
 
 export function intervalLabel(interval: BillingPlan["billing_interval"]) {
@@ -75,7 +87,7 @@ export function intervalLabel(interval: BillingPlan["billing_interval"]) {
 export function requirementGroupItems(requirementsDue: string[]) {
   return CONNECT_REQUIREMENT_GROUPS.map((group) => {
     const dueFields = requirementsDue.filter((field) =>
-      group.matches.some((prefix) => field === prefix || field.startsWith(prefix))
+      group.matches.some((prefix) => field === prefix || field.startsWith(prefix)),
     );
     return {
       ...group,
@@ -94,13 +106,38 @@ export function connectRefreshUrl() {
 }
 
 export function statusTone(status: string) {
-  if (["active", "current", "paid", "succeeded", "charges_enabled", "trialing", "externally_recorded", "externally_paid"].includes(status)) {
+  if (
+    [
+      "active",
+      "current",
+      "paid",
+      "succeeded",
+      "charges_enabled",
+      "trialing",
+      "externally_recorded",
+      "externally_paid",
+    ].includes(status)
+  ) {
     return "border-success/20 bg-success/10 text-success";
   }
-  if (["pending", "open", "upcoming", "onboarding_incomplete", "incomplete", "incomplete_expired", "paused"].includes(status)) {
+  if (
+    [
+      "pending",
+      "open",
+      "upcoming",
+      "onboarding_incomplete",
+      "incomplete",
+      "incomplete_expired",
+      "paused",
+    ].includes(status)
+  ) {
     return "border-warning/20 bg-warning/10 text-warning";
   }
-  if (["past_due", "failed", "unpaid", "action_required", "deauthorized", "uncollectible"].includes(status)) {
+  if (
+    ["past_due", "failed", "unpaid", "action_required", "deauthorized", "uncollectible"].includes(
+      status,
+    )
+  ) {
     return "border-danger/20 bg-danger/10 text-danger";
   }
   return "border-border bg-surface-raised text-muted";

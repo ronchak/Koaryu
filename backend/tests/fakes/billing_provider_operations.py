@@ -11,87 +11,87 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 
 
 def _operation_conflict() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "23505",
-        "message": "billing_provider_operation_request_conflict",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "23505",
+            "message": "billing_provider_operation_request_conflict",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 def _refund_unsettled() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "55000",
-        "message": "billing_provider_operation_resource_prior_refund_unsettled",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "55000",
+            "message": "billing_provider_operation_resource_prior_refund_unsettled",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 def _invoice_mutation_in_progress() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "55P03",
-        "message": "billing_invoice_mutation_in_progress",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "55P03",
+            "message": "billing_invoice_mutation_in_progress",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 def _retry_preread_release_rejected(message: str) -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "55000",
-        "message": message,
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "55000",
+            "message": message,
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 def _transition_not_found() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "P0002",
-        "message": "billing_enrollment_transition_not_found",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "P0002",
+            "message": "billing_enrollment_transition_not_found",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 def _transition_identity_mismatch() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "23514",
-        "message": "billing_enrollment_transition_read_identity_mismatch",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "23514",
+            "message": "billing_enrollment_transition_read_identity_mismatch",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 class BillingProviderOperationRpcMixin:
     billing_provider_operations: dict[tuple[str, str, str], dict[str, Any]]
 
     def initialize_billing_provider_operations(self) -> None:
-        self.billing_provider_now = datetime(
-            2026, 8, 27, tzinfo=timezone.utc
-        )
+        self.billing_provider_now = datetime(2026, 8, 27, tzinfo=timezone.utc)
         self.billing_provider_operations = {}
-        self.billing_invoice_retry_hash_ledger_v33: dict[
-            tuple[str, str], dict[str, Any]
-        ] = {}
+        self.billing_invoice_retry_hash_ledger_v33: dict[tuple[str, str], dict[str, Any]] = {}
         self.billing_invoice_retry_hash_capture_enabled_v33 = True
-        self.release_billing_invoice_retry_preread_lease_calls: list[
-            dict[str, Any]
-        ] = []
+        self.release_billing_invoice_retry_preread_lease_calls: list[dict[str, Any]] = []
         self.billing_provider_step_plans: dict[str, dict[str, Any]] = {}
-        self.billing_provider_operation_resources: dict[
-            tuple[str, str, str], dict[str, Any]
-        ] = {}
-        self.billing_provider_operation_aliases: dict[
-            tuple[str, str, str], str
-        ] = {}
+        self.billing_provider_operation_resources: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self.billing_provider_operation_aliases: dict[tuple[str, str, str], str] = {}
         self.billing_provider_operation_alias_resources: dict[
             tuple[str, str, str], tuple[str, str, str]
         ] = {}
-        self.billing_invoice_mutation_owners: dict[
-            tuple[str, str], dict[str, str]
-        ] = {}
+        self.billing_invoice_mutation_owners: dict[tuple[str, str], dict[str, str]] = {}
         self.billing_enrollment_transition_intents: dict[str, dict[str, Any]] = {}
         self.billing_enrollment_transition_aliases: dict[tuple[str, str, str], str] = {}
 
@@ -111,9 +111,7 @@ class BillingProviderOperationRpcMixin:
         operation = self.billing_provider_operations.get(key)
         if operation is None:
             lease_acquired_at = self.billing_provider_now
-            lease_expires_at = lease_acquired_at + timedelta(
-                seconds=int(params["p_lease_seconds"])
-            )
+            lease_expires_at = lease_acquired_at + timedelta(seconds=int(params["p_lease_seconds"]))
             operation = {
                 "id": f"00000000-0000-4000-8000-{len(self.billing_provider_operations) + 9001:012d}",
                 "studio_id": params["p_studio_id"],
@@ -126,12 +124,8 @@ class BillingProviderOperationRpcMixin:
                 "state": "started",
                 "provider_request_attempt_count": 0,
                 "lease_owner": params["p_lease_owner"],
-                "lease_acquired_at": self._billing_provider_timestamp(
-                    lease_acquired_at
-                ),
-                "lease_expires_at": self._billing_provider_timestamp(
-                    lease_expires_at
-                ),
+                "lease_acquired_at": self._billing_provider_timestamp(lease_acquired_at),
+                "lease_expires_at": self._billing_provider_timestamp(lease_expires_at),
                 "invoice_retry_preread_released_at": None,
                 "invoice_retry_preread_release_reason": None,
                 "provider_object_id": None,
@@ -174,39 +168,32 @@ class BillingProviderOperationRpcMixin:
         ):
             raise _operation_conflict()
         state = operation["state"]
-        lease_transferable = (
-            operation.get("operation_type") == "invoice.retry"
-            and state in {
-                "started", "recovery_authorized", "provider_succeeded", "projected"
-            }
-        )
+        lease_transferable = operation.get("operation_type") == "invoice.retry" and state in {
+            "started",
+            "recovery_authorized",
+            "provider_succeeded",
+            "projected",
+        }
         lease_owner = operation.get("lease_owner")
         lease_expires_at = operation.get("lease_expires_at")
         lease_expired = (
             lease_expires_at is not None
-            and datetime.fromisoformat(
-                str(lease_expires_at).replace("Z", "+00:00")
-            ) <= self.billing_provider_now
+            and datetime.fromisoformat(str(lease_expires_at).replace("Z", "+00:00"))
+            <= self.billing_provider_now
         )
         if lease_transferable and (
-            lease_owner is None
-            or lease_owner == params["p_lease_owner"]
-            or lease_expired
+            lease_owner is None or lease_owner == params["p_lease_owner"] or lease_expired
         ):
             lease_acquired_at = self.billing_provider_now
-            lease_expires_at = lease_acquired_at + timedelta(
-                seconds=int(params["p_lease_seconds"])
+            lease_expires_at = lease_acquired_at + timedelta(seconds=int(params["p_lease_seconds"]))
+            operation.update(
+                {
+                    "lease_owner": params["p_lease_owner"],
+                    "lease_acquired_at": self._billing_provider_timestamp(lease_acquired_at),
+                    "lease_expires_at": self._billing_provider_timestamp(lease_expires_at),
+                    "revision": operation["revision"] + 1,
+                }
             )
-            operation.update({
-                "lease_owner": params["p_lease_owner"],
-                "lease_acquired_at": self._billing_provider_timestamp(
-                    lease_acquired_at
-                ),
-                "lease_expires_at": self._billing_provider_timestamp(
-                    lease_expires_at
-                ),
-                "revision": operation["revision"] + 1,
-            })
             outcome = "continued"
         elif lease_transferable:
             outcome = "busy"
@@ -251,13 +238,11 @@ class BillingProviderOperationRpcMixin:
         lease_expires_at = operation.get("lease_expires_at")
         if (
             lease_acquired_at is None
-            or datetime.fromisoformat(
-                str(lease_acquired_at).replace("Z", "+00:00")
-            ) > self.billing_provider_now
+            or datetime.fromisoformat(str(lease_acquired_at).replace("Z", "+00:00"))
+            > self.billing_provider_now
             or lease_expires_at is None
-            or datetime.fromisoformat(
-                str(lease_expires_at).replace("Z", "+00:00")
-            ) <= self.billing_provider_now
+            or datetime.fromisoformat(str(lease_expires_at).replace("Z", "+00:00"))
+            <= self.billing_provider_now
         ):
             raise _retry_preread_release_rejected(
                 "billing_invoice_retry_preread_release_lease_not_current"
@@ -289,9 +274,7 @@ class BillingProviderOperationRpcMixin:
         parent_has_evidence = (
             operation.get("state") != "started"
             or int(operation.get("provider_request_attempt_count") or 0) != 0
-            or any(
-                operation.get(field) is not None for field in parent_evidence_fields
-            )
+            or any(operation.get(field) is not None for field in parent_evidence_fields)
         )
         child_evidence_fields = (
             "provider_object_id",
@@ -310,9 +293,7 @@ class BillingProviderOperationRpcMixin:
             "definitive_failed_at",
             "definitive_rejected_at",
         )
-        steps = self.billing_provider_step_plans.get(
-            operation["id"], {}
-        ).get("steps", [])
+        steps = self.billing_provider_step_plans.get(operation["id"], {}).get("steps", [])
         child_has_evidence = any(
             step.get("state") != "pending"
             or int(step.get("provider_request_attempt_count") or 0) != 0
@@ -323,16 +304,18 @@ class BillingProviderOperationRpcMixin:
             raise _retry_preread_release_rejected(
                 "billing_invoice_retry_preread_release_mutation_evidence"
             )
-        operation.update({
-            "lease_owner": None,
-            "lease_acquired_at": None,
-            "lease_expires_at": None,
-            "invoice_retry_preread_released_at": self._billing_provider_timestamp(
-                self.billing_provider_now
-            ),
-            "invoice_retry_preread_release_reason": params["p_release_reason"],
-            "revision": operation["revision"] + 1,
-        })
+        operation.update(
+            {
+                "lease_owner": None,
+                "lease_acquired_at": None,
+                "lease_expires_at": None,
+                "invoice_retry_preread_released_at": self._billing_provider_timestamp(
+                    self.billing_provider_now
+                ),
+                "invoice_retry_preread_release_reason": params["p_release_reason"],
+                "revision": operation["revision"] + 1,
+            }
+        )
         return {"outcome": "released", "operation": dict(operation)}
 
     def _rpc_claim_billing_provider_operation_resource_v1(
@@ -387,14 +370,20 @@ class BillingProviderOperationRpcMixin:
             if "connect_account_generation" in invoice_metadata
             else payer["connect_account_generation"]
         )
-        base_hash = hashlib.sha256(json.dumps({
-            "connect_account_generation": generation,
-            "invoice_id": self._canonical_uuid_text(invoice["id"]),
-            "operation_type": "invoice.retry",
-            "stripe_connected_account_id": str(invoice["stripe_account_id"]),
-            "stripe_invoice_id": str(invoice["stripe_invoice_id"]),
-            "studio_id": self._canonical_uuid_text(invoice["studio_id"]),
-        }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        base_hash = hashlib.sha256(
+            json.dumps(
+                {
+                    "connect_account_generation": generation,
+                    "invoice_id": self._canonical_uuid_text(invoice["id"]),
+                    "operation_type": "invoice.retry",
+                    "stripe_connected_account_id": str(invoice["stripe_account_id"]),
+                    "stripe_invoice_id": str(invoice["stripe_invoice_id"]),
+                    "studio_id": self._canonical_uuid_text(invoice["studio_id"]),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
         submitted_hash = params["p_request_sha256"]
         ledger_key = (
             canonical_params["p_studio_id"],
@@ -413,11 +402,9 @@ class BillingProviderOperationRpcMixin:
             )
             if (
                 owner_operation is not None
-                and owner_operation.get("state") not in {
-                    "completed", "definitive_failed", "definitive_rejected"
-                }
-                and owner_operation.get("caller_request_key")
-                == params["p_caller_request_key"]
+                and owner_operation.get("state")
+                not in {"completed", "definitive_failed", "definitive_rejected"}
+                and owner_operation.get("caller_request_key") == params["p_caller_request_key"]
                 and owner_operation.get("invoice_retry_preread_released_at") is not None
             ):
                 resource = next(
@@ -450,19 +437,20 @@ class BillingProviderOperationRpcMixin:
                     compatibility_outcome = "ledger_legacy_hash_accepted"
                 else:
                     compatibility_outcome = "ledger_legacy_hash_replay"
-                owner_operation.update({
-                    "invoice_retry_preread_released_at": None,
-                    "invoice_retry_preread_release_reason": None,
-                    "lease_owner": params["p_lease_owner"],
-                    "lease_acquired_at": self._billing_provider_timestamp(
-                        self.billing_provider_now
-                    ),
-                    "lease_expires_at": self._billing_provider_timestamp(
-                        self.billing_provider_now
-                        + timedelta(seconds=params["p_lease_seconds"])
-                    ),
-                    "revision": owner_operation["revision"] + 1,
-                })
+                owner_operation.update(
+                    {
+                        "invoice_retry_preread_released_at": None,
+                        "invoice_retry_preread_release_reason": None,
+                        "lease_owner": params["p_lease_owner"],
+                        "lease_acquired_at": self._billing_provider_timestamp(
+                            self.billing_provider_now
+                        ),
+                        "lease_expires_at": self._billing_provider_timestamp(
+                            self.billing_provider_now + timedelta(seconds=params["p_lease_seconds"])
+                        ),
+                        "revision": owner_operation["revision"] + 1,
+                    }
+                )
                 no_ledger_reclaim = True
             elif submitted_hash == base_hash:
                 effective_hash = base_hash
@@ -495,11 +483,13 @@ class BillingProviderOperationRpcMixin:
                 raise _operation_conflict()
             ledger_operation = self._operation_by_id(ledger["operation_id"])
             if ledger_operation.get("invoice_retry_preread_released_at") is not None:
-                ledger_operation.update({
-                    "invoice_retry_preread_released_at": None,
-                    "invoice_retry_preread_release_reason": None,
-                    "revision": ledger_operation["revision"] + 1,
-                })
+                ledger_operation.update(
+                    {
+                        "invoice_retry_preread_released_at": None,
+                        "invoice_retry_preread_release_reason": None,
+                        "revision": ledger_operation["revision"] + 1,
+                    }
+                )
         effective_params = {
             **canonical_params,
             "p_request_sha256": effective_hash,
@@ -521,12 +511,8 @@ class BillingProviderOperationRpcMixin:
                 "resource_id": canonical_params["p_resource_id"],
                 "payer_id": canonical_params["p_payer_id"],
                 "actor_id": params["p_actor_id"],
-                "stripe_connected_account_id": params[
-                    "p_stripe_connected_account_id"
-                ],
-                "connect_account_generation": params[
-                    "p_connect_account_generation"
-                ],
+                "stripe_connected_account_id": params["p_stripe_connected_account_id"],
+                "connect_account_generation": params["p_connect_account_generation"],
                 "base_request_sha256": base_hash,
                 "persisted_request_sha256": effective_hash,
             }
@@ -586,10 +572,7 @@ class BillingProviderOperationRpcMixin:
         }
         if owner is None:
             self.billing_invoice_mutation_owners[owner_key] = candidate_owner
-        elif (
-            owner["operation_id"] != candidate["id"]
-            and candidate.get("state") == "started"
-        ):
+        elif owner["operation_id"] != candidate["id"] and candidate.get("state") == "started":
             self.billing_invoice_mutation_owners[owner_key] = candidate_owner
         return result
 
@@ -617,9 +600,7 @@ class BillingProviderOperationRpcMixin:
         **updates: Any,
     ) -> dict[str, Any]:
         payer = next(
-            row
-            for row in self.tables.get("billing_payers", [])
-            if row.get("id") == payer_id
+            row for row in self.tables.get("billing_payers", []) if row.get("id") == payer_id
         )
         if self._autopay_invoice_mutation_in_progress(
             str(payer.get("studio_id") or ""),
@@ -634,9 +615,7 @@ class BillingProviderOperationRpcMixin:
         studio_id: str,
         payer_id: str,
     ) -> bool:
-        for (owner_studio_id, invoice_id), owner in (
-            self.billing_invoice_mutation_owners.items()
-        ):
+        for (owner_studio_id, invoice_id), owner in self.billing_invoice_mutation_owners.items():
             if owner_studio_id != studio_id or owner.get("payer_id") != payer_id:
                 continue
             operation_type = owner.get("operation_type")
@@ -645,8 +624,7 @@ class BillingProviderOperationRpcMixin:
                     (
                         row
                         for row in self.tables.get("billing_invoices", [])
-                        if row.get("id") == invoice_id
-                        and row.get("studio_id") == studio_id
+                        if row.get("id") == invoice_id and row.get("studio_id") == studio_id
                     ),
                     None,
                 )
@@ -657,30 +635,37 @@ class BillingProviderOperationRpcMixin:
             operation = self._operation_by_id(owner["operation_id"])
             if (
                 operation.get("invoice_retry_preread_released_at") is not None
-                and operation.get("state") in {
-                    "started", "provider_request_in_flight", "recovery_authorized"
-                }
+                and operation.get("state")
+                in {"started", "provider_request_in_flight", "recovery_authorized"}
                 and int(operation.get("provider_request_attempt_count") or 0) == 0
                 and all(
                     operation.get(field) is None
                     for field in (
-                        "provider_object_id", "provider_secondary_object_id",
-                        "provider_request_id", "result_code", "result_summary",
-                        "error_code", "error_summary", "reconciliation_reason_code",
-                        "recovery_proof_sha256", "recovery_outcome",
+                        "provider_object_id",
+                        "provider_secondary_object_id",
+                        "provider_request_id",
+                        "result_code",
+                        "result_summary",
+                        "error_code",
+                        "error_summary",
+                        "reconciliation_reason_code",
+                        "recovery_proof_sha256",
+                        "recovery_outcome",
                     )
                 )
             ):
-                operation.update({
-                    "state": "definitive_rejected",
-                    "error_code": "invoice_retry_consent_changed_before_provider",
-                    "definitive_rejected_at": self._billing_provider_timestamp(
-                        self.billing_provider_now
-                    ),
-                    "invoice_retry_preread_released_at": None,
-                    "invoice_retry_preread_release_reason": None,
-                    "revision": operation["revision"] + 1,
-                })
+                operation.update(
+                    {
+                        "state": "definitive_rejected",
+                        "error_code": "invoice_retry_consent_changed_before_provider",
+                        "definitive_rejected_at": self._billing_provider_timestamp(
+                            self.billing_provider_now
+                        ),
+                        "invoice_retry_preread_released_at": None,
+                        "invoice_retry_preread_release_reason": None,
+                        "revision": operation["revision"] + 1,
+                    }
+                )
                 continue
             if operation.get("state") in {
                 "started",
@@ -728,16 +713,13 @@ class BillingProviderOperationRpcMixin:
                 raise _operation_conflict()
             operation = self._operation_by_id(alias_operation_id)
             self._assert_resource_request_matches(operation, params)
-            if (
-                operation.get("state") != "completed"
-                and resource.get("resource_version_sha256")
-                != self._resource_version_sha256(params)
-            ):
+            if operation.get("state") != "completed" and resource.get(
+                "resource_version_sha256"
+            ) != self._resource_version_sha256(params):
                 raise _operation_conflict()
             if (
                 operation.get("operation_type") == "invoice.retry"
-                and operation.get("caller_request_key")
-                == params["p_caller_request_key"]
+                and operation.get("caller_request_key") == params["p_caller_request_key"]
             ):
                 claimed = self._rpc_claim_billing_provider_operation_v1(params)
                 operation = claimed["operation"]
@@ -773,8 +755,7 @@ class BillingProviderOperationRpcMixin:
             operation = self._operation_by_id(resource["operation_id"])
             if (
                 operation.get("state") == "recovery_authorized"
-                and operation.get("operation_type")
-                in {"plan.sync", "payer.sync", "payment.refund"}
+                and operation.get("operation_type") in {"plan.sync", "payer.sync", "payment.refund"}
                 and alias_operation_id is None
             ):
                 raise _operation_conflict()
@@ -908,8 +889,7 @@ class BillingProviderOperationRpcMixin:
             ):
                 target = summary.rsplit(":", 1)[1]
                 matches = (
-                    operation.get("provider_object_id") == plan.get("stripe_product_id")
-                    == target
+                    operation.get("provider_object_id") == plan.get("stripe_product_id") == target
                 )
             elif summary == "plan_sync_mode:product_price_steps":
                 step_plan = self.billing_provider_step_plans.get(operation["id"])
@@ -938,12 +918,9 @@ class BillingProviderOperationRpcMixin:
             and candidate.get("studio_id") == params["p_studio_id"]
         )
         summary = str(operation.get("result_summary") or "")
-        valid_summary = (
-            summary == "sync_mode:create:target_customer_id:none"
-            or re.fullmatch(
-                r"sync_mode:update:target_customer_id:cus_[A-Za-z0-9]+",
-                summary,
-            )
+        valid_summary = summary == "sync_mode:create:target_customer_id:none" or re.fullmatch(
+            r"sync_mode:update:target_customer_id:cus_[A-Za-z0-9]+",
+            summary,
         )
         if (
             payer.get("stripe_customer_id") != operation.get("provider_object_id")
@@ -990,46 +967,54 @@ class BillingProviderOperationRpcMixin:
         lease_expires_at = operation.get("lease_expires_at")
         lease_expired = (
             lease_expires_at is not None
-            and datetime.fromisoformat(
-                str(lease_expires_at).replace("Z", "+00:00")
-            ) <= self.billing_provider_now
+            and datetime.fromisoformat(str(lease_expires_at).replace("Z", "+00:00"))
+            <= self.billing_provider_now
         )
         requested_owner = params["p_lease_owner"]
-        if (
-            state in {
-                "started", "recovery_authorized", "provider_succeeded",
-                "projected", "reconciliation_required",
-            }
-            and (lease_owner is None or lease_owner == requested_owner or lease_expired)
-        ):
+        if state in {
+            "started",
+            "recovery_authorized",
+            "provider_succeeded",
+            "projected",
+            "reconciliation_required",
+        } and (lease_owner is None or lease_owner == requested_owner or lease_expired):
             acquired_at = self.billing_provider_now
-            operation.update({
-                "lease_owner": requested_owner,
-                "lease_acquired_at": self._billing_provider_timestamp(acquired_at),
-                "lease_expires_at": self._billing_provider_timestamp(
-                    acquired_at + timedelta(seconds=int(params["p_lease_seconds"]))
-                ),
-                "revision": operation["revision"] + 1,
-            })
+            operation.update(
+                {
+                    "lease_owner": requested_owner,
+                    "lease_acquired_at": self._billing_provider_timestamp(acquired_at),
+                    "lease_expires_at": self._billing_provider_timestamp(
+                        acquired_at + timedelta(seconds=int(params["p_lease_seconds"]))
+                    ),
+                    "revision": operation["revision"] + 1,
+                }
+            )
         return {**result, "operation": dict(operation)}
 
-    def _rpc_transition_billing_provider_operation_v1(self, params: dict[str, Any]) -> dict[str, Any]:
+    def _rpc_transition_billing_provider_operation_v1(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
         operation = self._operation_for_params(params)
         if operation["revision"] != params["p_expected_revision"]:
             raise AssertionError("stale operation revision")
         legal_transitions = {
             "started": {
-                "provider_request_in_flight", "definitive_failed",
+                "provider_request_in_flight",
+                "definitive_failed",
                 "definitive_rejected",
             },
             "provider_request_in_flight": {
-                "provider_succeeded", "reconciliation_required",
-                "definitive_failed", "definitive_rejected",
+                "provider_succeeded",
+                "reconciliation_required",
+                "definitive_failed",
+                "definitive_rejected",
             },
             "provider_succeeded": {"projected", "reconciliation_required"},
             "projected": {"completed", "reconciliation_required"},
             "reconciliation_required": {
-                "provider_succeeded", "projected", "definitive_failed",
+                "provider_succeeded",
+                "projected",
+                "definitive_failed",
                 "definitive_rejected",
             },
         }
@@ -1081,21 +1066,34 @@ class BillingProviderOperationRpcMixin:
         operation["revision"] += 1
         return {"outcome": "completed", "operation": dict(operation)}
 
-    def _rpc_read_active_billing_payer_payment_consent_v1(self, params: dict[str, Any]) -> dict[str, Any]:
-        consent = next((row for row in self.tables.get("billing_payer_payment_consents", [])
-            if row.get("studio_id") == params["p_studio_id"]
-            and row.get("payer_id") == params["p_payer_id"]
-            and row.get("terms_version") == params["p_terms_version"]
-            and row.get("stripe_connected_account_id") == params["p_stripe_connected_account_id"]
-            and row.get("connect_account_generation") == params["p_connect_account_generation"]
-            and row.get("completed_at") and not row.get("revoked_at") and not row.get("superseded_at")), None)
+    def _rpc_read_active_billing_payer_payment_consent_v1(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        consent = next(
+            (
+                row
+                for row in self.tables.get("billing_payer_payment_consents", [])
+                if row.get("studio_id") == params["p_studio_id"]
+                and row.get("payer_id") == params["p_payer_id"]
+                and row.get("terms_version") == params["p_terms_version"]
+                and row.get("stripe_connected_account_id")
+                == params["p_stripe_connected_account_id"]
+                and row.get("connect_account_generation") == params["p_connect_account_generation"]
+                and row.get("completed_at")
+                and not row.get("revoked_at")
+                and not row.get("superseded_at")
+            ),
+            None,
+        )
         if consent is None:
-            raise PostgrestAPIError({
-                "code": "P0002",
-                "message": "billing_payer_active_consent_not_found",
-                "details": "",
-                "hint": "",
-            })
+            raise PostgrestAPIError(
+                {
+                    "code": "P0002",
+                    "message": "billing_payer_active_consent_not_found",
+                    "details": "",
+                    "hint": "",
+                }
+            )
         return {"outcome": "read", "consent": dict(consent)}
 
     def _rpc_authorize_billing_provider_operation_recovery_v1(
@@ -1118,24 +1116,20 @@ class BillingProviderOperationRpcMixin:
         }:
             raise AssertionError("operation is not recoverable")
         lease_acquired_at = self.billing_provider_now
-        lease_expires_at = lease_acquired_at + timedelta(
-            seconds=int(params["p_lease_seconds"])
+        lease_expires_at = lease_acquired_at + timedelta(seconds=int(params["p_lease_seconds"]))
+        operation.update(
+            {
+                "state": "recovery_authorized",
+                "recovery_actor_id": params["p_recovery_actor_id"],
+                "recovery_proof_sha256": params["p_recovery_proof_sha256"],
+                "recovery_outcome": params["p_recovery_outcome"],
+                "lease_owner": params["p_lease_owner"],
+                "lease_acquired_at": self._billing_provider_timestamp(lease_acquired_at),
+                "lease_expires_at": self._billing_provider_timestamp(lease_expires_at),
+                "revision": operation["revision"] + 1,
+                "reconciliation_reason_code": None,
+            }
         )
-        operation.update({
-            "state": "recovery_authorized",
-            "recovery_actor_id": params["p_recovery_actor_id"],
-            "recovery_proof_sha256": params["p_recovery_proof_sha256"],
-            "recovery_outcome": params["p_recovery_outcome"],
-            "lease_owner": params["p_lease_owner"],
-            "lease_acquired_at": self._billing_provider_timestamp(
-                lease_acquired_at
-            ),
-            "lease_expires_at": self._billing_provider_timestamp(
-                lease_expires_at
-            ),
-            "revision": operation["revision"] + 1,
-            "reconciliation_reason_code": None,
-        })
         return {"outcome": "recovery_authorized", "operation": dict(operation)}
 
     def _rpc_authorize_billing_provider_operation_recovery_v2(
@@ -1149,13 +1143,26 @@ class BillingProviderOperationRpcMixin:
         if operation.get("provider_step_plan_sha256") is not None:
             raise AssertionError("parent step recovery denied")
         resource = next(
-            candidate for candidate in self.billing_provider_operation_resources.values()
+            candidate
+            for candidate in self.billing_provider_operation_resources.values()
             if candidate.get("operation_id") == operation["id"]
         )
-        current_plan = next((row for row in self.tables.get("billing_plans", [])
-            if row.get("id") == resource.get("resource_id")), None)
-        current_payer = next((row for row in self.tables.get("billing_payers", [])
-            if row.get("id") == resource.get("resource_id")), None)
+        current_plan = next(
+            (
+                row
+                for row in self.tables.get("billing_plans", [])
+                if row.get("id") == resource.get("resource_id")
+            ),
+            None,
+        )
+        current_payer = next(
+            (
+                row
+                for row in self.tables.get("billing_payers", [])
+                if row.get("id") == resource.get("resource_id")
+            ),
+            None,
+        )
         plan_match = re.fullmatch(
             r"plan_sync_mode:product_update_only:target_product_id:(prod_[A-Za-z0-9]+)",
             str(operation.get("result_summary") or ""),
@@ -1167,23 +1174,25 @@ class BillingProviderOperationRpcMixin:
         saved_evidence_valid = {
             "plan.sync": bool(
                 operation.get("result_code") == "plan_sync_product_update_started"
-                and plan_match and current_plan
+                and plan_match
+                and current_plan
                 and current_plan.get("status") == "active"
                 and current_plan.get("archived_at") is None
                 and current_plan.get("stripe_product_id") == plan_match.group(1)
             ),
             "payer.sync": bool(
-                current_payer and (
+                current_payer
+                and (
                     (
                         operation.get("result_code") == "payer_sync_create_started"
                         and operation.get("result_summary")
                         == "sync_mode:create:target_customer_id:none"
                         and current_payer.get("stripe_customer_id") is None
-                    ) or (
+                    )
+                    or (
                         operation.get("result_code") == "payer_sync_update_started"
                         and payer_update_match
-                        and current_payer.get("stripe_customer_id")
-                        == payer_update_match.group(1)
+                        and current_payer.get("stripe_customer_id") == payer_update_match.group(1)
                     )
                 )
             ),
@@ -1191,8 +1200,8 @@ class BillingProviderOperationRpcMixin:
                 operation.get("result_code") == "payment_refund_started"
                 and isinstance(operation.get("result_summary"), str)
                 and operation["result_summary"].startswith("amount_cents:")
-                and operation["result_summary"][len("amount_cents:"):].isdigit()
-                and int(operation["result_summary"][len("amount_cents:"):]) > 0
+                and operation["result_summary"][len("amount_cents:") :].isdigit()
+                and int(operation["result_summary"][len("amount_cents:") :]) > 0
             ),
         }.get(operation["operation_type"], False)
         if not saved_evidence_valid:
@@ -1228,34 +1237,30 @@ class BillingProviderOperationRpcMixin:
                 or operation.get("provider_secondary_object_id") is not None
             ):
                 raise AssertionError("invalid reconcile recovery")
-            suffix = recovered_id[len(prefix):]
+            suffix = recovered_id[len(prefix) :]
             if not suffix or not suffix.isalnum():
                 raise AssertionError("invalid recovered object id")
         else:
             raise AssertionError("unknown recovery outcome")
         lease_acquired_at = self.billing_provider_now
-        lease_expires_at = lease_acquired_at + timedelta(
-            seconds=int(params["p_lease_seconds"])
+        lease_expires_at = lease_acquired_at + timedelta(seconds=int(params["p_lease_seconds"]))
+        operation.update(
+            {
+                "state": "recovery_authorized",
+                "provider_object_id": recovered_id,
+                "recovery_actor_id": params["p_recovery_actor_id"],
+                "recovery_proof_sha256": params["p_recovery_proof_sha256"],
+                "recovery_outcome": outcome,
+                "recovery_authorized_at": self._billing_provider_timestamp(
+                    self.billing_provider_now
+                ),
+                "lease_owner": params["p_lease_owner"],
+                "lease_acquired_at": self._billing_provider_timestamp(lease_acquired_at),
+                "lease_expires_at": self._billing_provider_timestamp(lease_expires_at),
+                "revision": operation["revision"] + 1,
+                "reconciliation_reason_code": None,
+            }
         )
-        operation.update({
-            "state": "recovery_authorized",
-            "provider_object_id": recovered_id,
-            "recovery_actor_id": params["p_recovery_actor_id"],
-            "recovery_proof_sha256": params["p_recovery_proof_sha256"],
-            "recovery_outcome": outcome,
-            "recovery_authorized_at": self._billing_provider_timestamp(
-                self.billing_provider_now
-            ),
-            "lease_owner": params["p_lease_owner"],
-            "lease_acquired_at": self._billing_provider_timestamp(
-                lease_acquired_at
-            ),
-            "lease_expires_at": self._billing_provider_timestamp(
-                lease_expires_at
-            ),
-            "revision": operation["revision"] + 1,
-            "reconciliation_reason_code": None,
-        })
         return {"outcome": "recovery_authorized", "operation": dict(operation)}
 
     def _rpc_mark_billing_provider_recovery_reconciliation_v2(
@@ -1266,18 +1271,19 @@ class BillingProviderOperationRpcMixin:
         if (
             operation["revision"] != params["p_expected_revision"]
             or operation.get("state") != "recovery_authorized"
-            or operation.get("recovery_outcome")
-            != "provider_succeeded_reconcile_only"
+            or operation.get("recovery_outcome") != "provider_succeeded_reconcile_only"
             or operation.get("lease_owner") != params["p_lease_owner"]
         ):
             raise AssertionError("invalid recovery reconciliation")
-        operation.update({
-            "state": "reconciliation_required",
-            "reconciliation_reason_code": params["p_reconciliation_reason_code"],
-            "lease_owner": None,
-            "lease_expires_at": None,
-            "revision": operation["revision"] + 1,
-        })
+        operation.update(
+            {
+                "state": "reconciliation_required",
+                "reconciliation_reason_code": params["p_reconciliation_reason_code"],
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "revision": operation["revision"] + 1,
+            }
+        )
         return {"outcome": "reconciliation_required", "operation": dict(operation)}
 
     def _rpc_reject_billing_provider_recovery_source_drift_v2(
@@ -1291,13 +1297,15 @@ class BillingProviderOperationRpcMixin:
             or operation.get("lease_owner") != params["p_lease_owner"]
         ):
             raise AssertionError("invalid recovery source drift")
-        operation.update({
-            "state": "definitive_rejected",
-            "error_code": params["p_error_code"],
-            "lease_owner": None,
-            "lease_expires_at": None,
-            "revision": operation["revision"] + 1,
-        })
+        operation.update(
+            {
+                "state": "definitive_rejected",
+                "error_code": params["p_error_code"],
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "revision": operation["revision"] + 1,
+            }
+        )
         return {"outcome": "definitive_rejected", "operation": dict(operation)}
 
     def _rpc_claim_billing_enrollment_transition_v1(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -1319,7 +1327,9 @@ class BillingProviderOperationRpcMixin:
                 "requested_caller_request_key": params["p_caller_request_key"],
                 "intent": dict(existing),
             }
-        intent_id = f"00000000-0000-4000-8000-{len(self.billing_enrollment_transition_intents) + 9701:012d}"
+        intent_id = (
+            f"00000000-0000-4000-8000-{len(self.billing_enrollment_transition_intents) + 9701:012d}"
+        )
         operation_type = (
             "enrollment.cancel.immediate"
             if params["p_transition_kind"] == "immediate_cancel"
@@ -1327,17 +1337,19 @@ class BillingProviderOperationRpcMixin:
         )
         operation = None
         if params["p_transition_kind"] in {"immediate_cancel", "schedule_period_end"}:
-            operation = self._rpc_claim_billing_provider_operation_v1({
-                "p_studio_id": params["p_studio_id"],
-                "p_actor_id": params["p_actor_id"],
-                "p_operation_type": operation_type,
-                "p_caller_request_key": params["p_caller_request_key"],
-                "p_request_sha256": params["p_request_sha256"],
-                "p_stripe_connected_account_id": params["p_stripe_connected_account_id"],
-                "p_connect_account_generation": params["p_connect_account_generation"],
-                "p_lease_owner": params["p_lease_owner"],
-                "p_lease_seconds": params["p_lease_seconds"],
-            })["operation"]
+            operation = self._rpc_claim_billing_provider_operation_v1(
+                {
+                    "p_studio_id": params["p_studio_id"],
+                    "p_actor_id": params["p_actor_id"],
+                    "p_operation_type": operation_type,
+                    "p_caller_request_key": params["p_caller_request_key"],
+                    "p_request_sha256": params["p_request_sha256"],
+                    "p_stripe_connected_account_id": params["p_stripe_connected_account_id"],
+                    "p_connect_account_generation": params["p_connect_account_generation"],
+                    "p_lease_owner": params["p_lease_owner"],
+                    "p_lease_seconds": params["p_lease_seconds"],
+                }
+            )["operation"]
         intent = {
             "id": intent_id,
             "studio_id": params["p_studio_id"],
@@ -1362,7 +1374,9 @@ class BillingProviderOperationRpcMixin:
             "provider_quantity": params["p_provider_quantity"],
             "initiated_by": params["p_actor_id"],
             "reason_code": params["p_reason_code"],
-            "state": "scheduled" if params["p_transition_kind"] == "schedule_period_end" else "due_claimed",
+            "state": "scheduled"
+            if params["p_transition_kind"] == "schedule_period_end"
+            else "due_claimed",
             "provider_evidence_sha256": None,
             "revision": 2 if operation else 1,
         }
@@ -1374,7 +1388,9 @@ class BillingProviderOperationRpcMixin:
             "intent": dict(intent),
         }
 
-    def _rpc_read_billing_enrollment_transition_by_key_v1(self, params: dict[str, Any]) -> dict[str, Any]:
+    def _rpc_read_billing_enrollment_transition_by_key_v1(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
         alias_key = (
             params["p_studio_id"],
             params["p_transition_kind"],
@@ -1396,7 +1412,9 @@ class BillingProviderOperationRpcMixin:
             "intent": dict(intent),
         }
 
-    def _rpc_transition_billing_enrollment_transition_v1(self, params: dict[str, Any]) -> dict[str, Any]:
+    def _rpc_transition_billing_enrollment_transition_v1(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
         intent = self.billing_enrollment_transition_intents[params["p_intent_id"]]
         operation = self._operation_by_id(params["p_provider_operation_id"])
         state = operation["state"]
@@ -1412,11 +1430,15 @@ class BillingProviderOperationRpcMixin:
         source_id = intent.get("source_intent_id")
         if state == "completed" and source_id:
             source = self.billing_enrollment_transition_intents[source_id]
-            source["state"] = "revoked" if intent["transition_kind"] == "revoke_scheduled" else "completed"
+            source["state"] = (
+                "revoked" if intent["transition_kind"] == "revoke_scheduled" else "completed"
+            )
             source["revision"] += 1
         return {"outcome": "transitioned", "intent": dict(intent)}
 
-    def _rpc_revoke_billing_enrollment_transition_v1(self, params: dict[str, Any]) -> dict[str, Any]:
+    def _rpc_revoke_billing_enrollment_transition_v1(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
         alias_key = (
             params["p_studio_id"],
             "revoke_scheduled",
@@ -1442,8 +1464,11 @@ class BillingProviderOperationRpcMixin:
                 **({"operation": dict(operation)} if operation else {}),
             }
         source = self.billing_enrollment_transition_intents[params["p_intent_id"]]
-        intent_id = f"00000000-0000-4000-8000-{len(self.billing_enrollment_transition_intents) + 9701:012d}"
-        operation = self._rpc_claim_billing_provider_operation_v1({
+        intent_id = (
+            f"00000000-0000-4000-8000-{len(self.billing_enrollment_transition_intents) + 9701:012d}"
+        )
+        operation = self._rpc_claim_billing_provider_operation_v1(
+            {
                 "p_studio_id": params["p_studio_id"],
                 "p_actor_id": params["p_actor_id"],
                 "p_operation_type": "enrollment.cancel.period_end.revoke",
@@ -1453,7 +1478,8 @@ class BillingProviderOperationRpcMixin:
                 "p_connect_account_generation": source["connect_account_generation"],
                 "p_lease_owner": params["p_lease_owner"],
                 "p_lease_seconds": params["p_lease_seconds"],
-            })["operation"]
+            }
+        )["operation"]
         intent = {
             **source,
             "id": intent_id,
@@ -1476,16 +1502,24 @@ class BillingProviderOperationRpcMixin:
             "operation": dict(operation),
         }
 
-    def _rpc_claim_due_billing_enrollment_transitions_v1(self, params: dict[str, Any]) -> list[dict[str, Any]]:
+    def _rpc_claim_due_billing_enrollment_transitions_v1(
+        self, params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         results = []
         for source in list(self.billing_enrollment_transition_intents.values()):
             if source["transition_kind"] != "schedule_period_end":
                 continue
             if source["state"] == "due_claimed":
-                execute = next((candidate for candidate in self.billing_enrollment_transition_intents.values()
-                    if candidate.get("source_intent_id") == source["id"]
-                    and candidate.get("transition_kind") == "execute_due"
-                    and candidate.get("state") == "due_claimed"), None)
+                execute = next(
+                    (
+                        candidate
+                        for candidate in self.billing_enrollment_transition_intents.values()
+                        if candidate.get("source_intent_id") == source["id"]
+                        and candidate.get("transition_kind") == "execute_due"
+                        and candidate.get("state") == "due_claimed"
+                    ),
+                    None,
+                )
                 if execute is not None:
                     execute["lease_owner"] = params["p_worker_id"]
                     execute["revision"] += 1
@@ -1499,8 +1533,7 @@ class BillingProviderOperationRpcMixin:
                 continue
             intent_id = f"00000000-0000-4000-8000-{len(self.billing_enrollment_transition_intents) + 9701:012d}"
             legacy_item_mutation = (
-                source.get("mutation_strategy")
-                == "subscription_item_delete_at_period_end"
+                source.get("mutation_strategy") == "subscription_item_delete_at_period_end"
                 and source.get("provider_operation_id") is None
             )
             execute = {
@@ -1510,14 +1543,10 @@ class BillingProviderOperationRpcMixin:
                 "transition_kind": "execute_due",
                 "provider_operation_id": None,
                 "provider_caller_request_key": (
-                    f"enrollment-period-execute:{source['id']}"
-                    if legacy_item_mutation
-                    else None
+                    f"enrollment-period-execute:{source['id']}" if legacy_item_mutation else None
                 ),
                 "provider_request_sha256": (
-                    hashlib.sha256(
-                        f"legacy-due:{source['id']}".encode()
-                    ).hexdigest()
+                    hashlib.sha256(f"legacy-due:{source['id']}".encode()).hexdigest()
                     if legacy_item_mutation
                     else None
                 ),
@@ -1533,26 +1562,34 @@ class BillingProviderOperationRpcMixin:
                 break
         return results
 
-    def _rpc_start_due_billing_enrollment_transition_v1(self, params: dict[str, Any]) -> dict[str, Any]:
+    def _rpc_start_due_billing_enrollment_transition_v1(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
         intent = self.billing_enrollment_transition_intents[params["p_intent_id"]]
-        if intent["revision"] != params["p_expected_revision"] or intent.get("provider_operation_id"):
+        if intent["revision"] != params["p_expected_revision"] or intent.get(
+            "provider_operation_id"
+        ):
             raise AssertionError("due transition is not startable")
-        operation = self._rpc_claim_billing_provider_operation_v1({
-            "p_studio_id": intent["studio_id"],
-            "p_actor_id": intent["initiated_by"],
-            "p_operation_type": "enrollment.cancel.period_end.execute",
-            "p_caller_request_key": intent["provider_caller_request_key"],
-            "p_request_sha256": intent["provider_request_sha256"],
-            "p_stripe_connected_account_id": intent["stripe_connected_account_id"],
-            "p_connect_account_generation": intent["connect_account_generation"],
-            "p_lease_owner": params["p_worker_id"],
-            "p_lease_seconds": params["p_lease_seconds"],
-        })["operation"]
+        operation = self._rpc_claim_billing_provider_operation_v1(
+            {
+                "p_studio_id": intent["studio_id"],
+                "p_actor_id": intent["initiated_by"],
+                "p_operation_type": "enrollment.cancel.period_end.execute",
+                "p_caller_request_key": intent["provider_caller_request_key"],
+                "p_request_sha256": intent["provider_request_sha256"],
+                "p_stripe_connected_account_id": intent["stripe_connected_account_id"],
+                "p_connect_account_generation": intent["connect_account_generation"],
+                "p_lease_owner": params["p_worker_id"],
+                "p_lease_seconds": params["p_lease_seconds"],
+            }
+        )["operation"]
         intent["provider_operation_id"] = operation["id"]
         intent["revision"] += 1
         return {"outcome": "started", "intent": dict(intent), "operation": dict(operation)}
 
-    def _rpc_complete_due_billing_enrollment_transition_v1(self, params: dict[str, Any]) -> dict[str, Any]:
+    def _rpc_complete_due_billing_enrollment_transition_v1(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
         intent = self.billing_enrollment_transition_intents[params["p_intent_id"]]
         if intent["revision"] != params["p_expected_revision"]:
             raise AssertionError("stale due transition revision")
@@ -1574,9 +1611,7 @@ class BillingProviderOperationRpcMixin:
         completion_evidence = hashlib.sha256(
             json.dumps(
                 {
-                    "provider_evidence_sha256": params[
-                        "p_provider_evidence_sha256"
-                    ],
+                    "provider_evidence_sha256": params["p_provider_evidence_sha256"],
                     "item_transitions": canonical_mappings,
                 },
                 sort_keys=True,
@@ -1596,13 +1631,9 @@ class BillingProviderOperationRpcMixin:
         target = next(
             row
             for row in self.tables["student_billing_enrollments"]
-            if row["id"] == intent["enrollment_id"]
-            and row["studio_id"] == params["p_studio_id"]
+            if row["id"] == intent["enrollment_id"] and row["studio_id"] == params["p_studio_id"]
         )
-        mappings = {
-            row["old_item_id"]: row
-            for row in params["p_item_transitions"]
-        }
+        mappings = {row["old_item_id"]: row for row in params["p_item_transitions"]}
         old_target_id = intent["stripe_subscription_item_id"]
         if old_target_id not in mappings:
             raise AssertionError("target item transition mapping missing")
@@ -1610,34 +1641,37 @@ class BillingProviderOperationRpcMixin:
             if (
                 row["id"] != target["id"]
                 and row.get("studio_id") == params["p_studio_id"]
-                and row.get("billing_subscription_id")
-                == intent["billing_subscription_id"]
+                and row.get("billing_subscription_id") == intent["billing_subscription_id"]
                 and row.get("status") in {"pending", "active"}
                 and row.get("stripe_subscription_item_id") in mappings
             ):
-                replacement = mappings[row["stripe_subscription_item_id"]][
-                    "new_item_id"
-                ]
+                replacement = mappings[row["stripe_subscription_item_id"]]["new_item_id"]
                 if replacement is None:
                     raise AssertionError("surviving item transition mapping is null")
                 row["stripe_subscription_item_id"] = replacement
-        target.update({
-            "status": "canceled",
-            "billing_status": "unpaid",
-            "billing_subscription_id": None,
-            "stripe_subscription_id": None,
-            "stripe_subscription_item_id": None,
-        })
-        intent.update({
-            "state": "completed",
-            "provider_evidence_sha256": completion_evidence,
-            "revision": intent["revision"] + 1,
-        })
-        source.update({
-            "state": "completed",
-            "provider_evidence_sha256": completion_evidence,
-            "revision": source["revision"] + 1,
-        })
+        target.update(
+            {
+                "status": "canceled",
+                "billing_status": "unpaid",
+                "billing_subscription_id": None,
+                "stripe_subscription_id": None,
+                "stripe_subscription_item_id": None,
+            }
+        )
+        intent.update(
+            {
+                "state": "completed",
+                "provider_evidence_sha256": completion_evidence,
+                "revision": intent["revision"] + 1,
+            }
+        )
+        source.update(
+            {
+                "state": "completed",
+                "provider_evidence_sha256": completion_evidence,
+                "revision": source["revision"] + 1,
+            }
+        )
         return {"outcome": "completed", "intent": dict(intent)}
 
     def _rpc_read_billing_enrollment_item_schedule_identity_v31(
@@ -1658,13 +1692,10 @@ class BillingProviderOperationRpcMixin:
             intent.get("studio_id") != params["p_studio_id"]
             or source.get("studio_id") != params["p_studio_id"]
             or source.get("transition_kind") != "schedule_period_end"
-            or source.get("mutation_strategy")
-            != "subscription_item_delete_at_period_end"
-            or operation.get("operation_type")
-            != "enrollment.cancel.period_end.schedule"
+            or source.get("mutation_strategy") != "subscription_item_delete_at_period_end"
+            or operation.get("operation_type") != "enrollment.cancel.period_end.schedule"
             or operation.get("state") not in {"provider_succeeded", "projected", "completed"}
-            or operation.get("provider_object_id")
-            != source.get("stripe_subscription_item_id")
+            or operation.get("provider_object_id") != source.get("stripe_subscription_item_id")
             or not schedule_id
             or update_step.get("step_order") != 2
             or update_step.get("step_name") != "schedule_update"
@@ -1688,19 +1719,23 @@ class BillingProviderOperationRpcMixin:
         intent = self.billing_enrollment_transition_intents[params["p_intent_id"]]
         if intent["revision"] != params["p_expected_revision"]:
             raise AssertionError("stale due reconciliation revision")
-        intent.update({
-            "state": "reconciliation_required",
-            "provider_evidence_sha256": params["p_provider_evidence_sha256"],
-            "reconciliation_reason_code": params["p_reconciliation_reason_code"],
-            "revision": intent["revision"] + 1,
-        })
+        intent.update(
+            {
+                "state": "reconciliation_required",
+                "provider_evidence_sha256": params["p_provider_evidence_sha256"],
+                "reconciliation_reason_code": params["p_reconciliation_reason_code"],
+                "revision": intent["revision"] + 1,
+            }
+        )
         source = self.billing_enrollment_transition_intents[intent["source_intent_id"]]
-        source.update({
-            "state": "reconciliation_required",
-            "provider_evidence_sha256": params["p_provider_evidence_sha256"],
-            "reconciliation_reason_code": params["p_reconciliation_reason_code"],
-            "revision": source["revision"] + 1,
-        })
+        source.update(
+            {
+                "state": "reconciliation_required",
+                "provider_evidence_sha256": params["p_provider_evidence_sha256"],
+                "reconciliation_reason_code": params["p_reconciliation_reason_code"],
+                "revision": source["revision"] + 1,
+            }
+        )
         return {"outcome": "reconciliation_required", "intent": dict(intent)}
 
     def _rpc_mark_billing_enrollment_due_pre_provider_reconciliation_v1(
@@ -1708,21 +1743,27 @@ class BillingProviderOperationRpcMixin:
         params: dict[str, Any],
     ) -> dict[str, Any]:
         intent = self.billing_enrollment_transition_intents[params["p_intent_id"]]
-        if intent["revision"] != params["p_expected_revision"] or intent.get("provider_operation_id"):
+        if intent["revision"] != params["p_expected_revision"] or intent.get(
+            "provider_operation_id"
+        ):
             raise AssertionError("due transition is not pre-provider reconcilable")
-        intent.update({
-            "state": "reconciliation_required",
-            "provider_evidence_sha256": params["p_provider_evidence_sha256"],
-            "reconciliation_reason_code": params["p_reconciliation_reason_code"],
-            "revision": intent["revision"] + 1,
-        })
+        intent.update(
+            {
+                "state": "reconciliation_required",
+                "provider_evidence_sha256": params["p_provider_evidence_sha256"],
+                "reconciliation_reason_code": params["p_reconciliation_reason_code"],
+                "revision": intent["revision"] + 1,
+            }
+        )
         source = self.billing_enrollment_transition_intents[intent["source_intent_id"]]
-        source.update({
-            "state": "reconciliation_required",
-            "provider_evidence_sha256": params["p_provider_evidence_sha256"],
-            "reconciliation_reason_code": params["p_reconciliation_reason_code"],
-            "revision": source["revision"] + 1,
-        })
+        source.update(
+            {
+                "state": "reconciliation_required",
+                "provider_evidence_sha256": params["p_provider_evidence_sha256"],
+                "reconciliation_reason_code": params["p_reconciliation_reason_code"],
+                "revision": source["revision"] + 1,
+            }
+        )
         return {"outcome": "reconciliation_required", "intent": dict(intent)}
 
     def _rpc_register_billing_provider_operation_step_plan_v1(
@@ -1739,7 +1780,10 @@ class BillingProviderOperationRpcMixin:
                 "operation": dict(operation),
                 "steps": [dict(step) for step in existing["steps"]],
             }
-        if operation["state"] != "started" or operation["revision"] != params["p_expected_parent_revision"]:
+        if (
+            operation["state"] != "started"
+            or operation["revision"] != params["p_expected_parent_revision"]
+        ):
             raise AssertionError("parent is not registerable")
         steps = [
             {
@@ -1763,7 +1807,9 @@ class BillingProviderOperationRpcMixin:
         }
         operation["provider_step_plan_sha256"] = params["p_plan_sha256"]
         operation["provider_step_expected_count"] = len(steps)
-        operation["provider_step_plan_registered_at"] = self._billing_provider_timestamp(self.billing_provider_now)
+        operation["provider_step_plan_registered_at"] = self._billing_provider_timestamp(
+            self.billing_provider_now
+        )
         operation["revision"] += 1
         return {
             "outcome": "registered",
@@ -1829,23 +1875,23 @@ class BillingProviderOperationRpcMixin:
             if params.get(param) is not None:
                 step[field] = params[param]
         step["revision"] += 1
-        if (
-            operation.get("operation_type")
-            == "enrollment.cancel.period_end.schedule"
-            and step["state"] in {
-                "reconciliation_required",
-                "definitive_failed",
-                "definitive_rejected",
-            }
-        ):
-            operation.update({
-                "state": "reconciliation_required",
-                "reconciliation_reason_code": (
-                    params.get("p_reconciliation_reason_code")
-                    or "provider_step_phase_incomplete"
-                ),
-                "revision": operation["revision"] + 1,
-            })
+        if operation.get("operation_type") == "enrollment.cancel.period_end.schedule" and step[
+            "state"
+        ] in {
+            "reconciliation_required",
+            "definitive_failed",
+            "definitive_rejected",
+        }:
+            operation.update(
+                {
+                    "state": "reconciliation_required",
+                    "reconciliation_reason_code": (
+                        params.get("p_reconciliation_reason_code")
+                        or "provider_step_phase_incomplete"
+                    ),
+                    "revision": operation["revision"] + 1,
+                }
+            )
         return {"outcome": "transitioned", "operation": dict(operation), "step": dict(step)}
 
     def _rpc_complete_billing_provider_operation_provider_phase_v1(
@@ -1873,7 +1919,8 @@ class BillingProviderOperationRpcMixin:
             operation["result_code"] = "provider_step_phase_completed"
             outcome = "completed"
         elif any(
-            step["state"] in {
+            step["state"]
+            in {
                 "provider_request_in_flight",
                 "reconciliation_required",
                 "definitive_failed",
@@ -1906,8 +1953,7 @@ class BillingProviderOperationRpcMixin:
             and operation.get("result_code") == "provider_step_phase_completed"
         ):
             if (
-                operation.get("provider_object_id")
-                != final_step.get("provider_object_id")
+                operation.get("provider_object_id") != final_step.get("provider_object_id")
                 or operation.get("provider_secondary_object_id")
                 != final_step.get("provider_secondary_object_id")
                 or operation.get("lease_owner") != params["p_lease_owner"]
@@ -1941,9 +1987,7 @@ class BillingProviderOperationRpcMixin:
             for step in steps
         ):
             operation["state"] = "reconciliation_required"
-            operation["reconciliation_reason_code"] = (
-                "provider_step_phase_incomplete"
-            )
+            operation["reconciliation_reason_code"] = "provider_step_phase_incomplete"
             operation["lease_owner"] = None
             outcome = "reconciliation_required"
         else:
@@ -1961,13 +2005,15 @@ class BillingProviderOperationRpcMixin:
     ) -> dict[str, Any]:
         operation = self._operation_for_params(params)
         step = self._step_for_params(operation, params)
-        step.update({
-            "state": "recovery_authorized",
-            "recovery_actor_id": params["p_recovery_actor_id"],
-            "recovery_proof_sha256": params["p_recovery_proof_sha256"],
-            "recovery_outcome": params["p_recovery_outcome"],
-            "revision": step["revision"] + 1,
-        })
+        step.update(
+            {
+                "state": "recovery_authorized",
+                "recovery_actor_id": params["p_recovery_actor_id"],
+                "recovery_proof_sha256": params["p_recovery_proof_sha256"],
+                "recovery_outcome": params["p_recovery_outcome"],
+                "revision": step["revision"] + 1,
+            }
+        )
         return {"outcome": "recovery_authorized", "operation": dict(operation), "step": dict(step)}
 
     def _operation_for_params(self, params: dict[str, Any]) -> dict[str, Any]:

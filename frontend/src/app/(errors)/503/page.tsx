@@ -4,7 +4,9 @@ import { StatusAction } from "@/components/status-action";
 import { StatusReloadAction } from "@/components/status-reload-action";
 import { navigationRecoveryPath } from "@/lib/navigation-recovery";
 
-export default async function Custom503Page({ searchParams }: {
+export default async function Custom503Page({
+  searchParams,
+}: {
   searchParams: Promise<{ returnTo?: string | string[] }>;
 }) {
   const returnTo = navigationRecoveryPath((await searchParams).returnTo);

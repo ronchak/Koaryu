@@ -25,7 +25,7 @@ describe("dashboard widget catalog", () => {
         "Saved Report",
         "Quick Actions",
         "Emergency Contacts",
-      ]
+      ],
     );
     const expectedAllowedSizes = {
       needs_attention: ["2x2"],

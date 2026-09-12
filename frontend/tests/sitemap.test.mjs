@@ -24,11 +24,11 @@ describe("sitemap freshness", () => {
 
     assert.deepEqual(
       first.map((entry) => entry.lastModified?.toISOString()),
-      second.map((entry) => entry.lastModified?.toISOString())
+      second.map((entry) => entry.lastModified?.toISOString()),
     );
     assert.equal(
       first.every((entry) => entry.lastModified?.toISOString() === "2026-05-23T00:00:00.000Z"),
-      true
+      true,
     );
   });
 

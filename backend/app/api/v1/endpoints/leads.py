@@ -9,8 +9,11 @@ from app.core.deps import (
     get_supabase,
 )
 from app.schemas.lead import (
-    LeadCreate, LeadUpdate, LeadResponse,
-    LeadActivityCreate, LeadActivityResponse,
+    LeadCreate,
+    LeadUpdate,
+    LeadResponse,
+    LeadActivityCreate,
+    LeadActivityResponse,
     LeadConvert,
 )
 from app.services.lead_service import LeadService
@@ -27,6 +30,7 @@ async def list_leads(
 ):
     async def _provider_operation(client):
         return await LeadService(client).list_leads(studio_id, stage, source)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -43,6 +47,7 @@ async def create_lead(
 ):
     async def _provider_operation(client):
         return await LeadService(client).create_lead(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -58,6 +63,7 @@ async def get_lead(
 ):
     async def _provider_operation(client):
         return await LeadService(client).get_lead(lead_id, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -75,6 +81,7 @@ async def update_lead(
 ):
     async def _provider_operation(client):
         return await LeadService(client).update_lead(lead_id, data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -90,6 +97,7 @@ async def get_activities(
 ):
     async def _provider_operation(client):
         return await LeadService(client).get_activities(lead_id, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -107,6 +115,7 @@ async def add_activity(
 ):
     async def _provider_operation(client):
         return await LeadService(client).add_activity(lead_id, data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -124,6 +133,7 @@ async def convert_lead(
 ):
     async def _provider_operation(client):
         return await LeadService(client).convert_to_student(lead_id, data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

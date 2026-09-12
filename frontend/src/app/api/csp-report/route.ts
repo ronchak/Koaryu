@@ -42,19 +42,18 @@ function summarize(body: unknown): { directive: string; blockedOrigin: string } 
     return null;
   }
 
-  const report = "csp-report" in body
-    ? (body as Record<string, unknown>)["csp-report"]
-    : body;
+  const report = "csp-report" in body ? (body as Record<string, unknown>)["csp-report"] : body;
 
   if (typeof report !== "object" || report === null) {
     return null;
   }
 
   const fields = report as Record<string, unknown>;
-  const directive = fields["effective-directive"]
-    ?? fields["effectiveDirective"]
-    ?? fields["violated-directive"]
-    ?? fields["violatedDirective"];
+  const directive =
+    fields["effective-directive"] ??
+    fields["effectiveDirective"] ??
+    fields["violated-directive"] ??
+    fields["violatedDirective"];
 
   return {
     directive: typeof directive === "string" ? directive.slice(0, 64) : "unknown",
@@ -88,9 +87,10 @@ export async function POST(request: Request) {
   // A reports+json payload is an array of reports; csp-report is a single object.
   const entries = Array.isArray(parsed) ? parsed.slice(0, 10) : [parsed];
   for (const entry of entries) {
-    const candidate = typeof entry === "object" && entry !== null && "body" in entry
-      ? (entry as Record<string, unknown>).body
-      : entry;
+    const candidate =
+      typeof entry === "object" && entry !== null && "body" in entry
+        ? (entry as Record<string, unknown>).body
+        : entry;
     const summary = summarize(candidate);
     if (summary) {
       console.warn(

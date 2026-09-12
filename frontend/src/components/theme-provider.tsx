@@ -87,8 +87,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(DEFAULT_THEME);
   const preferenceRef = useRef<ThemePreference>(DEFAULT_THEME);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
-  const [navigationPlacement, setNavigationPlacementState] =
-    useState<NavigationPlacement>(DEFAULT_NAVIGATION_PLACEMENT);
+  const [navigationPlacement, setNavigationPlacementState] = useState<NavigationPlacement>(
+    DEFAULT_NAVIGATION_PLACEMENT,
+  );
 
   const setTheme = useCallback((nextPreference: ThemePreference) => {
     try {
@@ -169,14 +170,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setNavigationPlacement,
       toggleTheme,
     }),
-    [navigationPlacement, preference, resolvedTheme, setNavigationPlacement, setTheme, toggleTheme]
+    [navigationPlacement, preference, resolvedTheme, setNavigationPlacement, setTheme, toggleTheme],
   );
 
-  return (
-    <ThemeContext.Provider value={value}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

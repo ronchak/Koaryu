@@ -137,7 +137,9 @@ class RecordingAlertDestination:
         try:
             UUID(attempt_key)
         except (TypeError, ValueError):
-            raise OperationalAlertError("recording delivery is missing its idempotency key") from None
+            raise OperationalAlertError(
+                "recording delivery is missing its idempotency key"
+            ) from None
         receipt = self._receipts_by_attempt.get(attempt_key)
         if receipt is not None:
             return receipt
@@ -213,22 +215,24 @@ class HttpsAlertDestination:
             settings.OPERATIONAL_ALERT_BACKUP_URL_SHA256,
             settings.OPERATIONAL_ALERT_BACKUP_HOST,
         )
-        return cls({
-            "primary": HttpsDestinationConfig(
-                destination_id="primary-owner",
-                url=primary_url,
-                hostname=settings.OPERATIONAL_ALERT_PRIMARY_HOST,
-                url_fingerprint=settings.OPERATIONAL_ALERT_PRIMARY_URL_SHA256,
-                bearer_secret=settings.OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET,
-            ),
-            "backup": HttpsDestinationConfig(
-                destination_id="backup-owner",
-                url=backup_url,
-                hostname=settings.OPERATIONAL_ALERT_BACKUP_HOST,
-                url_fingerprint=settings.OPERATIONAL_ALERT_BACKUP_URL_SHA256,
-                bearer_secret=settings.OPERATIONAL_ALERT_BACKUP_BEARER_SECRET,
-            ),
-        })
+        return cls(
+            {
+                "primary": HttpsDestinationConfig(
+                    destination_id="primary-owner",
+                    url=primary_url,
+                    hostname=settings.OPERATIONAL_ALERT_PRIMARY_HOST,
+                    url_fingerprint=settings.OPERATIONAL_ALERT_PRIMARY_URL_SHA256,
+                    bearer_secret=settings.OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET,
+                ),
+                "backup": HttpsDestinationConfig(
+                    destination_id="backup-owner",
+                    url=backup_url,
+                    hostname=settings.OPERATIONAL_ALERT_BACKUP_HOST,
+                    url_fingerprint=settings.OPERATIONAL_ALERT_BACKUP_URL_SHA256,
+                    bearer_secret=settings.OPERATIONAL_ALERT_BACKUP_BEARER_SECRET,
+                ),
+            }
+        )
 
     def deliver(
         self,
@@ -277,8 +281,7 @@ class HttpsAlertDestination:
                     raise AlertDeliveryError("redirect_refused")
                 if response.status_code < 200 or response.status_code >= 300:
                     if send_number == 0 and (
-                        response.status_code in {408, 425, 429}
-                        or 500 <= response.status_code < 600
+                        response.status_code in {408, 425, 429} or 500 <= response.status_code < 600
                     ):
                         continue
                     raise AlertDeliveryError("destination_http_failure")
@@ -328,19 +331,23 @@ class OperationalAlertService:
             observed_count = metrics.get(rule.metric)
             if observed_count is None:
                 raise OperationalAlertError(f"missing aggregate metric: {rule.metric}")
-            result = self._execute_rpc_once("evaluate_operational_alert", {
-                "p_environment": normalized_environment,
-                "p_rule_id": rule.rule_id,
-                "p_observed_count": observed_count,
-                "p_threshold": rule.threshold,
-                "p_window_minutes": rule.window_minutes,
-                "p_primary_destination_id": rule.primary_destination_id,
-                "p_backup_destination_id": rule.backup_destination_id,
-                "p_escalation_after_minutes": rule.escalation_after_minutes,
-                "p_severity": rule.severity,
-                "p_commit_sha": normalized_commit,
-                "p_actor_ref": "scheduled-evaluator",
-            }, deadline_monotonic=work_deadline)
+            result = self._execute_rpc_once(
+                "evaluate_operational_alert",
+                {
+                    "p_environment": normalized_environment,
+                    "p_rule_id": rule.rule_id,
+                    "p_observed_count": observed_count,
+                    "p_threshold": rule.threshold,
+                    "p_window_minutes": rule.window_minutes,
+                    "p_primary_destination_id": rule.primary_destination_id,
+                    "p_backup_destination_id": rule.backup_destination_id,
+                    "p_escalation_after_minutes": rule.escalation_after_minutes,
+                    "p_severity": rule.severity,
+                    "p_commit_sha": normalized_commit,
+                    "p_actor_ref": "scheduled-evaluator",
+                },
+                deadline_monotonic=work_deadline,
+            )
             row = first_rpc_row(result)
             if not row or not isinstance(row.get("lifecycle_event"), str):
                 raise OperationalAlertError(f"evaluation result unavailable for {rule.rule_id}")
@@ -407,16 +414,18 @@ class OperationalAlertService:
         actor_role: str,
         actor_ref: str,
     ) -> dict[str, Any] | None:
-        row = first_rpc_row(execute_required_rpc(
-            self.supabase,
-            "acknowledge_operational_alert",
-            {
-                "p_environment": _safe_environment(environment),
-                "p_episode_id": str(episode_id),
-                "p_actor_role": actor_role,
-                "p_actor_ref": actor_ref,
-            },
-        ))
+        row = first_rpc_row(
+            execute_required_rpc(
+                self.supabase,
+                "acknowledge_operational_alert",
+                {
+                    "p_environment": _safe_environment(environment),
+                    "p_episode_id": str(episode_id),
+                    "p_actor_role": actor_role,
+                    "p_actor_ref": actor_ref,
+                },
+            )
+        )
         if not row:
             return None
         event = row.get("lifecycle_event")
@@ -433,11 +442,13 @@ class OperationalAlertService:
         }
 
     def _metric_counts(self, deadline_monotonic: float) -> dict[str, int]:
-        rows = rpc_rows(self._execute_rpc_once(
-            "operational_alert_metric_counts",
-            {},
-            deadline_monotonic=deadline_monotonic,
-        ))
+        rows = rpc_rows(
+            self._execute_rpc_once(
+                "operational_alert_metric_counts",
+                {},
+                deadline_monotonic=deadline_monotonic,
+            )
+        )
         metrics: dict[str, int] = {}
         for row in rows:
             rule_id = row.get("rule_id")
@@ -472,16 +483,18 @@ class OperationalAlertService:
             if not self._has_rpc_window(work_deadline):
                 break
             attempt_key = _new_attempt_key()
-            row = first_rpc_row(self._execute_delivery_rpc(
-                "claim_operational_alert_delivery",
-                {
-                    "p_environment": environment,
-                    "p_lease_token": lease_token,
-                    "p_attempt_key": attempt_key,
-                    "p_lease_seconds": DELIVERY_LEASE_SECONDS,
-                },
-                deadline_monotonic=work_deadline,
-            ))
+            row = first_rpc_row(
+                self._execute_delivery_rpc(
+                    "claim_operational_alert_delivery",
+                    {
+                        "p_environment": environment,
+                        "p_lease_token": lease_token,
+                        "p_attempt_key": attempt_key,
+                        "p_lease_seconds": DELIVERY_LEASE_SECONDS,
+                    },
+                    deadline_monotonic=work_deadline,
+                )
+            )
             if not row:
                 proven_empty = True
                 break
@@ -523,7 +536,9 @@ class OperationalAlertService:
                             "p_attempt_id": attempt_id,
                             "p_lease_token": lease_token,
                             "p_error_code": error_code,
-                            "p_retry_after_seconds": _retry_after_seconds(row.get("attempt_number")),
+                            "p_retry_after_seconds": _retry_after_seconds(
+                                row.get("attempt_number")
+                            ),
                         },
                         deadline_monotonic=hard_deadline,
                     )
@@ -565,22 +580,15 @@ class OperationalAlertService:
                 ) from exc
             raise
         if self._clock() >= deadline_monotonic:
-            raise OperationalAlertDeadlineExceeded(
-                "operational alert evaluation deadline exceeded"
-            )
+            raise OperationalAlertDeadlineExceeded("operational alert evaluation deadline exceeded")
         return result
 
     def _has_rpc_window(self, deadline_monotonic: float) -> bool:
-        return (
-            deadline_monotonic - self._clock()
-            >= EVALUATION_RPC_START_RESERVE_SECONDS
-        )
+        return deadline_monotonic - self._clock() >= EVALUATION_RPC_START_RESERVE_SECONDS
 
     def _require_rpc_window(self, deadline_monotonic: float) -> None:
         if not self._has_rpc_window(deadline_monotonic):
-            raise OperationalAlertDeadlineExceeded(
-                "operational alert evaluation deadline exceeded"
-            )
+            raise OperationalAlertDeadlineExceeded("operational alert evaluation deadline exceeded")
 
     def _execute_delivery_rpc(
         self,
@@ -627,7 +635,11 @@ def _safe_delivery_envelope(
     if destination_id != allowed_destination:
         raise OperationalAlertError("claimed delivery has an unknown logical destination")
     observed_count = row.get("observed_count")
-    if not isinstance(observed_count, int) or isinstance(observed_count, bool) or observed_count < 0:
+    if (
+        not isinstance(observed_count, int)
+        or isinstance(observed_count, bool)
+        or observed_count < 0
+    ):
         raise OperationalAlertError("claimed delivery has an invalid aggregate count")
     delivery_id = str(row.get("delivery_id") or "")
     episode_id = str(row.get("episode_id") or "")
@@ -641,9 +653,8 @@ def _safe_delivery_envelope(
         raise OperationalAlertError("claimed delivery has an invalid idempotency key") from None
     if event_kind not in {"triggered", "escalated", "resolved"}:
         raise OperationalAlertError("claimed delivery has an invalid event kind")
-    if (
-        (event_kind == "triggered" and destination_role != "primary")
-        or (event_kind == "escalated" and destination_role != "backup")
+    if (event_kind == "triggered" and destination_role != "primary") or (
+        event_kind == "escalated" and destination_role != "backup"
     ):
         raise OperationalAlertError("claimed delivery has an invalid destination role")
     return {
@@ -680,7 +691,9 @@ def _safe_commit_sha(value: str | None) -> str | None:
     if value is None:
         return None
     normalized = value.strip().lower()
-    if len(normalized) != 40 or any(character not in "0123456789abcdef" for character in normalized):
+    if len(normalized) != 40 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
         raise OperationalAlertError("commit SHA must be a full lowercase hexadecimal value")
     return normalized
 
@@ -695,7 +708,9 @@ def _strict_receipt(content_type: str | None, payload: bytes) -> str:
     if not isinstance(decoded, dict) or set(decoded) != {"receipt_id"}:
         raise AlertDeliveryError("receipt_shape_invalid")
     receipt = decoded.get("receipt_id")
-    if not isinstance(receipt, str) or not HttpsAlertDestination._receipt_pattern.fullmatch(receipt):
+    if not isinstance(receipt, str) or not HttpsAlertDestination._receipt_pattern.fullmatch(
+        receipt
+    ):
         raise AlertDeliveryError("receipt_id_invalid")
     return receipt
 

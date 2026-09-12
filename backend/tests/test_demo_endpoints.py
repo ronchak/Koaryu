@@ -19,10 +19,13 @@ class DemoEndpointsTest(unittest.TestCase):
         self.assertEqual(result, {"enabled": False})
 
     def test_demo_reset_rejects_when_environment_guard_is_disabled(self):
-        with patch(
-            "app.api.v1.endpoints.demo.get_settings",
-            return_value=SimpleNamespace(DEMO_RESET_ENABLED=False),
-        ), self.assertRaises(HTTPException) as ctx:
+        with (
+            patch(
+                "app.api.v1.endpoints.demo.get_settings",
+                return_value=SimpleNamespace(DEMO_RESET_ENABLED=False),
+            ),
+            self.assertRaises(HTTPException) as ctx,
+        ):
             asyncio.run(
                 demo.reset_demo_studio(
                     user_id="user-1",
@@ -35,12 +38,16 @@ class DemoEndpointsTest(unittest.TestCase):
         self.assertEqual(ctx.exception.detail, "Demo data tools are disabled in this environment.")
 
     def test_demo_reset_requires_destructive_confirmation_header(self):
-        with patch(
-            "app.api.v1.endpoints.demo.get_settings",
-            return_value=SimpleNamespace(DEMO_RESET_ENABLED=True),
-        ), patch(
-            "app.api.v1.endpoints.demo.resolve_staff_role_for_user",
-        ) as resolve_staff, self.assertRaises(HTTPException) as ctx:
+        with (
+            patch(
+                "app.api.v1.endpoints.demo.get_settings",
+                return_value=SimpleNamespace(DEMO_RESET_ENABLED=True),
+            ),
+            patch(
+                "app.api.v1.endpoints.demo.resolve_staff_role_for_user",
+            ) as resolve_staff,
+            self.assertRaises(HTTPException) as ctx,
+        ):
             asyncio.run(
                 demo.reset_demo_studio(
                     user_id="user-1",
@@ -56,18 +63,22 @@ class DemoEndpointsTest(unittest.TestCase):
     def test_demo_reset_uses_resolved_membership_studio_for_service_call(self):
         service = SimpleNamespace(reset_demo_studio=AsyncMock(return_value="reset-ok"))
 
-        with patch(
-            "app.api.v1.endpoints.demo.get_settings",
-            return_value=SimpleNamespace(
-                DEMO_RESET_ENABLED=True,
-                DEMO_RESET_STUDIO_IDS="resolved-studio",
+        with (
+            patch(
+                "app.api.v1.endpoints.demo.get_settings",
+                return_value=SimpleNamespace(
+                    DEMO_RESET_ENABLED=True,
+                    DEMO_RESET_STUDIO_IDS="resolved-studio",
+                ),
             ),
-        ), patch(
-            "app.api.v1.endpoints.demo.resolve_staff_role_for_user",
-            return_value={"studio_id": "resolved-studio", "role": "admin"},
-        ), patch(
-            "app.api.v1.endpoints.demo.DemoService",
-            return_value=service,
+            patch(
+                "app.api.v1.endpoints.demo.resolve_staff_role_for_user",
+                return_value={"studio_id": "resolved-studio", "role": "admin"},
+            ),
+            patch(
+                "app.api.v1.endpoints.demo.DemoService",
+                return_value=service,
+            ),
         ):
             result = asyncio.run(
                 demo.reset_demo_studio(
@@ -84,19 +95,24 @@ class DemoEndpointsTest(unittest.TestCase):
     def test_demo_reset_rejects_admin_studio_not_in_demo_allowlist(self):
         service = SimpleNamespace(reset_demo_studio=AsyncMock(return_value="reset-ok"))
 
-        with patch(
-            "app.api.v1.endpoints.demo.get_settings",
-            return_value=SimpleNamespace(
-                DEMO_RESET_ENABLED=True,
-                DEMO_RESET_STUDIO_IDS="demo-studio",
+        with (
+            patch(
+                "app.api.v1.endpoints.demo.get_settings",
+                return_value=SimpleNamespace(
+                    DEMO_RESET_ENABLED=True,
+                    DEMO_RESET_STUDIO_IDS="demo-studio",
+                ),
             ),
-        ), patch(
-            "app.api.v1.endpoints.demo.resolve_staff_role_for_user",
-            return_value={"studio_id": "real-studio", "role": "admin"},
-        ), patch(
-            "app.api.v1.endpoints.demo.DemoService",
-            return_value=service,
-        ), self.assertRaises(HTTPException) as ctx:
+            patch(
+                "app.api.v1.endpoints.demo.resolve_staff_role_for_user",
+                return_value={"studio_id": "real-studio", "role": "admin"},
+            ),
+            patch(
+                "app.api.v1.endpoints.demo.DemoService",
+                return_value=service,
+            ),
+            self.assertRaises(HTTPException) as ctx,
+        ):
             asyncio.run(
                 demo.reset_demo_studio(
                     user_id="user-1",
@@ -113,18 +129,22 @@ class DemoEndpointsTest(unittest.TestCase):
     def test_clear_studio_data_uses_resolved_membership_studio_for_service_call(self):
         service = SimpleNamespace(clear_studio_data=AsyncMock(return_value="clear-ok"))
 
-        with patch(
-            "app.api.v1.endpoints.demo.get_settings",
-            return_value=SimpleNamespace(
-                DEMO_RESET_ENABLED=True,
-                DEMO_RESET_STUDIO_IDS="resolved-studio",
+        with (
+            patch(
+                "app.api.v1.endpoints.demo.get_settings",
+                return_value=SimpleNamespace(
+                    DEMO_RESET_ENABLED=True,
+                    DEMO_RESET_STUDIO_IDS="resolved-studio",
+                ),
             ),
-        ), patch(
-            "app.api.v1.endpoints.demo.resolve_staff_role_for_user",
-            return_value={"studio_id": "resolved-studio", "role": "admin"},
-        ), patch(
-            "app.api.v1.endpoints.demo.DemoService",
-            return_value=service,
+            patch(
+                "app.api.v1.endpoints.demo.resolve_staff_role_for_user",
+                return_value={"studio_id": "resolved-studio", "role": "admin"},
+            ),
+            patch(
+                "app.api.v1.endpoints.demo.DemoService",
+                return_value=service,
+            ),
         ):
             result = asyncio.run(
                 demo.clear_studio_data(
@@ -139,12 +159,16 @@ class DemoEndpointsTest(unittest.TestCase):
         service.clear_studio_data.assert_awaited_once_with("resolved-studio")
 
     def test_clear_studio_data_requires_destructive_confirmation_header(self):
-        with patch(
-            "app.api.v1.endpoints.demo.get_settings",
-            return_value=SimpleNamespace(DEMO_RESET_ENABLED=True),
-        ), patch(
-            "app.api.v1.endpoints.demo.resolve_staff_role_for_user",
-        ) as resolve_staff, self.assertRaises(HTTPException) as ctx:
+        with (
+            patch(
+                "app.api.v1.endpoints.demo.get_settings",
+                return_value=SimpleNamespace(DEMO_RESET_ENABLED=True),
+            ),
+            patch(
+                "app.api.v1.endpoints.demo.resolve_staff_role_for_user",
+            ) as resolve_staff,
+            self.assertRaises(HTTPException) as ctx,
+        ):
             asyncio.run(
                 demo.clear_studio_data(
                     user_id="user-1",
@@ -158,10 +182,13 @@ class DemoEndpointsTest(unittest.TestCase):
         resolve_staff.assert_not_called()
 
     def test_clear_studio_data_rejects_when_environment_guard_is_disabled(self):
-        with patch(
-            "app.api.v1.endpoints.demo.get_settings",
-            return_value=SimpleNamespace(DEMO_RESET_ENABLED=False),
-        ), self.assertRaises(HTTPException) as ctx:
+        with (
+            patch(
+                "app.api.v1.endpoints.demo.get_settings",
+                return_value=SimpleNamespace(DEMO_RESET_ENABLED=False),
+            ),
+            self.assertRaises(HTTPException) as ctx,
+        ):
             asyncio.run(
                 demo.clear_studio_data(
                     user_id="user-1",

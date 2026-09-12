@@ -44,9 +44,7 @@ class DashboardSummaryStore:
         columns: str,
         apply_filters: Callable[[Any], Any],
     ) -> Optional[dict[str, Any]]:
-        result = apply_filters(
-            self.supabase.table(table).select(columns)
-        ).maybe_single().execute()
+        result = apply_filters(self.supabase.table(table).select(columns)).maybe_single().execute()
         if result is None:
             return None
         return result.data or None

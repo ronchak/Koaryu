@@ -22,16 +22,11 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<ButtonVariant, string> = {
-  primary:
-    "bg-accent text-accent-contrast hover:bg-accent-hover font-medium",
-  secondary:
-    "bg-surface-raised text-text-primary border border-border hover:bg-surface-hover",
-  danger:
-    "bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20",
-  ghost:
-    "bg-transparent text-text-secondary hover:text-text-primary hover:bg-surface-raised",
-  outline:
-    "bg-transparent text-text-primary border border-border hover:bg-surface-raised",
+  primary: "bg-accent text-accent-contrast hover:bg-accent-hover font-medium",
+  secondary: "bg-surface-raised text-text-primary border border-border hover:bg-surface-hover",
+  danger: "bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20",
+  ghost: "bg-transparent text-text-secondary hover:text-text-primary hover:bg-surface-raised",
+  outline: "bg-transparent text-text-primary border border-border hover:bg-surface-raised",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -82,7 +77,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       onClick,
       ...props
     },
-    ref
+    ref,
   ) => {
     const composedClassName = `
       ${baseStyles}
@@ -90,7 +85,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ${sizeStyles[size]}
       ${className}
     `;
-    const child = isValidElement(children) ? children as ChildElement : null;
+    const child = isValidElement(children) ? (children as ChildElement) : null;
     const childRef = child?.props.ref;
     const composedRef = useMemo(() => {
       if (!childRef && !ref) return undefined;
@@ -110,10 +105,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       const childProps: Partial<ChildElement["props"]> = {
         ...props,
         className: `${composedClassName} ${child.props.className ?? ""}`,
-        "aria-disabled": disabled || isLoading
-          ? true
-          : props["aria-disabled"] ?? child.props["aria-disabled"],
-        tabIndex: disabled || isLoading ? -1 : props.tabIndex ?? child.props.tabIndex,
+        "aria-disabled":
+          disabled || isLoading ? true : (props["aria-disabled"] ?? child.props["aria-disabled"]),
+        tabIndex: disabled || isLoading ? -1 : (props.tabIndex ?? child.props.tabIndex),
       };
 
       if (composedRef) {
@@ -143,11 +137,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {isLoading && (
-          <svg
-            className="animate-spin h-3.5 w-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
+          <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
             <circle
               className="opacity-25"
               cx="12"
@@ -166,7 +156,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {children}
       </button>
     );
-  }
+  },
 );
 
 Button.displayName = "Button";

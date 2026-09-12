@@ -52,7 +52,10 @@ class StudentPhotoStore:
             objects = self._bucket().list(f"{student['studio_id']}/students/{student['id']}")
         except StorageException:
             return None
-        if any((item.get("name") if isinstance(item, dict) else None) == "profile" for item in objects or []):
+        if any(
+            (item.get("name") if isinstance(item, dict) else None) == "profile"
+            for item in objects or []
+        ):
             return photo_path
         return None
 
@@ -69,11 +72,7 @@ class StudentPhotoStore:
         return self._extract_signed_url(payload)
 
     def create_signed_urls(self, photo_paths: list[str]) -> dict[str, Optional[str]]:
-        ordered_paths = [
-            path
-            for path in dict.fromkeys(photo_paths)
-            if path
-        ]
+        ordered_paths = [path for path in dict.fromkeys(photo_paths) if path]
         if not ordered_paths:
             return {}
 
@@ -150,11 +149,7 @@ class StudentPhotoStore:
                 ) from update_exc
 
     def remove(self, photo_paths: list[str], *, raise_on_failure: bool = True) -> None:
-        paths = [
-            path
-            for path in dict.fromkeys(photo_paths)
-            if path
-        ]
+        paths = [path for path in dict.fromkeys(photo_paths) if path]
         if not paths:
             return
         try:
@@ -205,9 +200,7 @@ class StudentPhotoStore:
     def _normalize_content_type(content_type: Optional[str]) -> Optional[str]:
         if not content_type:
             return None
-        return STUDENT_PHOTO_CONTENT_TYPE_ALIASES.get(
-            content_type.split(";")[0].strip().lower()
-        )
+        return STUDENT_PHOTO_CONTENT_TYPE_ALIASES.get(content_type.split(";")[0].strip().lower())
 
     @staticmethod
     def _detect_content_type(content: bytes) -> Optional[str]:
@@ -215,10 +208,6 @@ class StudentPhotoStore:
             return "image/jpeg"
         if content.startswith(b"\x89PNG\r\n\x1a\n"):
             return "image/png"
-        if (
-            len(content) >= 12
-            and content[:4] == b"RIFF"
-            and content[8:12] == b"WEBP"
-        ):
+        if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
             return "image/webp"
         return None

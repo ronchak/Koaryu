@@ -59,51 +59,297 @@ def _workflow(
 
 
 BILLING_WORKFLOWS = (
-    _workflow("connect.onboarding", routes=("create_connect_onboarding_link",), roles=("admin",), operations=("connect_account.create", "connect_onboarding_link.create"), prerequisites=("studio_identity", "connect_bootstrap"), scope="connect_onboarding"),
-    _workflow("connect.onboarding_delivery.acknowledge", routes=("acknowledge_connect_onboarding_link_delivery",), roles=("admin",), prerequisites=("onboarding_delivery_receipt",)),
-    _workflow("connect.sync", routes=("sync_connect_status",), roles=("admin",), prerequisites=("studio_payment_account",)),
-    _workflow("connect.reset", routes=("reset_connect_account",), roles=("admin",), prerequisites=("studio_payment_account",)),
-    _workflow("connect.dashboard", routes=("create_connect_dashboard_link",), roles=("admin",), operations=("connect_dashboard_login_link.create",), prerequisites=("connected_account",), scope="connect_onboarding"),
-    _workflow("connect.branding", roles=("admin",), operations=("connect_account.branding.update", "connect_branding_file.create"), prerequisites=("connected_account", "reviewed_brand_assets"), scope="connect_onboarding", classification="internal_only", denial=WORKFLOW_INTERNAL_ONLY),
-    _workflow("billing.reconcile", routes=("reconcile_billing_from_stripe",), roles=("admin",), prerequisites=("exact_provider_object",), classification="internal_only", denial=WORKFLOW_INTERNAL_ONLY),
-    _workflow("plan.create", routes=("create_plan",), roles=("admin",), prerequisites=("studio_identity",)),
-    _workflow("plan.update", routes=("update_plan",), roles=("admin",), prerequisites=("billing_plan",)),
-    _workflow("plan.archive", routes=("archive_plan",), roles=("admin",), prerequisites=("billing_plan",)),
-    _workflow("plan.sync", routes=("sync_plan",), roles=("admin",), operations=("connected_price.create", "connected_product.create", "connected_product.update"), prerequisites=("billing_plan", "connected_account_generation"), scope="connect_payments"),
-    _workflow("payer.create", routes=("create_payer",), roles=("admin",), prerequisites=("studio_identity",)),
-    _workflow("payer.update", routes=("update_payer",), roles=("admin",), prerequisites=("billing_payer",)),
-    _workflow("payer.sync", routes=("sync_payer",), roles=("admin",), operations=("connected_customer.create", "connected_customer.update"), prerequisites=("billing_payer", "connected_account_generation"), scope="connect_payments"),
-    _workflow("payer.setup", routes=("create_autopay_setup_link",), roles=("admin", "front_desk"), operations=("connected_setup_checkout_session.create",), prerequisites=("billing_payer", "connected_customer", "connected_account_generation"), scope="connect_payments"),
-    _workflow("payer.autopay.disable", routes=("disable_autopay",), roles=("admin",), prerequisites=("billing_payer", "no_provider_subscription_rewire")),
-    _workflow("enrollment.create.external", routes=("create_enrollment",), roles=("admin", "front_desk"), prerequisites=("student", "billing_plan", "external_collection")),
-    _workflow("enrollment.update.external", routes=("update_enrollment",), roles=("admin",), prerequisites=("external_enrollment",)),
-    _workflow("enrollment.activate", routes=("activate_enrollment",), roles=("admin", "front_desk"), operations=("connected_subscription.create", "connected_subscription_item.create", "connected_subscription_item.update"), prerequisites=("active_plan_price", "connected_payer", "verified_consent_when_autopay"), scope="connect_payments"),
-    _workflow("enrollment.cancel.period_end.schedule", routes=("schedule_enrollment_period_end",), roles=("admin", "front_desk"), operations=("connected_subscription.update", "connected_subscription_schedule.create", "connected_subscription_schedule.release", "connected_subscription_schedule.update"), prerequisites=("active_recurring_enrollment", "exact_subscription_quantity"), scope="connect_payments"),
-    _workflow("enrollment.cancel.period_end.revoke", routes=("revoke_scheduled_enrollment_transition",), roles=("admin", "front_desk"), operations=("connected_subscription.update", "connected_subscription_schedule.release"), prerequisites=("scheduled_cancellation_intent", "exact_subscription_quantity"), scope="connect_payments"),
-    _workflow("enrollment.cancel.immediate", routes=("cancel_enrollment_immediate",), roles=("admin",), operations=("connected_subscription.cancel", "connected_subscription_item.delete", "connected_subscription_item.update"), prerequisites=("active_recurring_enrollment", "exact_subscription_quantity"), scope="connect_payments"),
-    _workflow("enrollment.pause.generic", routes=("pause_enrollment",), roles=("admin",), classification="unsupported", denial="named_enrollment_pause_workflow_required"),
-    _workflow("enrollment.resume.generic", routes=("resume_enrollment",), roles=("admin",), classification="unsupported", denial="named_enrollment_resume_workflow_required"),
-    _workflow("enrollment.cancel.generic", routes=("cancel_enrollment",), roles=("admin",), classification="unsupported", denial="named_enrollment_cancellation_workflow_required"),
-    _workflow("invoice.create", routes=("create_invoice",), roles=("admin",), operations=("connected_invoice.create", "connected_invoice_item.create"), prerequisites=("connected_payer", "normalized_invoice_items"), scope="connect_payments"),
-    _workflow("invoice.finalize", routes=("finalize_invoice",), roles=("admin",), operations=("connected_invoice.finalize", "connected_invoice.send"), prerequisites=("draft_connected_invoice",), scope="connect_payments"),
-    _workflow("invoice.retry", routes=("retry_invoice_payment",), roles=("admin",), operations=("connected_invoice.pay",), prerequisites=("open_connected_invoice", "verified_payment_method"), scope="connect_payments"),
-    _workflow("invoice.void", routes=("void_invoice",), roles=("admin",), operations=("connected_invoice.void",), prerequisites=("voidable_connected_invoice",), scope="connect_payments"),
-    _workflow("invoice.reconcile", routes=("reconcile_invoice",), roles=("admin", "front_desk"), prerequisites=("exact_connected_invoice",), classification="internal_only", denial=WORKFLOW_INTERNAL_ONLY),
-    _workflow("payment.external.record", routes=("record_external_payment",), roles=("admin", "front_desk"), prerequisites=("billing_payer", "external_payment_evidence")),
-    _workflow("payment.refund", routes=("refund_payment",), roles=("admin",), operations=("connected_refund.create",), prerequisites=("refundable_connected_charge", "exact_refundable_amount"), scope="connect_payments"),
-    _workflow("billing.export.create", routes=("create_export_job",), roles=("admin",), prerequisites=("supported_export_type",), classification="internal_only", denial=WORKFLOW_INTERNAL_ONLY),
-    _workflow("enrollment.cancel.period_end.execute", routes=("process_due_billing_enrollment_transitions",), operations=("connected_subscription_item.delete", "connected_subscription_item.update", "connected_subscription_schedule.release"), prerequisites=("due_transition_intent", "exact_subscription_quantity"), scope="connect_payments", classification="internal_only", denial=WORKFLOW_INTERNAL_ONLY),
-    _workflow("core.subscription.checkout", roles=("admin",), operations=("core_checkout_session.create", "customer.create"), prerequisites=("core_checkout_reservation",), scope="core_subscription"),
-    _workflow("core.subscription.portal", roles=("admin",), operations=("customer_portal_session.create",), prerequisites=("core_customer",), scope="core_subscription"),
-    _workflow("core.checkout.expire", operations=("core_checkout_session.expire",), prerequisites=("exact_rejected_checkout_session",), scope="core_subscription", classification="internal_only", denial=WORKFLOW_INTERNAL_ONLY),
-    _workflow("core.subscription.cancel_compensation", operations=("core_subscription.cancel",), prerequisites=("exact_rejected_core_subscription",), scope="core_subscription", classification="internal_only", denial=WORKFLOW_INTERNAL_ONLY),
+    _workflow(
+        "connect.onboarding",
+        routes=("create_connect_onboarding_link",),
+        roles=("admin",),
+        operations=("connect_account.create", "connect_onboarding_link.create"),
+        prerequisites=("studio_identity", "connect_bootstrap"),
+        scope="connect_onboarding",
+    ),
+    _workflow(
+        "connect.onboarding_delivery.acknowledge",
+        routes=("acknowledge_connect_onboarding_link_delivery",),
+        roles=("admin",),
+        prerequisites=("onboarding_delivery_receipt",),
+    ),
+    _workflow(
+        "connect.sync",
+        routes=("sync_connect_status",),
+        roles=("admin",),
+        prerequisites=("studio_payment_account",),
+    ),
+    _workflow(
+        "connect.reset",
+        routes=("reset_connect_account",),
+        roles=("admin",),
+        prerequisites=("studio_payment_account",),
+    ),
+    _workflow(
+        "connect.dashboard",
+        routes=("create_connect_dashboard_link",),
+        roles=("admin",),
+        operations=("connect_dashboard_login_link.create",),
+        prerequisites=("connected_account",),
+        scope="connect_onboarding",
+    ),
+    _workflow(
+        "connect.branding",
+        roles=("admin",),
+        operations=("connect_account.branding.update", "connect_branding_file.create"),
+        prerequisites=("connected_account", "reviewed_brand_assets"),
+        scope="connect_onboarding",
+        classification="internal_only",
+        denial=WORKFLOW_INTERNAL_ONLY,
+    ),
+    _workflow(
+        "billing.reconcile",
+        routes=("reconcile_billing_from_stripe",),
+        roles=("admin",),
+        prerequisites=("exact_provider_object",),
+        classification="internal_only",
+        denial=WORKFLOW_INTERNAL_ONLY,
+    ),
+    _workflow(
+        "plan.create", routes=("create_plan",), roles=("admin",), prerequisites=("studio_identity",)
+    ),
+    _workflow(
+        "plan.update", routes=("update_plan",), roles=("admin",), prerequisites=("billing_plan",)
+    ),
+    _workflow(
+        "plan.archive", routes=("archive_plan",), roles=("admin",), prerequisites=("billing_plan",)
+    ),
+    _workflow(
+        "plan.sync",
+        routes=("sync_plan",),
+        roles=("admin",),
+        operations=(
+            "connected_price.create",
+            "connected_product.create",
+            "connected_product.update",
+        ),
+        prerequisites=("billing_plan", "connected_account_generation"),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "payer.create",
+        routes=("create_payer",),
+        roles=("admin",),
+        prerequisites=("studio_identity",),
+    ),
+    _workflow(
+        "payer.update", routes=("update_payer",), roles=("admin",), prerequisites=("billing_payer",)
+    ),
+    _workflow(
+        "payer.sync",
+        routes=("sync_payer",),
+        roles=("admin",),
+        operations=("connected_customer.create", "connected_customer.update"),
+        prerequisites=("billing_payer", "connected_account_generation"),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "payer.setup",
+        routes=("create_autopay_setup_link",),
+        roles=("admin", "front_desk"),
+        operations=("connected_setup_checkout_session.create",),
+        prerequisites=("billing_payer", "connected_customer", "connected_account_generation"),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "payer.autopay.disable",
+        routes=("disable_autopay",),
+        roles=("admin",),
+        prerequisites=("billing_payer", "no_provider_subscription_rewire"),
+    ),
+    _workflow(
+        "enrollment.create.external",
+        routes=("create_enrollment",),
+        roles=("admin", "front_desk"),
+        prerequisites=("student", "billing_plan", "external_collection"),
+    ),
+    _workflow(
+        "enrollment.update.external",
+        routes=("update_enrollment",),
+        roles=("admin",),
+        prerequisites=("external_enrollment",),
+    ),
+    _workflow(
+        "enrollment.activate",
+        routes=("activate_enrollment",),
+        roles=("admin", "front_desk"),
+        operations=(
+            "connected_subscription.create",
+            "connected_subscription_item.create",
+            "connected_subscription_item.update",
+        ),
+        prerequisites=("active_plan_price", "connected_payer", "verified_consent_when_autopay"),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "enrollment.cancel.period_end.schedule",
+        routes=("schedule_enrollment_period_end",),
+        roles=("admin", "front_desk"),
+        operations=(
+            "connected_subscription.update",
+            "connected_subscription_schedule.create",
+            "connected_subscription_schedule.release",
+            "connected_subscription_schedule.update",
+        ),
+        prerequisites=("active_recurring_enrollment", "exact_subscription_quantity"),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "enrollment.cancel.period_end.revoke",
+        routes=("revoke_scheduled_enrollment_transition",),
+        roles=("admin", "front_desk"),
+        operations=("connected_subscription.update", "connected_subscription_schedule.release"),
+        prerequisites=("scheduled_cancellation_intent", "exact_subscription_quantity"),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "enrollment.cancel.immediate",
+        routes=("cancel_enrollment_immediate",),
+        roles=("admin",),
+        operations=(
+            "connected_subscription.cancel",
+            "connected_subscription_item.delete",
+            "connected_subscription_item.update",
+        ),
+        prerequisites=("active_recurring_enrollment", "exact_subscription_quantity"),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "enrollment.pause.generic",
+        routes=("pause_enrollment",),
+        roles=("admin",),
+        classification="unsupported",
+        denial="named_enrollment_pause_workflow_required",
+    ),
+    _workflow(
+        "enrollment.resume.generic",
+        routes=("resume_enrollment",),
+        roles=("admin",),
+        classification="unsupported",
+        denial="named_enrollment_resume_workflow_required",
+    ),
+    _workflow(
+        "enrollment.cancel.generic",
+        routes=("cancel_enrollment",),
+        roles=("admin",),
+        classification="unsupported",
+        denial="named_enrollment_cancellation_workflow_required",
+    ),
+    _workflow(
+        "invoice.create",
+        routes=("create_invoice",),
+        roles=("admin",),
+        operations=("connected_invoice.create", "connected_invoice_item.create"),
+        prerequisites=("connected_payer", "normalized_invoice_items"),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "invoice.finalize",
+        routes=("finalize_invoice",),
+        roles=("admin",),
+        operations=("connected_invoice.finalize", "connected_invoice.send"),
+        prerequisites=("draft_connected_invoice",),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "invoice.retry",
+        routes=("retry_invoice_payment",),
+        roles=("admin",),
+        operations=("connected_invoice.pay",),
+        prerequisites=("open_connected_invoice", "verified_payment_method"),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "invoice.void",
+        routes=("void_invoice",),
+        roles=("admin",),
+        operations=("connected_invoice.void",),
+        prerequisites=("voidable_connected_invoice",),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "invoice.reconcile",
+        routes=("reconcile_invoice",),
+        roles=("admin", "front_desk"),
+        prerequisites=("exact_connected_invoice",),
+        classification="internal_only",
+        denial=WORKFLOW_INTERNAL_ONLY,
+    ),
+    _workflow(
+        "payment.external.record",
+        routes=("record_external_payment",),
+        roles=("admin", "front_desk"),
+        prerequisites=("billing_payer", "external_payment_evidence"),
+    ),
+    _workflow(
+        "payment.refund",
+        routes=("refund_payment",),
+        roles=("admin",),
+        operations=("connected_refund.create",),
+        prerequisites=("refundable_connected_charge", "exact_refundable_amount"),
+        scope="connect_payments",
+    ),
+    _workflow(
+        "billing.export.create",
+        routes=("create_export_job",),
+        roles=("admin",),
+        prerequisites=("supported_export_type",),
+        classification="internal_only",
+        denial=WORKFLOW_INTERNAL_ONLY,
+    ),
+    _workflow(
+        "enrollment.cancel.period_end.execute",
+        routes=("process_due_billing_enrollment_transitions",),
+        operations=(
+            "connected_subscription_item.delete",
+            "connected_subscription_item.update",
+            "connected_subscription_schedule.release",
+        ),
+        prerequisites=("due_transition_intent", "exact_subscription_quantity"),
+        scope="connect_payments",
+        classification="internal_only",
+        denial=WORKFLOW_INTERNAL_ONLY,
+    ),
+    _workflow(
+        "core.subscription.checkout",
+        roles=("admin",),
+        operations=("core_checkout_session.create", "customer.create"),
+        prerequisites=("core_checkout_reservation",),
+        scope="core_subscription",
+    ),
+    _workflow(
+        "core.subscription.portal",
+        roles=("admin",),
+        operations=("customer_portal_session.create",),
+        prerequisites=("core_customer",),
+        scope="core_subscription",
+    ),
+    _workflow(
+        "core.checkout.expire",
+        operations=("core_checkout_session.expire",),
+        prerequisites=("exact_rejected_checkout_session",),
+        scope="core_subscription",
+        classification="internal_only",
+        denial=WORKFLOW_INTERNAL_ONLY,
+    ),
+    _workflow(
+        "core.subscription.cancel_compensation",
+        operations=("core_subscription.cancel",),
+        prerequisites=("exact_rejected_core_subscription",),
+        scope="core_subscription",
+        classification="internal_only",
+        denial=WORKFLOW_INTERNAL_ONLY,
+    ),
 )
 
 WORKFLOWS_BY_ID = {workflow.workflow_id: workflow for workflow in BILLING_WORKFLOWS}
 WORKFLOWS_BY_ROUTE = {
-    route_name: workflow
-    for workflow in BILLING_WORKFLOWS
-    for route_name in workflow.route_names
+    route_name: workflow for workflow in BILLING_WORKFLOWS for route_name in workflow.route_names
 }
 
 LIVE_SCOPE_OPERATIONS: dict[LiveBillingScope, tuple[str, ...]] = {
@@ -252,9 +498,11 @@ def workflow_capabilities_for_role(
         ):
             enabled = False
             denial_reason = "billing_transition_scheduler_not_ready"
-        capabilities.append({
-            "workflow_id": workflow.workflow_id,
-            "enabled": enabled,
-            "denial_reason_code": denial_reason,
-        })
+        capabilities.append(
+            {
+                "workflow_id": workflow.workflow_id,
+                "enabled": enabled,
+                "denial_reason_code": denial_reason,
+            }
+        )
     return capabilities

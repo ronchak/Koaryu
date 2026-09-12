@@ -71,7 +71,7 @@ export function marketingPageHref(ref: MarketingPageRef) {
 
 function withMarketingPageMeta(
   kind: MarketingPageKind,
-  pages: MarketingPageDraft[]
+  pages: MarketingPageDraft[],
 ): MarketingPage[] {
   return pages.map((page) => ({
     ...page,
@@ -127,7 +127,11 @@ const featurePageDrafts: MarketingPageDraft[] = [
     proof: [
       { label: "Roster", value: "1 place", detail: "Students, families, notes, and status" },
       { label: "Setup", value: "CSV-ready", detail: "Bring existing records forward" },
-      { label: "Access", value: "Role-aware", detail: "Admin, instructor, and front desk boundaries" },
+      {
+        label: "Access",
+        value: "Role-aware",
+        detail: "Admin, instructor, and front desk boundaries",
+      },
     ],
     related: [
       { kind: "feature", slug: "belt-tracking" },
@@ -287,9 +291,17 @@ const featurePageDrafts: MarketingPageDraft[] = [
       },
     ],
     proof: [
-      { label: "Pricing", value: formatPublicPlatformPrice(), detail: "Flat Koaryu platform subscription" },
+      {
+        label: "Pricing",
+        value: formatPublicPlatformPrice(),
+        detail: "Flat Koaryu platform subscription",
+      },
       { label: "Provider writes", value: "Disabled", detail: "Currently unavailable" },
-      { label: "Tuition", value: "Visible", detail: "Existing plans, payers, invoices, and issues" },
+      {
+        label: "Tuition",
+        value: "Visible",
+        detail: "Existing plans, payers, invoices, and issues",
+      },
     ],
     related: [
       { kind: "feature", slug: "student-management" },
@@ -378,8 +390,7 @@ const useCasePageDrafts: MarketingPageDraft[] = [
       },
       {
         title: "Protect the trial-to-enrollment path",
-        description:
-          "New families need a clean handoff from inquiry to trial to enrolled student.",
+        description: "New families need a clean handoff from inquiry to trial to enrolled student.",
         bullets: [
           "Track lead source, next follow-up, trial status, and conversion notes",
           "Keep overdue follow-ups from disappearing in email or sticky notes",
@@ -400,7 +411,11 @@ const useCasePageDrafts: MarketingPageDraft[] = [
     proof: [
       { label: "Signals", value: "Daily", detail: "Follow-ups, classes, payments, ranks" },
       { label: "Owners", value: "Action-first", detail: "A clear queue beats passive charts" },
-      { label: "Families", value: "Contextual", detail: "Guardian and billing context stays close" },
+      {
+        label: "Families",
+        value: "Contextual",
+        detail: "Guardian and billing context stays close",
+      },
     ],
     related: [
       { kind: "feature", slug: "attendance" },
@@ -640,8 +655,7 @@ export const exploreSections: ExploreSection[] = [
       {
         eyebrow: "Product map",
         title: "Features",
-        description:
-          "Student CRM, belts, attendance, and billing visibility as product areas.",
+        description: "Student CRM, belts, attendance, and billing visibility as product areas.",
         href: "/features",
         action: "Compare features",
         pages: [

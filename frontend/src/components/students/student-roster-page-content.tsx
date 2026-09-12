@@ -30,7 +30,7 @@ const StudentForm = dynamic(
   {
     loading: () => <StudentFormLoading />,
     ssr: false,
-  }
+  },
 );
 
 const QUICK_VIEW_MEDIA_QUERY = "(min-width: 1400px)";
@@ -279,10 +279,7 @@ export function StudentRosterPageContent({
 
         <div className={`flex-1 ${styles.rosterViewport}`}>
           {activeLoadError ? (
-            <StudentRosterLoadError
-              activeLoadError={activeLoadError}
-              onRetry={onRetryRosterLoad}
-            />
+            <StudentRosterLoadError activeLoadError={activeLoadError} onRetry={onRetryRosterLoad} />
           ) : isInitialRosterLoading ? (
             <StudentRosterLoading />
           ) : filtered.length === 0 ? (
@@ -318,9 +315,9 @@ export function StudentRosterPageContent({
               </div>
               <div className={styles.rosterRailSlot}>
                 <StudentRosterReadingRail
-                  inactivity={focusedRow
-                    ? inactivityByStudentId.get(focusedRow.student.id) ?? null
-                    : null}
+                  inactivity={
+                    focusedRow ? (inactivityByStudentId.get(focusedRow.student.id) ?? null) : null
+                  }
                   onOpenStudent={onOpenStudent}
                   row={focusedRow}
                 />

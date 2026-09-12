@@ -33,13 +33,22 @@ class BillingConnectAccountStore:
         )
         if result.data:
             return result.data[0]
-        insert_result = self.supabase.table("studio_payment_accounts").insert({"studio_id": studio_id}).execute()
+        insert_result = (
+            self.supabase.table("studio_payment_accounts")
+            .insert({"studio_id": studio_id})
+            .execute()
+        )
         if not insert_result.data:
             raise HTTPException(status_code=500, detail="Failed to initialize payment account.")
         return insert_result.data[0]
 
     def update(self, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:
-        result = self.supabase.table("studio_payment_accounts").update(update).eq("studio_id", studio_id).execute()
+        result = (
+            self.supabase.table("studio_payment_accounts")
+            .update(update)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
         if not result.data:
             raise HTTPException(status_code=404, detail="Payment account not found.")
         return result.data[0]
@@ -124,7 +133,11 @@ class BillingConnectAccountStore:
         due = _object_get(requirements, "currently_due") or []
         charges_enabled = bool(_object_get(stripe_account, "charges_enabled"))
         details_submitted = bool(_object_get(stripe_account, "details_submitted"))
-        status_value = "charges_enabled" if charges_enabled else ("action_required" if due else "onboarding_incomplete")
+        status_value = (
+            "charges_enabled"
+            if charges_enabled
+            else ("action_required" if due else "onboarding_incomplete")
+        )
         return {
             "status": status_value,
             "charges_enabled": charges_enabled,
@@ -142,7 +155,9 @@ class BillingConnectAccountStore:
             payouts_enabled=bool(row.get("payouts_enabled")),
             details_submitted=bool(row.get("details_submitted")),
             requirements_due=row.get("requirements_due") or [],
-            platform_fee_bps=platform_fee_bps(row.get("platform_fee_bps"), self.settings.BILLING_PLATFORM_FEE_BPS),
+            platform_fee_bps=platform_fee_bps(
+                row.get("platform_fee_bps"), self.settings.BILLING_PLATFORM_FEE_BPS
+            ),
             created_at=_to_text(row.get("created_at")),
             updated_at=_to_text(row.get("updated_at")),
         )

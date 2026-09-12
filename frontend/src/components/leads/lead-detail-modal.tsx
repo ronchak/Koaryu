@@ -79,12 +79,17 @@ export function LeadDetailInspector({
   const isPending = pendingLeadId === lead.id;
   const nextStage = getNextStage(lead.stage);
   const [lostReason, setLostReason] = useState<LostReason>(lead.lost_reason ?? "other");
-  const detailStageOptions = lead.stage === "closed_lost"
-    ? [...PIPELINE_STAGES, { id: "closed_lost" as LeadStage, label: "Closed Lost" }]
-    : PIPELINE_STAGES;
-  const assigneeChoices = currentAssignedStaff && currentAssignedStaff.status !== "active"
-    ? [currentAssignedStaff, ...activeStaff.filter((member) => member.id !== currentAssignedStaff.id)]
-    : activeStaff;
+  const detailStageOptions =
+    lead.stage === "closed_lost"
+      ? [...PIPELINE_STAGES, { id: "closed_lost" as LeadStage, label: "Closed Lost" }]
+      : PIPELINE_STAGES;
+  const assigneeChoices =
+    currentAssignedStaff && currentAssignedStaff.status !== "active"
+      ? [
+          currentAssignedStaff,
+          ...activeStaff.filter((member) => member.id !== currentAssignedStaff.id),
+        ]
+      : activeStaff;
   const handleClose = () => {
     onClose();
     window.requestAnimationFrame(() => {
@@ -139,7 +144,9 @@ export function LeadDetailInspector({
         )}
 
         <div>
-          <label htmlFor="lead-detail-stage" className="block text-xs text-muted mb-1.5">Stage</label>
+          <label htmlFor="lead-detail-stage" className="block text-xs text-muted mb-1.5">
+            Stage
+          </label>
           <select
             id="lead-detail-stage"
             value={lead.stage}
@@ -150,14 +157,14 @@ export function LeadDetailInspector({
             className="w-full px-3 py-1.5 text-sm bg-surface-raised border border-border text-text-primary focus:border-accent focus:outline-none"
           >
             {detailStageOptions.map((stage) => (
-                <option
-                  key={stage.id}
-                  value={stage.id}
-                  disabled={stage.id === "enrolled" && !canConvertLeads}
-                >
-                  {stage.label}
-                </option>
-              ))}
+              <option
+                key={stage.id}
+                value={stage.id}
+                disabled={stage.id === "enrolled" && !canConvertLeads}
+              >
+                {stage.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -195,7 +202,9 @@ export function LeadDetailInspector({
         </div>
 
         <div>
-          <label htmlFor="lead-detail-assignee" className="block text-xs text-muted mb-1.5">Assigned staff</label>
+          <label htmlFor="lead-detail-assignee" className="block text-xs text-muted mb-1.5">
+            Assigned staff
+          </label>
           <select
             id="lead-detail-assignee"
             value={lead.assigned_staff_id ?? ""}
@@ -218,14 +227,10 @@ export function LeadDetailInspector({
             <p className="text-xs text-muted mb-2">Guardian</p>
             <p className="text-sm text-text-primary">{lead.guardian_name}</p>
             {lead.guardian_email && (
-              <p className="text-xs text-text-secondary font-mono mt-1">
-                {lead.guardian_email}
-              </p>
+              <p className="text-xs text-text-secondary font-mono mt-1">{lead.guardian_email}</p>
             )}
             {lead.guardian_phone && (
-              <p className="text-xs text-text-secondary font-mono mt-0.5">
-                {lead.guardian_phone}
-              </p>
+              <p className="text-xs text-text-secondary font-mono mt-0.5">{lead.guardian_phone}</p>
             )}
           </div>
         )}
@@ -255,29 +260,27 @@ export function LeadDetailInspector({
 
           {canManageLeads ? (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <label htmlFor="lead-detail-follow-up-date" className="sr-only">
-              Follow-up date
-            </label>
-            <input
-              id="lead-detail-follow-up-date"
-              type="date"
-              value={followUpValue}
-              disabled={isPending}
-              onChange={(event) =>
-                onFollowUpValueChange(lead.id, event.target.value)
-              }
-              className="w-full border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={isPending}
-              onClick={() => {
-                void onRescheduleLead(lead);
-              }}
-            >
-              Reschedule
-            </Button>
+              <label htmlFor="lead-detail-follow-up-date" className="sr-only">
+                Follow-up date
+              </label>
+              <input
+                id="lead-detail-follow-up-date"
+                type="date"
+                value={followUpValue}
+                disabled={isPending}
+                onChange={(event) => onFollowUpValueChange(lead.id, event.target.value)}
+                className="w-full border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={isPending}
+                onClick={() => {
+                  void onRescheduleLead(lead);
+                }}
+              >
+                Reschedule
+              </Button>
             </div>
           ) : null}
 
@@ -302,9 +305,7 @@ export function LeadDetailInspector({
                     void onMarkContacted(lead, true);
                   }}
                 >
-                  {nextStage === "enrolled"
-                    ? "Convert now"
-                    : `Move to ${getStageLabel(nextStage)}`}
+                  {nextStage === "enrolled" ? "Convert now" : `Move to ${getStageLabel(nextStage)}`}
                 </Button>
               )}
             </div>
@@ -314,9 +315,7 @@ export function LeadDetailInspector({
         {lead.notes && (
           <div>
             <p className="text-xs text-muted mb-1">Notes</p>
-            <p className="text-sm text-text-secondary leading-relaxed">
-              {lead.notes}
-            </p>
+            <p className="text-sm text-text-secondary leading-relaxed">{lead.notes}</p>
           </div>
         )}
 
@@ -324,24 +323,35 @@ export function LeadDetailInspector({
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-muted">Activity</p>
-              <h3 id="lead-activity-title" className="mt-1 text-sm font-semibold text-text-primary">Recorded follow-up trail</h3>
+              <h3 id="lead-activity-title" className="mt-1 text-sm font-semibold text-text-primary">
+                Recorded follow-up trail
+              </h3>
             </div>
             {activityStatus === "loading" ? (
-              <Clock aria-hidden="true" className="h-4 w-4 animate-pulse text-muted motion-reduce:animate-none" />
+              <Clock
+                aria-hidden="true"
+                className="h-4 w-4 animate-pulse text-muted motion-reduce:animate-none"
+              />
             ) : null}
           </div>
           {activityStatus === "error" ? (
             <div className="mt-3 text-sm text-danger">
               <p>{activityError || "Could not load lead activity."}</p>
-              <Button variant="ghost" size="sm" className="mt-2" onClick={onRetryActivities}>Retry activity</Button>
+              <Button variant="ghost" size="sm" className="mt-2" onClick={onRetryActivities}>
+                Retry activity
+              </Button>
             </div>
           ) : activityStatus === "ready" && activities.length === 0 ? (
-            <p className="mt-3 text-sm text-muted">No activity has been recorded for this lead yet.</p>
+            <p className="mt-3 text-sm text-muted">
+              No activity has been recorded for this lead yet.
+            </p>
           ) : (
             <ol className="mt-3 space-y-3">
               {activities.map((activity) => (
                 <li key={activity.id} className="border-l border-border pl-3">
-                  <p className="text-sm text-text-primary">{activity.description || activity.activity_type.replace(/_/g, " ")}</p>
+                  <p className="text-sm text-text-primary">
+                    {activity.description || activity.activity_type.replace(/_/g, " ")}
+                  </p>
                   <p className="mt-1 text-xs text-muted">
                     {new Date(activity.created_at).toLocaleString("en-US", {
                       month: "short",
@@ -368,44 +378,46 @@ export function LeadDetailInspector({
 
         {canManageLeads ? (
           <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-          {canConvertLeads && lead.stage !== "enrolled" && lead.stage !== "closed_lost" && (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={isPending}
-              onClick={() => {
-                void onConvertLead(lead);
-              }}
-            >
-              Convert to student
-            </Button>
-          )}
-          {lead.stage !== "closed_lost" && lead.stage !== "enrolled" && (
-            <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2 rounded-[10px] bg-danger/5 p-3">
-              <label className="min-w-40 flex-1 text-xs text-muted" htmlFor="lead-lost-reason">
-                Lost reason
-                <select
-                  id="lead-lost-reason"
-                  value={lostReason}
-                  disabled={isPending}
-                  onChange={(event) => setLostReason(event.target.value as LostReason)}
-                  className="mt-1 min-h-11 w-full border border-border bg-surface-raised px-2 text-sm text-text-primary"
-                >
-                  {Object.entries(LOST_REASON_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </label>
+            {canConvertLeads && lead.stage !== "enrolled" && lead.stage !== "closed_lost" && (
               <Button
-                variant="danger"
+                variant="primary"
                 size="sm"
                 disabled={isPending}
-                onClick={() => void onMarkLost(lead, lostReason)}
+                onClick={() => {
+                  void onConvertLead(lead);
+                }}
               >
-                Mark lost
+                Convert to student
               </Button>
-            </div>
-          )}
+            )}
+            {lead.stage !== "closed_lost" && lead.stage !== "enrolled" && (
+              <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2 rounded-[10px] bg-danger/5 p-3">
+                <label className="min-w-40 flex-1 text-xs text-muted" htmlFor="lead-lost-reason">
+                  Lost reason
+                  <select
+                    id="lead-lost-reason"
+                    value={lostReason}
+                    disabled={isPending}
+                    onChange={(event) => setLostReason(event.target.value as LostReason)}
+                    className="mt-1 min-h-11 w-full border border-border bg-surface-raised px-2 text-sm text-text-primary"
+                  >
+                    {Object.entries(LOST_REASON_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={() => void onMarkLost(lead, lostReason)}
+                >
+                  Mark lost
+                </Button>
+              </div>
+            )}
           </div>
         ) : null}
       </div>

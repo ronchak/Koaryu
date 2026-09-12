@@ -1,4 +1,5 @@
 """Date-only business context, independent of the server's system timezone."""
+
 from datetime import datetime, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError

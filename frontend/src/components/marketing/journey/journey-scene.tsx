@@ -117,11 +117,51 @@ interface Ridge {
 }
 
 const RIDGES: readonly Ridge[] = [
-  { color: PALETTE.mountain[0], baseY: 552, amplitude: 74, frequency: 0.9, phase: 0.4, speed: 190, scale: 0.05 },
-  { color: PALETTE.mountain[1], baseY: 638, amplitude: 92, frequency: 1.2, phase: 2.1, speed: 300, scale: 0.1 },
-  { color: PALETTE.mountain[2], baseY: 728, amplitude: 104, frequency: 0.8, phase: 4.3, speed: 440, scale: 0.17 },
-  { color: PALETTE.mountain[3], baseY: 826, amplitude: 118, frequency: 1.1, phase: 1.2, speed: 640, scale: 0.27 },
-  { color: PALETTE.mountain[4], baseY: 940, amplitude: 130, frequency: 0.7, phase: 5.6, speed: 900, scale: 0.42 },
+  {
+    color: PALETTE.mountain[0],
+    baseY: 552,
+    amplitude: 74,
+    frequency: 0.9,
+    phase: 0.4,
+    speed: 190,
+    scale: 0.05,
+  },
+  {
+    color: PALETTE.mountain[1],
+    baseY: 638,
+    amplitude: 92,
+    frequency: 1.2,
+    phase: 2.1,
+    speed: 300,
+    scale: 0.1,
+  },
+  {
+    color: PALETTE.mountain[2],
+    baseY: 728,
+    amplitude: 104,
+    frequency: 0.8,
+    phase: 4.3,
+    speed: 440,
+    scale: 0.17,
+  },
+  {
+    color: PALETTE.mountain[3],
+    baseY: 826,
+    amplitude: 118,
+    frequency: 1.1,
+    phase: 1.2,
+    speed: 640,
+    scale: 0.27,
+  },
+  {
+    color: PALETTE.mountain[4],
+    baseY: 940,
+    amplitude: 130,
+    frequency: 0.7,
+    phase: 5.6,
+    speed: 900,
+    scale: 0.42,
+  },
 ];
 
 const FAR_RIDGES = [
@@ -147,13 +187,7 @@ function mixColor(from: string, to: string, progress: number): string {
 function shade(color: string, amount: number): string {
   const [red, green, blue] = hexToRgb(color);
   const channel = (value: number) =>
-    Math.round(
-      clamp(
-        amount < 0 ? value * (1 + amount) : value + (255 - value) * amount,
-        0,
-        255
-      )
-    );
+    Math.round(clamp(amount < 0 ? value * (1 + amount) : value + (255 - value) * amount, 0, 255));
   return `rgb(${channel(red)},${channel(green)},${channel(blue)})`;
 }
 
@@ -162,7 +196,7 @@ function ridgeLine(
   amplitude: number,
   frequency: number,
   phase: number,
-  resolution = 46
+  resolution = 46,
 ): readonly ScenePoint[] {
   return Array.from({ length: resolution + 1 }, (_, index) => {
     const progress = index / resolution;
@@ -171,12 +205,8 @@ function ridgeLine(
       y:
         baseY +
         Math.sin(progress * Math.PI * 2 * frequency + phase) * amplitude +
-        Math.sin(progress * Math.PI * 2 * frequency * 2.31 + phase * 1.7) *
-          amplitude *
-          0.4 +
-        Math.sin(progress * Math.PI * 2 * frequency * 0.57 + phase * 0.45) *
-          amplitude *
-          0.72,
+        Math.sin(progress * Math.PI * 2 * frequency * 2.31 + phase * 1.7) * amplitude * 0.4 +
+        Math.sin(progress * Math.PI * 2 * frequency * 0.57 + phase * 0.45) * amplitude * 0.72,
     };
   });
 }
@@ -186,33 +216,35 @@ function closedRidgePath(
   amplitude: number,
   frequency: number,
   phase: number,
-  resolution = 46
+  resolution = 46,
 ): string {
   return `${smoothPath(ridgeLine(baseY, amplitude, frequency, phase, resolution))}L${SCENE_OVERSCAN.x + SCENE_OVERSCAN.width} 1900 L${SCENE_OVERSCAN.x} 1900 Z`;
 }
 
 const RIDGE_PATHS = Object.freeze(
   RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
-    closedRidgePath(baseY, amplitude, frequency, phase)
-  )
+    closedRidgePath(baseY, amplitude, frequency, phase),
+  ),
 );
 
 const FAR_RIDGE_PATHS = Object.freeze(
   FAR_RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
-    closedRidgePath(baseY, amplitude, frequency, phase, 30)
-  )
+    closedRidgePath(baseY, amplitude, frequency, phase, 30),
+  ),
 );
 
-const MOUNTAIN_WISPS = Object.freeze((() => {
-  const random = mulberry32(31);
-  return Array.from({ length: 5 }, () => ({
-    x: 120 + random() * 1400,
-    y: 180 + random() * 210,
-    scale: 0.45 + random() * 0.6,
-    opacity: 0.4 + random() * 0.4,
-    path: makeCloudPath(Math.floor(random() * 9999)),
-  }));
-})());
+const MOUNTAIN_WISPS = Object.freeze(
+  (() => {
+    const random = mulberry32(31);
+    return Array.from({ length: 5 }, () => ({
+      x: 120 + random() * 1400,
+      y: 180 + random() * 210,
+      scale: 0.45 + random() * 0.6,
+      opacity: 0.4 + random() * 0.4,
+      path: makeCloudPath(Math.floor(random() * 9999)),
+    }));
+  })(),
+);
 
 function makeIds(reactId: string): SceneIds {
   const prefix = `koaryu-scene-${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
@@ -279,32 +311,79 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
         <feDropShadow dx="0" dy="5" stdDeviation="6" floodColor="#4A3A1C" floodOpacity="0.24" />
       </filter>
       <filter id={ids.pulp} x="0" y="0" width="100%" height="100%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.018 0.035" numOctaves="2" seed="17" stitchTiles="stitch" />
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.018 0.035"
+          numOctaves="2"
+          seed="17"
+          stitchTiles="stitch"
+        />
         <feColorMatrix type="saturate" values="0" />
-        <feComponentTransfer><feFuncA type="linear" slope="0.72" /></feComponentTransfer>
+        <feComponentTransfer>
+          <feFuncA type="linear" slope="0.72" />
+        </feComponentTransfer>
       </filter>
       <filter id={ids.fine} x="0" y="0" width="100%" height="100%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.68" numOctaves="2" seed="7" stitchTiles="stitch" />
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.68"
+          numOctaves="2"
+          seed="7"
+          stitchTiles="stitch"
+        />
         <feColorMatrix type="saturate" values="0" />
-        <feComponentTransfer><feFuncA type="linear" slope="0.58" /></feComponentTransfer>
+        <feComponentTransfer>
+          <feFuncA type="linear" slope="0.58" />
+        </feComponentTransfer>
       </filter>
-      <filter id={ids.crumpleTile} filterUnits="userSpaceOnUse" x="0" y="0" width="360" height="360" colorInterpolationFilters="sRGB">
-        <feTurbulence type="fractalNoise" baseFrequency="0.0111" numOctaves="4" seed="9" stitchTiles="stitch" />
+      <filter
+        id={ids.crumpleTile}
+        filterUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="360"
+        height="360"
+        colorInterpolationFilters="sRGB"
+      >
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.0111"
+          numOctaves="4"
+          seed="9"
+          stitchTiles="stitch"
+        />
         <feDiffuseLighting surfaceScale="1.9" diffuseConstant="1.05" lightingColor="#FFFFFF">
           <feDistantLight azimuth="235" elevation="58" />
         </feDiffuseLighting>
-        <feColorMatrix type="matrix" values="0.2067 0.2067 0.2067 0 0.0273 0.1667 0.1667 0.1667 0 0.0127 0.1133 0.1133 0.1133 0 -0.0484 0 0 0 0 1" />
+        <feColorMatrix
+          type="matrix"
+          values="0.2067 0.2067 0.2067 0 0.0273 0.1667 0.1667 0.1667 0 0.0127 0.1133 0.1133 0.1133 0 -0.0484 0 0 0 0 1"
+        />
       </filter>
       <pattern id={ids.crumple} patternUnits="userSpaceOnUse" x="0" y="0" width="360" height="360">
         <rect x="0" y="0" width="360" height="360" filter={`url(#${ids.crumpleTile})`} />
       </pattern>
       <filter id={ids.washiNoise} x="0" y="0" width="100%" height="100%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.026 0.44" numOctaves="2" seed="29" stitchTiles="stitch" />
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.026 0.44"
+          numOctaves="2"
+          seed="29"
+          stitchTiles="stitch"
+        />
         <feColorMatrix type="saturate" values="0" />
-        <feComponentTransfer><feFuncA type="linear" slope="0.76" /></feComponentTransfer>
+        <feComponentTransfer>
+          <feFuncA type="linear" slope="0.76" />
+        </feComponentTransfer>
       </filter>
       <pattern id={ids.washi} width="220" height="220" patternUnits="userSpaceOnUse">
-        <rect width="220" height="220" fill="#8B7B60" filter={`url(#${ids.washiNoise})`} opacity="0.24" />
+        <rect
+          width="220"
+          height="220"
+          fill="#8B7B60"
+          filter={`url(#${ids.washiNoise})`}
+          opacity="0.24"
+        />
       </pattern>
     </defs>
   );
@@ -313,8 +392,18 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
 const SceneGrain = memo(function SceneGrain({ ids }: { readonly ids: SceneIds }) {
   return (
     <g pointerEvents="none">
-      <rect {...overscanRect()} filter={`url(#${ids.pulp})`} opacity="0.07" style={{ mixBlendMode: "multiply" }} />
-      <rect {...overscanRect()} filter={`url(#${ids.fine})`} opacity="0.05" style={{ mixBlendMode: "multiply" }} />
+      <rect
+        {...overscanRect()}
+        filter={`url(#${ids.pulp})`}
+        opacity="0.07"
+        style={{ mixBlendMode: "multiply" }}
+      />
+      <rect
+        {...overscanRect()}
+        filter={`url(#${ids.fine})`}
+        opacity="0.05"
+        style={{ mixBlendMode: "multiply" }}
+      />
       <rect {...overscanRect()} fill={`url(#${ids.vignette})`} />
     </g>
   );
@@ -329,8 +418,18 @@ function overscanRect() {
   };
 }
 
-const Mountains = memo(function Mountains({ progress, ids }: { readonly progress: number; readonly ids: SceneIds }) {
-  const local = rangeProgress(progress, SCENE_PHASES.mountains[0], SCENE_PHASES.mountains[1] + 0.02);
+const Mountains = memo(function Mountains({
+  progress,
+  ids,
+}: {
+  readonly progress: number;
+  readonly ids: SceneIds;
+}) {
+  const local = rangeProgress(
+    progress,
+    SCENE_PHASES.mountains[0],
+    SCENE_PHASES.mountains[1] + 0.02,
+  );
   const fall = easeIn(local);
   const opacity = 1 - rangeProgress(progress, 0.088, 0.106);
 
@@ -363,10 +462,17 @@ const Mountains = memo(function Mountains({ progress, ids }: { readonly progress
   );
 });
 
-const Curtain = memo(function Curtain({ progress, ids }: { readonly progress: number; readonly ids: SceneIds }) {
+const Curtain = memo(function Curtain({
+  progress,
+  ids,
+}: {
+  readonly progress: number;
+  readonly ids: SceneIds;
+}) {
   const cover = rangeProgress(progress, SCENE_PHASES.mountains[0], SCENE_PHASES.mountains[1]);
   const reveal = rangeProgress(progress, SCENE_PHASES.drop[0], SCENE_PHASES.drop[1]);
-  const opacity = 1 - rangeProgress(progress, SCENE_PHASES.settle[0], SCENE_PHASES.settle[1] - 0.02);
+  const opacity =
+    1 - rangeProgress(progress, SCENE_PHASES.settle[0], SCENE_PHASES.settle[1] - 0.02);
 
   if (reveal <= 0) {
     const eased = easeIn(cover);
@@ -390,9 +496,22 @@ const Curtain = memo(function Curtain({ progress, ids }: { readonly progress: nu
   return (
     <g opacity={opacity} data-scene-layer="curtain">
       <path d={topPath} fill={PALETTE.beam} />
-      <rect x={SCENE_OVERSCAN.x} y={bottomY} width={SCENE_OVERSCAN.width} height="1700" fill={PALETTE.beam} />
+      <rect
+        x={SCENE_OVERSCAN.x}
+        y={bottomY}
+        width={SCENE_OVERSCAN.width}
+        height="1700"
+        fill={PALETTE.beam}
+      />
       <path d={topPath} fill={`url(#${ids.crumple})`} opacity={CRUMPLE_OPACITY} />
-      <rect x={SCENE_OVERSCAN.x} y={bottomY} width={SCENE_OVERSCAN.width} height="1700" fill={`url(#${ids.crumple})`} opacity={CRUMPLE_OPACITY} />
+      <rect
+        x={SCENE_OVERSCAN.x}
+        y={bottomY}
+        width={SCENE_OVERSCAN.width}
+        height="1700"
+        fill={`url(#${ids.crumple})`}
+        opacity={CRUMPLE_OPACITY}
+      />
     </g>
   );
 });
@@ -407,7 +526,7 @@ function shojiGridPath(
   width: number,
   height: number,
   columns: number,
-  rows: number
+  rows: number,
 ): string {
   let path = "";
   for (let column = 1; column < columns; column += 1) {
@@ -432,16 +551,7 @@ interface ShojiProps {
   readonly ids: SceneIds;
 }
 
-function Shoji({
-  x,
-  y,
-  width,
-  height,
-  columns,
-  rows,
-  strokeWidth = 7,
-  ids,
-}: ShojiProps) {
+function Shoji({ x, y, width, height, columns, rows, strokeWidth = 7, ids }: ShojiProps) {
   return (
     <g>
       <rect x={x} y={y} width={width} height={height} fill={`url(#${ids.shoji})`} />
@@ -525,8 +635,16 @@ const SideWall = memo(function SideWall({
               ])}
               fill={shade(PALETTE.shoji, -alternatingShade)}
             />
-            <polygon points={polygonPoints(paper)} fill={shade("#EFECE5", -alternatingShade - 0.03)} />
-            <polygon points={polygonPoints(paper)} fill={`url(#${ids.washi})`} opacity="0.68" style={{ mixBlendMode: "multiply" }} />
+            <polygon
+              points={polygonPoints(paper)}
+              fill={shade("#EFECE5", -alternatingShade - 0.03)}
+            />
+            <polygon
+              points={polygonPoints(paper)}
+              fill={`url(#${ids.washi})`}
+              opacity="0.68"
+              style={{ mixBlendMode: "multiply" }}
+            />
             <polygon
               points={polygonPoints(paper)}
               fill="none"
@@ -619,7 +737,13 @@ const DojoFloor = memo(function DojoFloor() {
         fill={PALETTE.tatamiDark}
         opacity="0.5"
       />
-      <rect x={SCENE_OVERSCAN.x} y={VIEW.frontFloor - 4} width={SCENE_OVERSCAN.width} height={SCENE_OVERSCAN.height} fill={PALETTE.tatami} />
+      <rect
+        x={SCENE_OVERSCAN.x}
+        y={VIEW.frontFloor - 4}
+        width={SCENE_OVERSCAN.width}
+        height={SCENE_OVERSCAN.height}
+        fill={PALETTE.tatami}
+      />
     </g>
   );
 });
@@ -644,10 +768,20 @@ function dojoCamera(progress: number) {
   };
 }
 
-const Dojo = memo(function Dojo({ progress, ids }: { readonly progress: number; readonly ids: SceneIds }) {
+const Dojo = memo(function Dojo({
+  progress,
+  ids,
+}: {
+  readonly progress: number;
+  readonly ids: SceneIds;
+}) {
   const door = easeInOut(rangeProgress(progress, SCENE_PHASES.door[0], SCENE_PHASES.door[1]));
   const camera = dojoCamera(progress);
-  const opacity = 1 - easeIn(rangeProgress(progress, SCENE_PHASES.through[0] + 0.045, SCENE_PHASES.through[1] - 0.012));
+  const opacity =
+    1 -
+    easeIn(
+      rangeProgress(progress, SCENE_PHASES.through[0] + 0.045, SCENE_PHASES.through[1] - 0.012),
+    );
   if (opacity <= 0.001) {
     return null;
   }
@@ -697,19 +831,59 @@ const Dojo = memo(function Dojo({ progress, ids }: { readonly progress: number; 
       />
       <g clipPath={`url(#${ids.back})`}>
         <g transform={`translate(${-slide} 0)`} filter={`url(#${ids.lifted})`}>
-          <Shoji x={VIEW.doorLeft} y={VIEW.doorTop} width={panelWidth} height={VIEW.doorBottom - VIEW.doorTop} columns={3} rows={5} strokeWidth={8} ids={ids} />
+          <Shoji
+            x={VIEW.doorLeft}
+            y={VIEW.doorTop}
+            width={panelWidth}
+            height={VIEW.doorBottom - VIEW.doorTop}
+            columns={3}
+            rows={5}
+            strokeWidth={8}
+            ids={ids}
+          />
         </g>
         <g transform={`translate(${slide} 0)`} filter={`url(#${ids.lifted})`}>
-          <Shoji x={VIEW.doorLeft + panelWidth} y={VIEW.doorTop} width={panelWidth} height={VIEW.doorBottom - VIEW.doorTop} columns={3} rows={5} strokeWidth={8} ids={ids} />
+          <Shoji
+            x={VIEW.doorLeft + panelWidth}
+            y={VIEW.doorTop}
+            width={panelWidth}
+            height={VIEW.doorBottom - VIEW.doorTop}
+            columns={3}
+            rows={5}
+            strokeWidth={8}
+            ids={ids}
+          />
         </g>
       </g>
       {Array.from({ length: 4 }, (_, index) => {
         const x = VIEW.backLeft + index * panelWidth;
         return (
           <g key={`transom-${index}`}>
-            <rect x={x + 5} y={VIEW.backTop + 8} width={panelWidth - 10} height={VIEW.doorTop - VIEW.backTop - 16} fill="#EFECE5" />
-            <rect x={x + 5} y={VIEW.backTop + 8} width={panelWidth - 10} height={VIEW.doorTop - VIEW.backTop - 16} fill={`url(#${ids.washi})`} opacity="0.66" style={{ mixBlendMode: "multiply" }} />
-            <rect x={x + 5} y={VIEW.backTop + 8} width={panelWidth - 10} height={VIEW.doorTop - VIEW.backTop - 16} fill="none" stroke={PALETTE.wood} strokeWidth="9" />
+            <rect
+              x={x + 5}
+              y={VIEW.backTop + 8}
+              width={panelWidth - 10}
+              height={VIEW.doorTop - VIEW.backTop - 16}
+              fill="#EFECE5"
+            />
+            <rect
+              x={x + 5}
+              y={VIEW.backTop + 8}
+              width={panelWidth - 10}
+              height={VIEW.doorTop - VIEW.backTop - 16}
+              fill={`url(#${ids.washi})`}
+              opacity="0.66"
+              style={{ mixBlendMode: "multiply" }}
+            />
+            <rect
+              x={x + 5}
+              y={VIEW.backTop + 8}
+              width={panelWidth - 10}
+              height={VIEW.doorTop - VIEW.backTop - 16}
+              fill="none"
+              stroke={PALETTE.wood}
+              strokeWidth="9"
+            />
           </g>
         );
       })}
@@ -725,26 +899,96 @@ const Dojo = memo(function Dojo({ progress, ids }: { readonly progress: number; 
           ids={ids}
         />
       ))}
-      <rect x={VIEW.backLeft - 10} y={VIEW.backTop} width={VIEW.backRight - VIEW.backLeft + 20} height="16" fill={PALETTE.wood} />
-      <rect x={VIEW.backLeft - 10} y={VIEW.doorTop - 13} width={VIEW.backRight - VIEW.backLeft + 20} height="15" fill={PALETTE.wood} />
-      <rect x={VIEW.backLeft - 10} y={VIEW.doorBottom - 8} width={VIEW.backRight - VIEW.backLeft + 20} height="16" fill={PALETTE.wood} />
-      {[VIEW.backLeft, VIEW.backLeft + panelWidth, VIEW.backLeft + panelWidth * 3, VIEW.backRight].map((x, index) => (
-        <rect key={`jamb-${index}`} x={x - 7} y={VIEW.doorTop - 10} width="14" height={VIEW.doorBottom - VIEW.doorTop + 18} fill={PALETTE.wood} />
+      <rect
+        x={VIEW.backLeft - 10}
+        y={VIEW.backTop}
+        width={VIEW.backRight - VIEW.backLeft + 20}
+        height="16"
+        fill={PALETTE.wood}
+      />
+      <rect
+        x={VIEW.backLeft - 10}
+        y={VIEW.doorTop - 13}
+        width={VIEW.backRight - VIEW.backLeft + 20}
+        height="15"
+        fill={PALETTE.wood}
+      />
+      <rect
+        x={VIEW.backLeft - 10}
+        y={VIEW.doorBottom - 8}
+        width={VIEW.backRight - VIEW.backLeft + 20}
+        height="16"
+        fill={PALETTE.wood}
+      />
+      {[
+        VIEW.backLeft,
+        VIEW.backLeft + panelWidth,
+        VIEW.backLeft + panelWidth * 3,
+        VIEW.backRight,
+      ].map((x, index) => (
+        <rect
+          key={`jamb-${index}`}
+          x={x - 7}
+          y={VIEW.doorTop - 10}
+          width="14"
+          height={VIEW.doorBottom - VIEW.doorTop + 18}
+          fill={PALETTE.wood}
+        />
       ))}
-      <rect x="196" y={VIEW.frontTop - 60} width="66" height={SCENE_OVERSCAN.height} fill={PALETTE.beamLight} />
-      <rect x="196" y={VIEW.frontTop - 60} width="20" height={SCENE_OVERSCAN.height} fill={shade(PALETTE.beamLight, 0.13)} />
-      <rect x="1338" y={VIEW.frontTop - 60} width="66" height={SCENE_OVERSCAN.height} fill={PALETTE.beamLight} />
-      <rect x="1338" y={VIEW.frontTop - 60} width="20" height={SCENE_OVERSCAN.height} fill={shade(PALETTE.beamLight, 0.13)} />
+      <rect
+        x="196"
+        y={VIEW.frontTop - 60}
+        width="66"
+        height={SCENE_OVERSCAN.height}
+        fill={PALETTE.beamLight}
+      />
+      <rect
+        x="196"
+        y={VIEW.frontTop - 60}
+        width="20"
+        height={SCENE_OVERSCAN.height}
+        fill={shade(PALETTE.beamLight, 0.13)}
+      />
+      <rect
+        x="1338"
+        y={VIEW.frontTop - 60}
+        width="66"
+        height={SCENE_OVERSCAN.height}
+        fill={PALETTE.beamLight}
+      />
+      <rect
+        x="1338"
+        y={VIEW.frontTop - 60}
+        width="20"
+        height={SCENE_OVERSCAN.height}
+        fill={shade(PALETTE.beamLight, 0.13)}
+      />
       <g transform="translate(292 690)" opacity="0.95">
         <rect x="0" y="0" width="15" height="150" fill={PALETTE.beamLight} />
         <rect x="86" y="0" width="15" height="150" fill={PALETTE.beamLight} />
         {[0, 1, 2].map((index) => (
-          <rect key={`rack-${index}`} x="-9" y={18 + index * 36} width="119" height="11" rx="5" fill={PALETTE.woodPale} />
+          <rect
+            key={`rack-${index}`}
+            x="-9"
+            y={18 + index * 36}
+            width="119"
+            height="11"
+            rx="5"
+            fill={PALETTE.woodPale}
+          />
         ))}
       </g>
       <g transform="translate(1216 372)" opacity="0.95">
         <rect x="0" y="0" width="86" height="200" fill="#EDE7D8" />
-        <rect x="0" y="0" width="86" height="200" fill={`url(#${ids.washi})`} opacity="0.82" style={{ mixBlendMode: "multiply" }} />
+        <rect
+          x="0"
+          y="0"
+          width="86"
+          height="200"
+          fill={`url(#${ids.washi})`}
+          opacity="0.82"
+          style={{ mixBlendMode: "multiply" }}
+        />
         <rect x="0" y="0" width="86" height="14" fill={PALETTE.wood} />
         <rect x="0" y="186" width="86" height="14" fill={PALETTE.wood} />
         <rect x="30" y="44" width="26" height="94" rx="6" fill={PALETTE.beam} opacity="0.3" />
@@ -777,9 +1021,19 @@ const Clouds = memo(function Clouds({ progress }: { readonly progress: number })
             transform={`translate(${round2(cloud.x + offsetX)} ${round2(cloud.y + offsetY)}) scale(${round2(scale)})`}
             opacity={round2(clamp(cloudProgress * 2.6))}
           >
-            <path d={cloud.path} transform="translate(2 19)" fill={shade(PALETTE.cloud[cloud.tone]!, -0.42)} opacity="0.42" />
+            <path
+              d={cloud.path}
+              transform="translate(2 19)"
+              fill={shade(PALETTE.cloud[cloud.tone]!, -0.42)}
+              opacity="0.42"
+            />
             <path d={cloud.path} fill={PALETTE.cloud[cloud.tone]!} />
-            <path d={cloud.path} transform="translate(0 -5)" fill={shade(PALETTE.cloud[cloud.tone]!, 0.35)} opacity="0.3" />
+            <path
+              d={cloud.path}
+              transform="translate(0 -5)"
+              fill={shade(PALETTE.cloud[cloud.tone]!, 0.35)}
+              opacity="0.3"
+            />
           </g>
         );
       })}
@@ -787,12 +1041,19 @@ const Clouds = memo(function Clouds({ progress }: { readonly progress: number })
   );
 });
 
-const SkyWorld = memo(function SkyWorld({ progress, ids }: { readonly progress: number; readonly ids: SceneIds }) {
+const SkyWorld = memo(function SkyWorld({
+  progress,
+  ids,
+}: {
+  readonly progress: number;
+  readonly ids: SceneIds;
+}) {
   const door = easeInOut(rangeProgress(progress, SCENE_PHASES.door[0], SCENE_PHASES.door[1]));
   const through = rangeProgress(progress, SCENE_PHASES.through[0], SCENE_PHASES.through[1]);
   const sky = rangeProgress(progress, SCENE_PHASES.sky[0], SCENE_PHASES.sky[1]);
   const clouds = rangeProgress(progress, SCENE_PHASES.clouds[0], SCENE_PHASES.clouds[1]);
-  const opacity = 1 - rangeProgress(progress, SCENE_PHASES.morph[0] + 0.03, SCENE_PHASES.morph[0] + 0.1);
+  const opacity =
+    1 - rangeProgress(progress, SCENE_PHASES.morph[0] + 0.03, SCENE_PHASES.morph[0] + 0.1);
   if (opacity <= 0.001) {
     return null;
   }
@@ -803,16 +1064,30 @@ const SkyWorld = memo(function SkyWorld({ progress, ids }: { readonly progress: 
   const bottomRight = camera.project(VIEW.doorLeft + 185 + slide, VIEW.doorBottom);
   const scale = mix(1, 1.42, easeInOut(through)) * mix(1, 0.72, easeInOut(sky));
   const rise = mix(0, -230, easeInOut(sky)) + mix(0, -180, easeInOut(clouds));
-  const sunOpacity = 1 - rangeProgress(progress, SCENE_PHASES.clouds[0] + 0.05, SCENE_PHASES.clouds[1] - 0.03);
+  const sunOpacity =
+    1 - rangeProgress(progress, SCENE_PHASES.clouds[0] + 0.05, SCENE_PHASES.clouds[1] - 0.03);
 
   return (
     <g opacity={opacity} data-scene-layer="sky">
       <clipPath id={ids.skyWindow}>
-        <rect x={round2(topLeft.x)} y={round2(topLeft.y)} width={round2(bottomRight.x - topLeft.x)} height={round2(bottomRight.y - topLeft.y)} />
+        <rect
+          x={round2(topLeft.x)}
+          y={round2(topLeft.y)}
+          width={round2(bottomRight.x - topLeft.x)}
+          height={round2(bottomRight.y - topLeft.y)}
+        />
       </clipPath>
       <g clipPath={`url(#${ids.skyWindow})`}>
-        <rect x="-600" y="-600" width={SCENE_WIDTH + 1200} height={SCENE_HEIGHT + 1200} fill={`url(#${ids.sky})`} />
-        <g transform={`translate(${VIEW.centerX} 520) scale(${round2(scale)}) translate(${-VIEW.centerX} ${round2(-520 + rise)})`}>
+        <rect
+          x="-600"
+          y="-600"
+          width={SCENE_WIDTH + 1200}
+          height={SCENE_HEIGHT + 1200}
+          fill={`url(#${ids.sky})`}
+        />
+        <g
+          transform={`translate(${VIEW.centerX} 520) scale(${round2(scale)}) translate(${-VIEW.centerX} ${round2(-520 + rise)})`}
+        >
           <g opacity={1 - easeInOut(sky) * 0.9}>
             {FAR_RIDGES.map((ridge, index) => (
               <path
@@ -823,11 +1098,20 @@ const SkyWorld = memo(function SkyWorld({ progress, ids }: { readonly progress: 
               />
             ))}
           </g>
-          <g transform={`translate(${VIEW.centerX} 430) scale(${1 + easeInOut(sky) * 0.5})`} opacity={sunOpacity}>
+          <g
+            transform={`translate(${VIEW.centerX} 430) scale(${1 + easeInOut(sky) * 0.5})`}
+            opacity={sunOpacity}
+          >
             <circle r="300" fill={`url(#${ids.glow})`} />
             <circle cx="9" cy="14" r="88" fill={PALETTE.sun} opacity="0.5" />
             <circle r="84" fill={`url(#${ids.sun})`} />
-            <circle r="84" fill="none" stroke={shade(PALETTE.sun, -0.2)} strokeWidth="2" opacity="0.35" />
+            <circle
+              r="84"
+              fill="none"
+              stroke={shade(PALETTE.sun, -0.2)}
+              strokeWidth="2"
+              opacity="0.35"
+            />
           </g>
           <Clouds progress={progress} />
         </g>
@@ -836,10 +1120,20 @@ const SkyWorld = memo(function SkyWorld({ progress, ids }: { readonly progress: 
   );
 });
 
-const Weave = memo(function Weave({ progress, horizon, ids }: { readonly progress: number; readonly horizon: number; readonly ids: SceneIds }) {
+const Weave = memo(function Weave({
+  progress,
+  horizon,
+  ids,
+}: {
+  readonly progress: number;
+  readonly horizon: number;
+  readonly ids: SceneIds;
+}) {
   const morph = rangeProgress(progress, SCENE_PHASES.morph[0], SCENE_PHASES.morph[1]);
   const floor = rangeProgress(progress, SCENE_PHASES.floor[0], SCENE_PHASES.floor[1]);
-  const opacity = clamp(rangeProgress(progress, SCENE_PHASES.morph[0] - 0.012, SCENE_PHASES.morph[0] + 0.052));
+  const opacity = clamp(
+    rangeProgress(progress, SCENE_PHASES.morph[0] - 0.012, SCENE_PHASES.morph[0] + 0.052),
+  );
   if (opacity <= 0.001) {
     return null;
   }
@@ -852,7 +1146,12 @@ const Weave = memo(function Weave({ progress, horizon, ids }: { readonly progres
   return (
     <g opacity={round2(opacity)} data-scene-layer="weave-floor">
       <clipPath id={ids.floor}>
-        <rect x="-600" y={round2(floorTop)} width={SCENE_WIDTH + 1200} height={SCENE_HEIGHT + 1200} />
+        <rect
+          x="-600"
+          y={round2(floorTop)}
+          width={SCENE_WIDTH + 1200}
+          height={SCENE_HEIGHT + 1200}
+        />
       </clipPath>
       <g clipPath={`url(#${ids.floor})`}>
         <rect
@@ -863,7 +1162,8 @@ const Weave = memo(function Weave({ progress, horizon, ids }: { readonly progres
           fill={mixColor(PALETTE.cloud[1], PALETTE.floor[2], clamp(morph * 0.6 + floor * 0.4))}
         />
         {PLANK_GEOMETRY.map((plank, index) => {
-          const morphDelay = morphStagger * (0.72 * plank.horizontalOrder + 0.28 * plank.verticalOrder);
+          const morphDelay =
+            morphStagger * (0.72 * plank.horizontalOrder + 0.28 * plank.verticalOrder);
           const plankMorph = easeInOut(clamp((morph - morphDelay) / (1 - morphStagger)));
           const floorDelay = floorStagger * (1 - plank.normalizedDepth);
           const plankFloor = easeInOut(clamp((floor - floorDelay) / (1 - floorStagger)));
@@ -882,9 +1182,10 @@ const Weave = memo(function Weave({ progress, horizon, ids }: { readonly progres
           const cloudTone = PALETTE.cloud[plank.tone]!;
           const bambooTone = PALETTE.bamboo[plank.tone]!;
           const floorTone = PALETTE.floor[plank.tone]!;
-          const fill = plankFloor > 0
-            ? mixColor(bambooTone, floorTone, plankFloor)
-            : mixColor(cloudTone, bambooTone, plankMorph);
+          const fill =
+            plankFloor > 0
+              ? mixColor(bambooTone, floorTone, plankFloor)
+              : mixColor(cloudTone, bambooTone, plankMorph);
           const pointList = polygonPoints(points);
           return (
             <g key={`plank-${index}`}>
@@ -911,7 +1212,15 @@ const Weave = memo(function Weave({ progress, horizon, ids }: { readonly progres
   );
 });
 
-const RoomWall = memo(function RoomWall({ progress, horizon, ids }: { readonly progress: number; readonly horizon: number; readonly ids: SceneIds }) {
+const RoomWall = memo(function RoomWall({
+  progress,
+  horizon,
+  ids,
+}: {
+  readonly progress: number;
+  readonly horizon: number;
+  readonly ids: SceneIds;
+}) {
   const local = rangeProgress(progress, SCENE_PHASES.floor[0] + 0.02, SCENE_PHASES.floor[1]);
   if (local <= 0.001) {
     return null;
@@ -920,8 +1229,21 @@ const RoomWall = memo(function RoomWall({ progress, horizon, ids }: { readonly p
   const floorLine = horizon + FLOOR_FAR;
   return (
     <g opacity={round2(local)} data-scene-layer="room">
-      <rect x="-400" y="-900" width={SCENE_WIDTH + 800} height={900 + floorLine} fill={`url(#${ids.wall})`} />
-      <rect x="-400" y={floorLine - 20} width={SCENE_WIDTH + 800} height="22" fill={PALETTE.baseboard} opacity="0.55" />
+      <rect
+        x="-400"
+        y="-900"
+        width={SCENE_WIDTH + 800}
+        height={900 + floorLine}
+        fill={`url(#${ids.wall})`}
+      />
+      <rect
+        x="-400"
+        y={floorLine - 20}
+        width={SCENE_WIDTH + 800}
+        height="22"
+        fill={PALETTE.baseboard}
+        opacity="0.55"
+      />
       <g opacity={clamp((local - 0.45) * 3) * 0.85}>
         <rect x="182" y={floorLine - 232} width="34" height="52" rx="5" fill="#EDEAE4" />
         <rect x="192" y={floorLine - 222} width="14" height="24" rx="3" fill="#DAD4CB" />
@@ -962,7 +1284,7 @@ const STUDENT_BODY_PATH = smoothPath(
     { x: STUDENT_BODY_WIDTH * 0.28, y: -STUDENT_BODY_HEIGHT },
   ],
   true,
-  0.92
+  0.92,
 );
 
 function Student({
@@ -981,8 +1303,18 @@ function Student({
   readonly opacity: number;
 }) {
   return (
-    <g opacity={round2(opacity)} transform={`translate(${round2(x)} ${round2(y)}) scale(${round2(scale)}) rotate(${round2(lean)})`}>
-      <ellipse cx="8" cy="20" rx={STUDENT_BODY_WIDTH * 1.26} ry="24" fill="#7C6748" opacity="0.24" />
+    <g
+      opacity={round2(opacity)}
+      transform={`translate(${round2(x)} ${round2(y)}) scale(${round2(scale)}) rotate(${round2(lean)})`}
+    >
+      <ellipse
+        cx="8"
+        cy="20"
+        rx={STUDENT_BODY_WIDTH * 1.26}
+        ry="24"
+        fill="#7C6748"
+        opacity="0.24"
+      />
       <path d={STUDENT_BODY_PATH} transform="translate(7 11)" fill="#7C6748" opacity="0.24" />
       <path d={STUDENT_BODY_PATH} fill={PALETTE.gi} />
       <path
@@ -993,14 +1325,36 @@ function Student({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <ellipse cx="8" cy={-STUDENT_BODY_HEIGHT - 54} rx="66" ry="72" fill="#7C6748" opacity="0.22" />
+      <ellipse
+        cx="8"
+        cy={-STUDENT_BODY_HEIGHT - 54}
+        rx="66"
+        ry="72"
+        fill="#7C6748"
+        opacity="0.22"
+      />
       <ellipse cx="2" cy={-STUDENT_BODY_HEIGHT - 62} rx="66" ry="72" fill={skin} />
-      <ellipse cx="-16" cy={-STUDENT_BODY_HEIGHT - 78} rx="34" ry="30" fill={shade(skin, 0.16)} opacity="0.45" />
+      <ellipse
+        cx="-16"
+        cy={-STUDENT_BODY_HEIGHT - 78}
+        rx="34"
+        ry="30"
+        fill={shade(skin, 0.16)}
+        opacity="0.45"
+      />
     </g>
   );
 }
 
-const Students = memo(function Students({ progress, horizon, spread }: { readonly progress: number; readonly horizon: number; readonly spread: number }) {
+const Students = memo(function Students({
+  progress,
+  horizon,
+  spread,
+}: {
+  readonly progress: number;
+  readonly horizon: number;
+  readonly spread: number;
+}) {
   const local = rangeProgress(progress, SCENE_PHASES.students[0], SCENE_PHASES.students[1]);
   if (local <= 0.001) {
     return null;
@@ -1052,7 +1406,7 @@ export const JourneyScene = memo(function JourneyScene({
   const horizon = mix(
     -330,
     330,
-    easeInOut(rangeProgress(safeProgress, SCENE_PHASES.floor[0], SCENE_PHASES.floor[1]))
+    easeInOut(rangeProgress(safeProgress, SCENE_PHASES.floor[0], SCENE_PHASES.floor[1])),
   );
 
   return (
@@ -1082,7 +1436,8 @@ export const JourneyScene = memo(function JourneyScene({
       {isNear(safeProgress, SCENE_PHASES.portal[0], SCENE_PHASES.morph[0] + 0.12, 0.08) ? (
         <SkyWorld progress={safeProgress} ids={ids} />
       ) : null}
-      {safeProgress > SCENE_PHASES.mountains[1] - 0.006 && safeProgress < SCENE_PHASES.through[1] + 0.05 ? (
+      {safeProgress > SCENE_PHASES.mountains[1] - 0.006 &&
+      safeProgress < SCENE_PHASES.through[1] + 0.05 ? (
         <Dojo progress={safeProgress} ids={ids} />
       ) : null}
       {safeProgress < SCENE_PHASES.settle[1] + 0.03 ? (

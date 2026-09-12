@@ -23,11 +23,13 @@ def fake_supabase(row: dict) -> TableBackedSupabase:
 
 class StudioScopePlatformAccessTest(unittest.TestCase):
     def test_access_uses_repaired_platform_status_before_local_row(self):
-        supabase = fake_supabase({
-            "status": "incomplete",
-            "comped": False,
-            "trial_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "status": "incomplete",
+                "comped": False,
+                "trial_end": None,
+            }
+        )
         repaired_row = {
             "status": "active",
             "comped": False,
@@ -45,15 +47,19 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         self.assertEqual(supabase.query_log, [])
 
     def test_access_does_not_fall_back_to_stale_local_row_when_service_fails(self):
-        supabase = fake_supabase({
-            "status": "active",
-            "comped": False,
-            "trial_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "status": "active",
+                "comped": False,
+                "trial_end": None,
+            }
+        )
 
         with patch(
             "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
-            side_effect=AccessRepairProviderError(RuntimeError("Stripe unavailable"), reachable=False),
+            side_effect=AccessRepairProviderError(
+                RuntimeError("Stripe unavailable"), reachable=False
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_platform_subscription_access(supabase, "studio_1")
@@ -73,15 +79,19 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         told a lapsed studio SUBSCRIPTION_REQUIRED — an answer that looks
         routine and actionable — when the truth was that Koaryu had broken.
         """
-        supabase = fake_supabase({
-            "status": "incomplete",  # locally lapsed: the tempting case to answer locally
-            "comped": False,
-            "trial_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "status": "incomplete",  # locally lapsed: the tempting case to answer locally
+                "comped": False,
+                "trial_end": None,
+            }
+        )
 
         with patch(
             "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
-            side_effect=HTTPException(status_code=404, detail="Koaryu Core billing record not found."),
+            side_effect=HTTPException(
+                status_code=404, detail="Koaryu Core billing record not found."
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_platform_subscription_access(supabase, "studio_1")
@@ -91,11 +101,13 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         self.assertEqual(supabase.query_log, [])
 
     def test_access_falls_back_to_local_row_when_stripe_is_not_configured(self):
-        supabase = fake_supabase({
-            "status": "active",
-            "comped": False,
-            "trial_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "status": "active",
+                "comped": False,
+                "trial_end": None,
+            }
+        )
 
         with patch(
             "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
@@ -111,14 +123,19 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         self.assertEqual(len(supabase.query_log), 1)
 
     def test_access_does_not_use_no_stripe_fallback_in_production(self):
-        supabase = fake_supabase({
-            "status": "active",
-            "comped": False,
-            "trial_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "status": "active",
+                "comped": False,
+                "trial_end": None,
+            }
+        )
 
         with (
-            patch("app.services.studio_scope.get_settings", return_value=SimpleNamespace(ENVIRONMENT="production")),
+            patch(
+                "app.services.studio_scope.get_settings",
+                return_value=SimpleNamespace(ENVIRONMENT="production"),
+            ),
             patch(
                 "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
                 side_effect=HTTPException(
@@ -137,14 +154,19 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         self.assertEqual(supabase.query_log, [])
 
     def test_access_does_not_use_no_stripe_fallback_in_staging(self):
-        supabase = fake_supabase({
-            "status": "active",
-            "comped": False,
-            "trial_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "status": "active",
+                "comped": False,
+                "trial_end": None,
+            }
+        )
 
         with (
-            patch("app.services.studio_scope.get_settings", return_value=SimpleNamespace(ENVIRONMENT="staging")),
+            patch(
+                "app.services.studio_scope.get_settings",
+                return_value=SimpleNamespace(ENVIRONMENT="staging"),
+            ),
             patch(
                 "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
                 side_effect=HTTPException(
@@ -179,11 +201,13 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         self.assertFalse(service._can_degrade_access_repair(error))
 
     def test_ensure_platform_subscription_access_allows_repaired_active_status(self):
-        supabase = fake_supabase({
-            "status": "incomplete",
-            "comped": False,
-            "trial_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "status": "incomplete",
+                "comped": False,
+                "trial_end": None,
+            }
+        )
         repaired_row = {
             "status": "active",
             "comped": False,
@@ -196,7 +220,9 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         ):
             ensure_platform_subscription_access(supabase, "studio_1")
 
-    def test_ensure_platform_subscription_access_denies_locally_lapsed_studio_when_service_fails(self):
+    def test_ensure_platform_subscription_access_denies_locally_lapsed_studio_when_service_fails(
+        self,
+    ):
         """A studio the local row already shows as lapsed does not need Stripe.
 
         The answer is the same whether or not the provider is reachable, so the
@@ -204,15 +230,19 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         a generic service error it cannot act on. This holds only for a *provider*
         fault; see test_internal_failures_are_not_answered_from_local_state.
         """
-        supabase = fake_supabase({
-            "status": "incomplete",
-            "comped": False,
-            "trial_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "status": "incomplete",
+                "comped": False,
+                "trial_end": None,
+            }
+        )
 
         with patch(
             "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
-            side_effect=AccessRepairProviderError(RuntimeError("Stripe unavailable"), reachable=False),
+            side_effect=AccessRepairProviderError(
+                RuntimeError("Stripe unavailable"), reachable=False
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 ensure_platform_subscription_access(supabase, "studio_1")
@@ -229,15 +259,19 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         cannot be verified continues to return BILLING_STATUS_UNAVAILABLE rather
         than granting access.
         """
-        supabase = fake_supabase({
-            "status": "active",
-            "comped": False,
-            "trial_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "status": "active",
+                "comped": False,
+                "trial_end": None,
+            }
+        )
 
         with patch(
             "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
-            side_effect=AccessRepairProviderError(RuntimeError("Stripe unavailable"), reachable=False),
+            side_effect=AccessRepairProviderError(
+                RuntimeError("Stripe unavailable"), reachable=False
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 ensure_platform_subscription_access(supabase, "studio_1")
@@ -246,13 +280,15 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         self.assertEqual(context.exception.detail["code"], "BILLING_STATUS_UNAVAILABLE")
 
     def test_access_repairs_stale_incomplete_subscription_before_denial(self):
-        supabase = fake_supabase({
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "incomplete",
-            "comped": False,
-        })
+        supabase = fake_supabase(
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "incomplete",
+                "comped": False,
+            }
+        )
 
         class FakeStripeService:
             calls = 0
@@ -277,16 +313,18 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         self.assertEqual(FakeStripeService.calls, 1)
 
     def test_access_repairs_expired_trialing_subscription_before_denial(self):
-        supabase = fake_supabase({
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "trialing",
-            "comped": False,
-            "trial_end": "1970-01-01T00:05:00+00:00",
-            "current_period_start": "1970-01-01T00:01:40+00:00",
-            "current_period_end": "2999-01-01T00:03:20+00:00",
-        })
+        supabase = fake_supabase(
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "trialing",
+                "comped": False,
+                "trial_end": "1970-01-01T00:05:00+00:00",
+                "current_period_start": "1970-01-01T00:01:40+00:00",
+                "current_period_end": "2999-01-01T00:03:20+00:00",
+            }
+        )
 
         class FakeStripeService:
             calls = 0
@@ -309,15 +347,17 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         self.assertEqual(FakeStripeService.calls, 1)
 
     def test_access_reports_unavailable_when_strict_repair_fails(self):
-        supabase = fake_supabase({
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "active",
-            "comped": False,
-            "current_period_start": None,
-            "current_period_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "active",
+                "comped": False,
+                "current_period_start": None,
+                "current_period_end": None,
+            }
+        )
 
         class FakeStripeService:
             calls = 0
@@ -336,15 +376,17 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         self.assertEqual(FakeStripeService.calls, 1)
 
     def test_access_uses_local_row_when_strict_repair_hits_missing_stripe_config(self):
-        supabase = fake_supabase({
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "active",
-            "comped": False,
-            "current_period_start": None,
-            "current_period_end": None,
-        })
+        supabase = fake_supabase(
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "active",
+                "comped": False,
+                "current_period_start": None,
+                "current_period_end": None,
+            }
+        )
 
         class FakeStripeService:
             calls = 0

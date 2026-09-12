@@ -28,15 +28,29 @@ function ConnectEntityModal({
       ariaLabelledBy="connect-entity-title"
       onBackdropClick={onCancel}
     >
-      <h2 id="connect-entity-title" className="text-base font-semibold text-text-primary">Connect Stripe payments</h2>
+      <h2 id="connect-entity-title" className="text-base font-semibold text-text-primary">
+        Connect Stripe payments
+      </h2>
       <p className="mt-2 text-sm text-muted">
-        Choose the legal account type before Koaryu creates the Stripe account. If the studio is not registered yet, use the sole proprietor option. After the account is created, legal entity changes happen in Stripe or by reconnecting a new account before payment history exists.
+        Choose the legal account type before Koaryu creates the Stripe account. If the studio is not
+        registered yet, use the sole proprietor option. After the account is created, legal entity
+        changes happen in Stripe or by reconnecting a new account before payment history exists.
       </p>
       <div className="mt-4 grid gap-2">
-        {([
-          ["individual", "Sole proprietor / individual", "Use this when the studio operates under an individual owner without a separate legal company."],
-          ["company", "Registered business / company", "Use this for LLCs, corporations, partnerships, and incorporated studios with their own legal/tax details."],
-        ] as const).map(([value, label, description]) => (
+        {(
+          [
+            [
+              "individual",
+              "Sole proprietor / individual",
+              "Use this when the studio operates under an individual owner without a separate legal company.",
+            ],
+            [
+              "company",
+              "Registered business / company",
+              "Use this for LLCs, corporations, partnerships, and incorporated studios with their own legal/tax details.",
+            ],
+          ] as const
+        ).map(([value, label, description]) => (
           <label
             key={value}
             className={`min-h-11 cursor-pointer rounded-[10px] border px-3 py-3 transition-colors ${
@@ -66,7 +80,13 @@ function ConnectEntityModal({
         <Button variant="ghost" size="sm" disabled={isActionLoading} onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant="primary" size="sm" isLoading={isConnectLoading} disabled={isActionLoading} onClick={onConfirm}>
+        <Button
+          variant="primary"
+          size="sm"
+          isLoading={isConnectLoading}
+          disabled={isActionLoading}
+          onClick={onConfirm}
+        >
           <Link2 className="h-3.5 w-3.5" />
           {isConnectLoading ? "Opening Stripe..." : "Create Stripe account"}
         </Button>
@@ -88,7 +108,8 @@ export function useBillingConnectEntityModal({
   openConnectEntityModal: () => void;
 } {
   const [isOpen, setIsOpen] = useState(false);
-  const [connectEntityType, setConnectEntityType] = useState<ConnectBusinessEntityType>("individual");
+  const [connectEntityType, setConnectEntityType] =
+    useState<ConnectBusinessEntityType>("individual");
 
   async function handleConfirmConnectEntity() {
     setIsOpen(false);

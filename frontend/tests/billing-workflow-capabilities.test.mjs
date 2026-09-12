@@ -44,7 +44,9 @@ describe("billing workflow capabilities", () => {
       "billing-payer-actions.ts",
       "billing-payer-setup-action.ts",
       "billing-enrollment-actions.ts",
-    ].map((file) => fs.readFileSync(path.join(root, "src/lib", file), "utf8")).join("\n");
+    ]
+      .map((file) => fs.readFileSync(path.join(root, "src/lib", file), "utf8"))
+      .join("\n");
 
     for (const workflowId of [
       "connect.onboarding",

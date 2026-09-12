@@ -9,15 +9,14 @@ from app.core.config import get_settings
 
 _client: Optional[Client] = None
 
+
 class SupabaseClientCleanupError(RuntimeError):
     """Raised after every initialized synchronous client transport was closed."""
 
     def __init__(self, failures: list[BaseException]) -> None:
         self.failures = tuple(failures)
         self.causes = self.failures
-        super().__init__(
-            f"supabase client cleanup failed for {len(failures)} transport(s)"
-        )
+        super().__init__(f"supabase client cleanup failed for {len(failures)} transport(s)")
 
 
 def close_supabase_client(client: Client) -> None:
@@ -112,7 +111,8 @@ def create_supabase_client(*, postgrest_client_timeout: float | None = None) -> 
     if not math.isfinite(postgrest_client_timeout) or postgrest_client_timeout <= 0:
         raise ValueError("postgrest_client_timeout must be finite and positive")
     return create_client(
-        settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY,
+        settings.SUPABASE_URL,
+        settings.SUPABASE_SERVICE_ROLE_KEY,
         options=ClientOptions(postgrest_client_timeout=postgrest_client_timeout),
     )
 

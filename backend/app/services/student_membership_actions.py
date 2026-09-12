@@ -44,14 +44,18 @@ class StudentMembershipActions:
         self._ensure_student_exists(student_id, studio_id)
         ProgramService(self.supabase).ensure_program_active(studio_id, data.program_id)
         try:
-            result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
-                "p_student_id": student_id,
-                "p_studio_id": studio_id,
-                "p_actor_id": actor_id,
-                "p_operation": "add",
-                "p_membership_id": None,
-                "p_payload": self.membership_store.membership_write_payload(data.model_dump()),
-            })
+            result = execute_required_rpc(
+                self.supabase,
+                "mutate_student_program_membership_atomic",
+                {
+                    "p_student_id": student_id,
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_operation": "add",
+                    "p_membership_id": None,
+                    "p_payload": self.membership_store.membership_write_payload(data.model_dump()),
+                },
+            )
         except PostgrestAPIError as exc:
             if getattr(exc, "code", None) == "P0002":
                 raise HTTPException(status_code=404, detail="Student not found") from exc
@@ -70,21 +74,29 @@ class StudentMembershipActions:
         actor_id: str,
     ) -> StudentProgramMembershipResponse:
         self._ensure_student_exists(student_id, studio_id)
-        update_dict = self.membership_store.membership_write_payload(data.model_dump(exclude_unset=True))
+        update_dict = self.membership_store.membership_write_payload(
+            data.model_dump(exclude_unset=True)
+        )
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
         try:
-            result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
-                "p_student_id": student_id,
-                "p_studio_id": studio_id,
-                "p_actor_id": actor_id,
-                "p_operation": "update",
-                "p_membership_id": membership_id,
-                "p_payload": update_dict,
-            })
+            result = execute_required_rpc(
+                self.supabase,
+                "mutate_student_program_membership_atomic",
+                {
+                    "p_student_id": student_id,
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_operation": "update",
+                    "p_membership_id": membership_id,
+                    "p_payload": update_dict,
+                },
+            )
         except PostgrestAPIError as exc:
             if getattr(exc, "code", None) == "P0002":
-                raise HTTPException(status_code=404, detail="Student program membership not found") from exc
+                raise HTTPException(
+                    status_code=404, detail="Student program membership not found"
+                ) from exc
             raise
         row = first_rpc_row(result)
         if not row:
@@ -100,17 +112,23 @@ class StudentMembershipActions:
     ) -> None:
         self._ensure_student_exists(student_id, studio_id)
         try:
-            result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
-                "p_student_id": student_id,
-                "p_studio_id": studio_id,
-                "p_actor_id": actor_id,
-                "p_operation": "remove",
-                "p_membership_id": membership_id,
-                "p_payload": {},
-            })
+            result = execute_required_rpc(
+                self.supabase,
+                "mutate_student_program_membership_atomic",
+                {
+                    "p_student_id": student_id,
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_operation": "remove",
+                    "p_membership_id": membership_id,
+                    "p_payload": {},
+                },
+            )
         except PostgrestAPIError as exc:
             if getattr(exc, "code", None) == "P0002":
-                raise HTTPException(status_code=404, detail="Student program membership not found") from exc
+                raise HTTPException(
+                    status_code=404, detail="Student program membership not found"
+                ) from exc
             raise
         if not first_rpc_row(result):
             raise HTTPException(status_code=404, detail="Student program membership not found")

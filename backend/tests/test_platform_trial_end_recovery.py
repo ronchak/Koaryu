@@ -11,6 +11,7 @@ made the denial permanent rather than merely strict.
 These drive the real `get_platform_subscription_access`, because the defect is
 an interaction between two modules and neither one is wrong on its own.
 """
+
 from __future__ import annotations
 
 import unittest

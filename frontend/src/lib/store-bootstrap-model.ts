@@ -32,7 +32,11 @@ export function parseAuthProfileResponse(value: unknown): AuthProfileResponse {
   }
 
   const membershipStatus = (value as { membership_status?: unknown }).membership_status;
-  if (membershipStatus !== "none" && membershipStatus !== "active" && membershipStatus !== "archived") {
+  if (
+    membershipStatus !== "none" &&
+    membershipStatus !== "active" &&
+    membershipStatus !== "archived"
+  ) {
     throw new Error("Auth response is missing explicit membership_status.");
   }
 
@@ -59,16 +63,20 @@ export function buildAuthUserProfile(authProfile: AuthProfileResponse): AuthUser
   return authProfile.user;
 }
 
-export function isStaffProfilesAvailable(authProfile: { staff_profiles_available?: unknown }): boolean {
+export function isStaffProfilesAvailable(authProfile: {
+  staff_profiles_available?: unknown;
+}): boolean {
   return authProfile.staff_profiles_available === true;
 }
 
-export function resolveBootstrapStudioName(data: Pick<BootstrapResponse, "studio_name" | "studio">): string {
+export function resolveBootstrapStudioName(
+  data: Pick<BootstrapResponse, "studio_name" | "studio">,
+): string {
   return data.studio_name || data.studio?.name || "";
 }
 
 export function resolveBootstrapLadders(
-  data: Pick<BootstrapResponse, "belt_ladders" | "primary_belt_ladder">
+  data: Pick<BootstrapResponse, "belt_ladders" | "primary_belt_ladder">,
 ): BeltLadder[] {
   return data.belt_ladders.length > 0
     ? data.belt_ladders
@@ -77,7 +85,10 @@ export function resolveBootstrapLadders(
       : [];
 }
 
-export function buildDeferredScheduleDateRange(now = new Date(), businessDate = now.toISOString().slice(0, 10)): {
+export function buildDeferredScheduleDateRange(
+  now = new Date(),
+  businessDate = now.toISOString().slice(0, 10),
+): {
   startDate: string;
   endDate: string;
 } {
@@ -91,7 +102,7 @@ export function buildDeferredScheduleDateRange(now = new Date(), businessDate = 
 
 export function isDashboardSummaryForStudio(
   summary: DashboardSummary,
-  studioId: string | null
+  studioId: string | null,
 ): boolean {
   return summary.auth.studio_id === studioId;
 }

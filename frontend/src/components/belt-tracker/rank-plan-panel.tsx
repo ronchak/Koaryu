@@ -140,7 +140,10 @@ export function RankPlanPanel({
                     aria-label="Sub-rank term"
                     className="px-1.5 py-0.5 text-xs bg-surface-raised border border-accent rounded-[10px] text-text-primary focus:outline-none w-20"
                   />
-                  <button type="submit" className="text-xs text-accent hover:text-accent/80 cursor-pointer font-medium">
+                  <button
+                    type="submit"
+                    className="text-xs text-accent hover:text-accent/80 cursor-pointer font-medium"
+                  >
                     Save
                   </button>
                   <button
@@ -167,12 +170,7 @@ export function RankPlanPanel({
 
           <div className="flex flex-wrap items-center gap-2">
             {dirty && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isSaving}
-                onClick={onDiscardChanges}
-              >
+              <Button variant="ghost" size="sm" disabled={isSaving} onClick={onDiscardChanges}>
                 Discard
               </Button>
             )}
@@ -183,39 +181,37 @@ export function RankPlanPanel({
                 disabled={isSaving || !currentProgramReady || editingTerm}
                 onClick={onSaveRanks}
               >
-                <Save aria-hidden="true" className="w-3.5 h-3.5" />{isSaving ? "Saving..." : "Save ranks"}
+                <Save aria-hidden="true" className="w-3.5 h-3.5" />
+                {isSaving ? "Saving..." : "Save ranks"}
               </Button>
             )}
             {groups.length > 0 ? (
-              <Button variant="secondary" size="sm" disabled={!currentProgramReady} onClick={onAddBelt}>
-                <Plus aria-hidden="true" className="w-3.5 h-3.5" />Add belt
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!currentProgramReady}
+                onClick={onAddBelt}
+              >
+                <Plus aria-hidden="true" className="w-3.5 h-3.5" />
+                Add belt
               </Button>
             ) : null}
           </div>
         </div>
 
         {ladderError && (
-          <DismissibleNotice
-            tone="danger"
-            onDismiss={onDismissLadderError}
-          >
+          <DismissibleNotice tone="danger" onDismiss={onDismissLadderError}>
             {ladderError}
           </DismissibleNotice>
         )}
         {programsLoadError && !isProgramsLoadErrorDismissed && (
-          <DismissibleNotice
-            tone="danger"
-            onDismiss={onDismissProgramsLoadError}
-          >
+          <DismissibleNotice tone="danger" onDismiss={onDismissProgramsLoadError}>
             {programsLoadError}
           </DismissibleNotice>
         )}
 
         {saveError && (
-          <DismissibleNotice
-            tone="danger"
-            onDismiss={onDismissSaveError}
-          >
+          <DismissibleNotice tone="danger" onDismiss={onDismissSaveError}>
             {saveError}
           </DismissibleNotice>
         )}
@@ -239,9 +235,7 @@ export function RankPlanPanel({
                 data-progression-stratum={groupIndex + 1}
                 data-drop-target={isDropTarget || undefined}
                 className={`${styles.rankGroup} border transition-[background-color,border-color,opacity] ${
-                  isDropTarget
-                    ? "border-accent bg-accent/5"
-                    : "border-border bg-surface"
+                  isDropTarget ? "border-accent bg-accent/5" : "border-border bg-surface"
                 } ${isDraggingThisGroup ? "opacity-40" : "opacity-100"}`}
               >
                 <div
@@ -269,24 +263,28 @@ export function RankPlanPanel({
                     aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${group.belt.name}`}
                     className={styles.rankCollapseButton}
                   >
-                    {isCollapsed
-                      ? <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />
-                      : <ChevronDown aria-hidden="true" className="w-3.5 h-3.5" />}
+                    {isCollapsed ? (
+                      <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronDown aria-hidden="true" className="w-3.5 h-3.5" />
+                    )}
                   </button>
 
                   <div className={styles.rankIdentity}>
                     <BeltVisual rank={group.belt} />
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-text-primary">
-                        {group.belt.name}
-                      </p>
+                      <p className="text-sm font-semibold text-text-primary">{group.belt.name}</p>
                       <p className="text-xs text-muted mt-0.5">
                         {group.belt.min_classes > 0 ? `${group.belt.min_classes} classes` : ""}
                         {group.belt.min_classes > 0 && group.belt.min_months > 0 ? " · " : ""}
                         {group.belt.min_months > 0 ? `${group.belt.min_months} months` : ""}
                         {group.belt.requires_approval ? " · Approval" : ""}
-                        {!group.belt.min_classes && !group.belt.min_months && !group.belt.requires_approval
-                          ? groupIndex === 0 ? "Starting belt" : "No requirements"
+                        {!group.belt.min_classes &&
+                        !group.belt.min_months &&
+                        !group.belt.requires_approval
+                          ? groupIndex === 0
+                            ? "Starting belt"
+                            : "No requirements"
                           : ""}
                         {group.tips.length > 0
                           ? ` · ${group.tips.length} ${subRankTerm.toLowerCase()}${group.tips.length !== 1 ? "s" : ""}`
@@ -338,7 +336,10 @@ export function RankPlanPanel({
                 </div>
 
                 {!isCollapsed && (
-                  <div id={`rank-group-${group.belt.id}-tips`} className="mx-4 mb-3 border-l border-border pl-4">
+                  <div
+                    id={`rank-group-${group.belt.id}-tips`}
+                    className="mx-4 mb-3 border-l border-border pl-4"
+                  >
                     {group.tips.length === 0 && (
                       <p className="text-xs text-muted italic py-1 mb-1">
                         No {subRankTerm.toLowerCase()}s configured.
@@ -346,9 +347,12 @@ export function RankPlanPanel({
                     )}
 
                     {group.tips.map((tip, tipIndex) => {
-                      const isTipDragging = draggingTip?.gIdx === groupIndex && draggingTip?.tIdx === tipIndex;
-                      const isTipOver = dragOverTip?.gIdx === groupIndex && dragOverTip?.tIdx === tipIndex
-                        && !(draggingTip?.gIdx === groupIndex && draggingTip?.tIdx === tipIndex);
+                      const isTipDragging =
+                        draggingTip?.gIdx === groupIndex && draggingTip?.tIdx === tipIndex;
+                      const isTipOver =
+                        dragOverTip?.gIdx === groupIndex &&
+                        dragOverTip?.tIdx === tipIndex &&
+                        !(draggingTip?.gIdx === groupIndex && draggingTip?.tIdx === tipIndex);
 
                       return (
                         <div
@@ -382,7 +386,9 @@ export function RankPlanPanel({
                             {tip.min_months > 0 ? `${tip.min_months} mo` : ""}
                             {tip.requires_approval ? " · ✓" : ""}
                           </span>
-                          <div className={`flex items-center gap-0.5 flex-shrink-0 ${styles.rankActions}`}>
+                          <div
+                            className={`flex items-center gap-0.5 flex-shrink-0 ${styles.rankActions}`}
+                          >
                             <button
                               type="button"
                               onClick={() => onMoveTip(groupIndex, tipIndex, -1)}

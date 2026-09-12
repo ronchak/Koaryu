@@ -42,26 +42,38 @@ function student(id, firstName, lastName, programId, memberships = []) {
 
 describe("session detail model", () => {
   it("requires complete roster and settled attendance before exposing counters", () => {
-    assert.equal(areSessionAttendanceCountersReady({
-      attendanceReady: true,
-      rosterComplete: true,
-      rosterLoading: false,
-    }), true);
-    assert.equal(areSessionAttendanceCountersReady({
-      attendanceReady: true,
-      rosterComplete: false,
-      rosterLoading: false,
-    }), false);
-    assert.equal(areSessionAttendanceCountersReady({
-      attendanceReady: true,
-      rosterComplete: true,
-      rosterLoading: true,
-    }), false);
-    assert.equal(areSessionAttendanceCountersReady({
-      attendanceReady: false,
-      rosterComplete: true,
-      rosterLoading: false,
-    }), false);
+    assert.equal(
+      areSessionAttendanceCountersReady({
+        attendanceReady: true,
+        rosterComplete: true,
+        rosterLoading: false,
+      }),
+      true,
+    );
+    assert.equal(
+      areSessionAttendanceCountersReady({
+        attendanceReady: true,
+        rosterComplete: false,
+        rosterLoading: false,
+      }),
+      false,
+    );
+    assert.equal(
+      areSessionAttendanceCountersReady({
+        attendanceReady: true,
+        rosterComplete: true,
+        rosterLoading: true,
+      }),
+      false,
+    );
+    assert.equal(
+      areSessionAttendanceCountersReady({
+        attendanceReady: false,
+        rosterComplete: true,
+        rosterLoading: false,
+      }),
+      false,
+    );
   });
 
   it("formats labels and summarizes attendance outside the modal", () => {
@@ -80,41 +92,73 @@ describe("session detail model", () => {
         [
           { student_id: "one", status: "present" },
           { student_id: "two", status: "late", id: "two", checked_in_at: "2026-01-01T00:00:00Z" },
-          { student_id: "three", status: "absent", id: "three", checked_in_at: "2026-01-01T00:00:00Z" },
+          {
+            student_id: "three",
+            status: "absent",
+            id: "three",
+            checked_in_at: "2026-01-01T00:00:00Z",
+          },
         ],
-        [student("one", "One", "Student"), student("two", "Two", "Student"), student("three", "Three", "Student"), student("four", "Four", "Student")],
-        true
+        [
+          student("one", "One", "Student"),
+          student("two", "Two", "Student"),
+          student("three", "Three", "Student"),
+          student("four", "Four", "Student"),
+        ],
+        true,
       ),
-      { presentCount: 2, absentCount: 1, unmarkedCount: 1 }
+      { presentCount: 2, absentCount: 1, unmarkedCount: 1 },
     );
     assert.deepEqual(
       buildSessionAttendanceSummary(
         [{ student_id: "one", status: "present" }],
         [student("one", "One", "Student")],
-        false
+        false,
       ),
-      { presentCount: 0, absentCount: 0, unmarkedCount: 0 }
+      { presentCount: 0, absentCount: 0, unmarkedCount: 0 },
     );
   });
 
   it("summarizes the same latest per-student attendance state used by roster rows", () => {
     const attendance = [
-      { id: "current-jordan", student_id: "jordan", status: "present", checked_in_at: "2026-01-02T00:00:00Z" },
-      { id: "current-avery", student_id: "avery", status: "absent", checked_in_at: "2026-01-02T00:00:00Z" },
-      { id: "stale-jordan", student_id: "jordan", status: "absent", checked_in_at: "2026-01-01T00:00:00Z" },
+      {
+        id: "current-jordan",
+        student_id: "jordan",
+        status: "present",
+        checked_in_at: "2026-01-02T00:00:00Z",
+      },
+      {
+        id: "current-avery",
+        student_id: "avery",
+        status: "absent",
+        checked_in_at: "2026-01-02T00:00:00Z",
+      },
+      {
+        id: "stale-jordan",
+        student_id: "jordan",
+        status: "absent",
+        checked_in_at: "2026-01-01T00:00:00Z",
+      },
     ];
     const attendanceByStudentId = buildAttendanceByStudentId(attendance, true);
 
     assert.equal(attendanceByStudentId.get("jordan").status, "present");
-    assert.deepEqual(buildSessionAttendanceSummary(attendance, [
-      student("jordan", "Jordan", "Lee"),
-      student("avery", "Avery", "Lee"),
-      student("unmarked", "Morgan", "Lee"),
-    ], true), {
-      presentCount: 1,
-      absentCount: 1,
-      unmarkedCount: 1,
-    });
+    assert.deepEqual(
+      buildSessionAttendanceSummary(
+        attendance,
+        [
+          student("jordan", "Jordan", "Lee"),
+          student("avery", "Avery", "Lee"),
+          student("unmarked", "Morgan", "Lee"),
+        ],
+        true,
+      ),
+      {
+        presentCount: 1,
+        absentCount: 1,
+        unmarkedCount: 1,
+      },
+    );
   });
 
   it("uses explicit three-bucket semantics for supported and legacy statuses", () => {
@@ -126,10 +170,25 @@ describe("session detail model", () => {
       student("unmarked", "Unmarked", "Student"),
     ];
     const attendance = [
-      { id: "present", student_id: "present", status: "present", checked_in_at: "2026-01-01T00:00:00Z" },
+      {
+        id: "present",
+        student_id: "present",
+        status: "present",
+        checked_in_at: "2026-01-01T00:00:00Z",
+      },
       { id: "late", student_id: "late", status: "late", checked_in_at: "2026-01-01T00:00:00Z" },
-      { id: "excused", student_id: "excused", status: "excused", checked_in_at: "2026-01-01T00:00:00Z" },
-      { id: "absent", student_id: "absent", status: "absent", checked_in_at: "2026-01-01T00:00:00Z" },
+      {
+        id: "excused",
+        student_id: "excused",
+        status: "excused",
+        checked_in_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: "absent",
+        student_id: "absent",
+        status: "absent",
+        checked_in_at: "2026-01-01T00:00:00Z",
+      },
     ];
 
     assert.deepEqual(buildSessionAttendanceSummary(attendance, roster, true), {
@@ -147,9 +206,9 @@ describe("session detail model", () => {
           { student_id: "inactive", status: "absent" },
         ],
         [student("active", "Active", "Student"), student("unmarked", "Unmarked", "Student")],
-        true
+        true,
       ),
-      { presentCount: 1, absentCount: 0, unmarkedCount: 1 }
+      { presentCount: 1, absentCount: 0, unmarkedCount: 1 },
     );
   });
 
@@ -170,7 +229,7 @@ describe("session detail model", () => {
         { student_id: "b", status: "present" },
         { student_id: "c", status: "absent" },
       ],
-      true
+      true,
     );
 
     const sections = buildSessionRosterSections({
@@ -179,18 +238,26 @@ describe("session detail model", () => {
       programs,
       attendanceByStudentId,
       students: [
-        student("b", "Blake", "Stone", "kids", [{ program_id: "adult", status: "active", ended_at: null }]),
+        student("b", "Blake", "Stone", "kids", [
+          { program_id: "adult", status: "active", ended_at: null },
+        ]),
         student("a", "Alex", "River", "adult"),
         student("c", "Casey", "Vale", "kids"),
       ],
     });
 
-    assert.deepEqual(sections.classProgramRows.map((row) => row.studentName), [
-      "Alex River",
-      "Blake Stone",
-    ]);
-    assert.deepEqual(sections.otherProgramRows.map((row) => row.studentName), ["Casey Vale"]);
+    assert.deepEqual(
+      sections.classProgramRows.map((row) => row.studentName),
+      ["Alex River", "Blake Stone"],
+    );
+    assert.deepEqual(
+      sections.otherProgramRows.map((row) => row.studentName),
+      ["Casey Vale"],
+    );
     assert.equal(sections.classProgramRows[1].attendanceRecord.status, "present");
-    assert.deepEqual(sections.classProgramRows[0].programs.map((program) => program.name), ["Adult Karate"]);
+    assert.deepEqual(
+      sections.classProgramRows[0].programs.map((program) => program.name),
+      ["Adult Karate"],
+    );
   });
 });

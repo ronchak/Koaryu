@@ -4,10 +4,7 @@ import {
   selectDashboardBillingSummary,
   type DashboardBillingSummary,
 } from "./dashboard-billing-summary";
-import {
-  isDashboardBeltSetupComplete,
-  isDashboardSetupStepComplete,
-} from "./dashboard-page-model";
+import { isDashboardBeltSetupComplete, isDashboardSetupStepComplete } from "./dashboard-page-model";
 import type {
   buildDashboardBeltStats,
   buildDashboardChurnStats,
@@ -254,23 +251,24 @@ function buildDashboardSetupSteps({
 }): SetupStep[] {
   const hasPrograms = isDashboardSetupStepComplete(
     summary?.setup.has_programs,
-    programs.some((program) => !program.archived_at)
+    programs.some((program) => !program.archived_at),
   );
   const hasStudents = isDashboardSetupStepComplete(summary?.setup.has_students, studentCount > 0);
   const hasBeltSystem = isDashboardBeltSetupComplete(
     summary?.setup.has_belt_system,
     beltStats.beltCount,
-    localBeltCount
+    localBeltCount,
   );
   const hasSchedule = isDashboardSetupStepComplete(
     summary?.setup.has_weekly_classes,
-    templateCount > 0 || sessionCount > 0
+    templateCount > 0 || sessionCount > 0,
   );
   const steps: SetupStep[] = [
     {
       id: "programs",
       title: "Name your programs",
-      description: "Create the training tracks families recognize: Kids, Adults, No-Gi, Tae Kwon Do, and more.",
+      description:
+        "Create the training tracks families recognize: Kids, Adults, No-Gi, Tae Kwon Do, and more.",
       complete: hasPrograms,
       href: "/settings",
       actionLabel: "Create programs",
@@ -278,7 +276,8 @@ function buildDashboardSetupSteps({
     {
       id: "students",
       title: "Add your students",
-      description: "Import a roster or add the first few students by hand so Koaryu becomes your live record.",
+      description:
+        "Import a roster or add the first few students by hand so Koaryu becomes your live record.",
       complete: hasStudents,
       href: hasStudents ? "/students" : "/students/import",
       actionLabel: "Import students",
@@ -294,7 +293,8 @@ function buildDashboardSetupSteps({
     {
       id: "weekly-classes",
       title: "Add weekly classes",
-      description: "Build the normal class rhythm so attendance and promotion readiness stay current.",
+      description:
+        "Build the normal class rhythm so attendance and promotion readiness stay current.",
       complete: hasSchedule,
       href: "/schedule",
       actionLabel: "Add classes",
@@ -305,7 +305,8 @@ function buildDashboardSetupSteps({
     steps.push({
       id: "tuition",
       title: "Review existing billing",
-      description: "Confirm current plans, family records, invoices, and supported external-payment tracking.",
+      description:
+        "Confirm current plans, family records, invoices, and supported external-payment tracking.",
       complete: isDashboardBillingSetupComplete({ billingSummary, summary }),
       href: "/billing",
       actionLabel: "Review billing",

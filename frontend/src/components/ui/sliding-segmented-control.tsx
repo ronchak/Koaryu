@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  useRef,
-  type CSSProperties,
-  type ElementType,
-  type KeyboardEvent,
-} from "react";
+import { useRef, type CSSProperties, type ElementType, type KeyboardEvent } from "react";
 
 import styles from "./sliding-segmented-control.module.css";
 
@@ -47,7 +42,8 @@ export function SlidingSegmentedControl<T extends string>({
     const currentIndex = enabledItems.findIndex((item) => item.id === currentId);
     let nextIndex: number | null = null;
 
-    if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + enabledItems.length) % enabledItems.length;
+    if (event.key === "ArrowLeft")
+      nextIndex = (currentIndex - 1 + enabledItems.length) % enabledItems.length;
     if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % enabledItems.length;
     if (event.key === "Home") nextIndex = 0;
     if (event.key === "End") nextIndex = enabledItems.length - 1;
@@ -68,10 +64,12 @@ export function SlidingSegmentedControl<T extends string>({
       className={`${styles.control} ${className}`.trim()}
       data-has-selection={activeIndex >= 0 ? "true" : "false"}
       data-size={size}
-      style={{
-        "--segment-count": items.length,
-        "--segment-index": selectedIndex,
-      } as CSSProperties}
+      style={
+        {
+          "--segment-count": items.length,
+          "--segment-index": selectedIndex,
+        } as CSSProperties
+      }
     >
       <span className={styles.indicator} aria-hidden="true" />
       {items.map((item, index) => {

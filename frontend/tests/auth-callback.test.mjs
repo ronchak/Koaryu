@@ -18,7 +18,10 @@ describe("resolveAuthCallbackNextPath", () => {
   });
 
   it("preserves query strings only for allowed destinations", () => {
-    assert.equal(resolveAuthCallbackNextPath("/reset-password?source=email"), "/reset-password?source=email");
+    assert.equal(
+      resolveAuthCallbackNextPath("/reset-password?source=email"),
+      "/reset-password?source=email",
+    );
     assert.equal(resolveAuthCallbackNextPath("/api/proxy/health?source=email"), "/dashboard");
   });
 });

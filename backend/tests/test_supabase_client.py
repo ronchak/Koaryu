@@ -169,9 +169,7 @@ def test_exact_environment_target_matrix_rejects_other_pairs(
 
 
 @pytest.mark.parametrize("proxy_key", PROXY_ENVIRONMENT_KEYS)
-def test_factory_rejects_uppercase_and_lowercase_proxy_variants(
-    monkeypatch, proxy_key
-):
+def test_factory_rejects_uppercase_and_lowercase_proxy_variants(monkeypatch, proxy_key):
     _clear_proxy_environment(monkeypatch)
     monkeypatch.setenv(proxy_key, "http://proxy.invalid:8080")
     monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
@@ -222,9 +220,7 @@ def test_no_proxy_wildcard_does_not_bypass_proxy_refusal(monkeypatch):
 
 
 @pytest.mark.parametrize("bundle_key", CA_BUNDLE_ENVIRONMENT_KEYS)
-def test_factory_rejects_ca_bundle_and_certificate_overrides(
-    monkeypatch, bundle_key
-):
+def test_factory_rejects_ca_bundle_and_certificate_overrides(monkeypatch, bundle_key):
     _clear_proxy_environment(monkeypatch)
     monkeypatch.setenv(bundle_key, "/tmp/untrusted-ca-bundle")
     settings = Settings(

@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-  canMaterializeScheduleRange,
-  hasStaffPermission,
-} from "../src/lib/staff-permissions.ts";
+import { canMaterializeScheduleRange, hasStaffPermission } from "../src/lib/staff-permissions.ts";
 describe("staff permission policy", () => {
   it("allows roster, lifecycle, schedule, and lead management to admin and front desk", () => {
     for (const permission of [

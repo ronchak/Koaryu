@@ -32,16 +32,14 @@ export function chooseStudentRosterRecoveryTarget({
   }
 
   if (recoverTo === "first") {
-    return attemptedPageOrdinals.has(1)
-      ? null
-      : { pageOrdinal: 1, cursor: null };
+    return attemptedPageOrdinals.has(1) ? null : { pageOrdinal: 1, cursor: null };
   }
 
   const priorPage = Array.from(history.values())
-    .filter((entry) => (
-      entry.pageOrdinal < failedPageOrdinal &&
-      !attemptedPageOrdinals.has(entry.pageOrdinal)
-    ))
+    .filter(
+      (entry) =>
+        entry.pageOrdinal < failedPageOrdinal && !attemptedPageOrdinals.has(entry.pageOrdinal),
+    )
     .sort((left, right) => right.pageOrdinal - left.pageOrdinal)[0];
 
   if (priorPage) {
@@ -51,9 +49,7 @@ export function chooseStudentRosterRecoveryTarget({
     };
   }
 
-  return attemptedPageOrdinals.has(1)
-    ? null
-    : { pageOrdinal: 1, cursor: null };
+  return attemptedPageOrdinals.has(1) ? null : { pageOrdinal: 1, cursor: null };
 }
 
 export function isStudentRosterRequestCurrent({
@@ -70,8 +66,6 @@ export function isStudentRosterRequestCurrent({
   authCurrent: boolean;
 }) {
   return (
-    authCurrent &&
-    requestSequence === activeRequestSequence &&
-    requestQueryKey === activeQueryKey
+    authCurrent && requestSequence === activeRequestSequence && requestQueryKey === activeQueryKey
   );
 }

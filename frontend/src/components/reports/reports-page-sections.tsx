@@ -17,9 +17,7 @@ export function MetricCard({
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-raised text-accent">
           <Icon className="h-4 w-4" />
         </div>
-        <span className="text-xs font-medium text-text-secondary">
-          {label}
-        </span>
+        <span className="text-xs font-medium text-text-secondary">{label}</span>
       </div>
       <p className="text-3xl font-semibold tabular-nums text-text-primary leading-none">{value}</p>
       <p className="text-xs text-muted mt-2 leading-relaxed">{sub}</p>
@@ -27,13 +25,7 @@ export function MetricCard({
   );
 }
 
-export function Panel({
-  children,
-  className = "",
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <section className={`bg-surface p-4 ${className}`} data-report-section="reading-block">
       {children}
@@ -54,11 +46,7 @@ export function PanelHeader({
     <div className="flex items-start justify-between gap-4 mb-5">
       <div className="min-w-0">
         <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
-        {subtitle && (
-          <p className="text-xs text-text-secondary mt-1 leading-relaxed">
-            {subtitle}
-          </p>
-        )}
+        {subtitle && <p className="text-xs text-text-secondary mt-1 leading-relaxed">{subtitle}</p>}
       </div>
       {children}
     </div>

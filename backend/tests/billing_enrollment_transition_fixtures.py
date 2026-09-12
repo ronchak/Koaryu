@@ -30,20 +30,26 @@ class _TransitionFacade(_Facade):
         group = self._get_row_or_404(
             "billing_subscriptions", "group_1", "studio_1", "Group not found."
         )
-        group.update({
-            "stripe_account_id": account_id,
-            "status": "canceled" if event_type == "customer.subscription.deleted" else provider["status"],
-            "cancel_at_period_end": bool(provider.get("cancel_at_period_end")),
-        })
+        group.update(
+            {
+                "stripe_account_id": account_id,
+                "status": "canceled"
+                if event_type == "customer.subscription.deleted"
+                else provider["status"],
+                "cancel_at_period_end": bool(provider.get("cancel_at_period_end")),
+            }
+        )
         if event_type == "customer.subscription.deleted":
             for enrollment in self.supabase.tables["student_billing_enrollments"]:
                 if enrollment.get("billing_subscription_id") == group["id"]:
-                    enrollment.update({
-                        "status": "canceled",
-                        "billing_status": "unpaid",
-                        "stripe_subscription_id": None,
-                        "stripe_subscription_item_id": None,
-                    })
+                    enrollment.update(
+                        {
+                            "status": "canceled",
+                            "billing_status": "unpaid",
+                            "stripe_subscription_id": None,
+                            "stripe_subscription_item_id": None,
+                        }
+                    )
         return dict(group)
 
 
@@ -107,7 +113,8 @@ class _TransitionStripe(_Stripe):
         self.__class__.delete_item_calls.append(copy.deepcopy(payload))
         for subscription in self.__class__.subscriptions.values():
             subscription["items"]["data"] = [
-                item for item in subscription["items"]["data"]
+                item
+                for item in subscription["items"]["data"]
                 if item["id"] != payload["subscription_item_id"]
             ]
         return {"id": payload["subscription_item_id"], "deleted": True}
@@ -131,12 +138,8 @@ class _TransitionStripe(_Stripe):
         ]
         default_settings = {
             "collection_method": subscription["collection_method"],
-            "application_fee_percent": subscription.get(
-                "application_fee_percent"
-            ),
-            "default_payment_method": subscription.get(
-                "default_payment_method"
-            ),
+            "application_fee_percent": subscription.get("application_fee_percent"),
+            "default_payment_method": subscription.get("default_payment_method"),
         }
         if subscription.get("days_until_due") is not None:
             default_settings["invoice_settings"] = {
@@ -200,11 +203,13 @@ class _TransitionStripe(_Stripe):
                     phase[field] = None
             if phase.get("invoice_settings") == defaults.get("invoice_settings"):
                 phase["invoice_settings"] = None
-        schedule.update({
-            "metadata": copy.deepcopy(payload["metadata"]),
-            "end_behavior": "release",
-            "phases": returned_phases,
-        })
+        schedule.update(
+            {
+                "metadata": copy.deepcopy(payload["metadata"]),
+                "end_behavior": "release",
+                "phases": returned_phases,
+            }
+        )
         self.__class__.schedule_idempotency[payload["idempotency_key"]] = schedule_id
         if self.__class__.schedule_update_response_error_after:
             raise self.__class__.schedule_update_response_error_after
@@ -215,16 +220,16 @@ class _TransitionStripe(_Stripe):
         prior = self.__class__.schedule_idempotency.get(payload["idempotency_key"])
         schedule_id = prior or payload["schedule_id"]
         schedule = self.__class__.schedules[schedule_id]
-        subscription_id = schedule.get("subscription") or schedule.get(
-            "released_subscription"
-        )
+        subscription_id = schedule.get("subscription") or schedule.get("released_subscription")
         if self.__class__.schedule_release_error or self.__class__.provider_error:
             raise self.__class__.schedule_release_error or self.__class__.provider_error
-        schedule.update({
-            "status": "released",
-            "subscription": None,
-            "released_subscription": subscription_id,
-        })
+        schedule.update(
+            {
+                "status": "released",
+                "subscription": None,
+                "released_subscription": subscription_id,
+            }
+        )
         self.__class__.subscriptions[subscription_id]["schedule"] = None
         self.__class__.schedule_idempotency[payload["idempotency_key"]] = schedule_id
         if self.__class__.schedule_release_response_error_after:
@@ -296,9 +301,7 @@ def _item(item_id="si_1", quantity=1, price_id="price_1"):
 def _apply_scheduled_item_phase(subscription_id="sub_1", *, rotate_items=False):
     subscription = _TransitionStripe.subscriptions[subscription_id]
     schedule = _TransitionStripe.schedules[subscription["schedule"]]
-    by_price = {
-        item["price"]["id"]: item for item in subscription["items"]["data"]
-    }
+    by_price = {item["price"]["id"]: item for item in subscription["items"]["data"]}
     transitioned = []
     for index, phase_item in enumerate(schedule["phases"][1]["items"], start=1):
         price_id = phase_item["price"]
@@ -326,7 +329,9 @@ def _tables(*, peers=None):
         "student_billing_enrollments": [enrollment, *(peers or [])],
         "billing_plans": [_plan()],
         "billing_payers": [_payer()],
-        "billing_subscriptions": [_group(current_period_end=PERIOD_END, cancel_at_period_end=False)],
+        "billing_subscriptions": [
+            _group(current_period_end=PERIOD_END, cancel_at_period_end=False)
+        ],
         "audit_logs": [],
     }
 

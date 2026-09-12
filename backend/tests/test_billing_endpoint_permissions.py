@@ -53,9 +53,9 @@ class BillingEndpointPermissionTest(unittest.TestCase):
         self.assertEqual(header["schema"]["maxLength"], 255)
 
     def test_autopay_setup_idempotency_header_is_required_and_length_bounded_in_openapi(self):
-        operation = app.openapi()["paths"][
-            "/api/v1/billing/payers/{payer_id}/autopay/setup-link"
-        ]["post"]
+        operation = app.openapi()["paths"]["/api/v1/billing/payers/{payer_id}/autopay/setup-link"][
+            "post"
+        ]
         header = next(
             parameter
             for parameter in operation["parameters"]
@@ -77,8 +77,7 @@ class BillingEndpointPermissionTest(unittest.TestCase):
                 header = next(
                     parameter
                     for parameter in operation["parameters"]
-                    if parameter["in"] == "header"
-                    and parameter["name"] == "Idempotency-Key"
+                    if parameter["in"] == "header" and parameter["name"] == "Idempotency-Key"
                 )
                 self.assertTrue(header["required"])
                 self.assertEqual(header["schema"]["minLength"], 1)
@@ -108,9 +107,17 @@ class BillingEndpointPermissionTest(unittest.TestCase):
 
     def assert_admin_required(self, coroutine_factory):
         with (
-            patch("app.api.v1.endpoints.billing._admin_studio_id", side_effect=_front_desk_forbidden) as admin_studio,
-            patch("app.api.v1.endpoints.billing._manager_studio_id", side_effect=AssertionError("write used manager resolver")),
-            patch("app.api.v1.endpoints.billing._routine_studio_id", side_effect=AssertionError("admin action used routine resolver")),
+            patch(
+                "app.api.v1.endpoints.billing._admin_studio_id", side_effect=_front_desk_forbidden
+            ) as admin_studio,
+            patch(
+                "app.api.v1.endpoints.billing._manager_studio_id",
+                side_effect=AssertionError("write used manager resolver"),
+            ),
+            patch(
+                "app.api.v1.endpoints.billing._routine_studio_id",
+                side_effect=AssertionError("admin action used routine resolver"),
+            ),
             patch("app.api.v1.endpoints.billing.BillingService") as billing_service,
         ):
             with self.assertRaises(HTTPException) as context:
@@ -368,15 +375,19 @@ class BillingEndpointPermissionTest(unittest.TestCase):
             patch("app.api.v1.endpoints.billing._admin_studio_id", return_value="studio_1"),
             patch("app.api.v1.endpoints.billing.BillingService") as billing_service,
         ):
-            billing_service.return_value.retry_invoice_payment = AsyncMock(return_value={"id": "invoice_1"})
+            billing_service.return_value.retry_invoice_payment = AsyncMock(
+                return_value={"id": "invoice_1"}
+            )
 
-            response = asyncio.run(billing_endpoints.retry_invoice_payment(
-                "invoice_1",
-                request_idempotency_key="client-operation-1",
-                user_id="admin_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
+            response = asyncio.run(
+                billing_endpoints.retry_invoice_payment(
+                    "invoice_1",
+                    request_idempotency_key="client-operation-1",
+                    user_id="admin_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
 
         self.assertEqual(response, {"id": "invoice_1"})
         billing_service.return_value.retry_invoice_payment.assert_awaited_once_with(
@@ -398,20 +409,24 @@ class BillingEndpointPermissionTest(unittest.TestCase):
                 return_value={"id": "invoice_2", "status": "void"}
             )
 
-            finalized = asyncio.run(billing_endpoints.finalize_invoice(
-                "invoice_1",
-                request_idempotency_key="finalize-operation",
-                user_id="admin_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
-            voided = asyncio.run(billing_endpoints.void_invoice(
-                "invoice_2",
-                request_idempotency_key="void-operation",
-                user_id="admin_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
+            finalized = asyncio.run(
+                billing_endpoints.finalize_invoice(
+                    "invoice_1",
+                    request_idempotency_key="finalize-operation",
+                    user_id="admin_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
+            voided = asyncio.run(
+                billing_endpoints.void_invoice(
+                    "invoice_2",
+                    request_idempotency_key="void-operation",
+                    user_id="admin_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
 
         self.assertEqual(finalized["status"], "open")
         self.assertEqual(voided["status"], "void")
@@ -433,13 +448,15 @@ class BillingEndpointPermissionTest(unittest.TestCase):
         ):
             billing_service.return_value.retry_invoice_payment = AsyncMock(side_effect=safe_error)
             with self.assertRaises(HTTPException) as response:
-                asyncio.run(billing_endpoints.retry_invoice_payment(
-                    "invoice_1",
-                    request_idempotency_key="declined-operation",
-                    user_id="admin_1",
-                    requested_studio_id="studio_1",
-                    supabase=object(),
-                ))
+                asyncio.run(
+                    billing_endpoints.retry_invoice_payment(
+                        "invoice_1",
+                        request_idempotency_key="declined-operation",
+                        user_id="admin_1",
+                        requested_studio_id="studio_1",
+                        supabase=object(),
+                    )
+                )
 
         self.assertEqual(response.exception.status_code, 402)
         self.assertEqual(response.exception.detail, safe_error.detail)
@@ -449,15 +466,22 @@ class BillingEndpointPermissionTest(unittest.TestCase):
         service.list_payers = AsyncMock(return_value=[])
 
         with (
-            patch("app.api.v1.endpoints.billing._manager_studio_id", return_value="studio_1") as manager_studio,
-            patch("app.api.v1.endpoints.billing._admin_studio_id", side_effect=AssertionError("read used admin resolver")),
+            patch(
+                "app.api.v1.endpoints.billing._manager_studio_id", return_value="studio_1"
+            ) as manager_studio,
+            patch(
+                "app.api.v1.endpoints.billing._admin_studio_id",
+                side_effect=AssertionError("read used admin resolver"),
+            ),
             patch("app.api.v1.endpoints.billing.BillingService", return_value=service),
         ):
-            result = asyncio.run(billing_endpoints.list_payers(
-                user_id="front_desk_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
+            result = asyncio.run(
+                billing_endpoints.list_payers(
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
 
         self.assertEqual(result, [])
         manager_studio.assert_called_once()
@@ -473,11 +497,13 @@ class BillingEndpointPermissionTest(unittest.TestCase):
             ) as manager_role,
             patch("app.api.v1.endpoints.billing.BillingService", return_value=service),
         ):
-            result = asyncio.run(billing_endpoints.get_billing_system_status(
-                user_id="front_desk_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
+            result = asyncio.run(
+                billing_endpoints.get_billing_system_status(
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
 
         self.assertEqual(result, {"workflow_capabilities": []})
         manager_role.assert_called_once()
@@ -529,7 +555,9 @@ class BillingEndpointPermissionTest(unittest.TestCase):
         service.activate_enrollment = AsyncMock(return_value={"id": "enrollment_1"})
         service.record_external_payment = AsyncMock(return_value={"id": "payment_1"})
         service.reconcile_invoice = AsyncMock(return_value={"id": "invoice_1"})
-        service.create_autopay_setup_link = AsyncMock(return_value={"url": "https://checkout.test/setup"})
+        service.create_autopay_setup_link = AsyncMock(
+            return_value={"url": "https://checkout.test/setup"}
+        )
 
         enrollment = StudentBillingEnrollmentCreate(
             student_id="student_1",
@@ -542,45 +570,60 @@ class BillingEndpointPermissionTest(unittest.TestCase):
             external_method="cash",
         )
         with (
-            patch("app.api.v1.endpoints.billing._routine_studio_id", return_value="studio_1") as routine_studio,
-            patch("app.api.v1.endpoints.billing._admin_studio_id", side_effect=AssertionError("routine action used admin resolver")),
+            patch(
+                "app.api.v1.endpoints.billing._routine_studio_id", return_value="studio_1"
+            ) as routine_studio,
+            patch(
+                "app.api.v1.endpoints.billing._admin_studio_id",
+                side_effect=AssertionError("routine action used admin resolver"),
+            ),
             patch("app.api.v1.endpoints.billing.BillingService", return_value=service),
         ):
-            enrollment_result = asyncio.run(billing_endpoints.create_enrollment(
-                enrollment,
-                user_id="front_desk_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
-            activation_result = asyncio.run(billing_endpoints.activate_enrollment(
-                "enrollment_1",
-                request_idempotency_key="activation-key",
-                user_id="front_desk_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
-            payment_result = asyncio.run(billing_endpoints.record_external_payment(
-                payment,
-                request_idempotency_key="payment-key",
-                user_id="front_desk_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
-            invoice_result = asyncio.run(billing_endpoints.reconcile_invoice(
-                "invoice_1",
-                user_id="front_desk_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
-            autopay_result = asyncio.run(billing_endpoints.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                Response(),
-                request_idempotency_key="autopay-key",
-                user_id="front_desk_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
+            enrollment_result = asyncio.run(
+                billing_endpoints.create_enrollment(
+                    enrollment,
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
+            activation_result = asyncio.run(
+                billing_endpoints.activate_enrollment(
+                    "enrollment_1",
+                    request_idempotency_key="activation-key",
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
+            payment_result = asyncio.run(
+                billing_endpoints.record_external_payment(
+                    payment,
+                    request_idempotency_key="payment-key",
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
+            invoice_result = asyncio.run(
+                billing_endpoints.reconcile_invoice(
+                    "invoice_1",
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
+            autopay_result = asyncio.run(
+                billing_endpoints.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    Response(),
+                    request_idempotency_key="autopay-key",
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
 
         self.assertEqual(enrollment_result, {"id": "enrollment_1"})
         self.assertEqual(activation_result, {"id": "enrollment_1"})
@@ -597,9 +640,7 @@ class BillingEndpointPermissionTest(unittest.TestCase):
         service.record_external_payment.assert_awaited_once_with(
             payment, "studio_1", "front_desk_1", "payment-key"
         )
-        service.reconcile_invoice.assert_awaited_once_with(
-            "invoice_1", "studio_1", "front_desk_1"
-        )
+        service.reconcile_invoice.assert_awaited_once_with("invoice_1", "studio_1", "front_desk_1")
         service.create_autopay_setup_link.assert_awaited_once_with(
             "payer_1",
             BillingPayerAutopaySetupRequest(),
@@ -657,29 +698,33 @@ class BillingEndpointPermissionTest(unittest.TestCase):
             patch("app.api.v1.endpoints.billing.BillingService") as service,
         ):
             with self.assertRaises(HTTPException) as enrollment_error:
-                asyncio.run(billing_endpoints.create_enrollment(
-                    StudentBillingEnrollmentCreate(
-                        student_id="student_1",
-                        plan_id="plan_1",
-                        payer_id="payer_1",
-                        collection_mode="invoice_link",
-                    ),
-                    user_id="admin_1",
-                    requested_studio_id="studio_1",
-                    supabase=object(),
-                ))
+                asyncio.run(
+                    billing_endpoints.create_enrollment(
+                        StudentBillingEnrollmentCreate(
+                            student_id="student_1",
+                            plan_id="plan_1",
+                            payer_id="payer_1",
+                            collection_mode="invoice_link",
+                        ),
+                        user_id="admin_1",
+                        requested_studio_id="studio_1",
+                        supabase=object(),
+                    )
+                )
             with self.assertRaises(HTTPException) as payment_error:
-                asyncio.run(billing_endpoints.record_external_payment(
-                    ExternalPaymentCreate(
-                        invoice_id="invoice_1",
-                        amount_cents=1000,
-                        external_method="cash",
-                    ),
-                    request_idempotency_key="payment-key",
-                    user_id="admin_1",
-                    requested_studio_id="studio_1",
-                    supabase=object(),
-                ))
+                asyncio.run(
+                    billing_endpoints.record_external_payment(
+                        ExternalPaymentCreate(
+                            invoice_id="invoice_1",
+                            amount_cents=1000,
+                            external_method="cash",
+                        ),
+                        request_idempotency_key="payment-key",
+                        user_id="admin_1",
+                        requested_studio_id="studio_1",
+                        supabase=object(),
+                    )
+                )
 
         self.assertEqual(enrollment_error.exception.status_code, 409)
         self.assertEqual(
@@ -703,13 +748,15 @@ class BillingEndpointPermissionTest(unittest.TestCase):
             ) as routine_studio,
             patch("app.api.v1.endpoints.billing.BillingService", return_value=service),
         ):
-            result = asyncio.run(billing_endpoints.activate_enrollment(
-                "enrollment_1",
-                request_idempotency_key="activation-key",
-                user_id="admin_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
+            result = asyncio.run(
+                billing_endpoints.activate_enrollment(
+                    "enrollment_1",
+                    request_idempotency_key="activation-key",
+                    user_id="admin_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
 
         self.assertEqual(result, {"id": "enrollment_1"})
         routine_studio.assert_called_once()
@@ -773,16 +820,18 @@ class BillingEndpointPermissionTest(unittest.TestCase):
             ) as routine_resolver,
             patch("app.api.v1.endpoints.students.BillingService", return_value=service),
         ):
-            result = asyncio.run(student_endpoints.add_student_billing_enrollment(
-                "student_1",
-                StudentBillingEnrollmentForStudentCreate(
-                    plan_id="plan_1",
-                    collection_mode="external",
-                ),
-                user_id="front_desk_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
+            result = asyncio.run(
+                student_endpoints.add_student_billing_enrollment(
+                    "student_1",
+                    StudentBillingEnrollmentForStudentCreate(
+                        plan_id="plan_1",
+                        collection_mode="external",
+                    ),
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
 
         self.assertEqual(result, {"id": "enrollment_1"})
         routine_resolver.assert_called_once()
@@ -799,17 +848,19 @@ class BillingEndpointPermissionTest(unittest.TestCase):
             patch("app.api.v1.endpoints.students.BillingService") as service,
         ):
             with self.assertRaises(HTTPException) as enrollment_error:
-                asyncio.run(student_endpoints.add_student_billing_enrollment(
-                    "student_1",
-                    StudentBillingEnrollmentForStudentCreate(
-                        plan_id="plan_1",
-                        payer_id="payer_1",
-                        collection_mode="invoice_link",
-                    ),
-                    user_id="front_desk_1",
-                    requested_studio_id="studio_1",
-                    supabase=object(),
-                ))
+                asyncio.run(
+                    student_endpoints.add_student_billing_enrollment(
+                        "student_1",
+                        StudentBillingEnrollmentForStudentCreate(
+                            plan_id="plan_1",
+                            payer_id="payer_1",
+                            collection_mode="invoice_link",
+                        ),
+                        user_id="front_desk_1",
+                        requested_studio_id="studio_1",
+                        supabase=object(),
+                    )
+                )
 
         self.assertEqual(enrollment_error.exception.status_code, 409)
         self.assertEqual(

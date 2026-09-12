@@ -66,20 +66,16 @@ def _verify_secret(provided: Optional[str], expected: str, purpose: str) -> None
             detail=f"{purpose} secret is not configured.",
         )
     if not provided or not secrets.compare_digest(provided, expected):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid internal secret.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid internal secret."
+        )
 
 
 def _verify_operational_alert_target(environment: str, supabase_url: str) -> str:
     normalized_environment = environment.strip().lower()
-    if (
-        normalized_environment == "staging"
-        and supabase_url == KOARYU_STAGING_SUPABASE_URL
-    ):
+    if normalized_environment == "staging" and supabase_url == KOARYU_STAGING_SUPABASE_URL:
         return normalized_environment
-    if (
-        normalized_environment == "production"
-        and supabase_url == KOARYU_PRODUCTION_SUPABASE_URL
-    ):
+    if normalized_environment == "production" and supabase_url == KOARYU_PRODUCTION_SUPABASE_URL:
         return normalized_environment
     parsed = urlparse(supabase_url)
     if (
@@ -107,9 +103,7 @@ def _run_operational_alert_evaluation(
         raise _OperationalAlertEvaluationBusy
     try:
         if time.monotonic() >= deadline_monotonic:
-            raise OperationalAlertDeadlineExceeded(
-                "operational alert evaluation deadline exceeded"
-            )
+            raise OperationalAlertDeadlineExceeded("operational alert evaluation deadline exceeded")
         destination = HttpsAlertDestination.from_settings(settings)
         return OperationalAlertService(supabase, destination=destination).evaluate(
             environment=environment,
@@ -127,7 +121,9 @@ async def process_due_account_deletions(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     settings = get_settings()
-    _verify_secret(internal_secret, settings.ACCOUNT_DELETION_WORKER_SECRET, "Account deletion worker")
+    _verify_secret(
+        internal_secret, settings.ACCOUNT_DELETION_WORKER_SECRET, "Account deletion worker"
+    )
 
     async def _provider_operation(client):
         result = await AccountService(client).process_due_deletions()
@@ -154,6 +150,7 @@ async def process_due_account_deletions(
                 detail=result.model_dump(mode="json"),
             )
         return result, heartbeat_sequence
+
     result, heartbeat_sequence = await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -263,7 +260,10 @@ async def acknowledge_operational_alert(
     actor_role: str | None = None
     actor_ref: str | None = None
     for name, configured_secret in (
-        ("Operational alert primary acknowledgement", settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET),
+        (
+            "Operational alert primary acknowledgement",
+            settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET,
+        ),
         ("Operational alert backup acknowledgement", settings.OPERATIONAL_ALERT_BACKUP_ACK_SECRET),
     ):
         try:
@@ -273,18 +273,28 @@ async def acknowledge_operational_alert(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Operational alert acknowledgement secret is not safely configured.",
             ) from None
-    if internal_secret and settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET and secrets.compare_digest(
-        internal_secret,
-        settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET,
+    if (
+        internal_secret
+        and settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET
+        and secrets.compare_digest(
+            internal_secret,
+            settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET,
+        )
     ):
         actor_role, actor_ref = "primary", "primary-owner"
-    elif internal_secret and settings.OPERATIONAL_ALERT_BACKUP_ACK_SECRET and secrets.compare_digest(
-        internal_secret,
-        settings.OPERATIONAL_ALERT_BACKUP_ACK_SECRET,
+    elif (
+        internal_secret
+        and settings.OPERATIONAL_ALERT_BACKUP_ACK_SECRET
+        and secrets.compare_digest(
+            internal_secret,
+            settings.OPERATIONAL_ALERT_BACKUP_ACK_SECRET,
+        )
     ):
         actor_role, actor_ref = "backup", "backup-owner"
     if actor_role is None or actor_ref is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid internal secret.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid internal secret."
+        )
 
     async def _provider_operation(client):
         result = OperationalAlertService(client).acknowledge(
@@ -294,8 +304,11 @@ async def acknowledge_operational_alert(
             actor_ref=actor_ref,
         )
         if result is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert episode not found.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Alert episode not found."
+            )
         return result
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -323,6 +336,7 @@ async def list_support_triage_tickets(
 
     async def _provider_operation(client):
         return await SupportService(client).list_triage_tickets(filters)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -342,6 +356,7 @@ async def update_support_triage_ticket(
 
     async def _provider_operation(client):
         return await SupportService(client).triage_ticket(str(ticket_id), data)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

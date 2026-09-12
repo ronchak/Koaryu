@@ -3,16 +3,16 @@
 import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { consumeRosterReturn, loadRosterReturn, saveRosterReturn, safeStudentsReturn } from "@/lib/student-roster-location";
+import {
+  consumeRosterReturn,
+  loadRosterReturn,
+  saveRosterReturn,
+  safeStudentsReturn,
+} from "@/lib/student-roster-location";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { StudentRosterBulkPanel } from "@/components/students/student-roster-controls";
-import {
-  buildStudentInactivityRows,
-  formatInactivityDaysForRange,
-} from "@/lib/student-insights";
-import {
-  StudentRosterCursorError,
-} from "@/lib/store-student-pages";
+import { buildStudentInactivityRows, formatInactivityDaysForRange } from "@/lib/student-insights";
+import { StudentRosterCursorError } from "@/lib/store-student-pages";
 import { buildStudentPagePath } from "@/lib/student-roster-query";
 import {
   hasStudentRosterSearchChanged,
@@ -49,12 +49,7 @@ import type {
   StudioStoreContextValue,
 } from "@/lib/store-contexts";
 import { hasStaffPermission } from "@/lib/staff-permissions";
-import type {
-  Student,
-  StudentCreate,
-  StudentRosterPageResponse,
-  StudentStatus,
-} from "@/types";
+import type { Student, StudentCreate, StudentRosterPageResponse, StudentStatus } from "@/types";
 
 const STUDENTS_BOOTSTRAP_FRESH_MS = 30_000;
 const STUDENTS_PAGE_SIZE = 50;
@@ -85,7 +80,10 @@ type StudentsPageControllerOptions = {
     | "studentsLoaded"
     | "studentsMayBePartial"
   >;
-  studioStore: Pick<StudioStoreContextValue, "currentStudioId" | "identityGeneration" | "currentUserId">;
+  studioStore: Pick<
+    StudioStoreContextValue,
+    "currentStudioId" | "identityGeneration" | "currentUserId"
+  >;
 };
 
 function useDebouncedValue<T>(value: T, delayMs: number) {
@@ -112,11 +110,7 @@ export function useStudentsPageController({
   const canCreateStudents = hasStaffPermission(config.currentRole, "create_students");
   const { currentStudioId, identityGeneration } = studioStore;
   const { programs, programsLoadError, programsLoaded, refreshPrograms } = programsStore;
-  const {
-    attendance,
-    refreshScheduleRange,
-    sessions,
-  } = scheduleStore;
+  const { attendance, refreshScheduleRange, sessions } = scheduleStore;
   const {
     addStudent,
     bulkAddTagsToStudents,
@@ -150,17 +144,35 @@ export function useStudentsPageController({
         newStudentsParam,
         today,
       }),
-    [fullRosterParam, inactiveDaysParam, newStudentsParam, today]
+    [fullRosterParam, inactiveDaysParam, newStudentsParam, today],
   );
 
   const returnScope = `${studioStore.currentUserId}:${currentStudioId}:${config.currentRole}:${identityGeneration}`;
-  const [initialReturn] = useState(() => loadRosterReturn(returnScope, safeStudentsReturn(`/students?${searchParams}`)));
+  const [initialReturn] = useState(() =>
+    loadRosterReturn(returnScope, safeStudentsReturn(`/students?${searchParams}`)),
+  );
   const initialReturnRef = useRef(initialReturn);
   const [search, setSearch] = useState(() => (searchParams.get("q") ?? "").slice(0, 200));
-  const [statusFilter, setStatusFilter] = useState<StudentRosterStatusFilter | "">(() => ["active", "trialing", "inactive", "paused", "canceled"].includes(searchParams.get("status") ?? "") ? searchParams.get("status") as StudentRosterStatusFilter : "");
-  const [programFilter, setProgramFilter] = useState(() => (searchParams.get("program") ?? "").slice(0, 100));
-  const [sortKey, setSortKey] = useState<SortKey>(() => ["name", "status", "membership_start_date", "created_at"].includes(searchParams.get("sort") ?? "") ? searchParams.get("sort") as SortKey : "name");
-  const [sortDir, setSortDir] = useState<SortDir>(() => searchParams.get("dir") === "desc" ? "desc" : "asc");
+  const [statusFilter, setStatusFilter] = useState<StudentRosterStatusFilter | "">(() =>
+    ["active", "trialing", "inactive", "paused", "canceled"].includes(
+      searchParams.get("status") ?? "",
+    )
+      ? (searchParams.get("status") as StudentRosterStatusFilter)
+      : "",
+  );
+  const [programFilter, setProgramFilter] = useState(() =>
+    (searchParams.get("program") ?? "").slice(0, 100),
+  );
+  const [sortKey, setSortKey] = useState<SortKey>(() =>
+    ["name", "status", "membership_start_date", "created_at"].includes(
+      searchParams.get("sort") ?? "",
+    )
+      ? (searchParams.get("sort") as SortKey)
+      : "name",
+  );
+  const [sortDir, setSortDir] = useState<SortDir>(() =>
+    searchParams.get("dir") === "desc" ? "desc" : "asc",
+  );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showForm, setShowForm] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
@@ -188,7 +200,9 @@ export function useStudentsPageController({
   const pagedRequestSeqRef = useRef(0);
   const pagedAbortControllerRef = useRef<AbortController | null>(null);
   const pagedQueryKeyRef = useRef("");
-  const cursorHistoryRef = useRef(new Map<number, StudentRosterCursorChainEntry>(initialReturn?.history ?? []));
+  const cursorHistoryRef = useRef(
+    new Map<number, StudentRosterCursorChainEntry>(initialReturn?.history ?? []),
+  );
   const pageRef = useRef(initialReturn?.page ?? 1);
   const pagedCursorRef = useRef<string | null>(initialReturn?.cursor ?? null);
   const [pagedHasNext, setPagedHasNext] = useState(false);
@@ -198,10 +212,7 @@ export function useStudentsPageController({
   const inactivityScheduleRequestSeqRef = useRef(0);
   const normalizedSearch = normalizeStudentListSearch(search);
   const lastInputNormalizedSearchRef = useRef(normalizedSearch);
-  const debouncedSearch = useDebouncedValue(
-    normalizedSearch,
-    STUDENTS_SEARCH_DEBOUNCE_MS,
-  );
+  const debouncedSearch = useDebouncedValue(normalizedSearch, STUDENTS_SEARCH_DEBOUNCE_MS);
 
   const usesDerivedRosterFilters = shouldUseDerivedRosterFilters({
     fullRosterRequested,
@@ -211,10 +222,9 @@ export function useStudentsPageController({
     isPreviewMode: config.isPreviewMode,
   });
   const inactivityScheduleRange = useMemo(
-    () => inactivityThreshold
-      ? buildInactivityScheduleDateRange(today, inactivityThreshold)
-      : null,
-    [inactivityThreshold, today]
+    () =>
+      inactivityThreshold ? buildInactivityScheduleDateRange(today, inactivityThreshold) : null,
+    [inactivityThreshold, today],
   );
   const refreshInactivitySchedule = useCallback(async () => {
     const range = inactivityScheduleRange;
@@ -233,7 +243,7 @@ export function useStudentsPageController({
     } catch (error) {
       if (inactivityScheduleRequestSeqRef.current === requestSequence) {
         setInactivityScheduleError(
-          error instanceof Error ? error.message : "Schedule could not be loaded."
+          error instanceof Error ? error.message : "Schedule could not be loaded.",
         );
         setInactivityScheduleStatus("error");
       }
@@ -257,48 +267,63 @@ export function useStudentsPageController({
       inactivityScheduleRequestSeqRef.current += 1;
       window.clearTimeout(timer);
     };
-  }, [config.isPreviewMode, inactivityScheduleRange, refreshInactivitySchedule, usesDerivedRosterFilters]);
+  }, [
+    config.isPreviewMode,
+    inactivityScheduleRange,
+    refreshInactivitySchedule,
+    usesDerivedRosterFilters,
+  ]);
   const visibleStudents = usesDerivedRosterFilters ? students : pagedStudents;
   const studentRows = useMemo(
     () => buildStudentRows(visibleStudents, programs),
-    [programs, visibleStudents]
+    [programs, visibleStudents],
   );
   const inactivityRows = useMemo(
     () =>
       inactivityThreshold && usesDerivedRosterFilters
         ? buildStudentInactivityRows(students, sessions, attendance, today)
         : [],
-    [attendance, inactivityThreshold, sessions, students, today, usesDerivedRosterFilters]
+    [attendance, inactivityThreshold, sessions, students, today, usesDerivedRosterFilters],
   );
   const localInactivityDaysByStudentId = useMemo(
     () => new Map(inactivityRows.map((row) => [row.student.id, row.daysInactive])),
-    [inactivityRows]
+    [inactivityRows],
   );
   const localInactivityByStudentId = useMemo(
-    () => new Map(inactivityRows.map((row) => [
-      row.student.id,
-      inactivityThreshold
-        ? formatInactivityDaysForRange(row, inactivityThreshold)
-        : String(row.daysInactive),
-    ])),
-    [inactivityRows, inactivityThreshold]
+    () =>
+      new Map(
+        inactivityRows.map((row) => [
+          row.student.id,
+          inactivityThreshold
+            ? formatInactivityDaysForRange(row, inactivityThreshold)
+            : String(row.daysInactive),
+        ]),
+      ),
+    [inactivityRows, inactivityThreshold],
   );
   const serverInactivityByStudentId = useMemo(
     () => buildServerInactivityByStudentId(visibleStudents, inactivityThreshold),
-    [inactivityThreshold, visibleStudents]
+    [inactivityThreshold, visibleStudents],
   );
-  const inactivityDaysByStudentId = useMemo(() => usesDerivedRosterFilters
-    ? localInactivityDaysByStudentId
-    : new Map(
-      Array.from(serverInactivityByStudentId.entries()).map(([studentId, value]) => [
-        studentId,
-        Number.parseInt(value, 10) || 0,
-      ])
-    ), [localInactivityDaysByStudentId, serverInactivityByStudentId, usesDerivedRosterFilters]);
-  const inactivityByStudentId = useMemo(() => usesDerivedRosterFilters
-    ? localInactivityByStudentId
-    : serverInactivityByStudentId, [localInactivityByStudentId, serverInactivityByStudentId, usesDerivedRosterFilters]);
-  const hasActiveFilters = Boolean(search || statusFilter || programFilter || inactivityThreshold || hasNewStudentFilter);
+  const inactivityDaysByStudentId = useMemo(
+    () =>
+      usesDerivedRosterFilters
+        ? localInactivityDaysByStudentId
+        : new Map(
+            Array.from(serverInactivityByStudentId.entries()).map(([studentId, value]) => [
+              studentId,
+              Number.parseInt(value, 10) || 0,
+            ]),
+          ),
+    [localInactivityDaysByStudentId, serverInactivityByStudentId, usesDerivedRosterFilters],
+  );
+  const inactivityByStudentId = useMemo(
+    () => (usesDerivedRosterFilters ? localInactivityByStudentId : serverInactivityByStudentId),
+    [localInactivityByStudentId, serverInactivityByStudentId, usesDerivedRosterFilters],
+  );
+  const hasActiveFilters = Boolean(
+    search || statusFilter || programFilter || inactivityThreshold || hasNewStudentFilter,
+  );
 
   const rosterHref = useMemo(() => {
     const params = new URLSearchParams();
@@ -311,7 +336,16 @@ export function useStudentsPageController({
     if (newStudentsParam) params.set("newStudents", newStudentsParam);
     if (fullRosterParam) params.set("fullRoster", fullRosterParam);
     return safeStudentsReturn(`/students?${params}`);
-  }, [search, statusFilter, programFilter, sortKey, sortDir, inactiveDaysParam, newStudentsParam, fullRosterParam]);
+  }, [
+    search,
+    statusFilter,
+    programFilter,
+    sortKey,
+    sortDir,
+    inactiveDaysParam,
+    newStudentsParam,
+    fullRosterParam,
+  ]);
   const incomingRosterHref = safeStudentsReturn(`/students?${searchParams}`);
   const lastRosterHrefRef = useRef(incomingRosterHref);
 
@@ -332,40 +366,42 @@ export function useStudentsPageController({
     if (isNewStudentYtd) {
       return "ytd";
     }
-    return newStudentDays ? String(newStudentDays) as StudentRosterNewStudentWindow : undefined;
+    return newStudentDays ? (String(newStudentDays) as StudentRosterNewStudentWindow) : undefined;
   }, [isNewStudentYtd, newStudentDays]);
-  const liveRosterQuery = useMemo<StudentListQuery>(() => ({
-    search: debouncedSearch,
-    ...(statusFilter ? { status: statusFilter } : {}),
-    ...(programFilter ? { programId: programFilter } : {}),
-    page: 1,
-    pageSize: STUDENTS_PAGE_SIZE,
-    sortKey,
-    sortDir,
-    fullRoster: fullRosterRequested,
-    ...(inactivityThreshold
-      ? { inactivityDays: inactivityThreshold as 14 | 30 | 90 }
-      : {}),
-    ...(newStudents ? { newStudents } : {}),
-    today,
-  }), [
-    debouncedSearch,
-    fullRosterRequested,
-    inactivityThreshold,
-    newStudents,
-    programFilter,
-    sortDir,
-    sortKey,
-    statusFilter,
-    today,
-  ]);
-  const liveRosterQueryKey = useMemo(
-    () => JSON.stringify({
-      auth: config.token ? "authenticated" : "signed-out",
-      path: buildStudentPagePath(liveRosterQuery),
-      studio: currentStudioId,
+  const liveRosterQuery = useMemo<StudentListQuery>(
+    () => ({
+      search: debouncedSearch,
+      ...(statusFilter ? { status: statusFilter } : {}),
+      ...(programFilter ? { programId: programFilter } : {}),
+      page: 1,
+      pageSize: STUDENTS_PAGE_SIZE,
+      sortKey,
+      sortDir,
+      fullRoster: fullRosterRequested,
+      ...(inactivityThreshold ? { inactivityDays: inactivityThreshold as 14 | 30 | 90 } : {}),
+      ...(newStudents ? { newStudents } : {}),
+      today,
     }),
-    [config.token, currentStudioId, liveRosterQuery]
+    [
+      debouncedSearch,
+      fullRosterRequested,
+      inactivityThreshold,
+      newStudents,
+      programFilter,
+      sortDir,
+      sortKey,
+      statusFilter,
+      today,
+    ],
+  );
+  const liveRosterQueryKey = useMemo(
+    () =>
+      JSON.stringify({
+        auth: config.token ? "authenticated" : "signed-out",
+        path: buildStudentPagePath(liveRosterQuery),
+        studio: currentStudioId,
+      }),
+    [config.token, currentStudioId, liveRosterQuery],
   );
   const buildRosterPageQuery = useCallback(
     (requestedPage: number, requestedCursor: string | null): StudentListQuery => ({
@@ -373,7 +409,7 @@ export function useStudentsPageController({
       page: requestedPage,
       ...(requestedCursor ? { cursor: requestedCursor } : { cursor: null }),
     }),
-    [liveRosterQuery]
+    [liveRosterQuery],
   );
 
   const resetRosterPaging = useCallback(() => {
@@ -408,11 +444,21 @@ export function useStudentsPageController({
         const params = new URLSearchParams(browserHref.split("?")[1]);
         lastRosterHrefRef.current = browserHref;
         setSearch((params.get("q") ?? "").slice(0, 200));
-        setStatusFilter(["active", "trialing", "inactive", "paused", "canceled"].includes(params.get("status") ?? "")
-          ? params.get("status") as StudentRosterStatusFilter : "");
+        setStatusFilter(
+          ["active", "trialing", "inactive", "paused", "canceled"].includes(
+            params.get("status") ?? "",
+          )
+            ? (params.get("status") as StudentRosterStatusFilter)
+            : "",
+        );
         setProgramFilter((params.get("program") ?? "").slice(0, 100));
-        setSortKey(["name", "status", "membership_start_date", "created_at"].includes(params.get("sort") ?? "")
-          ? params.get("sort") as SortKey : "name");
+        setSortKey(
+          ["name", "status", "membership_start_date", "created_at"].includes(
+            params.get("sort") ?? "",
+          )
+            ? (params.get("sort") as SortKey)
+            : "name",
+        );
         setSortDir(params.get("dir") === "desc" ? "desc" : "asc");
         resetRosterPaging();
       }, 0);
@@ -437,69 +483,90 @@ export function useStudentsPageController({
     setPageRequestNonce((current) => current + 1);
   }, []);
 
-  const loadPagedStudents = useCallback(async (options?: {
-    recoverEmpty?: boolean;
-    signal?: AbortSignal;
-  }) => {
-    if (usesDerivedRosterFilters) {
-      return;
-    }
+  const loadPagedStudents = useCallback(
+    async (options?: { recoverEmpty?: boolean; signal?: AbortSignal }) => {
+      if (usesDerivedRosterFilters) {
+        return;
+      }
 
-    const requestSeq = pagedRequestSeqRef.current + 1;
-    pagedRequestSeqRef.current = requestSeq;
-    const requestQueryKey = liveRosterQueryKey;
-    pagedQueryKeyRef.current = requestQueryKey;
-    const requestController = new AbortController();
-    pagedAbortControllerRef.current = requestController;
-    const abortFromCaller = () => requestController.abort();
-    if (options?.signal?.aborted) {
-      abortFromCaller();
-    } else {
-      options?.signal?.addEventListener("abort", abortFromCaller, { once: true });
-    }
+      const requestSeq = pagedRequestSeqRef.current + 1;
+      pagedRequestSeqRef.current = requestSeq;
+      const requestQueryKey = liveRosterQueryKey;
+      pagedQueryKeyRef.current = requestQueryKey;
+      const requestController = new AbortController();
+      pagedAbortControllerRef.current = requestController;
+      const abortFromCaller = () => requestController.abort();
+      if (options?.signal?.aborted) {
+        abortFromCaller();
+      } else {
+        options?.signal?.addEventListener("abort", abortFromCaller, { once: true });
+      }
 
-    setIsPagedLoading(true);
-    setPagedLoadError(null);
+      setIsPagedLoading(true);
+      setPagedLoadError(null);
 
-    let requestedPage = pageRef.current;
-    let requestedCursor = pagedCursorRef.current;
-    const attemptedPageOrdinals = new Set<number>();
-    let recoveryAttempts = 0;
-    const isCurrentRequest = () => isStudentRosterRequestCurrent({
-      activeQueryKey: pagedQueryKeyRef.current,
-      activeRequestSequence: pagedRequestSeqRef.current,
-      authCurrent: !requestController.signal.aborted,
-      requestQueryKey,
-      requestSequence: requestSeq,
-    });
+      let requestedPage = pageRef.current;
+      let requestedCursor = pagedCursorRef.current;
+      const attemptedPageOrdinals = new Set<number>();
+      let recoveryAttempts = 0;
+      const isCurrentRequest = () =>
+        isStudentRosterRequestCurrent({
+          activeQueryKey: pagedQueryKeyRef.current,
+          activeRequestSequence: pagedRequestSeqRef.current,
+          authCurrent: !requestController.signal.aborted,
+          requestQueryKey,
+          requestSequence: requestSeq,
+        });
 
-    try {
-      while (true) {
-        attemptedPageOrdinals.add(requestedPage);
+      try {
+        while (true) {
+          attemptedPageOrdinals.add(requestedPage);
 
-        let result: StudentRosterPageResponse;
-        try {
-          result = await listStudentsPage(
-            buildRosterPageQuery(requestedPage, requestedCursor),
-            { signal: requestController.signal }
-          );
-        } catch (error) {
-          if (error instanceof Error && error.name === "AbortError") {
-            return;
+          let result: StudentRosterPageResponse;
+          try {
+            result = await listStudentsPage(buildRosterPageQuery(requestedPage, requestedCursor), {
+              signal: requestController.signal,
+            });
+          } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") {
+              return;
+            }
+            if (!isCurrentRequest()) {
+              return;
+            }
+
+            if (error instanceof StudentRosterCursorError) {
+              const recoveryTarget = chooseStudentRosterRecoveryTarget({
+                attemptedPageOrdinals,
+                failedPageOrdinal: requestedPage,
+                history: cursorHistoryRef.current,
+                maxAttempts: MAX_STUDENT_ROSTER_CURSOR_RECOVERY_ATTEMPTS,
+                recoverTo: error.recoverTo,
+              });
+              if (recoveryTarget) {
+                recoveryAttempts += 1;
+                requestedPage = recoveryTarget.pageOrdinal;
+                requestedCursor = recoveryTarget.cursor;
+                continue;
+              }
+            }
+
+            throw error;
           }
+
           if (!isCurrentRequest()) {
             return;
           }
 
-          if (error instanceof StudentRosterCursorError) {
+          if (options?.recoverEmpty && requestedPage > 1 && result.items.length === 0) {
             const recoveryTarget = chooseStudentRosterRecoveryTarget({
               attemptedPageOrdinals,
               failedPageOrdinal: requestedPage,
               history: cursorHistoryRef.current,
               maxAttempts: MAX_STUDENT_ROSTER_CURSOR_RECOVERY_ATTEMPTS,
-              recoverTo: error.recoverTo,
+              recoverTo: "nearest_prior",
             });
-            if (recoveryTarget) {
+            if (recoveryTarget && recoveryAttempts < MAX_STUDENT_ROSTER_CURSOR_RECOVERY_ATTEMPTS) {
               recoveryAttempts += 1;
               requestedPage = recoveryTarget.pageOrdinal;
               requestedCursor = recoveryTarget.cursor;
@@ -507,79 +574,53 @@ export function useStudentsPageController({
             }
           }
 
-          throw error;
-        }
+          const nextCursor = result.has_next ? (result.next_cursor ?? null) : null;
+          const previousCursor = result.has_previous ? (result.previous_cursor ?? null) : null;
+          cursorHistoryRef.current.set(result.page_ordinal, {
+            nextCursor,
+            pageOrdinal: result.page_ordinal,
+            previousCursor,
+            requestCursor: requestedCursor,
+          });
+          for (const knownPage of cursorHistoryRef.current.keys()) {
+            if (knownPage > result.page_ordinal) {
+              cursorHistoryRef.current.delete(knownPage);
+            }
+          }
 
+          pageRef.current = result.page_ordinal;
+          pagedCursorRef.current = requestedCursor;
+          setPage(result.page_ordinal);
+          setPagedNextCursor(nextCursor);
+          setPagedPreviousCursor(previousCursor);
+          setPagedHasNext(Boolean(nextCursor) && result.has_next);
+          setPagedHasPrevious(Boolean(previousCursor) && result.has_previous);
+          setPagedStudents(result.items);
+          setPagedTotal(result.total);
+          setPagedLoaded(true);
+          return;
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
         if (!isCurrentRequest()) {
           return;
         }
-
-        if (options?.recoverEmpty && requestedPage > 1 && result.items.length === 0) {
-          const recoveryTarget = chooseStudentRosterRecoveryTarget({
-            attemptedPageOrdinals,
-            failedPageOrdinal: requestedPage,
-            history: cursorHistoryRef.current,
-            maxAttempts: MAX_STUDENT_ROSTER_CURSOR_RECOVERY_ATTEMPTS,
-            recoverTo: "nearest_prior",
-          });
-          if (recoveryTarget && recoveryAttempts < MAX_STUDENT_ROSTER_CURSOR_RECOVERY_ATTEMPTS) {
-            recoveryAttempts += 1;
-            requestedPage = recoveryTarget.pageOrdinal;
-            requestedCursor = recoveryTarget.cursor;
-            continue;
-          }
-        }
-
-        const nextCursor = result.has_next ? result.next_cursor ?? null : null;
-        const previousCursor = result.has_previous ? result.previous_cursor ?? null : null;
-        cursorHistoryRef.current.set(result.page_ordinal, {
-          nextCursor,
-          pageOrdinal: result.page_ordinal,
-          previousCursor,
-          requestCursor: requestedCursor,
-        });
-        for (const knownPage of cursorHistoryRef.current.keys()) {
-          if (knownPage > result.page_ordinal) {
-            cursorHistoryRef.current.delete(knownPage);
-          }
-        }
-
-        pageRef.current = result.page_ordinal;
-        pagedCursorRef.current = requestedCursor;
-        setPage(result.page_ordinal);
-        setPagedNextCursor(nextCursor);
-        setPagedPreviousCursor(previousCursor);
-        setPagedHasNext(Boolean(nextCursor) && result.has_next);
-        setPagedHasPrevious(Boolean(previousCursor) && result.has_previous);
-        setPagedStudents(result.items);
-        setPagedTotal(result.total);
+        setPagedLoadError(error instanceof Error ? error.message : "Failed to load students.");
         setPagedLoaded(true);
-        return;
+      } finally {
+        options?.signal?.removeEventListener("abort", abortFromCaller);
+        if (pagedAbortControllerRef.current === requestController) {
+          pagedAbortControllerRef.current = null;
+        }
+        if (isCurrentRequest()) {
+          setIsPagedLoading(false);
+        }
       }
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        return;
-      }
-      if (!isCurrentRequest()) {
-        return;
-      }
-      setPagedLoadError(error instanceof Error ? error.message : "Failed to load students.");
-      setPagedLoaded(true);
-    } finally {
-      options?.signal?.removeEventListener("abort", abortFromCaller);
-      if (pagedAbortControllerRef.current === requestController) {
-        pagedAbortControllerRef.current = null;
-      }
-      if (isCurrentRequest()) {
-        setIsPagedLoading(false);
-      }
-    }
-  }, [
-    buildRosterPageQuery,
-    listStudentsPage,
-    liveRosterQueryKey,
-    usesDerivedRosterFilters,
-  ]);
+    },
+    [buildRosterPageQuery, listStudentsPage, liveRosterQueryKey, usesDerivedRosterFilters],
+  );
 
   useEffect(() => {
     if (!usesDerivedRosterFilters || config.isPreviewMode || studentsLoadError) {
@@ -623,8 +664,14 @@ export function useStudentsPageController({
     usesDerivedRosterFilters,
   ]);
 
-  const pagingResetKey = JSON.stringify([identityGeneration, currentStudioId,
-    fullRosterParam, inactiveDaysParam, newStudentsParam, usesDerivedRosterFilters]);
+  const pagingResetKey = JSON.stringify([
+    identityGeneration,
+    currentStudioId,
+    fullRosterParam,
+    inactiveDaysParam,
+    newStudentsParam,
+    usesDerivedRosterFilters,
+  ]);
   const previousPagingResetKeyRef = useRef(pagingResetKey);
   useEffect(() => {
     if (previousPagingResetKeyRef.current === pagingResetKey) return;
@@ -725,16 +772,17 @@ export function useStudentsPageController({
     }
   }
 
-  const reloadVisibleRoster = useCallback(async (options?: {
-    recoverEmpty?: boolean;
-  }) => {
-    if (usesDerivedRosterFilters) {
-      await refreshStudents();
-      return;
-    }
+  const reloadVisibleRoster = useCallback(
+    async (options?: { recoverEmpty?: boolean }) => {
+      if (usesDerivedRosterFilters) {
+        await refreshStudents();
+        return;
+      }
 
-    await loadPagedStudents(options);
-  }, [loadPagedStudents, refreshStudents, usesDerivedRosterFilters]);
+      await loadPagedStudents(options);
+    },
+    [loadPagedStudents, refreshStudents, usesDerivedRosterFilters],
+  );
 
   const retryRequiredStudentDatasets = useCallback(async () => {
     const requests: Promise<unknown>[] = [reloadVisibleRoster()];
@@ -761,11 +809,15 @@ export function useStudentsPageController({
     inactivityScheduleStatus,
     usesDerivedRosterFilters,
   ]);
-  useResumeRefresh(() => Promise.allSettled([
-    reloadVisibleRoster({ recoverEmpty: true }),
-    refreshPrograms({ includeArchived: false }),
-    ...(inactivityThreshold && usesDerivedRosterFilters && !config.isPreviewMode ? [refreshInactivitySchedule()] : []),
-  ]));
+  useResumeRefresh(() =>
+    Promise.allSettled([
+      reloadVisibleRoster({ recoverEmpty: true }),
+      refreshPrograms({ includeArchived: false }),
+      ...(inactivityThreshold && usesDerivedRosterFilters && !config.isPreviewMode
+        ? [refreshInactivitySchedule()]
+        : []),
+    ]),
+  );
 
   async function reloadVisibleRosterAfterMutation(context: string) {
     try {
@@ -824,10 +876,14 @@ export function useStudentsPageController({
       await deleteStudents(Array.from(selectedIds));
       setSelectedIds(new Set());
       setActiveBulkPanel(null);
-      setActionMessage(`${deleteCount} ${deleteCount === 1 ? "student was" : "students were"} removed from the active roster.`);
+      setActionMessage(
+        `${deleteCount} ${deleteCount === 1 ? "student was" : "students were"} removed from the active roster.`,
+      );
       await reloadVisibleRosterAfterMutation("delete");
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : "Failed to archive selected students.");
+      setDeleteError(
+        error instanceof Error ? error.message : "Failed to archive selected students.",
+      );
       if (!usesDerivedRosterFilters) {
         void reloadVisibleRoster({ recoverEmpty: true }).catch((refreshError) => {
           console.error("Failed to refresh students after archive error", refreshError);
@@ -857,7 +913,7 @@ export function useStudentsPageController({
       });
       if (result.updated !== selectedIds.size) {
         setBulkActionError(
-          `Added tags to ${result.updated} of ${selectedIds.size} selected students. Some students may no longer be available.`
+          `Added tags to ${result.updated} of ${selectedIds.size} selected students. Some students may no longer be available.`,
         );
         if (!usesDerivedRosterFilters) {
           await reloadVisibleRosterAfterMutation("partial bulk tag update");
@@ -866,7 +922,9 @@ export function useStudentsPageController({
       }
       setTagInput("");
       setActiveBulkPanel(null);
-      setActionMessage(`Tags added to ${result.updated} ${result.updated === 1 ? "student" : "students"}.`);
+      setActionMessage(
+        `Tags added to ${result.updated} ${result.updated === 1 ? "student" : "students"}.`,
+      );
       if (!usesDerivedRosterFilters) {
         await reloadVisibleRosterAfterMutation("bulk tag update");
       }
@@ -894,7 +952,7 @@ export function useStudentsPageController({
       });
       if (result.updated !== selectedIds.size) {
         setBulkActionError(
-          `Updated ${result.updated} of ${selectedIds.size} selected students. Some students may no longer be available.`
+          `Updated ${result.updated} of ${selectedIds.size} selected students. Some students may no longer be available.`,
         );
         if (!usesDerivedRosterFilters) {
           await reloadVisibleRosterAfterMutation("partial bulk status update");
@@ -902,7 +960,9 @@ export function useStudentsPageController({
         return;
       }
       setActiveBulkPanel(null);
-      setActionMessage(`Status changed to ${bulkStatus} for ${result.updated} ${result.updated === 1 ? "student" : "students"}.`);
+      setActionMessage(
+        `Status changed to ${bulkStatus} for ${result.updated} ${result.updated === 1 ? "student" : "students"}.`,
+      );
       if (!usesDerivedRosterFilters) {
         await reloadVisibleRosterAfterMutation("bulk status update");
       }
@@ -989,7 +1049,9 @@ export function useStudentsPageController({
         resetRosterPaging();
         router.replace("/students");
       },
-      onCloseStudentForm: () => { if (!isAdding) setShowForm(false); },
+      onCloseStudentForm: () => {
+        if (!isAdding) setShowForm(false);
+      },
       onDeleteSelected: handleDeleteSelected,
       onDismissActionMessage: () => setActionMessage(null),
       onDismissRosterQueryNotice: () => router.push("/students"),
@@ -1003,14 +1065,25 @@ export function useStudentsPageController({
         requestRosterPage(pageRef.current + 1, pagedNextCursor);
       },
       onOpenStudent: (studentId: string) => {
-        saveRosterReturn({ scope: returnScope, href: rosterHref, page: pageRef.current,
-          cursor: pagedCursorRef.current, history: [...cursorHistoryRef.current],
+        saveRosterReturn({
+          scope: returnScope,
+          href: rosterHref,
+          page: pageRef.current,
+          cursor: pagedCursorRef.current,
+          history: [...cursorHistoryRef.current],
           scroll: document.getElementById("main-content")?.scrollTop ?? 0,
-          focusId: studentId, savedAt: Date.now() });
+          focusId: studentId,
+          savedAt: Date.now(),
+        });
         router.push(`/students/${studentId}?returnTo=${encodeURIComponent(rosterHref)}`);
       },
       onPreviousPage: () => {
-        if (usesDerivedRosterFilters || isPagedLoading || !pagedHasPrevious || !pagedPreviousCursor) {
+        if (
+          usesDerivedRosterFilters ||
+          isPagedLoading ||
+          !pagedHasPrevious ||
+          !pagedPreviousCursor
+        ) {
           return;
         }
         requestRosterPage(Math.max(1, pageRef.current - 1), pagedPreviousCursor);

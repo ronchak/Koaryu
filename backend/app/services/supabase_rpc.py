@@ -32,7 +32,11 @@ def _is_missing_rpc_function(exc: PostgrestAPIError, name: str) -> bool:
     if code not in MISSING_RPC_CODES:
         return False
     message = (getattr(exc, "message", None) or str(exc)).lower()
-    return name.lower() in message or "schema cache" in message or "could not find the function" in message
+    return (
+        name.lower() in message
+        or "schema cache" in message
+        or "could not find the function" in message
+    )
 
 
 def rpc_rows(result: Any) -> list[dict[str, Any]]:

@@ -17,6 +17,7 @@ from app.services.schedule_service import (
 )
 from tests.fakes.supabase import RpcBackedSupabase
 
+
 class FakeSupabase(RpcBackedSupabase):
     def __init__(self, tables: dict[str, list[dict]]):
         super().__init__(tables)
@@ -51,28 +52,32 @@ class FakeSupabase(RpcBackedSupabase):
         )
         for template in templates:
             current = max(start, date.fromisoformat(template["start_date"]))
-            template_end = date.fromisoformat(template["end_date"]) if template.get("end_date") else end
+            template_end = (
+                date.fromisoformat(template["end_date"]) if template.get("end_date") else end
+            )
             range_end = min(end, template_end)
             while current <= range_end:
                 if ScheduleService._studio_weekday(current) == template["day_of_week"]:
                     key = (template["id"], current.isoformat())
                     if key not in existing_keys:
-                        self.tables["class_sessions"].append({
-                            "id": f"materialized-{template['id']}-{current.isoformat()}",
-                            "studio_id": params["p_studio_id"],
-                            "template_id": template["id"],
-                            "name": template["name"],
-                            "date": current.isoformat(),
-                            "start_time": template["start_time"],
-                            "end_time": template["end_time"],
-                            "instructor_id": template.get("instructor_id"),
-                            "program_id": template.get("program_id"),
-                            "capacity": template.get("capacity"),
-                            "status": "scheduled",
-                            "notes": None,
-                            "created_at": "2026-05-24T12:00:00Z",
-                            "deleted_at": None,
-                        })
+                        self.tables["class_sessions"].append(
+                            {
+                                "id": f"materialized-{template['id']}-{current.isoformat()}",
+                                "studio_id": params["p_studio_id"],
+                                "template_id": template["id"],
+                                "name": template["name"],
+                                "date": current.isoformat(),
+                                "start_time": template["start_time"],
+                                "end_time": template["end_time"],
+                                "instructor_id": template.get("instructor_id"),
+                                "program_id": template.get("program_id"),
+                                "capacity": template.get("capacity"),
+                                "status": "scheduled",
+                                "notes": None,
+                                "created_at": "2026-05-24T12:00:00Z",
+                                "deleted_at": None,
+                            }
+                        )
                         existing_keys.add(key)
                         inserted += 1
                 current += timedelta(days=1)
@@ -120,17 +125,19 @@ class FakeSupabase(RpcBackedSupabase):
                 deleted_count += 1
         if deleted_count == 0:
             raise AssertionError("Failed to delete recurring class series.")
-        self.tables.setdefault("audit_logs", []).append({
-            "studio_id": params["p_studio_id"],
-            "actor_id": params["p_actor_id"],
-            "action": "class_series.deleted",
-            "entity_type": "class_template",
-            "entity_id": template["id"],
-            "metadata": {
-                "start_date": session["date"],
-                "session_name": session["name"],
-            },
-        })
+        self.tables.setdefault("audit_logs", []).append(
+            {
+                "studio_id": params["p_studio_id"],
+                "actor_id": params["p_actor_id"],
+                "action": "class_series.deleted",
+                "entity_type": "class_template",
+                "entity_id": template["id"],
+                "metadata": {
+                    "start_date": session["date"],
+                    "session_name": session["name"],
+                },
+            }
+        )
         return None
 
 
@@ -188,9 +195,7 @@ def schedule_window_payload(
         "range": {
             "start_date": start_date,
             "end_date": end_date,
-            "day_count": (
-                date.fromisoformat(end_date) - date.fromisoformat(start_date)
-            ).days + 1,
+            "day_count": (date.fromisoformat(end_date) - date.fromisoformat(start_date)).days + 1,
         },
         "templates": [template],
         "sessions": [{**session, "attendance_count": 1}],
@@ -218,9 +223,7 @@ class ScheduleServiceTest(unittest.TestCase):
         supabase._rpc_schedule_window_read = lambda _params: schedule_window_payload()
         service = ScheduleService(supabase)
 
-        window = asyncio.run(
-            service.read_schedule_window("studio-1", "2026-05-24", "2026-05-24")
-        )
+        window = asyncio.run(service.read_schedule_window("studio-1", "2026-05-24", "2026-05-24"))
 
         self.assertEqual(window.contract_version, SCHEDULE_WINDOW_CONTRACT_VERSION)
         self.assertEqual([item.id for item in window.sessions], ["session-1"])
@@ -229,15 +232,20 @@ class ScheduleServiceTest(unittest.TestCase):
             ["Aiko Tanaka"],
         )
         self.assertEqual(supabase.query_log, [])
-        self.assertEqual(supabase.rpc_calls, [(
-            "schedule_window_read",
-            {
-                "p_studio_id": "studio-1",
-                "p_start_date": "2026-05-24",
-                "p_end_date": "2026-05-24",
-                "p_contract_version": SCHEDULE_WINDOW_CONTRACT_VERSION,
-            },
-        )])
+        self.assertEqual(
+            supabase.rpc_calls,
+            [
+                (
+                    "schedule_window_read",
+                    {
+                        "p_studio_id": "studio-1",
+                        "p_start_date": "2026-05-24",
+                        "p_end_date": "2026-05-24",
+                        "p_contract_version": SCHEDULE_WINDOW_CONTRACT_VERSION,
+                    },
+                )
+            ],
+        )
 
     def test_schedule_window_rejects_missing_malformed_and_cross_tenant_output(self):
         attendance_outside_sessions = schedule_window_payload()
@@ -293,13 +301,15 @@ class ScheduleServiceTest(unittest.TestCase):
         self.assertEqual(supabase.query_log, [])
 
     def test_materialize_sessions_uses_atomic_rpc_instead_of_direct_writes(self):
-        supabase = FakeSupabase({
-            "class_templates": [
-                template_row("template-1", "Youth Basics"),
-                template_row("template-2", "Adult Basics"),
-            ],
-            "class_sessions": [],
-        })
+        supabase = FakeSupabase(
+            {
+                "class_templates": [
+                    template_row("template-1", "Youth Basics"),
+                    template_row("template-2", "Adult Basics"),
+                ],
+                "class_sessions": [],
+            }
+        )
         service = ScheduleService(supabase)
 
         asyncio.run(service._materialize_sessions_for_range("studio-1", "2026-05-24", "2026-05-24"))
@@ -311,24 +321,28 @@ class ScheduleServiceTest(unittest.TestCase):
         )
         self.assertEqual(
             supabase.rpc_calls,
-            [(
-                "materialize_recurring_class_sessions",
-                {
-                    "p_studio_id": "studio-1",
-                    "p_start_date": "2026-05-24",
-                    "p_end_date": "2026-05-24",
-                },
-            )],
+            [
+                (
+                    "materialize_recurring_class_sessions",
+                    {
+                        "p_studio_id": "studio-1",
+                        "p_start_date": "2026-05-24",
+                        "p_end_date": "2026-05-24",
+                    },
+                )
+            ],
         )
         self.assertEqual(supabase.query_log, [])
 
     def test_materialize_sessions_does_not_resurrect_series_when_delete_wins_lock(self):
         template = template_row("template-1", "Youth Basics")
         selected = session_row("selected-session", "template-1", "2026-05-31")
-        supabase = FakeSupabase({
-            "class_templates": [template],
-            "class_sessions": [selected],
-        })
+        supabase = FakeSupabase(
+            {
+                "class_templates": [template],
+                "class_sessions": [selected],
+            }
+        )
 
         def delete_series_before_template_lock(tables: dict[str, list[dict]]) -> None:
             tables["class_templates"][0]["is_active"] = False
@@ -353,10 +367,12 @@ class ScheduleServiceTest(unittest.TestCase):
         )
 
     def test_list_sessions_does_not_materialize_recurring_sessions_on_read(self):
-        supabase = FakeSupabase({
-            "class_templates": [template_row("template-1", "Youth Basics")],
-            "class_sessions": [],
-        })
+        supabase = FakeSupabase(
+            {
+                "class_templates": [template_row("template-1", "Youth Basics")],
+                "class_sessions": [],
+            }
+        )
         service = ScheduleService(supabase)
 
         sessions = asyncio.run(service.list_sessions("studio-1", "2026-05-24", "2026-05-24"))
@@ -371,36 +387,38 @@ class ScheduleServiceTest(unittest.TestCase):
         )
 
     def test_materialize_session_range_surfaces_recurring_and_one_off_sessions(self):
-        supabase = FakeSupabase({
-            "class_templates": [template_row("template-1", "Youth Basics")],
-            "class_sessions": [
-                {
-                    "id": "one-off-session",
-                    "studio_id": "studio-1",
-                    "template_id": None,
-                    "name": "Makeup Class",
-                    "date": "2026-05-24",
-                    "start_time": "11:00",
-                    "end_time": "12:00",
-                    "instructor_id": None,
-                    "program_id": None,
-                    "capacity": 8,
-                    "status": "scheduled",
-                    "notes": None,
-                    "created_at": "2026-05-24T12:00:00Z",
-                    "deleted_at": None,
-                },
-            ],
-            "attendance": [
-                {
-                    "id": "attendance-1",
-                    "studio_id": "studio-1",
-                    "session_id": "one-off-session",
-                    "student_id": "student-1",
-                    "status": "present",
-                },
-            ],
-        })
+        supabase = FakeSupabase(
+            {
+                "class_templates": [template_row("template-1", "Youth Basics")],
+                "class_sessions": [
+                    {
+                        "id": "one-off-session",
+                        "studio_id": "studio-1",
+                        "template_id": None,
+                        "name": "Makeup Class",
+                        "date": "2026-05-24",
+                        "start_time": "11:00",
+                        "end_time": "12:00",
+                        "instructor_id": None,
+                        "program_id": None,
+                        "capacity": 8,
+                        "status": "scheduled",
+                        "notes": None,
+                        "created_at": "2026-05-24T12:00:00Z",
+                        "deleted_at": None,
+                    },
+                ],
+                "attendance": [
+                    {
+                        "id": "attendance-1",
+                        "studio_id": "studio-1",
+                        "session_id": "one-off-session",
+                        "student_id": "student-1",
+                        "status": "present",
+                    },
+                ],
+            }
+        )
         service = ScheduleService(supabase)
 
         sessions = asyncio.run(
@@ -408,7 +426,10 @@ class ScheduleServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            [(session.name, session.template_id, session.date, session.attendance_count) for session in sessions],
+            [
+                (session.name, session.template_id, session.date, session.attendance_count)
+                for session in sessions
+            ],
             [
                 ("Youth Basics", "template-1", "2026-05-24", 0),
                 ("Makeup Class", None, "2026-05-24", 1),
@@ -420,10 +441,12 @@ class ScheduleServiceTest(unittest.TestCase):
         deleted_session = session_row("deleted-session", "template-1", "2026-05-24")
         deleted_session["deleted_at"] = "2026-05-23T12:00:00Z"
         deleted_session["status"] = "canceled"
-        supabase = FakeSupabase({
-            "class_templates": [template_row("template-1", "Youth Basics")],
-            "class_sessions": [deleted_session],
-        })
+        supabase = FakeSupabase(
+            {
+                "class_templates": [template_row("template-1", "Youth Basics")],
+                "class_sessions": [deleted_session],
+            }
+        )
         service = ScheduleService(supabase)
 
         sessions = asyncio.run(
@@ -443,10 +466,12 @@ class ScheduleServiceTest(unittest.TestCase):
         template = template_row("template-1", "Youth Basics")
         template["start_date"] = "2026-05-31"
         template["end_date"] = "2026-06-07"
-        supabase = FakeSupabase({
-            "class_templates": [template],
-            "class_sessions": [],
-        })
+        supabase = FakeSupabase(
+            {
+                "class_templates": [template],
+                "class_sessions": [],
+            }
+        )
         service = ScheduleService(supabase)
 
         sessions = asyncio.run(
@@ -459,10 +484,12 @@ class ScheduleServiceTest(unittest.TestCase):
         )
 
     def test_list_sessions_rejects_ranges_above_visible_cap(self):
-        supabase = FakeSupabase({
-            "class_templates": [template_row("template-1", "Youth Basics")],
-            "class_sessions": [],
-        })
+        supabase = FakeSupabase(
+            {
+                "class_templates": [template_row("template-1", "Youth Basics")],
+                "class_sessions": [],
+            }
+        )
         service = ScheduleService(supabase)
 
         with self.assertRaises(HTTPException) as context:
@@ -476,27 +503,29 @@ class ScheduleServiceTest(unittest.TestCase):
         self.assertEqual(supabase.tables["class_sessions"], [])
 
     def test_list_sessions_returns_existing_persisted_sessions(self):
-        supabase = FakeSupabase({
-            "class_sessions": [
-                session_row("session-1", "template-1", "2026-05-24"),
-            ],
-            "attendance": [
-                {
-                    "id": "attendance-1",
-                    "studio_id": "studio-1",
-                    "session_id": "session-1",
-                    "student_id": "student-1",
-                    "status": "present",
-                },
-                {
-                    "id": "attendance-2",
-                    "studio_id": "studio-1",
-                    "session_id": "session-1",
-                    "student_id": "student-2",
-                    "status": "absent",
-                },
-            ],
-        })
+        supabase = FakeSupabase(
+            {
+                "class_sessions": [
+                    session_row("session-1", "template-1", "2026-05-24"),
+                ],
+                "attendance": [
+                    {
+                        "id": "attendance-1",
+                        "studio_id": "studio-1",
+                        "session_id": "session-1",
+                        "student_id": "student-1",
+                        "status": "present",
+                    },
+                    {
+                        "id": "attendance-2",
+                        "studio_id": "studio-1",
+                        "session_id": "session-1",
+                        "student_id": "student-2",
+                        "status": "absent",
+                    },
+                ],
+            }
+        )
         selected_columns: list[str] = []
         supabase.select_assertions["class_sessions"] = selected_columns.append
         service = ScheduleService(supabase)
@@ -520,9 +549,7 @@ class ScheduleServiceTest(unittest.TestCase):
             f"cannot exceed {ATTENDANCE_LIST_RANGE_MAX_DAYS} days",
             context.exception.detail,
         )
-        self.assertFalse(
-            any(query["table"] == "attendance" for query in supabase.query_log)
-        )
+        self.assertFalse(any(query["table"] == "attendance" for query in supabase.query_log))
 
     def test_list_attendance_rejects_oversized_session_id_list(self):
         supabase = FakeSupabase({"attendance": [], "class_sessions": []})
@@ -537,19 +564,21 @@ class ScheduleServiceTest(unittest.TestCase):
             f"session_ids cannot exceed {ATTENDANCE_SESSION_IDS_MAX} values",
             context.exception.detail,
         )
-        self.assertFalse(
-            any(query["table"] == "attendance" for query in supabase.query_log)
-        )
+        self.assertFalse(any(query["table"] == "attendance" for query in supabase.query_log))
 
     def test_generate_week_uses_actor_for_created_session_audit(self):
-        supabase = FakeSupabase({
-            "class_templates": [template_row("template-1", "Youth Basics")],
-            "class_sessions": [],
-            "audit_logs": [],
-        })
+        supabase = FakeSupabase(
+            {
+                "class_templates": [template_row("template-1", "Youth Basics")],
+                "class_sessions": [],
+                "audit_logs": [],
+            }
+        )
         service = ScheduleService(supabase)
 
-        created = asyncio.run(service.generate_sessions_for_week("studio-1", "2026-05-25", "actor-1"))
+        created = asyncio.run(
+            service.generate_sessions_for_week("studio-1", "2026-05-25", "actor-1")
+        )
 
         self.assertEqual(len(created), 1)
         self.assertEqual(created[0].date, "2026-05-31")
@@ -566,30 +595,36 @@ class ScheduleServiceTest(unittest.TestCase):
                 service = ScheduleService(supabase)
 
                 with self.assertRaises(HTTPException) as context:
-                    asyncio.run(service.generate_sessions_for_week("studio-1", week_start, "actor-1"))
+                    asyncio.run(
+                        service.generate_sessions_for_week("studio-1", week_start, "actor-1")
+                    )
 
                 self.assertEqual(context.exception.status_code, 400)
                 self.assertEqual(context.exception.detail, detail)
                 self.assertFalse(supabase.query_log)
 
     def test_delete_future_series_sets_template_end_before_deleted_session(self):
-        supabase = FakeSupabase({
-            "class_templates": [template_row("template-1", "Youth Basics")],
-            "class_sessions": [
-                session_row("past-session", "template-1", "2026-05-24"),
-                session_row("selected-session", "template-1", "2026-05-31"),
-                session_row("future-session", "template-1", "2026-06-07"),
-            ],
-            "audit_logs": [],
-        })
+        supabase = FakeSupabase(
+            {
+                "class_templates": [template_row("template-1", "Youth Basics")],
+                "class_sessions": [
+                    session_row("past-session", "template-1", "2026-05-24"),
+                    session_row("selected-session", "template-1", "2026-05-31"),
+                    session_row("future-session", "template-1", "2026-06-07"),
+                ],
+                "audit_logs": [],
+            }
+        )
         service = ScheduleService(supabase)
 
-        asyncio.run(service.delete_session(
-            "selected-session",
-            "studio-1",
-            "actor-1",
-            "future_series",
-        ))
+        asyncio.run(
+            service.delete_session(
+                "selected-session",
+                "studio-1",
+                "actor-1",
+                "future_series",
+            )
+        )
 
         template = supabase.tables["class_templates"][0]
         self.assertFalse(template["is_active"])
@@ -636,22 +671,26 @@ class ScheduleServiceTest(unittest.TestCase):
             },
         ):
             with self.subTest(session_id=session_row["id"]):
-                supabase = FakeSupabase({
-                    "attendance": [],
-                    "class_sessions": [session_row],
-                    "students": [{"id": "student-1", "studio_id": "studio-1"}],
-                })
+                supabase = FakeSupabase(
+                    {
+                        "attendance": [],
+                        "class_sessions": [session_row],
+                        "students": [{"id": "student-1", "studio_id": "studio-1"}],
+                    }
+                )
                 service = ScheduleService(supabase)
 
                 with self.assertRaises(HTTPException) as context:
-                    asyncio.run(service.check_in(
-                        AttendanceCheckIn(
-                            session_id=session_row["id"],
-                            student_id="student-1",
-                        ),
-                        "studio-1",
-                        "actor-1",
-                    ))
+                    asyncio.run(
+                        service.check_in(
+                            AttendanceCheckIn(
+                                session_id=session_row["id"],
+                                student_id="student-1",
+                            ),
+                            "studio-1",
+                            "actor-1",
+                        )
+                    )
 
                 self.assertEqual(context.exception.status_code, 409)
                 self.assertEqual(supabase.tables["attendance"], [])

@@ -5,10 +5,15 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 from pydantic import ValidationError
 from app.schemas.schedule import (
-    ClassTemplateCreate, ClassTemplateUpdate, ClassTemplateResponse,
-    ClassSessionCreate, ClassSessionResponse,
+    ClassTemplateCreate,
+    ClassTemplateUpdate,
+    ClassTemplateResponse,
+    ClassSessionCreate,
+    ClassSessionResponse,
     ClassSessionDeleteScopeValue,
-    AttendanceCheckIn, AttendanceResponse, AttendanceBulkCheckIn,
+    AttendanceCheckIn,
+    AttendanceResponse,
+    AttendanceBulkCheckIn,
     ScheduleWindowResponse,
 )
 from app.services.studio_scope import (
@@ -126,9 +131,7 @@ class ScheduleService:
                 detail="Schedule window data is incompatible with the current backend schema. Apply the latest schedule migrations.",
             ) from exc
 
-        expected_days = (
-            date.fromisoformat(end_date) - date.fromisoformat(start_date)
-        ).days + 1
+        expected_days = (date.fromisoformat(end_date) - date.fromisoformat(start_date)).days + 1
         if (
             window.range.start_date != start_date
             or window.range.end_date != end_date
@@ -278,14 +281,16 @@ class ScheduleService:
             if not result.data:
                 raise HTTPException(status_code=500, detail="Failed to create class template")
 
-            self.supabase.table("audit_logs").insert({
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": "class_template.created",
-                "entity_type": "class_template",
-                "entity_id": result.data[0]["id"],
-                "metadata": {"name": data.name},
-            }).execute()
+            self.supabase.table("audit_logs").insert(
+                {
+                    "studio_id": studio_id,
+                    "actor_id": actor_id,
+                    "action": "class_template.created",
+                    "entity_type": "class_template",
+                    "entity_id": result.data[0]["id"],
+                    "metadata": {"name": data.name},
+                }
+            ).execute()
 
             return ClassTemplateResponse(**result.data[0])
         except HTTPException:
@@ -313,7 +318,9 @@ class ScheduleService:
             studio_id,
             "Instructor not found in this studio",
         )
-        ProgramService(self.supabase).ensure_program_active(studio_id, update_dict.get("program_id"))
+        ProgramService(self.supabase).ensure_program_active(
+            studio_id, update_dict.get("program_id")
+        )
         result = (
             self.supabase.table("class_templates")
             .update(update_dict)
@@ -323,14 +330,16 @@ class ScheduleService:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Template not found")
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "class_template.updated",
-            "entity_type": "class_template",
-            "entity_id": template_id,
-            "metadata": update_dict,
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "class_template.updated",
+                "entity_type": "class_template",
+                "entity_id": template_id,
+                "metadata": update_dict,
+            }
+        ).execute()
         return ClassTemplateResponse(**result.data[0])
 
     async def delete_template(self, template_id: str, studio_id: str, actor_id: str) -> None:
@@ -344,14 +353,16 @@ class ScheduleService:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Template not found")
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "class_template.deleted",
-            "entity_type": "class_template",
-            "entity_id": template_id,
-            "metadata": {},
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "class_template.deleted",
+                "entity_type": "class_template",
+                "entity_id": template_id,
+                "metadata": {},
+            }
+        ).execute()
 
     # ---- Class Sessions ----
 
@@ -396,10 +407,12 @@ class ScheduleService:
 
             sessions = []
             for r in result.data or []:
-                sessions.append(ClassSessionResponse(
-                    **r,
-                    attendance_count=attendance_counts.get(r["id"], 0),
-                ))
+                sessions.append(
+                    ClassSessionResponse(
+                        **r,
+                        attendance_count=attendance_counts.get(r["id"], 0),
+                    )
+                )
             return sessions
         except HTTPException:
             raise
@@ -455,18 +468,20 @@ class ScheduleService:
         result = self.supabase.table("class_sessions").insert(row).execute()
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create session")
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "class_session.created",
-            "entity_type": "class_session",
-            "entity_id": result.data[0]["id"],
-            "metadata": {
-                "name": row["name"],
-                "date": row["date"],
-                "template_id": row.get("template_id"),
-            },
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "class_session.created",
+                "entity_type": "class_session",
+                "entity_id": result.data[0]["id"],
+                "metadata": {
+                    "name": row["name"],
+                    "date": row["date"],
+                    "template_id": row.get("template_id"),
+                },
+            }
+        ).execute()
         return ClassSessionResponse(**result.data[0], attendance_count=0)
 
     async def generate_sessions_for_week(
@@ -545,10 +560,12 @@ class ScheduleService:
 
         deleted = (
             self.supabase.table("class_sessions")
-            .update({
-                "deleted_at": deleted_at,
-                "status": "canceled",
-            })
+            .update(
+                {
+                    "deleted_at": deleted_at,
+                    "status": "canceled",
+                }
+            )
             .eq("id", session_id)
             .eq("studio_id", studio_id)
             .is_("deleted_at", "null")
@@ -557,20 +574,24 @@ class ScheduleService:
         if not deleted.data:
             raise HTTPException(status_code=409, detail="Failed to delete class session")
 
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "class_session.deleted",
-            "entity_type": "class_session",
-            "entity_id": session_id,
-            "metadata": {
-                "template_id": session.get("template_id"),
-                "date": session["date"],
-                "name": session["name"],
-            },
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "class_session.deleted",
+                "entity_type": "class_session",
+                "entity_id": session_id,
+                "metadata": {
+                    "template_id": session.get("template_id"),
+                    "date": session["date"],
+                    "name": session["name"],
+                },
+            }
+        ).execute()
 
-    def _delete_recurring_class_series_atomic(self, session_id: str, studio_id: str, actor_id: str) -> None:
+    def _delete_recurring_class_series_atomic(
+        self, session_id: str, studio_id: str, actor_id: str
+    ) -> None:
         try:
             execute_required_rpc(
                 self.supabase,
@@ -593,7 +614,9 @@ class ScheduleService:
             if "Class template not found" in message:
                 raise HTTPException(status_code=404, detail="Class template not found") from exc
             if "Failed to delete recurring class series" in message:
-                raise HTTPException(status_code=409, detail="Failed to delete recurring class series") from exc
+                raise HTTPException(
+                    status_code=409, detail="Failed to delete recurring class series"
+                ) from exc
             raise
 
     # ---- Attendance ----

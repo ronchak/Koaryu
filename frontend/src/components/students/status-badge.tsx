@@ -1,9 +1,6 @@
 import type { StudentStatus } from "@/types";
 
-const statusConfig: Record<
-  StudentStatus,
-  { label: string; variant: string; dot: string }
-> = {
+const statusConfig: Record<StudentStatus, { label: string; variant: string; dot: string }> = {
   active: {
     label: "Active",
     variant: "bg-success/10 text-success border-success/20",

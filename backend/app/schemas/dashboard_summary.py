@@ -172,11 +172,19 @@ class DashboardSummaryResponse(BaseModel):
     leads: DashboardSummaryLeadCounts = Field(default_factory=DashboardSummaryLeadCounts)
     schedule: DashboardSummaryScheduleCounts = Field(default_factory=DashboardSummaryScheduleCounts)
     belts: DashboardSummaryBeltCounts = Field(default_factory=DashboardSummaryBeltCounts)
-    inactivity: DashboardSummaryInactivityCounts = Field(default_factory=DashboardSummaryInactivityCounts)
-    new_students: DashboardSummaryNewStudentCounts = Field(default_factory=DashboardSummaryNewStudentCounts)
-    operational: DashboardSummaryOperationalCounts = Field(default_factory=DashboardSummaryOperationalCounts)
+    inactivity: DashboardSummaryInactivityCounts = Field(
+        default_factory=DashboardSummaryInactivityCounts
+    )
+    new_students: DashboardSummaryNewStudentCounts = Field(
+        default_factory=DashboardSummaryNewStudentCounts
+    )
+    operational: DashboardSummaryOperationalCounts = Field(
+        default_factory=DashboardSummaryOperationalCounts
+    )
     churn: DashboardSummaryChurnCounts = Field(default_factory=DashboardSummaryChurnCounts)
-    test_readiness: DashboardSummaryTestReadinessCounts = Field(default_factory=DashboardSummaryTestReadinessCounts)
+    test_readiness: DashboardSummaryTestReadinessCounts = Field(
+        default_factory=DashboardSummaryTestReadinessCounts
+    )
     billing: DashboardSummaryBillingCounts = Field(default_factory=DashboardSummaryBillingCounts)
     setup: DashboardSummarySetupFlags = Field(default_factory=DashboardSummarySetupFlags)
     recent_students: list[DashboardSummaryRecentStudent] = Field(default_factory=list)

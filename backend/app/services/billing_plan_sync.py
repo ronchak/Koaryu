@@ -47,7 +47,9 @@ class BillingPlanSyncWorkflow:
     ) -> BillingPlanResponse:
         normalized_key = normalize_idempotency_key(idempotency_key)
         if not normalized_key:
-            raise HTTPException(status_code=400, detail="Idempotency-Key is required for plan sync.")
+            raise HTTPException(
+                status_code=400, detail="Idempotency-Key is required for plan sync."
+            )
         plan = self.owner._get_row_or_404(
             "billing_plans", plan_id, studio_id, "Billing plan not found."
         )
@@ -86,11 +88,7 @@ class BillingPlanSyncWorkflow:
             request_sha256=str(operation["request_sha256"]),
             stripe_connected_account_id=account_id,
             connect_account_generation=generation,
-            lease_owner=(
-                str(operation["lease_owner"])
-                if recovery
-                else lease_owner
-            ),
+            lease_owner=(str(operation["lease_owner"]) if recovery else lease_owner),
         )
         if disposition == "replay":
             try:
@@ -113,9 +111,7 @@ class BillingPlanSyncWorkflow:
                     "plan_sync_projection_unverified",
                     exc,
                 )
-            operation = operations.complete(
-                context, operation, result_code="plan_sync_completed"
-            )
+            operation = operations.complete(context, operation, result_code="plan_sync_completed")
             self._ensure_audit(context, projected, operation)
             return self._response(projected, account)
         if operation.get("state") == "provider_succeeded":
@@ -181,9 +177,7 @@ class BillingPlanSyncWorkflow:
                     else operation.get("result_summary")
                 ),
             )
-            operation = operations.complete(
-                context, operation, result_code="plan_sync_completed"
-            )
+            operation = operations.complete(context, operation, result_code="plan_sync_completed")
             self._ensure_audit(context, projected, operation)
             return self._response(projected, account)
 
@@ -192,7 +186,8 @@ class BillingPlanSyncWorkflow:
                 saved_target = self._product_update_target(operation)
             except Exception as exc:
                 operations.reject_recovery_source_drift_v2(
-                    context, operation,
+                    context,
+                    operation,
                     error_code="plan_sync_recovery_source_drift",
                 )
                 raise HTTPException(status_code=409, detail=PLAN_SYNC_AMBIGUOUS_DETAIL) from exc
@@ -202,7 +197,8 @@ class BillingPlanSyncWorkflow:
                 or str(plan.get("stripe_product_id") or "") != saved_target
             ):
                 operations.reject_recovery_source_drift_v2(
-                    context, operation,
+                    context,
+                    operation,
                     error_code="plan_sync_recovery_source_drift",
                 )
                 raise HTTPException(status_code=409, detail=PLAN_SYNC_AMBIGUOUS_DETAIL)
@@ -345,18 +341,29 @@ class BillingPlanSyncWorkflow:
                 account_id=context.stripe_connected_account_id,
                 product_id=product_id,
             )
-            metadata = getattr(product, "metadata", None) or (
-                product.get("metadata") if isinstance(product, dict) else {}
-            ) or {}
+            metadata = (
+                getattr(product, "metadata", None)
+                or (product.get("metadata") if isinstance(product, dict) else {})
+                or {}
+            )
             if (
                 _stripe_id(product) != product_id
                 or product_id != str(plan.get("stripe_product_id") or "")
-                or (product.get("name") if isinstance(product, dict) else getattr(product, "name", None))
+                or (
+                    product.get("name")
+                    if isinstance(product, dict)
+                    else getattr(product, "name", None)
+                )
                 != plan["name"]
                 or str(
-                    (product.get("description") if isinstance(product, dict)
-                     else getattr(product, "description", None)) or ""
-                ) != str(plan.get("description") or "")
+                    (
+                        product.get("description")
+                        if isinstance(product, dict)
+                        else getattr(product, "description", None)
+                    )
+                    or ""
+                )
+                != str(plan.get("description") or "")
                 or metadata != self._product_metadata(plan)
             ):
                 raise RuntimeError("plan_sync_recovered_product_mismatch")
@@ -421,13 +428,20 @@ class BillingPlanSyncWorkflow:
                 and int(saved_steps[1].get("provider_request_attempt_count") or 0) == 0
             )
             if fresh_price:
-                if any(int(step.get("provider_request_attempt_count") or 0) for step in saved_steps):
+                if any(
+                    int(step.get("provider_request_attempt_count") or 0) for step in saved_steps
+                ):
                     step_client.complete_provider_phase(
-                        context, operation, plan_sha256=plan_sha256, expected_step_count=2,
+                        context,
+                        operation,
+                        plan_sha256=plan_sha256,
+                        expected_step_count=2,
                     )
                     raise HTTPException(status_code=409, detail=PLAN_SYNC_AMBIGUOUS_DETAIL)
                 operations.transition(
-                    context, operation, "definitive_rejected",
+                    context,
+                    operation,
+                    "definitive_rejected",
                     error_code="tuition_currency_requires_usd",
                 )
                 raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
@@ -603,12 +617,13 @@ class BillingPlanSyncWorkflow:
                 return provider_id
             raise HTTPException(status_code=503, detail=PLAN_SYNC_AMBIGUOUS_DETAIL)
         self._raise_for_blocked_step(envelope)
-        if (
-            int(current.get("provider_request_attempt_count") or 0) == 0
-            and not is_usd_currency(plan.get("currency"))
+        if int(current.get("provider_request_attempt_count") or 0) == 0 and not is_usd_currency(
+            plan.get("currency")
         ):
             client.transition_step(
-                step, current, "definitive_rejected",
+                step,
+                current,
+                "definitive_rejected",
                 error_code="tuition_currency_requires_usd",
             )
             raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
@@ -717,39 +732,41 @@ class BillingPlanSyncWorkflow:
         product_key = self.owner._idempotency_key(
             "plan-sync", context.operation_id, "step-1-product"
         )
-        price_key = self.owner._idempotency_key(
-            "plan-sync", context.operation_id, "step-2-price"
-        )
+        price_key = self.owner._idempotency_key("plan-sync", context.operation_id, "step-2-price")
         steps = [
             {
                 "step_name": "product",
                 "provider_operation": product_operation,
-                "request_sha256": stable_hash({
-                    "provider_operation": product_operation,
-                    "stripe_product_id": plan.get("stripe_product_id"),
-                    "name": plan["name"],
-                    "description": plan.get("description"),
-                    "studio_id": plan["studio_id"],
-                    "plan_id": plan["id"],
-                    "account_id": context.stripe_connected_account_id,
-                    "generation": context.connect_account_generation,
-                }),
+                "request_sha256": stable_hash(
+                    {
+                        "provider_operation": product_operation,
+                        "stripe_product_id": plan.get("stripe_product_id"),
+                        "name": plan["name"],
+                        "description": plan.get("description"),
+                        "studio_id": plan["studio_id"],
+                        "plan_id": plan["id"],
+                        "account_id": context.stripe_connected_account_id,
+                        "generation": context.connect_account_generation,
+                    }
+                ),
                 "stripe_idempotency_key": product_key,
             },
             {
                 "step_name": "price",
                 "provider_operation": "connected_price.create",
-                "request_sha256": stable_hash({
-                    "provider_operation": "connected_price.create",
-                    "product_source": "step:product",
-                    "amount_cents": int(plan.get("amount_cents") or 0),
-                    "currency": plan.get("currency") or "usd",
-                    "billing_interval": plan.get("billing_interval") or "monthly",
-                    "lookup_key": lookup_key,
-                    "version": version,
-                    "account_id": context.stripe_connected_account_id,
-                    "generation": context.connect_account_generation,
-                }),
+                "request_sha256": stable_hash(
+                    {
+                        "provider_operation": "connected_price.create",
+                        "product_source": "step:product",
+                        "amount_cents": int(plan.get("amount_cents") or 0),
+                        "currency": plan.get("currency") or "usd",
+                        "billing_interval": plan.get("billing_interval") or "monthly",
+                        "lookup_key": lookup_key,
+                        "version": version,
+                        "account_id": context.stripe_connected_account_id,
+                        "generation": context.connect_account_generation,
+                    }
+                ),
                 "stripe_idempotency_key": price_key,
             },
         ]
@@ -833,9 +850,7 @@ class BillingPlanSyncWorkflow:
         else:
             try:
                 inserted = (
-                    self.supabase.table("billing_plan_prices")
-                    .insert(price_payload)
-                    .execute()
+                    self.supabase.table("billing_plan_prices").insert(price_payload).execute()
                 )
             except Exception as exc:
                 price = self._recover_owned_price_projection(
@@ -1090,12 +1105,9 @@ class BillingPlanSyncWorkflow:
             raise RuntimeError("plan_sync_saved_price_mismatch")
         summary = str(operation.get("result_summary") or "")
         if summary.startswith("plan_sync_mode:product_update_only:"):
-            if (
-                self._product_update_target(operation)
-                != plan.get("stripe_product_id")
-                or operation.get("provider_object_id")
-                != plan.get("stripe_product_id")
-            ):
+            if self._product_update_target(operation) != plan.get(
+                "stripe_product_id"
+            ) or operation.get("provider_object_id") != plan.get("stripe_product_id"):
                 raise RuntimeError("plan_sync_saved_product_mismatch")
         elif summary == "plan_sync_mode:product_price_steps":
             if operation.get("provider_object_id") != plan.get("stripe_price_id"):
@@ -1140,7 +1152,9 @@ class BillingPlanSyncWorkflow:
         product_ids = {str(row.get("stripe_product_id") or "") for row in rows}
         price_ids = {str(row.get("stripe_price_id") or "") for row in rows}
         if len(product_ids) != 1 or len(price_ids) != 1:
-            raise HTTPException(status_code=409, detail="Plan has contradictory active Stripe price identity.")
+            raise HTTPException(
+                status_code=409, detail="Plan has contradictory active Stripe price identity."
+            )
         row = rows[0]
         row = self._verify_price_row(
             row,
@@ -1250,7 +1264,9 @@ class BillingPlanSyncWorkflow:
             or not account.get("charges_enabled")
             or account.get("status") == "deauthorized"
         ):
-            raise HTTPException(status_code=409, detail="Stripe Connect charges are not enabled yet.")
+            raise HTTPException(
+                status_code=409, detail="Stripe Connect charges are not enabled yet."
+            )
         return account
 
     @staticmethod
@@ -1261,29 +1277,37 @@ class BillingPlanSyncWorkflow:
         except (TypeError, ValueError):
             generation = 0
         if generation <= 0:
-            raise HTTPException(status_code=409, detail="Stripe account generation is not ready for plan sync.")
+            raise HTTPException(
+                status_code=409, detail="Stripe account generation is not ready for plan sync."
+            )
         return generation
 
     @staticmethod
     def _validate_plan_identity(plan: dict[str, Any], account_id: str) -> None:
         if plan.get("stripe_account_id") not in {None, account_id}:
-            raise HTTPException(status_code=409, detail="Plan belongs to another Stripe account identity.")
+            raise HTTPException(
+                status_code=409, detail="Plan belongs to another Stripe account identity."
+            )
         if plan.get("stripe_price_id") and not plan.get("stripe_product_id"):
-            raise HTTPException(status_code=409, detail="Plan has contradictory Stripe product and price identity.")
+            raise HTTPException(
+                status_code=409, detail="Plan has contradictory Stripe product and price identity."
+            )
 
     @staticmethod
     def _desired_plan_hash(plan: dict[str, Any], account_id: str, generation: int) -> str:
-        return stable_hash({
-            "studio_id": plan["studio_id"],
-            "plan_id": plan["id"],
-            "stripe_connected_account_id": account_id,
-            "connect_account_generation": generation,
-            "name": plan["name"],
-            "description": plan.get("description"),
-            "amount_cents": int(plan.get("amount_cents") or 0),
-            "currency": plan.get("currency") or "usd",
-            "billing_interval": plan.get("billing_interval") or "monthly",
-        })
+        return stable_hash(
+            {
+                "studio_id": plan["studio_id"],
+                "plan_id": plan["id"],
+                "stripe_connected_account_id": account_id,
+                "connect_account_generation": generation,
+                "name": plan["name"],
+                "description": plan.get("description"),
+                "amount_cents": int(plan.get("amount_cents") or 0),
+                "currency": plan.get("currency") or "usd",
+                "billing_interval": plan.get("billing_interval") or "monthly",
+            }
+        )
 
     @staticmethod
     def _product_update_summary(product_id: str) -> str:
@@ -1297,7 +1321,7 @@ class BillingPlanSyncWorkflow:
         summary = str(operation.get("result_summary") or "")
         if not summary.startswith(prefix):
             raise RuntimeError("plan_sync_saved_target_invalid")
-        target = summary[len(prefix):]
+        target = summary[len(prefix) :]
         cls._product_update_summary(target)
         return target
 
@@ -1313,7 +1337,10 @@ class BillingPlanSyncWorkflow:
     def _raise_for_blocked_step(envelope: dict[str, Any]) -> None:
         outcome = str(envelope.get("outcome") or "")
         state = str((envelope.get("step") or {}).get("state") or "")
-        if outcome in {"busy", "provider_request_in_flight"} or state == "provider_request_in_flight":
+        if (
+            outcome in {"busy", "provider_request_in_flight"}
+            or state == "provider_request_in_flight"
+        ):
             raise HTTPException(status_code=409, detail="Plan sync step is already in progress.")
         if outcome == "reconciliation_required" or state == "reconciliation_required":
             raise HTTPException(status_code=409, detail=PLAN_SYNC_AMBIGUOUS_DETAIL)
@@ -1398,9 +1425,7 @@ class BillingPlanSyncWorkflow:
         price_id = str(plan.get("stripe_price_id") or "")
         summary = str(operation.get("result_summary") or "")
         product_result = (
-            product_id
-            if summary.startswith("plan_sync_mode:product_update_only:")
-            else price_id
+            product_id if summary.startswith("plan_sync_mode:product_update_only:") else price_id
         )
         metadata = {
             "operation_id": context.operation_id,
@@ -1428,10 +1453,8 @@ class BillingPlanSyncWorkflow:
             or operation.get("operation_type") != PLAN_SYNC_OPERATION_TYPE
             or operation.get("caller_request_key") != context.caller_request_key
             or operation.get("request_sha256") != context.request_sha256
-            or operation.get("stripe_connected_account_id")
-            != context.stripe_connected_account_id
-            or operation.get("connect_account_generation")
-            != context.connect_account_generation
+            or operation.get("stripe_connected_account_id") != context.stripe_connected_account_id
+            or operation.get("connect_account_generation") != context.connect_account_generation
             or operation.get("state") != "completed"
             or operation.get("result_code") != "plan_sync_completed"
             or operation.get("provider_object_id") != product_result
@@ -1445,21 +1468,17 @@ class BillingPlanSyncWorkflow:
         ):
             raise RuntimeError("plan_sync_audit_identity_mismatch")
 
-        audit_id = str(uuid5(
-            NAMESPACE_URL,
-            f"koaryu:billing.plan_synced:{context.operation_id}",
-        ))
+        audit_id = str(
+            uuid5(
+                NAMESPACE_URL,
+                f"koaryu:billing.plan_synced:{context.operation_id}",
+            )
+        )
         existing = (
-            self.supabase.table("audit_logs")
-            .select("*")
-            .eq("id", audit_id)
-            .limit(1)
-            .execute()
+            self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
         )
         if existing.data:
-            self._validate_audit_row(
-                existing.data[0], audit_id, context, plan_id, metadata
-            )
+            self._validate_audit_row(existing.data[0], audit_id, context, plan_id, metadata)
             return
         legacy = (
             self.supabase.table("audit_logs")
@@ -1474,9 +1493,7 @@ class BillingPlanSyncWorkflow:
         if legacy.data:
             if len(legacy.data) != 1:
                 raise RuntimeError("plan_sync_legacy_audit_ambiguous")
-            self._validate_legacy_audit_row(
-                legacy.data[0], context, plan_id, product_id, price_id
-            )
+            self._validate_legacy_audit_row(legacy.data[0], context, plan_id, product_id, price_id)
             return
         payload = {
             "id": audit_id,
@@ -1493,22 +1510,14 @@ class BillingPlanSyncWorkflow:
             if getattr(exc, "code", None) != "23505":
                 raise
             winner = (
-                self.supabase.table("audit_logs")
-                .select("*")
-                .eq("id", audit_id)
-                .limit(1)
-                .execute()
+                self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
             )
             if not winner.data:
                 raise RuntimeError("plan_sync_audit_conflict_unverified") from exc
             try:
-                self._validate_audit_row(
-                    winner.data[0], audit_id, context, plan_id, metadata
-                )
+                self._validate_audit_row(winner.data[0], audit_id, context, plan_id, metadata)
             except RuntimeError as invariant_exc:
-                raise RuntimeError(
-                    "plan_sync_audit_conflict_unverified"
-                ) from invariant_exc
+                raise RuntimeError("plan_sync_audit_conflict_unverified") from invariant_exc
 
     @staticmethod
     def _validate_audit_row(
@@ -1544,7 +1553,8 @@ class BillingPlanSyncWorkflow:
             or audit.get("action") != "billing.plan_synced"
             or audit.get("entity_type") not in {None, "billing"}
             or str(audit.get("entity_id") or "") != plan_id
-            or audit.get("metadata") != {
+            or audit.get("metadata")
+            != {
                 "operation_id": context.operation_id,
                 "stripe_product_id": product_id,
                 "stripe_price_id": price_id,

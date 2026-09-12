@@ -13,7 +13,7 @@ describe("buildUpstreamProxyRequestHeaders", () => {
         "idempotency-key": "idem-1",
         "x-studio-id": "caller-controlled-studio",
       }),
-      "cookie-studio"
+      "cookie-studio",
     );
 
     assert.equal(headers.get("authorization"), "Bearer token");
@@ -28,7 +28,7 @@ describe("buildUpstreamProxyRequestHeaders", () => {
       new Headers({
         "x-studio-id": "caller-controlled-studio",
       }),
-      null
+      null,
     );
 
     assert.equal(headers.get("x-studio-id"), null);
@@ -39,7 +39,7 @@ describe("buildUpstreamProxyRequestHeaders", () => {
       new Headers({
         "content-type": "multipart/form-data; boundary=browser-generated",
       }),
-      "cookie-studio"
+      "cookie-studio",
     );
 
     assert.equal(headers.get("content-type"), "multipart/form-data; boundary=browser-generated");

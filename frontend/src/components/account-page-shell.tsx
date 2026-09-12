@@ -91,9 +91,17 @@ export function AccountLinkTile({
       </span>
       <span className="block min-w-0">
         <span className="block text-sm font-medium text-text-primary">{title}</span>
-        <span className="mt-1 block text-sm leading-relaxed text-text-secondary">{description}</span>
+        <span className="mt-1 block text-sm leading-relaxed text-text-secondary">
+          {description}
+        </span>
       </span>
-      {badge ? <Badge>{badge}</Badge> : <span aria-hidden="true" className="text-accent">→</span>}
+      {badge ? (
+        <Badge>{badge}</Badge>
+      ) : (
+        <span aria-hidden="true" className="text-accent">
+          →
+        </span>
+      )}
     </Link>
   );
 }

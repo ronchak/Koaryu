@@ -1,7 +1,4 @@
-import {
-  formatPublicPlatformPrice,
-  publicPlatformPriceAmount,
-} from "./constants.ts";
+import { formatPublicPlatformPrice, publicPlatformPriceAmount } from "./constants.ts";
 import {
   getMarketingPageByRef,
   type MarketingPageKind,
@@ -230,14 +227,12 @@ const featureRows: readonly LandingSummaryRow[] = [
   },
   {
     title: "Rank Progression",
-    description:
-      "See the history behind the shortlist. The instructor still makes the call.",
+    description: "See the history behind the shortlist. The instructor still makes the call.",
     detail: landingDetail({ kind: "feature", slug: "belt-tracking" }),
   },
   {
     title: "Schedule & Attendance",
-    description:
-      "Take attendance fast. Missed classes stop disappearing into a log.",
+    description: "Take attendance fast. Missed classes stop disappearing into a log.",
     detail: landingDetail({ kind: "feature", slug: "attendance" }),
   },
   {
@@ -271,14 +266,12 @@ const useCaseRows: readonly LandingSummaryRow[] = [
   },
   {
     title: "Tuition cleanup",
-    description:
-      "See missing payer details and overdue invoices before month-end gets awkward.",
+    description: "See missing payer details and overdue invoices before month-end gets awkward.",
     detail: landingDetail({ kind: "useCase", slug: "tuition-cleanup" }),
   },
   {
     title: "Test readiness",
-    description:
-      "Get a shortlist with the reasons attached. The instructor still decides.",
+    description: "Get a shortlist with the reasons attached. The instructor still decides.",
     detail: landingDetail({ kind: "useCase", slug: "belt-test-readiness" }),
   },
 ];
@@ -314,8 +307,7 @@ const faqGroups: readonly FaqGroup[] = [
     items: [
       {
         question: "Is CSV import available?",
-        answer:
-          "Yes. Student-roster CSV import supports program and current-belt mapping.",
+        answer: "Yes. Student-roster CSV import supports program and current-belt mapping.",
       },
       {
         question: "What if my existing data is messy?",
@@ -369,8 +361,7 @@ const faqGroups: readonly FaqGroup[] = [
     items: [
       {
         question: `What does the ${formatPublicPlatformPrice()} include?`,
-        answer:
-          `Students, ranks, leads, attendance, billing, reports, and automations. One studio is ${formatPublicPlatformPrice()} a month.`,
+        answer: `Students, ranks, leads, attendance, billing, reports, and automations. One studio is ${formatPublicPlatformPrice()} a month.`,
       },
       {
         question: "Do I pay more when the school grows?",
@@ -398,8 +389,7 @@ const faqGroups: readonly FaqGroup[] = [
     items: [
       {
         question: "Who owns the studio data?",
-        answer:
-          "The studio does. Records stay scoped to the school that owns them.",
+        answer: "The studio does. Records stay scoped to the school that owns them.",
       },
       {
         question: "Can staff have different permissions?",
@@ -491,8 +481,7 @@ export const landingPageContent = {
       ink: "light",
       framed: true,
       kicker: "One operating loop",
-      lede:
-        "Take attendance once. Missed classes reach the follow-up list, and the student history is already there when promotion time comes.",
+      lede: "Take attendance once. Missed classes reach the follow-up list, and the student history is already there when promotion time comes.",
     },
     {
       id: "features",
@@ -502,8 +491,7 @@ export const landingPageContent = {
       ink: "dark",
       kicker: "Features",
       heading: "One student record. Imagine that.",
-      lede:
-        "Update a student once. The front desk and instructors see the same thing.",
+      lede: "Update a student once. The front desk and instructors see the same thing.",
       rows: featureRows,
       link: { label: "See all features", href: "/features" },
     },
@@ -525,8 +513,7 @@ export const landingPageContent = {
       kind: "transition",
       ink: "dark",
       kicker: "Attendance with a point",
-      lede:
-        "Missed classes become follow-up work. A steady streak stays with the student when promotion time comes.",
+      lede: "Missed classes become follow-up work. A steady streak stays with the student when promotion time comes.",
     },
     {
       id: "explore",
@@ -551,8 +538,7 @@ export const landingPageContent = {
         },
         {
           title: "I run a family-focused school",
-          body:
-            "See the same system built around kids, guardians, trials, and tuition.",
+          body: "See the same system built around kids, guardians, trials, and tuition.",
           meta: "Family martial arts schools",
           href: "/studio-types/family-martial-arts-schools",
         },
@@ -567,8 +553,7 @@ export const landingPageContent = {
       ink: "dark",
       placement: "upper",
       kicker: "One shared history",
-      lede:
-        "The front desk and instructors are looking at the same student history.",
+      lede: "The front desk and instructors are looking at the same student history.",
     },
     {
       id: "pricing",
@@ -589,8 +574,7 @@ export const landingPageContent = {
         },
         {
           label: "Stripe fees",
-          description:
-            "Payment-processing fees are billed separately by Stripe.",
+          description: "Payment-processing fees are billed separately by Stripe.",
         },
         {
           label: "Student count",
@@ -608,13 +592,11 @@ export const landingPageContent = {
       ink: "dark",
       kicker: "About Koaryu",
       heading: "Built for the school you actually run.",
-      lede:
-        "Koaryu starts with one-location, owner-operated studios. If the org chart is three people and a group chat, enterprise gym software is a very weird fit.",
+      lede: "Koaryu starts with one-location, owner-operated studios. If the org chart is three people and a group chat, enterprise gym software is a very weird fit.",
       principles: [
         {
           title: "Independent schools first",
-          description:
-            "Koaryu starts with owner-operated and small-team studios.",
+          description: "Koaryu starts with owner-operated and small-team studios.",
         },
         {
           title: "Your data stays yours",
@@ -622,8 +604,7 @@ export const landingPageContent = {
         },
         {
           title: "Daily action beats dashboard theater",
-          description:
-            "Koaryu shows what needs attention today, then gets out of the way.",
+          description: "Koaryu shows what needs attention today, then gets out of the way.",
         },
       ],
       link: { label: "Why Koaryu exists", href: "/about" },

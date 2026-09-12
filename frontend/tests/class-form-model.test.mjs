@@ -35,7 +35,7 @@ describe("class form model", () => {
         dayOfWeek: 6,
         startDate: "2026-05-30",
         endDate: "",
-      }
+      },
     );
   });
 
@@ -55,7 +55,7 @@ describe("class form model", () => {
       {
         mode: "single",
         date: "2026-05-30",
-      }
+      },
     );
   });
 
@@ -74,7 +74,7 @@ describe("class form model", () => {
         endTime: "End time must be after the start time.",
         capacity: "Capacity must be a positive whole number.",
         startDate: "Choose when the series can begin.",
-      }
+      },
     );
 
     assert.deepEqual(
@@ -99,7 +99,7 @@ describe("class form model", () => {
           startDate: "2026-05-30",
           endDate: undefined,
         },
-      }
+      },
     );
 
     assert.deepEqual(
@@ -116,7 +116,7 @@ describe("class form model", () => {
         endTime: "19:30",
         program_id: undefined,
         capacity: undefined,
-      }
+      },
     );
   });
 });

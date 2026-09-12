@@ -28,6 +28,7 @@ async def list_programs(
 ):
     async def _provider_operation(client):
         return ProgramService(client).list_programs_sync(studio_id, include_archived)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -50,6 +51,7 @@ async def create_program(
             require_platform_subscription=True,
         )
         return await ProgramService(client).create_program(data, membership["studio_id"], user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -65,6 +67,7 @@ async def get_program(
 ):
     async def _provider_operation(client):
         return await ProgramService(client).get_program(program_id, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -87,7 +90,10 @@ async def update_program(
             requested_studio_id,
             require_platform_subscription=True,
         )
-        return await ProgramService(client).update_program(program_id, data, membership["studio_id"], user_id)
+        return await ProgramService(client).update_program(
+            program_id, data, membership["studio_id"], user_id
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -109,7 +115,10 @@ async def archive_program(
             requested_studio_id,
             require_platform_subscription=True,
         )
-        return await ProgramService(client).archive_program(program_id, membership["studio_id"], user_id)
+        return await ProgramService(client).archive_program(
+            program_id, membership["studio_id"], user_id
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -131,7 +140,10 @@ async def restore_program(
             requested_studio_id,
             require_platform_subscription=True,
         )
-        return await ProgramService(client).restore_program(program_id, membership["studio_id"], user_id)
+        return await ProgramService(client).restore_program(
+            program_id, membership["studio_id"], user_id
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -147,6 +159,7 @@ async def get_program_usage(
 ):
     async def _provider_operation(client):
         return await ProgramService(client).get_usage(program_id, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

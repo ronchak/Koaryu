@@ -203,11 +203,7 @@ class ProgramRecordStore:
         except PostgrestAPIError as exc:
             if not _is_optional_program_schema_error(exc):
                 raise
-            update = {
-                key: value
-                for key, value in update.items()
-                if key in {"name", "description"}
-            }
+            update = {key: value for key, value in update.items() if key in {"name", "description"}}
             if not update:
                 return None
             result = (
@@ -323,11 +319,13 @@ class ProgramRecordStore:
         entity_id: str,
         metadata: dict[str, Any],
     ) -> None:
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": action,
-            "entity_type": "program",
-            "entity_id": entity_id,
-            "metadata": metadata,
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": action,
+                "entity_type": "program",
+                "entity_id": entity_id,
+                "metadata": metadata,
+            }
+        ).execute()

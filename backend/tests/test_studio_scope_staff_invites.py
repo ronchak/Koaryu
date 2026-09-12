@@ -17,10 +17,12 @@ class FakeAuthAdmin:
 
     def get_user_by_id(self, user_id):
         self.supabase.operations.append(("auth_get_user", user_id))
-        return SimpleNamespace(user=SimpleNamespace(
-            id=user_id,
-            email=self.supabase.user_emails.get(user_id),
-        ))
+        return SimpleNamespace(
+            user=SimpleNamespace(
+                id=user_id,
+                email=self.supabase.user_emails.get(user_id),
+            )
+        )
 
 
 class FakeAuth:
@@ -38,22 +40,24 @@ class FakeSupabase(TableBackedSupabase):
 
 class StudioScopePendingStaffInviteTest(unittest.TestCase):
     def test_read_resolution_fails_closed_for_historical_multi_studio_memberships(self):
-        supabase = FakeSupabase([
-            {
-                "id": "role_1",
-                "studio_id": "studio_1",
-                "user_id": "user_1",
-                "role": "admin",
-                "created_at": "2026-05-24T12:00:00+00:00",
-            },
-            {
-                "id": "role_2",
-                "studio_id": "studio_2",
-                "user_id": "user_1",
-                "role": "admin",
-                "created_at": "2026-05-23T12:00:00+00:00",
-            },
-        ])
+        supabase = FakeSupabase(
+            [
+                {
+                    "id": "role_1",
+                    "studio_id": "studio_1",
+                    "user_id": "user_1",
+                    "role": "admin",
+                    "created_at": "2026-05-24T12:00:00+00:00",
+                },
+                {
+                    "id": "role_2",
+                    "studio_id": "studio_2",
+                    "user_id": "user_1",
+                    "role": "admin",
+                    "created_at": "2026-05-23T12:00:00+00:00",
+                },
+            ]
+        )
 
         for selector in (None, "studio_1", "studio_2"):
             with self.subTest(selector=selector):
@@ -63,16 +67,18 @@ class StudioScopePendingStaffInviteTest(unittest.TestCase):
                 self.assertEqual(context.exception.detail, MULTIPLE_STUDIO_MEMBERSHIPS_DETAIL)
 
     def test_resolve_does_not_claim_pending_staff_invite_by_auth_email(self):
-        supabase = FakeSupabase([
-            {
-                "id": "role_pending",
-                "studio_id": "studio_1",
-                "user_id": None,
-                "role": "instructor",
-                "invited_email": "invited@example.com",
-                "created_at": "2026-05-24T12:00:00+00:00",
-            },
-        ])
+        supabase = FakeSupabase(
+            [
+                {
+                    "id": "role_pending",
+                    "studio_id": "studio_1",
+                    "user_id": None,
+                    "role": "instructor",
+                    "invited_email": "invited@example.com",
+                    "created_at": "2026-05-24T12:00:00+00:00",
+                },
+            ]
+        )
 
         with self.assertRaises(HTTPException) as context:
             resolve_staff_role_for_user(supabase, "user_1")
@@ -82,24 +88,26 @@ class StudioScopePendingStaffInviteTest(unittest.TestCase):
         self.assertNotIn(("auth_get_user", "user_1"), supabase.operations)
 
     def test_requested_studio_does_not_claim_pending_invite_when_user_has_other_memberships(self):
-        supabase = FakeSupabase([
-            {
-                "id": "role_existing",
-                "studio_id": "studio_existing",
-                "user_id": "user_1",
-                "role": "front_desk",
-                "invited_email": "other@example.com",
-                "created_at": "2026-05-23T12:00:00+00:00",
-            },
-            {
-                "id": "role_pending",
-                "studio_id": "studio_requested",
-                "user_id": None,
-                "role": "admin",
-                "invited_email": "invited@example.com",
-                "created_at": "2026-05-24T12:00:00+00:00",
-            },
-        ])
+        supabase = FakeSupabase(
+            [
+                {
+                    "id": "role_existing",
+                    "studio_id": "studio_existing",
+                    "user_id": "user_1",
+                    "role": "front_desk",
+                    "invited_email": "other@example.com",
+                    "created_at": "2026-05-23T12:00:00+00:00",
+                },
+                {
+                    "id": "role_pending",
+                    "studio_id": "studio_requested",
+                    "user_id": None,
+                    "role": "admin",
+                    "invited_email": "invited@example.com",
+                    "created_at": "2026-05-24T12:00:00+00:00",
+                },
+            ]
+        )
 
         with self.assertRaises(HTTPException) as context:
             resolve_staff_role_for_user(supabase, "user_1", "studio_requested")
@@ -109,24 +117,26 @@ class StudioScopePendingStaffInviteTest(unittest.TestCase):
         self.assertIsNone(supabase.tables["staff_roles"][1]["user_id"])
 
     def test_requested_studio_must_match_membership_or_claimed_invite(self):
-        supabase = FakeSupabase([
-            {
-                "id": "role_existing",
-                "studio_id": "studio_existing",
-                "user_id": "user_1",
-                "role": "front_desk",
-                "invited_email": "other@example.com",
-                "created_at": "2026-05-23T12:00:00+00:00",
-            },
-            {
-                "id": "role_pending_other_email",
-                "studio_id": "studio_requested",
-                "user_id": None,
-                "role": "admin",
-                "invited_email": "someone-else@example.com",
-                "created_at": "2026-05-24T12:00:00+00:00",
-            },
-        ])
+        supabase = FakeSupabase(
+            [
+                {
+                    "id": "role_existing",
+                    "studio_id": "studio_existing",
+                    "user_id": "user_1",
+                    "role": "front_desk",
+                    "invited_email": "other@example.com",
+                    "created_at": "2026-05-23T12:00:00+00:00",
+                },
+                {
+                    "id": "role_pending_other_email",
+                    "studio_id": "studio_requested",
+                    "user_id": None,
+                    "role": "admin",
+                    "invited_email": "someone-else@example.com",
+                    "created_at": "2026-05-24T12:00:00+00:00",
+                },
+            ]
+        )
 
         with self.assertRaises(HTTPException) as context:
             resolve_staff_role_for_user(supabase, "user_1", "studio_requested")
@@ -135,16 +145,18 @@ class StudioScopePendingStaffInviteTest(unittest.TestCase):
         self.assertIsNone(supabase.tables["staff_roles"][1]["user_id"])
 
     def test_email_wildcard_characters_do_not_pattern_match_other_invites(self):
-        supabase = FakeSupabase([
-            {
-                "id": "role_pending",
-                "studio_id": "studio_1",
-                "user_id": None,
-                "role": "instructor",
-                "invited_email": "axb@example.com",
-                "created_at": "2026-05-24T12:00:00+00:00",
-            },
-        ])
+        supabase = FakeSupabase(
+            [
+                {
+                    "id": "role_pending",
+                    "studio_id": "studio_1",
+                    "user_id": None,
+                    "role": "instructor",
+                    "invited_email": "axb@example.com",
+                    "created_at": "2026-05-24T12:00:00+00:00",
+                },
+            ]
+        )
         supabase.user_emails["user_1"] = "a_b@example.com"
 
         with self.assertRaises(HTTPException) as context:
@@ -161,16 +173,18 @@ class StudioScopePendingStaffInviteTest(unittest.TestCase):
         self.assertIsNone(role)
 
     def test_optional_resolver_rejects_unclaimed_requested_studio(self):
-        supabase = FakeSupabase([
-            {
-                "id": "role_existing",
-                "studio_id": "studio_existing",
-                "user_id": "user_1",
-                "role": "front_desk",
-                "invited_email": "other@example.com",
-                "created_at": "2026-05-23T12:00:00+00:00",
-            },
-        ])
+        supabase = FakeSupabase(
+            [
+                {
+                    "id": "role_existing",
+                    "studio_id": "studio_existing",
+                    "user_id": "user_1",
+                    "role": "front_desk",
+                    "invited_email": "other@example.com",
+                    "created_at": "2026-05-23T12:00:00+00:00",
+                },
+            ]
+        )
 
         with self.assertRaises(HTTPException) as context:
             resolve_optional_staff_role_for_user(supabase, "user_1", "studio_requested")
@@ -178,16 +192,18 @@ class StudioScopePendingStaffInviteTest(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 403)
 
     def test_optional_resolver_does_not_claim_requested_invite_with_supplied_email(self):
-        supabase = FakeSupabase([
-            {
-                "id": "role_pending",
-                "studio_id": "studio_requested",
-                "user_id": None,
-                "role": "admin",
-                "invited_email": "profile@example.com",
-                "created_at": "2026-05-24T12:00:00+00:00",
-            },
-        ])
+        supabase = FakeSupabase(
+            [
+                {
+                    "id": "role_pending",
+                    "studio_id": "studio_requested",
+                    "user_id": None,
+                    "role": "admin",
+                    "invited_email": "profile@example.com",
+                    "created_at": "2026-05-24T12:00:00+00:00",
+                },
+            ]
+        )
 
         with self.assertRaises(HTTPException) as context:
             resolve_optional_staff_role_for_user(

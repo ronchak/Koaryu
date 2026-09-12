@@ -198,15 +198,17 @@ class ProgramUsageCalculator:
 
         return ProgramUsageResponse(
             student_count=len(memberships),
-            active_student_count=len([
-                row for row in memberships
-                if row.get("status") in {"active", "paused"} and not row.get("ended_at")
-            ]),
+            active_student_count=len(
+                [
+                    row
+                    for row in memberships
+                    if row.get("status") in {"active", "paused"} and not row.get("ended_at")
+                ]
+            ),
             class_count=len(sessions),
-            active_class_count=len([
-                row for row in sessions
-                if row.get("status") in {"scheduled", "in_progress"}
-            ]),
+            active_class_count=len(
+                [row for row in sessions if row.get("status") in {"scheduled", "in_progress"}]
+            ),
             lead_count=lead_count,
             belt_ladder_count=belt_ladder_count,
         )

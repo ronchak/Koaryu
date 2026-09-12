@@ -85,9 +85,17 @@ def _timestamp(value: Any) -> Optional[datetime]:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
-        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+        return (
+            parsed.replace(tzinfo=timezone.utc)
+            if parsed.tzinfo is None
+            else parsed.astimezone(timezone.utc)
+        )
     if isinstance(value, datetime):
-        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        return (
+            value.replace(tzinfo=timezone.utc)
+            if value.tzinfo is None
+            else value.astimezone(timezone.utc)
+        )
     return None
 
 
@@ -109,7 +117,11 @@ def _sanitized_error_code(value: Any) -> Optional[str]:
     normalized = str(value or "").strip().lower()
     if not normalized:
         return None
-    return normalized if SANITIZED_ERROR_CODE_PATTERN.fullmatch(normalized) else "redacted_unstructured_error"
+    return (
+        normalized
+        if SANITIZED_ERROR_CODE_PATTERN.fullmatch(normalized)
+        else "redacted_unstructured_error"
+    )
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -183,7 +195,9 @@ def _resolve_collection_window(
             "Requested event window starts outside the provider-supported retention safety boundary."
         )
     if normalized >= window_end:
-        raise ReconciliationReportError("Requested event window start must be earlier than its end.")
+        raise ReconciliationReportError(
+            "Requested event window start must be earlier than its end."
+        )
     return normalized, window_end
 
 
@@ -196,7 +210,9 @@ def _verify_deployed_readiness(probe: str, candidate_sha: str, *, now: datetime)
         raise ReconciliationReportError("--probe must be production or staging.")
     url, environment = expected
     try:
-        response = httpx.get(url, timeout=15, follow_redirects=False, headers={"cache-control": "no-cache"})
+        response = httpx.get(
+            url, timeout=15, follow_redirects=False, headers={"cache-control": "no-cache"}
+        )
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError) as exc:
@@ -207,7 +223,9 @@ def _verify_deployed_readiness(probe: str, candidate_sha: str, *, now: datetime)
         or payload.get("environment") != environment
         or payload.get("commit_sha") != candidate_sha
     ):
-        raise ReconciliationReportError("Pinned /health/ready did not report the exact candidate identity.")
+        raise ReconciliationReportError(
+            "Pinned /health/ready did not report the exact candidate identity."
+        )
     return {
         "verified": True,
         "url": url,
@@ -218,19 +236,21 @@ def _verify_deployed_readiness(probe: str, candidate_sha: str, *, now: datetime)
 
 
 def _latest_v3_checkpoints(supabase: Any) -> list[dict[str, Any]]:
-    return _paginate_supabase(lambda: (
-        supabase.table("stripe_live_billing_reconciliation_checkpoints_v3")
-        .select(
-            "checkpoint_id,checkpoint_sequence,candidate_sha,verified_at,expires_at,"
-            "source_report_sha256,continuity_mode,previous_checkpoint_id,"
-            "previous_checkpoint_sequence,event_window_started_at,event_window_ended_at,"
-            "continuity_overlap_started_at,continuity_overlap_ended_at,"
-            "previous_local_event_ingest_watermark,local_event_ingest_watermark,"
-            "bootstrap_historical_provider_completeness_claimed,"
-            "bootstrap_local_history_checked,created_at"
+    return _paginate_supabase(
+        lambda: (
+            supabase.table("stripe_live_billing_reconciliation_checkpoints_v3")
+            .select(
+                "checkpoint_id,checkpoint_sequence,candidate_sha,verified_at,expires_at,"
+                "source_report_sha256,continuity_mode,previous_checkpoint_id,"
+                "previous_checkpoint_sequence,event_window_started_at,event_window_ended_at,"
+                "continuity_overlap_started_at,continuity_overlap_ended_at,"
+                "previous_local_event_ingest_watermark,local_event_ingest_watermark,"
+                "bootstrap_historical_provider_completeness_claimed,"
+                "bootstrap_local_history_checked,created_at"
+            )
+            .order("checkpoint_sequence", desc=True)
         )
-        .order("checkpoint_sequence", desc=True)
-    ))
+    )
 
 
 def collect_read_only_snapshot(
@@ -242,20 +262,28 @@ def collect_read_only_snapshot(
 ) -> dict[str, Any]:
     """Read provider and local state without invoking a mutation API."""
     if not SHA_PATTERN.fullmatch(candidate_sha):
-        raise ReconciliationReportError("--candidate-sha must be an exact lowercase 40-character SHA.")
+        raise ReconciliationReportError(
+            "--candidate-sha must be an exact lowercase 40-character SHA."
+        )
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     window_start, window_end = _resolve_collection_window(now=now, requested_start=window_start)
     settings = get_settings()
     key = str(settings.STRIPE_RESTRICTED_KEY or settings.STRIPE_SECRET_KEY).strip()
     key_mode = (
-        "live" if key.startswith(("rk_live_", "sk_live_"))
-        else "test" if key.startswith(("rk_test_", "sk_test_"))
+        "live"
+        if key.startswith(("rk_live_", "sk_live_"))
+        else "test"
+        if key.startswith(("rk_test_", "sk_test_"))
         else None
     )
     if key_mode is None:
         raise ReconciliationReportError("A mode-identifiable read-capable Stripe key is required.")
-    if (probe == "production" and key_mode != "live") or (probe == "staging" and key_mode != "test"):
-        raise ReconciliationReportError("The selected diagnostic probe does not match the Stripe key mode.")
+    if (probe == "production" and key_mode != "live") or (
+        probe == "staging" and key_mode != "test"
+    ):
+        raise ReconciliationReportError(
+            "The selected diagnostic probe does not match the Stripe key mode."
+        )
 
     readiness = _verify_deployed_readiness(probe, candidate_sha, now=now)
     stripe = importlib.import_module("stripe")
@@ -279,59 +307,73 @@ def collect_read_only_snapshot(
         provider_events.extend(connected_events)
 
     endpoints = _paginate_stripe(stripe.WebhookEndpoint.list)
-    mappings = _paginate_supabase(lambda: (
-        supabase.table("studio_payment_accounts")
-        .select(
-            "studio_id,stripe_connected_account_id,status,charges_enabled,payouts_enabled,"
-            "details_submitted,requirements_due,metadata"
+    mappings = _paginate_supabase(
+        lambda: (
+            supabase.table("studio_payment_accounts")
+            .select(
+                "studio_id,stripe_connected_account_id,status,charges_enabled,payouts_enabled,"
+                "details_submitted,requirements_due,metadata"
+            )
+            .order("studio_id")
         )
-        .order("studio_id")
-    ))
-    dispositions = _paginate_supabase(lambda: (
-        supabase.table("stripe_connect_account_dispositions")
-        .select("stripe_connected_account_id,excluded,reason,revision,changed_at")
-        .order("stripe_connected_account_id")
-    ))
+    )
+    dispositions = _paginate_supabase(
+        lambda: (
+            supabase.table("stripe_connect_account_dispositions")
+            .select("stripe_connected_account_id,excluded,reason,revision,changed_at")
+            .order("stripe_connected_account_id")
+        )
+    )
     event_columns = (
         "stripe_event_id,stripe_account_id,livemode,type,processing_status,error,error_reference,"
         "processed_at,created_at,live_billing_ingest_sequence"
     )
-    local_events = _paginate_supabase(lambda: (
-        supabase.table("stripe_events")
-        .select(event_columns)
-        .gte("created_at", window_start.isoformat())
-        .lte("created_at", window_end.isoformat())
-        .order("live_billing_ingest_sequence")
-    ))
+    local_events = _paginate_supabase(
+        lambda: (
+            supabase.table("stripe_events")
+            .select(event_columns)
+            .gte("created_at", window_start.isoformat())
+            .lte("created_at", window_end.isoformat())
+            .order("live_billing_ingest_sequence")
+        )
+    )
     expected_livemode = key_mode == "live"
-    local_history_events = _paginate_supabase(lambda: (
-        supabase.table("stripe_events")
-        .select(event_columns)
-        .eq("livemode", expected_livemode)
-        .lte("created_at", window_end.isoformat())
-        .order("live_billing_ingest_sequence")
-    ))
+    local_history_events = _paginate_supabase(
+        lambda: (
+            supabase.table("stripe_events")
+            .select(event_columns)
+            .eq("livemode", expected_livemode)
+            .lte("created_at", window_end.isoformat())
+            .order("live_billing_ingest_sequence")
+        )
+    )
     v3_checkpoints = _latest_v3_checkpoints(supabase)
     previous_checkpoint = v3_checkpoints[0] if v3_checkpoints else None
     previous_account_evidence: list[dict[str, Any]] = []
     if previous_checkpoint and previous_checkpoint.get("checkpoint_id"):
-        previous_account_evidence = _paginate_supabase(lambda: (
-            supabase.table("stripe_live_billing_reconciliation_account_evidence")
-            .select(
-                "checkpoint_id,studio_id,stripe_connected_account_id,connect_account_generation,"
-                "provider_event_count,local_event_count,provider_only_event_count,"
-                "local_only_event_count,delivery_verified_at"
+        previous_account_evidence = _paginate_supabase(
+            lambda: (
+                supabase.table("stripe_live_billing_reconciliation_account_evidence")
+                .select(
+                    "checkpoint_id,studio_id,stripe_connected_account_id,connect_account_generation,"
+                    "provider_event_count,local_event_count,provider_only_event_count,"
+                    "local_only_event_count,delivery_verified_at"
+                )
+                .eq("checkpoint_id", previous_checkpoint["checkpoint_id"])
+                .order("stripe_connected_account_id")
             )
-            .eq("checkpoint_id", previous_checkpoint["checkpoint_id"])
-            .order("stripe_connected_account_id")
-        ))
-    enabled_authorizations = _paginate_supabase(lambda: (
-        supabase.table("studio_live_billing_authorizations")
-        .select("studio_id,scope,enabled,reconciliation_checkpoint_id,local_event_ingest_watermark")
-        .eq("enabled", True)
-        .order("studio_id")
-        .order("scope")
-    ))
+        )
+    enabled_authorizations = _paginate_supabase(
+        lambda: (
+            supabase.table("studio_live_billing_authorizations")
+            .select(
+                "studio_id,scope,enabled,reconciliation_checkpoint_id,local_event_ingest_watermark"
+            )
+            .eq("enabled", True)
+            .order("studio_id")
+            .order("scope")
+        )
+    )
 
     return {
         "candidate_sha": candidate_sha,
@@ -383,8 +425,14 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
     window_start = _timestamp(window.get("started_at"))
     window_end = _timestamp(window.get("ended_at"))
     if collected_at is None or window_start is None or window_end is None:
-        raise ReconciliationReportError("Snapshot collection and event-window timestamps are required.")
-    if window_end != collected_at or window_end < window_start or window_end > now + MAX_FUTURE_SKEW:
+        raise ReconciliationReportError(
+            "Snapshot collection and event-window timestamps are required."
+        )
+    if (
+        window_end != collected_at
+        or window_end < window_start
+        or window_end > now + MAX_FUTURE_SKEW
+    ):
         raise ReconciliationReportError("Snapshot event window is invalid.")
     oldest_supported = _expected_window_start(window_end)
     if window_start < oldest_supported:
@@ -493,9 +541,7 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         latest_platform_delivery
         and now - FRESH_DELIVERY_WINDOW <= latest_platform_delivery <= now + MAX_FUTURE_SKEW
     )
-    not_processed = [
-        row for row in local_events if row.get("processing_status") != "processed"
-    ]
+    not_processed = [row for row in local_events if row.get("processing_status") != "processed"]
     failed = [
         row
         for row in expected_local_window
@@ -506,7 +552,9 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         )
     ]
     observed_event_accounts = {
-        str(row["stripe_account_id"]) for row in expected_local_window if row.get("stripe_account_id")
+        str(row["stripe_account_id"])
+        for row in expected_local_window
+        if row.get("stripe_account_id")
     }
     provider_event_accounts = {
         account_id
@@ -515,13 +563,15 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
     }
     provider_ids = set(provider_accounts)
     mapping_ids = set(mappings)
-    account_universe = provider_ids | provider_event_accounts | observed_event_accounts | mapping_ids
+    account_universe = (
+        provider_ids | provider_event_accounts | observed_event_accounts | mapping_ids
+    )
     mapped_ids = mapping_ids & provider_ids
     excluded_ids = (account_universe - mapping_ids) & excluded
     unresolved_ids = account_universe - mapped_ids - excluded_ids
     unresolved_event_accounts = (
-        provider_event_accounts | observed_event_accounts
-    ) - mapped_ids - excluded_ids
+        (provider_event_accounts | observed_event_accounts) - mapped_ids - excluded_ids
+    )
     local_mappings_absent_from_provider = mapping_ids - provider_ids
 
     account_evidence: list[dict[str, Any]] = []
@@ -539,17 +589,19 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
             latest_delivery
             and now - FRESH_DELIVERY_WINDOW <= latest_delivery <= now + MAX_FUTURE_SKEW
         )
-        account_evidence.append({
-            "studio_id": mapping.get("studio_id"),
-            "stripe_connected_account_id": account_id,
-            "connect_account_generation": generation,
-            "provider_event_count": len(provider_keys),
-            "local_event_count": len(local_keys),
-            "provider_only_event_count": len(provider_keys - local_keys),
-            "local_only_event_count": len(local_keys - provider_keys),
-            "delivery_verified_at": _iso(latest_delivery) if delivery_fresh else None,
-            "fresh": delivery_fresh,
-        })
+        account_evidence.append(
+            {
+                "studio_id": mapping.get("studio_id"),
+                "stripe_connected_account_id": account_id,
+                "connect_account_generation": generation,
+                "provider_event_count": len(provider_keys),
+                "local_event_count": len(local_keys),
+                "provider_only_event_count": len(provider_keys - local_keys),
+                "local_only_event_count": len(local_keys - provider_keys),
+                "delivery_verified_at": _iso(latest_delivery) if delivery_fresh else None,
+                "fresh": delivery_fresh,
+            }
+        )
 
     account_delivery_complete = bool(
         account_evidence
@@ -584,13 +636,11 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
             and set(enabled_events) == events
         )
 
-    platform_endpoint_contract_matched = (
-        len(platform_candidates) == 1
-        and endpoint_matches(platform_candidates[0], url=platform_url, events=PLATFORM_EVENTS)
+    platform_endpoint_contract_matched = len(platform_candidates) == 1 and endpoint_matches(
+        platform_candidates[0], url=platform_url, events=PLATFORM_EVENTS
     )
-    connect_endpoint_contract_matched = (
-        len(connect_candidates) == 1
-        and endpoint_matches(connect_candidates[0], url=connect_url, events=CONNECT_EVENTS)
+    connect_endpoint_contract_matched = len(connect_candidates) == 1 and endpoint_matches(
+        connect_candidates[0], url=connect_url, events=CONNECT_EVENTS
     )
     unexpected_enabled = [
         row
@@ -643,7 +693,11 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         1 for row in local_history_events if _positive_sequence(row) is None
     )
     watermark = max(
-        (sequence for row in local_history_events if (sequence := _positive_sequence(row)) is not None),
+        (
+            sequence
+            for row in local_history_events
+            if (sequence := _positive_sequence(row)) is not None
+        ),
         default=0,
     )
     historical_failed = [
@@ -658,8 +712,7 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
     historical_unprocessed = [
         row
         for row in local_history_events
-        if in_reviewed_universe(row, provider=False)
-        and row.get("processing_status") != "processed"
+        if in_reviewed_universe(row, provider=False) and row.get("processing_status") != "processed"
     ]
     historical_unmapped = [
         row
@@ -675,15 +728,14 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         and not historical_unmapped
     )
 
-    sidecars = [
-        _as_dict(row) for row in snapshot.get("v3_checkpoints") or []
-    ]
+    sidecars = [_as_dict(row) for row in snapshot.get("v3_checkpoints") or []]
     previous_sidecar = _as_dict(
         snapshot.get("previous_checkpoint") or (sidecars[0] if sidecars else {})
     )
     previous_base = _checkpoint_row(previous_sidecar) if previous_sidecar else {}
     enabled_authorizations = [
-        _as_dict(row) for row in snapshot.get("enabled_authorizations") or []
+        _as_dict(row)
+        for row in snapshot.get("enabled_authorizations") or []
         if row.get("enabled") is True
     ]
 
@@ -779,17 +831,22 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         continuity_delta_failed = []
         continuity_delta_unprocessed = []
         continuity_delta_unmapped = []
-        continuity_eligible = bool(
-            not enabled_authorizations
-            and bootstrap_history_clean
-        )
+        continuity_eligible = bool(not enabled_authorizations and bootstrap_history_clean)
 
     latest_local = max(
-        (value for row in expected_local_window if (value := _timestamp(row.get("created_at"))) is not None),
+        (
+            value
+            for row in expected_local_window
+            if (value := _timestamp(row.get("created_at"))) is not None
+        ),
         default=None,
     )
     latest_provider = max(
-        (value for row in expected_provider_window if (value := _timestamp(row.get("created"))) is not None),
+        (
+            value
+            for row in expected_provider_window
+            if (value := _timestamp(row.get("created"))) is not None
+        ),
         default=None,
     )
     checkpoint_eligible = bool(
@@ -815,14 +872,17 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         and invalid_generation_count == 0
     )
 
-    sanitized_failures = [{
-        "event_id": row.get("stripe_event_id"),
-        "stripe_account_id": row.get("stripe_account_id"),
-        "type": row.get("type"),
-        "error_code": _sanitized_error_code(row.get("error")),
-        "error_reference": row.get("error_reference"),
-        "created_at": _iso(row.get("created_at")),
-    } for row in failed]
+    sanitized_failures = [
+        {
+            "event_id": row.get("stripe_event_id"),
+            "stripe_account_id": row.get("stripe_account_id"),
+            "type": row.get("type"),
+            "error_code": _sanitized_error_code(row.get("error")),
+            "error_reference": row.get("error_reference"),
+            "created_at": _iso(row.get("created_at")),
+        }
+        for row in failed
+    ]
 
     return {
         "schema_version": 3,
@@ -862,7 +922,8 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
             "minimum_overlap_seconds": int(MINIMUM_CONTINUITY_OVERLAP.total_seconds()),
             "local_event_ingest_watermark_non_regressing": watermark_non_regressing,
             "account_generation_continuity_valid": generation_continuity_valid,
-            "bootstrap_local_history_checked": continuity_mode == "bootstrap" and bootstrap_history_clean,
+            "bootstrap_local_history_checked": continuity_mode == "bootstrap"
+            and bootstrap_history_clean,
             "bootstrap_historical_provider_completeness_claimed": False,
             "bootstrap_enabled_authorization_count": len(enabled_authorizations),
             "bootstrap_historical_failed_count": len(historical_failed),
@@ -905,7 +966,9 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         "platform_delivery": {
             "provider_event_count": len({key for key in provider_event_keys if key[1] is None}),
             "local_event_count": len({key for key in local_event_keys if key[1] is None}),
-            "delivery_verified_at": _iso(latest_platform_delivery) if platform_delivery_fresh else None,
+            "delivery_verified_at": _iso(latest_platform_delivery)
+            if platform_delivery_fresh
+            else None,
             "fresh": platform_delivery_fresh,
         },
         "webhook_delivery": {
@@ -943,11 +1006,25 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Create a sanitized, read-only Stripe reconciliation report.")
+    parser = argparse.ArgumentParser(
+        description="Create a sanitized, read-only Stripe reconciliation report."
+    )
     source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--snapshot", type=Path, help="Offline sanitized snapshot; permanently checkpoint-ineligible.")
-    source.add_argument("--collect-read-only", action="store_true", help="Read Stripe, Supabase, and pinned readiness only.")
-    parser.add_argument("--probe", choices=("production", "staging"), help="Required for live collection; staging is diagnostic only.")
+    source.add_argument(
+        "--snapshot",
+        type=Path,
+        help="Offline sanitized snapshot; permanently checkpoint-ineligible.",
+    )
+    source.add_argument(
+        "--collect-read-only",
+        action="store_true",
+        help="Read Stripe, Supabase, and pinned readiness only.",
+    )
+    parser.add_argument(
+        "--probe",
+        choices=("production", "staging"),
+        help="Required for live collection; staging is diagnostic only.",
+    )
     parser.add_argument("--candidate-sha", required=True)
     parser.add_argument(
         "--window-start",
@@ -979,7 +1056,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             snapshot["deployment_readiness"] = None
         else:
             if not args.probe:
-                raise ReconciliationReportError("--collect-read-only requires --probe production or staging.")
+                raise ReconciliationReportError(
+                    "--collect-read-only requires --probe production or staging."
+                )
             snapshot = collect_read_only_snapshot(
                 args.candidate_sha,
                 probe=args.probe,

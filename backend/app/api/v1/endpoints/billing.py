@@ -2,11 +2,27 @@ import asyncio
 import inspect
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Response,
+    status,
+)
 from supabase import Client
 
 from app.core.config import get_settings
-from app.core.deps import PROVIDER_OPERATION_TIMEOUT_DETAIL, ProviderDependency, get_current_user_id, get_requested_studio_id, get_supabase, run_supabase_operation
+from app.core.deps import (
+    PROVIDER_OPERATION_TIMEOUT_DETAIL,
+    ProviderDependency,
+    get_current_user_id,
+    get_requested_studio_id,
+    get_supabase,
+    run_supabase_operation,
+)
 from app.core.provider_runtime import SupabaseProviderRuntime
 from app.schemas.billing import (
     BillingLandingResponse,
@@ -59,10 +75,7 @@ from app.services.studio_scope import (
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
-EXTERNAL_ENROLLMENT_ONLY_DETAIL = (
-    "Billing attachments currently support external collection only."
-)
-
+EXTERNAL_ENROLLMENT_ONLY_DETAIL = "Billing attachments currently support external collection only."
 
 
 async def _audit_billing_action(
@@ -139,18 +152,24 @@ async def get_billing_landing(
 
     response.headers["Cache-Control"] = "no-store"
     deadline = asyncio.get_running_loop().time() + BILLING_LANDING_REQUEST_TIMEOUT_SECONDS
+
     async def _provider_operation(client):
         return resolve_billing_manager_staff_role_for_user(client, user_id, requested_studio_id)
+
     membership_timeout = asyncio.timeout_at(deadline)
     try:
         async with membership_timeout:
-            membership = await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+            membership = await run_supabase_operation(
+                supabase, _provider_operation, lane="interactive"
+            )
     except TimeoutError as exc:
         if not membership_timeout.expired():
             raise
         if isinstance(supabase, SupabaseProviderRuntime):
             supabase.record_request_timeout("interactive")
-        raise HTTPException(504, PROVIDER_OPERATION_TIMEOUT_DETAIL, headers={"Retry-After": "1"}) from exc
+        raise HTTPException(
+            504, PROVIDER_OPERATION_TIMEOUT_DETAIL, headers={"Retry-After": "1"}
+        ) from exc
     return await compose_landing(supabase, membership, deadline=deadline)
 
 
@@ -165,8 +184,11 @@ async def get_invoices_page(
     from app.services.billing_read_pages import get_billing_page
 
     def _provider_operation(client):
-        studio_id = _manager_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        studio_id = _manager_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
         return get_billing_page(client, studio_id, "invoices", cursor, limit)
+
     return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
 
 
@@ -181,8 +203,11 @@ async def get_payments_page(
     from app.services.billing_read_pages import get_billing_page
 
     def _provider_operation(client):
-        studio_id = _manager_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        studio_id = _manager_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
         return get_billing_page(client, studio_id, "payments", cursor, limit)
+
     return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
 
 
@@ -195,6 +220,7 @@ async def get_connect_status(
     async def _provider_operation(client):
         studio_id = _manager_studio_id(client, user_id, requested_studio_id)
         return await BillingService(client).get_payment_account(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -213,13 +239,19 @@ async def create_connect_onboarding_link(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     response.headers["Cache-Control"] = "no-store"
+
     async def _provider_operation(client):
         studio_id = _admin_studio_id(client, user_id, requested_studio_id)
         link = await BillingService(client).create_connect_onboarding_link(
-            studio_id, user_id, data.refresh_url, data.return_url,
-            data.business_entity_type, request_idempotency_key,
+            studio_id,
+            user_id,
+            data.refresh_url,
+            data.return_url,
+            data.business_entity_type,
+            request_idempotency_key,
         )
         return link, studio_id
+
     link, studio_id = await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -254,6 +286,7 @@ async def acknowledge_connect_onboarding_link_delivery(
             studio_id,
             data.receipt,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -270,6 +303,7 @@ async def sync_connect_status(
     async def _provider_operation(client):
         studio_id = _admin_studio_id(client, user_id, requested_studio_id)
         return await BillingService(client).sync_connect_account(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -286,6 +320,7 @@ async def reset_connect_account(
     async def _provider_operation(client):
         studio_id = _admin_studio_id(client, user_id, requested_studio_id)
         return await BillingService(client).reset_connect_account(studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -306,6 +341,7 @@ async def create_connect_dashboard_link(
         service = BillingService(client)
         link = await service.create_connect_dashboard_link(studio_id, user_id)
         return link, studio_id
+
     link, studio_id = await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -337,6 +373,7 @@ async def get_billing_system_status(
             membership["studio_id"],
             membership["role"],
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -359,6 +396,7 @@ async def reconcile_billing_from_stripe(
             require_platform_subscription=True,
         )
         return await BillingService(client).reconcile_stripe_object(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -380,6 +418,7 @@ async def list_plans(
             require_platform_subscription=True,
         )
         return await BillingService(client).list_plans(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -402,6 +441,7 @@ async def create_plan(
             require_platform_subscription=True,
         )
         return await BillingService(client).create_plan(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -425,6 +465,7 @@ async def update_plan(
             require_platform_subscription=True,
         )
         return await BillingService(client).update_plan(plan_id, data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -447,6 +488,7 @@ async def archive_plan(
             require_platform_subscription=True,
         )
         return await BillingService(client).archive_plan(plan_id, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -480,6 +522,7 @@ async def sync_plan(
             user_id,
             request_idempotency_key,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -501,6 +544,7 @@ async def list_payers(
             require_platform_subscription=True,
         )
         return await BillingService(client).list_payers(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -523,6 +567,7 @@ async def create_payer(
             require_platform_subscription=True,
         )
         return await BillingService(client).create_payer(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -545,6 +590,7 @@ async def get_payer(
             require_platform_subscription=True,
         )
         return await BillingService(client).get_payer(payer_id, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -568,6 +614,7 @@ async def update_payer(
             require_platform_subscription=True,
         )
         return await BillingService(client).update_payer(payer_id, data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -603,6 +650,7 @@ async def sync_payer(
             request_idempotency_key,
             data.test_clock_id if data is not None else None,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -626,6 +674,7 @@ async def create_autopay_setup_link(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     response.headers["Cache-Control"] = "no-store"
+
     async def _provider_operation(client):
         studio_id = _routine_studio_id(
             client,
@@ -640,6 +689,7 @@ async def create_autopay_setup_link(
             user_id,
             request_idempotency_key,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -662,6 +712,7 @@ async def disable_autopay(
             require_platform_subscription=True,
         )
         return await BillingService(client).disable_autopay(payer_id, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -683,6 +734,7 @@ async def list_subscriptions(
             require_platform_subscription=True,
         )
         return await BillingService(client).list_subscriptions(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -704,6 +756,7 @@ async def list_enrollments(
             require_platform_subscription=True,
         )
         return await BillingService(client).list_enrollments(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -725,15 +778,13 @@ async def create_enrollment(
             requested_studio_id,
             require_platform_subscription=True,
         )
-        if (
-            data.collection_mode != "external"
-            and not allows_provider_enrollment_preparation()
-        ):
+        if data.collection_mode != "external" and not allows_provider_enrollment_preparation():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=EXTERNAL_ENROLLMENT_ONLY_DETAIL,
             )
         return await BillingService(client).add_student_billing_enrollment(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -756,7 +807,10 @@ async def update_enrollment(
             requested_studio_id,
             require_platform_subscription=True,
         )
-        return await BillingService(client).update_enrollment(enrollment_id, data, studio_id, user_id)
+        return await BillingService(client).update_enrollment(
+            enrollment_id, data, studio_id, user_id
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -764,7 +818,9 @@ async def update_enrollment(
     )
 
 
-@router.post("/enrollments/{enrollment_id}/activate", response_model=StudentBillingEnrollmentResponse)
+@router.post(
+    "/enrollments/{enrollment_id}/activate", response_model=StudentBillingEnrollmentResponse
+)
 async def activate_enrollment(
     enrollment_id: str,
     request_idempotency_key: str = Header(
@@ -790,6 +846,7 @@ async def activate_enrollment(
             user_id,
             request_idempotency_key,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -804,7 +861,9 @@ async def activate_enrollment(
 async def schedule_enrollment_period_end(
     enrollment_id: str,
     data: BillingEnrollmentTransitionRequest,
-    request_idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=255),
+    request_idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=1, max_length=255
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
@@ -837,7 +896,9 @@ async def schedule_enrollment_period_end(
 async def revoke_scheduled_enrollment_transition(
     transition_intent_id: str,
     data: BillingEnrollmentTransitionRevokeRequest,
-    request_idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=255),
+    request_idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=1, max_length=255
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
@@ -865,7 +926,9 @@ async def revoke_scheduled_enrollment_transition(
 async def cancel_enrollment_immediate(
     enrollment_id: str,
     data: BillingEnrollmentTransitionRequest,
-    request_idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=255),
+    request_idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=1, max_length=255
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
@@ -893,8 +956,13 @@ async def pause_enrollment(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
-        studio_id = _admin_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
-        return await BillingService(client).set_enrollment_status(enrollment_id, "paused", studio_id, user_id)
+        studio_id = _admin_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
+        return await BillingService(client).set_enrollment_status(
+            enrollment_id, "paused", studio_id, user_id
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -910,8 +978,13 @@ async def resume_enrollment(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
-        studio_id = _admin_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
-        return await BillingService(client).set_enrollment_status(enrollment_id, "active", studio_id, user_id)
+        studio_id = _admin_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
+        return await BillingService(client).set_enrollment_status(
+            enrollment_id, "active", studio_id, user_id
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -927,8 +1000,13 @@ async def cancel_enrollment(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
-        studio_id = _admin_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
-        return await BillingService(client).set_enrollment_status(enrollment_id, "canceled", studio_id, user_id)
+        studio_id = _admin_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
+        return await BillingService(client).set_enrollment_status(
+            enrollment_id, "canceled", studio_id, user_id
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -950,6 +1028,7 @@ async def list_invoices(
             require_platform_subscription=True,
         )
         return await BillingService(client).list_invoices(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -971,8 +1050,13 @@ async def create_invoice(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
-        studio_id = _admin_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
-        return await BillingService(client).create_invoice(data, studio_id, user_id, request_idempotency_key)
+        studio_id = _admin_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
+        return await BillingService(client).create_invoice(
+            data, studio_id, user_id, request_idempotency_key
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -994,13 +1078,16 @@ async def finalize_invoice(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
-        studio_id = _admin_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        studio_id = _admin_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
         return await BillingService(client).finalize_invoice(
             invoice_id,
             studio_id,
             user_id,
             request_idempotency_key,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -1022,13 +1109,16 @@ async def retry_invoice_payment(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
-        studio_id = _admin_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        studio_id = _admin_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
         return await BillingService(client).retry_invoice_payment(
             invoice_id,
             studio_id,
             user_id,
             request_idempotency_key,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -1050,13 +1140,16 @@ async def void_invoice(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
-        studio_id = _admin_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        studio_id = _admin_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
         return await BillingService(client).void_invoice(
             invoice_id,
             studio_id,
             user_id,
             request_idempotency_key,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -1079,6 +1172,7 @@ async def reconcile_invoice(
             require_platform_subscription=True,
         )
         return await BillingService(client).reconcile_invoice(invoice_id, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -1100,6 +1194,7 @@ async def list_payments(
             require_platform_subscription=True,
         )
         return await BillingService(client).list_payments(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -1121,6 +1216,7 @@ async def get_current_month_payment_cohort_summary(
             require_platform_subscription=True,
         )
         return await BillingService(client).current_month_payment_cohort_summary(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -1139,9 +1235,13 @@ async def get_payment(
     from app.services.billing_read_pages import get_billing_payment
 
     response.headers["Cache-Control"] = "no-store, private"
+
     def _provider_operation(client):
-        studio_id = _manager_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        studio_id = _manager_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
         return get_billing_payment(client, studio_id, payment_id)
+
     return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
 
 
@@ -1171,6 +1271,7 @@ async def record_external_payment(
             user_id,
             request_idempotency_key,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -1193,7 +1294,9 @@ async def refund_payment(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
-        studio_id = _admin_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
+        studio_id = _admin_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
         return await BillingService(client).refund_payment(
             payment_id,
             data,
@@ -1201,6 +1304,7 @@ async def refund_payment(
             user_id,
             request_idempotency_key,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -1223,6 +1327,7 @@ async def create_export_job(
             require_platform_subscription=True,
         )
         return await BillingService(client).create_export_job(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -1245,6 +1350,7 @@ async def get_export_job(
             require_platform_subscription=True,
         )
         return await BillingService(client).get_export_job(export_id, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

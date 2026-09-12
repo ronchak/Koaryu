@@ -128,9 +128,12 @@ def test_supabase_transport_cleanup_stays_on_client_owner_thread():
             thread_name_prefix="runtime-transport-affinity",
         )
         try:
-            assert await runtime.run_interactive(
-                lambda _client: operations.append(threading.get_ident()) or "ok"
-            ) == "ok"
+            assert (
+                await runtime.run_interactive(
+                    lambda _client: operations.append(threading.get_ident()) or "ok"
+                )
+                == "ok"
+            )
         finally:
             runtime.shutdown()
 
@@ -201,7 +204,9 @@ def test_provider_errors_propagate_and_shutdown_rejects_and_is_idempotent():
             thread_name_prefix="runtime-errors",
         )
         with pytest.raises(ValueError, match="provider failure"):
-            await runtime.run_interactive(lambda _client: (_ for _ in ()).throw(ValueError("provider failure")))
+            await runtime.run_interactive(
+                lambda _client: (_ for _ in ()).throw(ValueError("provider failure"))
+            )
 
         runtime.shutdown()
         runtime.shutdown()
@@ -231,8 +236,7 @@ def test_shutdown_attempts_both_lanes_and_reports_cleanup_failures():
 
         assert len(raised.value.failures) == 2
         assert all(
-            isinstance(failure, ProviderExecutorCleanupError)
-            for failure in raised.value.failures
+            isinstance(failure, ProviderExecutorCleanupError) for failure in raised.value.failures
         )
         runtime.shutdown()
 
@@ -248,7 +252,10 @@ def test_lane_rejects_unbounded_or_invalid_transport_policy(timeout):
 def test_lane_metrics_are_aggregate_only_and_rate_limited(caplog):
     async def scenario():
         runtime = SupabaseProviderRuntime(
-            config(), config(), client_factory=object, client_closer=lambda _client: None,
+            config(),
+            config(),
+            client_factory=object,
+            client_closer=lambda _client: None,
         )
         try:
             for _ in range(3):
@@ -260,9 +267,14 @@ def test_lane_metrics_are_aggregate_only_and_rate_limited(caplog):
             assert snapshot.queue_wait_seconds >= snapshot.admission_wait_seconds
         finally:
             runtime.shutdown()
+
     with caplog.at_level("INFO", logger="uvicorn.error.provider_lane"):
         asyncio.run(scenario())
-    messages = [record.getMessage() for record in caplog.records if "provider_lane_metrics" in record.getMessage()]
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if "provider_lane_metrics" in record.getMessage()
+    ]
     assert len(messages) == 1
     assert "lane=interactive" in messages[0]
     assert "private-row-not-for-metrics" not in messages[0]

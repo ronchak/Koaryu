@@ -3,12 +3,21 @@
 import { useReportWebVitals } from "next/web-vitals";
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-import { configurePerformanceCollection, flushPerformanceMetrics, navigationTimer, recordPerformanceMetric, startMeasuredNavigation, stopMeasuredNavigation } from "@/lib/navigation-telemetry";
+import {
+  configurePerformanceCollection,
+  flushPerformanceMetrics,
+  navigationTimer,
+  recordPerformanceMetric,
+  startMeasuredNavigation,
+  stopMeasuredNavigation,
+} from "@/lib/navigation-telemetry";
 import { metricRoute, type PerformanceMetric } from "@/lib/performance-metrics";
 
 let documentRoute: PerformanceMetric["route"] = "public";
 
-type WebVitalMetric = Parameters<typeof useReportWebVitals>[0] extends (metric: infer Metric) => void
+type WebVitalMetric = Parameters<typeof useReportWebVitals>[0] extends (
+  metric: infer Metric,
+) => void
   ? Metric
   : never;
 
@@ -29,7 +38,13 @@ function shouldLogVitals() {
 
 function reportMetric(metric: WebVitalMetric) {
   if (metric.name === "LCP" || metric.name === "INP" || metric.name === "CLS") {
-    recordPerformanceMetric({ route: documentRoute, name: metric.name, value: metric.value, navigation: "document", outcome: "success" });
+    recordPerformanceMetric({
+      route: documentRoute,
+      name: metric.name,
+      value: metric.value,
+      navigation: "document",
+      outcome: "success",
+    });
   }
   if (!shouldLogVitals()) {
     return;
@@ -44,7 +59,13 @@ function reportMetric(metric: WebVitalMetric) {
   });
 }
 
-export function WebVitals({ version, environment }: { version: string | null; environment: string }) {
+export function WebVitals({
+  version,
+  environment,
+}: {
+  version: string | null;
+  environment: string;
+}) {
   const pathname = usePathname();
   const lastPath = useRef(pathname);
   useEffect(() => {
@@ -52,19 +73,32 @@ export function WebVitals({ version, environment }: { version: string | null; en
     configurePerformanceCollection(version, environment);
     if (!document.hidden) startMeasuredNavigation(window.location.pathname, "document", 0);
     const onClick = (event: MouseEvent) => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[data-koaryu-navigation-link="true"]') : null;
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
+        return;
+      const anchor =
+        event.target instanceof Element
+          ? event.target.closest<HTMLAnchorElement>('a[data-koaryu-navigation-link="true"]')
+          : null;
       if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
       const url = new URL(anchor.href);
-      if (url.origin === window.location.origin && url.pathname !== window.location.pathname) startMeasuredNavigation(url.pathname, "link");
+      if (url.origin === window.location.origin && url.pathname !== window.location.pathname)
+        startMeasuredNavigation(url.pathname, "link");
     };
     const onHistory = () => {
       const nextPath = window.location.pathname;
       if (nextPath !== lastPath.current) startMeasuredNavigation(nextPath, "history");
       lastPath.current = nextPath;
     };
-    const onHide = () => { stopMeasuredNavigation("interrupted"); flushPerformanceMetrics(); };
-    const onVisibility = () => { if (document.hidden) { stopMeasuredNavigation("interrupted"); flushPerformanceMetrics(); } };
+    const onHide = () => {
+      stopMeasuredNavigation("interrupted");
+      flushPerformanceMetrics();
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        stopMeasuredNavigation("interrupted");
+        flushPerformanceMetrics();
+      }
+    };
     document.addEventListener("click", onClick, true);
     window.addEventListener("popstate", onHistory);
     window.addEventListener("pagehide", onHide);
@@ -79,7 +113,19 @@ export function WebVitals({ version, environment }: { version: string | null; en
   }, [version, environment]);
   useEffect(() => {
     lastPath.current = pathname;
-    if (["/503", "/504", "/502", "/login", "/access-denied", "/onboarding", "/account-archived", "/subscription-required"].includes(pathname)) stopMeasuredNavigation("redirect");
+    if (
+      [
+        "/503",
+        "/504",
+        "/502",
+        "/login",
+        "/access-denied",
+        "/onboarding",
+        "/account-archived",
+        "/subscription-required",
+      ].includes(pathname)
+    )
+      stopMeasuredNavigation("redirect");
     else navigationTimer.stage(metricRoute(pathname), "commit");
   }, [pathname]);
   useReportWebVitals(reportMetric);

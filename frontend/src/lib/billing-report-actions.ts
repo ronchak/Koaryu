@@ -1,6 +1,14 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, useSyncExternalStore, type Dispatch, type FormEvent, type SetStateAction } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type Dispatch,
+  type FormEvent,
+  type SetStateAction,
+} from "react";
 import { api } from "@/lib/api";
 import type { BillingActionRuntime } from "@/lib/billing-action-runtime";
 import { buildExternalBillingPaymentPayload } from "@/lib/billing-page-form-model";
@@ -25,10 +33,32 @@ type BillingReportActionsOptions = {
   runtime: BillingActionRuntime;
   setExportJobs: Dispatch<SetStateAction<ExportJob[]>>;
 };
-type Draft = { externalPayerId: string; externalAmount: string; externalMethod: string; externalNote: string };
-type State = { scope: string | null; ready: boolean; error: string; attempt: ExternalPaymentAttempt | null; form: Draft };
-const emptyForm = (): Draft => ({ externalPayerId: "", externalAmount: "", externalMethod: "Zelle", externalNote: "" });
-const emptyState = (scope: string | null): State => ({ scope, ready: false, error: "", attempt: null, form: emptyForm() });
+type Draft = {
+  externalPayerId: string;
+  externalAmount: string;
+  externalMethod: string;
+  externalNote: string;
+};
+type State = {
+  scope: string | null;
+  ready: boolean;
+  error: string;
+  attempt: ExternalPaymentAttempt | null;
+  form: Draft;
+};
+const emptyForm = (): Draft => ({
+  externalPayerId: "",
+  externalAmount: "",
+  externalMethod: "Zelle",
+  externalNote: "",
+});
+const emptyState = (scope: string | null): State => ({
+  scope,
+  ready: false,
+  error: "",
+  attempt: null,
+  form: emptyForm(),
+});
 function attemptForm(attempt: ExternalPaymentAttempt): Draft {
   return {
     externalPayerId: attempt.payload.payer_id!,
@@ -39,12 +69,26 @@ function attemptForm(attempt: ExternalPaymentAttempt): Draft {
 }
 
 export function useBillingReportActions({
-  canManageRoutineBilling, identity, identityKey, runtime, setExportJobs,
+  canManageRoutineBilling,
+  identity,
+  identityKey,
+  runtime,
+  setExportJobs,
 }: BillingReportActionsOptions) {
-  const scope = runtime.isPreviewMode ? `preview:${identityKey ?? "anonymous"}`
-    : canManageRoutineBilling && runtime.token && identity && identityKey
-      && runtime.canUseWorkflow("payment.external.record") ? identityKey : null;
-  const storageReady = useSyncExternalStore(() => () => {}, () => true, () => false);
+  const scope = runtime.isPreviewMode
+    ? `preview:${identityKey ?? "anonymous"}`
+    : canManageRoutineBilling &&
+        runtime.token &&
+        identity &&
+        identityKey &&
+        runtime.canUseWorkflow("payment.external.record")
+      ? identityKey
+      : null;
+  const storageReady = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const resolvedScope = runtime.isPreviewMode || storageReady ? scope : null;
   const [state, setState] = useState<State>(() => emptyState(null));
   if (state.scope !== resolvedScope) {
@@ -67,7 +111,9 @@ export function useBillingReportActions({
   const noticeScopeRef = useRef<string | null>(null);
   const contextRef = useRef({ identity, runtime });
   // Keep current callbacks without restarting ownership on ordinary rerenders.
-  useLayoutEffect(() => { contextRef.current = { identity, runtime }; });
+  useLayoutEffect(() => {
+    contextRef.current = { identity, runtime };
+  });
   useLayoutEffect(() => {
     const context = contextRef.current;
     scopeRef.current = scope;
@@ -85,11 +131,22 @@ export function useBillingReportActions({
   }, [scope]);
 
   const active = state.scope === scope ? state : emptyState(scope);
-  const formLocked = !active.ready || Boolean(active.attempt) || runtime.isLoadingAction("record-external");
+  const formLocked =
+    !active.ready || Boolean(active.attempt) || runtime.isLoadingAction("record-external");
   function change(field: keyof Draft, value: string) {
-    if (!canManageRoutineBilling || !scope || scopeRef.current !== scope || formLocked || operationRef.current) return;
-    setState(previous => previous.scope === scope && !previous.attempt
-      ? { ...previous, form: { ...previous.form, [field]: value } } : previous);
+    if (
+      !canManageRoutineBilling ||
+      !scope ||
+      scopeRef.current !== scope ||
+      formLocked ||
+      operationRef.current
+    )
+      return;
+    setState((previous) =>
+      previous.scope === scope && !previous.attempt
+        ? { ...previous, form: { ...previous.form, [field]: value } }
+        : previous,
+    );
   }
   function errorMessage(message: string) {
     noticeScopeRef.current = scope;
@@ -123,11 +180,19 @@ export function useBillingReportActions({
     if (runtime.isPreviewMode) {
       runtime.setError("");
       successMessage("Demo external payment recorded locally.");
-      setState(previous => ({ ...previous, form: { ...previous.form, externalAmount: "", externalNote: "" } }));
+      setState((previous) => ({
+        ...previous,
+        form: { ...previous.form, externalAmount: "", externalNote: "" },
+      }));
       return;
     }
-    if (!identity || !runtime.token || !runtime.canUseWorkflow("payment.external.record")
-        || !runtime.claimAction("record-external")) return;
+    if (
+      !identity ||
+      !runtime.token ||
+      !runtime.canUseWorkflow("payment.external.record") ||
+      !runtime.claimAction("record-external")
+    )
+      return;
     const operation = { release: () => runtime.releaseAction("record-external") };
     operationRef.current = operation;
     const current = () => scopeRef.current === scope && operationRef.current === operation;
@@ -147,30 +212,50 @@ export function useBillingReportActions({
       let attempt = active.attempt;
       if (!attempt) {
         if (!payloadResult.ok) throw new Error(payloadResult.error);
-        attempt = { version: 1, requestKey: createExternalPaymentRequestKey(), payload: payloadResult.payload };
+        attempt = {
+          version: 1,
+          requestKey: createExternalPaymentRequestKey(),
+          payload: payloadResult.payload,
+        };
       }
       retainExternalPaymentAttempt(identity, attempt, storage);
       setState({ scope, ready: true, error: "", attempt, form: attemptForm(attempt) });
       posted = true;
       const result = await postExternalBillingPayment({
-        payload: attempt.payload, post: api.post, requestKey: attempt.requestKey, token: runtime.token,
+        payload: attempt.payload,
+        post: api.post,
+        requestKey: attempt.requestKey,
+        token: runtime.token,
       });
       if (!current()) return;
       if (!isMatchingExternalPaymentResponse(result, identity, attempt)) {
-        throw new Error("The payment result could not be verified. Retry the saved original request.");
+        throw new Error(
+          "The payment result could not be verified. Retry the saved original request.",
+        );
       }
       accepted = true;
       successMessage("External payment recorded.");
       retireExternalPaymentAttempt(identity, attempt, storage);
-      setState({ scope, ready: true, error: "", attempt: null,
-        form: { ...attemptForm(attempt), externalAmount: "", externalNote: "" } });
+      setState({
+        scope,
+        ready: true,
+        error: "",
+        attempt: null,
+        form: { ...attemptForm(attempt), externalAmount: "", externalNote: "" },
+      });
       // The confirmed write stands even when the loader reports a read error.
       await runtime.refreshBilling();
     } catch (error) {
       if (!current()) return;
-      const detail = error instanceof Error ? error.message : "External payment could not be confirmed.";
-      if (!posted) setState(previous => previous.scope === scope ? { ...previous, ready: false, error: detail } : previous);
-      errorMessage(accepted ? `The payment was recorded, but completion needs attention. ${detail}` : detail);
+      const detail =
+        error instanceof Error ? error.message : "External payment could not be confirmed.";
+      if (!posted)
+        setState((previous) =>
+          previous.scope === scope ? { ...previous, ready: false, error: detail } : previous,
+        );
+      errorMessage(
+        accepted ? `The payment was recorded, but completion needs attention. ${detail}` : detail,
+      );
     } finally {
       if (current()) {
         operationRef.current = null;
@@ -183,8 +268,11 @@ export function useBillingReportActions({
     ...active.form,
     externalPaymentReady: active.ready && scope !== null,
     externalPaymentFormLocked: formLocked,
-    externalPaymentRecoveryMessage: active.error || (active.attempt
-      ? "This payment request is saved. Retry the original request before entering another payment." : ""),
+    externalPaymentRecoveryMessage:
+      active.error ||
+      (active.attempt
+        ? "This payment request is saved. Retry the original request before entering another payment."
+        : ""),
     externalPaymentIsRetry: active.attempt !== null,
     onCreateExport: handleCreateExport,
     onExternalAmountChange: (value: string) => change("externalAmount", value),

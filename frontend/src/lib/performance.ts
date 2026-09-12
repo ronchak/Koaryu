@@ -31,8 +31,10 @@ function safeDetail(detail?: PerfDetail) {
 
   return Object.fromEntries(
     Object.entries(detail)
-      .filter(([, value]) => value == null || ["string", "number", "boolean"].includes(typeof value))
-      .map(([key, value]) => [key, value ?? null])
+      .filter(
+        ([, value]) => value == null || ["string", "number", "boolean"].includes(typeof value),
+      )
+      .map(([key, value]) => [key, value ?? null]),
   );
 }
 
@@ -62,7 +64,12 @@ export function markPerformance(name: string, detail?: PerfDetail) {
   }
 }
 
-export function measurePerformance(name: string, startName: string, endName?: string, detail?: PerfDetail) {
+export function measurePerformance(
+  name: string,
+  startName: string,
+  endName?: string,
+  detail?: PerfDetail,
+) {
   if (!canUsePerformance()) {
     return;
   }
@@ -118,22 +125,65 @@ export function startStudentPagePerformanceSpan(query: StudentListQuery = {}) {
   });
 }
 
-export const DASHBOARD_PERFORMANCE_ROUTES = ["dashboard", "students", "schedule", "billing", "settings", "leads", "reports", "belt-tracker"] as const;
-export type DashboardPerformanceRoute = typeof DASHBOARD_PERFORMANCE_ROUTES[number];
-type DashboardReadiness = Partial<Record<"shell" | "identity" | "useful" | "complete" | "legacyComplete", boolean>>;
-let dashboardNavigation: { route: DashboardPerformanceRoute; identityGeneration: number; generation: number; marked: Set<string> } | null = null;
+export const DASHBOARD_PERFORMANCE_ROUTES = [
+  "dashboard",
+  "students",
+  "schedule",
+  "billing",
+  "settings",
+  "leads",
+  "reports",
+  "belt-tracker",
+] as const;
+export type DashboardPerformanceRoute = (typeof DASHBOARD_PERFORMANCE_ROUTES)[number];
+type DashboardReadiness = Partial<
+  Record<"shell" | "identity" | "useful" | "complete" | "legacyComplete", boolean>
+>;
+let dashboardNavigation: {
+  route: DashboardPerformanceRoute;
+  identityGeneration: number;
+  generation: number;
+  marked: Set<string>;
+} | null = null;
 let dashboardNavigationSequence = 0;
 
 /** Start a route/identity observation without ever recording identity values. */
-export function beginDashboardNavigation(route: DashboardPerformanceRoute, identityGeneration: number) {
-  if (!canUsePerformance() || !DASHBOARD_PERFORMANCE_ROUTES.includes(route) || !Number.isSafeInteger(identityGeneration) || identityGeneration < 0) return;
-  if (dashboardNavigation?.route === route && dashboardNavigation.identityGeneration === identityGeneration) return;
-  dashboardNavigation = { route, identityGeneration, generation: ++dashboardNavigationSequence, marked: new Set() };
-  markVisiblePerformance("koaryu.navigation.started", route, identityGeneration, dashboardNavigation.generation);
+export function beginDashboardNavigation(
+  route: DashboardPerformanceRoute,
+  identityGeneration: number,
+) {
+  if (
+    !canUsePerformance() ||
+    !DASHBOARD_PERFORMANCE_ROUTES.includes(route) ||
+    !Number.isSafeInteger(identityGeneration) ||
+    identityGeneration < 0
+  )
+    return;
+  if (
+    dashboardNavigation?.route === route &&
+    dashboardNavigation.identityGeneration === identityGeneration
+  )
+    return;
+  dashboardNavigation = {
+    route,
+    identityGeneration,
+    generation: ++dashboardNavigationSequence,
+    marked: new Set(),
+  };
+  markVisiblePerformance(
+    "koaryu.navigation.started",
+    route,
+    identityGeneration,
+    dashboardNavigation.generation,
+  );
 }
 
 /** Call from a committed React effect; the second frame follows a paint opportunity. */
-export function markDashboardReadiness(route: DashboardPerformanceRoute, identityGeneration: number, readiness: DashboardReadiness) {
+export function markDashboardReadiness(
+  route: DashboardPerformanceRoute,
+  identityGeneration: number,
+  readiness: DashboardReadiness,
+) {
   beginDashboardNavigation(route, identityGeneration);
   const navigation = dashboardNavigation;
   if (!navigation || !canUsePerformance()) return () => {};
@@ -144,7 +194,12 @@ export function markDashboardReadiness(route: DashboardPerformanceRoute, identit
       for (const stage of ["shell", "identity", "useful", "complete", "legacyComplete"] as const) {
         if (!readiness[stage] || navigation.marked.has(stage)) continue;
         navigation.marked.add(stage);
-        markVisiblePerformance(`koaryu.visible.${stage === "legacyComplete" ? "legacy-complete" : stage}`, route, identityGeneration, navigation.generation);
+        markVisiblePerformance(
+          `koaryu.visible.${stage === "legacyComplete" ? "legacy-complete" : stage}`,
+          route,
+          identityGeneration,
+          navigation.generation,
+        );
         if (stage === "useful" || stage === "complete") navigationTimer.stage(route, stage);
       }
     });
@@ -155,7 +210,12 @@ export function markDashboardReadiness(route: DashboardPerformanceRoute, identit
   };
 }
 
-function markVisiblePerformance(name: string, route: DashboardPerformanceRoute, identityGeneration: number, navigationGeneration: number) {
+function markVisiblePerformance(
+  name: string,
+  route: DashboardPerformanceRoute,
+  identityGeneration: number,
+  navigationGeneration: number,
+) {
   try {
     const previous = window.performance.getEntriesByName?.(name, "mark") ?? [];
     if (previous.length >= 64) {
@@ -164,7 +224,13 @@ function markVisiblePerformance(name: string, route: DashboardPerformanceRoute, 
         window.performance.mark(name, { startTime: entry.startTime, detail: entry.detail });
       }
     }
-    window.performance.mark(name, { detail: { route, identity_generation: identityGeneration, navigation_generation: navigationGeneration } });
+    window.performance.mark(name, {
+      detail: {
+        route,
+        identity_generation: identityGeneration,
+        navigation_generation: navigationGeneration,
+      },
+    });
   } catch {
     // Evidence must remain unavailable if marks are unsupported, without breaking UI.
   }

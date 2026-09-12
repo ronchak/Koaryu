@@ -123,9 +123,7 @@ def test_resources_are_created_reused_and_closed_on_their_own_threads():
         assert {resource_id for resource_id, _ in created} == {
             resource_id for resource_id, _ in closed
         }
-        assert {thread_id for _, thread_id in created} == {
-            thread_id for _, thread_id in closed
-        }
+        assert {thread_id for _, thread_id in created} == {thread_id for _, thread_id in closed}
         assert all(
             created_thread == used_thread
             for resource_id, created_thread in created

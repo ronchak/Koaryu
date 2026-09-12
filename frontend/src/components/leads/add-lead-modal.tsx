@@ -51,7 +51,9 @@ export function AddLeadModal({
       onBackdropClick={closeIfIdle}
     >
       <div className="flex items-center justify-between mb-6">
-        <h2 id="add-lead-title" className="text-base font-semibold text-text-primary">Add new lead</h2>
+        <h2 id="add-lead-title" className="text-base font-semibold text-text-primary">
+          Add new lead
+        </h2>
         <button
           type="button"
           onClick={closeIfIdle}
@@ -76,17 +78,12 @@ export function AddLeadModal({
             program_interest: selectedProgramId
               ? programById.get(selectedProgramId)?.name
               : undefined,
-            follow_up_date:
-              (formData.get("follow_up_date") as string) || undefined,
-            assigned_staff_id:
-              (formData.get("assigned_staff_id") as string) || undefined,
+            follow_up_date: (formData.get("follow_up_date") as string) || undefined,
+            assigned_staff_id: (formData.get("assigned_staff_id") as string) || undefined,
             is_minor: formData.get("is_minor") === "on",
-            guardian_name:
-              (formData.get("guardian_name") as string) || undefined,
-            guardian_email:
-              (formData.get("guardian_email") as string) || undefined,
-            guardian_phone:
-              (formData.get("guardian_phone") as string) || undefined,
+            guardian_name: (formData.get("guardian_name") as string) || undefined,
+            guardian_email: (formData.get("guardian_email") as string) || undefined,
+            guardian_phone: (formData.get("guardian_phone") as string) || undefined,
             notes: (formData.get("notes") as string) || undefined,
           });
         }}
@@ -124,7 +121,9 @@ export function AddLeadModal({
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="lead-email" className="text-sm text-text-secondary font-medium">Email</label>
+          <label htmlFor="lead-email" className="text-sm text-text-secondary font-medium">
+            Email
+          </label>
           <input
             id="lead-email"
             name="email"
@@ -135,7 +134,9 @@ export function AddLeadModal({
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="lead-phone" className="text-sm text-text-secondary font-medium">Phone</label>
+            <label htmlFor="lead-phone" className="text-sm text-text-secondary font-medium">
+              Phone
+            </label>
             <input
               id="lead-phone"
               name="phone"
@@ -145,7 +146,9 @@ export function AddLeadModal({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="lead-source" className="text-sm text-text-secondary font-medium">Source</label>
+            <label htmlFor="lead-source" className="text-sm text-text-secondary font-medium">
+              Source
+            </label>
             <select
               id="lead-source"
               name="source"
@@ -240,7 +243,9 @@ export function AddLeadModal({
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="lead-notes" className="text-sm text-text-secondary font-medium">Notes</label>
+          <label htmlFor="lead-notes" className="text-sm text-text-secondary font-medium">
+            Notes
+          </label>
           <textarea
             id="lead-notes"
             name="notes"
@@ -250,16 +255,15 @@ export function AddLeadModal({
           />
         </div>
         <div className="flex flex-wrap justify-end gap-2 pt-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={isAddingLead}
-            onClick={onClose}
-          >
+          <Button variant="ghost" size="sm" type="button" disabled={isAddingLead} onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" size="sm" type="submit" disabled={isAddingLead || isOutcomeUnknown}>
+          <Button
+            variant="primary"
+            size="sm"
+            type="submit"
+            disabled={isAddingLead || isOutcomeUnknown}
+          >
             {isAddingLead ? "Saving..." : "Add lead"}
           </Button>
         </div>

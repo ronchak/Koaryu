@@ -9,9 +9,16 @@ from app.core.deps import (
     get_supabase,
 )
 from app.schemas.belt import (
-    BeltLadderCreate, BeltLadderUpdate, BeltLadderSyncRequest, BeltLadderResponse,
-    BeltRankCreate, BeltRankUpdate, BeltRankResponse,
-    DemoteStudent, PromoteStudent, PromotionResponse,
+    BeltLadderCreate,
+    BeltLadderUpdate,
+    BeltLadderSyncRequest,
+    BeltLadderResponse,
+    BeltRankCreate,
+    BeltRankUpdate,
+    BeltRankResponse,
+    DemoteStudent,
+    PromoteStudent,
+    PromotionResponse,
     EligibilityEntry,
 )
 from app.services.belt_service import BeltService
@@ -27,6 +34,7 @@ async def list_ranks(
 ):
     async def _provider_operation(client):
         return await BeltService(client).list_ranks(studio_id, ladder_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -41,6 +49,7 @@ async def list_ladders(
 ):
     async def _provider_operation(client):
         return await BeltService(client).list_ladders(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -57,6 +66,7 @@ async def create_ladder(
 ):
     async def _provider_operation(client):
         return await BeltService(client).create_ladder(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -74,6 +84,7 @@ async def update_ladder(
 ):
     async def _provider_operation(client):
         return await BeltService(client).update_ladder(ladder_id, data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -91,6 +102,7 @@ async def sync_ladder(
 ):
     async def _provider_operation(client):
         return await BeltService(client).sync_ladder(ladder_id, data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -107,6 +119,7 @@ async def create_rank(
 ):
     async def _provider_operation(client):
         return await BeltService(client).create_rank(ladder_id, data, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -123,6 +136,7 @@ async def update_rank(
 ):
     async def _provider_operation(client):
         return await BeltService(client).update_rank(rank_id, data, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -138,6 +152,7 @@ async def delete_rank(
 ):
     async def _provider_operation(client):
         await BeltService(client).delete_rank(rank_id, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -153,6 +168,7 @@ async def get_eligibility(
 ):
     async def _provider_operation(client):
         return await BeltService(client).get_eligibility(studio_id, ladder_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -169,6 +185,7 @@ async def list_promotions(
 ):
     async def _provider_operation(client):
         return await BeltService(client).list_promotions(studio_id, student_id, include_names)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -185,6 +202,7 @@ async def promote_student(
 ):
     async def _provider_operation(client):
         return await BeltService(client).promote_student(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -201,6 +219,7 @@ async def demote_student(
 ):
     async def _provider_operation(client):
         return await BeltService(client).demote_student(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

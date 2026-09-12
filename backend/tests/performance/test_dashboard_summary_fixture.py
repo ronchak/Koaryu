@@ -13,7 +13,10 @@ class DashboardSummaryPerformanceFixtureTest(unittest.TestCase):
                 {table: len(rows) for table, rows in tables.items()},
                 definition["cardinalities"],
             )
-            self.assertNotIn("rows", json.dumps({"profile": profile, "cardinalities": definition["cardinalities"]}))
+            self.assertNotIn(
+                "rows",
+                json.dumps({"profile": profile, "cardinalities": definition["cardinalities"]}),
+            )
 
     def test_real_summary_measurement_has_expected_query_and_row_counts(self):
         expected = {name: (27, 30) for name in ("small", "medium", "large")}

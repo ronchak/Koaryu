@@ -21,7 +21,7 @@ describe("billing page form model", () => {
         planSignupFee: "",
         planTrialDays: "",
       }),
-      { ok: false, error: "Plan name is required." }
+      { ok: false, error: "Plan name is required." },
     );
 
     assert.deepEqual(
@@ -47,7 +47,7 @@ describe("billing page form model", () => {
           trial_days: 7,
           proration_behavior: "next_cycle",
         },
-      }
+      },
     );
   });
 
@@ -58,7 +58,7 @@ describe("billing page form model", () => {
         payerEmail: "",
         payerPhone: "",
       }),
-      { ok: false, error: "Payer name is required." }
+      { ok: false, error: "Payer name is required." },
     );
 
     assert.deepEqual(
@@ -74,7 +74,7 @@ describe("billing page form model", () => {
           email: "billing@example.test",
           phone: undefined,
         },
-      }
+      },
     );
   });
 
@@ -89,7 +89,7 @@ describe("billing page form model", () => {
         enrollmentEndDate: "",
         enrollmentNextBillDate: "",
       }),
-      { ok: false, error: "Choose a student, payer, and plan." }
+      { ok: false, error: "Choose a student, payer, and plan." },
     );
 
     assert.deepEqual(
@@ -113,7 +113,7 @@ describe("billing page form model", () => {
           end_date: null,
           next_bill_on: "2026-07-01",
         },
-      }
+      },
     );
 
     assert.deepEqual(
@@ -137,7 +137,7 @@ describe("billing page form model", () => {
           end_date: null,
           next_bill_on: null,
         },
-      }
+      },
     );
   });
 
@@ -150,7 +150,7 @@ describe("billing page form model", () => {
         payerCount: 0,
         planCount: 1,
       }),
-      true
+      true,
     );
     assert.equal(
       shouldDisableStudentBillingEnrollmentPayerSelect({
@@ -158,7 +158,7 @@ describe("billing page form model", () => {
         collectionMode: "external",
         payerCount: 0,
       }),
-      false
+      false,
     );
     assert.equal(
       canSubmitStudentBillingEnrollmentForm({
@@ -168,7 +168,7 @@ describe("billing page form model", () => {
         payerCount: 0,
         planCount: 1,
       }),
-      false
+      false,
     );
     assert.equal(
       shouldDisableStudentBillingEnrollmentPayerSelect({
@@ -176,7 +176,7 @@ describe("billing page form model", () => {
         collectionMode: "invoice_link",
         payerCount: 0,
       }),
-      true
+      true,
     );
   });
 });

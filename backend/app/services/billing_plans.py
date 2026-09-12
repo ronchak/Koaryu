@@ -19,7 +19,9 @@ from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
 class BillingPlanManager:
-    def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
+    def __init__(
+        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+    ):
         self.billing_service = billing_service
         self.stripe_service_cls = stripe_service_cls
 
@@ -39,7 +41,9 @@ class BillingPlanManager:
     def _idempotency_key(self, *parts: str) -> str:
         return self.billing_service._idempotency_key(*parts)
 
-    def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
+    def _audit(
+        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
+    ) -> None:
         self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
 
     async def list_plans(self, studio_id: str) -> list[BillingPlanResponse]:
@@ -53,10 +57,14 @@ class BillingPlanManager:
         )
         return [self._plan_response(row, account) for row in (result.data or [])]
 
-    async def create_plan(self, data: BillingPlanCreate, studio_id: str, actor_id: str) -> BillingPlanResponse:
+    async def create_plan(
+        self, data: BillingPlanCreate, studio_id: str, actor_id: str
+    ) -> BillingPlanResponse:
         return self._write_plan(data, studio_id, actor_id, plan_id=None)
 
-    async def update_plan(self, plan_id: str, data: BillingPlanUpdate, studio_id: str, actor_id: str) -> BillingPlanResponse:
+    async def update_plan(
+        self, plan_id: str, data: BillingPlanUpdate, studio_id: str, actor_id: str
+    ) -> BillingPlanResponse:
         if not plan_id:
             raise HTTPException(status_code=404, detail="Billing plan not found.")
         return self._write_plan(data, studio_id, actor_id, plan_id=plan_id)
@@ -69,37 +77,62 @@ class BillingPlanManager:
         *,
         plan_id: str | None,
     ) -> BillingPlanResponse:
-        values = data.model_dump(mode="json", exclude_unset=plan_id is not None, exclude={"program_ids"})
+        values = data.model_dump(
+            mode="json", exclude_unset=plan_id is not None, exclude={"program_ids"}
+        )
         if "name" in values:
             values["name"] = " ".join(values["name"].split())
             if not values["name"]:
                 raise HTTPException(status_code=400, detail="Billing plan name is required.")
         account = self._connect_accounts().ensure_row(studio_id)
         try:
-            result = execute_required_rpc(self.supabase, "write_billing_plan_v1", {
-                "p_studio_id": studio_id,
-                "p_actor_id": actor_id,
-                "p_plan_id": plan_id,
-                "p_values": values,
-                "p_program_ids": data.program_ids,
-            })
+            result = execute_required_rpc(
+                self.supabase,
+                "write_billing_plan_v1",
+                {
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_plan_id": plan_id,
+                    "p_values": values,
+                    "p_program_ids": data.program_ids,
+                },
+            )
         except PostgrestAPIError as exc:
             if exc.code == "23505":
-                raise HTTPException(status_code=409, detail="A billing plan with this name already exists.") from exc
+                raise HTTPException(
+                    status_code=409, detail="A billing plan with this name already exists."
+                ) from exc
             rejection = {
                 ("P0002", "billing_plan_not_found"): (404, "Billing plan not found."),
-                ("P0002", "billing_plan_program_not_found"): (404, "One or more programs were not found in this studio."),
+                ("P0002", "billing_plan_program_not_found"): (
+                    404,
+                    "One or more programs were not found in this studio.",
+                ),
                 ("22023", "billing_plan_invalid_request"): (400, "Invalid billing plan request."),
-                ("22023", "billing_plan_requires_usd"): (400, "New tuition plan definitions must use USD."),
-                ("42501", "billing_plan_actor_not_active"): (403, "Only studio admins can manage billing setup."),
+                ("22023", "billing_plan_requires_usd"): (
+                    400,
+                    "New tuition plan definitions must use USD.",
+                ),
+                ("42501", "billing_plan_actor_not_active"): (
+                    403,
+                    "Only studio admins can manage billing setup.",
+                ),
             }.get((exc.code, exc.message))
             if rejection:
                 raise HTTPException(status_code=rejection[0], detail=rejection[1]) from exc
             raise
         saved = first_rpc_row(result)
-        if not saved or not isinstance(saved.get("plan"), dict) or not isinstance(saved.get("programs"), list):
-            raise HTTPException(status_code=500, detail="Billing plan save confirmation is unavailable.")
-        programs = [BillingPlanProgramResponse.model_validate(program) for program in saved["programs"]]
+        if (
+            not saved
+            or not isinstance(saved.get("plan"), dict)
+            or not isinstance(saved.get("programs"), list)
+        ):
+            raise HTTPException(
+                status_code=500, detail="Billing plan save confirmation is unavailable."
+            )
+        programs = [
+            BillingPlanProgramResponse.model_validate(program) for program in saved["programs"]
+        ]
         return self._plan_response(saved["plan"], account, programs=programs)
 
     async def sync_plan(
@@ -119,7 +152,9 @@ class BillingPlanManager:
             idempotency_key,
         )
 
-    async def archive_plan(self, plan_id: str, studio_id: str, actor_id: str) -> BillingPlanResponse:
+    async def archive_plan(
+        self, plan_id: str, studio_id: str, actor_id: str
+    ) -> BillingPlanResponse:
         self._get_row_or_404("billing_plans", plan_id, studio_id, "Billing plan not found.")
         result = (
             self.supabase.table("billing_plans")
@@ -133,7 +168,9 @@ class BillingPlanManager:
         self._audit(studio_id, actor_id, "billing.plan_archived", plan_id, {})
         return self._plan_response(result.data[0], self._connect_accounts().ensure_row(studio_id))
 
-    def _stripe_recurring_for_interval(self, billing_interval: str) -> tuple[Optional[dict[str, Any]], int]:
+    def _stripe_recurring_for_interval(
+        self, billing_interval: str
+    ) -> tuple[Optional[dict[str, Any]], int]:
         if billing_interval == "paid_in_full":
             return None, 1
         if billing_interval == "annual":
@@ -155,8 +192,10 @@ class BillingPlanManager:
             programs = self._programs_for_plan(row["studio_id"], row["id"])
         is_usd = is_usd_currency(row.get("currency"))
         can_accept = (
-            is_usd and bool(account.get("charges_enabled"))
-            and row.get("status") == "active" and bool(row.get("stripe_price_id"))
+            is_usd
+            and bool(account.get("charges_enabled"))
+            and row.get("status") == "active"
+            and bool(row.get("stripe_price_id"))
         )
         pending_reason = None
         if not is_usd:
@@ -187,9 +226,11 @@ class BillingPlanManager:
             program = row.get("programs") or {}
             if isinstance(program, list):
                 program = program[0] if program else {}
-            programs.append(BillingPlanProgramResponse(
-                program_id=row["program_id"],
-                program_name=program.get("name"),
-                program_color_hex=program.get("color_hex"),
-            ))
+            programs.append(
+                BillingPlanProgramResponse(
+                    program_id=row["program_id"],
+                    program_name=program.get("name"),
+                    program_color_hex=program.get("color_hex"),
+                )
+            )
         return programs

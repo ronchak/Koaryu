@@ -50,7 +50,9 @@ export async function deleteStudentsAction<T extends { id: string }>(
         delete options.previewStudentPhotoUrlsRef.current[studentId];
       }
     });
-    options.persistStudents(options.studentsRef.current.filter((student) => !idSet.has(student.id)));
+    options.persistStudents(
+      options.studentsRef.current.filter((student) => !idSet.has(student.id)),
+    );
     options.onStudentMutation();
     return;
   }
@@ -67,14 +69,18 @@ export async function deleteStudentsAction<T extends { id: string }>(
         const requestSequence = options.studentRosterRequestSequenceRef.current + 1;
         options.studentRosterRequestSequenceRef.current = requestSequence;
         const readRequest = options.beginLiveAuthRequest();
-        const nextStudents = await options.fetchAllStudents(readRequest.token, { timeoutMs: 35000 });
-        if (options.isStudentRosterSnapshotCurrent({
-          authCurrent: readRequest.isCurrent() && canCommitLiveMutation(liveRequest),
-          currentMutationEpoch: options.studentMutationEpochRef.current,
-          currentRequestSequence: options.studentRosterRequestSequenceRef.current,
-          mutationEpochAtStart: mutationEpoch,
-          requestSequence,
-        })) {
+        const nextStudents = await options.fetchAllStudents(readRequest.token, {
+          timeoutMs: 35000,
+        });
+        if (
+          options.isStudentRosterSnapshotCurrent({
+            authCurrent: readRequest.isCurrent() && canCommitLiveMutation(liveRequest),
+            currentMutationEpoch: options.studentMutationEpochRef.current,
+            currentRequestSequence: options.studentRosterRequestSequenceRef.current,
+            mutationEpochAtStart: mutationEpoch,
+            requestSequence,
+          })
+        ) {
           options.commitStudents(nextStudents);
         }
       } catch (refreshError) {
@@ -87,9 +93,8 @@ export async function deleteStudentsAction<T extends { id: string }>(
   if (!canCommitLiveMutation(liveRequest)) return;
   options.studentMutationEpochRef.current += 1;
   const idSet = new Set(normalizedIds);
-  options.commitStudents(
-    (current) => current.filter((student) => !idSet.has(student.id)),
-    { mayBePartial: options.studentsMayBePartial },
-  );
+  options.commitStudents((current) => current.filter((student) => !idSet.has(student.id)), {
+    mayBePartial: options.studentsMayBePartial,
+  });
   options.onStudentMutation();
 }

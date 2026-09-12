@@ -36,7 +36,9 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             EXPECTED_RELEASE_MANIFEST_VERSION,
             "release-db-attestation-v45",
         )
-        self.assertEqual(EXPECTED_RELEASE_PENDING_VERSIONS[-2:], ["20260910135133", "20260910185031"])
+        self.assertEqual(
+            EXPECTED_RELEASE_PENDING_VERSIONS[-2:], ["20260910135133", "20260910185031"]
+        )
         self.assertEqual(len(EXPECTED_RELEASE_PENDING_VERSIONS), 56)
 
     def test_exact_preflight_is_ready(self):
@@ -79,7 +81,11 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             "ready": [False, "true", None],
             "migration_count": [139, 141],
             "migration_head": ["20260908133504", "20990101000000"],
-            "pending_versions": [EXPECTED_RELEASE_PENDING_VERSIONS[:-1], list(reversed(EXPECTED_RELEASE_PENDING_VERSIONS)), [*EXPECTED_RELEASE_PENDING_VERSIONS, "20990101000000"]],
+            "pending_versions": [
+                EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
+                list(reversed(EXPECTED_RELEASE_PENDING_VERSIONS)),
+                [*EXPECTED_RELEASE_PENDING_VERSIONS, "20990101000000"],
+            ],
             "security_failures": [["table:missing"]],
             "manifest_version": ["release-db-attestation-v40"],
         }.items():
@@ -110,17 +116,22 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
 
         def rpc(name, params):
             calls.append((name, params))
-            error = PostgrestAPIError({
-                "code": "PGRST000",
-                "message": "Database unavailable",
-            })
+            error = PostgrestAPIError(
+                {
+                    "code": "PGRST000",
+                    "message": "Database unavailable",
+                }
+            )
             return SimpleNamespace(execute=lambda: (_ for _ in ()).throw(error))
 
         client = SimpleNamespace(rpc=rpc)
-        with patch(
-            "app.services.release_schema_readiness.get_supabase_client",
-            return_value=client,
-        ), self.assertRaises(PostgrestAPIError):
+        with (
+            patch(
+                "app.services.release_schema_readiness.get_supabase_client",
+                return_value=client,
+            ),
+            self.assertRaises(PostgrestAPIError),
+        ):
             assert_hosted_release_schema_ready()
         self.assertEqual(calls, [("koaryu_release_schema_preflight_v26", {})])
 
@@ -129,20 +140,25 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
 
         def rpc(name, params):
             calls.append((name, params))
-            error = PostgrestAPIError({
-                "code": "PGRST202",
-                "message": (
-                    "Could not find the function "
-                    "public.koaryu_release_schema_preflight_v26 in the schema cache"
-                ),
-            })
+            error = PostgrestAPIError(
+                {
+                    "code": "PGRST202",
+                    "message": (
+                        "Could not find the function "
+                        "public.koaryu_release_schema_preflight_v26 in the schema cache"
+                    ),
+                }
+            )
             return SimpleNamespace(execute=lambda: (_ for _ in ()).throw(error))
 
         client = SimpleNamespace(rpc=rpc)
-        with patch(
-            "app.services.release_schema_readiness.get_supabase_client",
-            return_value=client,
-        ), self.assertRaisesRegex(RuntimeError, "Apply the database migrations"):
+        with (
+            patch(
+                "app.services.release_schema_readiness.get_supabase_client",
+                return_value=client,
+            ),
+            self.assertRaisesRegex(RuntimeError, "Apply the database migrations"),
+        ):
             assert_hosted_release_schema_ready()
         self.assertEqual(calls, [("koaryu_release_schema_preflight_v26", {})])
 
@@ -246,8 +262,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             self.assertEqual(len(runner_calls), 1)
             self.assertTrue(
                 all(
-                    isinstance(result, RuntimeError)
-                    and str(result) == "database unavailable"
+                    isinstance(result, RuntimeError) and str(result) == "database unavailable"
                     for result in results
                 )
             )
@@ -297,9 +312,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             loop_errors = []
             loop = asyncio.get_running_loop()
             previous_handler = loop.get_exception_handler()
-            loop.set_exception_handler(
-                lambda _loop, context: loop_errors.append(context)
-            )
+            loop.set_exception_handler(lambda _loop, context: loop_errors.append(context))
 
             async def run_check(_blocking_check):
                 check_started.set()

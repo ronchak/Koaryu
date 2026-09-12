@@ -167,7 +167,9 @@ class ProviderLane(Generic[ResourceT]):
             with self._lifecycle_lock:
                 if self._closed:
                     raise RuntimeError("provider lane is shut down")
-                source_future = self._executor.submit_source(self._measure_operation(operation, requested_at))
+                source_future = self._executor.submit_source(
+                    self._measure_operation(operation, requested_at)
+                )
                 with self._state_lock:
                     self._submitted += 1
                 source_future.add_done_callback(self._source_future_done)
@@ -198,9 +200,7 @@ class ProviderLane(Generic[ResourceT]):
             with self._state_lock:
                 self._timed_out += 1
             self._log_metrics()
-            raise ProviderLaneOperationTimeoutError(
-                "provider operation exceeded its wait timeout"
-            )
+            raise ProviderLaneOperationTimeoutError("provider operation exceeded its wait timeout")
 
         # Keep this outside the caller-cancellation handler so an exception
         # raised by provider code, including TimeoutError or CancelledError,
@@ -247,7 +247,9 @@ class ProviderLane(Generic[ResourceT]):
             if now - self._last_metrics_at < 60.0:
                 return
             self._last_metrics_at = now
-        logger.info("provider_lane_metrics lane=%s counters=%s", self._name, asdict(self.snapshot()))
+        logger.info(
+            "provider_lane_metrics lane=%s counters=%s", self._name, asdict(self.snapshot())
+        )
 
     def shutdown(self) -> None:
         """Reject new admission, then drain accepted work through the executor."""
@@ -295,9 +297,7 @@ class ProviderLane(Generic[ResourceT]):
                     self._waiting -= 1
                     self._saturated += 1
                 self._log_metrics()
-                raise ProviderLaneSaturatedError(
-                    "provider lane queue capacity is saturated"
-                )
+                raise ProviderLaneSaturatedError("provider lane queue capacity is saturated")
 
             try:
                 await asyncio.wait_for(wake_event.wait(), timeout=remaining)

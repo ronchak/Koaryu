@@ -44,7 +44,9 @@ class StudentImportPlanner:
         name_lookup: dict[str, str] = {}
         ambiguous_names: set[str] = set()
         for name, ids in names.items():
-            candidates = [record_id for record_id in ids if not records[record_id].get("archived_at")] or ids
+            candidates = [
+                record_id for record_id in ids if not records[record_id].get("archived_at")
+            ] or ids
             if len(candidates) == 1:
                 name_lookup[name] = candidates[0]
             else:
@@ -91,7 +93,9 @@ class StudentImportPlanner:
         id_lookup: set[str] = set()
         rank_meta: dict[str, dict[str, Optional[str]]] = {}
         rank_ids_by_name: dict[str, list[str]] = defaultdict(list)
-        program_rank_name_lookup: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+        program_rank_name_lookup: dict[str, dict[str, list[str]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
         unscoped_rank_name_lookup: dict[str, list[str]] = defaultdict(list)
 
         for row in result.data or []:
@@ -154,8 +158,14 @@ class StudentImportPlanner:
         validate_csv_import_mapping(mapping)
         receipts = receipts or {}
         unfinished = any(str(i) not in receipts.get("student", {}) for i in range(2, len(rows) + 2))
-        program_lookup = self.build_program_lookup(studio_id, receipts.get("program")) if studio_id and unfinished else None
-        belt_rank_lookup = self.build_belt_rank_lookup(studio_id) if studio_id and unfinished else None
+        program_lookup = (
+            self.build_program_lookup(studio_id, receipts.get("program"))
+            if studio_id and unfinished
+            else None
+        )
+        belt_rank_lookup = (
+            self.build_belt_rank_lookup(studio_id) if studio_id and unfinished else None
+        )
         if belt_rank_lookup is not None:
             belt_rank_lookup["confirmed_ranks"] = {
                 (receipt["context_program_id"], key.split(":", 1)[1]): receipt
@@ -171,7 +181,9 @@ class StudentImportPlanner:
             completed = receipts.get("student", {}).get(str(i))
             if completed is not None:
                 outcome = dict(completed["outcome"])
-                outcome["issues"] = [CsvImportIssue.model_validate(issue) for issue in outcome["issues"]]
+                outcome["issues"] = [
+                    CsvImportIssue.model_validate(issue) for issue in outcome["issues"]
+                ]
                 outcome["completed"] = True
                 planned_rows.append(outcome)
                 continue

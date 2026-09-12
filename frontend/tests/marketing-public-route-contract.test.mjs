@@ -2,46 +2,25 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import {
-  PUBLIC_PLATFORM_PRICE,
-  publicPlatformPriceAmount,
-} from "../src/lib/constants.ts";
+import { PUBLIC_PLATFORM_PRICE, publicPlatformPriceAmount } from "../src/lib/constants.ts";
 import {
   buildMarketingDetailMetadata,
   buildMarketingDetailStructuredData,
   generateMarketingDetailStaticParams,
 } from "../src/lib/marketing-detail-route-model.ts";
-import {
-  featurePages,
-  studioTypePages,
-  useCasePages,
-} from "../src/lib/marketing-pages.ts";
+import { featurePages, studioTypePages, useCasePages } from "../src/lib/marketing-pages.ts";
 import { buildPublicSitemap } from "../src/lib/sitemap-model.ts";
 
 const sourceUrl = (path) => new URL(`../src/${path}`, import.meta.url);
 const readSource = (path) => readFileSync(sourceUrl(path), "utf8");
 
-const staticRoutes = [
-  "/features",
-  "/use-cases",
-  "/explore",
-  "/about",
-  "/privacy",
-  "/terms",
-];
+const staticRoutes = ["/features", "/use-cases", "/explore", "/about", "/privacy", "/terms"];
 
-const detailRoutes = [
-  ...featurePages,
-  ...useCasePages,
-  ...studioTypePages,
-];
+const detailRoutes = [...featurePages, ...useCasePages, ...studioTypePages];
 
 describe("public marketing route contract", () => {
   it("accounts for exactly 16 non-root routes and every sitemap URL", () => {
-    const routes = [
-      ...staticRoutes,
-      ...detailRoutes.map((page) => page.href),
-    ];
+    const routes = [...staticRoutes, ...detailRoutes.map((page) => page.href)];
 
     assert.equal(featurePages.length, 4);
     assert.equal(useCasePages.length, 5);
@@ -60,10 +39,7 @@ describe("public marketing route contract", () => {
       .filter((url) => url !== "https://koaryu.app/")
       .sort();
 
-    assert.deepEqual(
-      sitemapUrls,
-      routes.map((route) => `https://koaryu.app${route}`).sort()
-    );
+    assert.deepEqual(sitemapUrls, routes.map((route) => `https://koaryu.app${route}`).sort());
   });
 
   it("derives every detail metadata, structured URL, and static parameter from its record", () => {
@@ -81,7 +57,7 @@ describe("public marketing route contract", () => {
     for (const pages of [featurePages, useCasePages, studioTypePages]) {
       assert.deepEqual(
         generateMarketingDetailStaticParams(pages),
-        pages.map((page) => ({ slug: page.slug }))
+        pages.map((page) => ({ slug: page.slug })),
       );
     }
   });
@@ -121,13 +97,12 @@ describe("public marketing route contract", () => {
       billingPage.sections
         .flatMap((section) => section.bullets)
         .includes(
-          "Plan, payer, autopay, invoice-lifecycle, refund, and Connect changes are currently unavailable"
-        )
+          "Plan, payer, autopay, invoice-lifecycle, refund, and Connect changes are currently unavailable",
+        ),
     );
     assert.deepEqual(
       billingPage.proof.find((item) => item.label === "Provider writes"),
-      { label: "Provider writes", value: "Disabled", detail: "Currently unavailable" }
+      { label: "Provider writes", value: "Disabled", detail: "Currently unavailable" },
     );
   });
-
 });

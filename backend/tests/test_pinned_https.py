@@ -15,7 +15,7 @@ from app.services.pinned_https import (
 
 
 class _Response:
-    def __init__(self, body=b'{}'):
+    def __init__(self, body=b"{}"):
         self.status = 200
         self._body = body
 
@@ -57,10 +57,18 @@ class PinnedHttpsTransportTest(unittest.TestCase):
         def resolver(*args, **kwargs):
             resolver_calls.append((args, kwargs))
             if len(resolver_calls) > 1:
-                return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("10.0.0.9", 443))]
+                return [
+                    (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("10.0.0.9", 443))
+                ]
             return [
                 (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("8.8.8.8", 443)),
-                (socket.AF_INET6, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("2001:4860:4860::8888", 443, 0, 0)),
+                (
+                    socket.AF_INET6,
+                    socket.SOCK_STREAM,
+                    socket.IPPROTO_TCP,
+                    "",
+                    ("2001:4860:4860::8888", 443, 0, 0),
+                ),
             ]
 
         def factory(hostname, port, address, timeout):
@@ -73,9 +81,13 @@ class PinnedHttpsTransportTest(unittest.TestCase):
         transport.request(target, address_index=1, method="POST", headers={}, body=b"{}")
 
         self.assertEqual(len(resolver_calls), 1)
-        self.assertEqual([call[2].address for call in factory_calls], [
-            "8.8.8.8", "2001:4860:4860::8888",
-        ])
+        self.assertEqual(
+            [call[2].address for call in factory_calls],
+            [
+                "8.8.8.8",
+                "2001:4860:4860::8888",
+            ],
+        )
         self.assertTrue(all(call[0] == "alerts.example.net" for call in factory_calls))
 
     def test_rejects_private_or_mixed_dns_before_connection_construction(self):

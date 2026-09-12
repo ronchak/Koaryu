@@ -102,31 +102,48 @@ describe("student detail page model", () => {
     assert.equal(validateStudentPhotoFile({ type: "image/jpeg", size: 100 }), null);
     assert.equal(
       validateStudentPhotoFile({ type: "image/gif", size: 100 }),
-      "Choose a JPG, PNG, or WebP image."
+      "Choose a JPG, PNG, or WebP image.",
     );
     assert.equal(
       validateStudentPhotoFile({ type: "image/png", size: 6 * 1024 * 1024 }),
-      "Choose an image under 5 MB."
+      "Choose an image under 5 MB.",
     );
   });
 
   it("detects current holds from paused status and date windows", () => {
     assert.equal(isStudentCurrentHold(student({ status: "paused" }), "2026-05-24"), true);
-    assert.equal(isStudentCurrentHold(student({ hold_start_date: "2026-06-01" }), "2026-05-24"), false);
-    assert.equal(isStudentCurrentHold(student({ hold_start_date: "2026-05-01", hold_end_date: null }), "2026-05-24"), true);
-    assert.equal(isStudentCurrentHold(student({ hold_start_date: "2026-05-01", hold_end_date: "2026-05-23" }), "2026-05-24"), false);
+    assert.equal(
+      isStudentCurrentHold(student({ hold_start_date: "2026-06-01" }), "2026-05-24"),
+      false,
+    );
+    assert.equal(
+      isStudentCurrentHold(
+        student({ hold_start_date: "2026-05-01", hold_end_date: null }),
+        "2026-05-24",
+      ),
+      true,
+    );
+    assert.equal(
+      isStudentCurrentHold(
+        student({ hold_start_date: "2026-05-01", hold_end_date: "2026-05-23" }),
+        "2026-05-24",
+      ),
+      false,
+    );
   });
 
   it("prefers active memberships over the legacy program id", () => {
     assert.deepEqual(
-      getActiveStudentProgramIds(student({
-        program_id: "legacy",
-        program_memberships: [
-          { program_id: "kids", status: "active" },
-          { program_id: "ended", status: "ended", ended_at: "2026-05-01" },
-        ],
-      })),
-      ["kids"]
+      getActiveStudentProgramIds(
+        student({
+          program_id: "legacy",
+          program_memberships: [
+            { program_id: "kids", status: "active" },
+            { program_id: "ended", status: "ended", ended_at: "2026-05-01" },
+          ],
+        }),
+      ),
+      ["kids"],
     );
     assert.deepEqual(getActiveStudentProgramIds(student({ program_id: "legacy" })), ["legacy"]);
   });

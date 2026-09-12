@@ -18,6 +18,10 @@ export async function generateMetadata({
   return generateMarketingDetailMetadata({ params }, studioTypeMarketingDetailRouteConfig);
 }
 
-export default async function StudioTypeDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function StudioTypeDetailPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
   return renderMarketingDetailRoute({ params }, studioTypeMarketingDetailRouteConfig);
 }

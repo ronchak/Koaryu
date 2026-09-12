@@ -84,9 +84,7 @@ export async function executePayerAutopaySetup({
     if (link?.url) {
       const copied = await copyLink(link.url);
       runtime.setMessage(
-        copied
-          ? "Stripe autopay setup link copied."
-          : `Stripe autopay setup link: ${link.url}`,
+        copied ? "Stripe autopay setup link copied." : `Stripe autopay setup link: ${link.url}`,
       );
     }
     return link?.url ?? null;
@@ -104,7 +102,9 @@ export async function executePayerAutopaySetup({
     runtime.setError(
       cleanupFailed
         ? "The expired payer setup could not be cleared from this browser. Clear site data or use another browser before creating another setup link."
-        : error instanceof Error ? error.message : "Billing action could not be completed.",
+        : error instanceof Error
+          ? error.message
+          : "Billing action could not be completed.",
     );
     return null;
   } finally {

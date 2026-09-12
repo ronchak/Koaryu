@@ -48,7 +48,10 @@ export function useBillingEnrollmentActions({
     setEnrollmentNextBillDate("");
   }
 
-  async function handleEnrollmentAction(enrollmentId: string, action: "pause" | "resume" | "cancel") {
+  async function handleEnrollmentAction(
+    enrollmentId: string,
+    action: "pause" | "resume" | "cancel",
+  ) {
     void enrollmentId;
     void action;
     runtime.setError("Enrollment lifecycle changes are currently unavailable.");
@@ -56,7 +59,7 @@ export function useBillingEnrollmentActions({
 
   async function handleEnrollmentModeUpdate(
     enrollmentId: string,
-    collectionMode: StudentBillingEnrollment["collection_mode"]
+    collectionMode: StudentBillingEnrollment["collection_mode"],
   ) {
     void enrollmentId;
     void collectionMode;
@@ -76,11 +79,12 @@ export function useBillingEnrollmentActions({
     const result = await runtime.postBillingAction<StudentBillingEnrollment>({
       action: `enrollment-activate:${enrollmentId}`,
       path: `/billing/enrollments/${enrollmentId}/activate`,
-      onTerminalIdempotencyError: () => clearEnrollmentActivationRequestKey({
-        enrollmentId,
-        identity: operationIdentity,
-        keysByEnrollment: activationKeysRef.current,
-      }),
+      onTerminalIdempotencyError: () =>
+        clearEnrollmentActivationRequestKey({
+          enrollmentId,
+          identity: operationIdentity,
+          keysByEnrollment: activationKeysRef.current,
+        }),
       refresh: false,
       requestOptions: buildEnrollmentActivationRequest(requestKey),
       successMessage: "Enrollment activation requested.",
@@ -126,12 +130,13 @@ export function useBillingEnrollmentActions({
       action: `enrollment-transition:${action}:${resourceId}`,
       path,
       body,
-      onTerminalIdempotencyError: () => clearEnrollmentTransitionRequestKey({
-        action,
-        identity: operationIdentity,
-        keys: transitionKeysRef.current,
-        resourceId,
-      }),
+      onTerminalIdempotencyError: () =>
+        clearEnrollmentTransitionRequestKey({
+          action,
+          identity: operationIdentity,
+          keys: transitionKeysRef.current,
+          resourceId,
+        }),
       refresh: false,
       requestOptions: enrollmentTransitionRequestOptions(requestKey),
       successMessage: "Enrollment transition requested.",
@@ -154,7 +159,9 @@ export function useBillingEnrollmentActions({
     runtime.setError("");
     runtime.setMessage("");
     if (!canManageRoutineBilling) {
-      runtime.setError("Only studio admins and front desk staff can attach external billing records.");
+      runtime.setError(
+        "Only studio admins and front desk staff can attach external billing records.",
+      );
       return;
     }
     const payloadResult = buildStudentBillingEnrollmentCreatePayload({
@@ -182,7 +189,11 @@ export function useBillingEnrollmentActions({
       return;
     }
     try {
-      await api.post<StudentBillingEnrollment>("/billing/enrollments", payloadResult.payload, runtime.token);
+      await api.post<StudentBillingEnrollment>(
+        "/billing/enrollments",
+        payloadResult.payload,
+        runtime.token,
+      );
       runtime.setMessage("Billing enrollment created.");
       resetEnrollmentForm();
       await runtime.refreshBilling();
@@ -207,37 +218,40 @@ export function useBillingEnrollmentActions({
     onEnrollmentCancelImmediate: (
       enrollmentId: string,
       options: { reasonCode?: string; startNewRequest?: boolean } = {},
-    ) => handleNamedTransition({
-      action: "cancel-immediate",
-      body: { reason_code: options.reasonCode ?? "staff_requested" },
-      path: `/billing/enrollments/${enrollmentId}/cancel-immediate`,
-      resourceId: enrollmentId,
-      startNewRequest: options.startNewRequest,
-    }),
+    ) =>
+      handleNamedTransition({
+        action: "cancel-immediate",
+        body: { reason_code: options.reasonCode ?? "staff_requested" },
+        path: `/billing/enrollments/${enrollmentId}/cancel-immediate`,
+        resourceId: enrollmentId,
+        startNewRequest: options.startNewRequest,
+      }),
     onEnrollmentRevokeScheduled: (
       transitionIntentId: string,
       expectedRevision: number,
       options: { reasonCode?: string; startNewRequest?: boolean } = {},
-    ) => handleNamedTransition({
-      action: "revoke-scheduled",
-      body: {
-        expected_revision: expectedRevision,
-        reason_code: options.reasonCode ?? "staff_requested",
-      },
-      path: `/billing/enrollment-transitions/${transitionIntentId}/revoke-scheduled`,
-      resourceId: transitionIntentId,
-      startNewRequest: options.startNewRequest,
-    }),
+    ) =>
+      handleNamedTransition({
+        action: "revoke-scheduled",
+        body: {
+          expected_revision: expectedRevision,
+          reason_code: options.reasonCode ?? "staff_requested",
+        },
+        path: `/billing/enrollment-transitions/${transitionIntentId}/revoke-scheduled`,
+        resourceId: transitionIntentId,
+        startNewRequest: options.startNewRequest,
+      }),
     onEnrollmentSchedulePeriodEnd: (
       enrollmentId: string,
       options: { reasonCode?: string; startNewRequest?: boolean } = {},
-    ) => handleNamedTransition({
-      action: "schedule-period-end",
-      body: { reason_code: options.reasonCode ?? "staff_requested" },
-      path: `/billing/enrollments/${enrollmentId}/schedule-period-end`,
-      resourceId: enrollmentId,
-      startNewRequest: options.startNewRequest,
-    }),
+    ) =>
+      handleNamedTransition({
+        action: "schedule-period-end",
+        body: { reason_code: options.reasonCode ?? "staff_requested" },
+        path: `/billing/enrollments/${enrollmentId}/schedule-period-end`,
+        resourceId: enrollmentId,
+        startNewRequest: options.startNewRequest,
+      }),
     onEnrollmentCollectionModeChange: setEnrollmentCollectionMode,
     onEnrollmentEndDateChange: setEnrollmentEndDate,
     onEnrollmentModeUpdate: handleEnrollmentModeUpdate,

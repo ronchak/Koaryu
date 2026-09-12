@@ -21,24 +21,34 @@ function applySearchInput(state, value) {
     ...state,
     lastInputSearch: value,
     visibleSearch: value,
-    ...(effectiveChanged
-      ? { cursor: null, page: 1, resetCount: state.resetCount + 1 }
-      : {}),
+    ...(effectiveChanged ? { cursor: null, page: 1, resetCount: state.resetCount + 1 } : {}),
   };
 }
 
 describe("live student roster cursor consumer", () => {
   it("keeps the settled search debounce and server-owned derived modes", () => {
     assert.match(controllerSource, /STUDENTS_SEARCH_DEBOUNCE_MS = 250/);
-    assert.match(controllerSource, /shouldScheduleStudentRosterSearch\(normalizedSearch, debouncedSearch\)/);
+    assert.match(
+      controllerSource,
+      /shouldScheduleStudentRosterSearch\(normalizedSearch, debouncedSearch\)/,
+    );
     assert.match(controllerSource, /fullRoster: fullRosterRequested/);
     assert.match(controllerSource, /inactivityDays: inactivityThreshold/);
     assert.match(controllerSource, /newStudents \? \{ newStudents \}/);
     assert.match(controllerSource, /today,/);
     assert.match(controllerSource, /requestRosterPage\(pageRef\.current \+ 1, pagedNextCursor\)/);
-    assert.match(controllerSource, /requestRosterPage\(Math\.max\(1, pageRef\.current - 1\), pagedPreviousCursor\)/);
-    assert.match(controllerSource, /const lastInputNormalizedSearchRef = useRef\(normalizedSearch\)/);
-    assert.match(controllerSource, /if \(hasStudentRosterSearchChanged\(previousNormalizedSearch, nextNormalizedSearch\)\)/);
+    assert.match(
+      controllerSource,
+      /requestRosterPage\(Math\.max\(1, pageRef\.current - 1\), pagedPreviousCursor\)/,
+    );
+    assert.match(
+      controllerSource,
+      /const lastInputNormalizedSearchRef = useRef\(normalizedSearch\)/,
+    );
+    assert.match(
+      controllerSource,
+      /if \(hasStudentRosterSearchChanged\(previousNormalizedSearch, nextNormalizedSearch\)\)/,
+    );
   });
 
   it("does not schedule another request when raw input normalizes to the settled query", () => {
@@ -114,6 +124,9 @@ describe("live student roster cursor consumer", () => {
     assert.doesNotMatch(pagesSource, /page \+= 1/);
     assert.match(querySource, /if \(query\.cursor\)/);
     assert.match(querySource, /params\.set\("cursor", query\.cursor\)/);
-    assert.match(querySource, /params\.set\("page", String\(Math\.max\(1, query\.page \|\| 1\)\)\)/);
+    assert.match(
+      querySource,
+      /params\.set\("page", String\(Math\.max\(1, query\.page \|\| 1\)\)\)/,
+    );
   });
 });

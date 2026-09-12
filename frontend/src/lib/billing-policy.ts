@@ -9,15 +9,13 @@ export type BillingProviderCopy = {
   connectPayments: string;
 };
 
-export function canManageRoutineBilling(
-  role: StaffRoleName | null | undefined
-): boolean {
+export function canManageRoutineBilling(role: StaffRoleName | null | undefined): boolean {
   return role === "admin" || role === "front_desk";
 }
 
 export function areProviderMutationsEnabled(
   isPreviewMode: boolean,
-  serverCapability = false
+  serverCapability = false,
 ): boolean {
   return isPreviewMode || serverCapability;
 }
@@ -31,8 +29,9 @@ export function resolveBillingProviderActionCapabilities({
   isPreviewMode: boolean;
   role: StaffRoleName | null | undefined;
 }) {
-  const enabled = (workflowId: string) => role === "admin"
-    && areProviderMutationsEnabled(isPreviewMode, enabledWorkflowIds.has(workflowId));
+  const enabled = (workflowId: string) =>
+    role === "admin" &&
+    areProviderMutationsEnabled(isPreviewMode, enabledWorkflowIds.has(workflowId));
   return {
     connectDashboardEnabled: enabled("connect.dashboard"),
     connectOnboardingEnabled: enabled("connect.onboarding"),
@@ -42,16 +41,12 @@ export function resolveBillingProviderActionCapabilities({
 }
 
 export function canStartCoreCheckout(
-  billingPlatform: Pick<PlatformBillingStatus, "can_start_checkout"> | null
+  billingPlatform: Pick<PlatformBillingStatus, "can_start_checkout"> | null,
 ): boolean {
   return billingPlatform?.can_start_checkout === true;
 }
 
-function scopedCopy(
-  mode: BillingProviderMode,
-  label: string,
-  permitted: boolean
-): string {
+function scopedCopy(mode: BillingProviderMode, label: string, permitted: boolean): string {
   if (!mode) {
     return `${label} is unavailable until provider mode and studio authorization load.`;
   }
@@ -75,7 +70,8 @@ export function resolveBillingProviderCopy({
   connectPayments: boolean;
 }): BillingProviderCopy {
   if (isPreviewMode) {
-    const preview = "Preview mode uses demo-only billing actions and does not change provider state.";
+    const preview =
+      "Preview mode uses demo-only billing actions and does not change provider state.";
     return {
       boundary: preview,
       coreSubscription: preview,

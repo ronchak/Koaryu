@@ -118,9 +118,7 @@ def _load_supabase_jwks(jwks_url: str, *, force_refresh: bool = False) -> list[d
         _jwks_cache["refreshing"] = True
         completion: Future[None] = Future()
         _jwks_cache["completion"] = completion
-        _jwks_cache["refresh_allowed_at"] = (
-            now + SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS
-        )
+        _jwks_cache["refresh_allowed_at"] = now + SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS
 
     try:
         response = httpx.get(
@@ -172,9 +170,7 @@ def _jwk_matches_header(key: dict[str, Any], *, kid: str, alg: str) -> bool:
     if key.get("use") not in (None, "sig"):
         return False
     key_ops = key.get("key_ops")
-    if key_ops is not None and (
-        not isinstance(key_ops, list) or "verify" not in key_ops
-    ):
+    if key_ops is not None and (not isinstance(key_ops, list) or "verify" not in key_ops):
         return False
     return True
 
@@ -266,9 +262,7 @@ def get_user_id_from_token(token: str) -> str:
             token,
             issuer=issuer,
             jwt_secret=settings.SUPABASE_JWT_SECRET,
-            allow_legacy_hs256=bool(
-                getattr(settings, "SUPABASE_ALLOW_LEGACY_HS256", False)
-            ),
+            allow_legacy_hs256=bool(getattr(settings, "SUPABASE_ALLOW_LEGACY_HS256", False)),
         )
         return _extract_authenticated_user_id(payload)
     except JWKSUnavailableError:

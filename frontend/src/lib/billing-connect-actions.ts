@@ -7,10 +7,7 @@ import {
   acknowledgeConnectOnboardingBeforeNavigation,
   createConnectOnboardingRequestKey,
 } from "@/lib/billing-connect-delivery";
-import {
-  connectRefreshUrl,
-  connectReturnUrl,
-} from "@/lib/billing-page-utils";
+import { connectRefreshUrl, connectReturnUrl } from "@/lib/billing-page-utils";
 import type {
   BillingLinkResponse,
   ConnectBusinessEntityType,
@@ -33,7 +30,7 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
   async function openBillingLink(
     path: string,
     body: Record<string, string | undefined>,
-    action = "stripe-link"
+    action = "stripe-link",
   ) {
     const workflowId = path.includes("/checkout")
       ? "core.subscription.checkout"
@@ -123,7 +120,8 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
     await runtime.postBillingAction<StudioPaymentAccount>({
       action: "connect-reset",
       path: "/billing/connect/reset",
-      successMessage: "Stripe connection cleared. Start onboarding again to connect the active Stripe platform.",
+      successMessage:
+        "Stripe connection cleared. Start onboarding again to connect the active Stripe platform.",
       workflowId: "connect.reset",
     });
   }

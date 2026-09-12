@@ -50,6 +50,7 @@ async def list_staff(
             studio_id,
             include_archived=include_archived,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -71,6 +72,7 @@ async def invite_staff(
     async def _provider_operation(client):
         studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
         return await StaffService(client).invite_staff(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -103,6 +105,7 @@ async def update_staff_legal_name(
             user_id,
             membership["role"],
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -126,6 +129,7 @@ async def update_staff_role(
             studio_id,
             user_id,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -143,6 +147,7 @@ async def archive_staff(
     async def _provider_operation(client):
         studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
         return await StaffService(client).archive_staff(staff_role_id, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -160,6 +165,7 @@ async def unarchive_staff(
     async def _provider_operation(client):
         studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
         return await StaffService(client).unarchive_staff(staff_role_id, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -186,6 +192,7 @@ async def schedule_staff_deletion(
             studio_id,
             user_id,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -204,6 +211,7 @@ async def remove_staff(
         studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
         await StaffService(client).remove_staff(staff_role_id, studio_id, user_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

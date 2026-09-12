@@ -45,7 +45,9 @@ class DashboardSummaryCounts:
         first_name = row.get("preferred_name") or row.get("legal_first_name") or ""
         last_name = row.get("legal_last_name") or ""
         display_name = f"{first_name} {last_name}".strip() or "Unnamed student"
-        started_on = row.get("membership_start_date") or str(row.get("created_at") or "")[:10] or None
+        started_on = (
+            row.get("membership_start_date") or str(row.get("created_at") or "")[:10] or None
+        )
         return DashboardSummaryRecentStudent(
             id=row["id"],
             display_name=display_name,
@@ -81,23 +83,25 @@ class DashboardSummaryCounts:
     ) -> DashboardSummaryStudentCounts:
         active_students = self.count_rows(
             "students",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .is_("deleted_at", "null")
-            .in_("status", ["active", "trialing"]),
+            lambda query: (
+                query.eq("studio_id", studio_id)
+                .is_("deleted_at", "null")
+                .in_("status", ["active", "trialing"])
+            ),
         )
         trialing_students = self.count_rows(
             "students",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .is_("deleted_at", "null")
-            .eq("status", "trialing"),
+            lambda query: (
+                query.eq("studio_id", studio_id).is_("deleted_at", "null").eq("status", "trialing")
+            ),
         )
         total_students = self.count_rows(
             "students",
             lambda query: query.eq("studio_id", studio_id).is_("deleted_at", "null"),
         )
-        on_hold_students = sum(1 for row in student_rows if self._is_student_on_hold_now(row, today))
+        on_hold_students = sum(
+            1 for row in student_rows if self._is_student_on_hold_now(row, today)
+        )
         return DashboardSummaryStudentCounts(
             total_students=total_students,
             active_students=active_students,
@@ -134,10 +138,11 @@ class DashboardSummaryCounts:
         )
         due_today_leads = self.count_rows(
             "leads",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .in_("stage", ACTIVE_LEAD_STAGES)
-            .lte("follow_up_date", today.isoformat()),
+            lambda query: (
+                query.eq("studio_id", studio_id)
+                .in_("stage", ACTIVE_LEAD_STAGES)
+                .lte("follow_up_date", today.isoformat())
+            ),
         )
         return DashboardSummaryLeadCounts(
             active_leads=active_leads,
@@ -170,17 +175,15 @@ class DashboardSummaryCounts:
 
         belt_count = self.count_rows(
             "belt_ranks",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .in_("ladder_id", ladder_ids)
-            .eq("is_tip", False),
+            lambda query: (
+                query.eq("studio_id", studio_id).in_("ladder_id", ladder_ids).eq("is_tip", False)
+            ),
         )
         tip_count = self.count_rows(
             "belt_ranks",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .in_("ladder_id", ladder_ids)
-            .eq("is_tip", True),
+            lambda query: (
+                query.eq("studio_id", studio_id).in_("ladder_id", ladder_ids).eq("is_tip", True)
+            ),
         )
         return DashboardSummaryBeltCounts(belt_count=belt_count, tip_count=tip_count)
 
@@ -227,17 +230,15 @@ class DashboardSummaryCounts:
     ) -> DashboardSummaryChurnCounts:
         inactive_students = self.count_rows(
             "students",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .is_("deleted_at", "null")
-            .eq("status", "inactive"),
+            lambda query: (
+                query.eq("studio_id", studio_id).is_("deleted_at", "null").eq("status", "inactive")
+            ),
         )
         canceled_students = self.count_rows(
             "students",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .is_("deleted_at", "null")
-            .eq("status", "canceled"),
+            lambda query: (
+                query.eq("studio_id", studio_id).is_("deleted_at", "null").eq("status", "canceled")
+            ),
         )
         churn_marked_students = inactive_students + canceled_students
         return DashboardSummaryChurnCounts(
@@ -258,22 +259,21 @@ class DashboardSummaryCounts:
 
         payer_attention_count = self.count_rows(
             "billing_payers",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .in_("billing_status", ["past_due", "failed", "unpaid"]),
+            lambda query: query.eq("studio_id", studio_id).in_(
+                "billing_status", ["past_due", "failed", "unpaid"]
+            ),
         )
         uncollectible_invoice_count = self.count_rows(
             "billing_invoices",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .eq("status", "uncollectible"),
+            lambda query: query.eq("studio_id", studio_id).eq("status", "uncollectible"),
         )
         overdue_open_invoice_count = self.count_rows(
             "billing_invoices",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .eq("status", "open")
-            .lte("due_date", today.isoformat()),
+            lambda query: (
+                query.eq("studio_id", studio_id)
+                .eq("status", "open")
+                .lte("due_date", today.isoformat())
+            ),
         )
         active_plan_count = self.count_rows(
             "billing_plans",
@@ -287,7 +287,9 @@ class DashboardSummaryCounts:
 
         return DashboardSummaryBillingCounts(
             can_view_billing=True,
-            payment_attention_count=payer_attention_count + uncollectible_invoice_count + overdue_open_invoice_count,
+            payment_attention_count=payer_attention_count
+            + uncollectible_invoice_count
+            + overdue_open_invoice_count,
             has_plans=active_plan_count > 0,
             payments_ready=bool(payment_account and payment_account.get("charges_enabled")),
             amounts=DashboardSummaryBillingAmounts(available=False),
@@ -303,10 +305,9 @@ class DashboardSummaryCounts:
     ) -> DashboardSummarySetupFlags:
         program_count = self.count_rows(
             "programs",
-            lambda query: query
-            .eq("studio_id", studio_id)
-            .eq("is_system", False)
-            .is_("archived_at", "null"),
+            lambda query: (
+                query.eq("studio_id", studio_id).eq("is_system", False).is_("archived_at", "null")
+            ),
         )
         active_template_count = self.count_rows(
             "class_templates",
@@ -321,14 +322,18 @@ class DashboardSummaryCounts:
             has_programs=program_count > 0,
             has_students=student_counts.total_students > 0,
             has_belt_system=belt_counts.belt_count > 0,
-            has_weekly_classes=active_template_count > 0 or live_session_count > 0 or schedule_counts.today_sessions > 0,
+            has_weekly_classes=active_template_count > 0
+            or live_session_count > 0
+            or schedule_counts.today_sessions > 0,
             has_tuition_plans=billing_counts.has_plans if billing_counts.can_view_billing else None,
         )
 
     def recent_students(self, studio_id: str) -> list[DashboardSummaryRecentStudent]:
         rows = (
             self.supabase.table("students")
-            .select("id, legal_first_name, legal_last_name, preferred_name, status, membership_start_date, created_at")
+            .select(
+                "id, legal_first_name, legal_last_name, preferred_name, status, membership_start_date, created_at"
+            )
             .eq("studio_id", studio_id)
             .is_("deleted_at", "null")
             .order("created_at", desc=True)

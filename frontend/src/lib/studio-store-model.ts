@@ -37,19 +37,17 @@ export interface StudioDataClearResponse {
   counts: DemoResetCounts;
 }
 
-export function resolvePreviewLadderHydrationDefaults(
-  {
-    storedLadders,
-    currentLadderId,
-    fallbackLadders,
-    fallbackLadder,
-  }: {
-    storedLadders: BeltLadder[];
-    currentLadderId?: string | null;
-    fallbackLadders: BeltLadder[];
-    fallbackLadder: BeltLadder;
-  }
-): {
+export function resolvePreviewLadderHydrationDefaults({
+  storedLadders,
+  currentLadderId,
+  fallbackLadders,
+  fallbackLadder,
+}: {
+  storedLadders: BeltLadder[];
+  currentLadderId?: string | null;
+  fallbackLadders: BeltLadder[];
+  fallbackLadder: BeltLadder;
+}): {
   previewLadders: BeltLadder[];
   selectedPreviewLadder: BeltLadder | null;
   defaultRanks: BeltRank[];
@@ -57,11 +55,10 @@ export function resolvePreviewLadderHydrationDefaults(
   defaultLadderName: string;
 } {
   const previewLadders = storedLadders.length ? storedLadders : fallbackLadders;
-  const selectedPreviewLadder = (
-    currentLadderId
-      ? previewLadders.find((ladder) => ladder.id === currentLadderId)
-      : null
-  ) || previewLadders[0] || null;
+  const selectedPreviewLadder =
+    (currentLadderId ? previewLadders.find((ladder) => ladder.id === currentLadderId) : null) ||
+    previewLadders[0] ||
+    null;
 
   return {
     previewLadders,
@@ -96,13 +93,14 @@ export function buildPreviewHydratedLadderState({
   const hydratedLadders = previewLadders.map((ladder) =>
     ladder.id === selectedPreviewLadder?.id
       ? { ...ladder, name: storedLadderName, sub_rank_term: storedSubRankTerm, ranks: storedRanks }
-      : ladder
+      : ladder,
   );
 
   return {
     hydratedLadders,
     eligibilityLadderId: selectedPreviewLadder?.id ?? null,
-    eligibilityRows: selectedPreviewLadder?.id === primaryEligibilityLadderId ? primaryEligibilityRows : [],
+    eligibilityRows:
+      selectedPreviewLadder?.id === primaryEligibilityLadderId ? primaryEligibilityRows : [],
   };
 }
 

@@ -27,8 +27,9 @@ export default function ProfilePage() {
         <AccountInfoRow label="Role" value={currentRole || "member"} />
         <div className="pt-4">
           <AccountNotice>
-            Email changes are intentionally handled through the authentication provider so login and verification stay
-            consistent. Name changes update your Koaryu staff identity immediately.
+            Email changes are intentionally handled through the authentication provider so login and
+            verification stay consistent. Name changes update your Koaryu staff identity
+            immediately.
           </AccountNotice>
         </div>
       </AccountSection>

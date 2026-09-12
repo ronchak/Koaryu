@@ -60,7 +60,7 @@ export function formatDate(value?: string | null, withYear = false) {
     "en-US",
     withYear
       ? { month: "short", day: "numeric", year: "numeric" }
-      : { month: "short", day: "numeric" }
+      : { month: "short", day: "numeric" },
   );
 }
 
@@ -96,9 +96,7 @@ export function getFollowUpStatusLabel(date: string, today: string) {
     return "Due today";
   }
 
-  const diffMs =
-    new Date(`${today}T00:00:00`).getTime() -
-    new Date(`${date}T00:00:00`).getTime();
+  const diffMs = new Date(`${today}T00:00:00`).getTime() - new Date(`${date}T00:00:00`).getTime();
   const diffDays = Math.floor(diffMs / DAY_MS);
 
   if (diffDays > 0) {
@@ -112,10 +110,7 @@ export function getProgramLabel(lead: Lead, program?: Program | null) {
   return program?.name || lead.program_interest || "No program";
 }
 
-export function mergeOptimisticLeads(
-  baseLeads: Lead[],
-  optimisticLeads: Record<string, Lead>
-) {
+export function mergeOptimisticLeads(baseLeads: Lead[], optimisticLeads: Record<string, Lead>) {
   const merged = new Map<string, Lead>();
 
   baseLeads.forEach((lead) => {
@@ -157,7 +152,7 @@ export function getDueFollowUpQueue(leads: Lead[], today: string) {
         lead.stage !== "closed_lost" &&
         lead.stage !== "enrolled" &&
         !!lead.follow_up_date &&
-        lead.follow_up_date <= today
+        lead.follow_up_date <= today,
     )
     .sort((a, b) => (a.follow_up_date ?? "").localeCompare(b.follow_up_date ?? ""));
 }
@@ -189,7 +184,7 @@ export function getUpcomingFollowUpCount(leads: Lead[], today: string) {
       lead.stage !== "closed_lost" &&
       lead.stage !== "enrolled" &&
       !!lead.follow_up_date &&
-      lead.follow_up_date > today
+      lead.follow_up_date > today,
   ).length;
 }
 
@@ -229,19 +224,19 @@ export function buildLeadsDatasetModel({
 export function selectLeadsPageModel(
   dataset: ReturnType<typeof buildLeadsDatasetModel>,
   selectedLeadId: string | null,
-  draggedLeadId: string | null
+  draggedLeadId: string | null,
 ): LeadsPageModel {
   return {
     ...dataset,
-    selectedLead: selectedLeadId ? dataset.leadById.get(selectedLeadId) ?? null : null,
-    draggedLeadRecord: draggedLeadId ? dataset.leadById.get(draggedLeadId) ?? null : null,
+    selectedLead: selectedLeadId ? (dataset.leadById.get(selectedLeadId) ?? null) : null,
+    draggedLeadRecord: draggedLeadId ? (dataset.leadById.get(draggedLeadId) ?? null) : null,
   };
 }
 
 export function getLeadFollowUpInputValue(
   lead: Lead,
   followUpDrafts: Record<string, string>,
-  fallbackDate: string
+  fallbackDate: string,
 ) {
   return followUpDrafts[lead.id] ?? lead.follow_up_date ?? fallbackDate;
 }
@@ -249,7 +244,7 @@ export function getLeadFollowUpInputValue(
 export function buildOptimisticLeadUpdate(
   lead: Lead,
   updates: Partial<Lead>,
-  updatedAt = new Date().toISOString()
+  updatedAt = new Date().toISOString(),
 ) {
   return {
     ...lead,
@@ -258,10 +253,7 @@ export function buildOptimisticLeadUpdate(
   };
 }
 
-export function removeOptimisticLeadUpdate(
-  optimisticLeads: Record<string, Lead>,
-  leadId: string
-) {
+export function removeOptimisticLeadUpdate(optimisticLeads: Record<string, Lead>, leadId: string) {
   if (!(leadId in optimisticLeads)) {
     return optimisticLeads;
   }

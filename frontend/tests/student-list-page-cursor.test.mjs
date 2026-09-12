@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-  normalizeStudentListSearch,
-} from "../src/lib/student-list-page.ts";
+import { normalizeStudentListSearch } from "../src/lib/student-list-page.ts";
 import { buildStudentPagePath } from "../src/lib/student-roster-query.ts";
 
 function query(path) {
@@ -12,19 +10,21 @@ function query(path) {
 
 describe("student roster cursor request encoding", () => {
   it("encodes normalized search, server filters, studio-local today, sorting, and page size", () => {
-    const params = query(buildStudentPagePath({
-      fullRoster: true,
-      inactivityDays: 90,
-      newStudents: "ytd",
-      page: 1,
-      pageSize: 50,
-      programId: "program-1",
-      search: "  Ava,(Kids)%_\nLane  ",
-      sortDir: "desc",
-      sortKey: "created_at",
-      status: "active",
-      today: "2026-08-19",
-    }));
+    const params = query(
+      buildStudentPagePath({
+        fullRoster: true,
+        inactivityDays: 90,
+        newStudents: "ytd",
+        page: 1,
+        pageSize: 50,
+        programId: "program-1",
+        search: "  Ava,(Kids)%_\nLane  ",
+        sortDir: "desc",
+        sortKey: "created_at",
+        status: "active",
+        today: "2026-08-19",
+      }),
+    );
 
     assert.equal(normalizeStudentListSearch("  Ava,(Kids)%_\nLane  "), "Ava Kids Lane");
     assert.equal(params.get("search"), "Ava Kids Lane");
@@ -42,14 +42,16 @@ describe("student roster cursor request encoding", () => {
 
   it("uses an opaque cursor instead of numeric page navigation", () => {
     const cursor = "opaque.cursor/with+=characters";
-    const params = query(buildStudentPagePath({
-      cursor,
-      page: 7,
-      pageSize: 50,
-      sortDir: "asc",
-      sortKey: "name",
-      today: "2026-08-19",
-    }));
+    const params = query(
+      buildStudentPagePath({
+        cursor,
+        page: 7,
+        pageSize: 50,
+        sortDir: "asc",
+        sortKey: "name",
+        today: "2026-08-19",
+      }),
+    );
 
     assert.equal(params.get("cursor"), cursor);
     assert.equal(params.has("page"), false);

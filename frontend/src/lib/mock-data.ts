@@ -26,7 +26,7 @@ function dayOfWeek(offsetDays = 0): number {
   return date.getDay();
 }
 
-const MOCK_BASE_STUDENTS: Student[] = ([
+const MOCK_BASE_STUDENTS: Student[] = [
   {
     id: "mock-1",
     studio_id: "mock-studio",
@@ -215,7 +215,7 @@ const MOCK_BASE_STUDENTS: Student[] = ([
     created_at: isoDaysFromToday(-700, "10:30:00"),
     updated_at: isoDaysFromToday(-10, "09:00:00"),
   },
-]).map((student) => ({
+].map((student) => ({
   ...student,
   status: student.status as Student["status"],
   program_id: "program-bjj-core",
@@ -238,22 +238,156 @@ const MOCK_BASE_STUDENTS: Student[] = ([
 }));
 
 const MOCK_ADDITIONAL_STUDENTS: Student[] = [
-  ["mock-9", "Hana", "Mori", "Hana", "2016-02-08", true, "active", -260, "rank-1a", ["youth", "beginner"]],
-  ["mock-10", "Liam", "Johnson", "Liam", "2014-05-19", true, "active", -95, "rank-1", ["youth", "new-family"]],
-  ["mock-11", "Ava", "Martinez", "Ava", "2013-10-02", true, "active", -390, "rank-1b", ["youth", "attendance-strong"]],
-  ["mock-12", "Noah", "Bennett", "Noah", "2012-12-11", true, "active", -510, "rank-1d", ["youth", "promotion-watch"]],
-  ["mock-13", "Zara", "Ali", "Zara", "2015-07-30", true, "active", -185, "rank-1", ["youth", "confidence"]],
-  ["mock-14", "Ethan", "Wong", "Ethan", "2011-04-17", true, "active", -720, "rank-2", ["youth", "assistant-helper"]],
-  ["mock-15", "Lucas", "Grant", "Lucas", "1990-08-03", false, "active", -140, "rank-1a", ["adult", "evening"]],
-  ["mock-16", "Maya", "Chen", "Maya", "1986-09-27", false, "active", -1100, "rank-4", ["adult", "mentor"]],
-  ["mock-17", "Amara", "Okafor", "Amara", "1993-03-25", false, "active", -1380, "rank-6", ["adult", "cross-training"]],
-  ["mock-18", "Kai", "Thompson", "Kai", "2010-06-23", true, "active", -980, "rank-4", ["youth", "competition"]],
-  ["mock-19", "Omar", "Haddad", "Omar", "1991-05-05", false, "active", -80, "tkd-rank-2", ["adult", "tae-kwon-do", "cross-training"]],
-  ["mock-20", "Chloe", "Park", "Chloe", "2013-08-20", true, "active", -130, "tkd-rank-1a", ["youth", "tae-kwon-do"]],
+  [
+    "mock-9",
+    "Hana",
+    "Mori",
+    "Hana",
+    "2016-02-08",
+    true,
+    "active",
+    -260,
+    "rank-1a",
+    ["youth", "beginner"],
+  ],
+  [
+    "mock-10",
+    "Liam",
+    "Johnson",
+    "Liam",
+    "2014-05-19",
+    true,
+    "active",
+    -95,
+    "rank-1",
+    ["youth", "new-family"],
+  ],
+  [
+    "mock-11",
+    "Ava",
+    "Martinez",
+    "Ava",
+    "2013-10-02",
+    true,
+    "active",
+    -390,
+    "rank-1b",
+    ["youth", "attendance-strong"],
+  ],
+  [
+    "mock-12",
+    "Noah",
+    "Bennett",
+    "Noah",
+    "2012-12-11",
+    true,
+    "active",
+    -510,
+    "rank-1d",
+    ["youth", "promotion-watch"],
+  ],
+  [
+    "mock-13",
+    "Zara",
+    "Ali",
+    "Zara",
+    "2015-07-30",
+    true,
+    "active",
+    -185,
+    "rank-1",
+    ["youth", "confidence"],
+  ],
+  [
+    "mock-14",
+    "Ethan",
+    "Wong",
+    "Ethan",
+    "2011-04-17",
+    true,
+    "active",
+    -720,
+    "rank-2",
+    ["youth", "assistant-helper"],
+  ],
+  [
+    "mock-15",
+    "Lucas",
+    "Grant",
+    "Lucas",
+    "1990-08-03",
+    false,
+    "active",
+    -140,
+    "rank-1a",
+    ["adult", "evening"],
+  ],
+  [
+    "mock-16",
+    "Maya",
+    "Chen",
+    "Maya",
+    "1986-09-27",
+    false,
+    "active",
+    -1100,
+    "rank-4",
+    ["adult", "mentor"],
+  ],
+  [
+    "mock-17",
+    "Amara",
+    "Okafor",
+    "Amara",
+    "1993-03-25",
+    false,
+    "active",
+    -1380,
+    "rank-6",
+    ["adult", "cross-training"],
+  ],
+  [
+    "mock-18",
+    "Kai",
+    "Thompson",
+    "Kai",
+    "2010-06-23",
+    true,
+    "active",
+    -980,
+    "rank-4",
+    ["youth", "competition"],
+  ],
+  [
+    "mock-19",
+    "Omar",
+    "Haddad",
+    "Omar",
+    "1991-05-05",
+    false,
+    "active",
+    -80,
+    "tkd-rank-2",
+    ["adult", "tae-kwon-do", "cross-training"],
+  ],
+  [
+    "mock-20",
+    "Chloe",
+    "Park",
+    "Chloe",
+    "2013-08-20",
+    true,
+    "active",
+    -130,
+    "tkd-rank-1a",
+    ["youth", "tae-kwon-do"],
+  ],
 ].map(([id, first, last, preferred, dob, isMinor, status, membershipOffset, rankId, tags]) => {
   const isTaeKwonDoPrimary = (tags as string[]).includes("tae-kwon-do");
   const primaryProgramId = isTaeKwonDoPrimary ? "program-tae-kwon-do" : "program-bjj-core";
-  const primaryProgramName = isTaeKwonDoPrimary ? "Tae Kwon Do Fundamentals" : "Brazilian Jiu-Jitsu Core";
+  const primaryProgramName = isTaeKwonDoPrimary
+    ? "Tae Kwon Do Fundamentals"
+    : "Brazilian Jiu-Jitsu Core";
   const primaryProgramColor = isTaeKwonDoPrimary ? "#F59E0B" : "#38BDF8";
   const startedAt = dateDaysFromToday(membershipOffset as number);
   const studentId = id as string;
@@ -328,14 +462,18 @@ const MOCK_ADDITIONAL_STUDENTS: Student[] = [
     preferred_name: preferred as string,
     date_of_birth: dob as string,
     is_minor: isMinor as boolean,
-    email: isMinor ? undefined : `${String(first).toLowerCase()}.${String(last).toLowerCase()}@email.com`,
+    email: isMinor
+      ? undefined
+      : `${String(first).toLowerCase()}.${String(last).toLowerCase()}@email.com`,
     phone: isMinor ? undefined : "(555) 246-8000",
     status: status as Student["status"],
     membership_start_date: startedAt,
     program_id: primaryProgramId,
     current_belt_rank_id: rankId as string | undefined,
     program_memberships: memberships,
-    notes: isTaeKwonDoPrimary ? "Part of the Tae Kwon Do program roster." : "Demo student for program filtering and rank readiness.",
+    notes: isTaeKwonDoPrimary
+      ? "Part of the Tae Kwon Do program roster."
+      : "Demo student for program filtering and rank readiness.",
     tags: tags as string[],
     guardians: isMinor
       ? [
@@ -888,7 +1026,6 @@ export const MOCK_ELIGIBILITY: EligibilityEntry[] = [
 ];
 
 // ---- Phase 5: Leads Mock Data ----
-
 
 export const MOCK_LEADS: Lead[] = [
   {

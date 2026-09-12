@@ -20,8 +20,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 const appTitle = `${APP_NAME} — Martial Arts Studio OS`;
-const appDescription =
-  `${APP_DESCRIPTION} Student CRM, belt progression, scheduling, billing, and more — built for how dojos actually operate.`;
+const appDescription = `${APP_DESCRIPTION} Student CRM, belt progression, scheduling, billing, and more — built for how dojos actually operate.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://koaryu.app"),
@@ -30,10 +29,7 @@ export const metadata: Metadata = {
   description: appDescription,
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico" },
-    ],
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/favicon.ico" }],
     shortcut: [{ url: "/favicon.ico" }],
     apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
   },
@@ -83,14 +79,19 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      data-koaryu-data-plane={process.env.NEXT_PUBLIC_PREVIEW_MODE === "true" ? "disposable-preview" : "live"}
+      data-koaryu-data-plane={
+        process.env.NEXT_PUBLIC_PREVIEW_MODE === "true" ? "disposable-preview" : "live"
+      }
       data-theme="light"
       suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable} h-full`}
     >
       <body className="min-h-full flex flex-col font-sans antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <WebVitals version={getDeploymentMetadata().commit_sha} environment={getDeploymentMetadata().environment} />
+        <WebVitals
+          version={getDeploymentMetadata().commit_sha}
+          environment={getDeploymentMetadata().environment}
+        />
         <AppResumeGuard loaded={getDeploymentMetadata()} />
         <ThemeProvider>{children}</ThemeProvider>
       </body>

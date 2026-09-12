@@ -65,13 +65,14 @@ export default function SubscriptionRequiredPage() {
   const checkoutRequestKeyRef = useRef<string | null>(null);
 
   const isAdmin = authProfile?.role === "admin";
-  const price = billingStatus ? formatMoney(billingStatus.monthly_price_cents, billingStatus.currency) : "$27";
+  const price = billingStatus
+    ? formatMoney(billingStatus.monthly_price_cents, billingStatus.currency)
+    : "$27";
   const currentStatus = billingStatus?.status || "incomplete";
   const showAdminBillingDetails = isAdmin && billingStatus !== null;
   const coreBillingEnabled = billingSystemStatus?.mutation_capabilities.core_subscription === true;
   const hasLiveStripeSubscription = Boolean(
-    billingStatus?.stripe_subscription_id
-      && LIVE_STRIPE_SUBSCRIPTION_STATUSES.has(currentStatus)
+    billingStatus?.stripe_subscription_id && LIVE_STRIPE_SUBSCRIPTION_STATUSES.has(currentStatus),
   );
   const canStartCheckout = coreBillingEnabled && !hasLiveStripeSubscription;
   const canOpenPortal = coreBillingEnabled && Boolean(billingStatus?.stripe_customer_id);
@@ -89,7 +90,9 @@ export default function SubscriptionRequiredPage() {
     async function loadStatus() {
       setIsLoading(true);
       setError("");
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!mounted) return;
       if (!session) {
         router.replace("/login");
@@ -98,15 +101,17 @@ export default function SubscriptionRequiredPage() {
       setAuthToken(session.access_token);
 
       try {
-        const profile = parseAuthProfileResponse(await api.get<unknown>("/auth/me", session.access_token, {
-          omitStudioHeader: false,
-        }));
+        const profile = parseAuthProfileResponse(
+          await api.get<unknown>("/auth/me", session.access_token, {
+            omitStudioHeader: false,
+          }),
+        );
         if (!mounted) return;
         setAuthProfile(profile);
         syncStoredStudioSessionCookies(
           session.user.id,
           profile.studio_id,
-          profile.membership_status
+          profile.membership_status,
         );
 
         if (profile.membership_status === "archived") {
@@ -126,7 +131,7 @@ export default function SubscriptionRequiredPage() {
 
         const status = await api.get<PlatformBillingStatus>(
           "/platform-billing/status",
-          session.access_token
+          session.access_token,
         );
         if (!mounted) return;
         setBillingStatus(status);
@@ -142,13 +147,15 @@ export default function SubscriptionRequiredPage() {
         try {
           const systemStatus = await api.get<BillingSystemStatus>(
             "/billing/system/status",
-            session.access_token
+            session.access_token,
           );
           if (!mounted) return;
           setBillingSystemStatus(systemStatus);
         } catch {
           if (!mounted) return;
-          setError("Self-service billing is unavailable right now. Contact Koaryu support for help.");
+          setError(
+            "Self-service billing is unavailable right now. Contact Koaryu support for help.",
+          );
         }
       } catch {
         if (!mounted) return;
@@ -182,7 +189,7 @@ export default function SubscriptionRequiredPage() {
           ? { success_url: window.location.href, cancel_url: window.location.href }
           : { return_url: window.location.href },
         authToken,
-        { timeoutMs: 30000, headers }
+        { timeoutMs: 30000, headers },
       );
       if (action === "checkout") {
         checkoutRequestKeyRef.current = null;
@@ -198,9 +205,11 @@ export default function SubscriptionRequiredPage() {
     <OperationsSurface page="subscription-required">
       <Header
         title={isAdmin ? "Subscription required" : "Workspace access required"}
-        description={isAdmin
-          ? "Koaryu Core access needs review before this studio can continue."
-          : "A studio administrator or Koaryu support can help restore workspace access."}
+        description={
+          isAdmin
+            ? "Koaryu Core access needs review before this studio can continue."
+            : "A studio administrator or Koaryu support can help restore workspace access."
+        }
       />
 
       <div className="flex-1 overflow-auto px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
@@ -233,7 +242,9 @@ export default function SubscriptionRequiredPage() {
 
                   <div className="space-y-4 lg:text-right">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.14em] text-muted">Current state</p>
+                      <p className="text-xs uppercase tracking-[0.14em] text-muted">
+                        Current state
+                      </p>
                       <p className={`mt-1 text-lg font-medium capitalize ${statusTone}`}>
                         {statusLabel(currentStatus)}
                       </p>
@@ -264,7 +275,9 @@ export default function SubscriptionRequiredPage() {
                 <div className="space-y-2">
                   <CheckCircle2 className="h-4 w-4 text-accent" />
                   <p className="text-sm font-medium text-text-primary">
-                    {coreBillingEnabled ? "Stripe capability verified" : "Live Stripe remains disabled"}
+                    {coreBillingEnabled
+                      ? "Stripe capability verified"
+                      : "Live Stripe remains disabled"}
                   </p>
                   <p className="text-sm leading-6 text-text-secondary">
                     {coreBillingEnabled
@@ -274,8 +287,12 @@ export default function SubscriptionRequiredPage() {
                 </div>
                 <div className="space-y-2">
                   <CheckCircle2 className="h-4 w-4 text-accent" />
-                  <p className="text-sm font-medium text-text-primary">Studio data stays preserved</p>
-                  <p className="text-sm leading-6 text-text-secondary">Access recovery does not delete operational history.</p>
+                  <p className="text-sm font-medium text-text-primary">
+                    Studio data stays preserved
+                  </p>
+                  <p className="text-sm leading-6 text-text-secondary">
+                    Access recovery does not delete operational history.
+                  </p>
                 </div>
               </div>
             </>

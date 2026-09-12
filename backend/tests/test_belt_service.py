@@ -22,7 +22,8 @@ ACTOR_ID = "88888888-8888-8888-8888-888888888888"
 class FakeSupabase(RpcBackedSupabase):
     def _rpc_sync_belt_ladder_ranks_v2(self, params: dict):
         ladder = next(
-            row for row in self.tables["belt_ladders"]
+            row
+            for row in self.tables["belt_ladders"]
             if row["id"] == params["p_ladder_id"] and row["studio_id"] == params["p_studio_id"]
         )
         ranks = [
@@ -36,62 +37,73 @@ class FakeSupabase(RpcBackedSupabase):
             for rank in params["p_ranks"]
         ]
         self.tables["belt_ranks"] = ranks
-        self.tables["audit_logs"].append({
-            "studio_id": params["p_studio_id"],
-            "actor_id": params["p_actor_id"],
-            "action": "belt_ladder.synced",
-            "entity_id": params["p_ladder_id"],
-            "metadata": {"operation_id": params["p_operation_id"]},
-        })
+        self.tables["audit_logs"].append(
+            {
+                "studio_id": params["p_studio_id"],
+                "actor_id": params["p_actor_id"],
+                "action": "belt_ladder.synced",
+                "entity_id": params["p_ladder_id"],
+                "metadata": {"operation_id": params["p_operation_id"]},
+            }
+        )
         return {**ladder, "ranks": ranks}
 
 
 class BeltServiceTest(unittest.TestCase):
     def test_sync_ladder_uses_atomic_idempotent_audit_rpc(self):
         operation_id = "99999999-9999-4999-8999-999999999999"
-        supabase = FakeSupabase({
-            "belt_ladders": [{
-                "id": LADDER_ID,
-                "studio_id": STUDIO_ID,
-                "program_id": PROGRAM_ID,
-                "name": "Karate",
-                "sub_rank_term": "Stripe",
-                "created_at": "2026-08-14T00:00:00Z",
-                "updated_at": "2026-08-14T00:00:00Z",
-            }],
-            "belt_ranks": [],
-            "audit_logs": [],
-        })
+        supabase = FakeSupabase(
+            {
+                "belt_ladders": [
+                    {
+                        "id": LADDER_ID,
+                        "studio_id": STUDIO_ID,
+                        "program_id": PROGRAM_ID,
+                        "name": "Karate",
+                        "sub_rank_term": "Stripe",
+                        "created_at": "2026-08-14T00:00:00Z",
+                        "updated_at": "2026-08-14T00:00:00Z",
+                    }
+                ],
+                "belt_ranks": [],
+                "audit_logs": [],
+            }
+        )
 
-        response = asyncio.run(BeltService(supabase).sync_ladder(
-            LADDER_ID,
-            BeltLadderSyncRequest(
-                operation_id=operation_id,
-                sub_rank_term="Stripe",
-                ranks=[{"name": "White Belt", "color_hex": "#FFFFFF"}],
-            ),
-            STUDIO_ID,
-            ACTOR_ID,
-        ))
+        response = asyncio.run(
+            BeltService(supabase).sync_ladder(
+                LADDER_ID,
+                BeltLadderSyncRequest(
+                    operation_id=operation_id,
+                    sub_rank_term="Stripe",
+                    ranks=[{"name": "White Belt", "color_hex": "#FFFFFF"}],
+                ),
+                STUDIO_ID,
+                ACTOR_ID,
+            )
+        )
 
         self.assertEqual(response.ranks[0].name, "White Belt")
         self.assertEqual(supabase.rpc_calls[0][0], "sync_belt_ladder_ranks_v2")
         self.assertEqual(supabase.rpc_calls[0][1]["p_operation_id"], operation_id)
         self.assertEqual(supabase.tables["audit_logs"][0]["metadata"]["operation_id"], operation_id)
         direct_audit_inserts = [
-            entry for entry in supabase.query_log
+            entry
+            for entry in supabase.query_log
             if entry["table"] == "audit_logs" and entry["insert"] is not None
         ]
         self.assertEqual(direct_audit_inserts, [])
 
     def test_delete_assigned_rank_returns_conflict_with_sync_guidance(self):
         supabase = FakeSupabase({"belt_ranks": []})
-        supabase.table_failures["belt_ranks"] = PostgrestAPIError({
-            "code": "P0001",
-            "message": "Assigned belt ranks must be deleted through sync_belt_ladder_ranks.",
-            "details": "",
-            "hint": "",
-        })
+        supabase.table_failures["belt_ranks"] = PostgrestAPIError(
+            {
+                "code": "P0001",
+                "message": "Assigned belt ranks must be deleted through sync_belt_ladder_ranks.",
+                "details": "",
+                "hint": "",
+            }
+        )
 
         with self.assertRaises(HTTPException) as raised:
             asyncio.run(BeltService(supabase).delete_rank(FROM_RANK_ID, STUDIO_ID))
@@ -100,80 +112,97 @@ class BeltServiceTest(unittest.TestCase):
         self.assertIn("full belt ladder", raised.exception.detail)
 
     def test_delete_unassigned_rank_remains_available(self):
-        supabase = FakeSupabase({
-            "belt_ranks": [{"id": FROM_RANK_ID, "studio_id": STUDIO_ID}],
-        })
+        supabase = FakeSupabase(
+            {
+                "belt_ranks": [{"id": FROM_RANK_ID, "studio_id": STUDIO_ID}],
+            }
+        )
 
         asyncio.run(BeltService(supabase).delete_rank(FROM_RANK_ID, STUDIO_ID))
 
         self.assertEqual(supabase.tables["belt_ranks"], [])
 
-
     def test_list_ladders_does_not_repair_program_ladders(self):
-        supabase = FakeSupabase({
-            "programs": [{
-                "id": PROGRAM_ID,
-                "studio_id": STUDIO_ID,
-                "name": "Program with no ladder",
-                "is_system": False,
-                "archived_at": None,
-            }],
-            "belt_ladders": [],
-        })
+        supabase = FakeSupabase(
+            {
+                "programs": [
+                    {
+                        "id": PROGRAM_ID,
+                        "studio_id": STUDIO_ID,
+                        "name": "Program with no ladder",
+                        "is_system": False,
+                        "archived_at": None,
+                    }
+                ],
+                "belt_ladders": [],
+            }
+        )
         service = BeltService(supabase)
 
         ladders = asyncio.run(service.list_ladders(STUDIO_ID))
-        self.assertTrue(all(q["insert"] is None and q["upsert"] is None and q["update"] is None and not q["delete"] for q in supabase.query_log))
+        self.assertTrue(
+            all(
+                q["insert"] is None
+                and q["upsert"] is None
+                and q["update"] is None
+                and not q["delete"]
+                for q in supabase.query_log
+            )
+        )
 
         self.assertEqual(ladders, [])
 
     def test_eligibility_attendance_excludes_deleted_and_canceled_sessions(self):
-        supabase = FakeSupabase({
-            "attendance": [
-                {
-                    "id": "attendance-valid",
-                    "studio_id": STUDIO_ID,
-                    "student_id": STUDENT_ID,
-                    "status": "present",
-                    "checked_in_at": "2026-05-24T12:00:00Z",
-                    "counts_toward_eligibility": True,
-                    "class_sessions": {"program_id": PROGRAM_ID},
-                    "class_sessions.status": "scheduled",
-                    "class_sessions.deleted_at": None,
-                },
-                {
-                    "id": "attendance-canceled",
-                    "studio_id": STUDIO_ID,
-                    "student_id": STUDENT_ID,
-                    "status": "present",
-                    "checked_in_at": "2026-05-25T12:00:00Z",
-                    "counts_toward_eligibility": True,
-                    "class_sessions": {"program_id": PROGRAM_ID},
-                    "class_sessions.status": "canceled",
-                    "class_sessions.deleted_at": None,
-                },
-                {
-                    "id": "attendance-deleted",
-                    "studio_id": STUDIO_ID,
-                    "student_id": STUDENT_ID,
-                    "status": "present",
-                    "checked_in_at": "2026-05-26T12:00:00Z",
-                    "counts_toward_eligibility": True,
-                    "class_sessions": {"program_id": PROGRAM_ID},
-                    "class_sessions.status": "scheduled",
-                    "class_sessions.deleted_at": "2026-05-26T13:00:00Z",
-                },
-            ],
-        })
+        supabase = FakeSupabase(
+            {
+                "attendance": [
+                    {
+                        "id": "attendance-valid",
+                        "studio_id": STUDIO_ID,
+                        "student_id": STUDENT_ID,
+                        "status": "present",
+                        "checked_in_at": "2026-05-24T12:00:00Z",
+                        "counts_toward_eligibility": True,
+                        "class_sessions": {"program_id": PROGRAM_ID},
+                        "class_sessions.status": "scheduled",
+                        "class_sessions.deleted_at": None,
+                    },
+                    {
+                        "id": "attendance-canceled",
+                        "studio_id": STUDIO_ID,
+                        "student_id": STUDENT_ID,
+                        "status": "present",
+                        "checked_in_at": "2026-05-25T12:00:00Z",
+                        "counts_toward_eligibility": True,
+                        "class_sessions": {"program_id": PROGRAM_ID},
+                        "class_sessions.status": "canceled",
+                        "class_sessions.deleted_at": None,
+                    },
+                    {
+                        "id": "attendance-deleted",
+                        "studio_id": STUDIO_ID,
+                        "student_id": STUDENT_ID,
+                        "status": "present",
+                        "checked_in_at": "2026-05-26T12:00:00Z",
+                        "counts_toward_eligibility": True,
+                        "class_sessions": {"program_id": PROGRAM_ID},
+                        "class_sessions.status": "scheduled",
+                        "class_sessions.deleted_at": "2026-05-26T13:00:00Z",
+                    },
+                ],
+            }
+        )
         calculator = BeltEligibilityCalculator(supabase)
 
         counts = calculator._fetch_attendance_counts_by_student(
             STUDIO_ID,
-            [{
-                "context_key": "membership-context",
-                "student": {"id": STUDENT_ID},
-                "target_ladder_id": LADDER_ID,
-            }],
+            [
+                {
+                    "context_key": "membership-context",
+                    "student": {"id": STUDENT_ID},
+                    "target_ladder_id": LADDER_ID,
+                }
+            ],
             {},
             {LADDER_ID: {"program_id": PROGRAM_ID}},
         )
@@ -209,37 +238,46 @@ class BeltServiceTest(unittest.TestCase):
             }
             for index in range(1001)
         ]
-        supabase = FakeSupabase({
-            "belt_ladders": [{"id": LADDER_ID, "studio_id": STUDIO_ID, "name": "Core", "program_id": PROGRAM_ID}],
-            "belt_ranks": [
-                {
-                    "id": FROM_RANK_ID,
-                    "studio_id": STUDIO_ID,
-                    "ladder_id": LADDER_ID,
-                    "name": "White",
-                    "color_hex": "#ffffff",
-                    "display_order": 1,
-                    "min_classes": 0,
-                    "min_months": 0,
-                    "requires_approval": False,
-                },
-                {
-                    "id": TO_RANK_ID,
-                    "studio_id": STUDIO_ID,
-                    "ladder_id": LADDER_ID,
-                    "name": "Blue",
-                    "color_hex": "#0000ff",
-                    "display_order": 2,
-                    "min_classes": 0,
-                    "min_months": 0,
-                    "requires_approval": False,
-                },
-            ],
-            "students": students,
-            "student_program_memberships": memberships,
-            "promotions": [],
-            "attendance": [],
-        })
+        supabase = FakeSupabase(
+            {
+                "belt_ladders": [
+                    {
+                        "id": LADDER_ID,
+                        "studio_id": STUDIO_ID,
+                        "name": "Core",
+                        "program_id": PROGRAM_ID,
+                    }
+                ],
+                "belt_ranks": [
+                    {
+                        "id": FROM_RANK_ID,
+                        "studio_id": STUDIO_ID,
+                        "ladder_id": LADDER_ID,
+                        "name": "White",
+                        "color_hex": "#ffffff",
+                        "display_order": 1,
+                        "min_classes": 0,
+                        "min_months": 0,
+                        "requires_approval": False,
+                    },
+                    {
+                        "id": TO_RANK_ID,
+                        "studio_id": STUDIO_ID,
+                        "ladder_id": LADDER_ID,
+                        "name": "Blue",
+                        "color_hex": "#0000ff",
+                        "display_order": 2,
+                        "min_classes": 0,
+                        "min_months": 0,
+                        "requires_approval": False,
+                    },
+                ],
+                "students": students,
+                "student_program_memberships": memberships,
+                "promotions": [],
+                "attendance": [],
+            }
+        )
         calculator = BeltEligibilityCalculator(supabase)
 
         entries = asyncio.run(calculator.get_eligibility(STUDIO_ID, LADDER_ID))
@@ -248,19 +286,23 @@ class BeltServiceTest(unittest.TestCase):
         student_ranges = [
             entry["range"]
             for entry in supabase.query_log
-            if entry["table"] == "students"
-            and entry["columns"].startswith("id, legal_first_name")
+            if entry["table"] == "students" and entry["columns"].startswith("id, legal_first_name")
         ]
         self.assertEqual(student_ranges, [(0, 999), (1000, 1999)])
         membership_queries = [
-            entry
-            for entry in supabase.query_log
-            if entry["table"] == "student_program_memberships"
+            entry for entry in supabase.query_log if entry["table"] == "student_program_memberships"
         ]
         self.assertGreater(len(membership_queries), 1)
         self.assertTrue(
             all(
-                len(next(value for op, key, value in entry["filters"] if op == "in" and key == "student_id")) <= 100
+                len(
+                    next(
+                        value
+                        for op, key, value in entry["filters"]
+                        if op == "in" and key == "student_id"
+                    )
+                )
+                <= 100
                 for entry in membership_queries
             )
         )

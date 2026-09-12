@@ -13,6 +13,7 @@ from app.services.billing_currency_policy import NEW_TUITION_CURRENCY_DETAIL, is
 from app.services.billing_invoice_operations import BillingInvoiceOperationWorkflow
 from app.services.stripe_service import StripeService
 
+
 class BillingInvoiceManager:
     def __init__(
         self,
@@ -54,9 +55,13 @@ class BillingInvoiceManager:
         stripe_invoice: Any,
         account_id: str,
     ) -> dict[str, Any]:
-        return self.billing_service._update_invoice_from_stripe(invoice_id, studio_id, stripe_invoice, account_id)
+        return self.billing_service._update_invoice_from_stripe(
+            invoice_id, studio_id, stripe_invoice, account_id
+        )
 
-    def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
+    def _audit(
+        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
+    ) -> None:
         self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
 
     def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
@@ -136,8 +141,12 @@ class BillingInvoiceManager:
             stripe_service_cls=self.stripe_service_cls,
         ).void_invoice(invoice_id, studio_id, actor_id, idempotency_key)
 
-    async def reconcile_invoice(self, invoice_id: str, studio_id: str, actor_id: str) -> BillingInvoiceResponse:
-        invoice = self._get_row_or_404("billing_invoices", invoice_id, studio_id, "Invoice not found.")
+    async def reconcile_invoice(
+        self, invoice_id: str, studio_id: str, actor_id: str
+    ) -> BillingInvoiceResponse:
+        invoice = self._get_row_or_404(
+            "billing_invoices", invoice_id, studio_id, "Invoice not found."
+        )
         if not invoice.get("stripe_invoice_id") or not invoice.get("stripe_account_id"):
             raise HTTPException(status_code=409, detail="Invoice is not linked to Stripe.")
         stripe_invoice = self.stripe_service_cls().retrieve_connected_invoice(
@@ -145,7 +154,9 @@ class BillingInvoiceManager:
             invoice_id=invoice["stripe_invoice_id"],
             expand=["payment_intent"],
         )
-        invoice = self._update_invoice_from_stripe(invoice_id, studio_id, stripe_invoice, invoice["stripe_account_id"])
+        invoice = self._update_invoice_from_stripe(
+            invoice_id, studio_id, stripe_invoice, invoice["stripe_account_id"]
+        )
         self._audit(studio_id, actor_id, "billing.invoice_reconciled", invoice_id, {})
         self._recompute_payer_balance(studio_id, invoice.get("payer_id"))
         return BillingInvoiceResponse(**invoice)
@@ -157,7 +168,9 @@ class BillingInvoiceManager:
         if not normalized:
             return None
         if len(normalized) > 255:
-            raise HTTPException(status_code=400, detail="Idempotency-Key must be 255 characters or fewer.")
+            raise HTTPException(
+                status_code=400, detail="Idempotency-Key must be 255 characters or fewer."
+            )
         return normalized
 
     def _invoice_request_hash(self, data: BillingInvoiceCreate) -> str:
@@ -243,7 +256,9 @@ class BillingInvoiceManager:
                 detail="Invoice item enrollment belongs to a different billing plan.",
             )
 
-    def _find_invoice_by_idempotency_key(self, studio_id: str, idempotency_key: str) -> Optional[dict[str, Any]]:
+    def _find_invoice_by_idempotency_key(
+        self, studio_id: str, idempotency_key: str
+    ) -> Optional[dict[str, Any]]:
         result = (
             self.supabase.table("billing_invoices")
             .select("*")

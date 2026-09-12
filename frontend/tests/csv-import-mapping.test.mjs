@@ -14,7 +14,7 @@ describe("getMissingCsvImportRequiredFields", () => {
         Given: "legal_first_name",
         Surname: "legal_last_name",
       }),
-      []
+      [],
     );
   });
 
@@ -23,7 +23,7 @@ describe("getMissingCsvImportRequiredFields", () => {
       getMissingCsvImportRequiredFields({
         "Full Student Name": "full_name",
       }),
-      []
+      [],
     );
   });
 
@@ -32,7 +32,7 @@ describe("getMissingCsvImportRequiredFields", () => {
       getMissingCsvImportRequiredFields({
         Child: "legal_first_name",
       }),
-      ["legal_last_name"]
+      ["legal_last_name"],
     );
   });
 });
@@ -71,9 +71,9 @@ describe("getSkippedBillingImportHeaders", () => {
           "Tuition Plan": "",
           "Payment Status": "",
           "Current Belt": "current_belt_rank_id",
-        }
+        },
       ),
-      ["Tuition Plan", "Payment Status"]
+      ["Tuition Plan", "Payment Status"],
     );
   });
 });

@@ -8,20 +8,20 @@
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0B0D10;
-  --surface: #12161B;
-  --surface-raised: #171C22;
-  --surface-hover: #1E2329;
-  --border: #232A33;
-  --text-primary: #F3F5F7;
-  --text-secondary: #98A2B3;
+  --bg: #0b0d10;
+  --surface: #12161b;
+  --surface-raised: #171c22;
+  --surface-hover: #1e2329;
+  --border: #232a33;
+  --text-primary: #f3f5f7;
+  --text-secondary: #98a2b3;
   --muted: #667085;
-  --accent: #D6B25E;
-  --accent-hover: #C4A24E;
-  --accent-contrast: #0B0D10;
-  --success: #4CAF7D;
-  --warning: #E8A23A;
-  --danger: #E05A5A;
+  --accent: #d6b25e;
+  --accent-hover: #c4a24e;
+  --accent-contrast: #0b0d10;
+  --success: #4caf7d;
+  --warning: #e8a23a;
+  --danger: #e05a5a;
   --radius: 6px;
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
@@ -33,20 +33,20 @@
 
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #F7F8FA;
-  --surface: #FFFFFF;
-  --surface-raised: #EEF1F5;
-  --surface-hover: #E5E9F0;
-  --border: #D9DEE7;
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-raised: #eef1f5;
+  --surface-hover: #e5e9f0;
+  --border: #d9dee7;
   --text-primary: #111827;
-  --text-secondary: #4B5565;
-  --muted: #7A8494;
-  --accent: #B88922;
-  --accent-hover: #9B711A;
+  --text-secondary: #4b5565;
+  --muted: #7a8494;
+  --accent: #b88922;
+  --accent-hover: #9b711a;
   --accent-contrast: #111827;
-  --success: #27805A;
-  --warning: #B87618;
-  --danger: #C44545;
+  --success: #27805a;
+  --warning: #b87618;
+  --danger: #c44545;
 }
 
 @theme inline {
@@ -122,7 +122,9 @@ body {
 }
 
 /* ---- Inputs ---- */
-input, textarea, select {
+input,
+textarea,
+select {
   background-color: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -134,17 +136,21 @@ input, textarea, select {
     color var(--motion-fast) var(--ease-standard);
 }
 
-input:focus, textarea:focus, select:focus {
+input:focus,
+textarea:focus,
+select:focus {
   border-color: var(--accent);
   outline: none;
 }
 
-input::placeholder, textarea::placeholder {
+input::placeholder,
+textarea::placeholder {
   color: var(--muted);
 }
 
 /* ---- Transitions ---- */
-a, button {
+a,
+button {
   transition:
     color var(--motion-fast) var(--ease-standard),
     background-color var(--motion-fast) var(--ease-standard),

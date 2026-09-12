@@ -34,7 +34,9 @@ class StudentImportCsvParsingTests(unittest.TestCase):
         self.planner = StudentImportPlanner(None)
 
     def test_parse_csv_accepts_quoted_commas_and_cp1252_exports(self):
-        content = "First Name,Last Name,Notes\nJosé,Álvarez,\"likes forms, sparring\"\n".encode("cp1252")
+        content = 'First Name,Last Name,Notes\nJosé,Álvarez,"likes forms, sparring"\n'.encode(
+            "cp1252"
+        )
 
         headers, rows = self.service.parse_csv(content)
 
@@ -173,22 +175,24 @@ class StudentImportCsvParsingTests(unittest.TestCase):
         self.assertIn("unsupported", raised.exception.detail)
 
     def test_auto_map_keeps_payment_status_out_of_student_status(self):
-        mapping = self.service.auto_map_headers([
-            "Membership Status",
-            "Payment Status",
-            "PaymentStatus",
-            "Billing Status",
-            "BillingStatus",
-            "Subscription Status",
-            "SubscriptionStatus",
-            "Autopay Status",
-            "AutopayStatus",
-            "Rank",
-            "Rank/Belt",
-            "Given",
-            "Child",
-            "Full Student Name",
-        ])
+        mapping = self.service.auto_map_headers(
+            [
+                "Membership Status",
+                "Payment Status",
+                "PaymentStatus",
+                "Billing Status",
+                "BillingStatus",
+                "Subscription Status",
+                "SubscriptionStatus",
+                "Autopay Status",
+                "AutopayStatus",
+                "Rank",
+                "Rank/Belt",
+                "Given",
+                "Child",
+                "Full Student Name",
+            ]
+        )
 
         self.assertEqual(mapping["Membership Status"], "status")
         self.assertEqual(mapping["Payment Status"], "")
@@ -220,7 +224,11 @@ class StudentImportCsvParsingTests(unittest.TestCase):
             with self.subTest(header=header), self.assertRaises(HTTPException) as raised:
                 self.service.validate_import_rows(
                     [{"First Name": "Ava", "Last Name": "Nguyen", header: "Current"}],
-                    {"First Name": "legal_first_name", "Last Name": "legal_last_name", header: "status"},
+                    {
+                        "First Name": "legal_first_name",
+                        "Last Name": "legal_last_name",
+                        header: "status",
+                    },
                     CsvImportOptions(),
                     studio_id=None,
                 )
@@ -231,7 +239,7 @@ class StudentImportCsvParsingTests(unittest.TestCase):
     def test_full_name_splits_into_required_first_and_last_names(self):
         result = self.service.validate_import_rows(
             [
-                {"Full Student Name": "Aiden \"AJ\" Morales"},
+                {"Full Student Name": 'Aiden "AJ" Morales'},
                 {"Full Student Name": "Nguyen, Ava"},
                 {"Full Student Name": "Ana Maria de la Cruz"},
                 {"Full Student Name": "Sofia St. James"},
@@ -245,7 +253,7 @@ class StudentImportCsvParsingTests(unittest.TestCase):
         self.assertEqual(result.valid_rows, 5)
         _, planned_rows = self.planner.prepare_import(
             [
-                {"Full Student Name": "Aiden \"AJ\" Morales"},
+                {"Full Student Name": 'Aiden "AJ" Morales'},
                 {"Full Student Name": "Nguyen, Ava"},
                 {"Full Student Name": "Ana Maria de la Cruz"},
                 {"Full Student Name": "Sofia St. James"},
@@ -283,18 +291,25 @@ class StudentImportCsvParsingTests(unittest.TestCase):
         self.assertEqual(result.error_rows, 0)
         self.assertEqual(result.normalized_status_count, 4)
         self.assertEqual(
-            {issue.value for row in result.rows for issue in row.issues if issue.code == "normalized_status"},
+            {
+                issue.value
+                for row in result.rows
+                for issue in row.issues
+                if issue.code == "normalized_status"
+            },
             {"trial", "current", "frozen", "on hold"},
         )
 
     def test_duplicate_notes_columns_are_combined_instead_of_rejected(self):
         result = self.service.validate_import_rows(
-            [{
-                "First Name": "Ava",
-                "Last Name": "Nguyen",
-                "Medical Notes": "Asthma inhaler in bag",
-                "Instructor Notes": "Working on focus",
-            }],
+            [
+                {
+                    "First Name": "Ava",
+                    "Last Name": "Nguyen",
+                    "Medical Notes": "Asthma inhaler in bag",
+                    "Instructor Notes": "Working on focus",
+                }
+            ],
             {
                 "First Name": "legal_first_name",
                 "Last Name": "legal_last_name",
@@ -307,12 +322,14 @@ class StudentImportCsvParsingTests(unittest.TestCase):
 
         self.assertEqual(result.valid_rows, 1)
         _, planned_rows = self.planner.prepare_import(
-            [{
-                "First Name": "Ava",
-                "Last Name": "Nguyen",
-                "Medical Notes": "Asthma inhaler in bag",
-                "Instructor Notes": "Working on focus",
-            }],
+            [
+                {
+                    "First Name": "Ava",
+                    "Last Name": "Nguyen",
+                    "Medical Notes": "Asthma inhaler in bag",
+                    "Instructor Notes": "Working on focus",
+                }
+            ],
             {
                 "First Name": "legal_first_name",
                 "Last Name": "legal_last_name",
@@ -345,11 +362,16 @@ class StudentImportCsvParsingTests(unittest.TestCase):
             with self.subTest(file_name=file_name):
                 headers, rows = self.service.parse_csv((fixture_dir / file_name).read_bytes())
                 mapping = self.service.auto_map_headers(headers)
-                result = self.service.validate_import_rows(rows, mapping, CsvImportOptions(), studio_id=None)
+                result = self.service.validate_import_rows(
+                    rows, mapping, CsvImportOptions(), studio_id=None
+                )
 
                 self.assertGreaterEqual(result.valid_rows, minimum_valid_rows)
                 self.assertEqual(result.total_rows, len(rows))
-                self.assertNotIn("Payment Status", [header for header, field in mapping.items() if field == "status"])
+                self.assertNotIn(
+                    "Payment Status",
+                    [header for header, field in mapping.items() if field == "status"],
+                )
 
     def test_pii_shaped_fixture_mappings_are_explicit_and_billing_columns_stay_skipped(self):
         fixture_dir = Path(__file__).parent / "fixtures" / "csv_import"
@@ -379,7 +401,14 @@ class StudentImportCsvParsingTests(unittest.TestCase):
                     "Emergency Contact": "emergency_contact_name",
                     "Notes": "notes",
                 },
-                "skipped": {"Subscription Status", "Payment Status", "Monthly Fee", "Last Paid", "Legacy Account #", "Parent 1"},
+                "skipped": {
+                    "Subscription Status",
+                    "Payment Status",
+                    "Monthly Fee",
+                    "Last Paid",
+                    "Legacy Account #",
+                    "Parent 1",
+                },
             },
             "stress_attendance_style.csv": {
                 "mapped": {
@@ -401,7 +430,9 @@ class StudentImportCsvParsingTests(unittest.TestCase):
             with self.subTest(file_name=file_name):
                 headers, rows = self.service.parse_csv((fixture_dir / file_name).read_bytes())
                 mapping = self.service.auto_map_headers(headers)
-                result = self.service.validate_import_rows(rows, mapping, CsvImportOptions(), studio_id=None)
+                result = self.service.validate_import_rows(
+                    rows, mapping, CsvImportOptions(), studio_id=None
+                )
 
                 self.assertEqual(
                     {header: mapping[header] for header in expectation["mapped"]},
@@ -415,9 +446,13 @@ class StudentImportCsvParsingTests(unittest.TestCase):
     def test_pii_shaped_fixture_import_plan_keeps_sensitive_columns_in_expected_fields(self):
         fixture_dir = Path(__file__).parent / "fixtures" / "csv_import"
 
-        headers, family_rows = self.service.parse_csv((fixture_dir / "stress_family_style.csv").read_bytes())
+        headers, family_rows = self.service.parse_csv(
+            (fixture_dir / "stress_family_style.csv").read_bytes()
+        )
         family_mapping = self.service.auto_map_headers(headers)
-        _, family_plan = self.planner.prepare_import(family_rows, family_mapping, None, CsvImportOptions())
+        _, family_plan = self.planner.prepare_import(
+            family_rows, family_mapping, None, CsvImportOptions()
+        )
         family_data = family_plan[0]["data"]
         self.assertEqual(family_data["guardian_name"], "Marisol O'Neill")
         self.assertEqual(family_data["guardian_email"], "marisol.oneill@example.com")
@@ -427,9 +462,13 @@ class StudentImportCsvParsingTests(unittest.TestCase):
         self.assertEqual(family_mapping["Coach Comments"], "")
         self.assertNotIn("notes", family_data)
 
-        headers, billing_rows = self.service.parse_csv((fixture_dir / "stress_billing_style.csv").read_bytes())
+        headers, billing_rows = self.service.parse_csv(
+            (fixture_dir / "stress_billing_style.csv").read_bytes()
+        )
         billing_mapping = self.service.auto_map_headers(headers)
-        _, billing_plan = self.planner.prepare_import(billing_rows, billing_mapping, None, CsvImportOptions())
+        _, billing_plan = self.planner.prepare_import(
+            billing_rows, billing_mapping, None, CsvImportOptions()
+        )
         billing_data = billing_plan[0]["data"]
         self.assertEqual(billing_data["legal_first_name"], 'Aiden "AJ"')
         self.assertEqual(billing_data["legal_last_name"], "Morales")
@@ -439,7 +478,9 @@ class StudentImportCsvParsingTests(unittest.TestCase):
         self.assertEqual(billing_mapping["Monthly Fee"], "")
         self.assertEqual(billing_mapping["Last Paid"], "")
 
-        headers, attendance_rows = self.service.parse_csv((fixture_dir / "stress_attendance_style.csv").read_bytes())
+        headers, attendance_rows = self.service.parse_csv(
+            (fixture_dir / "stress_attendance_style.csv").read_bytes()
+        )
         attendance_mapping = self.service.auto_map_headers(headers)
         attendance_result, attendance_plan = self.planner.prepare_import(
             attendance_rows,

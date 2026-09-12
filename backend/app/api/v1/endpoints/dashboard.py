@@ -36,7 +36,9 @@ async def get_dashboard_workspace(
 ):
     payload = await run_supabase_operation(
         supabase,
-        lambda client: DashboardBootstrapService(client).get_workspace_sync(user_id, requested_studio_id),
+        lambda client: DashboardBootstrapService(client).get_workspace_sync(
+            user_id, requested_studio_id
+        ),
         lane="interactive",
     )
     _set_private_dashboard_headers(response)
@@ -50,7 +52,9 @@ async def get_dashboard_bootstrap(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
-    view: Literal["dashboard", "students", "billing", "schedule", "settings", "leads", "reports", "training"] = "dashboard",
+    view: Literal[
+        "dashboard", "students", "billing", "schedule", "settings", "leads", "reports", "training"
+    ] = "dashboard",
 ):
     async def _provider_operation(client):
         """Return the critical initial dashboard payload in a single request."""
@@ -62,6 +66,7 @@ async def get_dashboard_bootstrap(
             allow_partial=allow_partial,
             view=view,
         )
+
     payload, timings = await run_supabase_operation(
         supabase,
         _provider_operation,

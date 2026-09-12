@@ -32,11 +32,13 @@ class BillingConnectAccountStoreTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
 
     def test_update_by_stripe_account_and_lookup_share_the_same_scope(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_connected_account_id": "acct_1",
-            "charges_enabled": False,
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "charges_enabled": False,
+            }
+        ]
         store = self._store(rows)
 
         store.update_by_stripe_account("acct_1", {"charges_enabled": True})
@@ -46,12 +48,14 @@ class BillingConnectAccountStoreTests(unittest.TestCase):
     def test_update_from_stripe_maps_requirements_to_connect_status(self):
         store = self._store([])
 
-        update = store.update_from_stripe({
-            "charges_enabled": False,
-            "payouts_enabled": False,
-            "details_submitted": True,
-            "requirements": {"currently_due": ["external_account"]},
-        })
+        update = store.update_from_stripe(
+            {
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": True,
+                "requirements": {"currently_due": ["external_account"]},
+            }
+        )
 
         self.assertEqual(update["status"], "action_required")
         self.assertEqual(update["requirements_due"], ["external_account"])
@@ -63,31 +67,49 @@ class BillingConnectAccountStoreTests(unittest.TestCase):
         stale_time = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
 
         self.assertFalse(store.should_refresh({"stripe_connected_account_id": None}))
-        self.assertTrue(store.should_refresh({"stripe_connected_account_id": "acct_1", "charges_enabled": False}))
-        self.assertTrue(store.should_refresh({
-            "stripe_connected_account_id": "acct_1",
-            "charges_enabled": True,
-            "requirements_due": ["external_account"],
-        }))
-        self.assertFalse(store.should_refresh({
-            "stripe_connected_account_id": "acct_1",
-            "charges_enabled": True,
-            "requirements_due": [],
-            "updated_at": fresh_time,
-        }))
-        self.assertTrue(store.should_refresh({
-            "stripe_connected_account_id": "acct_1",
-            "charges_enabled": True,
-            "requirements_due": [],
-            "updated_at": stale_time,
-        }))
+        self.assertTrue(
+            store.should_refresh(
+                {"stripe_connected_account_id": "acct_1", "charges_enabled": False}
+            )
+        )
+        self.assertTrue(
+            store.should_refresh(
+                {
+                    "stripe_connected_account_id": "acct_1",
+                    "charges_enabled": True,
+                    "requirements_due": ["external_account"],
+                }
+            )
+        )
+        self.assertFalse(
+            store.should_refresh(
+                {
+                    "stripe_connected_account_id": "acct_1",
+                    "charges_enabled": True,
+                    "requirements_due": [],
+                    "updated_at": fresh_time,
+                }
+            )
+        )
+        self.assertTrue(
+            store.should_refresh(
+                {
+                    "stripe_connected_account_id": "acct_1",
+                    "charges_enabled": True,
+                    "requirements_due": [],
+                    "updated_at": stale_time,
+                }
+            )
+        )
 
     def test_refresh_status_uses_injected_stripe_service_and_updates_row(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_connected_account_id": "acct_1",
-            "charges_enabled": False,
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "charges_enabled": False,
+            }
+        ]
         test_case = self
 
         class FakeStripeService:
@@ -114,16 +136,18 @@ class BillingConnectAccountStoreTests(unittest.TestCase):
         self.assertTrue(rows[0]["payouts_enabled"])
 
     def test_response_applies_defaults_and_text_timestamps(self):
-        response = self._store([]).response({
-            "studio_id": "studio_1",
-            "status": None,
-            "charges_enabled": 1,
-            "payouts_enabled": 0,
-            "details_submitted": True,
-            "requirements_due": None,
-            "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
-            "updated_at": "2026-01-02T00:00:00Z",
-        })
+        response = self._store([]).response(
+            {
+                "studio_id": "studio_1",
+                "status": None,
+                "charges_enabled": 1,
+                "payouts_enabled": 0,
+                "details_submitted": True,
+                "requirements_due": None,
+                "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+                "updated_at": "2026-01-02T00:00:00Z",
+            }
+        )
 
         self.assertEqual(response.status, "not_connected")
         self.assertTrue(response.charges_enabled)
@@ -134,9 +158,17 @@ class BillingConnectAccountStoreTests(unittest.TestCase):
 
         for stored, expected in ((0, 0), (None, 225), (50, 50)):
             with self.subTest(stored=stored):
-                self.assertEqual(self._store([]).response({
-                    "studio_id": "studio_1", "platform_fee_bps": stored,
-                }).platform_fee_bps, expected)
+                self.assertEqual(
+                    self._store([])
+                    .response(
+                        {
+                            "studio_id": "studio_1",
+                            "platform_fee_bps": stored,
+                        }
+                    )
+                    .platform_fee_bps,
+                    expected,
+                )
 
 
 if __name__ == "__main__":

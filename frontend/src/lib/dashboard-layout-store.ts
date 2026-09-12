@@ -73,8 +73,10 @@ function isGridCoordinate(value: unknown): value is number {
 }
 
 function isDashboardRow(value: unknown, size: DashboardWidgetSize): value is number {
-  return isGridCoordinate(value)
-    && Number(value) + getDashboardWidgetFootprint(size).rows <= DASHBOARD_LAYOUT_MAX_ROWS;
+  return (
+    isGridCoordinate(value) &&
+    Number(value) + getDashboardWidgetFootprint(size).rows <= DASHBOARD_LAYOUT_MAX_ROWS
+  );
 }
 
 function cellsFor(item: DashboardLayoutItem): string[] {
@@ -93,7 +95,7 @@ function canPlace(
   column: number,
   row: number,
   occupied: ReadonlySet<string>,
-  columns: number
+  columns: number,
 ): boolean {
   const footprint = getDashboardWidgetFootprint(item.size);
   if (column < 0 || row < 0 || column + footprint.columns > columns) return false;
@@ -109,7 +111,7 @@ function firstFit(
   item: Pick<DashboardLayoutItem, "size">,
   occupied: ReadonlySet<string>,
   columns: number,
-  startAt = 0
+  startAt = 0,
 ): { column: number; row: number } {
   const footprint = getDashboardWidgetFootprint(item.size);
   for (let index = Math.max(0, startAt); ; index += 1) {
@@ -124,18 +126,16 @@ function firstFit(
 export function packDashboardLayoutItems(
   items: readonly CandidateItem[],
   columns = DASHBOARD_LAYOUT_COLUMNS,
-  preservePreferredPositions = true
+  preservePreferredPositions = true,
 ): DashboardLayoutItem[] {
   const safeColumns = Math.max(2, Math.floor(columns));
   const occupied = new Set<string>();
   const packed: DashboardLayoutItem[] = [];
   for (const candidate of items) {
-    const preferredColumn = preservePreferredPositions && isGridCoordinate(candidate.column)
-      ? candidate.column
-      : -1;
-    const preferredRow = preservePreferredPositions && isGridCoordinate(candidate.row)
-      ? candidate.row
-      : -1;
+    const preferredColumn =
+      preservePreferredPositions && isGridCoordinate(candidate.column) ? candidate.column : -1;
+    const preferredRow =
+      preservePreferredPositions && isGridCoordinate(candidate.row) ? candidate.row : -1;
     const position = canPlace(candidate, preferredColumn, preferredRow, occupied, safeColumns)
       ? { column: preferredColumn, row: preferredRow }
       : firstFit(candidate, occupied, safeColumns);
@@ -151,7 +151,7 @@ export function projectDashboardFrameTargetToStoredCell(
   widgetId: DashboardWidgetId,
   frameColumns: number,
   column: number,
-  row: number
+  row: number,
 ): { column: number; row: number } {
   if (frameColumns === DASHBOARD_LAYOUT_COLUMNS) {
     return { column, row };
@@ -161,22 +161,26 @@ export function projectDashboardFrameTargetToStoredCell(
   const target = frameItems.find((item) => {
     if (item.widget_id === widgetId) return false;
     const footprint = getDashboardWidgetFootprint(item.size);
-    return column >= item.column
-      && column < item.column + footprint.columns
-      && row >= item.row
-      && row < item.row + footprint.rows;
+    return (
+      column >= item.column &&
+      column < item.column + footprint.columns &&
+      row >= item.row &&
+      row < item.row + footprint.rows
+    );
   });
   const orderedCandidates = frameItems
     .filter((item) => item.widget_id !== widgetId)
-    .sort((left, right) => (
-      left.row - right.row
-      || left.column - right.column
-      || left.widget_id.localeCompare(right.widget_id)
-    ));
+    .sort(
+      (left, right) =>
+        left.row - right.row ||
+        left.column - right.column ||
+        left.widget_id.localeCompare(right.widget_id),
+    );
   const targetIndex = row * safeColumns + column;
-  const nearest = target ?? orderedCandidates.find((item) => (
-    item.row * safeColumns + item.column >= targetIndex
-  )) ?? orderedCandidates.at(-1);
+  const nearest =
+    target ??
+    orderedCandidates.find((item) => item.row * safeColumns + item.column >= targetIndex) ??
+    orderedCandidates.at(-1);
   const stored = nearest
     ? items.find((item) => item.widget_id === nearest.widget_id)
     : items.find((item) => item.widget_id === widgetId);
@@ -184,18 +188,21 @@ export function projectDashboardFrameTargetToStoredCell(
 }
 
 function sortSpatially(items: readonly DashboardLayoutItem[]): DashboardLayoutItem[] {
-  return items.map((item) => ({ ...item })).sort((left, right) => (
-    left.row - right.row
-    || left.column - right.column
-    || left.widget_id.localeCompare(right.widget_id)
-  ));
+  return items
+    .map((item) => ({ ...item }))
+    .sort(
+      (left, right) =>
+        left.row - right.row ||
+        left.column - right.column ||
+        left.widget_id.localeCompare(right.widget_id),
+    );
 }
 
 function reflowPrioritizing(
   items: readonly DashboardLayoutItem[],
   priorityId: DashboardWidgetId,
   preferred: { column: number; row: number; size?: DashboardWidgetSize },
-  stableOrder?: readonly DashboardWidgetId[]
+  stableOrder?: readonly DashboardWidgetId[],
 ): DashboardLayoutItem[] {
   const fixed = items.find((item) => DASHBOARD_WIDGET_BY_ID.get(item.widget_id)?.fixed);
   const priority = items.find((item) => item.widget_id === priorityId);
@@ -219,14 +226,20 @@ function reflowPrioritizing(
     placed.push(fixedItem);
     for (const cell of cellsFor(fixedItem)) occupied.add(cell);
   }
-  const priorityPosition = canPlace(nextPriority, nextPriority.column, nextPriority.row, occupied, DASHBOARD_LAYOUT_COLUMNS)
+  const priorityPosition = canPlace(
+    nextPriority,
+    nextPriority.column,
+    nextPriority.row,
+    occupied,
+    DASHBOARD_LAYOUT_COLUMNS,
+  )
     ? { column: nextPriority.column, row: nextPriority.row }
     : firstFit(
-      nextPriority,
-      occupied,
-      DASHBOARD_LAYOUT_COLUMNS,
-      nextPriority.row * DASHBOARD_LAYOUT_COLUMNS + nextPriority.column
-    );
+        nextPriority,
+        occupied,
+        DASHBOARD_LAYOUT_COLUMNS,
+        nextPriority.row * DASHBOARD_LAYOUT_COLUMNS + nextPriority.column,
+      );
   const moved = { ...nextPriority, ...priorityPosition };
   placed.push(moved);
   for (const cell of cellsFor(moved)) occupied.add(cell);
@@ -234,7 +247,9 @@ function reflowPrioritizing(
   const byId = new Map(items.map((item) => [item.widget_id, item]));
   const orderedItems = stableOrder
     ? [
-        ...stableOrder.map((widgetId) => byId.get(widgetId)).filter((item): item is DashboardLayoutItem => Boolean(item)),
+        ...stableOrder
+          .map((widgetId) => byId.get(widgetId))
+          .filter((item): item is DashboardLayoutItem => Boolean(item)),
         ...items.filter((item) => !stableOrder.includes(item.widget_id)),
       ]
     : items;
@@ -255,7 +270,7 @@ export function moveDashboardLayoutItem(
   widgetId: DashboardWidgetId,
   column: number,
   row: number,
-  stableOrder?: readonly DashboardWidgetId[]
+  stableOrder?: readonly DashboardWidgetId[],
 ): DashboardLayoutItem[] {
   return reflowPrioritizing(items, widgetId, { column, row }, stableOrder);
 }
@@ -263,7 +278,7 @@ export function moveDashboardLayoutItem(
 export function resizeDashboardLayoutItem(
   items: readonly DashboardLayoutItem[],
   widgetId: DashboardWidgetId,
-  size: DashboardWidgetSize
+  size: DashboardWidgetSize,
 ): DashboardLayoutItem[] {
   const item = items.find((candidate) => candidate.widget_id === widgetId);
   const catalog = DASHBOARD_WIDGET_BY_ID.get(widgetId);
@@ -289,7 +304,7 @@ function safeIdentityPart(value: unknown): string | null {
 export function buildDashboardLayoutKey(
   userId: unknown,
   studioId: unknown,
-  role: unknown
+  role: unknown,
 ): string | null {
   const normalizedRole = normalizeDashboardWidgetRole(role);
   const safeUserId = safeIdentityPart(userId);
@@ -303,10 +318,10 @@ export function buildDashboardLayoutKey(
 
 function defaultItems(role: unknown): DashboardLayoutItem[] {
   const normalizedRole = normalizeDashboardWidgetRole(role);
-  const candidates = DASHBOARD_WIDGET_CATALOG
-    .filter((entry) => entry.fixed || (
-      normalizedRole !== null && entry.defaultRoles.includes(normalizedRole)
-    ))
+  const candidates = DASHBOARD_WIDGET_CATALOG.filter(
+    (entry) =>
+      entry.fixed || (normalizedRole !== null && entry.defaultRoles.includes(normalizedRole)),
+  )
     .filter((entry) => isDashboardWidgetEntitled(entry, role))
     .map((entry) => ({ widget_id: entry.id, size: entry.defaultSize }));
   return packDashboardLayoutItems(candidates, DASHBOARD_LAYOUT_COLUMNS, false);
@@ -350,9 +365,9 @@ function parseRemovedIds(value: unknown, role: unknown): DashboardWidgetId[] {
 export function reconcileDashboardLayout(value: unknown, role: unknown): DashboardLayout {
   const fallback = buildDefaultDashboardLayout(role);
   if (
-    !isObject(value)
-    || (value.version !== 1 && value.version !== DASHBOARD_LAYOUT_VERSION)
-    || !Array.isArray(value.items)
+    !isObject(value) ||
+    (value.version !== 1 && value.version !== DASHBOARD_LAYOUT_VERSION) ||
+    !Array.isArray(value.items)
   ) {
     return fallback;
   }
@@ -374,21 +389,25 @@ export function reconcileDashboardLayout(value: unknown, role: unknown): Dashboa
 
     seen.add(entry.id);
     removed.delete(entry.id);
-    const mappedSize = typeof candidate.size === "string" && LEGACY_SIZE_MAP[candidate.size]
-      ? LEGACY_SIZE_MAP[candidate.size]
-      : candidate.size;
-    const size = isDashboardWidgetSize(mappedSize) && entry.allowedSizes.includes(mappedSize)
-      ? mappedSize
-      : entry.defaultSize;
+    const mappedSize =
+      typeof candidate.size === "string" && LEGACY_SIZE_MAP[candidate.size]
+        ? LEGACY_SIZE_MAP[candidate.size]
+        : candidate.size;
+    const size =
+      isDashboardWidgetSize(mappedSize) && entry.allowedSizes.includes(mappedSize)
+        ? mappedSize
+        : entry.defaultSize;
     candidates.push({
       widget_id: entry.id,
       size,
-      column: value.version === DASHBOARD_LAYOUT_VERSION && isGridCoordinate(candidate.column)
-        ? candidate.column
-        : undefined,
-      row: value.version === DASHBOARD_LAYOUT_VERSION && isDashboardRow(candidate.row, size)
-        ? candidate.row
-        : undefined,
+      column:
+        value.version === DASHBOARD_LAYOUT_VERSION && isGridCoordinate(candidate.column)
+          ? candidate.column
+          : undefined,
+      row:
+        value.version === DASHBOARD_LAYOUT_VERSION && isDashboardRow(candidate.row, size)
+          ? candidate.row
+          : undefined,
     });
   }
 
@@ -401,21 +420,25 @@ export function reconcileDashboardLayout(value: unknown, role: unknown): Dashboa
         candidates.unshift({ ...fixedItem, size: fixedEntry.defaultSize, column: 0, row: 0 });
       }
     } else {
-      candidates.unshift({ widget_id: fixedEntry.id, size: fixedEntry.defaultSize, column: 0, row: 0 });
+      candidates.unshift({
+        widget_id: fixedEntry.id,
+        size: fixedEntry.defaultSize,
+        column: 0,
+        row: 0,
+      });
       seen.add(fixedEntry.id);
     }
   }
 
   for (const entry of DASHBOARD_WIDGET_CATALOG) {
     const normalizedRole = normalizeDashboardWidgetRole(role);
-    const isDefault = entry.fixed || (
-      normalizedRole !== null && entry.defaultRoles.includes(normalizedRole)
-    );
+    const isDefault =
+      entry.fixed || (normalizedRole !== null && entry.defaultRoles.includes(normalizedRole));
     if (
-      isDefault
-      && isDashboardWidgetEntitled(entry, role)
-      && !seen.has(entry.id)
-      && !removed.has(entry.id)
+      isDefault &&
+      isDashboardWidgetEntitled(entry, role) &&
+      !seen.has(entry.id) &&
+      !removed.has(entry.id)
     ) {
       seen.add(entry.id);
       candidates.push({ widget_id: entry.id, size: entry.defaultSize });
@@ -443,7 +466,7 @@ function browserStorage(): DashboardLayoutStorage | null {
 
 export function readDashboardLayout(
   storage: DashboardLayoutStorage | null | undefined,
-  identity: DashboardLayoutIdentity
+  identity: DashboardLayoutIdentity,
 ): DashboardLayoutReadResult {
   const fallback = buildDefaultDashboardLayout(identity.role);
   const key = buildDashboardLayoutKey(identity.userId, identity.studioId, identity.role);
@@ -458,9 +481,9 @@ export function readDashboardLayout(
     }
     const parsed = JSON.parse(raw) as unknown;
     if (
-      !isObject(parsed)
-      || (parsed.version !== 1 && parsed.version !== DASHBOARD_LAYOUT_VERSION)
-      || !Array.isArray(parsed.items)
+      !isObject(parsed) ||
+      (parsed.version !== 1 && parsed.version !== DASHBOARD_LAYOUT_VERSION) ||
+      !Array.isArray(parsed.items)
     ) {
       return { layout: fallback, source: "default" };
     }
@@ -485,7 +508,7 @@ export function writeDashboardLayout(
   storage: DashboardLayoutStorage | null | undefined,
   identity: DashboardLayoutIdentity,
   value: unknown,
-  options: { now?: () => string; createClientId?: () => string } = {}
+  options: { now?: () => string; createClientId?: () => string } = {},
 ): { ok: boolean; layout: DashboardLayout } {
   const reconciled = reconcileDashboardLayout(value, identity.role);
   const key = buildDashboardLayoutKey(identity.userId, identity.studioId, identity.role);
@@ -511,7 +534,7 @@ export function getBrowserDashboardLayoutStorage(): DashboardLayoutStorage | nul
 }
 
 export function purgeDashboardLayoutNamespace(
-  storage: DashboardLayoutStorage | null | undefined = browserStorage()
+  storage: DashboardLayoutStorage | null | undefined = browserStorage(),
 ): number {
   if (!storage) {
     return 0;
@@ -541,10 +564,7 @@ export function purgeDashboardLayoutNamespace(
   return removed;
 }
 
-export function getAddableDashboardWidgets(
-  role: unknown,
-  items: readonly DashboardLayoutItem[]
-) {
+export function getAddableDashboardWidgets(role: unknown, items: readonly DashboardLayoutItem[]) {
   const present = new Set(items.map((item) => item.widget_id));
   return getDashboardWidgetCatalogForRole(role).filter((entry) => !present.has(entry.id));
 }

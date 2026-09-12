@@ -15,7 +15,7 @@ describe("page dataset readiness", () => {
         loadedDataset({ error: null, label: "Students", loaded: true }),
         loadedDataset({ error: null, label: "Programs", loaded: true }),
       ]),
-      { error: null, status: "ready" }
+      { error: null, status: "ready" },
     );
   });
 
@@ -25,7 +25,7 @@ describe("page dataset readiness", () => {
         loadedDataset({ error: null, label: "Students", loaded: true }),
         { error: null, label: "Schedule", status: "loading" },
       ]),
-      { error: null, status: "loading" }
+      { error: null, status: "loading" },
     );
   });
 
@@ -34,47 +34,56 @@ describe("page dataset readiness", () => {
       resolvePageDatasetReadiness([
         { error: "request timed out", label: "Schedule", status: "error" },
       ]),
-      { error: "Schedule: request timed out", status: "error" }
+      { error: "Schedule: request timed out", status: "error" },
     );
   });
 
   it("requires a live dashboard summary but not a preview summary", () => {
     assert.deepEqual(
       dashboardSummaryDataset({ hasSummary: false, isPreviewMode: false, loaded: false }),
-      { error: null, label: "Dashboard summary", status: "loading" }
+      { error: null, label: "Dashboard summary", status: "loading" },
     );
     assert.equal(
       dashboardSummaryDataset({ hasSummary: false, isPreviewMode: false, loaded: true }).status,
-      "error"
+      "error",
     );
     assert.equal(
       dashboardSummaryDataset({ hasSummary: false, isPreviewMode: true, loaded: true }).status,
-      "ready"
+      "ready",
     );
   });
 
   it("requires eligibility for the selected ladder without blocking studios that have none", () => {
-    assert.equal(eligibilityDataset({
-      currentLadderId: null,
-      error: null,
-      loadedLadderId: null,
-      pendingLadderId: null,
-    }).status, "ready");
-    assert.equal(eligibilityDataset({
-      currentLadderId: "ladder-1",
-      error: null,
-      loadedLadderId: null,
-      pendingLadderId: "ladder-1",
-    }).status, "loading");
-    assert.deepEqual(eligibilityDataset({
-      currentLadderId: "ladder-1",
-      error: "Eligibility timed out",
-      loadedLadderId: null,
-      pendingLadderId: null,
-    }), {
-      error: "Eligibility timed out",
-      label: "Belt eligibility",
-      status: "error",
-    });
+    assert.equal(
+      eligibilityDataset({
+        currentLadderId: null,
+        error: null,
+        loadedLadderId: null,
+        pendingLadderId: null,
+      }).status,
+      "ready",
+    );
+    assert.equal(
+      eligibilityDataset({
+        currentLadderId: "ladder-1",
+        error: null,
+        loadedLadderId: null,
+        pendingLadderId: "ladder-1",
+      }).status,
+      "loading",
+    );
+    assert.deepEqual(
+      eligibilityDataset({
+        currentLadderId: "ladder-1",
+        error: "Eligibility timed out",
+        loadedLadderId: null,
+        pendingLadderId: null,
+      }),
+      {
+        error: "Eligibility timed out",
+        label: "Belt eligibility",
+        status: "error",
+      },
+    );
   });
 });

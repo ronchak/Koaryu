@@ -59,7 +59,7 @@ describe("marketing content contract", () => {
 
     assert.deepEqual(
       landingPageContent.chapters.map(({ id, scene, kind }) => [id, scene, kind]),
-      expectedStops
+      expectedStops,
     );
     assert.deepEqual(JSON.parse(JSON.stringify(landingPageContent)), landingPageContent);
     assertPlainJsonValue(landingPageContent);
@@ -73,11 +73,11 @@ describe("marketing content contract", () => {
         "/features/belt-tracking",
         "/features/attendance",
         "/features/billing",
-      ]
+      ],
     );
     assert.deepEqual(
       chapter("features").rows.map((row) => row.title),
-      chapter("features").rows.map((row) => row.detail.eyebrow)
+      chapter("features").rows.map((row) => row.detail.eyebrow),
     );
     assert.deepEqual(
       chapter("use-cases").rows.map((row) => row.detail.href),
@@ -87,11 +87,11 @@ describe("marketing content contract", () => {
         "/use-cases/trial-to-enrollment",
         "/use-cases/tuition-cleanup",
         "/use-cases/belt-test-readiness",
-      ]
+      ],
     );
     assert.deepEqual(
       chapter("explore").routes.map((route) => route.href),
-      ["/features", "/use-cases", "/studio-types/family-martial-arts-schools"]
+      ["/features", "/use-cases", "/studio-types/family-martial-arts-schools"],
     );
     assert.equal(chapter("features").rows.length, 4);
     assert.equal(chapter("use-cases").rows.length, 5);
@@ -100,17 +100,26 @@ describe("marketing content contract", () => {
     assert.equal(chapter("pricing").setupAction.href, "/signup");
     assert.equal(chapter("about").principles.length, 3);
     assert.equal(chapter("about").link.href, "/about");
-    assert.deepEqual(chapter("faq").groups.map((group) => group.items.length), [4, 4, 5, 5, 4, 4]);
+    assert.deepEqual(
+      chapter("faq").groups.map((group) => group.items.length),
+      [4, 4, 5, 5, 4, 4],
+    );
     assert.deepEqual(
       chapter("begin").footerLinks.map((link) => link.href),
-      ["/explore", "/features", "/use-cases", "/about", "/terms", "/privacy"]
+      ["/explore", "/features", "/use-cases", "/about", "/terms", "/privacy"],
     );
 
     const serialized = JSON.stringify(landingPageContent);
     assert.match(serialized, /Student-roster CSV import supports program and current-belt mapping/);
-    assert.match(serialized, /Ordered ladders support class-count, time-at-rank, and instructor-approval requirements/);
+    assert.match(
+      serialized,
+      /Ordered ladders support class-count, time-at-rank, and instructor-approval requirements/,
+    );
     assert.doesNotMatch(serialized, /CSV import is planned/);
-    assert.doesNotMatch(serialized, /Are configurable belt ladders planned|The plan covers ordered ranks/);
+    assert.doesNotMatch(
+      serialized,
+      /Are configurable belt ladders planned|The plan covers ordered ranks/,
+    );
     assert.match(serialized, /web-first/);
     assert.match(serialized, /Maybe\. SMS brings cost/);
     assert.match(serialized, /before activating payments/);
@@ -147,7 +156,10 @@ describe("marketing content contract", () => {
 
     const billingPage = featurePages.find((page) => page.slug === "billing");
     assert.ok(billingPage);
-    assert.equal(billingPage.proof.find((item) => item.label === "Pricing")?.value, formatPublicPlatformPrice());
+    assert.equal(
+      billingPage.proof.find((item) => item.label === "Pricing")?.value,
+      formatPublicPlatformPrice(),
+    );
   });
 
   it("keeps the canonical source server-safe and free of component values", () => {
@@ -161,22 +173,22 @@ describe("marketing content contract", () => {
   it("retires the old landing composition after the complete Journey takes ownership", () => {
     const landingSource = readFileSync(
       join(frontendRoot, "src/components/marketing/landing-page.tsx"),
-      "utf8"
+      "utf8",
     );
     assert.match(landingSource, /<JourneyController>/);
     assert.match(landingSource, /<JourneyChapters\s*\/>/);
     assert.doesNotMatch(landingSource, /landing-page-legacy-content/);
-    assert.equal(
-      existsSync(join(frontendRoot, "src/lib/landing-page-legacy-content.ts")),
-      false
-    );
+    assert.equal(existsSync(join(frontendRoot, "src/lib/landing-page-legacy-content.ts")), false);
     assert.equal(existsSync(join(frontendRoot, "src/app/page.module.css")), false);
   });
 
   it("preserves the provider-write availability boundary", () => {
     const source = readFileSync(join(frontendRoot, "src/lib/marketing-pages.ts"), "utf8");
     assert.match(source, /live outbound provider changes remain disabled/);
-    assert.match(source, /Plan, payer, autopay, invoice-lifecycle, refund, and Connect changes are currently unavailable/);
+    assert.match(
+      source,
+      /Plan, payer, autopay, invoice-lifecycle, refund, and Connect changes are currently unavailable/,
+    );
     assert.match(source, /without presenting unsupported provider changes as complete/);
   });
 });

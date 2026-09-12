@@ -22,12 +22,14 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
 
     def test_invalidated_checkout_completion_cancels_subscription_without_clearing_comp(self):
         token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "status": "incomplete",
-            "comped": True,
-            "metadata": {"core_checkout_epoch": 2},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "status": "incomplete",
+                "comped": True,
+                "metadata": {"core_checkout_epoch": 2},
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
         canceled = []
@@ -37,60 +39,70 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 canceled.append(payload["subscription_id"])
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "id": "evt_invalidated",
-                "created": 100,
-                "type": "checkout.session.completed",
-                "data": {"object": {
-                    "id": "cs_invalidated",
-                    "customer": "cus_123",
-                    "subscription": "sub_invalidated",
-                    "payment_status": "paid",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
+            service.project_subscription_event(
+                {
+                    "id": "evt_invalidated",
+                    "created": 100,
+                    "type": "checkout.session.completed",
+                    "data": {
+                        "object": {
+                            "id": "cs_invalidated",
+                            "customer": "cus_123",
+                            "subscription": "sub_invalidated",
+                            "payment_status": "paid",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
                     },
-                }},
-            })
+                }
+            )
 
         self.assertEqual(canceled, ["sub_invalidated"])
         self.assertTrue(rows[0]["comped"])
         self.assertIsNone(rows[0].get("stripe_subscription_id"))
         self.assertEqual(
-            rows[0]["metadata"]["core_checkout_compensations"]
-            ["sub_invalidated"]["state"],
+            rows[0]["metadata"]["core_checkout_compensations"]["sub_invalidated"]["state"],
             "required",
         )
 
     def test_exact_legacy_checkout_session_survives_database_first_cutover(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_customer_id": "cus_legacy",
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {
-                "core_checkout_session": {
-                    "id": "cs_legacy",
-                    "url": "https://checkout.stripe.test/legacy",
-                    "expires_at": 9999999999,
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_customer_id": "cus_legacy",
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {
+                    "core_checkout_session": {
+                        "id": "cs_legacy",
+                        "url": "https://checkout.stripe.test/legacy",
+                        "expires_at": 9999999999,
+                    },
                 },
-            },
-        }]
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
 
-        service.project_subscription_event({
-            "created": 100,
-            "type": "checkout.session.completed",
-            "data": {"object": {
-                "id": "cs_legacy",
-                "customer": "cus_legacy",
-                "subscription": "sub_legacy",
-                "payment_status": "paid",
-                "metadata": {"studio_id": "studio_1"},
-            }},
-        }, hydrate_subscription=False)
+        service.project_subscription_event(
+            {
+                "created": 100,
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "id": "cs_legacy",
+                        "customer": "cus_legacy",
+                        "subscription": "sub_legacy",
+                        "payment_status": "paid",
+                        "metadata": {"studio_id": "studio_1"},
+                    }
+                },
+            },
+            hydrate_subscription=False,
+        )
 
         self.assertEqual(rows[0]["stripe_subscription_id"], "sub_legacy")
         self.assertEqual(rows[0]["status"], "incomplete")
@@ -98,28 +110,32 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
 
     def test_checkout_completion_replay_preserves_durable_acceptance(self):
         token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "status": "incomplete",
-            "comped": False,
-            "metadata": self.published_checkout(token),
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "status": "incomplete",
+                "comped": False,
+                "metadata": self.published_checkout(token),
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
         event = {
             "created": 100,
             "type": "checkout.session.completed",
-            "data": {"object": {
-                "id": "cs_accepted",
-                "customer": "cus_123",
-                "subscription": "sub_accepted",
-                "payment_status": "paid",
-                "metadata": {
-                    "studio_id": "studio_1",
-                    "core_checkout_reservation_token": token,
-                    "core_checkout_epoch": "1",
-                },
-            }},
+            "data": {
+                "object": {
+                    "id": "cs_accepted",
+                    "customer": "cus_123",
+                    "subscription": "sub_accepted",
+                    "payment_status": "paid",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }
+            },
         }
 
         service.project_subscription_event(event, hydrate_subscription=False)
@@ -142,29 +158,31 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
             "accepted_subscription_id": "sub_old",
             "completed_event_created": 100,
         }
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_customer_id": "cus_123",
-            "stripe_subscription_id": "sub_new",
-            "status": "active",
-            "comped": False,
-            "last_stripe_event_created": 200,
-            "metadata": {
-                "core_trial_consumed": True,
-                "core_subscription_event_created": 200,
-                "core_invoice_payment_event_created": 200,
-                "core_checkout_epoch": 2,
-                "core_checkout_acceptances": {"sub_old": archived},
-                "core_checkout_session": {
-                    "state": "published",
-                    "token": new_token,
-                    "epoch": 2,
-                    "id": "cs_new",
-                    "url": "https://checkout.stripe.test/new",
-                    "expires_at": 9999999999,
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_customer_id": "cus_123",
+                "stripe_subscription_id": "sub_new",
+                "status": "active",
+                "comped": False,
+                "last_stripe_event_created": 200,
+                "metadata": {
+                    "core_trial_consumed": True,
+                    "core_subscription_event_created": 200,
+                    "core_invoice_payment_event_created": 200,
+                    "core_checkout_epoch": 2,
+                    "core_checkout_acceptances": {"sub_old": archived},
+                    "core_checkout_session": {
+                        "state": "published",
+                        "token": new_token,
+                        "epoch": 2,
+                        "id": "cs_new",
+                        "url": "https://checkout.stripe.test/new",
+                        "expires_at": 9999999999,
+                    },
                 },
-            },
-        }]
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
 
@@ -175,31 +193,35 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         checkout_event = {
             "created": 201,
             "type": "checkout.session.completed",
-            "data": {"object": {
-                "id": "cs_old",
-                "customer": "cus_123",
-                "subscription": "sub_old",
-                "payment_status": "paid",
-                "metadata": {
-                    "studio_id": "studio_1",
-                    "core_checkout_reservation_token": old_token,
-                    "core_checkout_epoch": "1",
-                },
-            }},
+            "data": {
+                "object": {
+                    "id": "cs_old",
+                    "customer": "cus_123",
+                    "subscription": "sub_old",
+                    "payment_status": "paid",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": old_token,
+                        "core_checkout_epoch": "1",
+                    },
+                }
+            },
         }
         subscription_event = {
             "created": 202,
             "type": "customer.subscription.updated",
-            "data": {"object": {
-                "id": "sub_old",
-                "customer": "cus_123",
-                "status": "canceled",
-                "metadata": {
-                    "studio_id": "studio_1",
-                    "core_checkout_reservation_token": old_token,
-                    "core_checkout_epoch": "1",
-                },
-            }},
+            "data": {
+                "object": {
+                    "id": "sub_old",
+                    "customer": "cus_123",
+                    "status": "canceled",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": old_token,
+                        "core_checkout_epoch": "1",
+                    },
+                }
+            },
         }
 
         with patch(
@@ -213,8 +235,7 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["status"], "active")
         self.assertEqual(rows[0]["metadata"]["core_checkout_session"]["id"], "cs_new")
         self.assertEqual(
-            rows[0]["metadata"]["core_checkout_acceptances"]["sub_old"]
-            ["accepted_subscription_id"],
+            rows[0]["metadata"]["core_checkout_acceptances"]["sub_old"]["accepted_subscription_id"],
             "sub_old",
         )
 
@@ -232,48 +253,54 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
             {
                 "created": 100,
                 "type": "checkout.session.completed",
-                "data": {"object": {
-                    "id": "cs_comped",
-                    "customer": "cus_123",
-                    "subscription": "sub_comped",
-                    "payment_status": "paid",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
-                    },
-                }},
+                "data": {
+                    "object": {
+                        "id": "cs_comped",
+                        "customer": "cus_123",
+                        "subscription": "sub_comped",
+                        "payment_status": "paid",
+                        "metadata": {
+                            "studio_id": "studio_1",
+                            "core_checkout_reservation_token": token,
+                            "core_checkout_epoch": "1",
+                        },
+                    }
+                },
             },
             {
                 "created": 100,
                 "type": "customer.subscription.updated",
-                "data": {"object": {
-                    "id": "sub_comped",
-                    "customer": "cus_123",
-                    "status": "active",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
-                    },
-                }},
+                "data": {
+                    "object": {
+                        "id": "sub_comped",
+                        "customer": "cus_123",
+                        "status": "active",
+                        "metadata": {
+                            "studio_id": "studio_1",
+                            "core_checkout_reservation_token": token,
+                            "core_checkout_epoch": "1",
+                        },
+                    }
+                },
             },
         ]
 
         for event in events:
             with self.subTest(event_type=event["type"]):
-                rows = [{
-                    "studio_id": "studio_1",
-                    "stripe_customer_id": "cus_123",
-                    "stripe_subscription_id": None,
-                    "status": "comped",
-                    "comped": True,
-                    "metadata": {
-                        "core_trial_consumed": True,
-                        "core_checkout_epoch": 2,
-                        "core_checkout_acceptances": {"sub_comped": dict(archived)},
-                    },
-                }]
+                rows = [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_customer_id": "cus_123",
+                        "stripe_subscription_id": None,
+                        "status": "comped",
+                        "comped": True,
+                        "metadata": {
+                            "core_trial_consumed": True,
+                            "core_checkout_epoch": 2,
+                            "core_checkout_acceptances": {"sub_comped": dict(archived)},
+                        },
+                    }
+                ]
                 service = self.service(rows)
                 service.settings.CORE_SELF_CHECKOUT_ENABLED = True
                 canceled = []
@@ -282,7 +309,9 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                     def cancel_core_subscription(self, **payload):
                         canceled.append(payload["subscription_id"])
 
-                with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+                with patch(
+                    "app.services.platform_billing_service.StripeService", FakeStripeService
+                ):
                     service.project_subscription_event(event, hydrate_subscription=False)
 
                 self.assertEqual(canceled, ["sub_comped"])
@@ -303,58 +332,66 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
             {
                 "created": 300,
                 "type": "checkout.session.completed",
-                "data": {"object": {
-                    "id": "cs_override",
-                    "customer": "cus_123",
-                    "subscription": "sub_override",
-                    "payment_status": "paid",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
-                    },
-                }},
+                "data": {
+                    "object": {
+                        "id": "cs_override",
+                        "customer": "cus_123",
+                        "subscription": "sub_override",
+                        "payment_status": "paid",
+                        "metadata": {
+                            "studio_id": "studio_1",
+                            "core_checkout_reservation_token": token,
+                            "core_checkout_epoch": "1",
+                        },
+                    }
+                },
             },
             {
                 "created": 301,
                 "type": "customer.subscription.updated",
-                "data": {"object": {
-                    "id": "sub_override",
-                    "customer": "cus_123",
-                    "status": "active",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
-                    },
-                }},
+                "data": {
+                    "object": {
+                        "id": "sub_override",
+                        "customer": "cus_123",
+                        "status": "active",
+                        "metadata": {
+                            "studio_id": "studio_1",
+                            "core_checkout_reservation_token": token,
+                            "core_checkout_epoch": "1",
+                        },
+                    }
+                },
             },
         ]
 
         for event in events:
             with self.subTest(event_type=event["type"]):
-                rows = [{
-                    "studio_id": "studio_1",
-                    "stripe_customer_id": "cus_123",
-                    "stripe_subscription_id": "sub_override",
-                    "status": "active",
-                    "comped": True,
-                    "metadata": {
-                        "core_checkout_epoch": 2,
-                        "core_checkout_acceptances": {"sub_override": dict(archived)},
-                        "comp": {
-                            "state": "granted",
-                            "live_subscription_override": True,
-                            "live_subscription_override_subscription_id": "sub_override",
+                rows = [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_customer_id": "cus_123",
+                        "stripe_subscription_id": "sub_override",
+                        "status": "active",
+                        "comped": True,
+                        "metadata": {
+                            "core_checkout_epoch": 2,
+                            "core_checkout_acceptances": {"sub_override": dict(archived)},
+                            "comp": {
+                                "state": "granted",
+                                "live_subscription_override": True,
+                                "live_subscription_override_subscription_id": "sub_override",
+                            },
                         },
-                    },
-                }]
+                    }
+                ]
                 service = self.service(rows)
                 service.settings.CORE_SELF_CHECKOUT_ENABLED = True
 
                 class CancellationMustNotRun:
                     def cancel_core_subscription(self, **_payload):
-                        raise AssertionError("the explicitly retained subscription must not be canceled")
+                        raise AssertionError(
+                            "the explicitly retained subscription must not be canceled"
+                        )
 
                 with patch(
                     "app.services.platform_billing_service.StripeService",
@@ -383,52 +420,58 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
             {
                 "created": 300,
                 "type": "checkout.session.completed",
-                "data": {"object": {
-                    "id": "cs_override",
-                    "customer": "cus_123",
-                    "subscription": "sub_override",
-                    "payment_status": "paid",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
-                    },
-                }},
+                "data": {
+                    "object": {
+                        "id": "cs_override",
+                        "customer": "cus_123",
+                        "subscription": "sub_override",
+                        "payment_status": "paid",
+                        "metadata": {
+                            "studio_id": "studio_1",
+                            "core_checkout_reservation_token": token,
+                            "core_checkout_epoch": "1",
+                        },
+                    }
+                },
             },
             {
                 "created": 301,
                 "type": "customer.subscription.deleted",
-                "data": {"object": {
-                    "id": "sub_override",
-                    "customer": "cus_123",
-                    "status": "canceled",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
-                    },
-                }},
+                "data": {
+                    "object": {
+                        "id": "sub_override",
+                        "customer": "cus_123",
+                        "status": "canceled",
+                        "metadata": {
+                            "studio_id": "studio_1",
+                            "core_checkout_reservation_token": token,
+                            "core_checkout_epoch": "1",
+                        },
+                    }
+                },
             },
         ]
 
         for event in events:
             with self.subTest(event_type=event["type"]):
-                rows = [{
-                    "studio_id": "studio_1",
-                    "stripe_customer_id": "cus_123",
-                    "stripe_subscription_id": "sub_override",
-                    "status": "active",
-                    "comped": True,
-                    "metadata": {
-                        "core_checkout_epoch": 2,
-                        "core_checkout_acceptances": {"sub_override": dict(archived)},
-                        "comp": {
-                            "state": "granted",
-                            "live_subscription_override": True,
-                            "live_subscription_override_subscription_id": "sub_override",
+                rows = [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_customer_id": "cus_123",
+                        "stripe_subscription_id": "sub_override",
+                        "status": "active",
+                        "comped": True,
+                        "metadata": {
+                            "core_checkout_epoch": 2,
+                            "core_checkout_acceptances": {"sub_override": dict(archived)},
+                            "comp": {
+                                "state": "granted",
+                                "live_subscription_override": True,
+                                "live_subscription_override_subscription_id": "sub_override",
+                            },
                         },
-                    },
-                }]
+                    }
+                ]
                 service = self.service(rows)
                 service.settings.CORE_SELF_CHECKOUT_ENABLED = True
 
@@ -443,7 +486,9 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                     def cancel_core_subscription(self, **_payload):
                         raise AssertionError("the retained subscription remains authoritative")
 
-                with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+                with patch(
+                    "app.services.platform_billing_service.StripeService", FakeStripeService
+                ):
                     service.project_subscription_event(event)
 
                 self.assertTrue(rows[0]["comped"])
@@ -452,29 +497,35 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
 
     def test_tokenized_subscription_event_accepts_before_checkout_completion(self):
         token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "status": "incomplete",
-            "comped": False,
-            "metadata": self.published_checkout(token),
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "status": "incomplete",
+                "comped": False,
+                "metadata": self.published_checkout(token),
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
 
-        service.project_subscription_event({
-            "created": 90,
-            "type": "customer.subscription.created",
-            "data": {"object": {
-                "id": "sub_first",
-                "customer": "cus_123",
-                "status": "trialing",
-                "metadata": {
-                    "studio_id": "studio_1",
-                    "core_checkout_reservation_token": token,
-                    "core_checkout_epoch": "1",
+        service.project_subscription_event(
+            {
+                "created": 90,
+                "type": "customer.subscription.created",
+                "data": {
+                    "object": {
+                        "id": "sub_first",
+                        "customer": "cus_123",
+                        "status": "trialing",
+                        "metadata": {
+                            "studio_id": "studio_1",
+                            "core_checkout_reservation_token": token,
+                            "core_checkout_epoch": "1",
+                        },
+                    }
                 },
-            }},
-        })
+            }
+        )
 
         self.assertEqual(rows[0]["stripe_subscription_id"], "sub_first")
         self.assertEqual(
@@ -484,12 +535,14 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
 
     def test_invalidated_tokenized_subscription_event_preserves_comp(self):
         token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "status": "comped",
-            "comped": True,
-            "metadata": {"core_checkout_epoch": 2},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "status": "comped",
+                "comped": True,
+                "metadata": {"core_checkout_epoch": 2},
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
         canceled = []
@@ -499,20 +552,24 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 canceled.append(payload["subscription_id"])
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "created": 100,
-                "type": "customer.subscription.created",
-                "data": {"object": {
-                    "id": "sub_invalid",
-                    "customer": "cus_123",
-                    "status": "active",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
+            service.project_subscription_event(
+                {
+                    "created": 100,
+                    "type": "customer.subscription.created",
+                    "data": {
+                        "object": {
+                            "id": "sub_invalid",
+                            "customer": "cus_123",
+                            "status": "active",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
                     },
-                }},
-            })
+                }
+            )
 
         self.assertEqual(canceled, ["sub_invalid"])
         self.assertTrue(rows[0]["comped"])
@@ -556,24 +613,30 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
             def retrieve_subscription(self, _subscription_id):
                 raise RuntimeError("sk_live_secret req_sensitive")
 
-        with self.assertLogs("app.services.platform_billing_service", level="ERROR") as captured_logs:
+        with self.assertLogs(
+            "app.services.platform_billing_service", level="ERROR"
+        ) as captured_logs:
             with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-                service.project_subscription_event({
-                    "id": "evt_sensitive",
-                    "created": 100,
-                    "type": "checkout.session.completed",
-                    "data": {
-                        "object": {
-                            "customer": "cus_sensitive",
-                            "subscription": "sub_sensitive",
-                            "payment_status": "paid",
-                            "metadata": {"studio_id": "studio_sensitive"},
+                service.project_subscription_event(
+                    {
+                        "id": "evt_sensitive",
+                        "created": 100,
+                        "type": "checkout.session.completed",
+                        "data": {
+                            "object": {
+                                "customer": "cus_sensitive",
+                                "subscription": "sub_sensitive",
+                                "payment_status": "paid",
+                                "metadata": {"studio_id": "studio_sensitive"},
+                            },
                         },
-                    },
-                })
+                    }
+                )
 
         log_record = captured_logs.records[0]
-        self.assertRegex(log_record.getMessage(), r"reference=[0-9a-f]{32}; error_type=RuntimeError$")
+        self.assertRegex(
+            log_record.getMessage(), r"reference=[0-9a-f]{32}; error_type=RuntimeError$"
+        )
         self.assertIsNone(log_record.exc_info)
         for sensitive_key in ("studio_id", "stripe_subscription_id"):
             self.assertNotIn(sensitive_key, log_record.__dict__)
@@ -593,7 +656,9 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         service = self.service(rows)
         service.supabase.tables["studios"] = []
 
-        with self.assertLogs("app.services.platform_billing_service", level="WARNING") as captured_logs:
+        with self.assertLogs(
+            "app.services.platform_billing_service", level="WARNING"
+        ) as captured_logs:
             service.project_subscription_event(self.subscription_event(created=100))
 
         self.assertEqual(rows, [])
@@ -609,44 +674,52 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         service = self.service(rows)
         service.supabase.tables["studios"] = []
 
-        with self.assertLogs("app.services.platform_billing_service", level="WARNING") as captured_logs:
+        with self.assertLogs(
+            "app.services.platform_billing_service", level="WARNING"
+        ) as captured_logs:
             with patch("app.services.platform_billing_service.StripeService") as stripe_service:
                 service.project_subscription_event(self.checkout_event(created=100))
 
         self.assertEqual(rows, [])
         stripe_service.assert_not_called()
-        self.assertIn("event_type=checkout.session.completed", captured_logs.records[0].getMessage())
+        self.assertIn(
+            "event_type=checkout.session.completed", captured_logs.records[0].getMessage()
+        )
 
     def test_project_subscription_uses_item_period_bounds_and_clears_trial_fields(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "trialing",
-            "trial_start": "old",
-            "trial_end": "old",
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "trialing",
+                "trial_start": "old",
+                "trial_end": "old",
+            }
+        ]
         service = self.service(rows)
 
-        service.project_subscription_event({
-            "type": "customer.subscription.updated",
-            "data": {
-                "object": {
-                    "id": "sub_123",
-                    "customer": {"id": "cus_123"},
-                    "status": "active",
-                    "trial_start": None,
-                    "trial_end": None,
-                    "cancel_at_period_end": True,
-                    "items": {
-                        "data": [
-                            {"current_period_start": 200, "current_period_end": 400},
-                            {"current_period_start": 100, "current_period_end": 500},
-                        ],
+        service.project_subscription_event(
+            {
+                "type": "customer.subscription.updated",
+                "data": {
+                    "object": {
+                        "id": "sub_123",
+                        "customer": {"id": "cus_123"},
+                        "status": "active",
+                        "trial_start": None,
+                        "trial_end": None,
+                        "cancel_at_period_end": True,
+                        "items": {
+                            "data": [
+                                {"current_period_start": 200, "current_period_end": 400},
+                                {"current_period_start": 100, "current_period_end": 500},
+                            ],
+                        },
                     },
                 },
-            },
-        })
+            }
+        )
 
         self.assertEqual(rows[0]["stripe_subscription_id"], "sub_123")
         self.assertEqual(rows[0]["stripe_customer_id"], "cus_123")
@@ -657,31 +730,35 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertTrue(rows[0]["cancel_at_period_end"])
 
     def test_subscription_webhook_allows_nullable_trial_field_clearing(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "trialing",
-            "trial_start": "old",
-            "trial_end": "old",
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "trialing",
+                "trial_start": "old",
+                "trial_end": "old",
+            }
+        ]
         service = self.service(rows)
 
-        service.project_subscription_event({
-            "type": "customer.subscription.updated",
-            "data": {
-                "object": {
-                    "id": "sub_123",
-                    "customer": "cus_123",
-                    "status": "active",
-                    "trial_start": None,
-                    "trial_end": None,
-                    "current_period_start": 100,
-                    "current_period_end": 200,
-                    "cancel_at_period_end": False,
+        service.project_subscription_event(
+            {
+                "type": "customer.subscription.updated",
+                "data": {
+                    "object": {
+                        "id": "sub_123",
+                        "customer": "cus_123",
+                        "status": "active",
+                        "trial_start": None,
+                        "trial_end": None,
+                        "current_period_start": 100,
+                        "current_period_end": 200,
+                        "cancel_at_period_end": False,
+                    },
                 },
-            },
-        })
+            }
+        )
 
         self.assertIsNone(rows[0]["trial_start"])
         self.assertIsNone(rows[0]["trial_end"])
@@ -689,115 +766,133 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["current_period_end"], "1970-01-01T00:03:20+00:00")
 
     def test_stale_subscription_webhook_does_not_regress_core_status(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "active",
-            "last_stripe_event_created": 200,
-            "metadata": {"core_subscription_event_created": 200},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "active",
+                "last_stripe_event_created": 200,
+                "metadata": {"core_subscription_event_created": 200},
+            }
+        ]
         service = self.service(rows)
 
-        service.project_subscription_event({
-            "id": "evt_old",
-            "created": 100,
-            "type": "customer.subscription.updated",
-            "data": {
-                "object": {
-                    "id": "sub_123",
-                    "customer": "cus_123",
-                    "status": "canceled",
+        service.project_subscription_event(
+            {
+                "id": "evt_old",
+                "created": 100,
+                "type": "customer.subscription.updated",
+                "data": {
+                    "object": {
+                        "id": "sub_123",
+                        "customer": "cus_123",
+                        "status": "canceled",
+                    },
                 },
-            },
-        })
+            }
+        )
 
         self.assertEqual(rows[0]["status"], "active")
         self.assertEqual(rows[0]["last_stripe_event_created"], 200)
 
     def test_legacy_last_event_watermark_still_blocks_stale_subscription_webhook(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "active",
-            "last_stripe_event_created": 200,
-            "metadata": {},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "active",
+                "last_stripe_event_created": 200,
+                "metadata": {},
+            }
+        ]
         service = self.service(rows)
 
-        service.project_subscription_event({
-            "id": "evt_old",
-            "created": 100,
-            "type": "customer.subscription.updated",
-            "data": {
-                "object": {
-                    "id": "sub_123",
-                    "customer": "cus_123",
-                    "status": "canceled",
+        service.project_subscription_event(
+            {
+                "id": "evt_old",
+                "created": 100,
+                "type": "customer.subscription.updated",
+                "data": {
+                    "object": {
+                        "id": "sub_123",
+                        "customer": "cus_123",
+                        "status": "canceled",
+                    },
                 },
-            },
-        })
+            }
+        )
 
         self.assertEqual(rows[0]["status"], "active")
         self.assertEqual(rows[0]["last_stripe_event_created"], 200)
 
     def test_newer_subscription_webhook_records_event_created(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "trialing",
-            "last_stripe_event_created": 100,
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "trialing",
+                "last_stripe_event_created": 100,
+            }
+        ]
         service = self.service(rows)
 
-        service.project_subscription_event({
-            "id": "evt_new",
-            "created": 200,
-            "type": "customer.subscription.updated",
-            "data": {
-                "object": {
-                    "id": "sub_123",
-                    "customer": "cus_123",
-                    "status": "active",
+        service.project_subscription_event(
+            {
+                "id": "evt_new",
+                "created": 200,
+                "type": "customer.subscription.updated",
+                "data": {
+                    "object": {
+                        "id": "sub_123",
+                        "customer": "cus_123",
+                        "status": "active",
+                    },
                 },
-            },
-        })
+            }
+        )
 
         self.assertEqual(rows[0]["status"], "active")
         self.assertEqual(rows[0]["last_stripe_event_created"], 200)
         self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
 
     def test_invoice_event_does_not_make_subscription_update_stale(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "trialing",
-            "last_stripe_event_created": 100,
-            "metadata": {"core_subscription_event_created": 100},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "trialing",
+                "last_stripe_event_created": 100,
+                "metadata": {"core_subscription_event_created": 100},
+            }
+        ]
         service = self.service(rows)
 
-        service.project_subscription_event({
-            "id": "evt_invoice",
-            "created": 300,
-            "type": "invoice.paid",
-            "data": {"object": {"subscription": "sub_123", "customer": "cus_123"}},
-        })
-        service.project_subscription_event({
-            "id": "evt_subscription",
-            "created": 200,
-            "type": "customer.subscription.updated",
-            "data": {
-                "object": {
-                    "id": "sub_123",
-                    "customer": "cus_123",
-                    "status": "active",
+        service.project_subscription_event(
+            {
+                "id": "evt_invoice",
+                "created": 300,
+                "type": "invoice.paid",
+                "data": {"object": {"subscription": "sub_123", "customer": "cus_123"}},
+            }
+        )
+        service.project_subscription_event(
+            {
+                "id": "evt_subscription",
+                "created": 200,
+                "type": "customer.subscription.updated",
+                "data": {
+                    "object": {
+                        "id": "sub_123",
+                        "customer": "cus_123",
+                        "status": "active",
+                    },
                 },
-            },
-        })
+            }
+        )
 
         self.assertEqual(rows[0]["last_payment_status"], "paid")
         self.assertEqual(rows[0]["status"], "active")
@@ -805,56 +900,66 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["metadata"]["core_invoice_payment_event_created"], 300)
 
     def test_stale_invoice_payment_event_does_not_regress_last_payment_status(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "active",
-            "last_payment_status": "paid",
-            "metadata": {"core_invoice_payment_event_created": 300},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "active",
+                "last_payment_status": "paid",
+                "metadata": {"core_invoice_payment_event_created": 300},
+            }
+        ]
         service = self.service(rows)
 
-        service.project_subscription_event({
-            "id": "evt_invoice_old",
-            "created": 200,
-            "type": "invoice.payment_failed",
-            "data": {"object": {"subscription": "sub_123", "customer": "cus_123"}},
-        })
+        service.project_subscription_event(
+            {
+                "id": "evt_invoice_old",
+                "created": 200,
+                "type": "invoice.payment_failed",
+                "data": {"object": {"subscription": "sub_123", "customer": "cus_123"}},
+            }
+        )
 
         self.assertEqual(rows[0]["last_payment_status"], "paid")
         self.assertEqual(rows[0]["metadata"]["core_invoice_payment_event_created"], 300)
 
     def test_newer_invoice_payment_event_advances_last_payment_status(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "active",
-            "last_payment_status": "failed",
-            "metadata": {"core_invoice_payment_event_created": 100},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "active",
+                "last_payment_status": "failed",
+                "metadata": {"core_invoice_payment_event_created": 100},
+            }
+        ]
         service = self.service(rows)
 
-        service.project_subscription_event({
-            "id": "evt_invoice_new",
-            "created": 200,
-            "type": "invoice.paid",
-            "data": {"object": {"subscription": "sub_123", "customer": "cus_123"}},
-        })
+        service.project_subscription_event(
+            {
+                "id": "evt_invoice_new",
+                "created": 200,
+                "type": "invoice.paid",
+                "data": {"object": {"subscription": "sub_123", "customer": "cus_123"}},
+            }
+        )
 
         self.assertEqual(rows[0]["last_payment_status"], "paid")
         self.assertEqual(rows[0]["metadata"]["core_invoice_payment_event_created"], 200)
 
     def test_old_checkout_completion_does_not_regress_newer_subscription_status(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "active",
-            "last_stripe_event_created": 200,
-            "metadata": {"core_subscription_event_created": 200},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "active",
+                "last_stripe_event_created": 200,
+                "metadata": {"core_subscription_event_created": 200},
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -862,36 +967,40 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 raise RuntimeError("temporary Stripe retrieve failure")
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "id": "evt_checkout_old",
-                "created": 100,
-                "type": "checkout.session.completed",
-                "data": {
-                    "object": {
-                        "customer": "cus_123",
-                        "subscription": "sub_123",
-                        "payment_status": "paid",
-                        "metadata": {"studio_id": "studio_1"},
+            service.project_subscription_event(
+                {
+                    "id": "evt_checkout_old",
+                    "created": 100,
+                    "type": "checkout.session.completed",
+                    "data": {
+                        "object": {
+                            "customer": "cus_123",
+                            "subscription": "sub_123",
+                            "payment_status": "paid",
+                            "metadata": {"studio_id": "studio_1"},
+                        },
                     },
-                },
-            })
+                }
+            )
 
         self.assertEqual(rows[0]["status"], "active")
         self.assertEqual(rows[0]["last_payment_status"], "paid")
         self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
 
     def test_old_checkout_completion_does_not_regress_newer_invoice_payment_status(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "active",
-            "last_payment_status": "failed",
-            "metadata": {
-                "core_subscription_event_created": 100,
-                "core_invoice_payment_event_created": 300,
-            },
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "active",
+                "last_payment_status": "failed",
+                "metadata": {
+                    "core_subscription_event_created": 100,
+                    "core_invoice_payment_event_created": 300,
+                },
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -899,33 +1008,37 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 raise RuntimeError("temporary Stripe retrieve failure")
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "id": "evt_checkout_old_payment",
-                "created": 200,
-                "type": "checkout.session.completed",
-                "data": {
-                    "object": {
-                        "customer": "cus_123",
-                        "subscription": "sub_123",
-                        "payment_status": "paid",
-                        "metadata": {"studio_id": "studio_1"},
+            service.project_subscription_event(
+                {
+                    "id": "evt_checkout_old_payment",
+                    "created": 200,
+                    "type": "checkout.session.completed",
+                    "data": {
+                        "object": {
+                            "customer": "cus_123",
+                            "subscription": "sub_123",
+                            "payment_status": "paid",
+                            "metadata": {"studio_id": "studio_1"},
+                        },
                     },
-                },
-            })
+                }
+            )
 
         self.assertEqual(rows[0]["status"], "incomplete")
         self.assertEqual(rows[0]["last_payment_status"], "failed")
         self.assertEqual(rows[0]["metadata"]["core_invoice_payment_event_created"], 300)
 
     def test_old_checkout_subscription_fetch_does_not_lower_subscription_watermark(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "active",
-            "last_stripe_event_created": 200,
-            "metadata": {"core_subscription_event_created": 200},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "active",
+                "last_stripe_event_created": 200,
+                "metadata": {"core_subscription_event_created": 200},
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -938,53 +1051,61 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 }
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "id": "evt_checkout_old",
-                "created": 100,
-                "type": "checkout.session.completed",
-                "data": {
-                    "object": {
-                        "customer": "cus_123",
-                        "subscription": "sub_123",
-                        "payment_status": "paid",
-                        "metadata": {"studio_id": "studio_1"},
+            service.project_subscription_event(
+                {
+                    "id": "evt_checkout_old",
+                    "created": 100,
+                    "type": "checkout.session.completed",
+                    "data": {
+                        "object": {
+                            "customer": "cus_123",
+                            "subscription": "sub_123",
+                            "payment_status": "paid",
+                            "metadata": {"studio_id": "studio_1"},
+                        },
                     },
-                },
-            })
+                }
+            )
 
         self.assertEqual(rows[0]["status"], "active")
         self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
 
     def test_old_checkout_completion_does_not_replace_newer_subscription_identity(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_new",
-            "stripe_customer_id": "cus_new",
-            "status": "active",
-            "comped": False,
-            "last_stripe_event_created": 200,
-            "metadata": {"core_subscription_event_created": 200},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_new",
+                "stripe_customer_id": "cus_new",
+                "status": "active",
+                "comped": False,
+                "last_stripe_event_created": 200,
+                "metadata": {"core_subscription_event_created": 200},
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
             def retrieve_subscription(self, subscription_id):
-                raise AssertionError("stale checkout should not retrieve and project subscription details")
+                raise AssertionError(
+                    "stale checkout should not retrieve and project subscription details"
+                )
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "id": "evt_checkout_old",
-                "created": 100,
-                "type": "checkout.session.completed",
-                "data": {
-                    "object": {
-                        "customer": "cus_old",
-                        "subscription": "sub_old",
-                        "payment_status": "paid",
-                        "metadata": {"studio_id": "studio_1"},
+            service.project_subscription_event(
+                {
+                    "id": "evt_checkout_old",
+                    "created": 100,
+                    "type": "checkout.session.completed",
+                    "data": {
+                        "object": {
+                            "customer": "cus_old",
+                            "subscription": "sub_old",
+                            "payment_status": "paid",
+                            "metadata": {"studio_id": "studio_1"},
+                        },
                     },
-                },
-            })
+                }
+            )
 
         self.assertEqual(rows[0]["stripe_customer_id"], "cus_new")
         self.assertEqual(rows[0]["stripe_subscription_id"], "sub_new")
@@ -992,14 +1113,16 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["last_payment_status"], "paid")
 
     def test_fresh_checkout_completion_marks_subscription_watermark_before_retrieve(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": None,
-            "stripe_customer_id": "cus_123",
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": None,
+                "stripe_customer_id": "cus_123",
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {},
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -1007,32 +1130,36 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 raise RuntimeError("temporary Stripe retrieve failure")
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "id": "evt_checkout_new",
-                "created": 200,
-                "type": "checkout.session.completed",
-                "data": {
-                    "object": {
-                        "customer": "cus_123",
-                        "subscription": "sub_new",
-                        "payment_status": "paid",
-                        "metadata": {"studio_id": "studio_1"},
+            service.project_subscription_event(
+                {
+                    "id": "evt_checkout_new",
+                    "created": 200,
+                    "type": "checkout.session.completed",
+                    "data": {
+                        "object": {
+                            "customer": "cus_123",
+                            "subscription": "sub_new",
+                            "payment_status": "paid",
+                            "metadata": {"studio_id": "studio_1"},
+                        },
                     },
-                },
-            })
-            service.project_subscription_event({
-                "id": "evt_subscription_old",
-                "created": 100,
-                "type": "customer.subscription.updated",
-                "data": {
-                    "object": {
-                        "id": "sub_new",
-                        "customer": "cus_123",
-                        "status": "canceled",
-                        "metadata": {"studio_id": "studio_1"},
+                }
+            )
+            service.project_subscription_event(
+                {
+                    "id": "evt_subscription_old",
+                    "created": 100,
+                    "type": "customer.subscription.updated",
+                    "data": {
+                        "object": {
+                            "id": "sub_new",
+                            "customer": "cus_123",
+                            "status": "canceled",
+                            "metadata": {"studio_id": "studio_1"},
+                        },
                     },
-                },
-            })
+                }
+            )
 
         self.assertEqual(rows[0]["stripe_subscription_id"], "sub_new")
         self.assertEqual(rows[0]["status"], "incomplete")
@@ -1040,20 +1167,22 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
 
     def test_checkout_completion_preserves_pending_cleanup_with_event_watermarks(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": None,
-            "stripe_customer_id": "cus_123",
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {
-                "core_checkout_session": {
-                    "id": "cs_pending",
-                    "url": "https://checkout.stripe.test/session",
-                    "expires_at": 9999999999,
-                }
-            },
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": None,
+                "stripe_customer_id": "cus_123",
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {
+                    "core_checkout_session": {
+                        "id": "cs_pending",
+                        "url": "https://checkout.stripe.test/session",
+                        "expires_at": 9999999999,
+                    }
+                },
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -1061,19 +1190,21 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 raise RuntimeError("temporary Stripe retrieve failure")
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "id": "evt_checkout_cleanup",
-                "created": 200,
-                "type": "checkout.session.completed",
-                "data": {
-                    "object": {
-                        "customer": "cus_123",
-                        "subscription": "sub_new",
-                        "payment_status": "paid",
-                        "metadata": {"studio_id": "studio_1"},
+            service.project_subscription_event(
+                {
+                    "id": "evt_checkout_cleanup",
+                    "created": 200,
+                    "type": "checkout.session.completed",
+                    "data": {
+                        "object": {
+                            "customer": "cus_123",
+                            "subscription": "sub_new",
+                            "payment_status": "paid",
+                            "metadata": {"studio_id": "studio_1"},
+                        },
                     },
-                },
-            })
+                }
+            )
 
         self.assertNotIn("core_checkout_session", rows[0]["metadata"])
         self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
@@ -1094,22 +1225,28 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                             "status": subscription_status,
                             "trial_start": 50 if subscription_status == "trialing" else None,
                             "trial_end": 100 if subscription_status == "trialing" else None,
-                            "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
+                            "items": {
+                                "data": [{"current_period_start": 100, "current_period_end": 200}]
+                            },
                             "cancel_at_period_end": False,
                         }
 
-                with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-                    service.project_subscription_event({
-                        "type": "checkout.session.completed",
-                        "data": {
-                            "object": {
-                                "customer": "cus_123",
-                                "subscription": "sub_123",
-                                "payment_status": "paid",
-                                "metadata": {"studio_id": "studio_1"},
+                with patch(
+                    "app.services.platform_billing_service.StripeService", FakeStripeService
+                ):
+                    service.project_subscription_event(
+                        {
+                            "type": "checkout.session.completed",
+                            "data": {
+                                "object": {
+                                    "customer": "cus_123",
+                                    "subscription": "sub_123",
+                                    "payment_status": "paid",
+                                    "metadata": {"studio_id": "studio_1"},
+                                },
                             },
-                        },
-                    })
+                        }
+                    )
 
                 self.assertEqual(rows[0]["status"], subscription_status)
                 self.assertEqual(rows[0]["stripe_customer_id"], "cus_123")
@@ -1152,19 +1289,21 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         }
         for label, (event, hydrate_subscription) in events.items():
             with self.subTest(label):
-                rows = [{
-                    "studio_id": "studio_1",
-                    "stripe_subscription_id": "sub_123",
-                    "stripe_customer_id": "cus_123",
-                    "status": "canceled",
-                    "comped": True,
-                    "metadata": {
-                        "comp": {
-                            "state": "granted",
-                            "at": "1970-01-01T00:01:40+00:00",
+                rows = [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_subscription_id": "sub_123",
+                        "stripe_customer_id": "cus_123",
+                        "status": "canceled",
+                        "comped": True,
+                        "metadata": {
+                            "comp": {
+                                "state": "granted",
+                                "at": "1970-01-01T00:01:40+00:00",
+                            },
                         },
-                    },
-                }]
+                    }
+                ]
                 service = self.service(rows)
 
                 service.project_subscription_event(
@@ -1185,14 +1324,16 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 )
 
     def test_non_object_comp_provenance_is_absent_and_does_not_wedge_clear(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "canceled",
-            "comped": True,
-            "metadata": {"comp": ["legacy"]},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "canceled",
+                "comped": True,
+                "metadata": {"comp": ["legacy"]},
+            }
+        ]
         service = self.service(rows)
 
         service.project_subscription_event(
@@ -1204,19 +1345,21 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["metadata"]["comp"], ["legacy"])
 
     def test_postgres_incompatible_grant_offset_preserves_comp_in_fake(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "canceled",
-            "comped": True,
-            "metadata": {
-                "comp": {
-                    "state": "granted",
-                    "at": "2026-07-27T00:00:00+16:00",
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "canceled",
+                "comped": True,
+                "metadata": {
+                    "comp": {
+                        "state": "granted",
+                        "at": "2026-07-27T00:00:00+16:00",
+                    },
                 },
-            },
-        }]
+            }
+        ]
         service = self.service(rows)
 
         service.project_subscription_event(
@@ -1227,19 +1370,21 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertTrue(rows[0]["comped"])
 
     def test_out_of_range_event_timestamp_preserves_comp_in_fake(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "canceled",
-            "comped": True,
-            "metadata": {
-                "comp": {
-                    "state": "granted",
-                    "at": "2026-07-27T00:00:00+00:00",
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "canceled",
+                "comped": True,
+                "metadata": {
+                    "comp": {
+                        "state": "granted",
+                        "at": "2026-07-27T00:00:00+00:00",
+                    },
                 },
-            },
-        }]
+            }
+        ]
         service = self.service(rows)
 
         service.project_subscription_event(
@@ -1266,14 +1411,16 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         }
         for label, (event, hydrate_subscription, expected_comped) in events.items():
             with self.subTest(label):
-                rows = [{
-                    "studio_id": "studio_1",
-                    "stripe_subscription_id": "sub_123",
-                    "stripe_customer_id": "cus_123",
-                    "status": "canceled",
-                    "comped": False,
-                    "metadata": {},
-                }]
+                rows = [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_subscription_id": "sub_123",
+                        "stripe_customer_id": "cus_123",
+                        "status": "canceled",
+                        "comped": False,
+                        "metadata": {},
+                    }
+                ]
                 service = self.service(rows)
 
                 def grant_after_webhook_read(_rows):
@@ -1299,25 +1446,26 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 event_update = next(
                     entry["update"]
                     for entry in service.supabase.query_log
-                    if entry["table"] == "studio_subscriptions"
-                    and entry["update"] is not None
+                    if entry["table"] == "studio_subscriptions" and entry["update"] is not None
                 )
                 self.assertNotIn("comped", event_update)
 
     def test_comp_clear_rpc_failure_propagates_after_projection_for_webhook_retry(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "canceled",
-            "comped": True,
-            "metadata": {
-                "comp": {
-                    "state": "granted",
-                    "at": "1970-01-01T00:01:40+00:00",
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "canceled",
+                "comped": True,
+                "metadata": {
+                    "comp": {
+                        "state": "granted",
+                        "at": "1970-01-01T00:01:40+00:00",
+                    },
                 },
-            },
-        }]
+            }
+        ]
         service = self.service(rows)
 
         def fail_comp_clear(_params):
@@ -1347,12 +1495,14 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         that the studio was owed anything.
         """
         token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {"core_checkout_epoch": 2},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {"core_checkout_epoch": 2},
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
         canceled = []
@@ -1372,26 +1522,28 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         service._record_core_subscription_rejection = tracked
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "created": 100,
-                "type": "customer.subscription.updated",
-                "data": {"object": {
-                    "id": "sub_invalid_paid",
-                    "customer": "cus_123",
-                    "status": "active",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
+            service.project_subscription_event(
+                {
+                    "created": 100,
+                    "type": "customer.subscription.updated",
+                    "data": {
+                        "object": {
+                            "id": "sub_invalid_paid",
+                            "customer": "cus_123",
+                            "status": "active",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
                     },
-                }},
-            })
+                }
+            )
 
         self.assertEqual(canceled, ["sub_invalid_paid"])
         self.assertEqual(order, ["receipt", "cancel"])
-        receipt = (
-            rows[0]["metadata"]["core_checkout_compensations"]["sub_invalid_paid"]
-        )
+        receipt = rows[0]["metadata"]["core_checkout_compensations"]["sub_invalid_paid"]
         self.assertEqual(receipt["state"], "required")
         self.assertEqual(receipt["reason"], "invalid_paid_subscription_event")
         self.assertIsNone(receipt["session_id"])
@@ -1399,12 +1551,14 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
     def test_invalid_trialing_subscription_event_cancels_without_compensation(self):
         """A trial was never invoiced, so cancelling it owes the studio nothing."""
         token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {"core_checkout_epoch": 2},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {"core_checkout_epoch": 2},
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
         canceled = []
@@ -1414,20 +1568,24 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 canceled.append(payload["subscription_id"])
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "created": 100,
-                "type": "customer.subscription.updated",
-                "data": {"object": {
-                    "id": "sub_invalid_trial",
-                    "customer": "cus_123",
-                    "status": "trialing",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
+            service.project_subscription_event(
+                {
+                    "created": 100,
+                    "type": "customer.subscription.updated",
+                    "data": {
+                        "object": {
+                            "id": "sub_invalid_trial",
+                            "customer": "cus_123",
+                            "status": "trialing",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
                     },
-                }},
-            })
+                }
+            )
 
         self.assertEqual(canceled, ["sub_invalid_trial"])
         self.assertNotIn(
@@ -1438,22 +1596,24 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
     def test_checkout_completion_refines_session_on_existing_compensation(self):
         """A receipt first recorded without a session accepts the later session."""
         token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {
-                "core_checkout_epoch": 2,
-                "core_checkout_compensations": {
-                    "sub_invalid_paid": {
-                        "state": "required",
-                        "session_id": None,
-                        "subscription_id": "sub_invalid_paid",
-                        "reason": "invalid_paid_subscription_event",
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {
+                    "core_checkout_epoch": 2,
+                    "core_checkout_compensations": {
+                        "sub_invalid_paid": {
+                            "state": "required",
+                            "session_id": None,
+                            "subscription_id": "sub_invalid_paid",
+                            "reason": "invalid_paid_subscription_event",
+                        },
                     },
                 },
-            },
-        }]
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
 
@@ -1462,24 +1622,26 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 pass
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "created": 100,
-                "type": "checkout.session.completed",
-                "data": {"object": {
-                    "id": "cs_invalid",
-                    "customer": "cus_123",
-                    "subscription": "sub_invalid_paid",
-                    "payment_status": "paid",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
+            service.project_subscription_event(
+                {
+                    "created": 100,
+                    "type": "checkout.session.completed",
+                    "data": {
+                        "object": {
+                            "id": "cs_invalid",
+                            "customer": "cus_123",
+                            "subscription": "sub_invalid_paid",
+                            "payment_status": "paid",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
                     },
-                }},
-            })
+                }
+            )
 
-        receipt = (
-            rows[0]["metadata"]["core_checkout_compensations"]["sub_invalid_paid"]
-        )
+        receipt = rows[0]["metadata"]["core_checkout_compensations"]["sub_invalid_paid"]
         self.assertEqual(receipt["session_id"], "cs_invalid")
         self.assertEqual(receipt["reason"], "invalid_paid_subscription_event")

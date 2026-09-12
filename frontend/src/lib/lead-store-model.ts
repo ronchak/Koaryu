@@ -10,7 +10,7 @@ export function buildPreviewLead(
     idFactory: () => string;
     now?: Date;
     businessDate?: string;
-  }
+  },
 ): Lead {
   const nowIso = now.toISOString();
 
@@ -40,7 +40,7 @@ export function applyLeadUpdate(
   leads: Lead[],
   id: string,
   data: Partial<Lead>,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): Lead[] {
   return leads.map((lead) =>
     lead.id === id
@@ -49,7 +49,7 @@ export function applyLeadUpdate(
           ...data,
           updated_at: nowIso,
         }
-      : lead
+      : lead,
   );
 }
 
@@ -76,7 +76,7 @@ export function buildPreviewLeadConversion(
     idFactory: () => string;
     now?: Date;
     businessDate?: string;
-  }
+  },
 ): { lead: Lead; student: Student; studentId: string } {
   const studentId = idFactory();
   const nowIso = now.toISOString();
@@ -129,19 +129,20 @@ export function buildPreviewLeadConversion(
     ],
     notes: lead.notes,
     tags: ["converted-lead"],
-    guardians: lead.is_minor && guardianName
-      ? [
-          {
-            id: idFactory(),
-            first_name: guardianName.firstName,
-            last_name: guardianName.lastName,
-            email: lead.guardian_email,
-            phone: lead.guardian_phone,
-            relation: undefined,
-            is_primary_contact: true,
-          },
-        ]
-      : [],
+    guardians:
+      lead.is_minor && guardianName
+        ? [
+            {
+              id: idFactory(),
+              first_name: guardianName.firstName,
+              last_name: guardianName.lastName,
+              email: lead.guardian_email,
+              phone: lead.guardian_phone,
+              relation: undefined,
+              is_primary_contact: true,
+            },
+          ]
+        : [],
     created_at: nowIso,
     updated_at: nowIso,
   };

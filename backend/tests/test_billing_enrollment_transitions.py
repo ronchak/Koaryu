@@ -76,13 +76,15 @@ def _authorize_recovery(facade, workflow, *, outcome):
         lease_owner="recovery_worker",
     )
     stored_intent = facade.supabase.billing_enrollment_transition_intents[intent["id"]]
-    stored_intent.update({
-        "state": "recovery_authorized",
-        "recovery_actor_id": "recovery_admin",
-        "recovery_proof_sha256": "a" * 64,
-        "recovery_outcome": outcome,
-        "revision": stored_intent["revision"] + 1,
-    })
+    stored_intent.update(
+        {
+            "state": "recovery_authorized",
+            "recovery_actor_id": "recovery_admin",
+            "recovery_proof_sha256": "a" * 64,
+            "recovery_outcome": outcome,
+            "revision": stored_intent["revision"] + 1,
+        }
+    )
     return recovered
 
 
@@ -98,9 +100,7 @@ def _authorize_schedule_step_recovery(facade, workflow, *, step_order, outcome):
         step_order,
         plan["steps"][step_order - 1],
     )
-    stored = facade.supabase.billing_provider_step_plans[operation["id"]]["steps"][
-        step_order - 1
-    ]
+    stored = facade.supabase.billing_provider_step_plans[operation["id"]]["steps"][step_order - 1]
     BillingProviderStepCoordinator(facade.supabase).authorize_step_recovery(
         step,
         stored,
@@ -120,12 +120,16 @@ def test_whole_schedule_replays_without_second_provider_mutation():
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
 
-    first = asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "schedule-key", "staff_requested"
-    ))
-    replay = asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "schedule-key", "staff_requested"
-    ))
+    first = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "schedule-key", "staff_requested"
+        )
+    )
+    replay = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "schedule-key", "staff_requested"
+        )
+    )
 
     assert first["intent"]["state"] == replay["intent"]["state"] == "scheduled"
     assert len(_TransitionStripe.subscription_update_calls) == 1
@@ -136,9 +140,10 @@ def test_whole_schedule_replays_without_second_provider_mutation():
     assert rpc_names.index("claim_billing_subscription_quantity_sync") < rpc_names.index(
         "claim_billing_enrollment_transition_v1"
     )
-    assert "stripe_quantity_sync_lock" not in facade.supabase.tables[
-        "billing_subscriptions"
-    ][0]["metadata"]
+    assert (
+        "stripe_quantity_sync_lock"
+        not in facade.supabase.tables["billing_subscriptions"][0]["metadata"]
+    )
 
 
 def test_completed_schedule_replay_repairs_failed_audit_without_provider_io():
@@ -155,9 +160,11 @@ def test_completed_schedule_replay_repairs_failed_audit_without_provider_io():
 
     facade.supabase.before_insert = fail_first_audit
     with pytest.raises(RuntimeError, match="audit unavailable"):
-        asyncio.run(manager.schedule_period_end(
-            "enrollment_1", "studio_1", "actor_1", "audit-repair", "staff_requested"
-        ))
+        asyncio.run(
+            manager.schedule_period_end(
+                "enrollment_1", "studio_1", "actor_1", "audit-repair", "staff_requested"
+            )
+        )
 
     provider_counts = (
         len(_TransitionStripe.retrieve_calls),
@@ -165,12 +172,16 @@ def test_completed_schedule_replay_repairs_failed_audit_without_provider_io():
         len(_TransitionStripe.subscription_cancel_calls),
         len(_TransitionStripe.delete_item_calls),
     )
-    replay = asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "audit-repair", "staff_requested"
-    ))
-    second_replay = asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "audit-repair", "staff_requested"
-    ))
+    replay = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "audit-repair", "staff_requested"
+        )
+    )
+    second_replay = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "audit-repair", "staff_requested"
+        )
+    )
 
     assert replay["intent"]["state"] == second_replay["intent"]["state"] == "scheduled"
     assert len(facade.supabase.tables["audit_logs"]) == 1
@@ -191,17 +202,21 @@ def test_completed_schedule_replay_rejects_wrong_existing_audit_identity():
     facade = _TransitionFacade(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
-    asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "audit-mismatch", "staff_requested"
-    ))
+    asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "audit-mismatch", "staff_requested"
+        )
+    )
     facade.supabase.tables["audit_logs"][0]["studio_id"] = "studio_other"
     provider_reads = len(_TransitionStripe.retrieve_calls)
     provider_writes = len(_TransitionStripe.subscription_update_calls)
 
     with pytest.raises(RuntimeError, match="audit_identity_mismatch"):
-        asyncio.run(manager.schedule_period_end(
-            "enrollment_1", "studio_1", "actor_1", "audit-mismatch", "staff_requested"
-        ))
+        asyncio.run(
+            manager.schedule_period_end(
+                "enrollment_1", "studio_1", "actor_1", "audit-mismatch", "staff_requested"
+            )
+        )
 
     assert len(_TransitionStripe.retrieve_calls) == provider_reads
     assert len(_TransitionStripe.subscription_update_calls) == provider_writes
@@ -234,12 +249,14 @@ def test_exact_legacy_audit_satisfies_each_completed_action_without_provider_io(
     operation["operation_type"] = operation_type
     if mutation == "revoke":
         intent["source_intent_id"] = "source_intent_1"
-        intent["request_sha256"] = stable_hash({
-            "version": 1,
-            "studio_id": "studio_1",
-            "source_intent_id": "source_intent_1",
-            "reason_code": "staff_requested",
-        })
+        intent["request_sha256"] = stable_hash(
+            {
+                "version": 1,
+                "studio_id": "studio_1",
+                "source_intent_id": "source_intent_1",
+                "reason_code": "staff_requested",
+            }
+        )
     elif mutation == "immediate":
         intent["request_sha256"] = workflow._request_hash(
             "studio_1", "enrollment_1", "immediate_cancel", "staff_requested"
@@ -247,9 +264,7 @@ def test_exact_legacy_audit_satisfies_each_completed_action_without_provider_io(
     operation["request_sha256"] = intent["provider_request_sha256"]
     facade.supabase.tables["audit_logs"] = []
 
-    workflow._audit_completed_transition(
-        intent, operation, actor_id="actor_1", mutation=mutation
-    )
+    workflow._audit_completed_transition(intent, operation, actor_id="actor_1", mutation=mutation)
     legacy = facade.supabase.tables["audit_logs"][0]
     legacy["id"] = f"legacy-{mutation}"
     provider_counts = (
@@ -258,9 +273,7 @@ def test_exact_legacy_audit_satisfies_each_completed_action_without_provider_io(
         len(_TransitionStripe.subscription_cancel_calls),
         len(_TransitionStripe.delete_item_calls),
     )
-    workflow._audit_completed_transition(
-        intent, operation, actor_id="actor_1", mutation=mutation
-    )
+    workflow._audit_completed_transition(intent, operation, actor_id="actor_1", mutation=mutation)
 
     assert len(facade.supabase.tables["audit_logs"]) == 1
     assert provider_counts == (
@@ -275,23 +288,27 @@ def test_duplicate_legacy_audits_fail_closed_without_deterministic_insert():
     facade = _TransitionFacade(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
-    asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "legacy-duplicate", "staff_requested"
-    ))
+    asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "legacy-duplicate", "staff_requested"
+        )
+    )
     original = facade.supabase.tables["audit_logs"].pop()
-    facade.supabase.tables["audit_logs"].extend([
-        {**copy.deepcopy(original), "id": "legacy-1"},
-        {**copy.deepcopy(original), "id": "legacy-2"},
-    ])
+    facade.supabase.tables["audit_logs"].extend(
+        [
+            {**copy.deepcopy(original), "id": "legacy-1"},
+            {**copy.deepcopy(original), "id": "legacy-2"},
+        ]
+    )
 
     with pytest.raises(RuntimeError, match="legacy_audit_ambiguous"):
-        asyncio.run(manager.schedule_period_end(
-            "enrollment_1", "studio_1", "actor_1", "legacy-duplicate", "staff_requested"
-        ))
+        asyncio.run(
+            manager.schedule_period_end(
+                "enrollment_1", "studio_1", "actor_1", "legacy-duplicate", "staff_requested"
+            )
+        )
 
-    assert {row["id"] for row in facade.supabase.tables["audit_logs"]} == {
-        "legacy-1", "legacy-2"
-    }
+    assert {row["id"] for row in facade.supabase.tables["audit_logs"]} == {"legacy-1", "legacy-2"}
 
 
 @pytest.mark.parametrize(
@@ -309,9 +326,11 @@ def test_malformed_legacy_audit_fails_closed_without_provider_io(mutate):
     facade = _TransitionFacade(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
-    asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "legacy-malformed", "staff_requested"
-    ))
+    asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "legacy-malformed", "staff_requested"
+        )
+    )
     legacy = facade.supabase.tables["audit_logs"][0]
     legacy["id"] = "legacy-malformed-id"
     mutate(legacy)
@@ -321,9 +340,11 @@ def test_malformed_legacy_audit_fails_closed_without_provider_io(mutate):
     )
 
     with pytest.raises(RuntimeError, match="audit_identity_mismatch"):
-        asyncio.run(manager.schedule_period_end(
-            "enrollment_1", "studio_1", "actor_1", "legacy-malformed", "staff_requested"
-        ))
+        asyncio.run(
+            manager.schedule_period_end(
+                "enrollment_1", "studio_1", "actor_1", "legacy-malformed", "staff_requested"
+            )
+        )
 
     assert len(facade.supabase.tables["audit_logs"]) == 1
     assert provider_counts == (
@@ -344,24 +365,25 @@ def test_audit_unique_race_rereads_and_validates_exact_winner_once():
             return
         raced = True
         rows.append(copy.deepcopy(payloads[0]))
-        raise PostgrestAPIError({
-            "code": "23505",
-            "message": "duplicate key",
-            "details": "",
-            "hint": "",
-        })
+        raise PostgrestAPIError(
+            {
+                "code": "23505",
+                "message": "duplicate key",
+                "details": "",
+                "hint": "",
+            }
+        )
 
     facade.supabase.before_insert = insert_race_winner
-    result = asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "audit-race", "staff_requested"
-    ))
+    result = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "audit-race", "staff_requested"
+        )
+    )
 
     assert result["intent"]["state"] == "scheduled"
     assert len(facade.supabase.tables["audit_logs"]) == 1
-    audit_queries = [
-        query for query in facade.supabase.query_log
-        if query["table"] == "audit_logs"
-    ]
+    audit_queries = [query for query in facade.supabase.query_log if query["table"] == "audit_logs"]
     assert sum(query["insert"] is None for query in audit_queries) == 4
 
 
@@ -369,9 +391,7 @@ def test_whole_schedule_cannot_insert_intent_while_activation_lock_is_held():
     facade = _TransitionFacade(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     workflow = _workflow(facade)
-    token = workflow.lifecycle._claim_subscription_quantity_sync_lock(
-        "studio_1", "group_1"
-    )
+    token = workflow.lifecycle._claim_subscription_quantity_sync_lock("studio_1", "group_1")
 
     try:
         with pytest.raises(HTTPException) as blocked:
@@ -383,9 +403,7 @@ def test_whole_schedule_cannot_insert_intent_while_activation_lock_is_held():
                 "staff_requested",
             )
     finally:
-        workflow.lifecycle._release_subscription_quantity_sync_lock(
-            "studio_1", "group_1", token
-        )
+        workflow.lifecycle._release_subscription_quantity_sync_lock("studio_1", "group_1", token)
 
     assert blocked.value.status_code == 409
     assert facade.supabase.billing_enrollment_transition_intents == {}
@@ -396,14 +414,18 @@ def test_transition_replay_is_bound_to_original_actor():
     facade = _TransitionFacade(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
-    asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "actor-bound", "staff_requested"
-    ))
+    asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "actor-bound", "staff_requested"
+        )
+    )
 
     with pytest.raises(HTTPException) as conflict:
-        asyncio.run(manager.schedule_period_end(
-            "enrollment_1", "studio_1", "actor_2", "actor-bound", "staff_requested"
-        ))
+        asyncio.run(
+            manager.schedule_period_end(
+                "enrollment_1", "studio_1", "actor_2", "actor-bound", "staff_requested"
+            )
+        )
 
     assert conflict.value.status_code == 409
     assert len(_TransitionStripe.subscription_update_calls) == 1
@@ -420,18 +442,22 @@ def test_immediate_item_delete_is_one_mutation_and_projects_only_target():
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
+    _TransitionStripe.subscriptions["sub_1"] = _provider(
+        items=[_item(), _item("si_2", price_id="price_2")]
     )
-    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item(), _item("si_2", price_id="price_2")])
 
     manager = _manager(facade)
-    result = asyncio.run(manager.cancel_immediate(
-        "enrollment_1", "studio_1", "actor_1", "immediate-key", "staff_requested"
-    ))
-    replay = asyncio.run(manager.cancel_immediate(
-        "enrollment_1", "studio_1", "actor_1", "immediate-key", "staff_requested"
-    ))
+    result = asyncio.run(
+        manager.cancel_immediate(
+            "enrollment_1", "studio_1", "actor_1", "immediate-key", "staff_requested"
+        )
+    )
+    replay = asyncio.run(
+        manager.cancel_immediate(
+            "enrollment_1", "studio_1", "actor_1", "immediate-key", "staff_requested"
+        )
+    )
 
     assert result["intent"]["state"] == replay["intent"]["state"] == "completed"
     assert len(_TransitionStripe.delete_item_calls) == 1
@@ -450,19 +476,23 @@ def test_immediate_replay_rejects_changed_reason_without_provider_retry():
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
+    _TransitionStripe.subscriptions["sub_1"] = _provider(
+        items=[_item(), _item("si_2", price_id="price_2")]
     )
-    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item(), _item("si_2", price_id="price_2")])
     manager = _manager(facade)
-    asyncio.run(manager.cancel_immediate(
-        "enrollment_1", "studio_1", "actor_1", "immediate-conflict", "staff_requested"
-    ))
+    asyncio.run(
+        manager.cancel_immediate(
+            "enrollment_1", "studio_1", "actor_1", "immediate-conflict", "staff_requested"
+        )
+    )
 
     with pytest.raises(HTTPException) as conflict:
-        asyncio.run(manager.cancel_immediate(
-            "enrollment_1", "studio_1", "actor_1", "immediate-conflict", "fraud_review"
-        ))
+        asyncio.run(
+            manager.cancel_immediate(
+                "enrollment_1", "studio_1", "actor_1", "immediate-conflict", "fraud_review"
+            )
+        )
 
     assert conflict.value.status_code == 409
     assert len(_TransitionStripe.delete_item_calls) == 1
@@ -475,13 +505,17 @@ def test_ambiguous_schedule_enters_reconciliation_and_same_key_does_not_retry():
     manager = _manager(facade)
 
     with pytest.raises(HTTPException) as first:
-        asyncio.run(manager.schedule_period_end(
-            "enrollment_1", "studio_1", "actor_1", "ambiguous-key", "staff_requested"
-        ))
+        asyncio.run(
+            manager.schedule_period_end(
+                "enrollment_1", "studio_1", "actor_1", "ambiguous-key", "staff_requested"
+            )
+        )
     with pytest.raises(HTTPException) as replay:
-        asyncio.run(manager.schedule_period_end(
-            "enrollment_1", "studio_1", "actor_1", "ambiguous-key", "staff_requested"
-        ))
+        asyncio.run(
+            manager.schedule_period_end(
+                "enrollment_1", "studio_1", "actor_1", "ambiguous-key", "staff_requested"
+            )
+        )
 
     assert first.value.status_code == 503
     assert replay.value.status_code == 409
@@ -609,9 +643,11 @@ def test_identity_drift_between_claim_and_mutation_reconciles_without_provider_w
     monkeypatch.setattr(_TransitionStripe, "retrieve_connected_subscription", retrieve_with_drift)
 
     with pytest.raises(HTTPException) as failed:
-        asyncio.run(_manager(facade).schedule_period_end(
-            "enrollment_1", "studio_1", "actor_1", "drift-key", "staff_requested"
-        ))
+        asyncio.run(
+            _manager(facade).schedule_period_end(
+                "enrollment_1", "studio_1", "actor_1", "drift-key", "staff_requested"
+            )
+        )
 
     assert failed.value.status_code == 503
     assert _TransitionStripe.subscription_update_calls == []
@@ -624,9 +660,11 @@ def test_whole_due_uses_readback_without_second_provider_mutation():
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
 
-    scheduled = asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "schedule-due", "staff_requested"
-    ))
+    scheduled = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "schedule-due", "staff_requested"
+        )
+    )
     _TransitionStripe.subscriptions["sub_1"]["status"] = "canceled"
     result = asyncio.run(manager.process_due_transitions(worker_id="worker_1", limit=25))
 
@@ -643,9 +681,11 @@ def test_whole_due_completes_after_cancellation_webhook_projects_first():
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
 
-    scheduled = asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "webhook-first-due", "staff_requested"
-    ))
+    scheduled = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "webhook-first-due", "staff_requested"
+        )
+    )
     _TransitionStripe.subscriptions["sub_1"]["status"] = "canceled"
     facade._project_subscription(
         copy.deepcopy(_TransitionStripe.subscriptions["sub_1"]),
@@ -689,9 +729,7 @@ def test_whole_due_schedulable_provider_stays_retryable_through_explicit_grace(
     elapsed,
 ):
     facade = _TransitionFacade(_tables())
-    _TransitionStripe.subscriptions["sub_1"] = _provider(
-        items=[_item()], status=provider_status
-    )
+    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()], status=provider_status)
     boundary = datetime.fromisoformat(PERIOD_END)
     workflow = _workflow(facade, now=boundary + elapsed)
     scheduled = workflow.schedule_period_end(
@@ -787,15 +825,17 @@ def test_item_provider_schedule_applies_before_due_readback_and_converges_source
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
+    _TransitionStripe.subscriptions["sub_1"] = _provider(
+        items=[_item(), _item("si_2", price_id="price_2")]
     )
-    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item(), _item("si_2", price_id="price_2")])
     manager = _manager(facade)
 
-    scheduled = asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "item-due", "staff_requested"
-    ))
+    scheduled = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "item-due", "staff_requested"
+        )
+    )
     _apply_scheduled_item_phase()
     result = asyncio.run(manager.process_due_transitions(worker_id="worker_1", limit=25))
     replay = asyncio.run(manager.process_due_transitions(worker_id="worker_1", limit=25))
@@ -808,9 +848,10 @@ def test_item_provider_schedule_applies_before_due_readback_and_converges_source
     assert len(_TransitionStripe.schedule_update_calls) == 1
     assert len(_TransitionStripe.schedule_release_calls) == 1
     assert _TransitionStripe.subscriptions["sub_1"]["schedule"] is None
-    assert facade.supabase.billing_enrollment_transition_intents[
-        scheduled["intent"]["id"]
-    ]["state"] == "completed"
+    assert (
+        facade.supabase.billing_enrollment_transition_intents[scheduled["intent"]["id"]]["state"]
+        == "completed"
+    )
     assert facade.supabase.tables["student_billing_enrollments"][0]["status"] == "canceled"
     assert facade.supabase.tables["student_billing_enrollments"][1]["status"] == "active"
 
@@ -826,35 +867,37 @@ def test_legacy_item_due_keeps_provider_mutation_owner_and_direct_execution_path
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
     manager = _manager(facade)
-    scheduled = asyncio.run(manager.schedule_period_end(
-        "enrollment_1",
-        "studio_1",
-        "actor_1",
-        "legacy-item-due",
-        "staff_requested",
-    ))
-    source = facade.supabase.billing_enrollment_transition_intents[
-        scheduled["intent"]["id"]
-    ]
-    source.update({
-        "provider_operation_id": None,
-        "provider_caller_request_key": None,
-        "provider_request_sha256": None,
-    })
+    scheduled = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1",
+            "studio_1",
+            "actor_1",
+            "legacy-item-due",
+            "staff_requested",
+        )
+    )
+    source = facade.supabase.billing_enrollment_transition_intents[scheduled["intent"]["id"]]
+    source.update(
+        {
+            "provider_operation_id": None,
+            "provider_caller_request_key": None,
+            "provider_request_sha256": None,
+        }
+    )
     _TransitionStripe.subscriptions["sub_1"]["schedule"] = None
     _TransitionStripe.schedules.clear()
 
-    result = asyncio.run(manager.process_due_transitions(
-        worker_id="legacy-worker",
-        limit=25,
-    ))
+    result = asyncio.run(
+        manager.process_due_transitions(
+            worker_id="legacy-worker",
+            limit=25,
+        )
+    )
 
     execute = next(
         intent
@@ -867,9 +910,7 @@ def test_legacy_item_due_keeps_provider_mutation_owner_and_direct_execution_path
         "reconciliation_required": 0,
         "failed": 0,
     }
-    assert execute["provider_caller_request_key"].startswith(
-        "enrollment-period-execute:"
-    )
+    assert execute["provider_caller_request_key"].startswith("enrollment-period-execute:")
     assert execute["provider_operation_id"] is not None
     assert len(_TransitionStripe.delete_item_calls) == 1
     assert source["state"] == execute["state"] == "completed"
@@ -886,9 +927,7 @@ def test_invoice_link_item_schedule_normalizes_real_subscription_invoice_setting
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")],
         collection_method="send_invoice",
@@ -896,13 +935,15 @@ def test_invoice_link_item_schedule_normalizes_real_subscription_invoice_setting
         default_payment_method=None,
     )
 
-    asyncio.run(_manager(facade).schedule_period_end(
-        "enrollment_1",
-        "studio_1",
-        "actor_1",
-        "invoice-link-item-schedule",
-        "staff_requested",
-    ))
+    asyncio.run(
+        _manager(facade).schedule_period_end(
+            "enrollment_1",
+            "studio_1",
+            "actor_1",
+            "invoice-link-item-schedule",
+            "staff_requested",
+        )
+    )
 
     schedule = next(iter(_TransitionStripe.schedules.values()))
     requested_phases = _TransitionStripe.schedule_update_calls[0]["phases"]
@@ -915,9 +956,7 @@ def test_invoice_link_item_schedule_normalizes_real_subscription_invoice_setting
         {"days_until_due": 7},
     ]
     assert schedule["default_settings"]["collection_method"] == "send_invoice"
-    assert schedule["default_settings"]["invoice_settings"] == {
-        "days_until_due": 7
-    }
+    assert schedule["default_settings"]["invoice_settings"] == {"days_until_due": 7}
     assert schedule["default_settings"]["application_fee_percent"] == 0.5
     assert [phase["collection_method"] for phase in schedule["phases"]] == [
         None,
@@ -940,21 +979,19 @@ def test_shared_item_rotation_webhook_does_not_split_family_before_due_cas():
         stripe_subscription_item_id="si_1",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    _TransitionStripe.subscriptions["sub_1"] = _provider(
-        items=[_item(quantity=2)]
-    )
+    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item(quantity=2)])
     manager = _manager(facade)
 
-    scheduled = asyncio.run(manager.schedule_period_end(
-        "enrollment_1",
-        "studio_1",
-        "actor_1",
-        "shared-item-webhook-before-due",
-        "staff_requested",
-    ))
-    schedule = _TransitionStripe.schedules[
-        _TransitionStripe.subscriptions["sub_1"]["schedule"]
-    ]
+    scheduled = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1",
+            "studio_1",
+            "actor_1",
+            "shared-item-webhook-before-due",
+            "staff_requested",
+        )
+    )
+    schedule = _TransitionStripe.schedules[_TransitionStripe.subscriptions["sub_1"]["schedule"]]
     future_metadata = schedule["phases"][1]["items"][0]["metadata"]
     assert "enrollment_id" not in future_metadata
     assert "student_id" not in future_metadata
@@ -971,10 +1008,12 @@ def test_shared_item_rotation_webhook_does_not_split_family_before_due_cas():
         "si_1",
     ]
 
-    result = asyncio.run(manager.process_due_transitions(
-        worker_id="worker_1",
-        limit=25,
-    ))
+    result = asyncio.run(
+        manager.process_due_transitions(
+            worker_id="worker_1",
+            limit=25,
+        )
+    )
 
     assert result == {
         "claimed": 1,
@@ -982,9 +1021,10 @@ def test_shared_item_rotation_webhook_does_not_split_family_before_due_cas():
         "reconciliation_required": 0,
         "failed": 0,
     }
-    assert facade.supabase.billing_enrollment_transition_intents[
-        scheduled["intent"]["id"]
-    ]["state"] == "completed"
+    assert (
+        facade.supabase.billing_enrollment_transition_intents[scheduled["intent"]["id"]]["state"]
+        == "completed"
+    )
     assert local[0]["status"] == "canceled"
     assert local[1]["status"] == "active"
     assert local[1]["stripe_subscription_item_id"] == "si_replacement_1"
@@ -1001,9 +1041,7 @@ def test_item_schedule_revoke_releases_exact_schedule_once_without_canceling_sub
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1033,9 +1071,10 @@ def test_item_schedule_revoke_releases_exact_schedule_once_without_canceling_sub
     assert len(_TransitionStripe.schedule_release_calls) == 1
     assert _TransitionStripe.subscription_cancel_calls == []
     assert _TransitionStripe.subscriptions["sub_1"]["schedule"] is None
-    assert facade.supabase.billing_enrollment_transition_intents[
-        scheduled["intent"]["id"]
-    ]["state"] == "revoked"
+    assert (
+        facade.supabase.billing_enrollment_transition_intents[scheduled["intent"]["id"]]["state"]
+        == "revoked"
+    )
 
 
 def test_attached_item_schedule_blocks_immediate_sibling_mutation():
@@ -1049,9 +1088,7 @@ def test_attached_item_schedule_blocks_immediate_sibling_mutation():
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1081,9 +1118,7 @@ def test_item_due_waits_for_provider_phase_through_grace_without_local_cancellat
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1198,7 +1233,11 @@ def test_item_schedule_step_reconcile_only_reads_exact_provider_state_without_re
 
     with pytest.raises(HTTPException) as ambiguous:
         workflow.schedule_period_end(
-            "enrollment_1", "studio_1", "actor_1", f"reconcile-only-{failed_step}", "staff_requested"
+            "enrollment_1",
+            "studio_1",
+            "actor_1",
+            f"reconcile-only-{failed_step}",
+            "staff_requested",
         )
     assert ambiguous.value.status_code == 503
     _authorize_schedule_step_recovery(
@@ -1249,9 +1288,7 @@ def test_item_schedule_create_policy_denial_terminally_rejects_without_provider_
 
     assert blocked.value.status_code == 409
     operation = next(iter(facade.supabase.billing_provider_operations.values()))
-    intent = next(
-        iter(facade.supabase.billing_enrollment_transition_intents.values())
-    )
+    intent = next(iter(facade.supabase.billing_enrollment_transition_intents.values()))
     steps = facade.supabase.billing_provider_step_plans[operation["id"]]["steps"]
     assert operation["state"] == "definitive_rejected"
     assert operation["error_code"] == "provider_mutation_blocked"
@@ -1329,9 +1366,7 @@ def test_item_due_replacement_item_id_rebinds_every_surviving_shared_enrollment(
         stripe_subscription_item_id="si_1",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    _TransitionStripe.subscriptions["sub_1"] = _provider(
-        items=[_item(quantity=2)]
-    )
+    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item(quantity=2)])
     boundary = datetime.fromisoformat(PERIOD_END)
     workflow = _workflow(
         facade,
@@ -1386,9 +1421,7 @@ def test_item_due_release_lost_response_converges_without_duplicate_release():
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1409,9 +1442,7 @@ def test_item_due_release_lost_response_converges_without_duplicate_release():
             "phases": [],
         }
     retrieve_count_before_due = len(_TransitionStripe.schedule_retrieve_calls)
-    _TransitionStripe.schedule_release_response_error_after = RuntimeError(
-        "release response lost"
-    )
+    _TransitionStripe.schedule_release_response_error_after = RuntimeError("release response lost")
 
     completed = workflow.process_due(worker_id="worker_1", limit=25)
     replay = workflow.process_due(worker_id="worker_2", limit=25)
@@ -1436,9 +1467,7 @@ def test_item_due_release_lost_response_converges_without_duplicate_release():
     assert _TransitionStripe.schedule_list_calls == []
     assert {
         call["schedule_id"]
-        for call in _TransitionStripe.schedule_retrieve_calls[
-            retrieve_count_before_due:
-        ]
+        for call in _TransitionStripe.schedule_retrieve_calls[retrieve_count_before_due:]
     } == {"sub_sched_1"}
 
 
@@ -1453,9 +1482,7 @@ def test_item_due_reclaim_after_release_before_completion_does_not_release_twice
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1499,9 +1526,7 @@ def test_item_due_release_failure_reconciles_with_owned_schedule_still_attached(
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1522,9 +1547,10 @@ def test_item_due_release_failure_reconciles_with_owned_schedule_still_attached(
     }
     assert len(_TransitionStripe.schedule_release_calls) == 1
     assert _TransitionStripe.subscriptions["sub_1"]["schedule"] == "sub_sched_1"
-    assert facade.supabase.billing_enrollment_transition_intents[
-        scheduled["intent"]["id"]
-    ]["state"] == "reconciliation_required"
+    assert (
+        facade.supabase.billing_enrollment_transition_intents[scheduled["intent"]["id"]]["state"]
+        == "reconciliation_required"
+    )
 
 
 def test_item_due_never_releases_schedule_with_mismatched_owner_metadata():
@@ -1538,9 +1564,7 @@ def test_item_due_never_releases_schedule_with_mismatched_owner_metadata():
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1549,9 +1573,9 @@ def test_item_due_never_releases_schedule_with_mismatched_owner_metadata():
         "enrollment_1", "studio_1", "actor_1", "due-release-owner", "staff_requested"
     )
     _apply_scheduled_item_phase()
-    _TransitionStripe.schedules["sub_sched_1"]["metadata"][
-        "koaryu_transition_intent_id"
-    ] = "00000000-0000-4000-8000-000000000999"
+    _TransitionStripe.schedules["sub_sched_1"]["metadata"]["koaryu_transition_intent_id"] = (
+        "00000000-0000-4000-8000-000000000999"
+    )
 
     result = workflow.process_due(worker_id="worker_1", limit=25)
 
@@ -1565,9 +1589,10 @@ def test_item_due_never_releases_schedule_with_mismatched_owner_metadata():
     assert _TransitionStripe.schedule_list_calls == []
     assert _TransitionStripe.schedule_retrieve_calls[-1]["schedule_id"] == "sub_sched_1"
     assert _TransitionStripe.subscriptions["sub_1"]["schedule"] == "sub_sched_1"
-    assert facade.supabase.billing_enrollment_transition_intents[
-        scheduled["intent"]["id"]
-    ]["state"] == "reconciliation_required"
+    assert (
+        facade.supabase.billing_enrollment_transition_intents[scheduled["intent"]["id"]]["state"]
+        == "reconciliation_required"
+    )
 
 
 @pytest.mark.parametrize("readback_mode", ["failure", "mismatch"])
@@ -1584,9 +1609,7 @@ def test_item_due_exact_schedule_readback_failure_never_projects(
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1600,16 +1623,16 @@ def test_item_due_exact_schedule_readback_failure_never_projects(
     )
     _apply_scheduled_item_phase()
     released = _TransitionStripe.schedules["sub_sched_1"]
-    released.update({
-        "status": "released",
-        "subscription": None,
-        "released_subscription": "sub_1",
-    })
+    released.update(
+        {
+            "status": "released",
+            "subscription": None,
+            "released_subscription": "sub_1",
+        }
+    )
     _TransitionStripe.subscriptions["sub_1"]["schedule"] = None
     if readback_mode == "failure":
-        _TransitionStripe.schedule_retrieve_error = RuntimeError(
-            "schedule read unavailable"
-        )
+        _TransitionStripe.schedule_retrieve_error = RuntimeError("schedule read unavailable")
     else:
         mismatched = copy.deepcopy(released)
         mismatched["id"] = "sub_sched_mismatch"
@@ -1633,9 +1656,10 @@ def test_item_due_exact_schedule_readback_failure_never_projects(
     assert "complete_due_billing_enrollment_item_transition_v31" not in {
         name for name, _params in facade.supabase.rpc_calls
     }
-    assert facade.supabase.billing_enrollment_transition_intents[
-        scheduled["intent"]["id"]
-    ]["state"] == "reconciliation_required"
+    assert (
+        facade.supabase.billing_enrollment_transition_intents[scheduled["intent"]["id"]]["state"]
+        == "reconciliation_required"
+    )
 
 
 def test_item_due_recovery_rejects_copied_metadata_on_different_schedule_id():
@@ -1649,9 +1673,7 @@ def test_item_due_recovery_rejects_copied_metadata_on_different_schedule_id():
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    facade.supabase.tables["billing_plans"].append(
-        _plan(id="plan_2", stripe_price_id="price_2")
-    )
+    facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1661,12 +1683,14 @@ def test_item_due_recovery_rejects_copied_metadata_on_different_schedule_id():
     )
     _apply_scheduled_item_phase()
     copied = copy.deepcopy(_TransitionStripe.schedules.pop("sub_sched_1"))
-    copied.update({
-        "id": "sub_sched_copied",
-        "status": "released",
-        "subscription": None,
-        "released_subscription": "sub_1",
-    })
+    copied.update(
+        {
+            "id": "sub_sched_copied",
+            "status": "released",
+            "subscription": None,
+            "released_subscription": "sub_1",
+        }
+    )
     _TransitionStripe.schedules[copied["id"]] = copied
     _TransitionStripe.subscriptions["sub_1"]["schedule"] = None
 
@@ -1688,25 +1712,29 @@ def test_item_due_recovery_rejects_copied_metadata_on_different_schedule_id():
     assert "complete_due_billing_enrollment_item_transition_v31" not in {
         name for name, _params in facade.supabase.rpc_calls
     }
-    assert facade.supabase.billing_enrollment_transition_intents[
-        scheduled["intent"]["id"]
-    ]["state"] == "reconciliation_required"
+    assert (
+        facade.supabase.billing_enrollment_transition_intents[scheduled["intent"]["id"]]["state"]
+        == "reconciliation_required"
+    )
 
 
 def test_whole_due_unconfirmed_readback_marks_source_reconciliation_without_mutation():
     facade = _TransitionFacade(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
-    scheduled = asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "whole-due-unknown", "staff_requested"
-    ))
+    scheduled = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "whole-due-unknown", "staff_requested"
+        )
+    )
 
     result = asyncio.run(manager.process_due_transitions(worker_id="worker_1", limit=25))
 
     assert result == {"claimed": 1, "completed": 0, "reconciliation_required": 1, "failed": 0}
-    assert facade.supabase.billing_enrollment_transition_intents[
-        scheduled["intent"]["id"]
-    ]["state"] == "reconciliation_required"
+    assert (
+        facade.supabase.billing_enrollment_transition_intents[scheduled["intent"]["id"]]["state"]
+        == "reconciliation_required"
+    )
     assert len(_TransitionStripe.subscription_update_calls) == 1
     assert _TransitionStripe.subscription_cancel_calls == []
 
@@ -1721,11 +1749,15 @@ def test_item_due_fact_drift_fails_before_provider_operation_or_mutation():
         stripe_subscription_item_id="si_2",
     )
     facade = _TransitionFacade(_tables(peers=[peer]))
-    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item(), _item("si_2", price_id="price_2")])
+    _TransitionStripe.subscriptions["sub_1"] = _provider(
+        items=[_item(), _item("si_2", price_id="price_2")]
+    )
     manager = _manager(facade)
-    scheduled = asyncio.run(manager.schedule_period_end(
-        "enrollment_1", "studio_1", "actor_1", "item-drift", "staff_requested"
-    ))
+    scheduled = asyncio.run(
+        manager.schedule_period_end(
+            "enrollment_1", "studio_1", "actor_1", "item-drift", "staff_requested"
+        )
+    )
     _TransitionStripe.subscriptions["sub_1"]["items"]["data"][0]["quantity"] = 2
 
     result = asyncio.run(manager.process_due_transitions(worker_id="worker_1", limit=25))

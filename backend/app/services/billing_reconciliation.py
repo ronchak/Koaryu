@@ -28,7 +28,9 @@ class BillingReconciliationService:
             return await self._reconcile_payer(data, studio_id, actor_id)
 
         if not data.stripe_object_id:
-            raise HTTPException(status_code=400, detail="stripe_object_id is required for this reconciliation.")
+            raise HTTPException(
+                status_code=400, detail="stripe_object_id is required for this reconciliation."
+            )
 
         account = self.billing_service._ensure_connect_ready(studio_id)
         account_id = account["stripe_connected_account_id"]
@@ -89,7 +91,9 @@ class BillingReconciliationService:
         actor_id: str,
     ) -> BillingReconcileResponse:
         if not data.payer_id:
-            raise HTTPException(status_code=400, detail="payer_id is required to reconcile a payer.")
+            raise HTTPException(
+                status_code=400, detail="payer_id is required to reconcile a payer."
+            )
         raise HTTPException(
             status_code=409,
             detail=(
@@ -117,11 +121,17 @@ class BillingReconciliationService:
             data.stripe_object_id,
             ["invoice.paid", "invoice.finalized", "invoice.created"],
         )
-        if stored_invoice and invoice_subscription_id(stored_invoice) and not invoice_subscription_id(invoice):
+        if (
+            stored_invoice
+            and invoice_subscription_id(stored_invoice)
+            and not invoice_subscription_id(invoice)
+        ):
             invoice = merge_invoice_identity_from_stored_event(invoice, stored_invoice)
 
         event_type = "invoice.paid" if invoice.get("status") == "paid" else "invoice.finalized"
-        self.billing_service._project_invoice_event(invoice, account_id, event_type, event_created=None)
+        self.billing_service._project_invoice_event(
+            invoice, account_id, event_type, event_created=None
+        )
         local = self.billing_service._find_invoice_for_stripe(invoice, account_id)
         self.billing_service._audit(
             studio_id,
@@ -199,7 +209,9 @@ class BillingReconciliationService:
             event_type = "payment_intent.payment_failed"
 
         self.billing_service._project_payment_intent(intent, account_id, event_type)
-        local_payment = self.billing_service._find_payment_by_intent(account_id, data.stripe_object_id)
+        local_payment = self.billing_service._find_payment_by_intent(
+            account_id, data.stripe_object_id
+        )
         self.billing_service._audit(
             studio_id,
             actor_id,

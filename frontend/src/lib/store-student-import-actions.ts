@@ -20,7 +20,7 @@ import type {
 
 type CommitStudents = (
   next: Student[] | ((current: Student[]) => Student[]),
-  options?: { mayBePartial?: boolean }
+  options?: { mayBePartial?: boolean },
 ) => void;
 
 interface UseStoreStudentImportActionsOptions {
@@ -56,158 +56,180 @@ export function useStoreStudentImportActions({
   studentRosterRequestSequenceRef,
   studentsRef,
 }: UseStoreStudentImportActionsOptions) {
-  const importStudents = useCallback(async (
-    file: File,
-    rows: Record<string, string>[],
-    mapping: Record<string, string>,
-    options: CsvImportOptions,
-    request?: { importKey?: string }
-  ): Promise<CsvImportResult> => {
-    if (isPreviewMode) {
-      const execution = buildPreviewStudentImportResult({
-        rows,
+  const importStudents = useCallback(
+    async (
+      file: File,
+      rows: Record<string, string>[],
+      mapping: Record<string, string>,
+      options: CsvImportOptions,
+      request?: { importKey?: string },
+    ): Promise<CsvImportResult> => {
+      if (isPreviewMode) {
+        const execution = buildPreviewStudentImportResult({
+          rows,
+          mapping,
+          options,
+          programs: programsRef.current,
+          beltLadders: beltLaddersRef.current,
+          fallbackRanks: beltRanksRef.current,
+          existingStudents: studentsRef.current,
+          idFactory: localId,
+        });
+        if (execution.importedStudents.length > 0) {
+          persistStudents(execution.students);
+          onStudentMutation();
+        }
+        return execution.result;
+      }
+
+      studentMutationEpochRef.current += 1;
+      const liveRequest = beginLiveAuthRequest();
+      const importKey = request?.importKey?.trim();
+      const formData = new FormData();
+      const requestPayload: CsvImportRequest = {
         mapping,
         options,
-        programs: programsRef.current,
-        beltLadders: beltLaddersRef.current,
-        fallbackRanks: beltRanksRef.current,
-        existingStudents: studentsRef.current,
-        idFactory: localId,
-      });
-      if (execution.importedStudents.length > 0) {
-        persistStudents(execution.students);
+        ...(importKey ? { idempotency_key: importKey } : {}),
+      };
+
+      formData.append("file", file);
+      formData.append("payload", JSON.stringify(requestPayload));
+      if (importKey) {
+        formData.append("idempotency_key", importKey);
+      }
+
+      const result = await api.postForm<CsvImportResult>(
+        "/students/import/execute",
+        formData,
+        liveRequest.token,
+        {
+          timeoutMs: 190000,
+          headers: importKey
+            ? {
+                "Idempotency-Key": importKey,
+                "X-Import-Key": importKey,
+              }
+            : undefined,
+          networkErrorMessage:
+            "The connection dropped before Koaryu could confirm the import finished. Wait a moment, then retry with this same file and options so Koaryu can avoid duplicate students.",
+        },
+      );
+      if (!canCommitLiveMutation(liveRequest)) {
+        return result;
+      }
+
+      const shouldRefreshBelts =
+        result.imported_count > 0 ||
+        result.reused_result ||
+        result.created_programs.length > 0 ||
+        result.created_ladders.length > 0 ||
+        result.created_belts.length > 0;
+
+      const refreshWarnings: string[] = [];
+
+      const programsRefresh = await Promise.allSettled([
+        refreshPrograms({ includeArchived: true, force: true }),
+      ]);
+      if (programsRefresh[0].status === "rejected") {
+        const message =
+          programsRefresh[0].reason instanceof Error
+            ? programsRefresh[0].reason.message
+            : "Failed to refresh programs after import.";
+        refreshWarnings.push(
+          `Import data was saved, but Koaryu could not refresh the Programs list afterward. ${message}`,
+        );
+      }
+
+      if (!canCommitLiveMutation(liveRequest)) return result;
+      const mutationEpoch = studentMutationEpochRef.current;
+      const requestSequence = studentRosterRequestSequenceRef.current + 1;
+      studentRosterRequestSequenceRef.current = requestSequence;
+      const studentsRefresh = await Promise.allSettled([
+        withCurrentLiveAuthRead(
+          beginLiveAuthRequest,
+          async (request) => {
+            const refreshedStudents = await fetchAllStudents(request.token, { timeoutMs: 35000 });
+            if (
+              isStudentRosterSnapshotCurrent({
+                authCurrent: request.isCurrent() && canCommitLiveMutation(liveRequest),
+                currentMutationEpoch: studentMutationEpochRef.current,
+                currentRequestSequence: studentRosterRequestSequenceRef.current,
+                mutationEpochAtStart: mutationEpoch,
+                requestSequence,
+              })
+            ) {
+              commitStudents(refreshedStudents);
+            }
+          },
+          () => {},
+        ),
+      ]);
+      if (studentsRefresh[0].status === "rejected") {
+        const message =
+          studentsRefresh[0].reason instanceof Error
+            ? studentsRefresh[0].reason.message
+            : "Failed to refresh students after import.";
+        if (
+          isStudentRosterSnapshotCurrent({
+            authCurrent: canCommitLiveMutation(liveRequest),
+            currentMutationEpoch: studentMutationEpochRef.current,
+            currentRequestSequence: studentRosterRequestSequenceRef.current,
+            mutationEpochAtStart: mutationEpoch,
+            requestSequence,
+          })
+        ) {
+          setStudentsLoadError(message);
+        }
+        refreshWarnings.push(
+          `Import data was saved, but Koaryu could not refresh the Students list afterward. ${message}`,
+        );
+      }
+
+      if (shouldRefreshBelts) {
+        const beltsRefresh = await Promise.allSettled([
+          refreshBeltsRef.current?.() ?? Promise.resolve(),
+        ]);
+        if (beltsRefresh[0].status === "rejected") {
+          const message =
+            beltsRefresh[0].reason instanceof Error
+              ? beltsRefresh[0].reason.message
+              : "Failed to refresh belt data after import.";
+          refreshWarnings.push(
+            `Import data was saved, but Koaryu could not refresh Belt Tracker afterward. ${message}`,
+          );
+        }
+      }
+
+      if (canCommitLiveMutation(liveRequest) && shouldRefreshBelts) {
         onStudentMutation();
       }
-      return execution.result;
-    }
 
-    studentMutationEpochRef.current += 1;
-    const liveRequest = beginLiveAuthRequest();
-    const importKey = request?.importKey?.trim();
-    const formData = new FormData();
-    const requestPayload: CsvImportRequest = {
-      mapping,
-      options,
-      ...(importKey ? { idempotency_key: importKey } : {}),
-    };
-
-    formData.append("file", file);
-    formData.append("payload", JSON.stringify(requestPayload));
-    if (importKey) {
-      formData.append("idempotency_key", importKey);
-    }
-
-    const result = await api.postForm<CsvImportResult>(
-      "/students/import/execute",
-      formData,
-      liveRequest.token,
-      {
-        timeoutMs: 190000,
-        headers: importKey ? {
-          "Idempotency-Key": importKey,
-          "X-Import-Key": importKey,
-        } : undefined,
-        networkErrorMessage:
-          "The connection dropped before Koaryu could confirm the import finished. Wait a moment, then retry with this same file and options so Koaryu can avoid duplicate students.",
+      if (refreshWarnings.length > 0) {
+        return refreshWarnings.reduce(
+          (nextResult, warning) => withCsvImportRefreshWarning(nextResult, warning),
+          result,
+        );
       }
-    );
-    if (!canCommitLiveMutation(liveRequest)) {
+
       return result;
-    }
-
-    const shouldRefreshBelts =
-      result.imported_count > 0 ||
-      result.reused_result ||
-      result.created_programs.length > 0 ||
-      result.created_ladders.length > 0 ||
-      result.created_belts.length > 0;
-
-    const refreshWarnings: string[] = [];
-
-    const programsRefresh = await Promise.allSettled([
-      refreshPrograms({ includeArchived: true, force: true }),
-    ]);
-    if (programsRefresh[0].status === "rejected") {
-      const message = programsRefresh[0].reason instanceof Error
-        ? programsRefresh[0].reason.message
-        : "Failed to refresh programs after import.";
-      refreshWarnings.push(`Import data was saved, but Koaryu could not refresh the Programs list afterward. ${message}`);
-    }
-
-    if (!canCommitLiveMutation(liveRequest)) return result;
-    const mutationEpoch = studentMutationEpochRef.current;
-    const requestSequence = studentRosterRequestSequenceRef.current + 1;
-    studentRosterRequestSequenceRef.current = requestSequence;
-    const studentsRefresh = await Promise.allSettled([
-      withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
-        const refreshedStudents = await fetchAllStudents(request.token, { timeoutMs: 35000 });
-        if (isStudentRosterSnapshotCurrent({
-          authCurrent: request.isCurrent() && canCommitLiveMutation(liveRequest),
-          currentMutationEpoch: studentMutationEpochRef.current,
-          currentRequestSequence: studentRosterRequestSequenceRef.current,
-          mutationEpochAtStart: mutationEpoch,
-          requestSequence,
-        })) {
-          commitStudents(refreshedStudents);
-        }
-      }, () => {}),
-    ]);
-    if (studentsRefresh[0].status === "rejected") {
-      const message = studentsRefresh[0].reason instanceof Error
-        ? studentsRefresh[0].reason.message
-        : "Failed to refresh students after import.";
-      if (isStudentRosterSnapshotCurrent({
-        authCurrent: canCommitLiveMutation(liveRequest),
-        currentMutationEpoch: studentMutationEpochRef.current,
-        currentRequestSequence: studentRosterRequestSequenceRef.current,
-        mutationEpochAtStart: mutationEpoch,
-        requestSequence,
-      })) {
-        setStudentsLoadError(message);
-      }
-      refreshWarnings.push(`Import data was saved, but Koaryu could not refresh the Students list afterward. ${message}`);
-    }
-
-    if (shouldRefreshBelts) {
-      const beltsRefresh = await Promise.allSettled([
-        refreshBeltsRef.current?.() ?? Promise.resolve(),
-      ]);
-      if (beltsRefresh[0].status === "rejected") {
-        const message = beltsRefresh[0].reason instanceof Error
-          ? beltsRefresh[0].reason.message
-          : "Failed to refresh belt data after import.";
-        refreshWarnings.push(`Import data was saved, but Koaryu could not refresh Belt Tracker afterward. ${message}`);
-      }
-    }
-
-    if (canCommitLiveMutation(liveRequest) && shouldRefreshBelts) {
-      onStudentMutation();
-    }
-
-    if (refreshWarnings.length > 0) {
-      return refreshWarnings.reduce(
-        (nextResult, warning) => withCsvImportRefreshWarning(nextResult, warning),
-        result
-      );
-    }
-
-    return result;
-  }, [
-    beginLiveAuthRequest,
-    beltLaddersRef,
-    beltRanksRef,
-    commitStudents,
-    isPreviewMode,
-    onStudentMutation,
-    persistStudents,
-    programsRef,
-    refreshBeltsRef,
-    refreshPrograms,
-    setStudentsLoadError,
-    studentMutationEpochRef,
-    studentRosterRequestSequenceRef,
-    studentsRef,
-  ]);
+    },
+    [
+      beginLiveAuthRequest,
+      beltLaddersRef,
+      beltRanksRef,
+      commitStudents,
+      isPreviewMode,
+      onStudentMutation,
+      persistStudents,
+      programsRef,
+      refreshBeltsRef,
+      refreshPrograms,
+      setStudentsLoadError,
+      studentMutationEpochRef,
+      studentRosterRequestSequenceRef,
+      studentsRef,
+    ],
+  );
 
   return {
     importStudents,

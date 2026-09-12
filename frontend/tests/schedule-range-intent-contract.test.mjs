@@ -13,23 +13,23 @@ const scheduleActionsSource = source("../src/lib/store-schedule-actions.ts");
 const storeSource = source("../src/lib/store.tsx");
 const initialReconciliationSource = storeSource.slice(
   storeSource.indexOf("const reconcileScheduleAttempt"),
-  storeSource.indexOf("const reconcileSchedule =")
+  storeSource.indexOf("const reconcileSchedule ="),
 );
 const rangeRefreshSource = scheduleActionsSource.slice(
   scheduleActionsSource.indexOf("const refreshScheduleRange"),
-  scheduleActionsSource.indexOf("const refreshSessionAttendance")
+  scheduleActionsSource.indexOf("const refreshSessionAttendance"),
 );
 
 describe("schedule range intent contracts", () => {
   it("keeps Reports and other analytics callers on the read-only path", () => {
     assert.match(
       reportsPageSource,
-      /refreshScheduleRange\([\s\S]*?reportScheduleRange\.endDate,\s*"read"\s*\)/
+      /refreshScheduleRange\([\s\S]*?reportScheduleRange\.endDate,\s*"read"\s*\)/,
     );
     assert.doesNotMatch(reportsPageSource, /"materialize"/);
     assert.match(
       studentsControllerSource,
-      /refreshScheduleRange\(range\.startDate, range\.endDate, "read"\)/
+      /refreshScheduleRange\(range\.startDate, range\.endDate, "read"\)/,
     );
     assert.match(storeSource, /await reconcileSchedule\("read"\)/);
     assert.match(storeSource, /reconcileSchedule\("read"\)\.catch/);
@@ -38,10 +38,16 @@ describe("schedule range intent contracts", () => {
   it("keeps calendar and attendance workflows explicitly materializing recurring sessions", () => {
     assert.equal(
       scheduleControllerSource.match(/refreshScheduleRange\([\s\S]*?"materialize"\s*\)/g)?.length,
-      1
+      1,
     );
-    assert.match(scheduleControllerSource, /resumedRangeRef\.current === visibleRangeKey \? "read" : "materialize"/);
-    assert.match(scheduleControllerSource, /refreshScheduleRange\(visibleRange\.start, visibleRange\.end, intent\)/);
+    assert.match(
+      scheduleControllerSource,
+      /resumedRangeRef\.current === visibleRangeKey \? "read" : "materialize"/,
+    );
+    assert.match(
+      scheduleControllerSource,
+      /refreshScheduleRange\(visibleRange\.start, visibleRange\.end, intent\)/,
+    );
     assert.match(scheduleActionsSource, /await reconcileSchedule\("materialize"\)/);
     assert.match(rangeRefreshSource, /await reconcileSchedule\(intent\)/);
   });

@@ -31,10 +31,7 @@ export function useBillingPayerActions(
     setPayerPhone("");
   }
 
-  async function handlePayerSync(
-    payerId: string,
-    options: { startNewRequest?: boolean } = {},
-  ) {
+  async function handlePayerSync(payerId: string, options: { startNewRequest?: boolean } = {}) {
     const requestKey = resolvePersistedPayerOperationRequestKey({
       identity,
       keysByPayer: payerSyncKeysRef.current,
@@ -46,12 +43,13 @@ export function useBillingPayerActions(
     const result = await runtime.postBillingAction<BillingPayer>({
       action: `payer-sync:${payerId}`,
       path: `/billing/payers/${payerId}/sync`,
-      onTerminalIdempotencyError: () => clearPersistedPayerOperationRequestKey({
-        identity,
-        keysByPayer: payerSyncKeysRef.current,
-        operation: "payer.sync",
-        payerId,
-      }),
+      onTerminalIdempotencyError: () =>
+        clearPersistedPayerOperationRequestKey({
+          identity,
+          keysByPayer: payerSyncKeysRef.current,
+          operation: "payer.sync",
+          payerId,
+        }),
       refresh: false,
       requestOptions: { headers: request.headers },
       successMessage: "Payer sync requested.",
@@ -73,9 +71,7 @@ export function useBillingPayerActions(
     return result;
   }
 
-  async function handleAutopaySetup(
-    payer: BillingPayer,
-  ) {
+  async function handleAutopaySetup(payer: BillingPayer) {
     return executePayerAutopaySetup({
       attemptsByPayer: autopaySetupAttemptsRef.current,
       identity,

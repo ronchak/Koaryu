@@ -81,13 +81,15 @@ export function getActiveStudentProgramIds(student: Student) {
     .filter((membership) => membership.status !== "ended" && !membership.ended_at)
     .map((membership) => membership.program_id);
 
-  return Array.from(new Set([...membershipProgramIds, student.program_id].filter(Boolean) as string[]));
+  return Array.from(
+    new Set([...membershipProgramIds, student.program_id].filter(Boolean) as string[]),
+  );
 }
 
 export function buildSessionAttendanceSummary(
   attendance: AttendanceRecord[],
   students: Pick<Student, "id">[],
-  open: boolean
+  open: boolean,
 ): SessionAttendanceSummary {
   if (!open) {
     return { presentCount: 0, absentCount: 0, unmarkedCount: 0 };
@@ -166,7 +168,10 @@ export function buildSessionRosterSections({
   };
 }
 
-export function buildSessionLabels(open: boolean, session: ClassSession | null): SessionLabels | null {
+export function buildSessionLabels(
+  open: boolean,
+  session: ClassSession | null,
+): SessionLabels | null {
   if (!open || !session) {
     return null;
   }

@@ -22,10 +22,9 @@ const ORIGINAL_ENV = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[
 const DEADMAN_URL = "https://deadman.example.com/deletion-worker";
 
 function request(secret = "cron-secret") {
-  return new Request(
-    "https://staging.example.test/api/cron/account-deletions/process-due",
-    { headers: { authorization: `Bearer ${secret}` } },
-  );
+  return new Request("https://staging.example.test/api/cron/account-deletions/process-due", {
+    headers: { authorization: `Bearer ${secret}` },
+  });
 }
 
 function pinnedJson(payload, status = 200, headers = {}) {
@@ -83,11 +82,12 @@ describe("account deletion cron backend binding", () => {
     }
   });
 
-  const invoke = (incoming = request()) => handleAccountDeletionCron(incoming, {
-    httpsRequest,
-    localRequest,
-    deadManSender,
-  });
+  const invoke = (incoming = request()) =>
+    handleAccountDeletionCron(incoming, {
+      httpsRequest,
+      localRequest,
+      deadManSender,
+    });
 
   it("rejects arbitrary, ambiguous, and non-exact URLs without constructing HTTPS", async (context) => {
     const rejectedTargets = [
@@ -195,11 +195,7 @@ describe("account deletion cron backend binding", () => {
     process.env.OPERATIONAL_ALERTS_ENABLED = "true";
     httpsRequest = async (options) => {
       httpsRequests.push(options);
-      return pinnedJson(
-        { processed: 0 },
-        200,
-        { "x-koaryu-heartbeat-sequence": "9" },
-      );
+      return pinnedJson({ processed: 0 }, 200, { "x-koaryu-heartbeat-sequence": "9" });
     };
     assert.equal((await invoke()).status, 200);
     assert.equal(deadManRequests.length, 1);

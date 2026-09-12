@@ -4,15 +4,15 @@ import { describe, it } from "node:test";
 
 const source = readFileSync(
   new URL("../src/components/marketing/public-pages.tsx", import.meta.url),
-  "utf8"
+  "utf8",
 );
 const css = readFileSync(
   new URL("../src/components/marketing/public-pages.module.css", import.meta.url),
-  "utf8"
+  "utf8",
 );
 const headerSource = source.slice(
   source.indexOf("export function MarketingHeader"),
-  source.indexOf("export function MarketingFooter")
+  source.indexOf("export function MarketingFooter"),
 );
 
 describe("conventional marketing page composition", () => {
@@ -46,14 +46,11 @@ describe("conventional marketing page composition", () => {
     assert.equal(source.match(/publicNavLinks\.map/g)?.length, 2);
     assert.match(source, /publicFooterLinks\.map/);
     assert.equal(source.match(/href="\/login"/g)?.length, 2);
-    assert.equal(
-      source.match(/href="\/login"\s+prefetch=\{false\}/g)?.length,
-      2
-    );
+    assert.equal(source.match(/href="\/login"\s+prefetch=\{false\}/g)?.length, 2);
     assert.doesNotMatch(headerSource, /\/signup|Start setup|MarketingActionLink/);
     assert.doesNotMatch(
       source,
-      /["']use client["']|\b(?:window|document|navigator)\s*\.|requestAnimationFrame|use(?:State|Effect|Ref)\s*\(/
+      /["']use client["']|\b(?:window|document|navigator)\s*\.|requestAnimationFrame|use(?:State|Effect|Ref)\s*\(/,
     );
   });
 
@@ -75,11 +72,11 @@ describe("conventional marketing page composition", () => {
   it("retires the old product scene, icon-card, reveal, and product-control seam", () => {
     assert.doesNotMatch(
       source,
-      /ProductScene|product-scene|iconMap|LucideIcon|lucide-react|ScrollReveal|LogoLink|MobileNav|\bButton\b|@\/components\/ui\//
+      /ProductScene|product-scene|iconMap|LucideIcon|lucide-react|ScrollReveal|LogoLink|MobileNav|\bButton\b|@\/components\/ui\//,
     );
     assert.doesNotMatch(
       `${source}\n${css}`,
-      /(?:bg-bg|bg-surface|text-text|border-border|text-accent)|var\(--(?:bg|surface|border|text-[\w-]+|accent)\b/
+      /(?:bg-bg|bg-surface|text-text|border-border|text-accent)|var\(--(?:bg|surface|border|text-[\w-]+|accent)\b/,
     );
     assert.doesNotMatch(css, /gradient|backdrop|glass|#[fF]{6}|#[0]{6}/);
   });
@@ -89,17 +86,17 @@ describe("conventional marketing page composition", () => {
     assert.doesNotMatch(css, /position:\s*fixed|height:\s*100dvh|overflow:\s*hidden/);
     assert.match(
       css,
-      /\.shell a:focus-visible\s*\{[^}]*outline:\s*2px solid currentColor;[^}]*outline-offset:\s*4px/s
+      /\.shell a:focus-visible\s*\{[^}]*outline:\s*2px solid currentColor;[^}]*outline-offset:\s*4px/s,
     );
     assert.match(css, /\.routeLink\s*\{[^}]*min-height:\s*106px/s);
     assert.match(css, /\.brand\s*\{[^}]*min-height:\s*44px/s);
     assert.match(
       css,
-      /\.headerInner\s*\{[^}]*grid-template-columns:[^;]*;[^}]*min-height:\s*76px/s
+      /\.headerInner\s*\{[^}]*grid-template-columns:[^;]*;[^}]*min-height:\s*76px/s,
     );
     assert.match(
       css,
-      /\.mobileNavigation > summary\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;[^}]*border-radius:\s*50%/s
+      /\.mobileNavigation > summary\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;[^}]*border-radius:\s*50%/s,
     );
     assert.match(css, /\.mobileMenu\s*\{[^}]*background:\s*var\(--koaryu-sheet\)/s);
     assert.match(css, /\.mobileNavigation\[open\] \.mobileMenuIcon/s);
@@ -113,7 +110,7 @@ describe("conventional marketing page composition", () => {
     assert.match(css, /\.main,\s*\n\.footer\s*\{[^}]*z-index:\s*0/s);
     assert.match(
       css,
-      /\.header\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*10;[^}]*background:\s*var\(--koaryu-paper\)/s
+      /\.header\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*10;[^}]*background:\s*var\(--koaryu-paper\)/s,
     );
     assert.doesNotMatch(css, /\.header\s*\{[^}]*(?:position:\s*(?:sticky|fixed)|top:\s*0)/s);
     assert.doesNotMatch(css, /\.(?:main|footer)[^{]*\{[^}]*z-index:\s*(?:2[0-9]|[3-9][0-9])/s);
@@ -123,7 +120,7 @@ describe("conventional marketing page composition", () => {
   it("renders explicit index and detail family classes without a faux index plane", () => {
     assert.match(
       source,
-      /basePath === "\/features" \? styles\.featureIndex : styles\.useCaseIndex/
+      /basePath === "\/features" \? styles\.featureIndex : styles\.useCaseIndex/,
     );
     assert.match(source, /pageHref\.startsWith\("\/features\/"\)[\s\S]*styles\.featureDetail/);
     assert.match(source, /pageHref\.startsWith\("\/use-cases\/"\)[\s\S]*styles\.useCaseDetail/);
@@ -134,7 +131,10 @@ describe("conventional marketing page composition", () => {
     assert.doesNotMatch(css, /\.indexSection::before/);
     assert.match(css, /\.featureIndex \.indexHeading\s*\{[^}]*max-width:\s*34ch/s);
     assert.match(css, /\.useCaseIndex\s*\{[^}]*grid-template-columns:\s*1fr/s);
-    assert.match(css, /\.useCaseIndex \.ledger li::before\s*\{[^}]*background:\s*var\(--koaryu-rule-soft\)/s);
+    assert.match(
+      css,
+      /\.useCaseIndex \.ledger li::before\s*\{[^}]*background:\s*var\(--koaryu-rule-soft\)/s,
+    );
     assert.match(css, /\.featureDetail\.proofBand/s);
     assert.match(css, /\.useCaseDetail\.detailSection/s);
     assert.match(css, /\.studioTypeDetail\.detailSection/s);
@@ -143,15 +143,15 @@ describe("conventional marketing page composition", () => {
   it("uses a restrained ruled related band and semantic, reduced-motion-safe movement", () => {
     assert.match(
       css,
-      /\.relatedSection\s*\{[^}]*position:\s*relative;[^}]*padding:\s*clamp\(56px, 5vw, 72px\) 0 clamp\(64px, 8vw, 96px\);[^}]*background:\s*transparent/s
+      /\.relatedSection\s*\{[^}]*position:\s*relative;[^}]*padding:\s*clamp\(56px, 5vw, 72px\) 0 clamp\(64px, 8vw, 96px\);[^}]*background:\s*transparent/s,
     );
     assert.match(
       css,
-      /\.relatedSection::before\s*\{[^}]*top:\s*0;[^}]*width:\s*100vw;[^}]*height:\s*1px;[^}]*background:\s*var\(--koaryu-rule\)/s
+      /\.relatedSection::before\s*\{[^}]*top:\s*0;[^}]*width:\s*100vw;[^}]*height:\s*1px;[^}]*background:\s*var\(--koaryu-rule\)/s,
     );
     assert.match(
       css,
-      /\.detailSection\s*\{[^}]*padding:\s*clamp\(72px, 9vw, 112px\) 0 clamp\(48px, 4vw, 64px\)/s
+      /\.detailSection\s*\{[^}]*padding:\s*clamp\(72px, 9vw, 112px\) 0 clamp\(48px, 4vw, 64px\)/s,
     );
     assert.match(css, /\.detailHeading\s*\{[^}]*position:\s*sticky;[^}]*top:\s*32px/s);
     assert.match(css, /\.relatedList\s*\{[^}]*display:\s*block/s);
@@ -160,9 +160,12 @@ describe("conventional marketing page composition", () => {
     assert.match(css, /@keyframes publicOpen/);
     assert.match(
       css,
-      /\.heroSupport,\s*\n\.exploreHeroSupport,\s*\n\.ledger,\s*\n\.proofBand dl\s*\{[^}]*animation:\s*publicSettle 360ms/s
+      /\.heroSupport,\s*\n\.exploreHeroSupport,\s*\n\.ledger,\s*\n\.proofBand dl\s*\{[^}]*animation:\s*publicSettle 360ms/s,
     );
-    assert.match(css, /\.mobileNavigation\[open\] \.mobileMenu,\s*\n\.detailSection:target \.detailArticles\s*\{[^}]*animation:\s*publicOpen/s);
+    assert.match(
+      css,
+      /\.mobileNavigation\[open\] \.mobileMenu,\s*\n\.detailSection:target \.detailArticles\s*\{[^}]*animation:\s*publicOpen/s,
+    );
     assert.match(css, /\.ledgerLink:hover \.ledgerAction,[^}]*transform:\s*translateX\(3px\)/s);
 
     const reducedMotion = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));

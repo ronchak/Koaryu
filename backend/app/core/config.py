@@ -13,14 +13,10 @@ from pydantic_settings import BaseSettings
 
 
 KOARYU_PRODUCTION_SUPABASE_REF = "mimguepumzsgmcaycdsh"
-KOARYU_PRODUCTION_SUPABASE_URL = (
-    f"https://{KOARYU_PRODUCTION_SUPABASE_REF}.supabase.co"
-)
+KOARYU_PRODUCTION_SUPABASE_URL = f"https://{KOARYU_PRODUCTION_SUPABASE_REF}.supabase.co"
 KOARYU_STAGING_SUPABASE_REF = "nxgsektqsgrtyfhawxbc"
 KOARYU_STAGING_SUPABASE_URL = "https://nxgsektqsgrtyfhawxbc.supabase.co"
-KOARYU_STAGING_FRONTEND_URL = (
-    "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"
-)
+KOARYU_STAGING_FRONTEND_URL = "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"
 KOARYU_PRODUCTION_FRONTEND_URL = "https://koaryu.app"
 PERMISSIVE_ENVIRONMENTS = {"development", "test"}
 STRICT_ENVIRONMENTS = {"production", "staging"}
@@ -51,9 +47,7 @@ CA_BUNDLE_ENVIRONMENT_KEYS = (
     "SSL_CERT_DIR",
     "ssl_cert_dir",
 )
-AMBIENT_TRANSPORT_ENVIRONMENT_KEYS = (
-    PROXY_ENVIRONMENT_KEYS + CA_BUNDLE_ENVIRONMENT_KEYS
-)
+AMBIENT_TRANSPORT_ENVIRONMENT_KEYS = PROXY_ENVIRONMENT_KEYS + CA_BUNDLE_ENVIRONMENT_KEYS
 COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 HEADER_BOUND_CREDENTIAL_FIELDS = (
     "SUPABASE_SERVICE_ROLE_KEY",
@@ -120,9 +114,7 @@ def has_minimum_secret_length(value: str, minimum: int = 32) -> bool:
 
 def validate_raw_header_value(name: str, value: str) -> None:
     """Reject header values that HTTP clients cannot safely transmit unchanged."""
-    has_control = any(
-        ord(character) < 32 or ord(character) == 127 for character in value
-    )
+    has_control = any(ord(character) < 32 or ord(character) == 127 for character in value)
     if value != value.strip() or has_control:
         raise RuntimeError(
             "Runtime configuration is incomplete or unsafe: "
@@ -134,9 +126,7 @@ def validate_raw_header_value(name: str, value: str) -> None:
 def validate_frontend_origin(url: str, environment: str) -> str:
     """Return one canonical frontend origin or fail without reflecting its value."""
     normalized_environment = environment.strip().lower()
-    has_control = any(
-        ord(character) < 32 or ord(character) == 127 for character in url
-    )
+    has_control = any(ord(character) < 32 or ord(character) == 127 for character in url)
     try:
         parsed = urlparse(url)
         port = parsed.port
@@ -226,14 +216,11 @@ class SupabaseSafetyError(RuntimeError):
 def validate_no_ambient_supabase_transport() -> None:
     """Refuse ambient proxy and CA overrides the pinned SDK cannot disable."""
     configured_keys = {
-        key.upper()
-        for key in AMBIENT_TRANSPORT_ENVIRONMENT_KEYS
-        if os.environ.get(key, "").strip()
+        key.upper() for key in AMBIENT_TRANSPORT_ENVIRONMENT_KEYS if os.environ.get(key, "").strip()
     }
     discovered_proxies = getproxies()
     if configured_keys or any(
-        str(discovered_proxies.get(scheme, "")).strip()
-        for scheme in ("http", "https", "all")
+        str(discovered_proxies.get(scheme, "")).strip() for scheme in ("http", "https", "all")
     ):
         names = ", ".join(sorted(configured_keys)) or "system HTTP proxy settings"
         raise SupabaseSafetyError(
@@ -287,7 +274,7 @@ class Settings(BaseSettings):
     model_config = {
         "env_file": str(Path(__file__).resolve().parents[2] / ".env"),
         "case_sensitive": True,
-        "extra": "ignore"
+        "extra": "ignore",
     }
 
     def validate_supabase_target(self) -> None:
@@ -298,8 +285,7 @@ class Settings(BaseSettings):
 
         if any(ord(character) < 32 or ord(character) == 127 for character in raw_url):
             raise SupabaseSafetyError(
-                "Refusing unsafe Supabase target: SUPABASE_URL contains an ASCII "
-                "control character."
+                "Refusing unsafe Supabase target: SUPABASE_URL contains an ASCII control character."
             )
         if environment not in PERMISSIVE_ENVIRONMENTS | STRICT_ENVIRONMENTS:
             raise SupabaseSafetyError(
@@ -361,9 +347,7 @@ class Settings(BaseSettings):
             )
 
     def validate_supabase_service_role_configuration(self) -> None:
-        validate_raw_header_value(
-            "SUPABASE_SERVICE_ROLE_KEY", self.SUPABASE_SERVICE_ROLE_KEY
-        )
+        validate_raw_header_value("SUPABASE_SERVICE_ROLE_KEY", self.SUPABASE_SERVICE_ROLE_KEY)
         self.validate_supabase_target()
         validate_no_ambient_supabase_transport()
 
@@ -433,7 +417,11 @@ class Settings(BaseSettings):
             missing.append("API_V1_PREFIX must be /api/v1")
 
         supabase = urlparse(self.SUPABASE_URL)
-        if supabase.scheme != "https" or not supabase.netloc or supabase.hostname in {"localhost", "127.0.0.1"}:
+        if (
+            supabase.scheme != "https"
+            or not supabase.netloc
+            or supabase.hostname in {"localhost", "127.0.0.1"}
+        ):
             missing.append("SUPABASE_URL must be a public HTTPS URL")
 
         if not has_minimum_secret_length(self.SUPABASE_SERVICE_ROLE_KEY):
@@ -451,9 +439,9 @@ class Settings(BaseSettings):
                 )
 
         stripe_secret_prefixes = ("sk_test_",) if environment == "staging" else ("sk_live_",)
-        if not self.STRIPE_SECRET_KEY.startswith(stripe_secret_prefixes) or not has_minimum_secret_length(
-            self.STRIPE_SECRET_KEY, 16
-        ):
+        if not self.STRIPE_SECRET_KEY.startswith(
+            stripe_secret_prefixes
+        ) or not has_minimum_secret_length(self.STRIPE_SECRET_KEY, 16):
             if environment == "staging":
                 missing.append("STRIPE_SECRET_KEY must be a Stripe test secret key in staging")
             else:
@@ -469,8 +457,7 @@ class Settings(BaseSettings):
         ):
             if environment == "staging":
                 missing.append(
-                    "STRIPE_RESTRICTED_KEY must be a Stripe test restricted key "
-                    "in staging when set"
+                    "STRIPE_RESTRICTED_KEY must be a Stripe test restricted key in staging when set"
                 )
             else:
                 missing.append(
@@ -513,9 +500,9 @@ class Settings(BaseSettings):
         ):
             missing.append("STRIPE_CONNECT_WEBHOOK_SECRET must contain Stripe webhook secrets")
 
-        if not self.STRIPE_KOARYU_CORE_PRICE_ID.startswith("price_") or not has_minimum_secret_length(
-            self.STRIPE_KOARYU_CORE_PRICE_ID, 16
-        ):
+        if not self.STRIPE_KOARYU_CORE_PRICE_ID.startswith(
+            "price_"
+        ) or not has_minimum_secret_length(self.STRIPE_KOARYU_CORE_PRICE_ID, 16):
             missing.append("STRIPE_KOARYU_CORE_PRICE_ID must be a Stripe Price ID")
 
         if not has_minimum_secret_length(self.ACCOUNT_DELETION_WORKER_SECRET):
@@ -528,11 +515,12 @@ class Settings(BaseSettings):
             missing.append("SUPPORT_TRIAGE_SECRET must be a long random secret")
 
         if self.OPERATIONAL_ALERTS_ENABLED:
-            if (
-                is_placeholder_value(self.OPERATIONAL_ALERT_WORKER_SECRET)
-                or not has_minimum_secret_length(self.OPERATIONAL_ALERT_WORKER_SECRET)
-            ):
-                missing.append("OPERATIONAL_ALERT_WORKER_SECRET must be a long random secret when alerts are enabled")
+            if is_placeholder_value(
+                self.OPERATIONAL_ALERT_WORKER_SECRET
+            ) or not has_minimum_secret_length(self.OPERATIONAL_ALERT_WORKER_SECRET):
+                missing.append(
+                    "OPERATIONAL_ALERT_WORKER_SECRET must be a long random secret when alerts are enabled"
+                )
             alert_destinations = (
                 (
                     "PRIMARY",
@@ -558,7 +546,9 @@ class Settings(BaseSettings):
                     missing.append(
                         f"OPERATIONAL_ALERT_{label}_URL, host allowlist, and fingerprint must be an exact public HTTPS destination"
                     )
-                if is_placeholder_value(bearer_secret) or not has_minimum_secret_length(bearer_secret):
+                if is_placeholder_value(bearer_secret) or not has_minimum_secret_length(
+                    bearer_secret
+                ):
                     missing.append(
                         f"OPERATIONAL_ALERT_{label}_BEARER_SECRET must be a long random secret"
                     )
@@ -573,7 +563,9 @@ class Settings(BaseSettings):
                 self.OPERATIONAL_ALERT_BACKUP_ACK_SECRET,
             }
             if len(configured_alert_secrets) != 4:
-                missing.append("operational alert bearer and acknowledgement secrets must all be distinct")
+                missing.append(
+                    "operational alert bearer and acknowledgement secrets must all be distinct"
+                )
             if (
                 self.OPERATIONAL_ALERT_PRIMARY_URL == self.OPERATIONAL_ALERT_BACKUP_URL
                 or self.OPERATIONAL_ALERT_PRIMARY_URL_SHA256
@@ -606,7 +598,11 @@ def validate_operational_alert_destination(
     expected_hostname: str,
 ) -> str:
     """Validate one exact, public HTTPS destination without resolving or logging it."""
-    if not url or url != url.strip() or any(ord(character) < 32 or ord(character) == 127 for character in url):
+    if (
+        not url
+        or url != url.strip()
+        or any(ord(character) < 32 or ord(character) == 127 for character in url)
+    ):
         raise ValueError("invalid operational alert destination")
     parsed = urlparse(url)
     if (

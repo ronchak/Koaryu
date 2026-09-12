@@ -81,14 +81,12 @@ export function StudentDetailSidebar({
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   return (
-    <aside className={`col-span-1 min-w-0 space-y-4 ${styles.identityRail}`} aria-label="Student identity and current context">
+    <aside
+      className={`col-span-1 min-w-0 space-y-4 ${styles.identityRail}`}
+      aria-label="Student identity and current context"
+    >
       <div className="rounded-[14px] bg-surface p-4 text-center shadow-[var(--product-shadow-card)]">
-        <StudentAvatar
-          student={student}
-          size="lg"
-          src={photoPreviewUrl}
-          className="mx-auto mb-3"
-        />
+        <StudentAvatar student={student} size="lg" src={photoPreviewUrl} className="mx-auto mb-3" />
         <p className="font-semibold text-text-primary text-base">{fullName}</p>
         {student.legal_first_name !== student.preferred_name && student.preferred_name && (
           <p className="text-xs text-muted mt-0.5">
@@ -144,19 +142,13 @@ export function StudentDetailSidebar({
         ) : isPhotoSaving ? (
           <p className="text-xs text-muted mt-2">Updating photo...</p>
         ) : null}
-        {isCurrentHold && (
-          <p className="text-xs text-warning mt-2">Currently on hold</p>
-        )}
-        {student.is_minor && (
-          <p className="text-xs text-warning mt-2">Minor</p>
-        )}
+        {isCurrentHold && <p className="text-xs text-warning mt-2">Currently on hold</p>}
+        {student.is_minor && <p className="text-xs text-warning mt-2">Minor</p>}
         {activeProgramIds.length > 0 && (
           <div className="mt-3 flex flex-wrap justify-center gap-1.5">
             {activeProgramIds.map((programId) => {
               const program = programs.find((item) => item.id === programId);
-              return program ? (
-                <ProgramBadge key={programId} program={program} />
-              ) : null;
+              return program ? <ProgramBadge key={programId} program={program} /> : null;
             })}
           </div>
         )}
@@ -214,7 +206,11 @@ export function StudentDetailSidebar({
                 isTip={nextRank.is_tip}
                 tipColorHex={nextRank.tip_color_hex ?? undefined}
               />
-            ) : currentRank ? "Top of ladder" : "—"}
+            ) : currentRank ? (
+              "Top of ladder"
+            ) : (
+              "—"
+            )}
           </span>
         </div>
 
@@ -227,9 +223,7 @@ export function StudentDetailSidebar({
 
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Recorded promotions</span>
-          <span className="text-text-primary font-mono text-xs">
-            {promotionCount}
-          </span>
+          <span className="text-text-primary font-mono text-xs">{promotionCount}</span>
         </div>
 
         {beltLoadError ? (

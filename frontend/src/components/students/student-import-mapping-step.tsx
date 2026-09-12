@@ -3,7 +3,10 @@
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getMissingCsvImportRequiredFields, getSkippedBillingImportHeaders } from "@/lib/csv-import-mapping";
+import {
+  getMissingCsvImportRequiredFields,
+  getSkippedBillingImportHeaders,
+} from "@/lib/csv-import-mapping";
 import {
   KOARYU_FIELDS,
   REQUIRED_FIELDS,
@@ -46,47 +49,62 @@ export function StudentImportMappingStep({
     return Object.entries(counts).filter(([, count]) => count > 1);
   }, [mapping]);
   const duplicateNotesMappingEntries = useMemo(
-    () => Object.entries(mapping).filter(([, field]) => field === "notes").map(([header]) => header),
-    [mapping]
+    () =>
+      Object.entries(mapping)
+        .filter(([, field]) => field === "notes")
+        .map(([header]) => header),
+    [mapping],
   );
   const duplicateBlockingMappingEntries = useMemo(
     () => duplicateMappingEntries.filter(([field]) => field !== "notes"),
-    [duplicateMappingEntries]
+    [duplicateMappingEntries],
   );
   const missingRequiredMappings = useMemo(() => {
     return getMissingCsvImportRequiredFields(mapping);
   }, [mapping]);
   const skippedBillingImportHeaders = useMemo(
     () => getSkippedBillingImportHeaders(headers, mapping),
-    [headers, mapping]
+    [headers, mapping],
   );
   const paymentStatusMappingEntries = useMemo(
-    () => Object.entries(mapping).filter(([header, field]) => field === "status" && isPaymentStatusHeader(header)),
-    [mapping]
+    () =>
+      Object.entries(mapping).filter(
+        ([header, field]) => field === "status" && isPaymentStatusHeader(header),
+      ),
+    [mapping],
   );
-  const mappingBlockers = useMemo(() => [
-    ...missingRequiredMappings.map((field) => ({
-      code: "missing_required_mapping",
-      message: `${getKoaryuFieldLabel(field)} is still unmapped.`,
-    })),
-    ...duplicateBlockingMappingEntries.map(([field]) => {
-      const duplicateColumns = Object.entries(mapping)
-        .filter(([, mappedField]) => mappedField === field)
-        .map(([header]) => header);
-      const [firstColumn, secondColumn] = duplicateColumns;
+  const mappingBlockers = useMemo(
+    () => [
+      ...missingRequiredMappings.map((field) => ({
+        code: "missing_required_mapping",
+        message: `${getKoaryuFieldLabel(field)} is still unmapped.`,
+      })),
+      ...duplicateBlockingMappingEntries.map(([field]) => {
+        const duplicateColumns = Object.entries(mapping)
+          .filter(([, mappedField]) => mappedField === field)
+          .map(([header]) => header);
+        const [firstColumn, secondColumn] = duplicateColumns;
 
-      return {
-        code: "duplicate_mapping",
-        message: firstColumn && secondColumn
-          ? `${getKoaryuFieldLabel(field)} is mapped from both "${firstColumn}" and "${secondColumn}". Choose one and set the other to "Skip this column."`
-          : `${getKoaryuFieldLabel(field)} is mapped more than once. Choose one CSV column and set the others to "Skip this column."`,
-      };
-    }),
-    ...paymentStatusMappingEntries.map(([header]) => ({
-      code: "payment_status_mapping",
-      message: `${header} is billing/payment data and cannot be mapped to Student Status. Set it to "Skip this column" or map a roster status column instead.`,
-    })),
-  ], [duplicateBlockingMappingEntries, mapping, missingRequiredMappings, paymentStatusMappingEntries]);
+        return {
+          code: "duplicate_mapping",
+          message:
+            firstColumn && secondColumn
+              ? `${getKoaryuFieldLabel(field)} is mapped from both "${firstColumn}" and "${secondColumn}". Choose one and set the other to "Skip this column."`
+              : `${getKoaryuFieldLabel(field)} is mapped more than once. Choose one CSV column and set the others to "Skip this column."`,
+        };
+      }),
+      ...paymentStatusMappingEntries.map(([header]) => ({
+        code: "payment_status_mapping",
+        message: `${header} is billing/payment data and cannot be mapped to Student Status. Set it to "Skip this column" or map a roster status column instead.`,
+      })),
+    ],
+    [
+      duplicateBlockingMappingEntries,
+      mapping,
+      missingRequiredMappings,
+      paymentStatusMappingEntries,
+    ],
+  );
 
   return (
     <div className="space-y-5">
@@ -128,9 +146,7 @@ export function StudentImportMappingStep({
           icon={<Info className="w-4 h-4 text-accent mt-0.5" />}
           tone="default"
         >
-          <p className="text-sm text-text-secondary">
-            {duplicateNotesMappingEntries.join(", ")}
-          </p>
+          <p className="text-sm text-text-secondary">{duplicateNotesMappingEntries.join(", ")}</p>
         </StudentImportSectionCard>
       ) : null}
       {skippedBillingImportHeaders.length > 0 ? (
@@ -140,9 +156,7 @@ export function StudentImportMappingStep({
           icon={<Info className="w-4 h-4 text-accent mt-0.5" />}
           tone="default"
         >
-          <p className="text-sm text-text-secondary">
-            {skippedBillingImportHeaders.join(", ")}
-          </p>
+          <p className="text-sm text-text-secondary">{skippedBillingImportHeaders.join(", ")}</p>
         </StudentImportSectionCard>
       ) : null}
 
@@ -159,8 +173,14 @@ export function StudentImportMappingStep({
         {headers.map((header) => {
           const selectedField = mapping[header] || "";
           const selectId = `csv-map-${header.replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
-          const sampleValues = rows.slice(0, 3).map((row) => row[header]).filter(Boolean);
-          const isDuplicate = !!selectedField && selectedField !== "notes" && duplicateMappingEntries.some(([field]) => field === selectedField);
+          const sampleValues = rows
+            .slice(0, 3)
+            .map((row) => row[header])
+            .filter(Boolean);
+          const isDuplicate =
+            !!selectedField &&
+            selectedField !== "notes" &&
+            duplicateMappingEntries.some(([field]) => field === selectedField);
           const isRequired = REQUIRED_FIELDS.includes(selectedField);
 
           return (
@@ -170,19 +190,22 @@ export function StudentImportMappingStep({
                   <p className="text-sm text-text-primary font-mono truncate">{header}</p>
                   {selectedField ? (
                     <Badge variant={isDuplicate ? "danger" : isRequired ? "accent" : "default"}>
-                      {KOARYU_FIELDS.find((item) => item.value === selectedField)?.label || selectedField}
+                      {KOARYU_FIELDS.find((item) => item.value === selectedField)?.label ||
+                        selectedField}
                     </Badge>
                   ) : null}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {sampleValues.length > 0 ? sampleValues.map((value, index) => (
-                    <span
-                      key={`${header}-${index}`}
-                      className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
-                    >
-                      {value}
-                    </span>
-                  )) : (
+                  {sampleValues.length > 0 ? (
+                    sampleValues.map((value, index) => (
+                      <span
+                        key={`${header}-${index}`}
+                        className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
+                      >
+                        {value}
+                      </span>
+                    ))
+                  ) : (
                     <span className="text-xs text-muted">No sample values</span>
                   )}
                 </div>

@@ -12,6 +12,7 @@ StudentProgramMembershipStatus = Literal["active", "paused", "ended"]
 
 # ---- Guardian ----
 
+
 class GuardianCreate(BaseModel):
     first_name: str
     last_name: str
@@ -64,6 +65,7 @@ class StudentProgramMembershipUpdate(BaseModel):
 
 
 # ---- Student ----
+
 
 class StudentCreate(BaseModel):
     legal_first_name: str
@@ -206,8 +208,10 @@ class StudentListQueryContract(BaseModel):
 
 # ---- CSV Import ----
 
+
 class CsvImportRow(BaseModel):
     """A single parsed row from a CSV import attempt."""
+
     row_number: int
     data: dict
     issues: list["CsvImportIssue"] = Field(default_factory=list)
@@ -306,6 +310,7 @@ CsvImportRow.model_rebuild()
 
 
 # ---- Bulk Actions ----
+
 
 class BulkTagUpdate(BaseModel):
     student_ids: list[str] = Field(min_length=1)

@@ -1,4 +1,5 @@
 """Compose independently bounded status and totals without widening access."""
+
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
@@ -24,8 +25,14 @@ def payment_cohort_period(as_of: datetime | None = None) -> tuple[datetime, date
     observed = as_of or datetime.now(timezone.utc)
     if observed.tzinfo is None:
         observed = observed.replace(tzinfo=timezone.utc)
-    start = observed.astimezone(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
+    start = observed.astimezone(timezone.utc).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+    end = (
+        start.replace(year=start.year + 1, month=1)
+        if start.month == 12
+        else start.replace(month=start.month + 1)
+    )
     return start, end
 
 
@@ -51,7 +58,9 @@ def _financials(client: Client, studio_id: str, observed: datetime):
     errors = []
     try:
         access = get_platform_subscription_access(client, studio_id)
-        financial_access = "subscription_required" if access["subscription_required"] else "available"
+        financial_access = (
+            "subscription_required" if access["subscription_required"] else "available"
+        )
     except HTTPException:
         financial_access = "unavailable"
         errors.append("Financial access could not be verified.")
@@ -59,9 +68,15 @@ def _financials(client: Client, studio_id: str, observed: datetime):
     if financial_access == "available":
         start, end = payment_cohort_period(observed)
         try:
-            result = execute_required_rpc(client, "billing_landing_aggregates", {
-                "p_studio_id": studio_id, "p_period_start": start.isoformat(), "p_period_end": end.isoformat(),
-            })
+            result = execute_required_rpc(
+                client,
+                "billing_landing_aggregates",
+                {
+                    "p_studio_id": studio_id,
+                    "p_period_start": start.isoformat(),
+                    "p_period_end": end.isoformat(),
+                },
+            )
             aggregates = BillingLandingAggregatesResponse.model_validate(result.data)
         except Exception:
             financial_access = "unavailable"
@@ -118,7 +133,10 @@ async def get_billing_landing(
 
     if isinstance(diagnostic_result, BaseException):
         system_status, payment_account = None, None
-        errors = ["Billing system diagnostics are unavailable.", "Stripe account status is unavailable."]
+        errors = [
+            "Billing system diagnostics are unavailable.",
+            "Stripe account status is unavailable.",
+        ]
     else:
         system_status, payment_account, errors = diagnostic_result
     if isinstance(platform_result, BaseException):
@@ -134,6 +152,12 @@ async def get_billing_landing(
         errors.extend(financial_errors)
 
     return BillingLandingResponse(
-        studio_id=studio_id, observed_at=observed.isoformat(), system_status=system_status,
-        payment_account=payment_account, platform_status=platform_status, financial_access=financial_access, aggregates=aggregates, errors=errors,
+        studio_id=studio_id,
+        observed_at=observed.isoformat(),
+        system_status=system_status,
+        payment_account=payment_account,
+        platform_status=platform_status,
+        financial_access=financial_access,
+        aggregates=aggregates,
+        errors=errors,
     )

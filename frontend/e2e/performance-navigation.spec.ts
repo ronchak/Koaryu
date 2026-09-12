@@ -10,81 +10,135 @@ type Sample = { elapsed: number; opacity: number; height: number; iconOpacity: n
 
 for (const placement of ["side", "collapsed", "top", "mobile"] as const) {
   for (const reducedMotion of ["reduce", "no-preference"] as const) {
-    check(`navigation stays stable in ${placement} layout with motion ${reducedMotion}`, async ({ page }) => {
-      await page.emulateMedia({ reducedMotion });
-      await page.setViewportSize({ width: placement === "mobile" ? 390 : 1280, height: 900 });
-      await page.addInitScript(value => localStorage.setItem("koaryu-navigation-placement", value), placement === "top" ? "top" : "side");
-      await page.goto(`${origin}/dashboard`);
-      await expect(page.locator("html")).toHaveAttribute("data-koaryu-data-plane", "disposable-preview");
-      await expect(page.locator('[data-koaryu-dashboard-data-ready="true"]')).toBeVisible();
-      if (placement === "collapsed") {
-        await page.getByRole("button", { name: "Collapse product spine" }).filter({ visible: true }).click();
-        await expect(page.locator('aside[data-collapsed="true"]')).toBeVisible();
-        await page.locator('aside').evaluate(async element => {
-          await Promise.all(element.getAnimations().map(animation => animation.finished));
+    check(
+      `navigation stays stable in ${placement} layout with motion ${reducedMotion}`,
+      async ({ page }) => {
+        await page.emulateMedia({ reducedMotion });
+        await page.setViewportSize({ width: placement === "mobile" ? 390 : 1280, height: 900 });
+        await page.addInitScript(
+          (value) => localStorage.setItem("koaryu-navigation-placement", value),
+          placement === "top" ? "top" : "side",
+        );
+        await page.goto(`${origin}/dashboard`);
+        await expect(page.locator("html")).toHaveAttribute(
+          "data-koaryu-data-plane",
+          "disposable-preview",
+        );
+        await expect(page.locator('[data-koaryu-dashboard-data-ready="true"]')).toBeVisible();
+        if (placement === "collapsed") {
+          await page
+            .getByRole("button", { name: "Collapse product spine" })
+            .filter({ visible: true })
+            .click();
+          await expect(page.locator('aside[data-collapsed="true"]')).toBeVisible();
+          await page.locator("aside").evaluate(async (element) => {
+            await Promise.all(element.getAnimations().map((animation) => animation.finished));
+          });
+        }
+        const link = page
+          .getByRole("link", { name: "Billing", exact: true })
+          .filter({ visible: true });
+        await link.scrollIntoViewIfNeeded();
+        const bounds = await link.boundingBox();
+        const errors: string[] = [];
+        page.on("pageerror", (error) => errors.push(error.message));
+        // Hold the actual route read to measure pending feedback frame by frame.
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
         });
-      }
-      const link = page.getByRole("link", { name: "Billing", exact: true }).filter({ visible: true });
-      await link.scrollIntoViewIfNeeded();
-      const bounds = await link.boundingBox();
-      const errors: string[] = [];
-      page.on("pageerror", error => errors.push(error.message));
-      // Hold the actual route read to measure pending feedback frame by frame.
-      let release!: () => void;
-      const held = new Promise<void>(resolve => { release = resolve; });
-      await page.route(`${origin}/billing*`, async route => { await held; await route.continue(); });
-      await page.evaluate(() => {
-        const samples: Sample[] = [];
-        Object.assign(window, { navigationSamples: samples });
-        let started: number | undefined;
-        const sample = (now: number) => {
-          const indicator = Array.from(document.querySelectorAll<HTMLElement>('[data-koaryu-navigation-pending="true"]'))
-            .find(element => element.getBoundingClientRect().width > 0);
-          if (indicator) {
-            started ??= now;
-            samples.push({
-              elapsed: now - started,
-              opacity: Number(getComputedStyle(indicator).opacity),
-              height: indicator.closest("a")!.getBoundingClientRect().height,
-              iconOpacity: Number(getComputedStyle(indicator.parentElement!.querySelector("svg")!).opacity),
-            });
-          }
-          if (started === undefined || now - started < 600) requestAnimationFrame(sample);
-        };
-        requestAnimationFrame(sample);
-      });
-      try {
-        await link.click();
-        const pending = link.locator('[data-koaryu-navigation-pending="true"]');
-        await expect(pending).toHaveCount(1);
-        await expect(pending).toHaveCSS("opacity", "1");
+        await page.route(`${origin}/billing*`, async (route) => {
+          await held;
+          await route.continue();
+        });
+        await page.evaluate(() => {
+          const samples: Sample[] = [];
+          Object.assign(window, { navigationSamples: samples });
+          let started: number | undefined;
+          const sample = (now: number) => {
+            const indicator = Array.from(
+              document.querySelectorAll<HTMLElement>('[data-koaryu-navigation-pending="true"]'),
+            ).find((element) => element.getBoundingClientRect().width > 0);
+            if (indicator) {
+              started ??= now;
+              samples.push({
+                elapsed: now - started,
+                opacity: Number(getComputedStyle(indicator).opacity),
+                height: indicator.closest("a")!.getBoundingClientRect().height,
+                iconOpacity: Number(
+                  getComputedStyle(indicator.parentElement!.querySelector("svg")!).opacity,
+                ),
+              });
+            }
+            if (started === undefined || now - started < 600) requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        });
+        try {
+          await link.click();
+          const pending = link.locator('[data-koaryu-navigation-pending="true"]');
+          await expect(pending).toHaveCount(1);
+          await expect(pending).toHaveCSS("opacity", "1");
+          expect(await link.boundingBox()).toEqual(bounds);
+          if (reducedMotion === "reduce") await expect(pending).toHaveCSS("transform", "none");
+          const samples = await page.evaluate(
+            () => (window as unknown as { navigationSamples: Sample[] }).navigationSamples,
+          );
+          const early = samples.filter((sample) => sample.elapsed < 100);
+          expect(early.length).toBeGreaterThan(0);
+          expect(early.every((sample) => sample.opacity === 0 && sample.iconOpacity > 0)).toBe(
+            true,
+          );
+          expect(samples.every((sample) => sample.height === bounds?.height)).toBe(true);
+          expect(samples.some((sample) => sample.opacity === 1 && sample.iconOpacity === 0)).toBe(
+            true,
+          );
+        } finally {
+          release();
+        }
+        await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+        await expect(page.locator('[data-koaryu-navigation-pending="true"]')).toHaveCount(0);
         expect(await link.boundingBox()).toEqual(bounds);
-        if (reducedMotion === "reduce") await expect(pending).toHaveCSS("transform", "none");
-        const samples = await page.evaluate(() => (window as unknown as { navigationSamples: Sample[] }).navigationSamples);
-        const early = samples.filter(sample => sample.elapsed < 100);
-        expect(early.length).toBeGreaterThan(0);
-        expect(early.every(sample => sample.opacity === 0 && sample.iconOpacity > 0)).toBe(true);
-        expect(samples.every(sample => sample.height === bounds?.height)).toBe(true);
-        expect(samples.some(sample => sample.opacity === 1 && sample.iconOpacity === 0)).toBe(true);
-      } finally {
-        release();
-      }
-      await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
-      await expect(page.locator('[data-koaryu-navigation-pending="true"]')).toHaveCount(0);
-      expect(await link.boundingBox()).toEqual(bounds);
-      await page.waitForFunction(() => performance.getEntriesByName("koaryu.measured.navigation_commit").some(entry => (entry as PerformanceMark).detail?.route === "billing"));
-      const commit = await page.evaluate(() => (performance.getEntriesByName("koaryu.measured.navigation_commit").at(-1) as PerformanceMark).detail);
-      expect(commit.value).toBeGreaterThanOrEqual(150);
-      // Preview Billing has no live landing payload. Schedule has a useful preview state.
-      await page.getByRole("link", { name: "Schedule", exact: true }).filter({ visible: true }).click();
-      await page.waitForFunction(() => performance.getEntriesByName("koaryu.measured.navigation_useful").some(entry => (entry as PerformanceMark).detail?.route === "schedule"));
-      const timings = await page.evaluate(() => ({
-        commit: (performance.getEntriesByName("koaryu.measured.navigation_commit").at(-1) as PerformanceMark)?.detail,
-        useful: (performance.getEntriesByName("koaryu.measured.navigation_useful").at(-1) as PerformanceMark)?.detail,
-      }));
-      expect(timings.commit.route).toBe("schedule");
-      expect(timings.useful.value).toBeGreaterThanOrEqual(timings.commit.value);
-      expect(errors).toEqual([]);
-    });
+        await page.waitForFunction(() =>
+          performance
+            .getEntriesByName("koaryu.measured.navigation_commit")
+            .some((entry) => (entry as PerformanceMark).detail?.route === "billing"),
+        );
+        const commit = await page.evaluate(
+          () =>
+            (
+              performance
+                .getEntriesByName("koaryu.measured.navigation_commit")
+                .at(-1) as PerformanceMark
+            ).detail,
+        );
+        expect(commit.value).toBeGreaterThanOrEqual(150);
+        // Preview Billing has no live landing payload. Schedule has a useful preview state.
+        await page
+          .getByRole("link", { name: "Schedule", exact: true })
+          .filter({ visible: true })
+          .click();
+        await page.waitForFunction(() =>
+          performance
+            .getEntriesByName("koaryu.measured.navigation_useful")
+            .some((entry) => (entry as PerformanceMark).detail?.route === "schedule"),
+        );
+        const timings = await page.evaluate(() => ({
+          commit: (
+            performance
+              .getEntriesByName("koaryu.measured.navigation_commit")
+              .at(-1) as PerformanceMark
+          )?.detail,
+          useful: (
+            performance
+              .getEntriesByName("koaryu.measured.navigation_useful")
+              .at(-1) as PerformanceMark
+          )?.detail,
+        }));
+        expect(timings.commit.route).toBe("schedule");
+        expect(timings.useful.value).toBeGreaterThanOrEqual(timings.commit.value);
+        expect(errors).toEqual([]);
+      },
+    );
   }
 }

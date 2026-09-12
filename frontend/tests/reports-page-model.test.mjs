@@ -129,7 +129,7 @@ describe("reports page model", () => {
         ["trial_completed", 0, 0],
         ["offer_sent", 0, 0],
         ["enrolled", 1, 0.5],
-      ]
+      ],
     );
     assert.equal(metrics.sourceRows[0].source, "website");
     assert.equal(metrics.sourceRows[0].conversionRate, 0.5);
@@ -137,7 +137,12 @@ describe("reports page model", () => {
 
   it("builds attendance and unique attendees from the same non-canceled date-window session set", () => {
     const attendanceRows = [
-      attendance({ id: "a-1", session_id: "session-1", student_id: "student-1", status: "present" }),
+      attendance({
+        id: "a-1",
+        session_id: "session-1",
+        student_id: "student-1",
+        status: "present",
+      }),
       attendance({ id: "a-2", session_id: "session-1", student_id: "student-2", status: "absent" }),
       attendance({ id: "a-3", session_id: "canceled", student_id: "student-3", status: "present" }),
     ];
@@ -154,15 +159,21 @@ describe("reports page model", () => {
       today: "2026-05-24",
     });
 
-    assert.deepEqual(sessionRows.map((row) => row.id), ["session-1"]);
+    assert.deepEqual(
+      sessionRows.map((row) => row.id),
+      ["session-1"],
+    );
     assert.equal(sessionRows[0].attendees, 1);
     assert.equal(sessionRows[0].utilization, 0.25);
-    assert.equal(countUniqueReportAttendees({
-      attendance: attendanceRows,
-      lookbackStart: "2026-04-25",
-      sessions,
-      today: "2026-05-24",
-    }), 1);
+    assert.equal(
+      countUniqueReportAttendees({
+        attendance: attendanceRows,
+        lookbackStart: "2026-04-25",
+        sessions,
+        today: "2026-05-24",
+      }),
+      1,
+    );
   });
 
   it("derives complete reports page state for the route", () => {
@@ -173,7 +184,13 @@ describe("reports page model", () => {
       ],
       leads: [
         lead({ id: "lead-1", program_id: "program-1", stage: "enrolled", source: "website" }),
-        lead({ id: "lead-2", program_id: null, program_interest: "Trial", stage: "closed_lost", source: "referral" }),
+        lead({
+          id: "lead-2",
+          program_id: null,
+          program_interest: "Trial",
+          stage: "closed_lost",
+          source: "referral",
+        }),
       ],
       programs: [
         program({ id: "program-1", name: "Kids BJJ" }),
@@ -189,9 +206,21 @@ describe("reports page model", () => {
     assert.equal(model.programById.get("program-1").name, "Kids BJJ");
     assert.equal(model.attendanceMetrics.totalAttendance, 2);
     assert.equal(model.attendanceMetrics.utilizationRate, 0.5);
-    assert.deepEqual(model.visibleSessionRows.map((row) => row.id), ["session-1"]);
-    assert.deepEqual(model.programLeadRows.map((row) => [row.label, row.total]), [["Kids BJJ", 1], ["Trial", 1]]);
-    assert.deepEqual(model.programAttendanceRows.map((row) => [row.label, row.attendance]), [["Kids BJJ", 2]]);
+    assert.deepEqual(
+      model.visibleSessionRows.map((row) => row.id),
+      ["session-1"],
+    );
+    assert.deepEqual(
+      model.programLeadRows.map((row) => [row.label, row.total]),
+      [
+        ["Kids BJJ", 1],
+        ["Trial", 1],
+      ],
+    );
+    assert.deepEqual(
+      model.programAttendanceRows.map((row) => [row.label, row.attendance]),
+      [["Kids BJJ", 2]],
+    );
     assert.equal(model.uniqueAttendees, 2);
   });
 
@@ -202,15 +231,15 @@ describe("reports page model", () => {
         lead({ id: "lead-2", program_id: "kids", stage: "enrolled" }),
         lead({ id: "lead-3", program_id: "kids", stage: "closed_lost" }),
       ],
-      programs: [
-        program({ id: "kids", name: "Kids" }),
-        program({ id: "adult", name: "Adults" }),
-      ],
+      programs: [program({ id: "kids", name: "Kids" }), program({ id: "adult", name: "Adults" })],
     });
 
-    assert.deepEqual(rows.map((row) => [row.label, row.total, row.active, row.enrolled]), [
-      ["Kids", 2, 1, 1],
-      ["Adults", 1, 1, 0],
-    ]);
+    assert.deepEqual(
+      rows.map((row) => [row.label, row.total, row.active, row.enrolled]),
+      [
+        ["Kids", 2, 1, 1],
+        ["Adults", 1, 1, 0],
+      ],
+    );
   });
 });

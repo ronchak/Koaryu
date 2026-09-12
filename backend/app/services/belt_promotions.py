@@ -33,17 +33,21 @@ class BeltPromotionRecorder:
         # SQL resolves context and checks replay under the operation lock, before
         # current-rank validation. Pre-reading those facts would race a retry.
         try:
-            result = execute_required_rpc(self.supabase, "record_student_rank_transition_v3", {
-                "p_studio_id": studio_id,
-                "p_student_id": data.student_id,
-                "p_student_program_membership_id": data.student_program_membership_id,
-                "p_program_id": data.program_id,
-                "p_to_rank_id": data.to_rank_id,
-                "p_actor_id": actor_id,
-                "p_notes": notes,
-                "p_transition_kind": kind,
-                "p_operation_id": str(data.operation_id or uuid4()),
-            })
+            result = execute_required_rpc(
+                self.supabase,
+                "record_student_rank_transition_v3",
+                {
+                    "p_studio_id": studio_id,
+                    "p_student_id": data.student_id,
+                    "p_student_program_membership_id": data.student_program_membership_id,
+                    "p_program_id": data.program_id,
+                    "p_to_rank_id": data.to_rank_id,
+                    "p_actor_id": actor_id,
+                    "p_notes": notes,
+                    "p_transition_kind": kind,
+                    "p_operation_id": str(data.operation_id or uuid4()),
+                },
+            )
         except PostgrestAPIError as exc:
             status_code = {
                 ("22023", "rank_transition_conflict"): 409,
@@ -58,15 +62,18 @@ class BeltPromotionRecorder:
             detail = (
                 "This rank change could not be verified against the recorded history. "
                 "Check the student's history before trying again."
-                if status_code == 409 else exc.message
+                if status_code == 409
+                else exc.message
             )
             raise HTTPException(status_code=status_code, detail=detail) from exc
 
         row = first_rpc_row(result)
         if row is None:
             raise HTTPException(status_code=500, detail="Failed to record rank transition")
-        return PromotionResponse.model_validate({
-            **row,
-            "from_rank_name": row.get("from_rank_name_snapshot"),
-            "to_rank_name": row.get("to_rank_name_snapshot"),
-        })
+        return PromotionResponse.model_validate(
+            {
+                **row,
+                "from_rank_name": row.get("from_rank_name_snapshot"),
+                "to_rank_name": row.get("to_rank_name_snapshot"),
+            }
+        )

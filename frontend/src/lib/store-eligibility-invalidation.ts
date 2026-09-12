@@ -15,7 +15,7 @@ export function invalidateEligibilityAfterStudentMutation({
   onRefreshError: (error: unknown) => void;
   refreshEligibility: (
     ladderId: string,
-    options: { force: boolean }
+    options: { force: boolean },
   ) => Promise<EligibilityEntry[]>;
 }) {
   eligibilityCacheRef.current = {};

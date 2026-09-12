@@ -175,9 +175,7 @@ class BillingInvoiceOperationWorkflow:
             "stripe_account_id": account_id,
             "stripe_customer_id": payer["stripe_customer_id"],
             "collection_method": (
-                "charge_automatically"
-                if data.collection_mode == "autopay"
-                else "send_invoice"
+                "charge_automatically" if data.collection_mode == "autopay" else "send_invoice"
             ),
             "application_fee_amount_cents": application_fee,
             "external": False,
@@ -202,20 +200,22 @@ class BillingInvoiceOperationWorkflow:
             amount_due=amount_due,
             application_fee=application_fee,
         )
-        desired_hash = stable_hash({
-            "operation_type": INVOICE_CREATE_OPERATION_TYPE,
-            "studio_id": studio_id,
-            "invoice_id": local_invoice["id"],
-            "payer_id": payer["id"],
-            "stripe_customer_id": payer["stripe_customer_id"],
-            "stripe_connected_account_id": account_id,
-            "connect_account_generation": generation,
-            "collection_method": invoice_row["collection_method"],
-            "application_fee_amount_cents": application_fee,
-            "currency": data.currency,
-            "due_date": due_date,
-            "items": items,
-        })
+        desired_hash = stable_hash(
+            {
+                "operation_type": INVOICE_CREATE_OPERATION_TYPE,
+                "studio_id": studio_id,
+                "invoice_id": local_invoice["id"],
+                "payer_id": payer["id"],
+                "stripe_customer_id": payer["stripe_customer_id"],
+                "stripe_connected_account_id": account_id,
+                "connect_account_generation": generation,
+                "collection_method": invoice_row["collection_method"],
+                "application_fee_amount_cents": application_fee,
+                "currency": data.currency,
+                "due_date": due_date,
+                "items": items,
+            }
+        )
         operations = BillingProviderOperationCoordinator(self.supabase)
         context, claimed = self._claim_parent(
             operations,
@@ -232,9 +232,7 @@ class BillingInvoiceOperationWorkflow:
         outcome = str(claimed.get("outcome") or "")
         if state == "completed":
             try:
-                invoice = self._load_created_invoice(
-                    local_invoice, context, operation, items
-                )
+                invoice = self._load_created_invoice(local_invoice, context, operation, items)
             except Exception as exc:
                 raise HTTPException(
                     status_code=503,
@@ -244,7 +242,8 @@ class BillingInvoiceOperationWorkflow:
         if state == "reconciliation_required" or outcome == "reconciliation_required":
             raise HTTPException(status_code=409, detail=INVOICE_CREATE_AMBIGUOUS_DETAIL)
         if state == "provider_request_in_flight" or outcome in {
-            "busy", "provider_request_in_flight"
+            "busy",
+            "provider_request_in_flight",
         }:
             provider_operation_disposition(claimed)
         if state in {"definitive_failed", "definitive_rejected"}:
@@ -352,17 +351,19 @@ class BillingInvoiceOperationWorkflow:
                 status_code=409,
                 detail="Invoice collection method is not eligible for finalization.",
             )
-        desired_hash = stable_hash({
-            "operation_type": INVOICE_FINALIZE_OPERATION_TYPE,
-            "studio_id": studio_id,
-            "invoice_id": invoice_id,
-            "payer_id": invoice["payer_id"],
-            "stripe_invoice_id": invoice["stripe_invoice_id"],
-            "stripe_customer_id": invoice["stripe_customer_id"],
-            "stripe_connected_account_id": invoice["stripe_account_id"],
-            "connect_account_generation": generation,
-            "collection_method": collection_method,
-        })
+        desired_hash = stable_hash(
+            {
+                "operation_type": INVOICE_FINALIZE_OPERATION_TYPE,
+                "studio_id": studio_id,
+                "invoice_id": invoice_id,
+                "payer_id": invoice["payer_id"],
+                "stripe_invoice_id": invoice["stripe_invoice_id"],
+                "stripe_customer_id": invoice["stripe_customer_id"],
+                "stripe_connected_account_id": invoice["stripe_account_id"],
+                "connect_account_generation": generation,
+                "collection_method": collection_method,
+            }
+        )
         operations = BillingProviderOperationCoordinator(self.supabase)
         context, claimed = self._claim_parent(
             operations,
@@ -403,26 +404,28 @@ class BillingInvoiceOperationWorkflow:
                 )
             except Exception as exc:
                 self._mark_parent_reconciliation(
-                    operations, context, operation,
-                    "invoice_finalize_projection_unverified", exc,
+                    operations,
+                    context,
+                    operation,
+                    "invoice_finalize_projection_unverified",
+                    exc,
                     INVOICE_FINALIZE_AMBIGUOUS_DETAIL,
                 )
             self.owner._recompute_payer_balance(studio_id, invoice["payer_id"])
-            operations.complete(
-                context, operation, result_code="invoice_finalize_completed"
-            )
+            operations.complete(context, operation, result_code="invoice_finalize_completed")
             self._audit_finalized_once(context, finalized)
             return BillingInvoiceResponse(**finalized)
         if state == "provider_request_in_flight" or outcome in {
-            "busy", "provider_request_in_flight"
+            "busy",
+            "provider_request_in_flight",
         }:
             raise HTTPException(status_code=409, detail=INVOICE_FINALIZE_AMBIGUOUS_DETAIL)
         if state in {"definitive_failed", "definitive_rejected"}:
             provider_operation_disposition(claimed)
         try:
             provider_before = self._read_invoice(invoice)
-            provider_collection_method, provider_before_status = (
-                self._verify_finalize_preread(invoice, provider_before)
+            provider_collection_method, provider_before_status = self._verify_finalize_preread(
+                invoice, provider_before
             )
         except HTTPException as exc:
             if state == "started":
@@ -462,17 +465,19 @@ class BillingInvoiceOperationWorkflow:
                 finalized = self._project_finalized_invoice(invoice, context, operation)
             except Exception as exc:
                 self._mark_parent_reconciliation(
-                    operations, context, operation,
-                    "invoice_finalize_projection_failed", exc,
+                    operations,
+                    context,
+                    operation,
+                    "invoice_finalize_projection_failed",
+                    exc,
                     INVOICE_FINALIZE_AMBIGUOUS_DETAIL,
                 )
         elif state == "reconciliation_required" or outcome == "reconciliation_required":
             if collection_method == "send_invoice" or provider_before_status not in {
-                "open", "paid"
+                "open",
+                "paid",
             }:
-                raise HTTPException(
-                    status_code=409, detail=INVOICE_FINALIZE_AMBIGUOUS_DETAIL
-                )
+                raise HTTPException(status_code=409, detail=INVOICE_FINALIZE_AMBIGUOUS_DETAIL)
             operation = operations.transition(
                 context,
                 operation,
@@ -549,10 +554,12 @@ class BillingInvoiceOperationWorkflow:
         if not invoice.get("stripe_invoice_id") and not invoice.get("stripe_account_id"):
             result = (
                 self.supabase.table("billing_invoices")
-                .update({
-                    "status": "void",
-                    "voided_at": datetime.now(timezone.utc).isoformat(),
-                })
+                .update(
+                    {
+                        "status": "void",
+                        "voided_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
                 .eq("id", invoice_id)
                 .eq("studio_id", studio_id)
                 .execute()
@@ -560,9 +567,15 @@ class BillingInvoiceOperationWorkflow:
             if not result.data:
                 raise HTTPException(status_code=404, detail="Invoice not found.")
             local_void = result.data[0]
-            self.owner._audit(studio_id, actor_id, "billing.invoice_voided", invoice_id, {
-                "provider_workflow": "local_only",
-            })
+            self.owner._audit(
+                studio_id,
+                actor_id,
+                "billing.invoice_voided",
+                invoice_id,
+                {
+                    "provider_workflow": "local_only",
+                },
+            )
             self.owner._recompute_payer_balance(studio_id, local_void.get("payer_id"))
             return BillingInvoiceResponse(**local_void)
         if not invoice.get("stripe_invoice_id") or not invoice.get("stripe_account_id"):
@@ -571,15 +584,17 @@ class BillingInvoiceOperationWorkflow:
                 detail="Invoice provider identity is incomplete and requires reconciliation.",
             )
         _account, generation = self._invoice_generation(invoice, studio_id)
-        desired_hash = stable_hash({
-            "operation_type": INVOICE_VOID_OPERATION_TYPE,
-            "studio_id": studio_id,
-            "invoice_id": invoice_id,
-            "payer_id": invoice["payer_id"],
-            "stripe_invoice_id": invoice["stripe_invoice_id"],
-            "stripe_connected_account_id": invoice["stripe_account_id"],
-            "connect_account_generation": generation,
-        })
+        desired_hash = stable_hash(
+            {
+                "operation_type": INVOICE_VOID_OPERATION_TYPE,
+                "studio_id": studio_id,
+                "invoice_id": invoice_id,
+                "payer_id": invoice["payer_id"],
+                "stripe_invoice_id": invoice["stripe_invoice_id"],
+                "stripe_connected_account_id": invoice["stripe_account_id"],
+                "connect_account_generation": generation,
+            }
+        )
         operations = BillingProviderOperationCoordinator(self.supabase)
         context, claimed = self._claim_parent(
             operations,
@@ -601,9 +616,7 @@ class BillingInvoiceOperationWorkflow:
             try:
                 voided = self._load_void_invoice(invoice_id, context, operation)
             except Exception as exc:
-                raise HTTPException(
-                    status_code=503, detail=INVOICE_VOID_AMBIGUOUS_DETAIL
-                ) from exc
+                raise HTTPException(status_code=503, detail=INVOICE_VOID_AMBIGUOUS_DETAIL) from exc
             self._audit_voided_once(context, voided)
             return BillingInvoiceResponse(**voided)
         if state == "projected":
@@ -623,7 +636,8 @@ class BillingInvoiceOperationWorkflow:
             self._audit_voided_once(context, voided)
             return BillingInvoiceResponse(**voided)
         if state == "provider_request_in_flight" or outcome in {
-            "busy", "provider_request_in_flight"
+            "busy",
+            "provider_request_in_flight",
         }:
             raise HTTPException(status_code=409, detail=INVOICE_VOID_AMBIGUOUS_DETAIL)
         if state in {"definitive_failed", "definitive_rejected"}:
@@ -633,8 +647,11 @@ class BillingInvoiceOperationWorkflow:
                 voided = self._project_void_invoice(invoice, context, operation)
             except Exception as exc:
                 self._mark_parent_reconciliation(
-                    operations, context, operation,
-                    "invoice_void_projection_failed", exc,
+                    operations,
+                    context,
+                    operation,
+                    "invoice_void_projection_failed",
+                    exc,
                     INVOICE_VOID_AMBIGUOUS_DETAIL,
                 )
         elif state == "reconciliation_required" or outcome == "reconciliation_required":
@@ -648,9 +665,7 @@ class BillingInvoiceOperationWorkflow:
                 provider_object_id=str(invoice["stripe_invoice_id"]),
                 result_code="invoice_void_provider_verified",
             )
-            voided = self._project_void_invoice(
-                invoice, context, operation, provider=readback
-            )
+            voided = self._project_void_invoice(invoice, context, operation, provider=readback)
         else:
             try:
                 provider_before = self._read_invoice(invoice)
@@ -689,8 +704,7 @@ class BillingInvoiceOperationWorkflow:
                 raise HTTPException(
                     status_code=409,
                     detail=(
-                        "Invoice was voided outside this workflow and requires "
-                        "reconciliation."
+                        "Invoice was voided outside this workflow and requires reconciliation."
                     ),
                 )
             operation = operations.transition(
@@ -711,14 +725,19 @@ class BillingInvoiceOperationWorkflow:
                 )
             except StripeMutationBlocked:
                 operations.transition(
-                    context, operation, "definitive_rejected",
+                    context,
+                    operation,
+                    "definitive_rejected",
                     error_code="provider_mutation_blocked",
                 )
                 raise
             except Exception as exc:
                 self._mark_parent_reconciliation(
-                    operations, context, operation,
-                    "invoice_void_provider_outcome_ambiguous", exc,
+                    operations,
+                    context,
+                    operation,
+                    "invoice_void_provider_outcome_ambiguous",
+                    exc,
                     INVOICE_VOID_AMBIGUOUS_DETAIL,
                 )
             if (
@@ -726,7 +745,9 @@ class BillingInvoiceOperationWorkflow:
                 or str(_object_get(provider_void, "status") or "") != "void"
             ):
                 self._mark_parent_reconciliation(
-                    operations, context, operation,
+                    operations,
+                    context,
+                    operation,
                     "invoice_void_provider_identity_ambiguous",
                     RuntimeError("invoice_void_provider_identity_ambiguous"),
                     INVOICE_VOID_AMBIGUOUS_DETAIL,
@@ -744,8 +765,11 @@ class BillingInvoiceOperationWorkflow:
                 )
             except Exception as exc:
                 self._mark_parent_reconciliation(
-                    operations, context, operation,
-                    "invoice_void_projection_failed", exc,
+                    operations,
+                    context,
+                    operation,
+                    "invoice_void_projection_failed",
+                    exc,
                     INVOICE_VOID_AMBIGUOUS_DETAIL,
                 )
         operation = operations.transition(
@@ -836,14 +860,13 @@ class BillingInvoiceOperationWorkflow:
                     exc,
                     INVOICE_RETRY_AMBIGUOUS_DETAIL,
                 )
-            return self._finish_local_invoice(
-                paid, context, projected_operation, operations
-            )
+            return self._finish_local_invoice(paid, context, projected_operation, operations)
         if state == "reconciliation_required" or outcome == "reconciliation_required":
             paid, operation = self._retry_readback(invoice, context, operation, operations)
             return self._finish_local_invoice(paid, context, operation, operations)
         if state == "provider_request_in_flight" or outcome in {
-            "busy", "provider_request_in_flight"
+            "busy",
+            "provider_request_in_flight",
         }:
             raise HTTPException(status_code=409, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL)
         if state in {"definitive_failed", "definitive_rejected"}:
@@ -867,7 +890,9 @@ class BillingInvoiceOperationWorkflow:
                 )
             except _RetryLocalConsentEvidenceUnavailable as exc:
                 self._release_retry_preread_lease(
-                    operations, context, operation,
+                    operations,
+                    context,
+                    operation,
                     release_reason="local_consent_preread_unavailable",
                 )
                 raise HTTPException(
@@ -876,7 +901,9 @@ class BillingInvoiceOperationWorkflow:
                 ) from exc
             except _RetryProviderEvidenceUnavailable as exc:
                 self._release_retry_preread_lease(
-                    operations, context, operation,
+                    operations,
+                    context,
+                    operation,
                     release_reason="provider_preread_unavailable",
                 )
                 raise HTTPException(
@@ -903,7 +930,9 @@ class BillingInvoiceOperationWorkflow:
                 )
             except _RetryLocalConsentEvidenceUnavailable as exc:
                 self._release_retry_preread_lease(
-                    operations, context, operation,
+                    operations,
+                    context,
+                    operation,
                     release_reason="local_consent_preread_unavailable",
                 )
                 raise HTTPException(
@@ -933,7 +962,9 @@ class BillingInvoiceOperationWorkflow:
                     )
             except _RetryLocalConsentEvidenceUnavailable as exc:
                 self._release_retry_preread_lease(
-                    operations, context, operation,
+                    operations,
+                    context,
+                    operation,
                     release_reason="local_consent_preread_unavailable",
                 )
                 raise HTTPException(
@@ -942,7 +973,9 @@ class BillingInvoiceOperationWorkflow:
                 ) from exc
             except _RetryProviderEvidenceUnavailable as exc:
                 self._release_retry_preread_lease(
-                    operations, context, operation,
+                    operations,
+                    context,
+                    operation,
                     release_reason="provider_preread_unavailable",
                 )
                 raise HTTPException(
@@ -976,9 +1009,7 @@ class BillingInvoiceOperationWorkflow:
             }
             if retry_autopay_consent is not None:
                 pay_payload["payment_method"] = str(
-                    retry_autopay_consent["local"]["payer"][
-                        "default_payment_method_id"
-                    ]
+                    retry_autopay_consent["local"]["payer"]["default_payment_method_id"]
                 )
             provider_invoice = self.stripe_service_cls().pay_connected_invoice(
                 **pay_payload,
@@ -1063,14 +1094,16 @@ class BillingInvoiceOperationWorkflow:
             except (TypeError, ValueError):
                 return str(value)
 
-        return stable_hash({
-            "operation_type": INVOICE_RETRY_OPERATION_TYPE,
-            "studio_id": canonical_uuid(invoice["studio_id"]),
-            "invoice_id": canonical_uuid(invoice["id"]),
-            "stripe_invoice_id": invoice["stripe_invoice_id"],
-            "stripe_connected_account_id": invoice["stripe_account_id"],
-            "connect_account_generation": generation,
-        })
+        return stable_hash(
+            {
+                "operation_type": INVOICE_RETRY_OPERATION_TYPE,
+                "studio_id": canonical_uuid(invoice["studio_id"]),
+                "invoice_id": canonical_uuid(invoice["id"]),
+                "stripe_invoice_id": invoice["stripe_invoice_id"],
+                "stripe_connected_account_id": invoice["stripe_account_id"],
+                "connect_account_generation": generation,
+            }
+        )
 
     def _require_retry_autopay_consent(
         self,
@@ -1120,29 +1153,23 @@ class BillingInvoiceOperationWorkflow:
                 and released_operation.get("id") == context.operation_id
                 and released_operation.get("studio_id") == context.studio_id
                 and released_operation.get("actor_id") == context.actor_id
-                and released_operation.get("operation_type")
-                == INVOICE_RETRY_OPERATION_TYPE
-                and released_operation.get("caller_request_key")
-                == context.caller_request_key
+                and released_operation.get("operation_type") == INVOICE_RETRY_OPERATION_TYPE
+                and released_operation.get("caller_request_key") == context.caller_request_key
                 and released_operation.get("request_sha256") == context.request_sha256
                 and released_operation.get("stripe_connected_account_id")
                 == context.stripe_connected_account_id
                 and released_operation.get("connect_account_generation")
                 == context.connect_account_generation
                 and released_operation.get("state") == "started"
-                and int(released_operation.get("provider_request_attempt_count") or 0)
-                == 0
+                and int(released_operation.get("provider_request_attempt_count") or 0) == 0
                 and released_operation.get("provider_object_id") is None
                 and released_operation.get("provider_secondary_object_id") is None
                 and released_operation.get("provider_request_id") is None
                 and released_operation.get("lease_owner") is None
                 and released_operation.get("lease_acquired_at") is None
                 and released_operation.get("lease_expires_at") is None
-                and released_operation.get("invoice_retry_preread_release_reason")
-                == release_reason
-                and isinstance(
-                    released_operation.get("invoice_retry_preread_released_at"), str
-                )
+                and released_operation.get("invoice_retry_preread_release_reason") == release_reason
+                and isinstance(released_operation.get("invoice_retry_preread_released_at"), str)
                 and bool(
                     datetime.fromisoformat(
                         released_operation["invoice_retry_preread_released_at"].replace(
@@ -1150,8 +1177,7 @@ class BillingInvoiceOperationWorkflow:
                         )
                     )
                 )
-                and int(released_operation.get("revision") or 0)
-                == int(operation["revision"]) + 1
+                and int(released_operation.get("revision") or 0) == int(operation["revision"]) + 1
             )
         except Exception as exc:
             raise HTTPException(
@@ -1213,8 +1239,7 @@ class BillingInvoiceOperationWorkflow:
             _stripe_id(provider_invoice) != invoice.get("stripe_invoice_id")
             or _stripe_id(_object_get(provider_invoice, "customer"))
             != invoice.get("stripe_customer_id")
-            or str(_object_get(provider_invoice, "status") or "")
-            != provider_status
+            or str(_object_get(provider_invoice, "status") or "") != provider_status
             or str(_object_get(provider_invoice, "collection_method") or "")
             != "charge_automatically"
             or (
@@ -1223,24 +1248,19 @@ class BillingInvoiceOperationWorkflow:
                 != payment_method_id
             )
             or str(invoice_metadata.get("studio_id") or "") != studio_id
-            or str(invoice_metadata.get("payer_id") or "")
-            != str(invoice.get("payer_id") or "")
-            or str(invoice_metadata.get("invoice_id") or "")
-            != str(invoice.get("id") or "")
+            or str(invoice_metadata.get("payer_id") or "") != str(invoice.get("payer_id") or "")
+            or str(invoice_metadata.get("invoice_id") or "") != str(invoice.get("id") or "")
             or _stripe_id(setup_intent) != setup_intent_id
             or str(_object_get(setup_intent, "status") or "") != "succeeded"
             or _stripe_id(_object_get(setup_intent, "customer"))
             != invoice.get("stripe_customer_id")
-            or _stripe_id(_object_get(setup_intent, "payment_method"))
-            != payment_method_id
+            or _stripe_id(_object_get(setup_intent, "payment_method")) != payment_method_id
             or setup_metadata.get("product") != "koaryu_payments_autopay"
             or setup_metadata.get("studio_id") != studio_id
             or setup_metadata.get("payer_id") != str(invoice["payer_id"])
-            or setup_metadata.get("setup_request_id")
-            != str(consent.get("setup_request_id") or "")
+            or setup_metadata.get("setup_request_id") != str(consent.get("setup_request_id") or "")
             or setup_metadata.get("terms_version") != AUTOPAY_TERMS_VERSION
-            or setup_metadata.get("stripe_account_id")
-            != str(invoice["stripe_account_id"])
+            or setup_metadata.get("stripe_account_id") != str(invoice["stripe_account_id"])
             or setup_metadata.get("connect_account_generation") != str(generation)
         ):
             raise HTTPException(status_code=409, detail=detail)
@@ -1293,8 +1313,7 @@ class BillingInvoiceOperationWorkflow:
         except PostgrestAPIError as exc:
             if (
                 local_unavailable_is_retryable
-                and str(getattr(exc, "code", "") or "")
-                in _RETRYABLE_POSTGREST_AVAILABILITY_CODES
+                and str(getattr(exc, "code", "") or "") in _RETRYABLE_POSTGREST_AVAILABILITY_CODES
             ):
                 raise _RetryLocalConsentEvidenceUnavailable() from exc
             raise
@@ -1353,8 +1372,7 @@ class BillingInvoiceOperationWorkflow:
             or consent.get("revoked_at")
             or consent.get("superseded_at")
             or consent.get("completed_at") != payer.get("autopay_authorized_at")
-            or consent.get("accepted_at")
-            != payer.get("autopay_terms_accepted_at")
+            or consent.get("accepted_at") != payer.get("autopay_terms_accepted_at")
         ):
             raise HTTPException(status_code=409, detail=detail) from None
         return payer, consent, payment_method_id
@@ -1447,9 +1465,7 @@ class BillingInvoiceOperationWorkflow:
                 "id": _stripe_id(provider_invoice),
                 "customer": _stripe_id(_object_get(provider_invoice, "customer")),
                 "status": str(_object_get(provider_invoice, "status") or ""),
-                "collection_method": str(
-                    _object_get(provider_invoice, "collection_method") or ""
-                ),
+                "collection_method": str(_object_get(provider_invoice, "collection_method") or ""),
                 "default_payment_method": _stripe_id(
                     _object_get(provider_invoice, "default_payment_method")
                 ),
@@ -1462,9 +1478,7 @@ class BillingInvoiceOperationWorkflow:
                 "id": _stripe_id(setup_intent),
                 "status": str(_object_get(setup_intent, "status") or ""),
                 "customer": _stripe_id(_object_get(setup_intent, "customer")),
-                "payment_method": _stripe_id(
-                    _object_get(setup_intent, "payment_method")
-                ),
+                "payment_method": _stripe_id(_object_get(setup_intent, "payment_method")),
                 "metadata": {
                     key: str(setup_metadata.get(key) or "")
                     for key in (
@@ -1488,14 +1502,20 @@ class BillingInvoiceOperationWorkflow:
         )
 
     def _normalized_items(self, data: BillingInvoiceCreate, studio_id: str) -> list[dict[str, Any]]:
-        source = [item.model_dump() for item in data.items] if data.items else [{
-            "description": data.description or "Tuition invoice",
-            "amount_cents": data.amount_cents or 0,
-            "quantity": 1,
-            "student_id": data.student_id,
-            "enrollment_id": data.enrollment_id,
-            "billing_plan_id": None,
-        }]
+        source = (
+            [item.model_dump() for item in data.items]
+            if data.items
+            else [
+                {
+                    "description": data.description or "Tuition invoice",
+                    "amount_cents": data.amount_cents or 0,
+                    "quantity": 1,
+                    "student_id": data.student_id,
+                    "enrollment_id": data.enrollment_id,
+                    "billing_plan_id": None,
+                }
+            ]
+        )
         if not 1 <= len(source) <= 31:
             raise HTTPException(status_code=400, detail="Invoices require 1 to 31 line items.")
         normalized: list[dict[str, Any]] = []
@@ -1522,7 +1542,9 @@ class BillingInvoiceOperationWorkflow:
             or not account.get("charges_enabled")
             or account.get("status") == "deauthorized"
         ):
-            raise HTTPException(status_code=409, detail="Stripe Connect charges are not enabled yet.")
+            raise HTTPException(
+                status_code=409, detail="Stripe Connect charges are not enabled yet."
+            )
         return account
 
     @staticmethod
@@ -1548,9 +1570,15 @@ class BillingInvoiceOperationWorkflow:
                 detail="Payer must be synchronized to the current Stripe account generation.",
             )
 
-    def _invoice_generation(self, invoice: dict[str, Any], studio_id: str) -> tuple[dict[str, Any], int]:
+    def _invoice_generation(
+        self, invoice: dict[str, Any], studio_id: str
+    ) -> tuple[dict[str, Any], int]:
         account = self.owner._connect_accounts().by_stripe_account(invoice["stripe_account_id"])
-        if not account or account.get("studio_id") != studio_id or not account.get("charges_enabled"):
+        if (
+            not account
+            or account.get("studio_id") != studio_id
+            or not account.get("charges_enabled")
+        ):
             raise HTTPException(status_code=409, detail="Invoice Stripe account is not current.")
         generation = self._account_generation(account)
         raw = (invoice.get("metadata") or {}).get("connect_account_generation")
@@ -1559,14 +1587,18 @@ class BillingInvoiceOperationWorkflow:
         except (TypeError, ValueError):
             invoice_generation = 0
         if invoice_generation != generation:
-            raise HTTPException(status_code=409, detail="Invoice Stripe account generation is not current.")
+            raise HTTPException(
+                status_code=409, detail="Invoice Stripe account generation is not current."
+            )
         return account, generation
 
     @staticmethod
     def _required_key(value: str | None, workflow: str) -> str:
         normalized = normalize_idempotency_key(value)
         if not normalized:
-            raise HTTPException(status_code=400, detail=f"Idempotency-Key is required for {workflow}.")
+            raise HTTPException(
+                status_code=400, detail=f"Idempotency-Key is required for {workflow}."
+            )
         return normalized
 
     def _claim_parent(
@@ -1688,12 +1720,8 @@ class BillingInvoiceOperationWorkflow:
         try:
             UUID(str(operation.get("id")))
             if not terminal and not busy:
-                datetime.fromisoformat(
-                    str(operation["lease_acquired_at"]).replace("Z", "+00:00")
-                )
-                datetime.fromisoformat(
-                    str(operation["lease_expires_at"]).replace("Z", "+00:00")
-                )
+                datetime.fromisoformat(str(operation["lease_acquired_at"]).replace("Z", "+00:00"))
+                datetime.fromisoformat(str(operation["lease_expires_at"]).replace("Z", "+00:00"))
             structure_valid = True
         except (KeyError, TypeError, ValueError):
             structure_valid = False
@@ -1711,10 +1739,8 @@ class BillingInvoiceOperationWorkflow:
             and bool(operation["caller_request_key"])
             and operation.get("stripe_connected_account_id") == expected_account_id
             and operation.get("connect_account_generation") == expected_generation
-            and claimed.get("requested_caller_request_key")
-            == requested_caller_request_key
-            and claimed.get("canonical_caller_request_key")
-            == operation.get("caller_request_key")
+            and claimed.get("requested_caller_request_key") == requested_caller_request_key
+            and claimed.get("canonical_caller_request_key") == operation.get("caller_request_key")
             and resource.get("studio_id") == expected_studio_id
             and resource.get("operation_type") == expected_operation_type
             and resource.get("resource_type") == expected_resource_type
@@ -1722,10 +1748,7 @@ class BillingInvoiceOperationWorkflow:
             and resource.get("payer_id") == expected_payer_id
             and (terminal or resource.get("operation_id") == operation.get("id"))
         )
-        if (
-            not terminal
-            and operation.get("lease_owner") not in {None, acquired_lease_owner}
-        ):
+        if not terminal and operation.get("lease_owner") not in {None, acquired_lease_owner}:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -1734,11 +1757,10 @@ class BillingInvoiceOperationWorkflow:
                     else INVOICE_FINALIZE_AMBIGUOUS_DETAIL
                 ),
             )
-        lease_valid = terminal or (
-            busy
-            and operation.get("lease_owner") not in {None, acquired_lease_owner}
-        ) or (
-            not busy and operation.get("lease_owner") == acquired_lease_owner
+        lease_valid = (
+            terminal
+            or (busy and operation.get("lease_owner") not in {None, acquired_lease_owner})
+            or (not busy and operation.get("lease_owner") == acquired_lease_owner)
         )
         if not (structure_valid and valid_hash and identity_valid and lease_valid):
             raise HTTPException(
@@ -1784,25 +1806,34 @@ class BillingInvoiceOperationWorkflow:
         compatibility_valid = (
             compatibility in {"base_hash_exact", "ledger_base_hash_exact"}
             and effective == requested_base_sha256
-        ) or (
-            compatibility == "ledger_legacy_hash_accepted"
-            and effective != requested_base_sha256
-        )
+        ) or (compatibility == "ledger_legacy_hash_accepted" and effective != requested_base_sha256)
         allowed_claim_outcomes = {
-            "started": {"claimed", "replaced", "continued", "busy", "reclaimed", "adopted", "replay"},
+            "started": {
+                "claimed",
+                "replaced",
+                "continued",
+                "busy",
+                "reclaimed",
+                "adopted",
+                "replay",
+            },
             "provider_request_in_flight": {"provider_request_in_flight", "adopted", "replay"},
             "reconciliation_required": {"reconciliation_required", "adopted", "replay"},
             "provider_succeeded": {"continued", "busy", "reclaimed", "adopted", "replay"},
             "projected": {"continued", "busy", "reclaimed", "adopted", "replay"},
-            "recovery_authorized": {"continued", "busy", "recovery_authorized", "adopted", "replay"},
+            "recovery_authorized": {
+                "continued",
+                "busy",
+                "recovery_authorized",
+                "adopted",
+                "replay",
+            },
             "completed": {"replay", "adopted"},
             "definitive_failed": {"replay", "adopted"},
             "definitive_rejected": {"replay", "adopted"},
         }
         state_outcome_valid = claim_outcome in allowed_claim_outcomes.get(state, set())
-        terminal_state = state in {
-            "completed", "definitive_failed", "definitive_rejected"
-        }
+        terminal_state = state in {"completed", "definitive_failed", "definitive_rejected"}
         try:
             UUID(str(operation.get("id")))
             UUID(str(resource.get("id")))
@@ -1825,14 +1856,10 @@ class BillingInvoiceOperationWorkflow:
             and resource.get("resource_type") == expected_resource_type == "invoice"
             and resource.get("resource_id") == expected_resource_id
             and resource.get("payer_id") == expected_payer_id
-            and (
-                terminal_state
-                or resource.get("operation_id") == operation.get("id")
-            )
+            and (terminal_state or resource.get("operation_id") == operation.get("id"))
         )
         envelope_keys_valid = (
-            claimed.get("requested_caller_request_key")
-            == expected_caller_request_key
+            claimed.get("requested_caller_request_key") == expected_caller_request_key
             and claimed.get("canonical_caller_request_key")
             == operation.get("caller_request_key")
             == expected_caller_request_key
@@ -1889,37 +1916,43 @@ class BillingInvoiceOperationWorkflow:
         invoice_step = {
             "step_name": "invoice",
             "provider_operation": "connected_invoice.create",
-            "request_sha256": stable_hash({
-                "invoice_id": invoice["id"],
-                "payer_id": payer["id"],
-                "customer_id": payer["stripe_customer_id"],
-                "account_id": context.stripe_connected_account_id,
-                "generation": context.connect_account_generation,
-                "collection_method": invoice["collection_method"],
-                "application_fee_amount_cents": application_fee,
-                "due_date": str(due_date) if due_date else None,
-            }),
+            "request_sha256": stable_hash(
+                {
+                    "invoice_id": invoice["id"],
+                    "payer_id": payer["id"],
+                    "customer_id": payer["stripe_customer_id"],
+                    "account_id": context.stripe_connected_account_id,
+                    "generation": context.connect_account_generation,
+                    "collection_method": invoice["collection_method"],
+                    "application_fee_amount_cents": application_fee,
+                    "due_date": str(due_date) if due_date else None,
+                }
+            ),
             "stripe_idempotency_key": self.owner._idempotency_key(
                 "invoice-create", context.operation_id, "step-1-invoice"
             ),
         }
         item_steps = []
         for index, item in enumerate(items, start=1):
-            item_steps.append({
-                "step_name": f"item_{index:03d}",
-                "provider_operation": "connected_invoice_item.create",
-                "request_sha256": stable_hash({
-                    "invoice_id": invoice["id"],
-                    "invoice_source": "step:invoice",
-                    "account_id": context.stripe_connected_account_id,
-                    "generation": context.connect_account_generation,
-                    "order": index,
-                    **item,
-                }),
-                "stripe_idempotency_key": self.owner._idempotency_key(
-                    "invoice-create", context.operation_id, f"step-{index + 1}-item"
-                ),
-            })
+            item_steps.append(
+                {
+                    "step_name": f"item_{index:03d}",
+                    "provider_operation": "connected_invoice_item.create",
+                    "request_sha256": stable_hash(
+                        {
+                            "invoice_id": invoice["id"],
+                            "invoice_source": "step:invoice",
+                            "account_id": context.stripe_connected_account_id,
+                            "generation": context.connect_account_generation,
+                            "order": index,
+                            **item,
+                        }
+                    ),
+                    "stripe_idempotency_key": self.owner._idempotency_key(
+                        "invoice-create", context.operation_id, f"step-{index + 1}-item"
+                    ),
+                }
+            )
         steps = [invoice_step, *item_steps]
         return {"steps": steps, "plan_sha256": billing_provider_step_plan_sha256(steps)}
 
@@ -1946,15 +1979,23 @@ class BillingInvoiceOperationWorkflow:
                     raise HTTPException(status_code=503, detail=INVOICE_CREATE_AMBIGUOUS_DETAIL)
             # The invoice header has no line amounts. Only an attempted item
             # establishes historical financial work that this intent may finish.
-            if not any(int(step.get("provider_request_attempt_count") or 0) for step in saved_steps[1:]):
-                if any(int(step.get("provider_request_attempt_count") or 0) for step in saved_steps):
+            if not any(
+                int(step.get("provider_request_attempt_count") or 0) for step in saved_steps[1:]
+            ):
+                if any(
+                    int(step.get("provider_request_attempt_count") or 0) for step in saved_steps
+                ):
                     client.complete_provider_phase(
-                        context, operation, plan_sha256=spec["plan_sha256"],
+                        context,
+                        operation,
+                        plan_sha256=spec["plan_sha256"],
                         expected_step_count=len(spec["steps"]),
                     )
                     raise HTTPException(status_code=409, detail=INVOICE_CREATE_AMBIGUOUS_DETAIL)
                 operations.transition(
-                    context, operation, "definitive_rejected",
+                    context,
+                    operation,
+                    "definitive_rejected",
                     error_code="tuition_currency_requires_usd",
                 )
                 raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
@@ -1977,16 +2018,18 @@ class BillingInvoiceOperationWorkflow:
         )
         item_ids = []
         for index, item in enumerate(items, start=1):
-            item_ids.append(self._execute_item_step(
-                invoice,
-                item=item,
-                index=index,
-                provider_invoice_id=invoice_id,
-                context=context,
-                operation=operation,
-                client=client,
-                spec=spec,
-            ))
+            item_ids.append(
+                self._execute_item_step(
+                    invoice,
+                    item=item,
+                    index=index,
+                    provider_invoice_id=invoice_id,
+                    context=context,
+                    operation=operation,
+                    client=client,
+                    spec=spec,
+                )
+            )
         completed = client.complete_provider_phase(
             context,
             operation,
@@ -2066,19 +2109,30 @@ class BillingInvoiceOperationWorkflow:
             raise
         except Exception as exc:
             self._mark_step_reconciliation(
-                client, step, current, operation, spec,
-                "invoice_create_provider_outcome_ambiguous", exc,
+                client,
+                step,
+                current,
+                operation,
+                spec,
+                "invoice_create_provider_outcome_ambiguous",
+                exc,
             )
         provider_id = _stripe_id(provider_invoice)
         if not provider_id:
             self._mark_step_reconciliation(
-                client, step, current, operation, spec,
+                client,
+                step,
+                current,
+                operation,
+                spec,
                 "invoice_create_provider_identity_ambiguous",
                 RuntimeError("invoice_create_provider_identity_ambiguous"),
             )
         try:
             client.transition_step(
-                step, current, "provider_succeeded",
+                step,
+                current,
+                "provider_succeeded",
                 provider_object_id=provider_id,
                 result_code="invoice_create_invoice_succeeded",
             )
@@ -2126,19 +2180,30 @@ class BillingInvoiceOperationWorkflow:
             raise
         except Exception as exc:
             self._mark_step_reconciliation(
-                client, step, current, operation, spec,
-                "invoice_create_item_outcome_ambiguous", exc,
+                client,
+                step,
+                current,
+                operation,
+                spec,
+                "invoice_create_item_outcome_ambiguous",
+                exc,
             )
         provider_id = _stripe_id(provider_item)
         if not provider_id:
             self._mark_step_reconciliation(
-                client, step, current, operation, spec,
+                client,
+                step,
+                current,
+                operation,
+                spec,
                 "invoice_create_item_identity_ambiguous",
                 RuntimeError("invoice_create_item_identity_ambiguous"),
             )
         try:
             client.transition_step(
-                step, current, "provider_succeeded",
+                step,
+                current,
+                "provider_succeeded",
                 provider_object_id=provider_id,
                 result_code="invoice_create_item_succeeded",
             )
@@ -2216,7 +2281,9 @@ class BillingInvoiceOperationWorkflow:
                 )
                 self._verify_local_item(saved, row)
             projected = self.owner._update_invoice_from_stripe(
-                invoice["id"], context.studio_id, provider_invoice,
+                invoice["id"],
+                context.studio_id,
+                provider_invoice,
                 context.stripe_connected_account_id,
             )
             self._verify_projected_invoice(projected, invoice, context, provider_invoice_id)
@@ -2275,20 +2342,26 @@ class BillingInvoiceOperationWorkflow:
             local = local_by_provider_id.get(provider_item_id)
             if local is None:
                 raise RuntimeError("invoice_create_saved_item_identity_missing")
-            self._verify_local_item(local, {
-                "studio_id": context.studio_id,
-                "invoice_id": saved["id"],
-                "student_id": expected.get("student_id"),
-                "enrollment_id": expected.get("enrollment_id"),
-                "billing_plan_id": expected.get("billing_plan_id"),
-                "description": expected["description"],
-                "quantity": expected["quantity"],
-                "unit_amount_cents": expected["amount_cents"],
-                "amount_cents": expected["amount_cents"] * expected["quantity"],
-                "stripe_invoice_item_id": provider_item_id,
-            })
+            self._verify_local_item(
+                local,
+                {
+                    "studio_id": context.studio_id,
+                    "invoice_id": saved["id"],
+                    "student_id": expected.get("student_id"),
+                    "enrollment_id": expected.get("enrollment_id"),
+                    "billing_plan_id": expected.get("billing_plan_id"),
+                    "description": expected["description"],
+                    "quantity": expected["quantity"],
+                    "unit_amount_cents": expected["amount_cents"],
+                    "amount_cents": expected["amount_cents"] * expected["quantity"],
+                    "stripe_invoice_item_id": provider_item_id,
+                },
+            )
         self._verify_projected_invoice(
-            saved, invoice, context, str(saved["stripe_invoice_id"]),
+            saved,
+            invoice,
+            context,
+            str(saved["stripe_invoice_id"]),
             require_original_balance=False,
         )
         return saved
@@ -2304,9 +2377,10 @@ class BillingInvoiceOperationWorkflow:
             provider = self._read_invoice(invoice)
         except Exception as exc:
             raise HTTPException(status_code=503, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL) from exc
-        if _stripe_id(provider) != invoice.get("stripe_invoice_id") or str(
-            _object_get(provider, "status") or ""
-        ) != "paid":
+        if (
+            _stripe_id(provider) != invoice.get("stripe_invoice_id")
+            or str(_object_get(provider, "status") or "") != "paid"
+        ):
             raise HTTPException(status_code=409, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL)
         operation = operations.transition(
             context,
@@ -2385,7 +2459,9 @@ class BillingInvoiceOperationWorkflow:
         if _stripe_id(provider) != invoice.get("stripe_invoice_id"):
             raise HTTPException(status_code=503, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL)
         projected = self.owner._update_invoice_from_stripe(
-            invoice["id"], context.studio_id, provider,
+            invoice["id"],
+            context.studio_id,
+            provider,
             context.stripe_connected_account_id,
         )
         if (
@@ -2421,15 +2497,12 @@ class BillingInvoiceOperationWorkflow:
         return invoice
 
     @staticmethod
-    def _verify_finalize_preread(
-        invoice: dict[str, Any], provider: Any
-    ) -> tuple[str, str]:
+    def _verify_finalize_preread(invoice: dict[str, Any], provider: Any) -> tuple[str, str]:
         collection_method = str(_object_get(provider, "collection_method") or "")
         provider_status = str(_object_get(provider, "status") or "")
         if (
             _stripe_id(provider) != invoice.get("stripe_invoice_id")
-            or _stripe_id(_object_get(provider, "customer"))
-            != invoice.get("stripe_customer_id")
+            or _stripe_id(_object_get(provider, "customer")) != invoice.get("stripe_customer_id")
             or provider_status not in {"draft", "open", "paid"}
             or collection_method not in {"charge_automatically", "send_invoice"}
             or collection_method != invoice.get("collection_method")
@@ -2445,8 +2518,7 @@ class BillingInvoiceOperationWorkflow:
         provider_status = str(_object_get(provider, "status") or "")
         if (
             _stripe_id(provider) != invoice.get("stripe_invoice_id")
-            or _stripe_id(_object_get(provider, "customer"))
-            != invoice.get("stripe_customer_id")
+            or _stripe_id(_object_get(provider, "customer")) != invoice.get("stripe_customer_id")
             or provider_status not in {"draft", "open", "void"}
         ):
             raise HTTPException(
@@ -2481,14 +2553,19 @@ class BillingInvoiceOperationWorkflow:
             )
         except StripeMutationBlocked:
             operations.transition(
-                context, operation, "definitive_rejected",
+                context,
+                operation,
+                "definitive_rejected",
                 error_code="provider_mutation_blocked",
             )
             raise
         except Exception as exc:
             self._mark_parent_reconciliation(
-                operations, context, operation,
-                "invoice_finalize_provider_outcome_ambiguous", exc,
+                operations,
+                context,
+                operation,
+                "invoice_finalize_provider_outcome_ambiguous",
+                exc,
                 INVOICE_FINALIZE_AMBIGUOUS_DETAIL,
             )
         self._verify_finalized_provider(invoice, provider)
@@ -2505,8 +2582,11 @@ class BillingInvoiceOperationWorkflow:
             )
         except Exception as exc:
             self._mark_parent_reconciliation(
-                operations, context, operation,
-                "invoice_finalize_projection_failed", exc,
+                operations,
+                context,
+                operation,
+                "invoice_finalize_projection_failed",
+                exc,
                 INVOICE_FINALIZE_AMBIGUOUS_DETAIL,
             )
         return projected, operation
@@ -2523,12 +2603,14 @@ class BillingInvoiceOperationWorkflow:
             {
                 "step_name": "finalize",
                 "provider_operation": "connected_invoice.finalize",
-                "request_sha256": stable_hash({
-                    "invoice_id": invoice["id"],
-                    "stripe_invoice_id": invoice["stripe_invoice_id"],
-                    "account_id": context.stripe_connected_account_id,
-                    "generation": context.connect_account_generation,
-                }),
+                "request_sha256": stable_hash(
+                    {
+                        "invoice_id": invoice["id"],
+                        "stripe_invoice_id": invoice["stripe_invoice_id"],
+                        "account_id": context.stripe_connected_account_id,
+                        "generation": context.connect_account_generation,
+                    }
+                ),
                 "stripe_idempotency_key": self.owner._idempotency_key(
                     "invoice-finalize", context.operation_id, "step-1-finalize"
                 ),
@@ -2536,13 +2618,15 @@ class BillingInvoiceOperationWorkflow:
             {
                 "step_name": "send",
                 "provider_operation": "connected_invoice.send",
-                "request_sha256": stable_hash({
-                    "invoice_id": invoice["id"],
-                    "stripe_invoice_id": invoice["stripe_invoice_id"],
-                    "account_id": context.stripe_connected_account_id,
-                    "generation": context.connect_account_generation,
-                    "predecessor": "finalize",
-                }),
+                "request_sha256": stable_hash(
+                    {
+                        "invoice_id": invoice["id"],
+                        "stripe_invoice_id": invoice["stripe_invoice_id"],
+                        "account_id": context.stripe_connected_account_id,
+                        "generation": context.connect_account_generation,
+                        "predecessor": "finalize",
+                    }
+                ),
                 "stripe_idempotency_key": self.owner._idempotency_key(
                     "invoice-finalize", context.operation_id, "step-2-send"
                 ),
@@ -2554,7 +2638,8 @@ class BillingInvoiceOperationWorkflow:
         }
         client = BillingProviderStepCoordinator(self.supabase)
         registered = client.register_plan(
-            context, operation,
+            context,
+            operation,
             plan_sha256=spec["plan_sha256"],
             steps=steps,
         )
@@ -2568,9 +2653,7 @@ class BillingInvoiceOperationWorkflow:
                 self._required_provider_id(current)
                 continue
             self._raise_for_blocked_step(envelope, INVOICE_FINALIZE_AMBIGUOUS_DETAIL)
-            current = client.transition_step(
-                step, current, "provider_request_in_flight"
-            )
+            current = client.transition_step(step, current, "provider_request_in_flight")
             try:
                 if action == "finalize":
                     provider = self.stripe_service_cls().finalize_connected_invoice(
@@ -2588,7 +2671,9 @@ class BillingInvoiceOperationWorkflow:
                     )
             except StripeMutationBlocked:
                 client.transition_step(
-                    step, current, "definitive_rejected",
+                    step,
+                    current,
+                    "definitive_rejected",
                     error_code="provider_mutation_blocked",
                 )
                 self._complete_failed_phase(client, context, operation, spec)
@@ -2605,16 +2690,14 @@ class BillingInvoiceOperationWorkflow:
                     detail = f"{detail} Reference: {error_id}"
                 try:
                     client.transition_step(
-                        step, current, "reconciliation_required",
-                        reconciliation_reason_code=(
-                            f"invoice_{action}_provider_outcome_ambiguous"
-                        ),
+                        step,
+                        current,
+                        "reconciliation_required",
+                        reconciliation_reason_code=(f"invoice_{action}_provider_outcome_ambiguous"),
                     )
                 finally:
                     self._complete_failed_phase(client, context, operation, spec)
-                raise HTTPException(
-                    status_code=503, detail=detail
-                ) from exc
+                raise HTTPException(status_code=503, detail=detail) from exc
             self._verify_finalized_provider(invoice, provider)
             try:
                 client.transition_step(
@@ -2640,8 +2723,11 @@ class BillingInvoiceOperationWorkflow:
             projected = self._project_finalized_invoice(invoice, context, operation)
         except Exception as exc:
             self._mark_parent_reconciliation(
-                operations, context, operation,
-                "invoice_finalize_projection_failed", exc,
+                operations,
+                context,
+                operation,
+                "invoice_finalize_projection_failed",
+                exc,
                 INVOICE_FINALIZE_AMBIGUOUS_DETAIL,
             )
         return projected, operation
@@ -2650,8 +2736,7 @@ class BillingInvoiceOperationWorkflow:
     def _verify_finalized_provider(invoice: dict[str, Any], provider: Any) -> None:
         if (
             _stripe_id(provider) != invoice.get("stripe_invoice_id")
-            or _stripe_id(_object_get(provider, "customer"))
-            != invoice.get("stripe_customer_id")
+            or _stripe_id(_object_get(provider, "customer")) != invoice.get("stripe_customer_id")
             or str(_object_get(provider, "status") or "") not in {"open", "paid"}
             or str(_object_get(provider, "collection_method") or "")
             != invoice.get("collection_method")
@@ -2671,7 +2756,9 @@ class BillingInvoiceOperationWorkflow:
         if operation.get("provider_object_id") != invoice.get("stripe_invoice_id"):
             raise HTTPException(status_code=503, detail=INVOICE_FINALIZE_AMBIGUOUS_DETAIL)
         projected = self.owner._update_invoice_from_stripe(
-            invoice["id"], context.studio_id, readback,
+            invoice["id"],
+            context.studio_id,
+            readback,
             context.stripe_connected_account_id,
         )
         if (
@@ -2721,7 +2808,9 @@ class BillingInvoiceOperationWorkflow:
         ):
             raise HTTPException(status_code=503, detail=INVOICE_VOID_AMBIGUOUS_DETAIL)
         projected = self.owner._update_invoice_from_stripe(
-            invoice["id"], context.studio_id, readback,
+            invoice["id"],
+            context.studio_id,
+            readback,
             context.stripe_connected_account_id,
         )
         if (
@@ -2854,7 +2943,10 @@ class BillingInvoiceOperationWorkflow:
     def _raise_for_blocked_step(envelope: dict[str, Any], detail: str) -> None:
         outcome = str(envelope.get("outcome") or "")
         state = str((envelope.get("step") or {}).get("state") or "")
-        if outcome in {"busy", "provider_request_in_flight"} or state == "provider_request_in_flight":
+        if (
+            outcome in {"busy", "provider_request_in_flight"}
+            or state == "provider_request_in_flight"
+        ):
             raise HTTPException(status_code=409, detail=detail)
         if outcome == "reconciliation_required" or state == "reconciliation_required":
             raise HTTPException(status_code=409, detail=detail)
@@ -2875,7 +2967,9 @@ class BillingInvoiceOperationWorkflow:
     ) -> None:
         try:
             client.transition_step(
-                step, current, "reconciliation_required",
+                step,
+                current,
+                "reconciliation_required",
                 reconciliation_reason_code=reason,
             )
         except Exception:
@@ -2947,8 +3041,15 @@ class BillingInvoiceOperationWorkflow:
     @staticmethod
     def _verify_local_item(saved: dict[str, Any], expected: dict[str, Any]) -> None:
         fields = (
-            "studio_id", "invoice_id", "student_id", "enrollment_id", "billing_plan_id",
-            "description", "quantity", "unit_amount_cents", "amount_cents",
+            "studio_id",
+            "invoice_id",
+            "student_id",
+            "enrollment_id",
+            "billing_plan_id",
+            "description",
+            "quantity",
+            "unit_amount_cents",
+            "amount_cents",
             "stripe_invoice_item_id",
         )
         if any(saved.get(field) != expected.get(field) for field in fields):
@@ -2975,10 +3076,13 @@ class BillingInvoiceOperationWorkflow:
             != int(intent.get("amount_due_cents") or 0)
             # Replay of a certified projection checks command identity; later
             # payments and voiding may change its remaining balance.
-            or (require_original_balance and (
-                int(projected.get("amount_remaining_cents") or 0)
-                != int(intent.get("amount_due_cents") or 0)
-            ))
+            or (
+                require_original_balance
+                and (
+                    int(projected.get("amount_remaining_cents") or 0)
+                    != int(intent.get("amount_due_cents") or 0)
+                )
+            )
         ):
             raise RuntimeError("invoice_create_local_projection_mismatch")
 
@@ -3058,15 +3162,17 @@ class BillingInvoiceOperationWorkflow:
         if existing.data:
             return
         try:
-            self.supabase.table("audit_logs").insert({
-                "id": audit_id,
-                "studio_id": context.studio_id,
-                "actor_id": context.actor_id,
-                "action": action,
-                "entity_type": "billing",
-                "entity_id": entity_id,
-                "metadata": metadata,
-            }).execute()
+            self.supabase.table("audit_logs").insert(
+                {
+                    "id": audit_id,
+                    "studio_id": context.studio_id,
+                    "actor_id": context.actor_id,
+                    "action": action,
+                    "entity_type": "billing",
+                    "entity_id": entity_id,
+                    "metadata": metadata,
+                }
+            ).execute()
         except PostgrestAPIError as exc:
             if getattr(exc, "code", None) != "23505":
                 raise

@@ -20,7 +20,9 @@ from app.services.report_export_service import ReportExportService
 from tests.fakes.supabase import TableBackedSupabase
 
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "report_exports" / "intelligence_source_columns.json"
+FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "report_exports" / "intelligence_source_columns.json"
+)
 EXPECTED_COLUMNS = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 # Explicitly bounded to relations reachable from the Worker 2 report source
@@ -28,21 +30,113 @@ EXPECTED_COLUMNS = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 MIGRATION_BACKED_SOURCE_COLUMNS = {
     "attendance": {"id", "studio_id", "session_id", "student_id", "status", "checked_in_at"},
     "belt_ladders": {"id", "studio_id", "program_id"},
-    "belt_ranks": {"id", "studio_id", "ladder_id", "name", "display_order", "min_classes", "min_months", "requires_approval"},
-    "billing_invoices": {"id", "studio_id", "student_id", "payer_id", "status", "amount_due_cents", "amount_paid_cents"},
-    "billing_payers": {"id", "studio_id", "display_name", "email", "phone", "billing_status", "balance_cents"},
-    "billing_payments": {"id", "studio_id", "payer_id", "invoice_id", "status", "amount_cents", "created_at"},
+    "belt_ranks": {
+        "id",
+        "studio_id",
+        "ladder_id",
+        "name",
+        "display_order",
+        "min_classes",
+        "min_months",
+        "requires_approval",
+    },
+    "billing_invoices": {
+        "id",
+        "studio_id",
+        "student_id",
+        "payer_id",
+        "status",
+        "amount_due_cents",
+        "amount_paid_cents",
+    },
+    "billing_payers": {
+        "id",
+        "studio_id",
+        "display_name",
+        "email",
+        "phone",
+        "billing_status",
+        "balance_cents",
+    },
+    "billing_payments": {
+        "id",
+        "studio_id",
+        "payer_id",
+        "invoice_id",
+        "status",
+        "amount_cents",
+        "created_at",
+    },
     "billing_plans": {"id", "studio_id", "amount_cents", "billing_interval"},
-    "class_sessions": {"id", "studio_id", "program_id", "instructor_id", "name", "start_time", "date", "deleted_at", "status", "capacity"},
+    "class_sessions": {
+        "id",
+        "studio_id",
+        "program_id",
+        "instructor_id",
+        "name",
+        "start_time",
+        "date",
+        "deleted_at",
+        "status",
+        "capacity",
+    },
     "guardians": {"id", "studio_id", "first_name", "last_name", "email", "phone"},
-    "leads": {"id", "studio_id", "source", "stage", "converted_student_id", "assigned_staff_id", "follow_up_date", "created_at"},
+    "leads": {
+        "id",
+        "studio_id",
+        "source",
+        "stage",
+        "converted_student_id",
+        "assigned_staff_id",
+        "follow_up_date",
+        "created_at",
+    },
     "programs": {"id", "studio_id", "name"},
-    "promotions": {"id", "studio_id", "student_id", "student_program_membership_id", "program_id", "promoted_at"},
+    "promotions": {
+        "id",
+        "studio_id",
+        "student_id",
+        "student_program_membership_id",
+        "program_id",
+        "promoted_at",
+    },
     "staff_profiles": {"user_id", "legal_first_name", "legal_last_name"},
-    "student_billing_enrollments": {"id", "studio_id", "student_id", "payer_id", "billing_plan_id", "status", "billing_status", "next_bill_on", "created_at"},
+    "student_billing_enrollments": {
+        "id",
+        "studio_id",
+        "student_id",
+        "payer_id",
+        "billing_plan_id",
+        "status",
+        "billing_status",
+        "next_bill_on",
+        "created_at",
+    },
     "student_guardians": {"id", "student_id", "guardian_id"},
-    "student_program_memberships": {"id", "studio_id", "student_id", "program_id", "status", "current_belt_rank_id", "started_at"},
-    "students": {"id", "studio_id", "legal_first_name", "legal_last_name", "preferred_name", "status", "membership_start_date", "deleted_at", "created_at", "is_minor", "emergency_contact_name", "program_id", "current_belt_rank_id"},
+    "student_program_memberships": {
+        "id",
+        "studio_id",
+        "student_id",
+        "program_id",
+        "status",
+        "current_belt_rank_id",
+        "started_at",
+    },
+    "students": {
+        "id",
+        "studio_id",
+        "legal_first_name",
+        "legal_last_name",
+        "preferred_name",
+        "status",
+        "membership_start_date",
+        "deleted_at",
+        "created_at",
+        "is_minor",
+        "emergency_contact_name",
+        "program_id",
+        "current_belt_rank_id",
+    },
 }
 
 
@@ -64,21 +158,28 @@ class ReportExportDataBudgetTest(unittest.TestCase):
                 self.assertEqual(list(report.source_keys), list(expected_sources))
                 self.assertEqual(
                     expected_sources,
-                    {key: list(columns) for key, columns in INTELLIGENCE_INPUT_COLUMNS[report_id].items()},
+                    {
+                        key: list(columns)
+                        for key, columns in INTELLIGENCE_INPUT_COLUMNS[report_id].items()
+                    },
                 )
 
     def test_each_intelligence_report_queries_only_declared_relations_and_columns(self):
         catalog = build_report_catalog(ReportExportService)
         for report_id in EXPECTED_COLUMNS:
             with self.subTest(report_id=report_id):
-                supabase = TableBackedSupabase({
-                    "students": [{"id": "student-1", "studio_id": "studio-1"}],
-                    "student_guardians": [{
-                        "id": "link-1",
-                        "student_id": "student-1",
-                        "guardian_id": "guardian-1",
-                    }],
-                })
+                supabase = TableBackedSupabase(
+                    {
+                        "students": [{"id": "student-1", "studio_id": "studio-1"}],
+                        "student_guardians": [
+                            {
+                                "id": "link-1",
+                                "student_id": "student-1",
+                                "guardian_id": "guardian-1",
+                            }
+                        ],
+                    }
+                )
                 dataset = ReportExportDataFetcher(supabase).fetch_intelligence_dataset(
                     catalog[report_id], "studio-1"
                 )
@@ -91,7 +192,8 @@ class ReportExportDataBudgetTest(unittest.TestCase):
                 self.assertEqual(set(dataset), set(catalog[report_id].source_keys))
                 for entry in supabase.log:
                     source_key = next(
-                        key for key in catalog[report_id].source_keys
+                        key
+                        for key in catalog[report_id].source_keys
                         if REPORT_SOURCE_SPECS[key].relation == entry["table"]
                     )
                     self.assertEqual(
@@ -115,33 +217,40 @@ class ReportExportDataBudgetTest(unittest.TestCase):
                         )
 
     def test_shared_row_budget_spans_tables_and_student_guardian_batches(self):
-        students = [
-            {"id": f"student-{index}", "studio_id": "studio-1"}
-            for index in range(25_000)
-        ]
+        students = [{"id": f"student-{index}", "studio_id": "studio-1"} for index in range(25_000)]
         relationships = [
             {"id": f"link-{index}", "student_id": f"student-{index}", "guardian_id": "guardian-1"}
             for index in range(25_000)
         ]
 
-        success_service = ReportExportService(TableBackedSupabase({
-            "students": students,
-            "student_guardians": relationships,
-        }))
+        success_service = ReportExportService(
+            TableBackedSupabase(
+                {
+                    "students": students,
+                    "student_guardians": relationships,
+                }
+            )
+        )
         asyncio.run(success_service.build_csv("family_account_health", "studio-1"))
         success_snapshot = success_service.budget_snapshot
         self.assertEqual(success_snapshot.max_rows, EXPORT_MAX_ROWS)
         self.assertEqual(success_snapshot.fetched_rows, EXPORT_MAX_ROWS)
 
-        relationships.append({
-            "id": "link-over-cap",
-            "student_id": "student-0",
-            "guardian_id": "guardian-1",
-        })
-        failure_service = ReportExportService(TableBackedSupabase({
-            "students": students,
-            "student_guardians": relationships,
-        }))
+        relationships.append(
+            {
+                "id": "link-over-cap",
+                "student_id": "student-0",
+                "guardian_id": "guardian-1",
+            }
+        )
+        failure_service = ReportExportService(
+            TableBackedSupabase(
+                {
+                    "students": students,
+                    "student_guardians": relationships,
+                }
+            )
+        )
         with self.assertRaises(HTTPException) as context:
             asyncio.run(failure_service.build_csv("family_account_health", "studio-1"))
         self.assertEqual(context.exception.status_code, 413)
@@ -177,11 +286,13 @@ class ReportExportDataBudgetTest(unittest.TestCase):
         self.assertEqual(snapshot.fetched_rows, 0)
 
     def test_custom_report_sources_share_one_budget(self):
-        supabase = TableBackedSupabase({
-            "studios": [{"id": "studio-1"}],
-            "studio_subscriptions": [{"studio_id": "studio-1"}],
-            "studio_payment_accounts": [{"studio_id": "studio-1"}],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "studios": [{"id": "studio-1"}],
+                "studio_subscriptions": [{"studio_id": "studio-1"}],
+                "studio_payment_accounts": [{"studio_id": "studio-1"}],
+            }
+        )
         service = ReportExportService(supabase)
         asyncio.run(service.build_csv("studio_overview", "studio-1"))
         snapshot = service.budget_snapshot
@@ -204,38 +315,63 @@ class ReportExportDataBudgetTest(unittest.TestCase):
 
         class Supabase(TableBackedSupabase):
             def __init__(self):
-                super().__init__({
-                    "staff_roles": [
-                        {
-                            "id": "role-1", "studio_id": "studio-1", "user_id": "user-1",
-                            "role": "instructor", "archived_at": None, "invited_by": "admin-1",
-                            "invited_email": "invite-1@example.com", "created_at": "2026-01-01",
-                            "updated_at": "2026-01-01",
-                        },
-                        {
-                            "id": "role-2", "studio_id": "studio-1", "user_id": "user-2",
-                            "role": "front_desk", "archived_at": None, "invited_by": "admin-1",
-                            "invited_email": "invite-2@example.com", "created_at": "2026-01-02",
-                            "updated_at": "2026-01-02",
-                        },
-                    ],
-                    "staff_profiles": [
-                        {"user_id": "user-1", "legal_first_name": "Legal", "legal_last_name": "One"},
-                        {"user_id": "user-2", "legal_first_name": "Legal", "legal_last_name": "Two"},
-                    ],
-                })
+                super().__init__(
+                    {
+                        "staff_roles": [
+                            {
+                                "id": "role-1",
+                                "studio_id": "studio-1",
+                                "user_id": "user-1",
+                                "role": "instructor",
+                                "archived_at": None,
+                                "invited_by": "admin-1",
+                                "invited_email": "invite-1@example.com",
+                                "created_at": "2026-01-01",
+                                "updated_at": "2026-01-01",
+                            },
+                            {
+                                "id": "role-2",
+                                "studio_id": "studio-1",
+                                "user_id": "user-2",
+                                "role": "front_desk",
+                                "archived_at": None,
+                                "invited_by": "admin-1",
+                                "invited_email": "invite-2@example.com",
+                                "created_at": "2026-01-02",
+                                "updated_at": "2026-01-02",
+                            },
+                        ],
+                        "staff_profiles": [
+                            {
+                                "user_id": "user-1",
+                                "legal_first_name": "Legal",
+                                "legal_last_name": "One",
+                            },
+                            {
+                                "user_id": "user-2",
+                                "legal_first_name": "Legal",
+                                "legal_last_name": "Two",
+                            },
+                        ],
+                    }
+                )
                 self.auth_pages = []
                 self.auth_users = [
                     SimpleNamespace(
-                        id="user-1", email="one@example.com", user_metadata={},
-                        confirmed_at="2026-01-01", email_confirmed_at="2026-01-01",
+                        id="user-1",
+                        email="one@example.com",
+                        user_metadata={},
+                        confirmed_at="2026-01-01",
+                        email_confirmed_at="2026-01-01",
                         last_sign_in_at="2026-02-01",
                     )
                 ] + [SimpleNamespace(id=f"unrelated-{i}") for i in range(999)]
                 self.auth = SimpleNamespace(admin=AuthAdmin(self))
 
         supabase = Supabase()
-        csv_text, _ = asyncio.run(ReportExportService(supabase).build_csv("staff_roles", "studio-1"))
+        csv_text, _ = asyncio.run(
+            ReportExportService(supabase).build_csv("staff_roles", "studio-1")
+        )
         self.assertIn("one@example.com", csv_text)
         self.assertIn("invite-2@example.com", csv_text)
         self.assertIn("Legal,One", csv_text.replace(" ", ""))
@@ -253,23 +389,35 @@ class ReportExportDataBudgetTest(unittest.TestCase):
 
         class Supabase(TableBackedSupabase):
             def __init__(self):
-                super().__init__({
-                    "staff_roles": [
-                        {
-                            "id": "active-role", "studio_id": "studio-1", "user_id": "active-user",
-                            "role": "instructor", "archived_at": None, "invited_by": "admin-1",
-                            "invited_email": "active@example.com", "created_at": "2026-01-01",
-                            "updated_at": "2026-01-01",
-                        },
-                        {
-                            "id": "archived-role", "studio_id": "studio-1", "user_id": "archived-user",
-                            "role": "front_desk", "archived_at": "2026-01-02T00:00:00+00:00",
-                            "invited_by": "admin-1", "invited_email": "archived@example.com",
-                            "created_at": "2026-01-02", "updated_at": "2026-01-02",
-                        },
-                    ],
-                    "staff_profiles": [],
-                })
+                super().__init__(
+                    {
+                        "staff_roles": [
+                            {
+                                "id": "active-role",
+                                "studio_id": "studio-1",
+                                "user_id": "active-user",
+                                "role": "instructor",
+                                "archived_at": None,
+                                "invited_by": "admin-1",
+                                "invited_email": "active@example.com",
+                                "created_at": "2026-01-01",
+                                "updated_at": "2026-01-01",
+                            },
+                            {
+                                "id": "archived-role",
+                                "studio_id": "studio-1",
+                                "user_id": "archived-user",
+                                "role": "front_desk",
+                                "archived_at": "2026-01-02T00:00:00+00:00",
+                                "invited_by": "admin-1",
+                                "invited_email": "archived@example.com",
+                                "created_at": "2026-01-02",
+                                "updated_at": "2026-01-02",
+                            },
+                        ],
+                        "staff_profiles": [],
+                    }
+                )
                 self.auth_admin = AuthAdmin()
                 self.auth_admin.pages = []
                 self.auth = SimpleNamespace(admin=self.auth_admin)
@@ -281,10 +429,7 @@ class ReportExportDataBudgetTest(unittest.TestCase):
 
         rows = list(csv.DictReader(StringIO(csv_text)))
         self.assertEqual([row["id"] for row in rows], ["active-role"])
-        role_queries = [
-            query for query in supabase.query_log
-            if query["table"] == "staff_roles"
-        ]
+        role_queries = [query for query in supabase.query_log if query["table"] == "staff_roles"]
         self.assertTrue(role_queries)
         self.assertTrue(
             all(("is", "archived_at", None) in query["filters"] for query in role_queries)

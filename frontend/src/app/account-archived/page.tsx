@@ -32,7 +32,7 @@ export default function AccountArchivedPage() {
       setError(
         signOutError instanceof Error
           ? signOutError.message
-          : "Could not sign out. Please try again."
+          : "Could not sign out. Please try again.",
       );
       setIsSigningOut(false);
     }
@@ -40,33 +40,34 @@ export default function AccountArchivedPage() {
 
   return (
     <FocusedOperationsSheet page="account-archived" eyebrow="Account access">
-        <div className="flex h-10 w-10 items-center justify-center rounded-[6px] bg-warning/10 text-warning">
-          <ShieldAlert className="h-5 w-5" aria-hidden="true" />
-        </div>
-        <h1 className="mt-2 text-2xl font-semibold text-text-primary">Studio access is archived</h1>
-        <p className="mt-4 text-sm leading-6 text-text-secondary">
-          Your studio access has been archived. This is reversible, and a studio admin or owner can restore access for you.
-        </p>
-        <p className="mt-3 text-sm leading-6 text-text-secondary">
-          Contact a studio admin or owner for help. No studio data is loaded on this page.
-        </p>
+      <div className="flex h-10 w-10 items-center justify-center rounded-[6px] bg-warning/10 text-warning">
+        <ShieldAlert className="h-5 w-5" aria-hidden="true" />
+      </div>
+      <h1 className="mt-2 text-2xl font-semibold text-text-primary">Studio access is archived</h1>
+      <p className="mt-4 text-sm leading-6 text-text-secondary">
+        Your studio access has been archived. This is reversible, and a studio admin or owner can
+        restore access for you.
+      </p>
+      <p className="mt-3 text-sm leading-6 text-text-secondary">
+        Contact a studio admin or owner for help. No studio data is loaded on this page.
+      </p>
 
-        <p role="alert" aria-live="assertive" className="mt-5 min-h-5 text-sm text-danger">
-          {error}
-        </p>
+      <p role="alert" aria-live="assertive" className="mt-5 min-h-5 text-sm text-danger">
+        {error}
+      </p>
 
-        <Button
-          type="button"
-          variant="secondary"
-          size="lg"
-          onClick={() => void handleSignOut()}
-          isLoading={isSigningOut}
-          aria-busy={isSigningOut}
-          className="mt-2 w-full"
-        >
-          <LogOut className="h-4 w-4" aria-hidden="true" />
-          {isSigningOut ? "Signing out..." : "Sign out"}
-        </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        size="lg"
+        onClick={() => void handleSignOut()}
+        isLoading={isSigningOut}
+        aria-busy={isSigningOut}
+        className="mt-2 w-full"
+      >
+        <LogOut className="h-4 w-4" aria-hidden="true" />
+        {isSigningOut ? "Signing out..." : "Sign out"}
+      </Button>
     </FocusedOperationsSheet>
   );
 }

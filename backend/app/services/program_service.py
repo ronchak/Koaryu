@@ -54,8 +54,7 @@ class ProgramService:
             [row["id"] for row in rows if row.get("id")],
         )
         return [
-            row_to_program_response(row, usage_by_program_id.get(row.get("id")))
-            for row in rows
+            row_to_program_response(row, usage_by_program_id.get(row.get("id"))) for row in rows
         ]
 
     def list_programs_metadata_sync(
@@ -112,7 +111,9 @@ class ProgramService:
             program_row["id"],
             {"name": name},
         )
-        return row_to_program_response(program_row, self._usage_for_program(program_row["id"], studio_id))
+        return row_to_program_response(
+            program_row, self._usage_for_program(program_row["id"], studio_id)
+        )
 
     async def update_program(
         self,
@@ -138,7 +139,9 @@ class ProgramService:
                     "PROGRAM_NAME_REQUIRED",
                     "Program name is required.",
                 )
-            self._records.ensure_name_available(studio_id, next_name, excluding_program_id=program_id)
+            self._records.ensure_name_available(
+                studio_id, next_name, excluding_program_id=program_id
+            )
             update_dict["name"] = next_name
 
         updated = self._records.update_program(program_id, studio_id, update_dict)
@@ -200,7 +203,9 @@ class ProgramService:
 
         archived_at = datetime.now(timezone.utc).isoformat()
         archived = self._records.archive_program(program_id, studio_id, archived_at)
-        self._records.audit(studio_id, actor_id, "program.archived", program_id, {"name": row.get("name")})
+        self._records.audit(
+            studio_id, actor_id, "program.archived", program_id, {"name": row.get("name")}
+        )
         return row_to_program_response(archived, usage)
 
     async def restore_program(
@@ -217,9 +222,13 @@ class ProgramService:
                 "Program archiving requires the latest program migration.",
                 program_id=program_id,
             )
-        self._records.ensure_name_available(studio_id, row.get("name") or "", excluding_program_id=program_id)
+        self._records.ensure_name_available(
+            studio_id, row.get("name") or "", excluding_program_id=program_id
+        )
         restored = self._records.restore_program(program_id, studio_id)
-        self._records.audit(studio_id, actor_id, "program.restored", program_id, {"name": row.get("name")})
+        self._records.audit(
+            studio_id, actor_id, "program.restored", program_id, {"name": row.get("name")}
+        )
         return row_to_program_response(restored, self._usage_for_program(program_id, studio_id))
 
     async def get_usage(self, program_id: str, studio_id: str) -> ProgramUsageResponse:

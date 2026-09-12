@@ -36,10 +36,13 @@ class ErrorResponseTest(unittest.TestCase):
         response = TestClient(test_app).get("/missing")
 
         self.assertEqual(response.status_code, 404)
-        self.assertEqual(response.json(), {
-            "detail": "Student not found.",
-            "error": {"code": "not_found", "status_code": 404},
-        })
+        self.assertEqual(
+            response.json(),
+            {
+                "detail": "Student not found.",
+                "error": {"code": "not_found", "status_code": 404},
+            },
+        )
 
     def test_http_exception_preserves_structured_detail_payloads(self):
         test_app = FastAPI()
@@ -103,10 +106,13 @@ class ErrorResponseTest(unittest.TestCase):
         response = TestClient(test_app, raise_server_exceptions=False).get("/boom")
 
         self.assertEqual(response.status_code, 500)
-        self.assertEqual(response.json(), {
-            "detail": "Internal server error.",
-            "error": {"code": "internal_server_error", "status_code": 500},
-        })
+        self.assertEqual(
+            response.json(),
+            {
+                "detail": "Internal server error.",
+                "error": {"code": "internal_server_error", "status_code": 500},
+            },
+        )
         self.assertNotIn("sk_live_secret", response.text)
 
     def test_unhandled_errors_preserve_cors_for_allowed_browser_origin(self):
@@ -154,14 +160,17 @@ class ErrorResponseTest(unittest.TestCase):
         self.assertNotIn("input", validation_detail["properties"])
         self.assertNotIn("ctx", validation_detail["properties"])
         self.assertEqual(
-            schema["paths"]["/api/v1/auth/me"]["get"]["responses"]["default"]["content"]
-            ["application/json"]["schema"]["$ref"],
+            schema["paths"]["/api/v1/auth/me"]["get"]["responses"]["default"]["content"][
+                "application/json"
+            ]["schema"]["$ref"],
             "#/components/schemas/ErrorResponse",
         )
 
     def test_main_app_registers_normalized_error_handlers(self):
         self.assertIs(app.exception_handlers[StarletteHTTPException], http_exception_handler)
-        self.assertIs(app.exception_handlers[RequestValidationError], request_validation_exception_handler)
+        self.assertIs(
+            app.exception_handlers[RequestValidationError], request_validation_exception_handler
+        )
         self.assertIs(app.exception_handlers[Exception], unhandled_exception_handler)
 
 

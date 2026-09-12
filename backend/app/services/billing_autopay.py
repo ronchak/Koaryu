@@ -33,16 +33,16 @@ AUTOPAY_SETUP_PROVIDER_MINIMUM_LIFETIME = timedelta(minutes=30)
 AUTOPAY_SETUP_IN_PROGRESS_DETAIL = (
     "Autopay setup is still being reconciled. Retry with the same Idempotency-Key."
 )
-AUTOPAY_SETUP_AMBIGUOUS_DETAIL = (
-    "Autopay setup outcome is not yet confirmed. Retry with the same Idempotency-Key after reconciliation."
-)
+AUTOPAY_SETUP_AMBIGUOUS_DETAIL = "Autopay setup outcome is not yet confirmed. Retry with the same Idempotency-Key after reconciliation."
 AUTOPAY_EXISTING_CONSENT_UNVERIFIED_DETAIL = (
     "Existing autopay consent could not be verified. Retry before starting a replacement setup."
 )
 
 
 class BillingAutopayManager:
-    def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
+    def __init__(
+        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+    ):
         self.billing_service = billing_service
         self.stripe_service_cls = stripe_service_cls
 
@@ -66,7 +66,9 @@ class BillingAutopayManager:
     def _idempotency_key(self, *parts: str) -> str:
         return self.billing_service._idempotency_key(*parts)
 
-    def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
+    def _audit(
+        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
+    ) -> None:
         self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
 
     async def create_autopay_setup_link(
@@ -102,7 +104,9 @@ class BillingAutopayManager:
                 ),
             )
         frontend_url = self.settings.FRONTEND_URL.rstrip("/")
-        return_url = self._safe_redirect_url(data.return_url, f"{frontend_url}/billing?autopay=success")
+        return_url = self._safe_redirect_url(
+            data.return_url, f"{frontend_url}/billing?autopay=success"
+        )
         success_url = self._safe_redirect_url(
             data.success_url or data.return_url,
             f"{frontend_url}/billing?autopay=success",
@@ -111,18 +115,20 @@ class BillingAutopayManager:
             data.cancel_url or data.return_url,
             f"{frontend_url}/billing?autopay=cancelled",
         )
-        request_sha256 = stable_hash({
-            "operation_type": PAYER_SETUP_OPERATION_TYPE,
-            "studio_id": studio_id,
-            "payer_id": payer_id,
-            "stripe_customer_id": customer_id,
-            "stripe_connected_account_id": account_id,
-            "connect_account_generation": generation,
-            "terms_version": AUTOPAY_TERMS_VERSION,
-            "success_url": success_url,
-            "cancel_url": cancel_url,
-            "return_url": return_url,
-        })
+        request_sha256 = stable_hash(
+            {
+                "operation_type": PAYER_SETUP_OPERATION_TYPE,
+                "studio_id": studio_id,
+                "payer_id": payer_id,
+                "stripe_customer_id": customer_id,
+                "stripe_connected_account_id": account_id,
+                "connect_account_generation": generation,
+                "terms_version": AUTOPAY_TERMS_VERSION,
+                "success_url": success_url,
+                "cancel_url": cancel_url,
+                "return_url": return_url,
+            }
+        )
         lease_owner = str(uuid4())
         coordinator = BillingProviderOperationCoordinator(self.supabase)
         claimed = coordinator.claim(
@@ -155,18 +161,17 @@ class BillingAutopayManager:
             request_sha256=request_sha256,
             stripe_connected_account_id=account_id,
             connect_account_generation=generation,
-            lease_owner=(
-                str(operation["lease_owner"])
-                if recovery_safe_retry
-                else lease_owner
-            ),
+            lease_owner=(str(operation["lease_owner"]) if recovery_safe_retry else lease_owner),
         )
         if outcome in {"busy", "provider_request_in_flight"}:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
             )
-        if outcome == "reconciliation_required" or operation.get("state") == "reconciliation_required":
+        if (
+            outcome == "reconciliation_required"
+            or operation.get("state") == "reconciliation_required"
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=AUTOPAY_SETUP_AMBIGUOUS_DETAIL,
@@ -243,9 +248,7 @@ class BillingAutopayManager:
                 terms_version=AUTOPAY_TERMS_VERSION,
                 expires_at=expires_at.isoformat(),
             )
-        if expires_at < (
-            datetime.now(timezone.utc) + AUTOPAY_SETUP_PROVIDER_MINIMUM_LIFETIME
-        ):
+        if expires_at < (datetime.now(timezone.utc) + AUTOPAY_SETUP_PROVIDER_MINIMUM_LIFETIME):
             if recovery_safe_retry:
                 rejected = coordinator.reject_payer_setup_without_provider(
                     context,
@@ -316,8 +319,7 @@ class BillingAutopayManager:
             )
             if (
                 rejected.get("outcome") not in {"rejected", "replay"}
-                or (rejected.get("operation") or {}).get("state")
-                != "definitive_rejected"
+                or (rejected.get("operation") or {}).get("state") != "definitive_rejected"
                 or not (rejected.get("setup_request") or {}).get("superseded_at")
             ):
                 raise RuntimeError("payer_setup_policy_rejection_not_converged")
@@ -374,11 +376,19 @@ class BillingAutopayManager:
             ) from exc
 
         if not preserve_existing_autopay:
-            pending = self.supabase.table("billing_payers").update({
-                "autopay_status": "pending",
-                "autopay_authorized_at": None,
-                "autopay_terms_accepted_at": None,
-            }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+            pending = (
+                self.supabase.table("billing_payers")
+                .update(
+                    {
+                        "autopay_status": "pending",
+                        "autopay_authorized_at": None,
+                        "autopay_terms_accepted_at": None,
+                    }
+                )
+                .eq("id", payer_id)
+                .eq("studio_id", studio_id)
+                .execute()
+            )
             if not pending.data:
                 try:
                     coordinator.mark_payer_setup_reconciliation(
@@ -446,8 +456,7 @@ class BillingAutopayManager:
             consent.get("completed_at")
             and not consent.get("revoked_at")
             and not consent.get("superseded_at")
-            and consent.get("accepted_at")
-            == payer.get("autopay_terms_accepted_at")
+            and consent.get("accepted_at") == payer.get("autopay_terms_accepted_at")
         ):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -510,9 +519,7 @@ class BillingAutopayManager:
                             setup_request_id=setup_request_id,
                             operation_id=context.operation_id,
                             stripe_checkout_session_id=session_id,
-                            stripe_setup_intent_id=operation.get(
-                                "provider_secondary_object_id"
-                            ),
+                            stripe_setup_intent_id=operation.get("provider_secondary_object_id"),
                             stripe_connected_account_id=context.stripe_connected_account_id,
                             connect_account_generation=context.connect_account_generation,
                             reconciliation_reason_code="setup_session_projection_failed",
@@ -547,15 +554,12 @@ class BillingAutopayManager:
                 raw_session_status = _object_get(session, "status")
                 session_status = (
                     raw_session_status
-                    if isinstance(raw_session_status, str)
-                    and 0 < len(raw_session_status) <= 64
+                    if isinstance(raw_session_status, str) and 0 < len(raw_session_status) <= 64
                     else None
                 )
                 raw_expires_at = _object_get(session, "expires_at")
                 try:
-                    expires_at_epoch = (
-                        int(raw_expires_at) if raw_expires_at is not None else None
-                    )
+                    expires_at_epoch = int(raw_expires_at) if raw_expires_at is not None else None
                 except (TypeError, ValueError):
                     expires_at_epoch = None
                 if operation_state == "provider_succeeded":
@@ -580,23 +584,24 @@ class BillingAutopayManager:
                             stripe_connected_account_id=context.stripe_connected_account_id,
                             connect_account_generation=context.connect_account_generation,
                             close_reason_code=close_reason,
-                            provider_read_proof_sha256=stable_hash({
-                                "operation_id": context.operation_id,
-                                "setup_request_id": setup_request_id,
-                                "studio_id": context.studio_id,
-                                "payer_id": payer_id,
-                                "stripe_checkout_session_id": session_id,
-                                "stripe_connected_account_id": context.stripe_connected_account_id,
-                                "connect_account_generation": context.connect_account_generation,
-                                "checkout_session_status": session_status,
-                                "checkout_session_expires_at": expires_at_epoch,
-                                "close_reason_code": close_reason,
-                            }),
+                            provider_read_proof_sha256=stable_hash(
+                                {
+                                    "operation_id": context.operation_id,
+                                    "setup_request_id": setup_request_id,
+                                    "studio_id": context.studio_id,
+                                    "payer_id": payer_id,
+                                    "stripe_checkout_session_id": session_id,
+                                    "stripe_connected_account_id": context.stripe_connected_account_id,
+                                    "connect_account_generation": context.connect_account_generation,
+                                    "checkout_session_status": session_status,
+                                    "checkout_session_expires_at": expires_at_epoch,
+                                    "close_reason_code": close_reason,
+                                }
+                            ),
                         )
                         if (
                             closed.get("outcome") not in {"closed", "replay"}
-                            or (closed.get("operation") or {}).get("state")
-                            != "definitive_rejected"
+                            or (closed.get("operation") or {}).get("state") != "definitive_rejected"
                             or not (closed.get("setup_request") or {}).get("superseded_at")
                         ):
                             raise RuntimeError("payer_setup_close_not_converged")
@@ -618,11 +623,7 @@ class BillingAutopayManager:
                             detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
                         )
                 hosted_url = _object_get(session, "url")
-                if (
-                    isinstance(hosted_url, str)
-                    and hosted_url
-                    and hosted_url not in return_urls
-                ):
+                if isinstance(hosted_url, str) and hosted_url and hosted_url not in return_urls:
                     self._audit_autopay_setup_started_once(
                         context=context,
                         payer_id=payer_id,
@@ -654,18 +655,18 @@ class BillingAutopayManager:
         *,
         session_id: str,
     ) -> None:
-        if not session_id or any((
-            operation.get("id") != context.operation_id,
-            operation.get("studio_id") != context.studio_id,
-            operation.get("actor_id") != context.actor_id,
-            operation.get("operation_type") != context.operation_type,
-            operation.get("caller_request_key") != context.caller_request_key,
-            operation.get("request_sha256") != context.request_sha256,
-            operation.get("stripe_connected_account_id")
-            != context.stripe_connected_account_id,
-            operation.get("connect_account_generation")
-            != context.connect_account_generation,
-        )):
+        if not session_id or any(
+            (
+                operation.get("id") != context.operation_id,
+                operation.get("studio_id") != context.studio_id,
+                operation.get("actor_id") != context.actor_id,
+                operation.get("operation_type") != context.operation_type,
+                operation.get("caller_request_key") != context.caller_request_key,
+                operation.get("request_sha256") != context.request_sha256,
+                operation.get("stripe_connected_account_id") != context.stripe_connected_account_id,
+                operation.get("connect_account_generation") != context.connect_account_generation,
+            )
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
@@ -681,22 +682,24 @@ class BillingAutopayManager:
         session_id: str,
     ) -> None:
         bound_session_id = setup_request.get("stripe_checkout_session_id")
-        if any((
-            setup_request.get("id") != setup_request_id,
-            setup_request.get("operation_id") != context.operation_id,
-            setup_request.get("studio_id") != context.studio_id,
-            setup_request.get("payer_id") != payer_id,
-            setup_request.get("initiated_by") != context.actor_id,
-            setup_request.get("terms_version") != AUTOPAY_TERMS_VERSION,
-            setup_request.get("stripe_connected_account_id")
-            != context.stripe_connected_account_id,
-            setup_request.get("connect_account_generation")
-            != context.connect_account_generation,
-            bound_session_id not in {None, session_id},
-            bool(setup_request.get("revoked_at")),
-            bool(setup_request.get("superseded_at")),
-            bool(setup_request.get("completed_at")),
-        )):
+        if any(
+            (
+                setup_request.get("id") != setup_request_id,
+                setup_request.get("operation_id") != context.operation_id,
+                setup_request.get("studio_id") != context.studio_id,
+                setup_request.get("payer_id") != payer_id,
+                setup_request.get("initiated_by") != context.actor_id,
+                setup_request.get("terms_version") != AUTOPAY_TERMS_VERSION,
+                setup_request.get("stripe_connected_account_id")
+                != context.stripe_connected_account_id,
+                setup_request.get("connect_account_generation")
+                != context.connect_account_generation,
+                bound_session_id not in {None, session_id},
+                bool(setup_request.get("revoked_at")),
+                bool(setup_request.get("superseded_at")),
+                bool(setup_request.get("completed_at")),
+            )
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
@@ -794,15 +797,17 @@ class BillingAutopayManager:
         if not isinstance(rows, list) or len(rows) != 1:
             raise RuntimeError("autopay_setup_started_audit_conflict")
         row = rows[0]
-        if not isinstance(row, dict) or any((
-            audit_id is not None and row.get("id") != audit_id,
-            row.get("studio_id") != context.studio_id,
-            row.get("actor_id") != context.actor_id,
-            row.get("action") != "billing.autopay_setup_started",
-            row.get("entity_type") != "billing",
-            row.get("entity_id") != payer_id,
-            row.get("metadata") != metadata,
-        )):
+        if not isinstance(row, dict) or any(
+            (
+                audit_id is not None and row.get("id") != audit_id,
+                row.get("studio_id") != context.studio_id,
+                row.get("actor_id") != context.actor_id,
+                row.get("action") != "billing.autopay_setup_started",
+                row.get("entity_type") != "billing",
+                row.get("entity_id") != payer_id,
+                row.get("metadata") != metadata,
+            )
+        ):
             raise RuntimeError("autopay_setup_started_audit_conflict")
 
     def _mark_ambiguous_provider_request(
@@ -854,9 +859,7 @@ class BillingAutopayManager:
     def _setup_request_expiry(setup_request: dict[str, Any]) -> datetime:
         raw_expires_at = setup_request.get("setup_request_expires_at")
         try:
-            expires_at = datetime.fromisoformat(
-                str(raw_expires_at).replace("Z", "+00:00")
-            )
+            expires_at = datetime.fromisoformat(str(raw_expires_at).replace("Z", "+00:00"))
         except (TypeError, ValueError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -866,11 +869,11 @@ class BillingAutopayManager:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         return expires_at.astimezone(timezone.utc)
 
-    async def disable_autopay(self, payer_id: str, studio_id: str, actor_id: str) -> BillingPayerResponse:
+    async def disable_autopay(
+        self, payer_id: str, studio_id: str, actor_id: str
+    ) -> BillingPayerResponse:
         self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
-        active_subscription_ids = self._active_payer_autopay_subscription_ids(
-            payer_id, studio_id
-        )
+        active_subscription_ids = self._active_payer_autopay_subscription_ids(payer_id, studio_id)
         if active_subscription_ids:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -882,14 +885,18 @@ class BillingAutopayManager:
             actor_id=actor_id,
             disabled_at=datetime.now(timezone.utc).isoformat(),
         )
-        self._audit(studio_id, actor_id, "billing.autopay_disabled", payer_id, {
-            "rewired_subscription_ids": [],
-        })
+        self._audit(
+            studio_id,
+            actor_id,
+            "billing.autopay_disabled",
+            payer_id,
+            {
+                "rewired_subscription_ids": [],
+            },
+        )
         return BillingPayerResponse(**envelope["payer"])
 
-    def _active_payer_autopay_subscription_ids(
-        self, payer_id: str, studio_id: str
-    ) -> list[str]:
+    def _active_payer_autopay_subscription_ids(self, payer_id: str, studio_id: str) -> list[str]:
         result = (
             self.supabase.table("billing_subscriptions")
             .select("*")

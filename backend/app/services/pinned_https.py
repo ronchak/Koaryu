@@ -262,9 +262,7 @@ class PinnedHttpsTransport:
             self._remaining(target.deadline_monotonic)
             if len(payload) > self._max_response_bytes:
                 raise PinnedHttpsError("destination_response_too_large")
-            response_headers = {
-                name.lower(): value for name, value in response.getheaders()
-            }
+            response_headers = {name.lower(): value for name, value in response.getheaders()}
             return PinnedHttpsResponse(response.status, response_headers, payload)
         except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
             if self._clock() >= target.deadline_monotonic:

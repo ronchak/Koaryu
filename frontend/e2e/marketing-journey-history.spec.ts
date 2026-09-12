@@ -19,22 +19,18 @@ async function expectJourneyChapter(page: Page, hash: string, chapter: string) {
   await expect(page).toHaveURL(new URL(hash, ROOT_URL).toString());
   await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
     "data-active-chapter",
-    chapter
+    chapter,
   );
 }
 
 async function expectHealthyPage(page: Page, pageErrors: string[]) {
   await expect(
-    page.locator(
-      "[data-nextjs-dialog], .vite-error-overlay, #webpack-dev-server-client-overlay"
-    )
+    page.locator("[data-nextjs-dialog], .vite-error-overlay, #webpack-dev-server-client-overlay"),
   ).toHaveCount(0);
   expect(pageErrors, "expected no uncaught browser page errors").toEqual([]);
 }
 
-test("explicit landing links preserve Back, Forward, and duplicate history", async ({
-  page,
-}) => {
+test("explicit landing links preserve Back, Forward, and duplicate history", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(ROOT_URL);
@@ -44,9 +40,7 @@ test("explicit landing links preserve Back, Forward, and duplicate history", asy
   await expect(journey).toHaveAttribute("data-active-chapter", "welcome");
   const initialHistoryLength = await page.evaluate(() => window.history.length);
 
-  await page
-    .getByRole("link", { name: "See how it works", exact: true })
-    .click();
+  await page.getByRole("link", { name: "See how it works", exact: true }).click();
   await expectJourneyChapter(page, "#studio-view", "studio-view");
   await expect
     .poll(() => page.evaluate(() => window.history.length))
@@ -67,31 +61,22 @@ test("explicit landing links preserve Back, Forward, and duplicate history", asy
   await page.goForward();
   await expectJourneyChapter(page, "#pricing", "pricing");
 
-  const historyLengthBeforeRepeat = await page.evaluate(
-    () => window.history.length
-  );
+  const historyLengthBeforeRepeat = await page.evaluate(() => window.history.length);
   await pricingLink.click();
   await expectJourneyChapter(page, "#pricing", "pricing");
-  expect(await page.evaluate(() => window.history.length)).toBe(
-    historyLengthBeforeRepeat
-  );
+  expect(await page.evaluate(() => window.history.length)).toBe(historyLengthBeforeRepeat);
 
   await expectHealthyPage(page, pageErrors);
 });
 
-test("passive chapter movement replaces the current landing entry", async ({
-  page,
-}) => {
+test("passive chapter movement replaces the current landing entry", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(ABOUT_URL);
 
   await Promise.all([
     page.waitForURL(ROOT_URL),
-    page
-      .getByRole("link", { name: "Return to Koaryu home", exact: true })
-      .first()
-      .click(),
+    page.getByRole("link", { name: "Return to Koaryu home", exact: true }).first().click(),
   ]);
   const journey = page.locator("[data-active-chapter]");
   await expect(journey).toHaveAttribute("data-enhanced", "true");
@@ -105,9 +90,7 @@ test("passive chapter movement replaces the current landing entry", async ({
   });
   await page.keyboard.press("ArrowDown");
   await expectJourneyChapter(page, "#the-problem", "the-problem");
-  expect(await page.evaluate(() => window.history.length)).toBe(
-    landingHistoryLength
-  );
+  expect(await page.evaluate(() => window.history.length)).toBe(landingHistoryLength);
 
   await page.goBack();
   await expect(page).toHaveURL(ABOUT_URL);

@@ -37,7 +37,9 @@ from app.services.billing_webhook_event_state import (
 
 
 class BillingWebhookProjector:
-    def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
+    def __init__(
+        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+    ):
         self.billing_service = billing_service
         self.stripe_service_cls = stripe_service_cls
 
@@ -103,14 +105,18 @@ class BillingWebhookProjector:
         event_type = event.get("type") or ""
         account_id = event.get("account")
         event_created = event.get("created")
-        data_object = ((event.get("data") or {}).get("object") or {})
+        data_object = (event.get("data") or {}).get("object") or {}
         if event_type == "account.application.deauthorized":
             account_id = account_id or data_object.get("id")
-            self._connect_accounts().update_by_stripe_account(account_id, {
-                "status": "deauthorized",
-                "charges_enabled": False,
-                "payouts_enabled": False,
-            }, event_created=event_created)
+            self._connect_accounts().update_by_stripe_account(
+                account_id,
+                {
+                    "status": "deauthorized",
+                    "charges_enabled": False,
+                    "payouts_enabled": False,
+                },
+                event_created=event_created,
+            )
             return
         if event_type == "account.updated":
             account_id = account_id or data_object.get("id")
@@ -183,11 +189,7 @@ class BillingWebhookProjector:
         operation_id = self._bounded_uuid(metadata.get("operation_id"))
         setup_request_id = self._bounded_uuid(metadata.get("setup_request_id"))
         terms_version = self._bounded_metadata_value(metadata.get("terms_version"))
-        if (
-            not operation_id
-            or not setup_request_id
-            or terms_version != AUTOPAY_TERMS_VERSION
-        ):
+        if not operation_id or not setup_request_id or terms_version != AUTOPAY_TERMS_VERSION:
             self._handle_legacy_checkout_session(session, account_id, metadata)
             return
         studio_id = self._resolve_stripe_event_studio_id(
@@ -302,11 +304,19 @@ class BillingWebhookProjector:
                 completed_at=consent["completed_at"],
             )
             consent = completion["consent"]
-            enabled = self.supabase.table("billing_payers").update({
-                "autopay_status": "enabled",
-                "autopay_authorized_at": consent["completed_at"],
-                "autopay_terms_accepted_at": consent["accepted_at"],
-            }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+            enabled = (
+                self.supabase.table("billing_payers")
+                .update(
+                    {
+                        "autopay_status": "enabled",
+                        "autopay_authorized_at": consent["completed_at"],
+                        "autopay_terms_accepted_at": consent["accepted_at"],
+                    }
+                )
+                .eq("id", payer_id)
+                .eq("studio_id", studio_id)
+                .execute()
+            )
             if not enabled.data:
                 raise RuntimeError("reconciled_consent_payer_enable_failed")
             finalized = coordinator.finalize_payer_setup_projection(
@@ -335,9 +345,8 @@ class BillingWebhookProjector:
                 stripe_connected_account_id=account_id,
                 connect_account_generation=account_generation,
             )
-            if (
-                consent.get("stripe_setup_intent_id") != setup_intent_id
-                or not consent.get("completed_at")
+            if consent.get("stripe_setup_intent_id") != setup_intent_id or not consent.get(
+                "completed_at"
             ):
                 return
             if not payer.get("default_payment_method_id"):
@@ -351,11 +360,19 @@ class BillingWebhookProjector:
                     payer=payer,
                 )
                 return
-            enabled = self.supabase.table("billing_payers").update({
-                "autopay_status": "enabled",
-                "autopay_authorized_at": consent["completed_at"],
-                "autopay_terms_accepted_at": consent["accepted_at"],
-            }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+            enabled = (
+                self.supabase.table("billing_payers")
+                .update(
+                    {
+                        "autopay_status": "enabled",
+                        "autopay_authorized_at": consent["completed_at"],
+                        "autopay_terms_accepted_at": consent["accepted_at"],
+                    }
+                )
+                .eq("id", payer_id)
+                .eq("studio_id", studio_id)
+                .execute()
+            )
             if not enabled.data:
                 raise RuntimeError("projected_consent_payer_enable_failed")
             finalized = coordinator.finalize_payer_setup_projection(
@@ -378,7 +395,11 @@ class BillingWebhookProjector:
             return
 
         consent_status = _object_get(session.get("consent") or {}, "terms_of_service")
-        if session.get("status") != "complete" or consent_status != "accepted" or not setup_intent_id:
+        if (
+            session.get("status") != "complete"
+            or consent_status != "accepted"
+            or not setup_intent_id
+        ):
             self._mark_setup_reconciliation(
                 coordinator=coordinator,
                 setup_request=setup_request,
@@ -390,18 +411,20 @@ class BillingWebhookProjector:
             )
             return
 
-        acceptance_proof = stable_hash({
-            "setup_request_id": setup_request_id,
-            "operation_id": operation_id,
-            "studio_id": studio_id,
-            "payer_id": payer_id,
-            "terms_version": terms_version,
-            "stripe_checkout_session_id": session_id,
-            "stripe_setup_intent_id": setup_intent_id,
-            "stripe_connected_account_id": account_id,
-            "connect_account_generation": account_generation,
-            "terms_of_service": "accepted",
-        })
+        acceptance_proof = stable_hash(
+            {
+                "setup_request_id": setup_request_id,
+                "operation_id": operation_id,
+                "studio_id": studio_id,
+                "payer_id": payer_id,
+                "terms_version": terms_version,
+                "stripe_checkout_session_id": session_id,
+                "stripe_setup_intent_id": setup_intent_id,
+                "stripe_connected_account_id": account_id,
+                "connect_account_generation": account_generation,
+                "terms_of_service": "accepted",
+            }
+        )
         consent = coordinator.accept_payer_consent(
             setup_request=setup_request,
             acceptance_proof_sha256=acceptance_proof,
@@ -448,16 +471,24 @@ class BillingWebhookProjector:
 
         payer_metadata = dict(payer.get("metadata") or {})
         payer_metadata.pop("autopay_projection_error", None)
-        projected = self.supabase.table("billing_payers").update({
-            "stripe_account_id": account_id,
-            "stripe_customer_id": customer_id,
-            "connect_account_generation": account_generation,
-            **{key: value for key, value in payment_fields.items() if value is not None},
-            "autopay_status": "pending",
-            "autopay_authorized_at": None,
-            "autopay_terms_accepted_at": None,
-            "metadata": payer_metadata,
-        }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+        projected = (
+            self.supabase.table("billing_payers")
+            .update(
+                {
+                    "stripe_account_id": account_id,
+                    "stripe_customer_id": customer_id,
+                    "connect_account_generation": account_generation,
+                    **{key: value for key, value in payment_fields.items() if value is not None},
+                    "autopay_status": "pending",
+                    "autopay_authorized_at": None,
+                    "autopay_terms_accepted_at": None,
+                    "metadata": payer_metadata,
+                }
+            )
+            .eq("id", payer_id)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
         if not projected.data:
             self._mark_setup_reconciliation(
                 coordinator=coordinator,
@@ -478,11 +509,19 @@ class BillingWebhookProjector:
             completed_at=accepted_at,
         )
         consent = completion["consent"]
-        enabled = self.supabase.table("billing_payers").update({
-            "autopay_status": "enabled",
-            "autopay_authorized_at": consent["completed_at"],
-            "autopay_terms_accepted_at": consent["accepted_at"],
-        }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+        enabled = (
+            self.supabase.table("billing_payers")
+            .update(
+                {
+                    "autopay_status": "enabled",
+                    "autopay_authorized_at": consent["completed_at"],
+                    "autopay_terms_accepted_at": consent["accepted_at"],
+                }
+            )
+            .eq("id", payer_id)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
         if not enabled.data:
             raise RuntimeError("completed_consent_payer_enable_failed")
         finalized = coordinator.finalize_payer_setup_projection(
@@ -532,14 +571,14 @@ class BillingWebhookProjector:
             or generation is None
         ):
             raise RuntimeError("legacy_autopay_setup_identity_unverified")
-        payer = self._get_row_or_404(
-            "billing_payers", payer_id, studio_id, "Payer not found."
-        )
-        if any((
-            payer.get("stripe_account_id") != account_id,
-            payer.get("stripe_customer_id") != customer_id,
-            payer.get("connect_account_generation") != generation,
-        )):
+        payer = self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
+        if any(
+            (
+                payer.get("stripe_account_id") != account_id,
+                payer.get("stripe_customer_id") != customer_id,
+                payer.get("connect_account_generation") != generation,
+            )
+        ):
             raise RuntimeError("legacy_autopay_setup_identity_unverified")
         payer_metadata = dict(payer.get("metadata") or {})
         existing_error = payer_metadata.get("autopay_projection_error") or {}
@@ -554,12 +593,20 @@ class BillingWebhookProjector:
             "occurred_at": occurred_at,
             "stripe_checkout_session_id": session_id,
         }
-        updated = self.supabase.table("billing_payers").update({
-            "autopay_status": "pending",
-            "autopay_authorized_at": None,
-            "autopay_terms_accepted_at": None,
-            "metadata": payer_metadata,
-        }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+        updated = (
+            self.supabase.table("billing_payers")
+            .update(
+                {
+                    "autopay_status": "pending",
+                    "autopay_authorized_at": None,
+                    "autopay_terms_accepted_at": None,
+                    "metadata": payer_metadata,
+                }
+            )
+            .eq("id", payer_id)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
         if not updated.data:
             raise RuntimeError("legacy_autopay_setup_repair_state_write_failed")
 
@@ -597,39 +644,40 @@ class BillingWebhookProjector:
             "setup_request_id": setup_request_id,
             "terms_version": terms_version,
         }
-        if any((
-            setup_request.get("payer_id") != payer_id,
-            setup_request.get("operation_id") != operation_id,
-            setup_request.get("stripe_checkout_session_id") != session_id,
-            setup_request.get("stripe_setup_intent_id") != setup_intent_id,
-            setup_request.get("stripe_connected_account_id") != account_id,
-            setup_request.get("connect_account_generation") != account_generation,
-            setup_request.get("terms_version") != terms_version,
-            operation.get("operation_type") != PAYER_SETUP_OPERATION_TYPE,
-            operation.get("provider_object_id") != session_id,
-            operation.get("provider_secondary_object_id") != setup_intent_id,
-            operation.get("state") != "completed",
-            operation.get("studio_id") not in {None, studio_id},
-            operation.get("actor_id") not in {None, actor_id},
-            payer.get("studio_id") != studio_id,
-            payer.get("stripe_account_id") != account_id,
-            payer.get("connect_account_generation") != account_generation,
-            not payment_method_id,
-            consent.get("setup_request_id") != setup_request_id,
-            consent.get("operation_id") not in {None, operation_id},
-            consent.get("stripe_checkout_session_id") != session_id,
-            consent.get("stripe_setup_intent_id") != setup_intent_id,
-            consent.get("stripe_connected_account_id") != account_id,
-            consent.get("connect_account_generation") != account_generation,
-            consent.get("terms_version") != terms_version,
-            not consent.get("completed_at"),
-        )):
+        if any(
+            (
+                setup_request.get("payer_id") != payer_id,
+                setup_request.get("operation_id") != operation_id,
+                setup_request.get("stripe_checkout_session_id") != session_id,
+                setup_request.get("stripe_setup_intent_id") != setup_intent_id,
+                setup_request.get("stripe_connected_account_id") != account_id,
+                setup_request.get("connect_account_generation") != account_generation,
+                setup_request.get("terms_version") != terms_version,
+                operation.get("operation_type") != PAYER_SETUP_OPERATION_TYPE,
+                operation.get("provider_object_id") != session_id,
+                operation.get("provider_secondary_object_id") != setup_intent_id,
+                operation.get("state") != "completed",
+                operation.get("studio_id") not in {None, studio_id},
+                operation.get("actor_id") not in {None, actor_id},
+                payer.get("studio_id") != studio_id,
+                payer.get("stripe_account_id") != account_id,
+                payer.get("connect_account_generation") != account_generation,
+                not payment_method_id,
+                consent.get("setup_request_id") != setup_request_id,
+                consent.get("operation_id") not in {None, operation_id},
+                consent.get("stripe_checkout_session_id") != session_id,
+                consent.get("stripe_setup_intent_id") != setup_intent_id,
+                consent.get("stripe_connected_account_id") != account_id,
+                consent.get("connect_account_generation") != account_generation,
+                consent.get("terms_version") != terms_version,
+                not consent.get("completed_at"),
+            )
+        ):
             raise RuntimeError("autopay_consent_audit_identity_mismatch")
         audit_id = str(uuid5(NAMESPACE_URL, f"koaryu:{action}:{operation_id}"))
         columns = "id, studio_id, actor_id, action, entity_type, entity_id, metadata"
         deterministic = (
-            self.supabase.table("audit_logs").select(columns)
-            .eq("id", audit_id).limit(1).execute()
+            self.supabase.table("audit_logs").select(columns).eq("id", audit_id).limit(1).execute()
         )
         if deterministic.data:
             self._validate_consent_audit(
@@ -637,10 +685,14 @@ class BillingWebhookProjector:
             )
             return
         legacy = (
-            self.supabase.table("audit_logs").select(columns)
-            .eq("studio_id", studio_id).eq("action", action)
+            self.supabase.table("audit_logs")
+            .select(columns)
+            .eq("studio_id", studio_id)
+            .eq("action", action)
             .eq("entity_id", payer_id)
-            .eq("metadata->>operation_id", operation_id).limit(2).execute()
+            .eq("metadata->>operation_id", operation_id)
+            .limit(2)
+            .execute()
         )
         if legacy.data:
             self._validate_consent_audit(
@@ -662,8 +714,11 @@ class BillingWebhookProjector:
             if getattr(exc, "code", None) != "23505":
                 raise
             winner = (
-                self.supabase.table("audit_logs").select(columns)
-                .eq("id", audit_id).limit(1).execute()
+                self.supabase.table("audit_logs")
+                .select(columns)
+                .eq("id", audit_id)
+                .limit(1)
+                .execute()
             )
             self._validate_consent_audit(
                 winner.data, audit_id, studio_id, actor_id, payer_id, expected
@@ -681,15 +736,17 @@ class BillingWebhookProjector:
         if not isinstance(rows, list) or len(rows) != 1:
             raise RuntimeError("autopay_consent_audit_conflict")
         row = rows[0]
-        if not isinstance(row, dict) or any((
-            audit_id is not None and row.get("id") != audit_id,
-            row.get("studio_id") != studio_id,
-            row.get("actor_id") != actor_id,
-            row.get("action") != "billing.autopay_consent_recorded",
-            row.get("entity_type") != "billing",
-            row.get("entity_id") != payer_id,
-            row.get("metadata") != metadata,
-        )):
+        if not isinstance(row, dict) or any(
+            (
+                audit_id is not None and row.get("id") != audit_id,
+                row.get("studio_id") != studio_id,
+                row.get("actor_id") != actor_id,
+                row.get("action") != "billing.autopay_consent_recorded",
+                row.get("entity_type") != "billing",
+                row.get("entity_id") != payer_id,
+                row.get("metadata") != metadata,
+            )
+        ):
             raise RuntimeError("autopay_consent_audit_conflict")
 
     @staticmethod
@@ -786,8 +843,7 @@ class BillingWebhookProjector:
             and metadata.get("setup_request_id") == setup_request_id
             and metadata.get("terms_version") == terms_version
             and metadata.get("stripe_account_id") == account_id
-            and metadata.get("connect_account_generation")
-            == str(account_generation)
+            and metadata.get("connect_account_generation") == str(account_generation)
         )
 
     def _mark_setup_reconciliation(
@@ -815,12 +871,14 @@ class BillingWebhookProjector:
             "code": reason_code,
             "occurred_at": datetime.now(timezone.utc).isoformat(),
         }
-        self.supabase.table("billing_payers").update({
-            "autopay_status": "pending",
-            "autopay_authorized_at": None,
-            "autopay_terms_accepted_at": None,
-            "metadata": payer_metadata,
-        }).eq("id", payer["id"]).eq("studio_id", payer["studio_id"]).execute()
+        self.supabase.table("billing_payers").update(
+            {
+                "autopay_status": "pending",
+                "autopay_authorized_at": None,
+                "autopay_terms_accepted_at": None,
+                "metadata": payer_metadata,
+            }
+        ).eq("id", payer["id"]).eq("studio_id", payer["studio_id"]).execute()
 
     def _enable_payer_from_completed_consent(
         self,
@@ -832,12 +890,14 @@ class BillingWebhookProjector:
     ) -> None:
         if not consent.get("completed_at") or not payer.get("default_payment_method_id"):
             return
-        self.supabase.table("billing_payers").update({
-            "autopay_status": "enabled",
-            "autopay_authorized_at": payer.get("autopay_authorized_at")
-            or consent.get("completed_at"),
-            "autopay_terms_accepted_at": consent.get("accepted_at"),
-        }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+        self.supabase.table("billing_payers").update(
+            {
+                "autopay_status": "enabled",
+                "autopay_authorized_at": payer.get("autopay_authorized_at")
+                or consent.get("completed_at"),
+                "autopay_terms_accepted_at": consent.get("accepted_at"),
+            }
+        ).eq("id", payer_id).eq("studio_id", studio_id).execute()
 
     def _project_invoice_event(
         self,
@@ -858,14 +918,18 @@ class BillingWebhookProjector:
         if local and is_stale_stripe_event(local, event_created):
             return
         if local:
-            local = self._update_invoice_from_stripe(local["id"], studio_id, invoice, account_id, event_created=event_created)
+            local = self._update_invoice_from_stripe(
+                local["id"], studio_id, invoice, account_id, event_created=event_created
+            )
         else:
             local = self._insert_invoice_from_stripe(studio_id, invoice, account_id, event_created)
         if local and is_stale_stripe_event(local, event_created):
             return
         self._update_subscription_period_from_invoice(studio_id, invoice, account_id)
         if event_type == "invoice.paid":
-            self._project_payment_from_invoice(invoice, account_id, local, event_created=event_created)
+            self._project_payment_from_invoice(
+                invoice, account_id, local, event_created=event_created
+            )
             self._link_orphan_payment_to_invoice(invoice, account_id, local)
         if local.get("payer_id"):
             self._recompute_payer_balance(studio_id, local.get("payer_id"))
@@ -877,9 +941,13 @@ class BillingWebhookProjector:
         event_type: str,
         event_created: Optional[int] = None,
     ) -> None:
-        self._payment_events()._project_payment_intent(intent, account_id, event_type, event_created)
+        self._payment_events()._project_payment_intent(
+            intent, account_id, event_type, event_created
+        )
 
-    def _link_adjustments_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
+    def _link_adjustments_to_payment(
+        self, payment: dict[str, Any], account_id: Optional[str]
+    ) -> dict[str, Any]:
         return self._payment_events()._link_adjustments_to_payment(payment, account_id)
 
     def _project_charge_refund(
@@ -940,7 +1008,14 @@ class BillingWebhookProjector:
         event_created: Optional[int] = None,
     ) -> dict[str, Any]:
         update = self._invoice_projection(invoice, account_id)
-        current_rows = self.supabase.table("billing_invoices").select("*").eq("id", invoice_id).eq("studio_id", studio_id).limit(1).execute()
+        current_rows = (
+            self.supabase.table("billing_invoices")
+            .select("*")
+            .eq("id", invoice_id)
+            .eq("studio_id", studio_id)
+            .limit(1)
+            .execute()
+        )
         current = current_rows.data[0] if current_rows.data else {}
         if is_same_second_status_regression(
             current.get("last_stripe_event_created"),
@@ -955,7 +1030,9 @@ class BillingWebhookProjector:
                 update[stable_field] = current[stable_field]
         if event_created is not None:
             update["last_stripe_event_created"] = event_created
-        update.update(self._invoice_identity_projection(studio_id, invoice, account_id, current=current))
+        update.update(
+            self._invoice_identity_projection(studio_id, invoice, account_id, current=current)
+        )
         query = (
             self.supabase.table("billing_invoices")
             .update(update)
@@ -1029,9 +1106,15 @@ class BillingWebhookProjector:
             "hosted_invoice_url": _object_get(invoice, "hosted_invoice_url"),
             "invoice_pdf": _object_get(invoice, "invoice_pdf"),
             "due_date": date_from_epoch(_object_get(invoice, "due_date")),
-            "paid_at": timestamp(_object_get(_object_get(invoice, "status_transitions") or {}, "paid_at")),
-            "finalized_at": timestamp(_object_get(_object_get(invoice, "status_transitions") or {}, "finalized_at")),
-            "voided_at": timestamp(_object_get(_object_get(invoice, "status_transitions") or {}, "voided_at")),
+            "paid_at": timestamp(
+                _object_get(_object_get(invoice, "status_transitions") or {}, "paid_at")
+            ),
+            "finalized_at": timestamp(
+                _object_get(_object_get(invoice, "status_transitions") or {}, "finalized_at")
+            ),
+            "voided_at": timestamp(
+                _object_get(_object_get(invoice, "status_transitions") or {}, "voided_at")
+            ),
             "collection_method": _object_get(invoice, "collection_method"),
             "last_payment_error": last_error,
         }
@@ -1069,7 +1152,13 @@ class BillingWebhookProjector:
         enrollment = self._invoice_enrollment(studio_id, invoice)
         subscription_id = invoice_subscription_id(invoice)
         projection: dict[str, Any] = {}
-        payer_id = metadata.get("payer_id") or current.get("payer_id") or self._payer_id_for_customer(studio_id, account_id, _stripe_id(_object_get(invoice, "customer")))
+        payer_id = (
+            metadata.get("payer_id")
+            or current.get("payer_id")
+            or self._payer_id_for_customer(
+                studio_id, account_id, _stripe_id(_object_get(invoice, "customer"))
+            )
+        )
         enrollment_id = metadata.get("enrollment_id") or (enrollment or {}).get("id")
         student_id = metadata.get("student_id") or (enrollment or {}).get("student_id")
         invoice_type = metadata.get("invoice_type") or ("tuition" if subscription_id else None)
@@ -1079,7 +1168,9 @@ class BillingWebhookProjector:
             projection["enrollment_id"] = enrollment_id
         if student_id and not current.get("student_id"):
             projection["student_id"] = student_id
-        if invoice_type and (not current.get("invoice_type") or current.get("invoice_type") == "manual"):
+        if invoice_type and (
+            not current.get("invoice_type") or current.get("invoice_type") == "manual"
+        ):
             projection["invoice_type"] = invoice_type
         return projection
 
@@ -1097,7 +1188,9 @@ class BillingWebhookProjector:
         )
         return result.data[0] if result.data else None
 
-    def _update_subscription_period_from_invoice(self, studio_id: str, invoice: Any, account_id: Optional[str]) -> None:
+    def _update_subscription_period_from_invoice(
+        self, studio_id: str, invoice: Any, account_id: Optional[str]
+    ) -> None:
         subscription_id = invoice_subscription_id(invoice)
         if not subscription_id:
             return
@@ -1111,7 +1204,11 @@ class BillingWebhookProjector:
             .eq("stripe_subscription_id", subscription_id)
             .limit(1)
         )
-        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        query = (
+            query.eq("stripe_account_id", account_id)
+            if account_id
+            else query.is_("stripe_account_id", "null")
+        )
         result = query.execute()
         if not result.data:
             return
@@ -1127,13 +1224,21 @@ class BillingWebhookProjector:
         if period_end and should_update:
             update["current_period_end"] = timestamp(period_end)
         if update:
-            self.supabase.table("billing_subscriptions").update(update).eq("id", current["id"]).execute()
+            self.supabase.table("billing_subscriptions").update(update).eq(
+                "id", current["id"]
+            ).execute()
 
-    def _link_orphan_payment_to_invoice(self, invoice: dict[str, Any], account_id: Optional[str], local_invoice: dict[str, Any]) -> None:
+    def _link_orphan_payment_to_invoice(
+        self, invoice: dict[str, Any], account_id: Optional[str], local_invoice: dict[str, Any]
+    ) -> None:
         if not local_invoice or not local_invoice.get("id"):
             return
         payment_intent_id = _stripe_id(invoice.get("payment_intent"))
-        payment = self._find_payment_by_intent(account_id, payment_intent_id) if payment_intent_id else None
+        payment = (
+            self._find_payment_by_intent(account_id, payment_intent_id)
+            if payment_intent_id
+            else None
+        )
         if not payment:
             payment = self._find_unlinked_payment_by_customer_amount(
                 account_id,
@@ -1149,31 +1254,57 @@ class BillingWebhookProjector:
         }
         if local_invoice.get("payer_id") and not payment.get("payer_id"):
             payment_update["payer_id"] = local_invoice["payer_id"]
-        self.supabase.table("billing_payments").update(payment_update).eq("id", payment["id"]).execute()
+        self.supabase.table("billing_payments").update(payment_update).eq(
+            "id", payment["id"]
+        ).execute()
         invoice_update: dict[str, Any] = {}
-        if payment.get("stripe_payment_intent_id") and not local_invoice.get("stripe_payment_intent_id"):
+        if payment.get("stripe_payment_intent_id") and not local_invoice.get(
+            "stripe_payment_intent_id"
+        ):
             invoice_update["stripe_payment_intent_id"] = payment["stripe_payment_intent_id"]
         existing_fee = local_invoice.get("application_fee_amount_cents")
         payment_fee = payment.get("application_fee_amount_cents")
         if payment_fee is not None and (int(payment_fee or 0) > 0 or existing_fee is None):
-            invoice_update["application_fee_amount_cents"] = int(payment.get("application_fee_amount_cents") or 0)
+            invoice_update["application_fee_amount_cents"] = int(
+                payment.get("application_fee_amount_cents") or 0
+            )
         if invoice_update:
-            self.supabase.table("billing_invoices").update(invoice_update).eq("id", local_invoice["id"]).execute()
+            self.supabase.table("billing_invoices").update(invoice_update).eq(
+                "id", local_invoice["id"]
+            ).execute()
             local_invoice.update(invoice_update)
 
-    def _find_invoice_for_stripe(self, invoice: dict[str, Any], account_id: Optional[str]) -> Optional[dict[str, Any]]:
+    def _find_invoice_for_stripe(
+        self, invoice: dict[str, Any], account_id: Optional[str]
+    ) -> Optional[dict[str, Any]]:
         metadata = invoice_metadata(invoice)
         local_id = metadata.get("invoice_id")
         studio_id = metadata.get("studio_id")
         if local_id and studio_id:
-            result = self.supabase.table("billing_invoices").select("*").eq("id", local_id).eq("studio_id", studio_id).limit(1).execute()
+            result = (
+                self.supabase.table("billing_invoices")
+                .select("*")
+                .eq("id", local_id)
+                .eq("studio_id", studio_id)
+                .limit(1)
+                .execute()
+            )
             if result.data and self._row_matches_stripe_account(result.data[0], account_id):
                 return result.data[0]
         stripe_invoice_id = _stripe_id(invoice)
         if not stripe_invoice_id:
             return None
-        query = self.supabase.table("billing_invoices").select("*").eq("stripe_invoice_id", stripe_invoice_id).limit(1)
-        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        query = (
+            self.supabase.table("billing_invoices")
+            .select("*")
+            .eq("stripe_invoice_id", stripe_invoice_id)
+            .limit(1)
+        )
+        query = (
+            query.eq("stripe_account_id", account_id)
+            if account_id
+            else query.is_("stripe_account_id", "null")
+        )
         result = query.execute()
         return result.data[0] if result.data else None
 
@@ -1217,10 +1348,14 @@ class BillingWebhookProjector:
             currency,
         )
 
-    def _find_payment_by_charge(self, account_id: Optional[str], charge_id: Optional[str]) -> Optional[dict[str, Any]]:
+    def _find_payment_by_charge(
+        self, account_id: Optional[str], charge_id: Optional[str]
+    ) -> Optional[dict[str, Any]]:
         return self._payment_events()._find_payment_by_charge(account_id, charge_id)
 
-    def _find_payment_by_intent(self, account_id: Optional[str], payment_intent_id: Optional[str]) -> Optional[dict[str, Any]]:
+    def _find_payment_by_intent(
+        self, account_id: Optional[str], payment_intent_id: Optional[str]
+    ) -> Optional[dict[str, Any]]:
         return self._payment_events()._find_payment_by_intent(account_id, payment_intent_id)
 
     def _stored_stripe_event_object(
@@ -1238,24 +1373,34 @@ class BillingWebhookProjector:
                 .order("created_at", desc=True)
                 .limit(10)
             )
-            query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+            query = (
+                query.eq("stripe_account_id", account_id)
+                if account_id
+                else query.is_("stripe_account_id", "null")
+            )
             result = query.execute()
         except Exception:
             return None
         for row in result.data or []:
             payload = row.get("payload") or {}
-            data_object = ((payload.get("data") or {}).get("object") or {})
+            data_object = (payload.get("data") or {}).get("object") or {}
             if _stripe_id(data_object) == object_id:
                 return data_object
         return None
 
-    def _find_subscription_for_stripe(self, subscription: dict[str, Any], account_id: Optional[str]) -> Optional[dict[str, Any]]:
+    def _find_subscription_for_stripe(
+        self, subscription: dict[str, Any], account_id: Optional[str]
+    ) -> Optional[dict[str, Any]]:
         return self._subscription_events().find_subscription_for_stripe(subscription, account_id)
 
-    def _project_subscription_items(self, subscription: dict[str, Any], group: dict[str, Any]) -> None:
+    def _project_subscription_items(
+        self, subscription: dict[str, Any], group: dict[str, Any]
+    ) -> None:
         self._subscription_events().project_subscription_items(subscription, group)
 
-    def _update_invoice_last_event(self, invoice: dict[str, Any], studio_id: str, event_created: int) -> dict[str, Any]:
+    def _update_invoice_last_event(
+        self, invoice: dict[str, Any], studio_id: str, event_created: int
+    ) -> dict[str, Any]:
         query = (
             self.supabase.table("billing_invoices")
             .update({"last_stripe_event_created": event_created})

@@ -7,7 +7,6 @@ export type DashboardBillingSummary = {
   paymentsReady: boolean | null;
 };
 
-
 export function canViewDashboardBilling({
   currentRole,
   summary,

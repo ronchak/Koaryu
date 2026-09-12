@@ -21,26 +21,32 @@ const metrics = {
 
 describe("dashboard widget interaction geometry", () => {
   it("keeps the original grab point while resolving a clamped grid target", () => {
-    assert.deepEqual(resolveDashboardPointerTarget({
-      ...metrics,
-      grabOffsetX: 25,
-      grabOffsetY: 40,
-      pointerX: 45,
-      pointerY: 120,
-      previousColumn: -1,
-      previousRow: -1,
-      size: "1x1",
-    }), { column: 0, row: 0 });
-    assert.deepEqual(resolveDashboardPointerTarget({
-      ...metrics,
-      grabOffsetX: 25,
-      grabOffsetY: 40,
-      pointerX: 999,
-      pointerY: 999,
-      previousColumn: -1,
-      previousRow: -1,
-      size: "2x2",
-    }), { column: 2, row: 5 });
+    assert.deepEqual(
+      resolveDashboardPointerTarget({
+        ...metrics,
+        grabOffsetX: 25,
+        grabOffsetY: 40,
+        pointerX: 45,
+        pointerY: 120,
+        previousColumn: -1,
+        previousRow: -1,
+        size: "1x1",
+      }),
+      { column: 0, row: 0 },
+    );
+    assert.deepEqual(
+      resolveDashboardPointerTarget({
+        ...metrics,
+        grabOffsetX: 25,
+        grabOffsetY: 40,
+        pointerX: 999,
+        pointerY: 999,
+        previousColumn: -1,
+        previousRow: -1,
+        size: "2x2",
+      }),
+      { column: 2, row: 5 },
+    );
   });
 
   it("holds the current slot through a midpoint dead band", () => {
@@ -59,20 +65,26 @@ describe("dashboard widget interaction geometry", () => {
 
   it("maps only to supported resize footprints and adds switch hysteresis", () => {
     assert.deepEqual(dashboardSizePixels("2x2", metrics), { width: 212, height: 332 });
-    assert.equal(chooseDashboardResizeSize({
-      ...metrics,
-      allowedSizes: ["1x1", "2x1", "2x2"],
-      currentSize: "1x1",
-      width: 205,
-      height: 165,
-    }), "2x1");
-    assert.equal(chooseDashboardResizeSize({
-      ...metrics,
-      allowedSizes: ["1x1", "2x1"],
-      currentSize: "1x1",
-      width: 156,
-      height: 160,
-    }), "1x1");
+    assert.equal(
+      chooseDashboardResizeSize({
+        ...metrics,
+        allowedSizes: ["1x1", "2x1", "2x2"],
+        currentSize: "1x1",
+        width: 205,
+        height: 165,
+      }),
+      "2x1",
+    );
+    assert.equal(
+      chooseDashboardResizeSize({
+        ...metrics,
+        allowedSizes: ["1x1", "2x1"],
+        currentSize: "1x1",
+        width: 156,
+        height: 160,
+      }),
+      "1x1",
+    );
   });
 
   it("keeps continuous resize previews on paths between supported footprints", () => {
@@ -80,13 +92,7 @@ describe("dashboard widget interaction geometry", () => {
       width: 156,
       height: 160,
     });
-    const diagonal = clampDashboardResizePreview(
-      500,
-      500,
-      ["1x1", "2x1", "1x2"],
-      metrics,
-      "1x1"
-    );
+    const diagonal = clampDashboardResizePreview(500, 500, ["1x1", "2x1", "1x2"], metrics, "1x1");
     assert.ok(diagonal.width === 212 || diagonal.height === 332);
     assert.ok(diagonal.width !== 212 || diagonal.height !== 332);
   });

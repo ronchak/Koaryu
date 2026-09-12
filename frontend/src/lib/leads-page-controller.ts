@@ -16,14 +16,7 @@ import {
   getStageLabel,
   removeOptimisticLeadUpdate,
 } from "@/lib/leads-page-model";
-import type {
-  Lead,
-  LeadActivity,
-  LeadStage,
-  LostReason,
-  Program,
-  StaffRoleName,
-} from "@/types";
+import type { Lead, LeadActivity, LeadStage, LostReason, Program, StaffRoleName } from "@/types";
 
 type LeadActivityStatus = "idle" | "loading" | "ready" | "error";
 
@@ -72,16 +65,17 @@ export function useLeadsPageController({
   const [addLeadProgramId, setAddLeadProgramId] = useState<string | null>(null);
   const [selectedLeadActivities, setSelectedLeadActivities] = useState<LeadActivity[]>([]);
   const [selectedLeadActivityError, setSelectedLeadActivityError] = useState<string | null>(null);
-  const [selectedLeadActivityStatus, setSelectedLeadActivityStatus] = useState<LeadActivityStatus>("idle");
+  const [selectedLeadActivityStatus, setSelectedLeadActivityStatus] =
+    useState<LeadActivityStatus>("idle");
   const [activityRefreshKey, setActivityRefreshKey] = useState(0);
 
   const dataset = useMemo(
     () => buildLeadsDatasetModel({ baseLeads, optimisticLeads, programs, today }),
-    [baseLeads, optimisticLeads, programs, today]
+    [baseLeads, optimisticLeads, programs, today],
   );
   const model = useMemo(
     () => selectLeadsPageModel(dataset, selectedLeadId, draggedLead),
-    [dataset, selectedLeadId, draggedLead]
+    [dataset, selectedLeadId, draggedLead],
   );
 
   useEffect(() => {
@@ -99,7 +93,7 @@ export function useLeadsPageController({
       .catch((error: unknown) => {
         if (error instanceof Error && error.name === "AbortError") return;
         setSelectedLeadActivityError(
-          error instanceof Error ? error.message : "Could not load lead activity."
+          error instanceof Error ? error.message : "Could not load lead activity.",
         );
         setSelectedLeadActivityStatus("error");
       });
@@ -151,7 +145,9 @@ export function useLeadsPageController({
       setSelectedLeadActivityError(null);
       setSelectedLeadActivityStatus("ready");
     } else if (!token) {
-      setSelectedLeadActivityError("Activity history is unavailable until the current session is ready.");
+      setSelectedLeadActivityError(
+        "Activity history is unavailable until the current session is ready.",
+      );
       setSelectedLeadActivityStatus("error");
     } else {
       setSelectedLeadActivityError(null);
@@ -232,9 +228,7 @@ export function useLeadsPageController({
     } catch (error) {
       console.error("Failed to convert lead", error);
       setLeadActionError(
-        error instanceof Error
-          ? error.message
-          : "Could not convert this lead into a student."
+        error instanceof Error ? error.message : "Could not convert this lead into a student.",
       );
     } finally {
       rollbackOptimisticLead();
@@ -266,7 +260,7 @@ export function useLeadsPageController({
   async function handleLeadUpdate(
     lead: Lead,
     updates: Partial<Lead>,
-    options?: { closeAfterSuccess?: boolean }
+    options?: { closeAfterSuccess?: boolean },
   ) {
     if (!canManageLeads) return;
     setLeadActionError(null);
@@ -283,9 +277,7 @@ export function useLeadsPageController({
     } catch (error) {
       console.error("Failed to update lead", error);
       setLeadActionError(
-        error instanceof Error
-          ? error.message
-          : "Could not save lead changes. Please try again."
+        error instanceof Error ? error.message : "Could not save lead changes. Please try again.",
       );
     } finally {
       rollbackOptimisticLead();
@@ -305,7 +297,7 @@ export function useLeadsPageController({
 
     await handleLeadUpdate(lead, {
       stage: nextStage,
-      lost_reason: nextStage === "closed_lost" ? lead.lost_reason ?? "other" : lead.lost_reason,
+      lost_reason: nextStage === "closed_lost" ? (lead.lost_reason ?? "other") : lead.lost_reason,
     });
   }
 
@@ -368,7 +360,7 @@ export function useLeadsPageController({
         activity_type: "follow_up",
         description,
       },
-      token
+      token,
     );
     if (selectedLeadId === leadId) {
       setSelectedLeadActivities((current) => [activity, ...current]);
@@ -405,7 +397,7 @@ export function useLeadsPageController({
         lead.id,
         advanceStage && nextStage
           ? `Lead contacted and moved to ${getStageLabel(nextStage)}.`
-          : "Lead contacted."
+          : "Lead contacted.",
       );
 
       if (advanceStage && nextStage === "enrolled") {
@@ -424,7 +416,7 @@ export function useLeadsPageController({
       setActionMessage(
         advanceStage && nextStage
           ? `${fullName(lead)} moved to ${getStageLabel(nextStage)}.`
-          : `${fullName(lead)} marked contacted.`
+          : `${fullName(lead)} marked contacted.`,
       );
 
       if (selectedLeadId === lead.id && !advanceStage) {
@@ -433,9 +425,7 @@ export function useLeadsPageController({
     } catch (error) {
       console.error("Failed to update follow-up", error);
       setLeadActionError(
-        error instanceof Error
-          ? error.message
-          : "Could not complete that follow-up action."
+        error instanceof Error ? error.message : "Could not complete that follow-up action.",
       );
     } finally {
       rollbackOptimisticLead();
@@ -448,7 +438,7 @@ export function useLeadsPageController({
     return handleLeadUpdate(
       lead,
       { stage: "closed_lost", lost_reason: lostReason },
-      { closeAfterSuccess: true }
+      { closeAfterSuccess: true },
     );
   }
 

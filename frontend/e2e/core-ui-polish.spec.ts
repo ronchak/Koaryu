@@ -13,7 +13,10 @@ const coreUiTest = coreUiEnabled ? test : test.skip;
 
 async function signInToPreview(page: Page) {
   await page.goto(`${FRONTEND_URL}/login`);
-  await expect(page.locator("html")).toHaveAttribute("data-koaryu-data-plane", "disposable-preview");
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-koaryu-data-plane",
+    "disposable-preview",
+  );
   await page.getByLabel("Email").fill("demo@koaryu.local");
   await page.getByLabel("Password").fill("preview-password");
   await Promise.all([
@@ -30,34 +33,50 @@ function collectPageErrors(page: Page) {
 
 async function expectHealthyPage(page: Page, pageErrors: string[]) {
   await expect(page.locator("body")).not.toHaveText("");
-  await expect(page.locator("[data-nextjs-dialog], .vite-error-overlay, #webpack-dev-server-client-overlay")).toHaveCount(0);
+  await expect(
+    page.locator("[data-nextjs-dialog], .vite-error-overlay, #webpack-dev-server-client-overlay"),
+  ).toHaveCount(0);
   expect(pageErrors, "expected no uncaught browser page errors").toEqual([]);
 }
 
-coreUiTest("renders selected program colors, month-first schedule, and card-level follow-up cues", async ({ page }, testInfo) => {
-  const pageErrors = collectPageErrors(page);
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await signInToPreview(page);
+coreUiTest(
+  "renders selected program colors, month-first schedule, and card-level follow-up cues",
+  async ({ page }, testInfo) => {
+    const pageErrors = collectPageErrors(page);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await signInToPreview(page);
 
-  await page.goto(`${FRONTEND_URL}/settings`);
-  const amberProgramSwatch = page.getByRole("button", { name: "Use #F59E0B" });
-  await amberProgramSwatch.scrollIntoViewIfNeeded();
-  await amberProgramSwatch.click();
-  await expect(amberProgramSwatch).toHaveAttribute("aria-pressed", "true");
-  await expect(amberProgramSwatch).toHaveAttribute("title", "#F59E0B selected");
+    await page.goto(`${FRONTEND_URL}/settings`);
+    const amberProgramSwatch = page.getByRole("button", { name: "Use #F59E0B" });
+    await amberProgramSwatch.scrollIntoViewIfNeeded();
+    await amberProgramSwatch.click();
+    await expect(amberProgramSwatch).toHaveAttribute("aria-pressed", "true");
+    await expect(amberProgramSwatch).toHaveAttribute("title", "#F59E0B selected");
 
-  await page.goto(`${FRONTEND_URL}/schedule`);
-  await expect(page.getByRole("group", { name: "Schedule view", exact: true }).getByRole("button", { name: "Month", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("button", { name: /^Open .+, .+ \d{1,2}, \d{4}$/ }).first()).toBeVisible();
+    await page.goto(`${FRONTEND_URL}/schedule`);
+    await expect(
+      page
+        .getByRole("group", { name: "Schedule view", exact: true })
+        .getByRole("button", { name: "Month", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByRole("button", { name: /^Open .+, .+ \d{1,2}, \d{4}$/ }).first(),
+    ).toBeVisible();
 
-  await page.goto(`${FRONTEND_URL}/leads`);
-  await expect(page.locator('[data-follow-up-state="today"]')).not.toHaveCount(0);
-  await expect(page.locator('[data-follow-up-state^="overdue-"]')).not.toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Follow-up today", exact: true })).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath("lead-card-follow-up-cues.png"), fullPage: true });
+    await page.goto(`${FRONTEND_URL}/leads`);
+    await expect(page.locator('[data-follow-up-state="today"]')).not.toHaveCount(0);
+    await expect(page.locator('[data-follow-up-state^="overdue-"]')).not.toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Follow-up today", exact: true })).toHaveCount(
+      0,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath("lead-card-follow-up-cues.png"),
+      fullPage: true,
+    });
 
-  await expectHealthyPage(page, pageErrors);
-});
+    await expectHealthyPage(page, pageErrors);
+  },
+);
 
 coreUiTest("formats student contact phone numbers while typing", async ({ page }) => {
   const pageErrors = collectPageErrors(page);
@@ -78,70 +97,81 @@ coreUiTest("formats student contact phone numbers while typing", async ({ page }
   await expectHealthyPage(page, pageErrors);
 });
 
-coreUiTest("prepopulates standard belt names and exposes working drag handles", async ({ page }) => {
-  const pageErrors = collectPageErrors(page);
-  await signInToPreview(page);
+coreUiTest(
+  "prepopulates standard belt names and exposes working drag handles",
+  async ({ page }) => {
+    const pageErrors = collectPageErrors(page);
+    await signInToPreview(page);
 
-  await page.goto(`${FRONTEND_URL}/belt-tracker`);
-  await page.getByRole("tab", { name: "Rank Plan", exact: true }).click();
-  await page.getByRole("button", { name: "Add belt", exact: true }).click();
+    await page.goto(`${FRONTEND_URL}/belt-tracker`);
+    await page.getByRole("tab", { name: "Rank Plan", exact: true }).click();
+    await page.getByRole("button", { name: "Add belt", exact: true }).click();
 
-  await page.getByRole("button", { name: "Use Brown for belt color" }).click();
-  await expect(page.getByLabel("Rank name")).toHaveValue("Brown Belt");
-  await page.getByLabel("Belt color", { exact: true }).fill("#ABCDEF");
-  await expect(page.getByLabel("Rank name")).toHaveValue("Brown Belt");
-  await page.getByRole("button", { name: "Close rank form" }).click();
+    await page.getByRole("button", { name: "Use Brown for belt color" }).click();
+    await expect(page.getByLabel("Rank name")).toHaveValue("Brown Belt");
+    await page.getByLabel("Belt color", { exact: true }).fill("#ABCDEF");
+    await expect(page.getByLabel("Rank name")).toHaveValue("Brown Belt");
+    await page.getByRole("button", { name: "Close rank form" }).click();
 
-  const beltHandles = page.locator("[data-belt-drag-handle]");
-  expect(await beltHandles.count()).toBeGreaterThan(1);
-  await expect(beltHandles.first()).toHaveAttribute("draggable", "true");
-  await beltHandles.first().evaluate((element) => element.scrollIntoView({ block: "center" }));
-  const firstHandleId = await beltHandles.first().getAttribute("data-belt-drag-handle");
-  await beltHandles.first().dragTo(beltHandles.nth(1));
-  await expect.poll(async () => beltHandles.first().getAttribute("data-belt-drag-handle")).not.toBe(firstHandleId);
-  await expect(page.getByRole("button", { name: "Save ranks", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Discard", exact: true }).click();
+    const beltHandles = page.locator("[data-belt-drag-handle]");
+    expect(await beltHandles.count()).toBeGreaterThan(1);
+    await expect(beltHandles.first()).toHaveAttribute("draggable", "true");
+    await beltHandles.first().evaluate((element) => element.scrollIntoView({ block: "center" }));
+    const firstHandleId = await beltHandles.first().getAttribute("data-belt-drag-handle");
+    await beltHandles.first().dragTo(beltHandles.nth(1));
+    await expect
+      .poll(async () => beltHandles.first().getAttribute("data-belt-drag-handle"))
+      .not.toBe(firstHandleId);
+    await expect(page.getByRole("button", { name: "Save ranks", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Discard", exact: true }).click();
 
-  await expectHealthyPage(page, pageErrors);
-});
+    await expectHealthyPage(page, pageErrors);
+  },
+);
 
-coreUiTest("adds a program student at the starting belt and refreshes eligibility", async ({ page }) => {
-  const pageErrors = collectPageErrors(page);
-  await signInToPreview(page);
+coreUiTest(
+  "adds a program student at the starting belt and refreshes eligibility",
+  async ({ page }) => {
+    const pageErrors = collectPageErrors(page);
+    await signInToPreview(page);
 
-  await page.goto(`${FRONTEND_URL}/students`);
-  await page.getByRole("button", { name: "Add student", exact: true }).click();
-  await page.getByLabel("Legal first name *").fill("Eligibility");
-  await page.getByLabel("Legal last name *").fill("Check");
-  await page.getByRole("checkbox", { name: "Brazilian Jiu-Jitsu Core" }).check();
-  await page.locator("form").getByRole("button", { name: "Add student", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Add student", exact: true })).toHaveCount(0);
+    await page.goto(`${FRONTEND_URL}/students`);
+    await page.getByRole("button", { name: "Add student", exact: true }).click();
+    await page.getByLabel("Legal first name *").fill("Eligibility");
+    await page.getByLabel("Legal last name *").fill("Check");
+    await page.getByRole("checkbox", { name: "Brazilian Jiu-Jitsu Core" }).check();
+    await page.locator("form").getByRole("button", { name: "Add student", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Add student", exact: true })).toHaveCount(0);
 
-  await page.goto(`${FRONTEND_URL}/belt-tracker`);
-  const studentRow = page.getByRole("row").filter({ hasText: "Eligibility Check" });
-  await expect(studentRow).toBeVisible();
-  await expect(studentRow).toContainText("White Belt");
-  await expect(studentRow).toContainText("Red Tip 1");
+    await page.goto(`${FRONTEND_URL}/belt-tracker`);
+    const studentRow = page.getByRole("row").filter({ hasText: "Eligibility Check" });
+    await expect(studentRow).toBeVisible();
+    await expect(studentRow).toContainText("White Belt");
+    await expect(studentRow).toContainText("Red Tip 1");
 
-  await expectHealthyPage(page, pageErrors);
-});
+    await expectHealthyPage(page, pageErrors);
+  },
+);
 
-coreUiTest("keeps rapid roster input in sync with the URL and restores profile return", async ({ page }) => {
-  await signInToPreview(page);
-  await page.goto(`${FRONTEND_URL}/students`);
-  const search = page.getByRole("textbox", { name: "Search students", exact: true });
-  await search.pressSequentially("Maya", { delay: 20 });
-  await expect(search).toHaveValue("Maya");
-  await expect(page).toHaveURL(/\/students\?q=Maya/);
-  await page.getByRole("combobox", { name: "Filter by status" }).selectOption("active");
-  await expect(search).toHaveValue("Maya");
-  await page.getByRole("button", { name: "Open Maya Chen profile" }).click();
-  await expect(page.getByRole("heading", { name: "Maya Chen", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Back to students", exact: true }).click();
-  await expect(search).toHaveValue("Maya");
-  await expect(page.getByRole("combobox", { name: "Filter by status" })).toHaveValue("active");
-  await expect(page.getByRole("button", { name: "Open Maya Chen profile" })).toBeFocused();
-  await page.getByRole("link", { name: "Students", exact: true }).click();
-  await expect(search).toHaveValue("");
-  await expect(page).toHaveURL(`${FRONTEND_URL}/students`);
-});
+coreUiTest(
+  "keeps rapid roster input in sync with the URL and restores profile return",
+  async ({ page }) => {
+    await signInToPreview(page);
+    await page.goto(`${FRONTEND_URL}/students`);
+    const search = page.getByRole("textbox", { name: "Search students", exact: true });
+    await search.pressSequentially("Maya", { delay: 20 });
+    await expect(search).toHaveValue("Maya");
+    await expect(page).toHaveURL(/\/students\?q=Maya/);
+    await page.getByRole("combobox", { name: "Filter by status" }).selectOption("active");
+    await expect(search).toHaveValue("Maya");
+    await page.getByRole("button", { name: "Open Maya Chen profile" }).click();
+    await expect(page.getByRole("heading", { name: "Maya Chen", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Back to students", exact: true }).click();
+    await expect(search).toHaveValue("Maya");
+    await expect(page.getByRole("combobox", { name: "Filter by status" })).toHaveValue("active");
+    await expect(page.getByRole("button", { name: "Open Maya Chen profile" })).toBeFocused();
+    await page.getByRole("link", { name: "Students", exact: true }).click();
+    await expect(search).toHaveValue("");
+    await expect(page).toHaveURL(`${FRONTEND_URL}/students`);
+  },
+);

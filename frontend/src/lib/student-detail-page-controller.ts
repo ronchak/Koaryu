@@ -5,10 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { safeStudentsReturn } from "@/lib/student-roster-location";
 import { api } from "@/lib/api";
-import {
-  buildStudentDetailModel,
-  validateStudentPhotoFile,
-} from "@/lib/student-detail-page-model";
+import { buildStudentDetailModel, validateStudentPhotoFile } from "@/lib/student-detail-page-model";
 import type {
   BeltsStoreContextValue,
   ConfigStoreContextValue,
@@ -55,7 +52,7 @@ export function useStudentDetailPageController({
   const canManageRoster = hasStaffPermission(config.currentRole, "manage_roster_bulk");
   const canManageStudentLifecycle = hasStaffPermission(
     config.currentRole,
-    "manage_student_lifecycle"
+    "manage_student_lifecycle",
   );
   const {
     deleteStudentPhoto,
@@ -76,7 +73,9 @@ export function useStudentDetailPageController({
   const [isSaving, setIsSaving] = useState(false);
   const scope = `${studioStore.identityGeneration}:${id}`;
   const currentScope = useRef(scope);
-  useEffect(() => { currentScope.current = scope; }, [scope]);
+  useEffect(() => {
+    currentScope.current = scope;
+  }, [scope]);
   const detailRevision = useRef(0);
   const [hydration, setHydration] = useState<{ scope: string; student: Student } | null>(null);
   const hydratedStudent = hydration?.scope === scope ? hydration.student : null;
@@ -85,7 +84,7 @@ export function useStudentDetailPageController({
   };
   const [retryNonce, setRetryNonce] = useState(0);
   const historyRetryNonceRef = useRef(0);
-  useResumeRefresh(() => setRetryNonce(value => value + 1));
+  useResumeRefresh(() => setRetryNonce((value) => value + 1));
   const [isLoadingStudent, setIsLoadingStudent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fallbackBeltLadders, setFallbackBeltLadders] = useState<BeltLadder[]>([]);
@@ -104,10 +103,7 @@ export function useStudentDetailPageController({
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [isPhotoSaving, setIsPhotoSaving] = useState(false);
 
-  const listStudent = useMemo(
-    () => students.find((student) => student.id === id),
-    [id, students]
-  );
+  const listStudent = useMemo(() => students.find((student) => student.id === id), [id, students]);
   const cachedPromotionHistory = promotionHistoryByStudent[id];
 
   useEffect(() => {
@@ -177,9 +173,7 @@ export function useStudentDetailPageController({
         setFallbackBeltLadders(laddersResult);
       } catch (error) {
         if (mounted) {
-          setBeltLoadError(
-            error instanceof Error ? error.message : "Failed to load belt ladder"
-          );
+          setBeltLoadError(error instanceof Error ? error.message : "Failed to load belt ladder");
         }
       } finally {
         if (mounted) {
@@ -230,9 +224,7 @@ export function useStudentDetailPageController({
           return;
         }
         if (mounted) {
-          setBeltLoadError(
-            error instanceof Error ? error.message : "Failed to load belt history"
-          );
+          setBeltLoadError(error instanceof Error ? error.message : "Failed to load belt history");
         }
       } finally {
         if (mounted) {
@@ -247,17 +239,22 @@ export function useStudentDetailPageController({
       mounted = false;
       controller.abort();
     };
-  }, [cachedPromotionHistory, id, isPreviewMode, loadPromotionHistoryForStudent, retryNonce, token]);
+  }, [
+    cachedPromotionHistory,
+    id,
+    isPreviewMode,
+    loadPromotionHistoryForStudent,
+    retryNonce,
+    token,
+  ]);
 
   const student = hydratedStudent ?? listStudent;
   const detailReady = isPreviewMode ? Boolean(student) : Boolean(hydratedStudent);
-  const promotionHistory = promotionHistoryState?.studentId === id
-    ? promotionHistoryState.items
-    : EMPTY_PROMOTION_HISTORY;
+  const promotionHistory =
+    promotionHistoryState?.studentId === id ? promotionHistoryState.items : EMPTY_PROMOTION_HISTORY;
   const beltLadders = storeBeltLadders.length > 0 ? storeBeltLadders : fallbackBeltLadders;
-  const isLoadingBeltData = isLoadingPromotionHistory || (
-    beltLadders.length === 0 && isLoadingFallbackBeltLadders
-  );
+  const isLoadingBeltData =
+    isLoadingPromotionHistory || (beltLadders.length === 0 && isLoadingFallbackBeltLadders);
   const detail = useMemo(
     () =>
       student
@@ -268,7 +265,7 @@ export function useStudentDetailPageController({
             today: config.businessDate,
           })
         : null,
-    [beltLadders, config.businessDate, promotionHistory, student]
+    [beltLadders, config.businessDate, promotionHistory, student],
   );
 
   async function handleEdit(data: StudentUpdate) {
@@ -370,7 +367,8 @@ export function useStudentDetailPageController({
       detailReady,
       isDeleting,
       isLoadingBeltData,
-      isLoadingStudent: !student && !loadError && (!studentsLoaded || isLoadingStudent || !detailReady),
+      isLoadingStudent:
+        !student && !loadError && (!studentsLoaded || isLoadingStudent || !detailReady),
       isPhotoSaving,
       isSaving,
       loadError,
@@ -386,15 +384,21 @@ export function useStudentDetailPageController({
         setShowDeleteConfirm(false);
         setDeleteError(null);
       },
-      onCloseEdit: () => { if (!isSaving) setShowEdit(false); },
+      onCloseEdit: () => {
+        if (!isSaving) setShowEdit(false);
+      },
       onRetryDetail: () => setRetryNonce((value) => value + 1),
       onDeletePhoto: handleDeletePhoto,
       onDeleteStudent: handleDeleteStudent,
       onDismissActionMessage: () => setActionMessage(null),
       onEdit: handleEdit,
       onPhotoSelected: handlePhotoSelected,
-      onShowDeleteConfirm: () => { if (detailReady) setShowDeleteConfirm(true); },
-      onShowEdit: () => { if (detailReady) setShowEdit(true); },
+      onShowDeleteConfirm: () => {
+        if (detailReady) setShowDeleteConfirm(true);
+      },
+      onShowEdit: () => {
+        if (detailReady) setShowEdit(true);
+      },
     },
   };
 }

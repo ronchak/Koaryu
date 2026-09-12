@@ -38,9 +38,9 @@ export const KOARYU_FIELDS: { value: string; label: string; required?: boolean }
   { value: "guardian_relation", label: "Guardian Relation" },
 ];
 
-export const REQUIRED_FIELDS = KOARYU_FIELDS
-  .filter((field) => field.required)
-  .map((field) => field.value);
+export const REQUIRED_FIELDS = KOARYU_FIELDS.filter((field) => field.required).map(
+  (field) => field.value,
+);
 
 export const DEFAULT_IMPORT_OPTIONS: CsvImportOptions = {
   create_missing_programs: false,
@@ -64,7 +64,7 @@ export function getStudentImportStageIndex(stage: StudentImportStage) {
 
 export function getCsvImportFileRejection(
   file: Pick<File, "name" | "size">,
-  limits: { maxBytes: number; formattedLimit: string }
+  limits: { maxBytes: number; formattedLimit: string },
 ) {
   if (!file.name.toLowerCase().endsWith(".csv")) {
     return "Please upload a .csv file.";
@@ -123,11 +123,17 @@ export function buildPreviewValidationResult(
   rows: Record<string, string>[],
   mapping: Record<string, string>,
   options: CsvImportOptions,
-  splitFullName: SplitCsvImportFullName
+  splitFullName: SplitCsvImportFullName,
 ): CsvImportResult {
   const issueRows: CsvImportResult["rows"] = [];
   const warnings: CsvImportResult["warnings"] = [];
-  const validStatuses = new Set<StudentStatus>(["active", "trialing", "inactive", "paused", "canceled"]);
+  const validStatuses = new Set<StudentStatus>([
+    "active",
+    "trialing",
+    "inactive",
+    "paused",
+    "canceled",
+  ]);
   let validRows = 0;
   let normalizedStatusCount = 0;
   const targetCounts = Object.values(mapping).reduce<Record<string, number>>((acc, field) => {
@@ -205,7 +211,9 @@ export function buildPreviewValidationResult(
         data: mapped,
         issues,
         errors: issues.filter((issue) => issue.severity === "error").map((issue) => issue.message),
-        warnings: issues.filter((issue) => issue.severity === "warning").map((issue) => issue.message),
+        warnings: issues
+          .filter((issue) => issue.severity === "warning")
+          .map((issue) => issue.message),
         is_valid: isValid,
       });
     }
@@ -220,11 +228,15 @@ export function buildPreviewValidationResult(
         .filter((row) => row.issues.some((issue) => issue.code === "normalized_status"))
         .map((row) => row.row_number),
       field: "status",
-      values: Array.from(new Set(issueRows.flatMap((row) =>
-        row.issues
-          .filter((issue) => issue.code === "normalized_status" && issue.value)
-          .map((issue) => String(issue.value))
-      ))),
+      values: Array.from(
+        new Set(
+          issueRows.flatMap((row) =>
+            row.issues
+              .filter((issue) => issue.code === "normalized_status" && issue.value)
+              .map((issue) => String(issue.value)),
+          ),
+        ),
+      ),
     });
   }
 
@@ -310,7 +322,7 @@ export interface CsvImportIssueGroup {
 
 export function buildCsvImportIssueGroups(
   rows: CsvImportResult["rows"],
-  severity: "error" | "warning"
+  severity: "error" | "warning",
 ): CsvImportIssueGroup[] {
   const groups = new Map<string, CsvImportIssueGroup>();
 
@@ -318,9 +330,10 @@ export function buildCsvImportIssueGroups(
     row.issues
       .filter((issue) => issue.severity === severity)
       .forEach((issue) => {
-        const mappedValue = issue.field && row.data[issue.field] !== undefined
-          ? getRowDisplayValue(row.data[issue.field])
-          : null;
+        const mappedValue =
+          issue.field && row.data[issue.field] !== undefined
+            ? getRowDisplayValue(row.data[issue.field])
+            : null;
         const key = [
           issue.code,
           issue.field || "",
@@ -373,7 +386,7 @@ const CSV_PAYMENT_STATUS_TOKENS = new Set([
 
 const RAW_CSV_ALIASES: Record<string, string> = {
   "first name": "legal_first_name",
-  "first_names": "legal_first_name",
+  first_names: "legal_first_name",
   "student first name": "legal_first_name",
   "given name": "legal_first_name",
   given: "legal_first_name",
@@ -384,7 +397,7 @@ const RAW_CSV_ALIASES: Record<string, string> = {
   "student name": "full_name",
   "full name": "full_name",
   "last name": "legal_last_name",
-  "last_names": "legal_last_name",
+  last_names: "legal_last_name",
   "student last name": "legal_last_name",
   surname: "legal_last_name",
   "family name": "legal_last_name",
@@ -480,7 +493,11 @@ const RAW_CSV_ALIASES: Record<string, string> = {
 };
 
 function normalizeHeader(header: string): string {
-  return header.toLowerCase().trim().replace(/[^a-z0-9]+/g, " ").trim();
+  return header
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function compactHeader(header: string): string {
@@ -488,11 +505,11 @@ function compactHeader(header: string): string {
 }
 
 const CSV_ALIASES = Object.fromEntries(
-  Object.entries(RAW_CSV_ALIASES).map(([header, field]) => [normalizeHeader(header), field])
+  Object.entries(RAW_CSV_ALIASES).map(([header, field]) => [normalizeHeader(header), field]),
 );
 
 const COMPACT_CSV_ALIASES = Object.fromEntries(
-  Object.entries(RAW_CSV_ALIASES).map(([header, field]) => [compactHeader(header), field])
+  Object.entries(RAW_CSV_ALIASES).map(([header, field]) => [compactHeader(header), field]),
 );
 
 function lookupAlias(table: Record<string, string>, key: string) {
@@ -503,9 +520,10 @@ export function isPaymentStatusHeader(header: string) {
   const tokens = new Set(normalizeHeader(header).split(/\s+/).filter(Boolean));
   const compact = compactHeader(header);
   return (
-    tokens.has("status") &&
-    Array.from(CSV_PAYMENT_STATUS_TOKENS).some((token) => tokens.has(token))
-  ) || Array.from(CSV_PAYMENT_STATUS_TOKENS).some((token) => compact.includes(`${token}status`));
+    (tokens.has("status") &&
+      Array.from(CSV_PAYMENT_STATUS_TOKENS).some((token) => tokens.has(token))) ||
+    Array.from(CSV_PAYMENT_STATUS_TOKENS).some((token) => compact.includes(`${token}status`))
+  );
 }
 
 function inferFieldFromTokens(tokens: Set<string>): string {
@@ -513,7 +531,13 @@ function inferFieldFromTokens(tokens: Set<string>): string {
 
   if (tokens.has("guardian") || tokens.has("parent")) {
     if (tokens.has("email") || tokens.has("mail")) return "guardian_email";
-    if (tokens.has("phone") || tokens.has("mobile") || tokens.has("cell") || tokens.has("telephone") || tokens.has("tel")) {
+    if (
+      tokens.has("phone") ||
+      tokens.has("mobile") ||
+      tokens.has("cell") ||
+      tokens.has("telephone") ||
+      tokens.has("tel")
+    ) {
       return "guardian_phone";
     }
     if (tokens.has("relation") || tokens.has("relationship")) return "guardian_relation";
@@ -521,14 +545,21 @@ function inferFieldFromTokens(tokens: Set<string>): string {
   }
 
   if (tokens.has("emergency")) {
-    if (tokens.has("phone") || tokens.has("mobile") || tokens.has("cell") || tokens.has("telephone") || tokens.has("tel")) {
+    if (
+      tokens.has("phone") ||
+      tokens.has("mobile") ||
+      tokens.has("cell") ||
+      tokens.has("telephone") ||
+      tokens.has("tel")
+    ) {
       return "emergency_contact_phone";
     }
     if (tokens.has("relation") || tokens.has("relationship")) return "emergency_contact_relation";
     if (tokens.has("name") || tokens.has("contact")) return "emergency_contact_name";
   }
 
-  if (tokens.has("dob") || tokens.has("birthday") || (tokens.has("birth") && tokens.has("date"))) return "date_of_birth";
+  if (tokens.has("dob") || tokens.has("birthday") || (tokens.has("birth") && tokens.has("date")))
+    return "date_of_birth";
   if (
     (tokens.has("full") && tokens.has("name")) ||
     (tokens.has("student") && tokens.has("name")) ||
@@ -536,14 +567,26 @@ function inferFieldFromTokens(tokens: Set<string>): string {
   ) {
     return "full_name";
   }
-  if ((tokens.has("first") && tokens.has("name")) || (tokens.has("given") && tokens.has("name")) || tokens.has("forename")) {
+  if (
+    (tokens.has("first") && tokens.has("name")) ||
+    (tokens.has("given") && tokens.has("name")) ||
+    tokens.has("forename")
+  ) {
     return "legal_first_name";
   }
   if (tokens.has("given") || tokens.has("child")) return "legal_first_name";
-  if ((tokens.has("last") && tokens.has("name")) || (tokens.has("family") && tokens.has("name")) || tokens.has("surname")) {
+  if (
+    (tokens.has("last") && tokens.has("name")) ||
+    (tokens.has("family") && tokens.has("name")) ||
+    tokens.has("surname")
+  ) {
     return "legal_last_name";
   }
-  if ((tokens.has("preferred") && tokens.has("name")) || tokens.has("nickname") || (tokens.has("nick") && tokens.has("name"))) {
+  if (
+    (tokens.has("preferred") && tokens.has("name")) ||
+    tokens.has("nickname") ||
+    (tokens.has("nick") && tokens.has("name"))
+  ) {
     return "preferred_name";
   }
   if (
@@ -559,15 +602,29 @@ function inferFieldFromTokens(tokens: Set<string>): string {
   }
   if (tokens.has("program") || tokens.has("track")) return "program_id";
   if (tokens.has("order") && (tokens.has("belt") || tokens.has("rank"))) return "";
-  if (tokens.has("belt") && (tokens.has("current") || tokens.has("rank"))) return "current_belt_rank_id";
-  if (tokens.has("rank") && !["class", "attendance", "order", "sort"].some((token) => tokens.has(token))) {
+  if (tokens.has("belt") && (tokens.has("current") || tokens.has("rank")))
+    return "current_belt_rank_id";
+  if (
+    tokens.has("rank") &&
+    !["class", "attendance", "order", "sort"].some((token) => tokens.has(token))
+  ) {
     return "current_belt_rank_id";
   }
   if (tokens.has("email") || tokens.has("mail")) return "email";
-  if (tokens.has("phone") || tokens.has("mobile") || tokens.has("cell") || tokens.has("telephone") || tokens.has("tel")) {
+  if (
+    tokens.has("phone") ||
+    tokens.has("mobile") ||
+    tokens.has("cell") ||
+    tokens.has("telephone") ||
+    tokens.has("tel")
+  ) {
     return "phone";
   }
-  if (tokens.has("status") && !Array.from(CSV_PAYMENT_STATUS_TOKENS).some((token) => tokens.has(token))) return "status";
+  if (
+    tokens.has("status") &&
+    !Array.from(CSV_PAYMENT_STATUS_TOKENS).some((token) => tokens.has(token))
+  )
+    return "status";
   if (tokens.has("notes") || tokens.has("note")) return "notes";
   if (tokens.has("tags") || tokens.has("tag") || tokens.has("labels")) return "tags";
   if (tokens.has("address")) return "address_line1";
@@ -599,9 +656,9 @@ export function parseCsvText(text: string): string[][] {
     const char = text[index];
     const nextChar = text[index + 1];
 
-    if (char === "\"") {
-      if (inQuotes && nextChar === "\"") {
-        value += "\"";
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        value += '"';
         index += 1;
       } else {
         inQuotes = !inQuotes;
@@ -639,7 +696,9 @@ export function parseCsvText(text: string): string[][] {
   return rows;
 }
 
-export function mockParseCSV(file: File): Promise<{ headers: string[]; rows: Record<string, string>[] }> {
+export function mockParseCSV(
+  file: File,
+): Promise<{ headers: string[]; rows: Record<string, string>[] }> {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (event) => {

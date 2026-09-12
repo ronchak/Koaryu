@@ -152,9 +152,13 @@ def test_repository_gate_rejects_a_byte_identical_separate_checkout_copy(tmp_pat
     operator.parent.mkdir(parents=True)
     operator.write_text("print('operator')\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q", str(repository)], check=True)
-    subprocess.run(["git", "config", "user.email", "operator-test@example.com"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "operator-test@example.com"], cwd=repository, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Operator Test"], cwd=repository, check=True)
-    subprocess.run(["git", "add", str(operator.relative_to(repository))], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "add", str(operator.relative_to(repository))], cwd=repository, check=True
+    )
     subprocess.run(["git", "commit", "-qm", "track operator"], cwd=repository, check=True)
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip()
     copy = tmp_path / "copy.py"
@@ -189,7 +193,9 @@ def test_run_refuses_repository_gate_before_backend_import_client_or_arming(tmp_
     monkeypatch.setattr(
         MODULE,
         "validate_repository_state",
-        lambda *_args: (_ for _ in ()).throw(MODULE.OperatorError("repository must be completely clean")),
+        lambda *_args: (_ for _ in ()).throw(
+            MODULE.OperatorError("repository must be completely clean")
+        ),
     )
     args = Namespace(
         repository=str(tmp_path),
@@ -235,6 +241,7 @@ def test_unexpected_failure_redacts_secret_values(monkeypatch, capsys):
     assert secret not in captured.err
     assert "RuntimeError" in captured.err
 
+
 def test_private_state_is_mode_600_exact_and_never_blindly_overwritten(tmp_path):
     path = tmp_path / f"koaryu-payer-ambiguity-test-{uuid4()}.json"
     try:
@@ -247,9 +254,10 @@ def test_private_state_is_mode_600_exact_and_never_blindly_overwritten(tmp_path)
             state_directory=tmp_path,
         )
         assert (path.stat().st_mode & 0o777) == 0o600
-        assert MODULE.read_private_state(
-            path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path
-        ) == state
+        assert (
+            MODULE.read_private_state(path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path)
+            == state
+        )
         with pytest.raises(MODULE.OperatorError):
             MODULE.write_private_state(
                 path,
@@ -273,13 +281,14 @@ def test_private_state_is_mode_600_exact_and_never_blindly_overwritten(tmp_path)
             integrity_key=INTEGRITY_KEY,
             state_directory=tmp_path,
         )
-        assert MODULE.read_private_state(
-            path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path
-        )["phase"] == "provider_created"
+        assert (
+            MODULE.read_private_state(path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path)[
+                "phase"
+            ]
+            == "provider_created"
+        )
         with pytest.raises(MODULE.OperatorError, match="integrity"):
-            MODULE.read_private_state(
-                path, integrity_key="wrong-key", state_directory=tmp_path
-            )
+            MODULE.read_private_state(path, integrity_key="wrong-key", state_directory=tmp_path)
     finally:
         path.unlink(missing_ok=True)
 
@@ -303,9 +312,7 @@ def test_private_state_rejects_wrong_path_and_permissions(tmp_path):
         )
         os.chmod(path, 0o644)
         with pytest.raises(MODULE.OperatorError):
-            MODULE.read_private_state(
-                path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path
-            )
+            MODULE.read_private_state(path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path)
     finally:
         path.unlink(missing_ok=True)
 
@@ -330,7 +337,9 @@ def test_private_state_rejects_symlinks_non_private_directory_and_path_escape(tm
     with pytest.raises(MODULE.OperatorError, match="0700"):
         MODULE.write_private_state(
             private / f"koaryu-payer-ambiguity-{uuid4()}.json",
-            _armed_state(), integrity_key=INTEGRITY_KEY, state_directory=private,
+            _armed_state(),
+            integrity_key=INTEGRITY_KEY,
+            state_directory=private,
         )
 
 
@@ -395,9 +404,7 @@ def test_private_state_rejects_tampering_and_phase_field_drift(tmp_path):
         path.write_text(json.dumps(payload), encoding="utf-8")
         os.chmod(path, 0o600)
         with pytest.raises(MODULE.OperatorError, match="integrity"):
-            MODULE.read_private_state(
-                path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path
-            )
+            MODULE.read_private_state(path, integrity_key=INTEGRITY_KEY, state_directory=tmp_path)
         with pytest.raises(MODULE.OperatorError, match="phase fields"):
             MODULE.validate_state_phase({**_armed_state(), "unexpected": True})
     finally:
@@ -471,11 +478,13 @@ def test_route_authorization_requires_exact_active_admin_and_core_access():
     assert MODULE.require_route_authorization(
         allowed, object(), actor_id=ACTOR_ID, studio_id=STUDIO_ID
     ) == {"studio_id": STUDIO_ID, "role": "admin"}
-    assert calls == [{
-        "actor_id": ACTOR_ID,
-        "studio_id": STUDIO_ID,
-        "require_platform_subscription": True,
-    }]
+    assert calls == [
+        {
+            "actor_id": ACTOR_ID,
+            "studio_id": STUDIO_ID,
+            "require_platform_subscription": True,
+        }
+    ]
 
     denied_resolvers = (
         lambda *_args, **_kwargs: {"studio_id": STUDIO_ID, "role": "front_desk"},
@@ -551,20 +560,26 @@ def _provider_created_state(*, phase="provider_created") -> dict:
 
 
 def test_recovery_action_models_each_crash_boundary_without_extra_read_or_replay():
-    assert MODULE.classify_recovery_action(
-        state=_provider_created_state(phase="provider_response_verified"),
-        operation=_recoverable_operation(),
-        resource=_resource(),
-        payer_id=PAYER_ID,
-    ) == "authorize_from_create_response"
+    assert (
+        MODULE.classify_recovery_action(
+            state=_provider_created_state(phase="provider_response_verified"),
+            operation=_recoverable_operation(),
+            resource=_resource(),
+            payer_id=PAYER_ID,
+        )
+        == "authorize_from_create_response"
+    )
 
     verified = _provider_created_state(phase="provider_response_verified")
-    assert MODULE.classify_recovery_action(
-        state={**verified, "phase": "provider_verified"},
-        operation=_recoverable_operation(),
-        resource=_resource(),
-        payer_id=PAYER_ID,
-    ) == "authorize_from_create_response"
+    assert (
+        MODULE.classify_recovery_action(
+            state={**verified, "phase": "provider_verified"},
+            operation=_recoverable_operation(),
+            resource=_resource(),
+            payer_id=PAYER_ID,
+        )
+        == "authorize_from_create_response"
+    )
 
     committed = {
         **_recoverable_operation(state="recovery_authorized"),
@@ -572,12 +587,15 @@ def test_recovery_action_models_each_crash_boundary_without_extra_read_or_replay
         "recovery_outcome": "provider_succeeded_reconcile_only",
         "recovery_proof_sha256": "a" * 64,
     }
-    assert MODULE.classify_recovery_action(
-        state={**verified, "phase": "provider_verified"},
-        operation=committed,
-        resource=_resource(),
-        payer_id=PAYER_ID,
-    ) == "persist_authorized"
+    assert (
+        MODULE.classify_recovery_action(
+            state={**verified, "phase": "provider_verified"},
+            operation=committed,
+            resource=_resource(),
+            payer_id=PAYER_ID,
+        )
+        == "persist_authorized"
+    )
 
 
 def test_recovery_action_rejects_wrong_resource_attempts_counts_and_phase():
@@ -670,7 +688,9 @@ def test_interruption_after_create_capture_fails_closed_before_authorization():
     with pytest.raises(MODULE.OperatorError, match="attended inspection"):
         MODULE.classify_recovery_action(
             state={**_provider_created_state(), "phase": "provider_created"},
-            operation=_recoverable_operation(), resource=_resource(), payer_id=PAYER_ID,
+            operation=_recoverable_operation(),
+            resource=_resource(),
+            payer_id=PAYER_ID,
         )
 
 

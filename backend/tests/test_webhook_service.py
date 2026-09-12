@@ -33,23 +33,25 @@ class _FakeSupabase(RpcBackedSupabase):
         mapped_account_ids=("acct_1",),
         excluded_account_ids=(),
     ):
-        super().__init__({
-            "stripe_events": rows,
-            "studio_payment_accounts": [
-                {
-                    "studio_id": f"studio_{index}",
-                    "stripe_connected_account_id": account_id,
-                }
-                for index, account_id in enumerate(mapped_account_ids, start=1)
-            ],
-            "stripe_connect_account_dispositions": [
-                {
-                    "stripe_connected_account_id": account_id,
-                    "excluded": True,
-                }
-                for account_id in excluded_account_ids
-            ],
-        })
+        super().__init__(
+            {
+                "stripe_events": rows,
+                "studio_payment_accounts": [
+                    {
+                        "studio_id": f"studio_{index}",
+                        "stripe_connected_account_id": account_id,
+                    }
+                    for index, account_id in enumerate(mapped_account_ids, start=1)
+                ],
+                "stripe_connect_account_dispositions": [
+                    {
+                        "stripe_connected_account_id": account_id,
+                        "excluded": True,
+                    }
+                    for account_id in excluded_account_ids
+                ],
+            }
+        )
 
     def _rpc_claim_stripe_event_for_processing(self, params: dict) -> list[dict]:
         rows = self.tables["stripe_events"]
@@ -81,17 +83,22 @@ class _FakeSupabase(RpcBackedSupabase):
             return [{"claim_status": "already_processing", "event_row": dict(row)}]
         if row.get("processing_status") not in {"pending", "processing", "failed"}:
             return [{"claim_status": "already_processing", "event_row": dict(row)}]
-        row.update({
-            "processing_status": "processing",
-            "processing_token": params["p_processing_token"],
-            "processing_started_at": datetime.now(timezone.utc).isoformat(),
-            "error": None,
-        })
+        row.update(
+            {
+                "processing_status": "processing",
+                "processing_token": params["p_processing_token"],
+                "processing_started_at": datetime.now(timezone.utc).isoformat(),
+                "error": None,
+            }
+        )
         return [{"claim_status": "claimed", "event_row": dict(row)}]
 
     def _rpc_finish_stripe_event_processing_v2(self, params: dict) -> list[dict]:
         for row in self.tables["stripe_events"]:
-            if row.get("id") == params["p_event_id"] and row.get("processing_token") == params["p_processing_token"]:
+            if (
+                row.get("id") == params["p_event_id"]
+                and row.get("processing_token") == params["p_processing_token"]
+            ):
                 row["processing_status"] = params["p_status"]
                 row["processing_token"] = None
                 row["processing_started_at"] = None
@@ -118,24 +125,32 @@ class _FakeSupabase(RpcBackedSupabase):
 
 class _RpcWebhookSupabase(RpcBackedSupabase):
     def __init__(self):
-        super().__init__({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-            }],
-        })
+        super().__init__(
+            {
+                "studio_payment_accounts": [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_connected_account_id": "acct_1",
+                    }
+                ],
+            }
+        )
 
     def _rpc_claim_stripe_event_for_processing(self, _params: dict) -> list[dict]:
-        return [{
+        return [
+            {
                 "claim_status": "claimed",
                 "event_row": {"id": "row_1"},
-        }]
+            }
+        ]
 
     def _rpc_finish_stripe_event_processing_v2(self, params: dict) -> list[dict]:
-        return [{
-            "updated": True,
-            "event_row": {"id": params["p_event_id"], "processing_status": params["p_status"]},
-        }]
+        return [
+            {
+                "updated": True,
+                "event_row": {"id": params["p_event_id"], "processing_status": params["p_status"]},
+            }
+        ]
 
 
 class _FakeBillingService:
@@ -230,15 +245,17 @@ class WebhookServiceTest(unittest.TestCase):
                 )
 
     def test_handle_connect_webhook_reclaims_stale_duplicate_through_public_handler(self):
-        rows = [{
-            "id": "row_1",
-            "stripe_event_id": "evt_1",
-            "stripe_account_id": "acct_1",
-            "processing_status": "failed",
-            "processing_token": "old-token",
-            "created_at": (datetime.now(timezone.utc) - timedelta(minutes=11)).isoformat(),
-            "error": "worker exited",
-        }]
+        rows = [
+            {
+                "id": "row_1",
+                "stripe_event_id": "evt_1",
+                "stripe_account_id": "acct_1",
+                "processing_status": "failed",
+                "processing_token": "old-token",
+                "created_at": (datetime.now(timezone.utc) - timedelta(minutes=11)).isoformat(),
+                "error": "worker exited",
+            }
+        ]
         _FakeBillingService.calls = 0
 
         result = self.handle_connect_event(rows)
@@ -362,10 +379,12 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(rows[0]["processing_status"], "failed")
         self.assertEqual(rows[0]["error"], "unmapped_live_connect_account")
 
-        service.supabase.tables["studio_payment_accounts"].append({
-            "studio_id": "studio_mapped",
-            "stripe_connected_account_id": "acct_unmapped",
-        })
+        service.supabase.tables["studio_payment_accounts"].append(
+            {
+                "studio_id": "studio_mapped",
+                "stripe_connected_account_id": "acct_unmapped",
+            }
+        )
         with patch("app.services.webhook_service.BillingService", _FakeBillingService):
             result = service._store_and_process(
                 {
@@ -575,7 +594,10 @@ class WebhookServiceTest(unittest.TestCase):
 
         with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
             with patch("app.services.webhook_service.StripeService", FakeStripeService):
-                with patch("app.services.webhook_service.PlatformBillingService", _FakePlatformBillingService):
+                with patch(
+                    "app.services.webhook_service.PlatformBillingService",
+                    _FakePlatformBillingService,
+                ):
                     with self.assertRaises(HTTPException) as raised:
                         asyncio.run(
                             StripeWebhookService(_FakeSupabase(rows)).handle_platform_webhook(
@@ -601,13 +623,15 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(_FakeBillingService.calls, 1)
 
     def test_processed_duplicate_returns_already_processed_without_projection(self):
-        rows = [{
-            "id": "row_1",
-            "stripe_event_id": "evt_1",
-            "stripe_account_id": "acct_1",
-            "processing_status": "processed",
-            "processed_at": datetime.now(timezone.utc).isoformat(),
-        }]
+        rows = [
+            {
+                "id": "row_1",
+                "stripe_event_id": "evt_1",
+                "stripe_account_id": "acct_1",
+                "processing_status": "processed",
+                "processed_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ]
         _FakeBillingService.calls = 0
 
         result = self.handle_connect_event(rows)
@@ -618,13 +642,15 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertNotIn("processing_token", rows[0])
 
     def test_fresh_processing_duplicate_raises_retryable_error(self):
-        rows = [{
-            "id": "row_1",
-            "stripe_event_id": "evt_1",
-            "stripe_account_id": "acct_1",
-            "processing_status": "processing",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }]
+        rows = [
+            {
+                "id": "row_1",
+                "stripe_event_id": "evt_1",
+                "stripe_account_id": "acct_1",
+                "processing_status": "processing",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ]
         _FakeBillingService.calls = 0
 
         with self.assertRaises(HTTPException) as context:
@@ -636,15 +662,17 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(rows[0]["processing_status"], "processing")
 
     def test_stale_processing_duplicate_is_reclaimed(self):
-        rows = [{
-            "id": "row_1",
-            "stripe_event_id": "evt_1",
-            "stripe_account_id": "acct_1",
-            "processing_status": "processing",
-            "processing_token": "old-token",
-            "created_at": (datetime.now(timezone.utc) - timedelta(minutes=11)).isoformat(),
-            "error": "worker exited",
-        }]
+        rows = [
+            {
+                "id": "row_1",
+                "stripe_event_id": "evt_1",
+                "stripe_account_id": "acct_1",
+                "processing_status": "processing",
+                "processing_token": "old-token",
+                "created_at": (datetime.now(timezone.utc) - timedelta(minutes=11)).isoformat(),
+                "error": "worker exited",
+            }
+        ]
         _FakeBillingService.calls = 0
 
         result = self.handle_connect_event(rows)
@@ -658,19 +686,25 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertIsNotNone(rows[0]["processed_at"])
 
     def test_lost_completion_lease_raises_instead_of_reporting_processed(self):
-        rows = [{
-            "id": "row_1",
-            "stripe_event_id": "evt_1",
-            "stripe_account_id": "acct_1",
-            "processing_status": "failed",
-            "processing_token": "old-token",
-            "created_at": (datetime.now(timezone.utc) - timedelta(minutes=11)).isoformat(),
-            "error": "worker exited",
-        }]
+        rows = [
+            {
+                "id": "row_1",
+                "stripe_event_id": "evt_1",
+                "stripe_account_id": "acct_1",
+                "processing_status": "failed",
+                "processing_token": "old-token",
+                "created_at": (datetime.now(timezone.utc) - timedelta(minutes=11)).isoformat(),
+                "error": "worker exited",
+            }
+        ]
         _FakeBillingService.calls = 0
-        _FakeBillingService.mutate_during_projection = lambda rows_to_mutate: rows_to_mutate[0].update({
-            "processing_token": "other-worker",
-        })
+        _FakeBillingService.mutate_during_projection = lambda rows_to_mutate: rows_to_mutate[
+            0
+        ].update(
+            {
+                "processing_token": "other-worker",
+            }
+        )
         try:
             with self.assertRaises(RuntimeError):
                 self.handle_connect_event(rows)
@@ -783,7 +817,10 @@ class WebhookServiceTest(unittest.TestCase):
 
         with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
             with patch("app.services.webhook_service.StripeService", FakeStripeService):
-                with patch("app.services.webhook_service.PlatformBillingService", _FakePlatformBillingService):
+                with patch(
+                    "app.services.webhook_service.PlatformBillingService",
+                    _FakePlatformBillingService,
+                ):
                     result = asyncio.run(
                         StripeWebhookService(supabase).handle_platform_webhook(
                             b'{"id":"evt_checkout"}',
@@ -958,12 +995,16 @@ class WebhookRouteIntegrationTest(unittest.TestCase):
         )
 
     def test_invoice_and_payment_route_matrix_reclaims_and_deduplicates(self):
-        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()), patch(
-            "app.services.webhook_service.BillingService",
-            _FakeBillingService,
-        ), patch(
-            "app.services.webhook_service.PlatformBillingService",
-            _FakePlatformBillingService,
+        with (
+            patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()),
+            patch(
+                "app.services.webhook_service.BillingService",
+                _FakeBillingService,
+            ),
+            patch(
+                "app.services.webhook_service.PlatformBillingService",
+                _FakePlatformBillingService,
+            ),
         ):
             for event_type in self.BILLING_EVENT_TYPES:
                 with self.subTest(event_type=event_type, scope="platform"):
@@ -1079,12 +1120,16 @@ class WebhookRouteIntegrationTest(unittest.TestCase):
                     self.assertIsNone(self.rows[0]["error"])
 
     def test_invoice_and_payment_unknown_account_matrix_stays_unprojected(self):
-        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()), patch(
-            "app.services.webhook_service.BillingService",
-            _FakeBillingService,
-        ), patch(
-            "app.services.webhook_service.PlatformBillingService",
-            _FakePlatformBillingService,
+        with (
+            patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()),
+            patch(
+                "app.services.webhook_service.BillingService",
+                _FakeBillingService,
+            ),
+            patch(
+                "app.services.webhook_service.PlatformBillingService",
+                _FakePlatformBillingService,
+            ),
         ):
             for event_type in self.BILLING_EVENT_TYPES:
                 with self.subTest(event_type=event_type):
@@ -1208,10 +1253,12 @@ class WebhookRouteIntegrationTest(unittest.TestCase):
         self.assertIsNone(self.rows[0]["error"])
 
     def test_excluded_unmapped_connect_event_returns_success_and_is_ignored(self):
-        self.supabase.tables["stripe_connect_account_dispositions"].append({
-            "stripe_connected_account_id": "acct_retired",
-            "excluded": True,
-        })
+        self.supabase.tables["stripe_connect_account_dispositions"].append(
+            {
+                "stripe_connected_account_id": "acct_retired",
+                "excluded": True,
+            }
+        )
         event = {
             "id": "evt_retired_account_route",
             "object": "event",

@@ -20,11 +20,7 @@ export function PanelHeader({
     <div className="flex items-start justify-between gap-4 mb-5">
       <div className="min-w-0">
         <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
-        {subtitle && (
-          <p className="text-xs text-text-secondary mt-1 leading-relaxed">
-            {subtitle}
-          </p>
-        )}
+        {subtitle && <p className="text-xs text-text-secondary mt-1 leading-relaxed">{subtitle}</p>}
       </div>
       {href && (
         <Link

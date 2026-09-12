@@ -1,10 +1,6 @@
 import type { PinnedHttpsResponse } from "./pinned-https.ts";
 
-export type KoaryuDeploymentEnvironment =
-  | "development"
-  | "test"
-  | "staging"
-  | "production";
+export type KoaryuDeploymentEnvironment = "development" | "test" | "staging" | "production";
 
 const STAGING_BACKEND_API = "https://koaryu-staging.onrender.com/api/v1";
 const PRODUCTION_BACKEND_API = "https://koaryu.onrender.com/api/v1";
@@ -41,21 +37,15 @@ export function configuredBackendApiBase(environment: string) {
   }
 
   if (
-    (typeof expected === "string" && raw !== expected)
-    || (expected instanceof Set && !expected.has(raw))
+    (typeof expected === "string" && raw !== expected) ||
+    (expected instanceof Set && !expected.has(raw))
   ) {
     return null;
   }
 
   try {
     const parsed = new URL(raw);
-    if (
-      parsed.username
-      || parsed.password
-      || parsed.search
-      || parsed.hash
-      || parsed.href !== raw
-    ) {
+    if (parsed.username || parsed.password || parsed.search || parsed.hash || parsed.href !== raw) {
       return null;
     }
   } catch {
@@ -83,13 +73,13 @@ export async function boundedLocalBackendRequest({
   const target = new URL(rawUrl);
   const base = `${target.protocol}//${target.host}/api/v1`;
   if (
-    !LOCAL_BACKEND_APIS.has(base)
-    || target.username
-    || target.password
-    || target.search
-    || target.hash
-    || !target.pathname.startsWith("/api/v1/internal/")
-    || target.href !== rawUrl
+    !LOCAL_BACKEND_APIS.has(base) ||
+    target.username ||
+    target.password ||
+    target.search ||
+    target.hash ||
+    !target.pathname.startsWith("/api/v1/internal/") ||
+    target.href !== rawUrl
   ) {
     throw new Error("local backend target is invalid");
   }
