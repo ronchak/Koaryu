@@ -201,26 +201,40 @@ class BillingService(BillingPrivateFacadeMixin):
         ).archive_plan(plan_id, studio_id, actor_id)
 
     async def list_payers(self, studio_id: str) -> list[BillingPayerResponse]:
-        return await BillingPayerManager(self, stripe_service_cls=StripeService).list_payers(
-            studio_id
-        )
+        return await BillingPayerManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        ).list_payers(studio_id)
 
     async def create_payer(
         self, data: BillingPayerCreate, studio_id: str, actor_id: str
     ) -> BillingPayerResponse:
-        return await BillingPayerManager(self, stripe_service_cls=StripeService).create_payer(
-            data, studio_id, actor_id
-        )
+        return await BillingPayerManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        ).create_payer(data, studio_id, actor_id)
 
     async def get_payer(self, payer_id: str, studio_id: str) -> BillingPayerResponse:
-        return await BillingPayerManager(self, stripe_service_cls=StripeService).get_payer(
-            payer_id, studio_id
-        )
+        return await BillingPayerManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        ).get_payer(payer_id, studio_id)
 
     async def update_payer(
         self, payer_id: str, data: BillingPayerUpdate, studio_id: str, actor_id: str
     ) -> BillingPayerResponse:
-        return await BillingPayerManager(self, stripe_service_cls=StripeService).update_payer(
+        return await BillingPayerManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        ).update_payer(
             payer_id,
             data,
             studio_id,
@@ -235,7 +249,12 @@ class BillingService(BillingPrivateFacadeMixin):
         idempotency_key: str | None = None,
         test_clock_id: str | None = None,
     ) -> BillingPayerResponse:
-        return await BillingPayerManager(self, stripe_service_cls=StripeService).sync_payer(
+        return await BillingPayerManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        ).sync_payer(
             payer_id,
             studio_id,
             actor_id,

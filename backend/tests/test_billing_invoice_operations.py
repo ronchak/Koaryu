@@ -12,7 +12,7 @@ from stripe import CardError as StripeCardError
 
 from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceItemCreate
 from app.services.billing_fees import application_fee_amount
-from app.services.billing_payers import BillingPayerManager
+from app.services.billing_payers import recompute_payer_balance
 from app.services.billing_invoice_operations import (
     BillingInvoiceOperationWorkflow,
     INVOICE_CREATE_AMBIGUOUS_DETAIL,
@@ -191,7 +191,7 @@ class _Facade:
         return int(datetime.combine(parsed, time.min, tzinfo=timezone.utc).timestamp())
 
     def _recompute_payer_balance(self, studio_id, payer_id):
-        BillingPayerManager(self)._recompute_payer_balance(studio_id, payer_id)
+        recompute_payer_balance(self.supabase, studio_id, payer_id)
 
 
 class _Stripe:

@@ -889,7 +889,10 @@ def run(args: argparse.Namespace, environment: Mapping[str, str]) -> dict[str, A
                     arm=arm,
                 )
                 manager = BillingPayerManager(
-                    billing_service, stripe_service_cls=stripe_class
+                    billing_service.supabase,
+                    billing_service._connect_accounts(),
+                    billing_service.settings,
+                    stripe_service_cls=stripe_class,
                 )
                 caught: HTTPException | None = None
                 try:

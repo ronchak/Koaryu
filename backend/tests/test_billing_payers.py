@@ -11,7 +11,11 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 from pydantic import ValidationError
 
 from app.schemas.billing import BillingPayerCreate, BillingPayerSyncRequest, BillingPayerUpdate
-from app.services.billing_payers import BillingPayerManager
+from app.services.billing_payers import (
+    BillingPayerManager,
+    payer_id_for_customer,
+    recompute_payer_balance,
+)
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
@@ -48,65 +52,23 @@ class _PayerSupabase(BillingBalanceRpcMixin, BillingProviderOperationRpcMixin, R
         self.initialize_billing_provider_operations()
 
 
-class _BillingFacade:
+class _PayerFixture:
     def __init__(self, tables: dict[str, list[dict]], account: dict | None = None):
         self.supabase = _PayerSupabase(tables)
         self.supabase.insert_defaults["billing_payers"] = _payer_defaults
-        self.account = account or {"charges_enabled": False, "stripe_connected_account_id": None}
-        self.settings = SimpleNamespace(
+        account = account or {"charges_enabled": False, "stripe_connected_account_id": None}
+        connect_accounts = _ConnectAccounts(account)
+        settings = SimpleNamespace(
             ENVIRONMENT="development",
             STRIPE_MODE="test",
             STRIPE_SECRET_KEY="sk_test_synthetic",
         )
-        self.validated_accounts: list[dict] = []
-
-    def _connect_accounts(self) -> _ConnectAccounts:
-        return _ConnectAccounts(self.account)
-
-    def _ensure_connect_ready(self, studio_id: str) -> dict:
-        account = self._connect_accounts().ensure_row(studio_id)
-        if not account.get("charges_enabled"):
-            raise HTTPException(
-                status_code=409, detail="Stripe Connect charges are not enabled yet."
-            )
-        return account
-
-    def _get_row_or_404(self, table: str, record_id: str, studio_id: str, detail: str) -> dict:
-        result = (
-            self.supabase.table(table)
-            .select("*")
-            .eq("id", record_id)
-            .eq("studio_id", studio_id)
-            .limit(1)
-            .execute()
+        self.manager = BillingPayerManager(
+            self.supabase,
+            connect_accounts,
+            settings,
+            stripe_service_cls=_FakeStripeService,
         )
-        if not result.data:
-            raise HTTPException(status_code=404, detail=detail)
-        return result.data[0]
-
-    def _ensure_record_in_studio(
-        self, table: str, record_id: str, studio_id: str, detail: str
-    ) -> None:
-        self._get_row_or_404(table, record_id, studio_id, detail)
-
-    def _validate_connect_account_access(self, account: dict) -> None:
-        self.validated_accounts.append(account)
-
-    def _idempotency_key(self, *parts: str) -> str:
-        return "koaryu:" + ":".join(parts)
-
-    def _audit(
-        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict
-    ) -> None:
-        self.supabase.table("audit_logs").insert(
-            {
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": action,
-                "entity_id": entity_id,
-                "metadata": metadata,
-            }
-        ).execute()
 
 
 class _FakeStripeService:
@@ -181,7 +143,7 @@ class BillingPayerManagerTests(unittest.TestCase):
             "updated_at": "2026-01-01T00:00:00Z",
             **(payer_overrides or {}),
         }
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {"billing_payers": [payer], "audit_logs": []},
             account={
                 "charges_enabled": True,
@@ -190,12 +152,12 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 1},
             },
         )
-        facade.settings = SimpleNamespace(
+        facade.manager.settings = SimpleNamespace(
             ENVIRONMENT="staging",
             STRIPE_MODE="test",
             STRIPE_SECRET_KEY="sk_test_synthetic",
         )
-        return facade, BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        return facade, facade.manager
 
     def test_payer_sync_request_schema_validates_optional_test_clock(self):
         self.assertIsNone(BillingPayerSyncRequest().test_clock_id)
@@ -339,7 +301,7 @@ class BillingPayerManagerTests(unittest.TestCase):
             with self.subTest(environment=environment, stripe_mode=stripe_mode, clock_id=clock_id):
                 _FakeStripeService.reset()
                 facade, manager = self._clock_ready_manager()
-                facade.settings = SimpleNamespace(
+                manager.settings = SimpleNamespace(
                     ENVIRONMENT=environment,
                     STRIPE_MODE=stripe_mode,
                     STRIPE_SECRET_KEY=stripe_key,
@@ -402,7 +364,7 @@ class BillingPayerManagerTests(unittest.TestCase):
             "default_payment_method_exp_month": 12,
             "default_payment_method_exp_year": 2030,
         }
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [payer],
                 "audit_logs": [],
@@ -428,7 +390,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 1},
             },
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
         context = BillingProviderOperationContext(
             operation_id="operation_1",
             studio_id="studio_1",
@@ -460,7 +422,7 @@ class BillingPayerManagerTests(unittest.TestCase):
             "autopay_terms_accepted_at": "2026-08-01T00:00:00Z",
             "default_payment_method_id": "pm_unproved",
         }
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {"billing_payers": [payer], "audit_logs": []},
             account={
                 "charges_enabled": True,
@@ -471,7 +433,7 @@ class BillingPayerManagerTests(unittest.TestCase):
         context = BillingProviderOperationContext(
             "op", "studio_1", "actor_1", "payer.sync", "key", "a" * 64, "acct_1", 1, "lease"
         )
-        projected = BillingPayerManager(facade)._project_payer_sync_result(
+        projected = facade.manager._project_payer_sync_result(
             payer=payer,
             provider_customer={"invoice_settings": {"default_payment_method": None}},
             customer_id="cus_1",
@@ -480,7 +442,7 @@ class BillingPayerManagerTests(unittest.TestCase):
         self.assertIsNone(projected["default_payment_method_id"])
 
     def test_create_update_get_and_list_payers_without_stripe(self):
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "guardians": [{"id": "guardian_1", "studio_id": "studio_1"}],
                 "billing_payers": [
@@ -494,7 +456,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 ],
             }
         )
-        manager = BillingPayerManager(facade)
+        manager = facade.manager
 
         created = asyncio.run(
             manager.create_payer(
@@ -524,7 +486,7 @@ class BillingPayerManagerTests(unittest.TestCase):
 
     def test_create_and_update_stay_local_when_connect_is_ready(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {"billing_payers": [], "audit_logs": []},
             account={
                 "charges_enabled": True,
@@ -533,7 +495,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 1},
             },
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         created = asyncio.run(
             manager.create_payer(
@@ -563,7 +525,7 @@ class BillingPayerManagerTests(unittest.TestCase):
 
     def test_payer_sync_create_replays_saved_result_without_second_provider_call(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [
                     {
@@ -586,7 +548,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 1},
             },
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         first = asyncio.run(
             manager.sync_payer(
@@ -634,7 +596,7 @@ class BillingPayerManagerTests(unittest.TestCase):
 
     def test_completed_payer_sync_replay_repairs_one_failed_audit_without_provider_call(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [
                     {
@@ -655,7 +617,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 1},
             },
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         def fail_first_audit(table_name, _payloads, _rows):
             if table_name == "audit_logs":
@@ -711,7 +673,7 @@ class BillingPayerManagerTests(unittest.TestCase):
 
     def test_payer_sync_audit_repair_rejects_wrong_identity_and_precompletion(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [
                     {
@@ -732,7 +694,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 1},
             },
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
         asyncio.run(
             manager.sync_payer(
                 "payer_1",
@@ -948,7 +910,7 @@ class BillingPayerManagerTests(unittest.TestCase):
 
     def _completed_sync_audit_fixture(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [
                     {
@@ -969,7 +931,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 1},
             },
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
         asyncio.run(
             manager.sync_payer(
                 "payer_1",
@@ -1120,7 +1082,7 @@ class BillingPayerManagerTests(unittest.TestCase):
 
     def test_payer_sync_new_key_uses_update_mode_and_new_parent_identity(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [
                     {
@@ -1145,7 +1107,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 2},
             },
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         result = asyncio.run(
             manager.sync_payer(
@@ -1170,7 +1132,7 @@ class BillingPayerManagerTests(unittest.TestCase):
     def test_payer_sync_different_key_collapses_and_old_key_replays_without_metadata_receipts(self):
         _FakeStripeService.reset()
         original_metadata = {"source": "guardian-import"}
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [
                     {
@@ -1193,7 +1155,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 1},
             },
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         first = asyncio.run(
             manager.sync_payer(
@@ -1243,7 +1205,7 @@ class BillingPayerManagerTests(unittest.TestCase):
 
     def test_payer_sync_same_key_rejects_changed_desired_customer_state(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [
                     {
@@ -1266,7 +1228,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 1},
             },
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         asyncio.run(
             manager.sync_payer(
@@ -1293,7 +1255,7 @@ class BillingPayerManagerTests(unittest.TestCase):
 
     def test_payer_sync_provider_success_local_failure_requires_reconciliation(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [
                     {
@@ -1321,7 +1283,7 @@ class BillingPayerManagerTests(unittest.TestCase):
             and (query.update_payload or {}).get("stripe_customer_id") == "cus_created"
             else None
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         with self.assertRaises(HTTPException) as failed:
             asyncio.run(
@@ -1355,7 +1317,7 @@ class BillingPayerManagerTests(unittest.TestCase):
     def test_payer_sync_rejects_missing_oversized_and_stale_generation_keys(self):
         for key in (None, "é" * 128):
             with self.subTest(key=key):
-                facade = _BillingFacade(
+                facade = _PayerFixture(
                     {
                         "billing_payers": [
                             {
@@ -1376,12 +1338,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                     },
                 )
                 with self.assertRaises(HTTPException) as context:
-                    asyncio.run(
-                        BillingPayerManager(
-                            facade,
-                            stripe_service_cls=_FakeStripeService,
-                        ).sync_payer("payer_1", "studio_1", "actor_1", key)
-                    )
+                    asyncio.run(facade.manager.sync_payer("payer_1", "studio_1", "actor_1", key))
                 self.assertEqual(context.exception.status_code, 400)
                 self.assertEqual(facade.supabase.billing_provider_operations, {})
 
@@ -1399,7 +1356,7 @@ class BillingPayerManagerTests(unittest.TestCase):
             with self.subTest(expected_state=expected_state):
                 _FakeStripeService.reset()
                 _FakeStripeService.provider_error = provider_error
-                facade = _BillingFacade(
+                facade = _PayerFixture(
                     {
                         "billing_payers": [
                             {
@@ -1419,10 +1376,7 @@ class BillingPayerManagerTests(unittest.TestCase):
                         "metadata": {"connect_account_generation": 1},
                     },
                 )
-                manager = BillingPayerManager(
-                    facade,
-                    stripe_service_cls=_FakeStripeService,
-                )
+                manager = facade.manager
 
                 with self.assertRaises(HTTPException):
                     asyncio.run(
@@ -1485,7 +1439,7 @@ class BillingPayerManagerTests(unittest.TestCase):
             "default_payment_method_exp_month": 12,
             "default_payment_method_exp_year": 2030,
         }
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {"billing_payers": [payer], "audit_logs": []},
             account={
                 "charges_enabled": True,
@@ -1509,7 +1463,7 @@ class BillingPayerManagerTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(RuntimeError, "consent read unavailable"):
-            BillingPayerManager(facade)._project_payer_sync_result(
+            facade.manager._project_payer_sync_result(
                 payer=payer,
                 provider_customer={"invoice_settings": {"default_payment_method": None}},
                 customer_id="cus_1",
@@ -1528,7 +1482,7 @@ class BillingPayerManagerTests(unittest.TestCase):
             "stripe_connected_account_id": "acct_1",
             "metadata": {"connect_account_generation": 1},
         }
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [
                     {
@@ -1544,7 +1498,7 @@ class BillingPayerManagerTests(unittest.TestCase):
             },
             account=account,
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
 
         asyncio.run(
             manager.sync_payer(
@@ -1570,41 +1524,40 @@ class BillingPayerManagerTests(unittest.TestCase):
         self.assertEqual(_FakeStripeService.updated_customers, [])
 
     def test_customer_lookup_respects_connected_account_scope(self):
-        manager = BillingPayerManager(
-            _BillingFacade(
-                {
-                    "billing_payers": [
-                        {
-                            "id": "payer_platform",
-                            "studio_id": "studio_1",
-                            "stripe_account_id": None,
-                            "stripe_customer_id": "cus_1",
-                        },
-                        {
-                            "id": "payer_connected",
-                            "studio_id": "studio_1",
-                            "stripe_account_id": "acct_1",
-                            "stripe_customer_id": "cus_1",
-                        },
-                    ],
-                }
-            )
+        facade = _PayerFixture(
+            {
+                "billing_payers": [
+                    {
+                        "id": "payer_platform",
+                        "studio_id": "studio_1",
+                        "stripe_account_id": None,
+                        "stripe_customer_id": "cus_1",
+                    },
+                    {
+                        "id": "payer_connected",
+                        "studio_id": "studio_1",
+                        "stripe_account_id": "acct_1",
+                        "stripe_customer_id": "cus_1",
+                    },
+                ],
+            }
         )
 
         self.assertEqual(
-            manager._payer_id_for_customer("studio_1", None, "cus_1"), "payer_platform"
+            payer_id_for_customer(facade.supabase, "studio_1", None, "cus_1"),
+            "payer_platform",
         )
         self.assertEqual(
-            manager._payer_id_for_customer("studio_1", "acct_1", "cus_1"), "payer_connected"
+            payer_id_for_customer(facade.supabase, "studio_1", "acct_1", "cus_1"),
+            "payer_connected",
         )
-        self.assertIsNone(manager._payer_id_for_customer("studio_1", "acct_2", "cus_1"))
+        self.assertIsNone(payer_id_for_customer(facade.supabase, "studio_1", "acct_2", "cus_1"))
 
     def test_balance_recomputation_requires_scoped_rpc_and_propagates_failures(self):
-        facade = _BillingFacade({})
-        manager = BillingPayerManager(facade)
-        manager._recompute_payer_balance("studio_1", None)
+        facade = _PayerFixture({})
+        recompute_payer_balance(facade.supabase, "studio_1", None)
         self.assertEqual(facade.supabase.rpc_calls, [])
-        manager._recompute_payer_balance("studio_1", "payer_1")
+        recompute_payer_balance(facade.supabase, "studio_1", "payer_1")
         self.assertEqual(
             facade.supabase.rpc_calls,
             [
@@ -1632,14 +1585,14 @@ class BillingPayerManagerTests(unittest.TestCase):
                 facade.supabase.on_payer_balance_recompute = fail
                 expected = PostgrestAPIError if code == "42501" else RuntimeError
                 with self.assertRaises(expected) as caught:
-                    manager._recompute_payer_balance("studio_1", "payer_1")
+                    recompute_payer_balance(facade.supabase, "studio_1", "payer_1")
                 if code == "42501":
                     self.assertIs(caught.exception, failure)
                 else:
                     self.assertIn("required", str(caught.exception))
         facade.supabase.rpc = None
         with self.assertRaisesRegex(RuntimeError, "does not expose rpc"):
-            manager._recompute_payer_balance("studio_1", "payer_1")
+            recompute_payer_balance(facade.supabase, "studio_1", "payer_1")
         self.assertEqual(facade.supabase.query_log, [])
 
     def _payer_recovery(
@@ -1651,7 +1604,7 @@ class BillingPayerManagerTests(unittest.TestCase):
         payer_overrides=None,
     ):
         _FakeStripeService.reset()
-        facade = _BillingFacade(
+        facade = _PayerFixture(
             {
                 "billing_payers": [
                     {
@@ -1673,9 +1626,9 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "metadata": {"connect_account_generation": 1},
             },
         )
-        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        manager = facade.manager
         if test_clock_id:
-            facade.settings = SimpleNamespace(
+            manager.settings = SimpleNamespace(
                 ENVIRONMENT="staging",
                 STRIPE_MODE="test",
                 STRIPE_SECRET_KEY="sk_test_synthetic",
