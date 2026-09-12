@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.deps import get_current_user_id, get_supabase
 from app.core.error_handlers import (
     error_code_for_status,
     http_exception_handler,
@@ -18,6 +19,24 @@ from app.main import app
 
 
 class ErrorResponseTest(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        app.dependency_overrides[get_current_user_id] = lambda: "validation-contract-user"
+        app.dependency_overrides[get_supabase] = lambda: object()
+
+    def tearDown(self):
+        app.dependency_overrides.clear()
+
+    def assert_public_validation_detail(self, response):
+        payload = response.json()
+        self.assertEqual(
+            payload["error"],
+            {"code": "validation_error", "status_code": 422},
+        )
+        self.assertTrue(payload["detail"])
+        for error in payload["detail"]:
+            self.assertEqual(set(error), {"loc", "msg", "type"})
+
     def test_status_codes_map_to_stable_error_codes(self):
         self.assertEqual(error_code_for_status(400), "bad_request")
         self.assertEqual(error_code_for_status(401), "unauthorized")
@@ -75,7 +94,7 @@ class ErrorResponseTest(unittest.TestCase):
                 self.assertEqual(response.content, b"")
                 self.assertEqual(response.headers["X-Koaryu-Test"], "preserved")
 
-    def test_validation_errors_keep_fastapi_detail_shape_with_metadata(self):
+    def test_validation_errors_keep_public_fastapi_fields_with_metadata(self):
         class Payload(BaseModel):
             name: str
 
@@ -89,8 +108,70 @@ class ErrorResponseTest(unittest.TestCase):
         response = TestClient(test_app).post("/payload", json={})
 
         self.assertEqual(response.status_code, 422)
-        self.assertIsInstance(response.json()["detail"], list)
-        self.assertEqual(response.json()["error"], {"code": "validation_error", "status_code": 422})
+        self.assertEqual(response.json(), {
+            "detail": [{
+                "loc": ["body", "name"],
+                "msg": "Field required",
+                "type": "missing",
+            }],
+            "error": {"code": "validation_error", "status_code": 422},
+        })
+
+    def test_main_app_validation_errors_preserve_missing_field_details(self):
+        response = self.client.post("/api/v1/support/tickets", json={})
+
+        self.assertEqual(response.status_code, 422)
+        self.assert_public_validation_detail(response)
+        self.assertEqual(
+            {
+                (tuple(error["loc"]), error["msg"], error["type"])
+                for error in response.json()["detail"]
+            },
+            {
+                (("body", "topic"), "Field required", "missing"),
+                (("body", "subject"), "Field required", "missing"),
+                (("body", "details"), "Field required", "missing"),
+            },
+        )
+
+    def test_main_app_validation_errors_do_not_echo_secret_shaped_wrong_type_input(self):
+        synthetic_secret = "sk_live_TEST_DO_NOT_USE_validation_echo"
+
+        response = self.client.post(
+            "/api/v1/support/tickets",
+            json={
+                "topic": "other",
+                "subject": "Validation contract",
+                "details": "Enough valid detail text.",
+                "browser_context": synthetic_secret,
+            },
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assert_public_validation_detail(response)
+        self.assertEqual(response.json()["detail"], [{
+            "loc": ["body", "browser_context"],
+            "msg": "Input should be a valid dictionary",
+            "type": "dict_type",
+        }])
+        self.assertNotIn(synthetic_secret, response.text)
+
+    def test_main_app_validation_errors_drop_rejected_body_and_error_context(self):
+        synthetic_secret = "sk_live_TEST_DO_NOT_USE_validation_context"
+
+        response = self.client.patch(
+            "/api/v1/internal/support/tickets/11111111-1111-4111-8111-111111111111",
+            json={"metadata": {"credential": synthetic_secret}},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assert_public_validation_detail(response)
+        self.assertEqual(response.json()["detail"], [{
+            "loc": ["body"],
+            "msg": "Value error, A status change or note is required.",
+            "type": "value_error",
+        }])
+        self.assertNotIn(synthetic_secret, response.text)
 
     def test_unhandled_errors_return_user_safe_message(self):
         test_app = FastAPI()
@@ -151,6 +232,10 @@ class ErrorResponseTest(unittest.TestCase):
             "#/components/schemas/ErrorMeta",
         )
         self.assertEqual(validation_detail["required"], ["loc", "msg", "type"])
+        self.assertEqual(
+            set(validation_detail["properties"]),
+            {"loc", "msg", "type"},
+        )
         self.assertNotIn("input", validation_detail["properties"])
         self.assertNotIn("ctx", validation_detail["properties"])
         self.assertEqual(
