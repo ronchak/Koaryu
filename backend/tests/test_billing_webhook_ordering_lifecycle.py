@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from app.services.billing_subscription_webhook_projection import (
+    BillingSubscriptionWebhookProjector,
+)
 from tests.billing_lifecycle_helpers import (
     BillingPaymentsLifecycleTestBase,
     _FakeSupabase,
@@ -581,7 +584,10 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
             }
         )
 
-        service._project_subscription(
+        subscription_projector = BillingSubscriptionWebhookProjector(
+            service.supabase, service._connect_accounts()
+        )
+        subscription_projector.project_subscription(
             {
                 "id": "sub_1",
                 "status": "active",
@@ -627,7 +633,10 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         service.supabase.before_update = newer_event_wins
 
-        service._project_subscription(
+        subscription_projector = BillingSubscriptionWebhookProjector(
+            service.supabase, service._connect_accounts()
+        )
+        subscription_projector.project_subscription(
             {
                 "id": "sub_1",
                 "status": "active",
@@ -682,7 +691,10 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         service.supabase.before_update = newer_event_wins
 
-        service._project_subscription(
+        subscription_projector = BillingSubscriptionWebhookProjector(
+            service.supabase, service._connect_accounts()
+        )
+        subscription_projector.project_subscription(
             {
                 "id": "sub_1",
                 "status": "active",
@@ -731,7 +743,10 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
             }
         )
 
-        service._project_subscription(
+        subscription_projector = BillingSubscriptionWebhookProjector(
+            service.supabase, service._connect_accounts()
+        )
+        subscription_projector.project_subscription(
             {
                 "id": "sub_1",
                 "status": "canceled",
@@ -777,7 +792,10 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
             }
         )
 
-        service._project_subscription(
+        subscription_projector = BillingSubscriptionWebhookProjector(
+            service.supabase, service._connect_accounts()
+        )
+        subscription_projector.project_subscription(
             {
                 "id": "sub_2",
                 "status": "canceled",
@@ -808,7 +826,10 @@ class BillingWebhookOrderingLifecycleTest(BillingPaymentsLifecycleTestBase):
             }
         )
 
-        response = service._project_subscription(
+        subscription_projector = BillingSubscriptionWebhookProjector(
+            service.supabase, service._connect_accounts()
+        )
+        response = subscription_projector.project_subscription(
             {
                 "id": "sub_unknown",
                 "status": "active",

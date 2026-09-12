@@ -14,7 +14,7 @@ from app.services.billing_provider_operations import (
 )
 from app.services.platform_billing_helpers import stable_hash
 from tests.billing_enrollment_activation_fixtures import (
-    _Facade,
+    _EnrollmentFixture,
     _Stripe,
     _enrollment,
     _group,
@@ -26,7 +26,12 @@ from tests.billing_enrollment_activation_fixtures import (
 
 
 def _manager(facade):
-    return BillingEnrollmentManager(facade, stripe_service_cls=_Stripe)
+    return BillingEnrollmentManager(
+        facade.supabase,
+        facade.connect_accounts,
+        facade.settings,
+        stripe_service_cls=_Stripe,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +45,7 @@ def _operation(facade):
 
 def _existing_subscription_case(branch):
     if branch == "add_item":
-        facade = _Facade(_tables(group=_group()))
+        facade = _EnrollmentFixture(_tables(group=_group()))
         provider = _provider_subscription()
     else:
         item = {
@@ -61,7 +66,7 @@ def _existing_subscription_case(branch):
             stripe_subscription_item_id="si_shared",
             status="active",
         )
-        facade = _Facade(_tables(group=_group(), peers=[peer]))
+        facade = _EnrollmentFixture(_tables(group=_group(), peers=[peer]))
         provider = _provider_subscription(items=[item])
     _Stripe.subscriptions["sub_1"] = provider
     return facade
@@ -69,7 +74,7 @@ def _existing_subscription_case(branch):
 
 def test_activation_requires_canonical_key_and_recurring_identity():
     for key in (None, "é" * 128):
-        facade = _Facade(_tables())
+        facade = _EnrollmentFixture(_tables())
         with pytest.raises(HTTPException) as exc:
             asyncio.run(
                 _manager(facade).activate_enrollment("enrollment_1", "studio_1", "actor_1", key)
@@ -83,7 +88,7 @@ def test_activation_requires_canonical_key_and_recurring_identity():
     ):
         tables = _tables(enrollment=enrollment)
         tables["billing_plans"] = [plan]
-        facade = _Facade(tables)
+        facade = _EnrollmentFixture(tables)
         with pytest.raises(HTTPException) as exc:
             asyncio.run(
                 _manager(facade).activate_enrollment(
@@ -100,7 +105,7 @@ def test_new_non_usd_activation_leaves_local_and_provider_state_unchanged(mode):
     tables = _tables(enrollment=_enrollment(collection_mode=mode))
     tables["billing_plans"] = [_plan(currency="eur")]
     tables["billing_plan_prices"] = [_price(currency="eur")]
-    facade = _Facade(tables)
+    facade = _EnrollmentFixture(tables)
     before = copy.deepcopy(facade.supabase.tables)
     with pytest.raises(HTTPException) as failure:
         asyncio.run(
@@ -144,7 +149,7 @@ def test_historical_non_usd_activation_uses_saved_provider_outcome(stage, error)
     )
     tables["billing_plans"] = [_plan(currency="eur")]
     tables["billing_plan_prices"] = [_price(currency="eur")]
-    facade = _Facade(tables)
+    facade = _EnrollmentFixture(tables)
     operations = BillingProviderOperationCoordinator(facade.supabase)
     lease = "00000000-0000-4000-8000-000000000101"
     claimed = operations.claim_resource(
@@ -248,7 +253,7 @@ def test_activation_branches_preserve_exact_owner_replay_and_release_lock(
     branch, subscription_id, item_id, key_suffix
 ):
     facade = (
-        _Facade(_tables())
+        _EnrollmentFixture(_tables())
         if branch == "create_subscription"
         else _existing_subscription_case(branch)
     )
@@ -344,7 +349,7 @@ def test_activation_branches_preserve_exact_owner_replay_and_release_lock(
 
 def test_provider_backed_legacy_group_adopts_generation_before_add_item():
     group = _group(metadata={"legacy_marker": "keep"})
-    facade = _Facade(_tables(group=group))
+    facade = _EnrollmentFixture(_tables(group=group))
     _Stripe.subscriptions["sub_1"] = _provider_subscription()
 
     result = asyncio.run(
@@ -374,7 +379,7 @@ def test_legacy_group_adoption_rejects_stale_customer_without_mutation():
         stripe_customer_id="cus_stale",
         metadata={"legacy_marker": "keep"},
     )
-    facade = _Facade(_tables(group=group))
+    facade = _EnrollmentFixture(_tables(group=group))
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(
@@ -505,7 +510,7 @@ def test_schedule_inserted_between_activation_checks_prevents_provider_mutation(
 
 
 def test_provider_success_local_failure_reconciles_and_readback_never_mutates_again():
-    facade = _Facade(_tables())
+    facade = _EnrollmentFixture(_tables())
     facade.projection_failures = 1
     manager = _manager(facade)
 
@@ -516,6 +521,12 @@ def test_provider_success_local_failure_reconciles_and_readback_never_mutates_ag
     assert exc.value.status_code == 503
     assert _operation(facade)["state"] == "reconciliation_required"
     assert len(_Stripe.create_subscription_calls) == 1
+    assert facade.projection_failure_observation == {
+        "matched_subscription": {"id": "group_created", "studio_id": "studio_1"},
+        "provider": {"id": "sub_created", "status": "active"},
+    }
+    assert _Stripe.subscriptions["sub_created"]["status"] == "active"
+    assert facade.supabase.tables["billing_subscriptions"][0].get("stripe_subscription_id") is None
 
     result = asyncio.run(
         manager.activate_enrollment("enrollment_1", "studio_1", "actor_1", "projection-adopter")
@@ -526,7 +537,7 @@ def test_provider_success_local_failure_reconciles_and_readback_never_mutates_ag
 
 
 def test_balance_failure_stays_projected_and_same_actor_replay_completes():
-    facade = _Facade(_tables())
+    facade = _EnrollmentFixture(_tables())
     facade.balance_failures = 1
     manager = _manager(facade)
 
@@ -551,7 +562,7 @@ def test_balance_failure_stays_projected_and_same_actor_replay_completes():
 
 
 def test_provider_ambiguity_is_reconciliation_and_does_not_retry():
-    facade = _Facade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _Stripe.provider_error = TimeoutError("raw provider payload")
     manager = _manager(facade)
 
@@ -589,7 +600,7 @@ def test_prerequisites_fail_before_resource_or_provider():
     tables["billing_payers"][0]["connect_account_generation"] = 1
     cases.append(tables)
     for tables in cases:
-        facade = _Facade(tables)
+        facade = _EnrollmentFixture(tables)
         with pytest.raises(HTTPException) as exc:
             asyncio.run(
                 _manager(facade).activate_enrollment(
@@ -604,7 +615,7 @@ def test_prerequisites_fail_before_resource_or_provider():
 def test_legacy_plan_price_adopts_generation_before_activation():
     tables = _tables()
     tables["billing_plan_prices"][0]["metadata"] = {"legacy_marker": "keep"}
-    facade = _Facade(tables)
+    facade = _EnrollmentFixture(tables)
 
     result = asyncio.run(
         _manager(facade).activate_enrollment(
@@ -629,8 +640,9 @@ def test_legacy_plan_price_adopts_generation_before_activation():
 
 def test_autopay_requires_consent_and_passes_exact_payment_method():
     enrollment = _enrollment(collection_mode="autopay")
-    facade = _Facade(_tables(enrollment=enrollment))
-    facade.authorized = False
+    facade = _EnrollmentFixture(_tables(enrollment=enrollment))
+    payer = facade.supabase.tables["billing_payers"][0]
+    payer["autopay_status"] = "disabled"
     with pytest.raises(HTTPException):
         asyncio.run(
             _manager(facade).activate_enrollment(
@@ -639,7 +651,7 @@ def test_autopay_requires_consent_and_passes_exact_payment_method():
         )
     assert _Stripe.create_subscription_calls == []
 
-    facade.authorized = True
+    payer["autopay_status"] = "enabled"
     result = asyncio.run(
         _manager(facade).activate_enrollment("enrollment_1", "studio_1", "actor_1", "autopay-key")
     )
@@ -650,11 +662,20 @@ def test_autopay_requires_consent_and_passes_exact_payment_method():
 
 def test_autopay_create_reservation_rejects_disable_first_without_stale_group():
     enrollment = _enrollment(collection_mode="autopay")
-    facade = _Facade(_tables(enrollment=enrollment))
+    facade = _EnrollmentFixture(_tables(enrollment=enrollment))
     manager = _manager(facade)
 
     def disable_before_reservation():
-        facade.authorized = False
+        payer = facade.supabase.tables["billing_payers"][0]
+        consent = facade.supabase.tables["billing_payer_payment_consents"][0]
+        payer.update(
+            {
+                "autopay_status": "disabled",
+                "autopay_authorized_at": None,
+                "autopay_terms_accepted_at": None,
+            }
+        )
+        consent["revoked_at"] = "2026-08-27T00:01:00Z"
         facade.supabase.autopay_consent_active = False
 
     facade.supabase.autopay_reservation_hook = disable_before_reservation
@@ -710,9 +731,11 @@ class _BoundaryRecheckBlockedStripe(_Stripe):
 
 
 def test_policy_blocked_autopay_create_deletes_exact_empty_reservation():
-    facade = _Facade(_tables(enrollment=_enrollment(collection_mode="autopay")))
+    facade = _EnrollmentFixture(_tables(enrollment=_enrollment(collection_mode="autopay")))
     manager = BillingEnrollmentManager(
-        facade,
+        facade.supabase,
+        facade.connect_accounts,
+        facade.settings,
         stripe_service_cls=_PolicyBlockedStripe,
     )
 
@@ -735,10 +758,12 @@ def test_policy_blocked_autopay_create_deletes_exact_empty_reservation():
 
 
 def test_lost_policy_cleanup_response_same_key_never_recreates_group():
-    facade = _Facade(_tables(enrollment=_enrollment(collection_mode="autopay")))
+    facade = _EnrollmentFixture(_tables(enrollment=_enrollment(collection_mode="autopay")))
     facade.supabase.lose_autopay_rejection_response_once = True
     blocked_manager = BillingEnrollmentManager(
-        facade,
+        facade.supabase,
+        facade.connect_accounts,
+        facade.settings,
         stripe_service_cls=_PolicyBlockedStripe,
     )
 
@@ -777,10 +802,12 @@ def test_lost_policy_cleanup_response_same_key_never_recreates_group():
 
 
 def test_precommit_cleanup_failure_same_key_reestablishes_policy_proof():
-    facade = _Facade(_tables(enrollment=_enrollment(collection_mode="autopay")))
+    facade = _EnrollmentFixture(_tables(enrollment=_enrollment(collection_mode="autopay")))
     facade.supabase.fail_autopay_rejection_before_commit_once = True
     blocked_manager = BillingEnrollmentManager(
-        facade,
+        facade.supabase,
+        facade.connect_accounts,
+        facade.settings,
         stripe_service_cls=_PolicyBlockedStripe,
     )
 
@@ -824,13 +851,15 @@ def test_boundary_policy_block_retries_exact_cleanup_once_before_returning(
 ):
     _BoundaryRecheckBlockedStripe.authorization_calls = 0
     _BoundaryRecheckBlockedStripe.raw_create_calls = 0
-    facade = _Facade(_tables(enrollment=_enrollment(collection_mode="autopay")))
+    facade = _EnrollmentFixture(_tables(enrollment=_enrollment(collection_mode="autopay")))
     if cleanup_failure == "before_commit":
         facade.supabase.fail_autopay_rejection_before_commit_once = True
     else:
         facade.supabase.lose_autopay_rejection_response_once = True
     manager = BillingEnrollmentManager(
-        facade,
+        facade.supabase,
+        facade.connect_accounts,
+        facade.settings,
         stripe_service_cls=_BoundaryRecheckBlockedStripe,
     )
 
@@ -909,7 +938,7 @@ def test_policy_blocked_autopay_never_deletes_protected_group(protected_kind):
                 "billing_subscription_id": "group_1",
             }
         ]
-    facade = _Facade(
+    facade = _EnrollmentFixture(
         _tables(
             enrollment=_enrollment(collection_mode="autopay"),
             group=group,
@@ -917,7 +946,9 @@ def test_policy_blocked_autopay_never_deletes_protected_group(protected_kind):
         )
     )
     manager = BillingEnrollmentManager(
-        facade,
+        facade.supabase,
+        facade.connect_accounts,
+        facade.settings,
         stripe_service_cls=_PolicyBlockedStripe,
     )
 
@@ -939,7 +970,7 @@ def test_policy_blocked_autopay_never_deletes_protected_group(protected_kind):
 
 
 def test_lost_provider_success_response_replays_without_second_mutation():
-    facade = _Facade(_tables())
+    facade = _EnrollmentFixture(_tables())
     facade.supabase.lose_provider_success_response_once = True
     manager = _manager(facade)
 
@@ -959,7 +990,7 @@ def test_lost_provider_success_response_replays_without_second_mutation():
 def test_completed_and_projected_local_drift_never_retries_provider():
     for state in ("completed", "projected"):
         _Stripe.reset()
-        facade = _Facade(_tables())
+        facade = _EnrollmentFixture(_tables())
         manager = _manager(facade)
         asyncio.run(
             manager.activate_enrollment("enrollment_1", "studio_1", "actor_1", f"drift-{state}")
@@ -985,7 +1016,7 @@ def test_tampered_intent_and_unowned_provider_link_fail_closed():
         stripe_subscription_id="sub_unowned",
         stripe_subscription_item_id="si_unowned",
     )
-    facade = _Facade(_tables(enrollment=linked))
+    facade = _EnrollmentFixture(_tables(enrollment=linked))
     with pytest.raises(HTTPException) as unowned:
         asyncio.run(
             _manager(facade).activate_enrollment(
@@ -995,13 +1026,17 @@ def test_tampered_intent_and_unowned_provider_link_fail_closed():
     assert unowned.value.status_code == 409
     assert facade.supabase.billing_provider_operations == {}
 
-    facade = _Facade(_tables())
+    facade = _EnrollmentFixture(_tables())
     manager = _manager(facade)
     facade.projection_failures = 1
     with pytest.raises(HTTPException):
         asyncio.run(
             manager.activate_enrollment("enrollment_1", "studio_1", "actor_1", "tamper-key")
         )
+    assert facade.projection_failure_observation == {
+        "matched_subscription": {"id": "group_created", "studio_id": "studio_1"},
+        "provider": {"id": "sub_created", "status": "active"},
+    }
     enrollment = facade.supabase.tables["student_billing_enrollments"][0]
     enrollment["metadata"]["provider_activation_intent"]["expected_quantity"] = 99
     with pytest.raises(HTTPException) as tampered:
@@ -1020,7 +1055,7 @@ def test_contradictory_active_price_and_provider_readback_mismatch_fail_closed()
             stripe_price_id="price_other",
         )
     )
-    facade = _Facade(tables)
+    facade = _EnrollmentFixture(tables)
     with pytest.raises(HTTPException) as contradictory:
         asyncio.run(
             _manager(facade).activate_enrollment("enrollment_1", "studio_1", "actor_1", "price-key")
@@ -1028,7 +1063,7 @@ def test_contradictory_active_price_and_provider_readback_mismatch_fail_closed()
     assert contradictory.value.status_code == 409
     assert facade.supabase.billing_provider_operations == {}
 
-    facade = _Facade(_tables())
+    facade = _EnrollmentFixture(_tables())
     manager = _manager(facade)
     original_retrieve = _Stripe.retrieve_connected_subscription
 
@@ -1053,7 +1088,7 @@ def test_contradictory_active_price_and_provider_readback_mismatch_fail_closed()
 def test_incomplete_and_past_due_readback_keep_enrollment_past_due():
     for provider_status in ("incomplete", "past_due"):
         _Stripe.reset()
-        facade = _Facade(_tables(group=_group()))
+        facade = _EnrollmentFixture(_tables(group=_group()))
         _Stripe.subscriptions["sub_1"] = _provider_subscription(status=provider_status)
 
         result = asyncio.run(

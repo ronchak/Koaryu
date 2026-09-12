@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+from tests.billing_enrollment_activation_fixtures import _EnrollmentFixture
 from tests.billing_enrollment_transition_fixtures import (
-    _TransitionFacade,
     _TransitionStripe,
     _item,
     _manager,
@@ -12,7 +12,7 @@ from tests.billing_enrollment_transition_fixtures import (
 )
 
 
-def _install_scheduled_transition_list_rpc(facade: _TransitionFacade) -> None:
+def _install_scheduled_transition_list_rpc(facade: _EnrollmentFixture) -> None:
     def list_scheduled(params: dict) -> list[dict]:
         requested_ids = set(params["p_enrollment_ids"])
         return [
@@ -33,7 +33,7 @@ def _install_scheduled_transition_list_rpc(facade: _TransitionFacade) -> None:
 
 def test_scheduled_transition_survives_reload_and_disappears_after_revoke():
     _TransitionStripe.reset()
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _install_scheduled_transition_list_rpc(facade)
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
 

@@ -6,12 +6,16 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
+from supabase import Client
 
+from app.services.billing_connect_accounts import BillingConnectAccountStore
+from app.services.billing_enrollment_records import BillingEnrollmentRecords
 from app.services.billing_invoice_projection import (
     _object_get,
     _stripe_id,
     subscription_period_bounds,
 )
+from app.services.billing_payers import recompute_payer_balance
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
@@ -24,7 +28,14 @@ from app.services.billing_provider_operations import (
     billing_provider_step_plan_sha256,
 )
 from app.services.billing_webhook_event_state import epoch_seconds, timestamp
-from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
+from app.services.billing_subscription_webhook_projection import (
+    BillingSubscriptionWebhookProjector,
+)
+from app.services.platform_billing_helpers import (
+    build_idempotency_key,
+    normalize_idempotency_key,
+    stable_hash,
+)
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from app.services.stripe_service import StripeService
 
@@ -45,17 +56,22 @@ ITEM_SCHEDULE_METADATA_WORKFLOW = "enrollment_cancel_period_end"
 class BillingEnrollmentTransitionWorkflow:
     def __init__(
         self,
-        owner: Any,
+        records: BillingEnrollmentRecords,
+        connect_accounts: BillingConnectAccountStore,
         *,
         stripe_service_cls: type[StripeService] = StripeService,
         clock: Callable[[], datetime] | None = None,
     ):
-        self.owner = owner
-        self.supabase = owner.supabase
+        self.records = records
+        self.connect_accounts = connect_accounts
+        self.supabase: Client = records.supabase
         self.stripe_service_cls = stripe_service_cls
         self._clock = clock or (lambda: datetime.now(timezone.utc))
-        self.lifecycle = owner._stripe_lifecycle()
         self.operations = BillingProviderOperationCoordinator(self.supabase)
+        self.subscription_projector = BillingSubscriptionWebhookProjector(
+            self.supabase,
+            connect_accounts,
+        )
 
     def schedule_period_end(
         self,
@@ -89,7 +105,7 @@ class BillingEnrollmentTransitionWorkflow:
             )
         if snapshot["mutation_strategy"] == "subscription_cancel_at_period_end":
             group_id = str(snapshot["group"]["id"])
-            lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(
+            lock_token = self.records.claim_subscription_quantity_sync_lock(
                 studio_id,
                 group_id,
             )
@@ -103,7 +119,7 @@ class BillingEnrollmentTransitionWorkflow:
                     reason_code=reason_code,
                 )
             finally:
-                self.lifecycle._release_subscription_quantity_sync_lock(
+                self.records.release_subscription_quantity_sync_lock(
                     studio_id,
                     group_id,
                     lock_token,
@@ -315,7 +331,7 @@ class BillingEnrollmentTransitionWorkflow:
                     lock_token: str | None = None
                     try:
                         group_id = str(intent["billing_subscription_id"])
-                        lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(
+                        lock_token = self.records.claim_subscription_quantity_sync_lock(
                             str(intent["studio_id"]),
                             group_id,
                         )
@@ -362,7 +378,7 @@ class BillingEnrollmentTransitionWorkflow:
                         result["reconciliation_required"] += 1
                     finally:
                         if lock_token is not None:
-                            self.lifecycle._release_subscription_quantity_sync_lock(
+                            self.records.release_subscription_quantity_sync_lock(
                                 str(intent["studio_id"]),
                                 str(intent["billing_subscription_id"]),
                                 lock_token,
@@ -479,7 +495,7 @@ class BillingEnrollmentTransitionWorkflow:
             and mutation in {"schedule", "revoke"}
         )
         if needs_quantity_lock:
-            lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(
+            lock_token = self.records.claim_subscription_quantity_sync_lock(
                 str(snapshot["enrollment"]["studio_id"]),
                 group_id,
             )
@@ -509,7 +525,7 @@ class BillingEnrollmentTransitionWorkflow:
                     mutation=mutation,
                 )
             finally:
-                self.lifecycle._release_subscription_quantity_sync_lock(
+                self.records.release_subscription_quantity_sync_lock(
                     str(snapshot["enrollment"]["studio_id"]),
                     group_id,
                     lock_token,
@@ -1212,12 +1228,12 @@ class BillingEnrollmentTransitionWorkflow:
         context: BillingProviderOperationContext,
         snapshot: dict[str, Any],
     ) -> dict[str, Any]:
-        create_key = self.owner._idempotency_key(
+        create_key = build_idempotency_key(
             "enrollment-transition",
             context.operation_id,
             "step-1-schedule-create",
         )
-        update_key = self.owner._idempotency_key(
+        update_key = build_idempotency_key(
             "enrollment-transition",
             context.operation_id,
             "step-2-schedule-update",
@@ -1649,7 +1665,7 @@ class BillingEnrollmentTransitionWorkflow:
         plans: dict[str, dict[str, Any]] = {}
         for family in families.values():
             plan_id = str(family["plan_id"])
-            plan = self.owner._get_row_or_404(
+            plan = self.records.get_row_or_404(
                 "billing_plans",
                 plan_id,
                 str(intent["studio_id"]),
@@ -1745,7 +1761,7 @@ class BillingEnrollmentTransitionWorkflow:
             schedule_id=schedule_id,
         )
         self._verify_item_schedule_due_phase(intent, snapshot, provider, schedule)
-        key = self.owner._idempotency_key(
+        key = build_idempotency_key(
             "enrollment-transition",
             str(intent["source_intent_id"]),
             "boundary-schedule-release",
@@ -1916,7 +1932,7 @@ class BillingEnrollmentTransitionWorkflow:
         return boundary_epoch <= now_epoch <= grace_ends_at
 
     def _snapshot(self, enrollment_id: str, studio_id: str, *, immediate: bool) -> dict[str, Any]:
-        enrollment = self.owner._get_row_or_404(
+        enrollment = self.records.get_row_or_404(
             "student_billing_enrollments", enrollment_id, studio_id, "Billing enrollment not found."
         )
         if enrollment.get("status") not in {"pending", "active"}:
@@ -1931,7 +1947,7 @@ class BillingEnrollmentTransitionWorkflow:
             raise HTTPException(
                 status_code=409, detail="Enrollment provider identity is incomplete."
             )
-        plan = self.owner._get_row_or_404(
+        plan = self.records.get_row_or_404(
             "billing_plans", enrollment["billing_plan_id"], studio_id, "Billing plan not found."
         )
         if plan.get("billing_interval") == "paid_in_full":
@@ -1939,16 +1955,16 @@ class BillingEnrollmentTransitionWorkflow:
                 status_code=409,
                 detail="Paid-in-full cancellation requires the separate invoice workflow.",
             )
-        payer = self.owner._get_row_or_404(
+        payer = self.records.get_row_or_404(
             "billing_payers", enrollment["payer_id"], studio_id, "Billing payer not found."
         )
-        group = self.owner._get_row_or_404(
+        group = self.records.get_row_or_404(
             "billing_subscriptions",
             enrollment["billing_subscription_id"],
             studio_id,
             "Billing subscription not found.",
         )
-        account = self.owner._connect_accounts().ensure_row(studio_id)
+        account = self.connect_accounts.ensure_row(studio_id)
         account_id = str(account.get("stripe_connected_account_id") or "")
         try:
             generation = int((account.get("metadata") or {}).get("connect_account_generation") or 0)
@@ -2051,25 +2067,25 @@ class BillingEnrollmentTransitionWorkflow:
 
     def _snapshot_for_replay(self, intent: dict[str, Any]) -> dict[str, Any]:
         studio_id = str(intent["studio_id"])
-        enrollment = self.owner._get_row_or_404(
+        enrollment = self.records.get_row_or_404(
             "student_billing_enrollments",
             str(intent["enrollment_id"]),
             studio_id,
             "Billing enrollment not found.",
         )
-        plan = self.owner._get_row_or_404(
+        plan = self.records.get_row_or_404(
             "billing_plans", enrollment["billing_plan_id"], studio_id, "Billing plan not found."
         )
-        payer = self.owner._get_row_or_404(
+        payer = self.records.get_row_or_404(
             "billing_payers", str(intent["payer_id"]), studio_id, "Billing payer not found."
         )
-        group = self.owner._get_row_or_404(
+        group = self.records.get_row_or_404(
             "billing_subscriptions",
             str(intent["billing_subscription_id"]),
             studio_id,
             "Billing subscription not found.",
         )
-        account = self.owner._connect_accounts().ensure_row(studio_id)
+        account = self.connect_accounts.ensure_row(studio_id)
         if (
             enrollment.get("payer_id") != intent["payer_id"]
             or payer.get("stripe_account_id") != intent["stripe_connected_account_id"]
@@ -2263,7 +2279,7 @@ class BillingEnrollmentTransitionWorkflow:
         context: BillingProviderOperationContext,
     ) -> None:
         stripe = self.stripe_service_cls()
-        key = self.owner._idempotency_key("enrollment-transition", context.operation_id)
+        key = build_idempotency_key("enrollment-transition", context.operation_id)
         if (
             mutation == "revoke"
             and snapshot["mutation_strategy"] == "subscription_item_delete_at_period_end"
@@ -2321,7 +2337,10 @@ class BillingEnrollmentTransitionWorkflow:
 
     def _project_local(self, snapshot: dict[str, Any], provider: Any, *, mutation: str) -> None:
         if mutation in {"schedule", "revoke"}:
-            projected = self.owner._project_subscription(provider, snapshot["account_id"])
+            projected = self.subscription_projector.project_subscription(
+                provider,
+                snapshot["account_id"],
+            )
             if not projected or projected.get("id") != snapshot["group"]["id"]:
                 raise RuntimeError("enrollment_transition_group_projection_failed")
             return
@@ -2344,21 +2363,25 @@ class BillingEnrollmentTransitionWorkflow:
         )
         if not result.data:
             raise RuntimeError("enrollment_transition_projection_failed")
-        self.owner._project_subscription(provider, snapshot["account_id"])
-        self.owner._recompute_payer_balance(
-            snapshot["enrollment"]["studio_id"], snapshot["payer"]["id"]
+        self.subscription_projector.project_subscription(provider, snapshot["account_id"])
+        recompute_payer_balance(
+            self.supabase,
+            snapshot["enrollment"]["studio_id"],
+            snapshot["payer"]["id"],
         )
 
     def _project_whole_cancellation(self, snapshot: dict[str, Any], provider: Any) -> None:
-        projected = self.owner._project_subscription(
+        projected = self.subscription_projector.project_subscription(
             provider,
             snapshot["account_id"],
             event_type="customer.subscription.deleted",
         )
         if not projected or projected.get("id") != snapshot["group"]["id"]:
             raise RuntimeError("enrollment_transition_subscription_projection_failed")
-        self.owner._recompute_payer_balance(
-            snapshot["enrollment"]["studio_id"], snapshot["payer"]["id"]
+        recompute_payer_balance(
+            self.supabase,
+            snapshot["enrollment"]["studio_id"],
+            snapshot["payer"]["id"],
         )
 
     def _read_operation(self, intent: dict[str, Any], *, lease_owner: str) -> dict[str, Any]:

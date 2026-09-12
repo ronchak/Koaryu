@@ -788,9 +788,7 @@ def run(args: argparse.Namespace, environment: Mapping[str, str]) -> dict[str, A
             studio_id=studio_id,
         )
         billing_service = BillingService(client)
-        payer = billing_service._get_row_or_404(
-            "billing_payers", payer_id, studio_id, "Payer not found."
-        )
+        payer = payer_module.get_payer_or_404(client, payer_id, studio_id)
         require_unprojected_payer(payer)
         account = billing_service._connect_accounts().ensure_row(studio_id)
         if (

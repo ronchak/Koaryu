@@ -1,36 +1,57 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
+from supabase import Client
 
-from app.services.billing_invoice_projection import _object_get, _stripe_id
+from app.services.billing_fees import application_fee_percent
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
-class BillingEnrollmentStripeLifecycle:
-    def __init__(self, enrollment_manager: Any):
-        self.enrollment_manager = enrollment_manager
+class BillingEnrollmentRecords:
+    def __init__(self, supabase: Client):
+        self.supabase = supabase
 
-    @property
-    def supabase(self):
-        return self.enrollment_manager.supabase
+    def get_row_or_404(
+        self, table: str, record_id: str, studio_id: str, detail: str
+    ) -> dict[str, Any]:
+        result = (
+            self.supabase.table(table)
+            .select("*")
+            .eq("id", record_id)
+            .eq("studio_id", studio_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail=detail)
+        return result.data
 
-    @property
-    def stripe_service_cls(self):
-        return self.enrollment_manager.stripe_service_cls
+    def ensure_record_in_studio(
+        self, table: str, record_id: str, studio_id: str, detail: str
+    ) -> None:
+        result = (
+            self.supabase.table(table)
+            .select("id")
+            .eq("id", record_id)
+            .eq("studio_id", studio_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail=detail)
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.enrollment_manager, name)
-
-    def _find_or_create_billing_subscription(
+    def find_or_create_billing_subscription(
         self,
         enrollment: dict[str, Any],
         plan: dict[str, Any],
         payer: dict[str, Any],
         account: dict[str, Any],
+        *,
+        default_fee_bps: int,
     ) -> dict[str, Any]:
         account_id = account["stripe_connected_account_id"]
         result = (
@@ -58,7 +79,9 @@ class BillingEnrollmentStripeLifecycle:
                 "currency": plan.get("currency") or "usd",
                 "status": "pending",
                 "default_payment_method_id": payer.get("default_payment_method_id"),
-                "application_fee_percent": self._application_fee_percent(account),
+                "application_fee_percent": application_fee_percent(
+                    account.get("platform_fee_bps"), default_fee_bps
+                ),
             }
         )
         try:
@@ -85,9 +108,9 @@ class BillingEnrollmentStripeLifecycle:
             raise HTTPException(status_code=500, detail="Failed to create billing subscription.")
         return inserted.data[0]
 
-    def _subscription_item_id_for_group_plan(
+    def subscription_item_id_for_group_plan(
         self, studio_id: str, group_id: str, plan_id: str
-    ) -> Optional[str]:
+    ) -> str | None:
         result = (
             self.supabase.table("student_billing_enrollments")
             .select("stripe_subscription_item_id")
@@ -101,13 +124,13 @@ class BillingEnrollmentStripeLifecycle:
         )
         return result.data[0]["stripe_subscription_item_id"] if result.data else None
 
-    def _active_enrollment_count_for_subscription_item(
+    def active_enrollment_count_for_subscription_item(
         self,
         studio_id: str,
-        group_id: Optional[str],
-        item_id: Optional[str],
+        group_id: str | None,
+        item_id: str | None,
         *,
-        exclude_enrollment_id: Optional[str] = None,
+        exclude_enrollment_id: str | None = None,
     ) -> int:
         if not group_id or not item_id:
             return 0
@@ -129,7 +152,7 @@ class BillingEnrollmentStripeLifecycle:
             rows = [row for row in rows if row.get("id") != exclude_enrollment_id]
         return len(rows)
 
-    def _claim_subscription_quantity_sync_lock(self, studio_id: str, group_id: str) -> str:
+    def claim_subscription_quantity_sync_lock(self, studio_id: str, group_id: str) -> str:
         token = str(uuid4())
         result = execute_required_rpc(
             self.supabase,
@@ -149,7 +172,7 @@ class BillingEnrollmentStripeLifecycle:
             )
         return token
 
-    def _release_subscription_quantity_sync_lock(
+    def release_subscription_quantity_sync_lock(
         self, studio_id: str, group_id: str, token: str
     ) -> None:
         execute_required_rpc(
@@ -161,26 +184,3 @@ class BillingEnrollmentStripeLifecycle:
                 "p_lock_token": token,
             },
         )
-
-    def _update_enrollment(
-        self, enrollment_id: str, studio_id: str, update: dict[str, Any]
-    ) -> dict[str, Any]:
-        result = (
-            self.supabase.table("student_billing_enrollments")
-            .update(update)
-            .eq("id", enrollment_id)
-            .eq("studio_id", studio_id)
-            .execute()
-        )
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Billing enrollment not found.")
-        return result.data[0]
-
-    def _subscription_item_id_for_enrollment(
-        self, subscription: Any, enrollment_id: str
-    ) -> Optional[str]:
-        items = _object_get(_object_get(subscription, "items") or {}, "data") or []
-        for item in items:
-            if (_object_get(item, "metadata") or {}).get("enrollment_id") == enrollment_id:
-                return _stripe_id(item)
-        return _stripe_id(items[0]) if items else None

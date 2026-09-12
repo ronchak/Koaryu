@@ -132,7 +132,12 @@ class BillingWebhookProjector:
             self._payment_events().project_dispute(data_object, account_id, event_created)
             return
         if event_type.startswith("customer.subscription."):
-            self._project_subscription(data_object, account_id, event_type, event_created)
+            self._subscription_events().project_subscription(
+                data_object,
+                account_id,
+                event_type=event_type,
+                event_created=event_created,
+            )
             return
 
     @staticmethod
@@ -902,20 +907,6 @@ class BillingWebhookProjector:
             self._link_orphan_payment_to_invoice(invoice, account_id, local)
         if local.get("payer_id"):
             recompute_payer_balance(self.supabase, studio_id, local.get("payer_id"))
-
-    def _project_subscription(
-        self,
-        subscription: dict[str, Any],
-        account_id: Optional[str],
-        event_type: str = "",
-        event_created: Optional[int] = None,
-    ) -> Optional[dict[str, Any]]:
-        return self._subscription_events().project_subscription(
-            subscription,
-            account_id,
-            event_type=event_type,
-            event_created=event_created,
-        )
 
     def update_invoice_from_stripe(
         self,

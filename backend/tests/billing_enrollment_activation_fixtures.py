@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import copy
 
-from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
-from app.services.billing_fees import application_fee_percent
-from app.services.platform_billing_helpers import build_idempotency_key
+from app.services.billing_connect_accounts import BillingConnectAccountStore
+from app.services.billing_enrollment_records import BillingEnrollmentRecords
+from app.services.billing_provider_operations import AUTOPAY_TERMS_VERSION
+from app.services.billing_subscription_webhook_projection import (
+    BillingSubscriptionWebhookProjector,
+)
 from tests.billing_lifecycle_helpers import _FakeSupabase
 
 
@@ -199,28 +202,39 @@ class _ActivationSupabase(_FakeSupabase):
         return result
 
 
-class _Accounts:
-    def __init__(self, account):
-        self.account = account
-
-    def ensure_row(self, studio_id):
-        return {"studio_id": studio_id, **self.account}
+class _Settings:
+    BILLING_PLATFORM_FEE_BPS = 50
 
 
-class _Facade:
+class _EnrollmentFixture:
     def __init__(self, tables):
         self.supabase = _ActivationSupabase(tables)
         self.account = {
+            "studio_id": "studio_1",
             "stripe_connected_account_id": "acct_1",
             "charges_enabled": True,
             "status": "charges_enabled",
             "platform_fee_bps": 50,
             "metadata": {"connect_account_generation": 2},
         }
-        self.authorized = True
+        self.supabase.tables.setdefault("studio_payment_accounts", []).append(self.account)
+        self.settings = _Settings()
+        self.connect_accounts = BillingConnectAccountStore(
+            self.supabase,
+            settings=self.settings,
+            stripe_service_cls=_Stripe,
+        )
+        self.records = BillingEnrollmentRecords(self.supabase)
+        self.subscription_projector = BillingSubscriptionWebhookProjector(
+            self.supabase,
+            self.connect_accounts,
+        )
         self.projection_failures = 0
+        self.projection_failure_observation = None
         self.balance_recomputes = 0
         self.balance_failures = 0
+        self.supabase.on_update_query = self._observe_update
+        self.supabase.on_payer_balance_recompute = self._observe_balance_recompute
         self.supabase.insert_defaults["billing_subscriptions"] = {
             "id": "group_created",
             "metadata": {},
@@ -228,73 +242,34 @@ class _Facade:
             "updated_at": "2026-08-27T00:00:00Z",
         }
 
-    def _connect_accounts(self):
-        return _Accounts(self.account)
-
-    def _get_row_or_404(self, table, record_id, studio_id, detail):
-        row = next(
-            (
-                candidate
-                for candidate in self.supabase.tables.setdefault(table, [])
-                if candidate.get("id") == record_id and candidate.get("studio_id") == studio_id
-            ),
-            None,
-        )
-        if row is None:
-            raise HTTPException(status_code=404, detail=detail)
-        return row
-
-    def _ensure_record_in_studio(self, table, record_id, studio_id, detail):
-        self._get_row_or_404(table, record_id, studio_id, detail)
-
-    def _ensure_connect_ready(self, studio_id):
-        return {"studio_id": studio_id, **self.account}
-
-    @staticmethod
-    def _idempotency_key(*parts):
-        return build_idempotency_key(*parts)
-
-    @staticmethod
-    def _application_fee_percent(account):
-        return application_fee_percent(account.get("platform_fee_bps"), default_bps=50)
-
-    def _payer_autopay_authorized(self, _payer):
-        return self.authorized
-
-    def _project_subscription(self, provider, account_id):
-        if self.projection_failures:
+    def _observe_update(self, query, _rows):
+        if (
+            self.projection_failures
+            and query.name == "billing_subscriptions"
+            and "stripe_subscription_id" in (query.update_payload or {})
+        ):
+            matched = query._matched_rows(_rows)
+            subscription = matched[0] if len(matched) == 1 else None
+            update = query.update_payload or {}
+            self.projection_failure_observation = {
+                "matched_subscription": {
+                    "id": (subscription or {}).get("id"),
+                    "studio_id": (subscription or {}).get("studio_id"),
+                },
+                "provider": {
+                    "id": update.get("stripe_subscription_id"),
+                    "status": update.get("status"),
+                },
+            }
             self.projection_failures -= 1
             raise RuntimeError("local subscription projection failed")
-        group_id = provider["metadata"]["billing_subscription_id"]
-        group = self._get_row_or_404(
-            "billing_subscriptions", group_id, "studio_1", "Group not found."
-        )
-        group.update(
-            {
-                "stripe_subscription_id": provider["id"],
-                "stripe_account_id": account_id,
-                "stripe_customer_id": provider["customer"],
-                "status": provider.get("status") or "active",
-            }
-        )
-        return dict(group)
+        return None
 
-    def _recompute_payer_balance(self, _studio_id, _payer_id):
+    def _observe_balance_recompute(self, _params):
         if self.balance_failures:
             self.balance_failures -= 1
             raise RuntimeError("payer balance projection failed")
         self.balance_recomputes += 1
-
-    def _audit(self, studio_id, actor_id, action, entity_id, metadata):
-        self.supabase.tables.setdefault("audit_logs", []).append(
-            {
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": action,
-                "entity_id": entity_id,
-                "metadata": metadata,
-            }
-        )
 
 
 class _Stripe:
@@ -408,6 +383,9 @@ def _payer(**overrides):
         "stripe_customer_id": "cus_1",
         "connect_account_generation": 2,
         "default_payment_method_id": "pm_1",
+        "autopay_status": "enabled",
+        "autopay_authorized_at": "2026-08-27T00:00:00Z",
+        "autopay_terms_accepted_at": "2026-08-27T00:00:00Z",
         **overrides,
     }
 
@@ -437,6 +415,20 @@ def _tables(*, enrollment=None, group=None, peers=None):
         "billing_plans": [_plan()],
         "billing_plan_prices": [_price()],
         "billing_payers": [_payer()],
+        "billing_payer_payment_consents": [
+            {
+                "id": "consent_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "terms_version": AUTOPAY_TERMS_VERSION,
+                "stripe_connected_account_id": "acct_1",
+                "connect_account_generation": 2,
+                "accepted_at": "2026-08-27T00:00:00Z",
+                "completed_at": "2026-08-27T00:00:00Z",
+                "revoked_at": None,
+                "superseded_at": None,
+            }
+        ],
         "billing_subscriptions": [group] if group else [],
         "audit_logs": [],
     }
