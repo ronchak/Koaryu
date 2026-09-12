@@ -360,6 +360,7 @@ export function useStudentDetailPageController({
     contentProps: {
       actionMessage,
       beltLoadError,
+      businessDate: config.businessDate,
       canManageRoster,
       canManageStudentLifecycle,
       deleteError,

@@ -55,6 +55,7 @@ export function useBeltTrackerPageController({
     eligibilityLoadError,
     eligibilityPendingLadderId,
     ladderName,
+    loadEligibilityForLadder,
     promoteStudent,
     setBeltRanks,
     setCurrentLadder,
@@ -558,6 +559,11 @@ export function useBeltTrackerPageController({
       onDismissEligibilityLoadError: () => dismissLoadNotice("eligibility", eligibilityLoadError),
       onDismissLadderError: () => setLadderError(null),
       onDismissProgramsLoadError: () => dismissLoadNotice("programs", programsLoadError),
+      onRetryEligibility: () => {
+        if (currentLadderId) {
+          void loadEligibilityForLadder(currentLadderId, { force: true }).catch(() => undefined);
+        }
+      },
       onStartPromotion: handleStartPromotion,
       onStartDemotion: handleStartDemotion,
       onToggleGroup: toggleEligibilityGroup,

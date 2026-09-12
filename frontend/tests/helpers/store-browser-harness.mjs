@@ -50,6 +50,12 @@ export function bundle(
     ...(rosterPresentation
       ? {
           "next/dynamic": `exports.__esModule=true;exports.default=()=>()=>null;`,
+          "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href:typeof href==='string'?href:href.pathname,...props},children);`,
+          "@/components/icons/martial-arts-belt": `exports.MartialArtsBelt=()=>null;`,
+          "@/components/programs/program-picker": `exports.ProgramBadge=({program,name})=>require('react').createElement('span',null,program?.name??name);`,
+          "@/components/students/status-badge": `exports.StatusBadge=({status})=>require('react').createElement('span',null,status);`,
+          "@/components/students/student-avatar": `exports.StudentAvatar=()=>null;`,
+          "./belt-tracker.module.css": `exports.__esModule=true;exports.default=new Proxy({},{get:(_target,name)=>String(name)});`,
           "./student-records.module.css": `exports.__esModule=true;exports.default=new Proxy({},{get:(_target,name)=>String(name)});`,
           "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
         }
@@ -179,9 +185,42 @@ export function bundle(
     const react = add("react");
     const dom = add("react-dom/client");
     const page = add("@/components/students/student-roster-page-content");
+    const eligibility = add("@/components/belt-tracker/eligibility-panel");
+    const mapping = add("@/components/students/student-import-mapping-step");
+    const session = add("@/components/schedule/session-detail-modal");
+    const sidebar = add("@/components/students/student-detail-sidebar");
     const studentBadge = add("@/components/students/student-rank-badge");
     const rankVisuals = add("@/components/belt-tracker/rank-visuals");
-    return `(()=>{const process={env:{NODE_ENV:"production"}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const root=require(${dom}).createRoot(document.getElementById('root'));const Page=require(${page}).StudentRosterPageContent;const StudentBadge=require(${studentBadge}).StudentRankBadge;const RankBadge=require(${rankVisuals}).RankBadge;const noop=()=>{};window.fixture.renderRoster=input=>root.render(React.createElement(Page,{actionMessage:null,activeBulkPanel:null,activeLoadError:null,allSelected:false,bulkActionError:null,bulkStatus:'active',canCreateStudents:false,canManageRoster:true,deleteError:null,filtered:input.filtered,fullRosterRequested:false,hasActiveFilters:false,hasNextPage:false,hasNewStudentFilter:false,hasPreviousPage:false,inactivityByStudentId:new Map(),inactivityThreshold:null,isAdding:false,isAddingTags:false,isDeleting:false,isInitialRosterLoading:false,isNewStudentYtd:false,isPagedLoading:false,isRosterRefreshing:false,isUpdatingStatus:false,newStudentDays:null,newStudentStartDate:null,onAddStudent:noop,onAddStudentSubmit:async()=>{},onAddTags:async()=>{},onBulkStatusChange:noop,onBulkStatusUpdate:async()=>{},onCancelDelete:noop,onCancelStatus:noop,onCancelTags:noop,onClearFilters:noop,onCloseStudentForm:noop,onDeleteSelected:async()=>{},onDismissActionMessage:noop,onDismissRosterQueryNotice:noop,onImportCsv:noop,onNextPage:noop,onOpenStudent:id=>window.fixture.opened.push(id),onPreviousPage:noop,onProgramFilterChange:noop,onRetryRosterLoad:noop,onSearchChange:noop,onSort:key=>window.fixture.sorts.push(key),onStatusFilterChange:noop,onTagInputChange:noop,onToggleBulkPanel:noop,onToggleSelect:id=>window.fixture.selected.push(id),onToggleSelectAll:noop,page:1,pageEnd:2,pageStart:1,pagedTotal:2,programFilter:'',programs:[],search:'',selectedCount:0,selectedIds:new Set(),showForm:false,sortDir:input.sortDir??'asc',sortKey:input.sortKey??'name',statusFilter:'',studentsCount:2,tagInput:'',totalPages:1,usesDerivedRosterFilters:false,visibleTotal:2}));window.fixture.renderBadges=()=>root.render(React.createElement('div',null,React.createElement(StudentBadge,{name:'Student yellow tip',colorHex:'#EAB308',isTip:true,tipColorHex:'#22C55E'}),React.createElement(RankBadge,{name:'Belt yellow tip',color:'#EAB308',isTip:true,tipColor:'#22C55E'})));})();`;
+    return `(()=>{const process={env:{NODE_ENV:"production"}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const root=require(${dom}).createRoot(document.getElementById('root'));const Page=require(${page}).StudentRosterPageContent;const StudentBadge=require(${studentBadge}).StudentRankBadge;const RankBadge=require(${rankVisuals}).RankBadge;const noop=()=>{};window.fixture.renderRoster=input=>root.render(React.createElement(Page,{actionMessage:null,activeBulkPanel:null,activeLoadError:null,allSelected:false,bulkActionError:null,bulkStatus:'active',canCreateStudents:false,canManageRoster:true,deleteError:null,filtered:input.filtered,fullRosterRequested:false,hasActiveFilters:false,hasNextPage:false,hasNewStudentFilter:false,hasPreviousPage:false,inactivityByStudentId:new Map(),inactivityThreshold:null,isAdding:false,isAddingTags:false,isDeleting:false,isInitialRosterLoading:false,isNewStudentYtd:false,isPagedLoading:false,isRosterRefreshing:false,isUpdatingStatus:false,newStudentDays:null,newStudentStartDate:null,onAddStudent:noop,onAddStudentSubmit:async()=>{},onAddTags:async()=>{},onBulkStatusChange:noop,onBulkStatusUpdate:async()=>{},onCancelDelete:noop,onCancelStatus:noop,onCancelTags:noop,onClearFilters:noop,onCloseStudentForm:noop,onDeleteSelected:async()=>{},onDismissActionMessage:noop,onDismissRosterQueryNotice:noop,onImportCsv:noop,onNextPage:noop,onOpenStudent:id=>window.fixture.opened.push(id),onPreviousPage:noop,onProgramFilterChange:noop,onRetryRosterLoad:noop,onSearchChange:noop,onSort:key=>window.fixture.sorts.push(key),onStatusFilterChange:noop,onTagInputChange:noop,onToggleBulkPanel:noop,onToggleSelect:id=>window.fixture.selected.push(id),onToggleSelectAll:noop,page:1,pageEnd:2,pageStart:1,pagedTotal:2,programFilter:'',programs:[],search:'',selectedCount:0,selectedIds:new Set(),showForm:false,sortDir:input.sortDir??'asc',sortKey:input.sortKey??'name',statusFilter:'',studentsCount:2,tagInput:'',totalPages:1,usesDerivedRosterFilters:false,visibleTotal:2}));window.fixture.renderBadges=()=>root.render(React.createElement('div',null,React.createElement(StudentBadge,{name:'Student yellow tip',colorHex:'#EAB308',isTip:true,tipColorHex:'#22C55E'}),React.createElement(RankBadge,{name:'Belt yellow tip',color:'#EAB308',isTip:true,tipColor:'#22C55E'})));
+const Eligibility = require(${eligibility}).EligibilityPanel;
+const Mapping = require(${mapping}).StudentImportMappingStep;
+const Session = require(${session}).ScheduleSessionDetailModal;
+const Sidebar = require(${sidebar}).StudentDetailSidebar;
+
+window.fixture.renderEligibility = (props) => {
+  root.render(React.createElement(Eligibility, props));
+};
+
+window.fixture.renderSession = (props) => {
+  root.render(React.createElement(Session, props));
+};
+
+window.fixture.renderSidebar = (props) => {
+  root.render(React.createElement(Sidebar, props));
+};
+
+window.fixture.renderMappings = (instances) => {
+  root.render(
+    React.createElement(
+      React.Fragment,
+      null,
+      ...instances.map((props, index) =>
+        React.createElement(Mapping, { ...props, key: index }),
+      ),
+    ),
+  );
+};
+})();`;
   }
   const react = add("react");
   const dom = add("react-dom/client");

@@ -13,6 +13,7 @@ import {
   getStudentImportStageIndex,
   getStudentImportErrorMessage,
   isPaymentStatusHeader,
+  mockParseCSV,
   parseCsvText,
   pluralize,
 } from "../src/lib/student-import-page-model.ts";
@@ -82,7 +83,7 @@ describe("student import page model", () => {
     assert.equal(isPaymentStatusHeader("Student Status"), false);
   });
 
-  it("parses quoted commas, escaped quotes, and blank lines like the import preview", () => {
+  it("parses valid CSV and rejects normalized duplicate headers through the FileReader promise", async () => {
     assert.deepEqual(
       parseCsvText(
         'Name,Notes\n"Ari Lane","Loves throws, sweeps"\n\n"Bo ""The Bear"" Kim",Ready\n',
@@ -93,6 +94,25 @@ describe("student import page model", () => {
         ['Bo "The Bear" Kim', "Ready"],
       ],
     );
+    const previousFileReader = globalThis.FileReader;
+    globalThis.FileReader = class {
+      readAsText(file) {
+        this.onload({ target: { result: file.contents } });
+      }
+    };
+    try {
+      assert.deepEqual(await mockParseCSV({ contents: "" }), { headers: [], rows: [] });
+      assert.deepEqual(await mockParseCSV({ contents: 'Name,Notes\nAri,"Throws, sweeps"' }), {
+        headers: ["Name", "Notes"],
+        rows: [{ Name: "Ari", Notes: "Throws, sweeps" }],
+      });
+      await assert.rejects(
+        mockParseCSV({ contents: "First Name, first-name \nAri,Lane" }),
+        /Duplicate CSV header 'first-name'/,
+      );
+    } finally {
+      globalThis.FileReader = previousFileReader;
+    }
   });
 
   it("returns owner-facing labels for mapped Koaryu fields", () => {

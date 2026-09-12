@@ -699,27 +699,45 @@ export function parseCsvText(text: string): string[][] {
 export function mockParseCSV(
   file: File,
 ): Promise<{ headers: string[]; rows: Record<string, string>[] }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = (event.target?.result as string) || "";
-      const parsedRows = parseCsvText(text);
-      if (parsedRows.length === 0) {
-        resolve({ headers: [], rows: [] });
-        return;
-      }
+      try {
+        const text = (event.target?.result as string) || "";
+        const parsedRows = parseCsvText(text);
+        if (parsedRows.length === 0) {
+          resolve({ headers: [], rows: [] });
+          return;
+        }
 
-      const headers = parsedRows[0].map((value) => value.trim());
-      const rows = parsedRows.slice(1).map((values) => {
-        const row: Record<string, string> = {};
-        headers.forEach((header, index) => {
-          row[header] = values[index]?.trim() || "";
+        const headers = parsedRows[0].map((value) => value.trim());
+        const normalizedHeaders = new Set<string>();
+        for (const header of headers) {
+          const normalized = normalizeHeader(header);
+          if (normalizedHeaders.has(normalized)) {
+            reject(
+              new Error(
+                `Duplicate CSV header '${header}' found. Rename or remove the duplicate column and try again.`,
+              ),
+            );
+            return;
+          }
+          normalizedHeaders.add(normalized);
+        }
+        const rows = parsedRows.slice(1).map((values) => {
+          const row: Record<string, string> = {};
+          headers.forEach((header, index) => {
+            row[header] = values[index]?.trim() || "";
+          });
+          return row;
         });
-        return row;
-      });
 
-      resolve({ headers, rows });
+        resolve({ headers, rows });
+      } catch (error) {
+        reject(error);
+      }
     };
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read the CSV file."));
     reader.readAsText(file);
   });
 }

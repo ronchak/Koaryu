@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +40,7 @@ export function StudentImportMappingStep({
   onReset,
   onValidate,
 }: StudentImportMappingStepProps) {
+  const instanceId = useId();
   const duplicateMappingEntries = useMemo(() => {
     const counts = Object.values(mapping).reduce<Record<string, number>>((acc, field) => {
       if (!field) return acc;
@@ -170,9 +171,9 @@ export function StudentImportMappingStep({
           </div>
         </div>
 
-        {headers.map((header) => {
+        {headers.map((header, columnIndex) => {
           const selectedField = mapping[header] || "";
-          const selectId = `csv-map-${header.replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
+          const selectId = `${instanceId}-csv-map-${columnIndex}`;
           const sampleValues = rows
             .slice(0, 3)
             .map((row) => row[header])

@@ -33,6 +33,7 @@ interface StudentDetailSidebarProps {
   promotionCount: number;
   isLoadingBeltData: boolean;
   beltLoadError: string | null;
+  businessDate: string;
 }
 
 function formatDate(d?: string | null) {
@@ -53,10 +54,13 @@ function formatDateTime(d?: string | null) {
   });
 }
 
-function calculateAge(dob?: string | null): string {
+function calculateAge(dob: string | null | undefined, businessDate: string): string {
   if (!dob) return "—";
-  const diff = Date.now() - new Date(dob).getTime();
-  return `${Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25))} yrs`;
+  const [birthYear, birthMonth, birthDay] = dob.split("-").map(Number);
+  const [currentYear, currentMonth, currentDay] = businessDate.split("-").map(Number);
+  const birthdayHasPassed =
+    currentMonth > birthMonth || (currentMonth === birthMonth && currentDay >= birthDay);
+  return `${currentYear - birthYear - (birthdayHasPassed ? 0 : 1)} yrs`;
 }
 
 export function StudentDetailSidebar({
@@ -77,8 +81,11 @@ export function StudentDetailSidebar({
   promotionCount,
   isLoadingBeltData,
   beltLoadError,
+  businessDate,
 }: StudentDetailSidebarProps) {
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const beltFactsLoading = isLoadingBeltData && !beltLoadError;
+  const beltFactsUnavailable = Boolean(beltLoadError);
 
   return (
     <aside
@@ -158,7 +165,7 @@ export function StudentDetailSidebar({
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Age</span>
           <span className="text-text-primary font-mono text-xs">
-            {calculateAge(student.date_of_birth)}
+            {calculateAge(student.date_of_birth, businessDate)}
           </span>
         </div>
         <div className="flex justify-between text-sm">
@@ -191,6 +198,10 @@ export function StudentDetailSidebar({
               />
               <span className="text-xs text-muted">{currentRank.ladderName}</span>
             </div>
+          ) : beltFactsUnavailable ? (
+            <p className="text-sm text-text-secondary">Rank unavailable</p>
+          ) : beltFactsLoading ? (
+            <p className="text-sm text-text-secondary">Loading rank…</p>
           ) : (
             <p className="text-sm text-text-secondary">No rank assigned</p>
           )}
@@ -199,7 +210,11 @@ export function StudentDetailSidebar({
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Next rank</span>
           <span className="text-text-primary text-xs">
-            {nextRank ? (
+            {beltFactsUnavailable ? (
+              "Unavailable"
+            ) : beltFactsLoading ? (
+              "Loading…"
+            ) : nextRank ? (
               <StudentRankBadge
                 name={nextRank.name}
                 colorHex={nextRank.color_hex}
@@ -217,13 +232,19 @@ export function StudentDetailSidebar({
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Last promotion</span>
           <span className="text-text-primary font-mono text-xs">
-            {formatDateTime(latestPromotionAt)}
+            {beltFactsUnavailable
+              ? "Unavailable"
+              : beltFactsLoading
+                ? "Loading…"
+                : formatDateTime(latestPromotionAt)}
           </span>
         </div>
 
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Recorded promotions</span>
-          <span className="text-text-primary font-mono text-xs">{promotionCount}</span>
+          <span className="text-text-primary font-mono text-xs">
+            {beltFactsUnavailable ? "Unavailable" : beltFactsLoading ? "Loading…" : promotionCount}
+          </span>
         </div>
 
         {beltLoadError ? (
