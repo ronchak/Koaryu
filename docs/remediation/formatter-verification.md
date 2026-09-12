@@ -8,6 +8,8 @@ The 100-column choice balances existing style and initial reflow. Ruff 88 would 
 
 The mechanical commit contains formatter output only. Root independently compared Python ASTs for all 256 changed Python files, with no differences, and regenerated all 416 changed frontend authored files from the base with pinned Prettier, with no mismatches. Generated readiness metadata, API types, Vercel configuration, migrations and SQL verification files remain byte-identical. The dependency locks add only the two formatter packages.
 
+The first candidate CI run exposed one moved scanner fingerprint: the public browser storage key in `student-roster-location.ts` moved from line 25 to line 34. The current-tree `.gitleaksignore` entry follows that exact line change. Its historical commit entry and the scanner rules remain unchanged.
+
 ## Explicit exceptions
 
 The full frontend pass initially failed 16 source-text assertions in ten suites. A targeted rerun exposed two more one-line confirmation-text constraints. All assertions are retained. Fifteen individually listed source files remain byte-identical to the base and are excluded in `frontend/.prettierignore`, each with its owning test named. These are temporary constraints, not claimed formatting coverage. Remove an exception only with the owning test/presentation change and behavioral verification. Do not reflow an excluded file inside an unrelated behavior PR.
