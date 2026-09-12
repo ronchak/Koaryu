@@ -5,17 +5,31 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
+from supabase import Client
 
+from app.core.config import Settings
 from app.schemas.billing import StudentBillingEnrollmentResponse
+from app.services.billing_autopay import payer_autopay_authorized
+from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_currency_policy import NEW_TUITION_CURRENCY_DETAIL, is_usd_currency
+from app.services.billing_enrollment_records import BillingEnrollmentRecords
+from app.services.billing_fees import application_fee_percent
 from app.services.billing_invoice_projection import _object_get, _stripe_id
+from app.services.billing_payers import recompute_payer_balance
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
     ENROLLMENT_ACTIVATE_AUTOPAY_OPERATION_TYPE,
     ENROLLMENT_ACTIVATE_INVOICE_OPERATION_TYPE,
 )
-from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
+from app.services.billing_subscription_webhook_projection import (
+    BillingSubscriptionWebhookProjector,
+)
+from app.services.platform_billing_helpers import (
+    build_idempotency_key,
+    normalize_idempotency_key,
+    stable_hash,
+)
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from app.services.stripe_service import StripeService
 
@@ -38,11 +52,23 @@ ACTIVATABLE_SUBSCRIPTION_STATUSES = frozenset({"active", "trialing", "past_due",
 
 
 class BillingEnrollmentActivationWorkflow:
-    def __init__(self, owner: Any, *, stripe_service_cls: type[StripeService] = StripeService):
-        self.owner = owner
-        self.supabase = owner.supabase
+    def __init__(
+        self,
+        records: BillingEnrollmentRecords,
+        connect_accounts: BillingConnectAccountStore,
+        settings: Settings,
+        *,
+        stripe_service_cls: type[StripeService] = StripeService,
+    ):
+        self.records = records
+        self.connect_accounts = connect_accounts
+        self.settings = settings
+        self.supabase: Client = records.supabase
         self.stripe_service_cls = stripe_service_cls
-        self.lifecycle = owner._stripe_lifecycle()
+        self.subscription_projector = BillingSubscriptionWebhookProjector(
+            self.supabase,
+            connect_accounts,
+        )
 
     def activate(
         self,
@@ -56,7 +82,7 @@ class BillingEnrollmentActivationWorkflow:
             raise HTTPException(
                 status_code=400, detail="Idempotency-Key is required for enrollment activation."
             )
-        enrollment = self.owner._get_row_or_404(
+        enrollment = self.records.get_row_or_404(
             "student_billing_enrollments",
             enrollment_id,
             studio_id,
@@ -82,7 +108,7 @@ class BillingEnrollmentActivationWorkflow:
             )
         if not enrollment.get("payer_id"):
             raise HTTPException(status_code=409, detail="Assign a payer before activation.")
-        plan = self.owner._get_row_or_404(
+        plan = self.records.get_row_or_404(
             "billing_plans",
             enrollment["billing_plan_id"],
             studio_id,
@@ -99,7 +125,7 @@ class BillingEnrollmentActivationWorkflow:
         account_id = str(account["stripe_connected_account_id"])
         generation = self._account_generation(account)
         price = self._exact_active_plan_price(plan, account_id, generation)
-        payer = self.owner._get_row_or_404(
+        payer = self.records.get_row_or_404(
             "billing_payers", enrollment["payer_id"], studio_id, "Payer not found."
         )
         self._require_exact_payer(payer, account_id, generation, collection_mode)
@@ -125,7 +151,10 @@ class BillingEnrollmentActivationWorkflow:
                     billing_plan_id=str(plan["id"]),
                     stripe_connected_account_id=account_id,
                     connect_account_generation=generation,
-                    application_fee_percent=self.owner._application_fee_percent(account),
+                    application_fee_percent=application_fee_percent(
+                        account.get("platform_fee_bps"),
+                        self.settings.BILLING_PLATFORM_FEE_BPS,
+                    ),
                     caller_request_key_sha256=caller_request_key_sha256,
                 )
             except PostgrestAPIError as exc:
@@ -150,8 +179,12 @@ class BillingEnrollmentActivationWorkflow:
             group = reservation["subscription"]
             reservation_created = reservation.get("outcome") == "created"
         else:
-            group = self.owner._find_or_create_billing_subscription(
-                enrollment, plan, payer, account
+            group = self.records.find_or_create_billing_subscription(
+                enrollment,
+                plan,
+                payer,
+                account,
+                default_fee_bps=self.settings.BILLING_PLATFORM_FEE_BPS,
             )
         group = self._bind_local_group_generation(
             group,
@@ -159,9 +192,9 @@ class BillingEnrollmentActivationWorkflow:
             generation=generation,
             payer=payer,
         )
-        lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(studio_id, group["id"])
+        lock_token = self.records.claim_subscription_quantity_sync_lock(studio_id, group["id"])
         try:
-            enrollment = self.owner._get_row_or_404(
+            enrollment = self.records.get_row_or_404(
                 "student_billing_enrollments",
                 enrollment_id,
                 studio_id,
@@ -308,7 +341,7 @@ class BillingEnrollmentActivationWorkflow:
                     ).data
                 )
             if group_exists:
-                self.lifecycle._release_subscription_quantity_sync_lock(
+                self.records.release_subscription_quantity_sync_lock(
                     studio_id, group["id"], lock_token
                 )
 
@@ -405,7 +438,7 @@ class BillingEnrollmentActivationWorkflow:
                     operation,
                     exc,
                 )
-        key = self.owner._idempotency_key(
+        key = build_idempotency_key(
             "enrollment-activate", context.operation_id, branch.replace("_", "-")
         )
         try:
@@ -420,7 +453,10 @@ class BillingEnrollmentActivationWorkflow:
                         if enrollment["collection_mode"] == "autopay"
                         else "send_invoice"
                     ),
-                    application_fee_percent=self.owner._application_fee_percent(account),
+                    application_fee_percent=application_fee_percent(
+                        account.get("platform_fee_bps"),
+                        self.settings.BILLING_PLATFORM_FEE_BPS,
+                    ),
                     default_payment_method=(
                         payer.get("default_payment_method_id")
                         if enrollment["collection_mode"] == "autopay"
@@ -433,9 +469,7 @@ class BillingEnrollmentActivationWorkflow:
                     idempotency_key=key,
                 )
                 subscription_id = _stripe_id(provider)
-                item_id = self.lifecycle._subscription_item_id_for_enrollment(
-                    provider, enrollment["id"]
-                )
+                item_id = self._subscription_item_id_for_enrollment(provider, enrollment["id"])
             elif branch == "add_item":
                 provider = stripe_service.create_connected_subscription_item(
                     account_id=context.stripe_connected_account_id,
@@ -569,7 +603,7 @@ class BillingEnrollmentActivationWorkflow:
         intent: dict[str, Any],
         check_provider: bool,
     ) -> None:
-        current_group = self.owner._get_row_or_404(
+        current_group = self.records.get_row_or_404(
             "billing_subscriptions",
             group["id"],
             context.studio_id,
@@ -655,7 +689,10 @@ class BillingEnrollmentActivationWorkflow:
                 group=group,
             )
             projected_group = (
-                self.owner._project_subscription(provider, context.stripe_connected_account_id)
+                self.subscription_projector.project_subscription(
+                    provider,
+                    context.stripe_connected_account_id,
+                )
                 or group
             )
             if projected_group.get("id") != group.get("id"):
@@ -745,7 +782,7 @@ class BillingEnrollmentActivationWorkflow:
             return existing
         subscription_id = group.get("stripe_subscription_id")
         item_id = (
-            self.owner._subscription_item_id_for_group_plan(
+            self.records.subscription_item_id_for_group_plan(
                 enrollment["studio_id"], group["id"], plan["id"]
             )
             if subscription_id
@@ -760,7 +797,7 @@ class BillingEnrollmentActivationWorkflow:
         else:
             branch = "update_quantity"
             quantity = (
-                self.owner._active_enrollment_count_for_subscription_item(
+                self.records.active_enrollment_count_for_subscription_item(
                     enrollment["studio_id"],
                     group["id"],
                     item_id,
@@ -919,7 +956,7 @@ class BillingEnrollmentActivationWorkflow:
             raise HTTPException(status_code=409, detail="Payer must be synchronized first.")
         if mode == "autopay" and (
             not payer.get("default_payment_method_id")
-            or not self.owner._payer_autopay_authorized(payer)
+            or not payer_autopay_authorized(self.supabase, self.connect_accounts, payer)
         ):
             raise HTTPException(
                 status_code=409,
@@ -965,7 +1002,7 @@ class BillingEnrollmentActivationWorkflow:
                 update = update.is_("stripe_subscription_id", "null")
             result = update.execute()
             if not result.data:
-                group = self.owner._get_row_or_404(
+                group = self.records.get_row_or_404(
                     "billing_subscriptions",
                     group["id"],
                     group["studio_id"],
@@ -990,7 +1027,7 @@ class BillingEnrollmentActivationWorkflow:
         operation: dict[str, Any],
         intent: dict[str, Any],
     ) -> dict[str, Any]:
-        enrollment = self.owner._get_row_or_404(
+        enrollment = self.records.get_row_or_404(
             "student_billing_enrollments",
             enrollment_id,
             context.studio_id,
@@ -1075,8 +1112,16 @@ class BillingEnrollmentActivationWorkflow:
         ):
             raise RuntimeError("enrollment_activation_item_readback_mismatch")
 
+    @staticmethod
+    def _subscription_item_id_for_enrollment(subscription: Any, enrollment_id: str) -> str | None:
+        items = _object_get(_object_get(subscription, "items") or {}, "data") or []
+        for item in items:
+            if (_object_get(item, "metadata") or {}).get("enrollment_id") == enrollment_id:
+                return _stripe_id(item)
+        return _stripe_id(items[0]) if items else None
+
     def _local_ready_account(self, studio_id: str) -> dict[str, Any]:
-        account = self.owner._connect_accounts().ensure_row(studio_id)
+        account = self.connect_accounts.ensure_row(studio_id)
         if (
             account.get("studio_id") != studio_id
             or not account.get("stripe_connected_account_id")
@@ -1184,7 +1229,7 @@ class BillingEnrollmentActivationWorkflow:
 
     def _recompute_balance_or_raise(self, studio_id: str, payer_id: str) -> None:
         try:
-            self.owner._recompute_payer_balance(studio_id, payer_id)
+            recompute_payer_balance(self.supabase, studio_id, payer_id)
         except Exception as exc:
             raise HTTPException(
                 status_code=503,

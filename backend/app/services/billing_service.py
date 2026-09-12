@@ -44,12 +44,11 @@ from app.services.billing_payments import BillingPaymentManager
 from app.services.billing_reconciliation import BillingReconciliationService
 from app.services.billing_plans import BillingPlanManager
 from app.services.billing_system_status import BillingSystemStatusReporter
-from app.services.billing_private_facade import BillingPrivateFacadeMixin
 from app.services.billing_webhook_projection import BillingWebhookProjector
 from app.services.stripe_service import StripeService
 
 
-class BillingService(BillingPrivateFacadeMixin):
+class BillingService:
     def __init__(self, supabase: Client):
         self.supabase = supabase
         self.settings = get_settings()
@@ -85,6 +84,14 @@ class BillingService(BillingPrivateFacadeMixin):
         return BillingPaymentManager(
             self.supabase,
             self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        )
+
+    def _enrollment_manager(self) -> BillingEnrollmentManager:
+        return BillingEnrollmentManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
             stripe_service_cls=StripeService,
         )
 
@@ -296,21 +303,15 @@ class BillingService(BillingPrivateFacadeMixin):
         )
 
     async def list_subscriptions(self, studio_id: str) -> list[BillingSubscriptionResponse]:
-        return await BillingEnrollmentManager(
-            self, stripe_service_cls=StripeService
-        ).list_subscriptions(studio_id)
+        return await self._enrollment_manager().list_subscriptions(studio_id)
 
     async def list_enrollments(self, studio_id: str) -> list[StudentBillingEnrollmentResponse]:
-        return await BillingEnrollmentManager(
-            self, stripe_service_cls=StripeService
-        ).list_enrollments(studio_id)
+        return await self._enrollment_manager().list_enrollments(studio_id)
 
     async def list_student_billing(
         self, student_id: str, studio_id: str
     ) -> list[StudentBillingEnrollmentResponse]:
-        return await BillingEnrollmentManager(
-            self, stripe_service_cls=StripeService
-        ).list_student_billing(
+        return await self._enrollment_manager().list_student_billing(
             student_id,
             studio_id,
         )
@@ -321,9 +322,7 @@ class BillingService(BillingPrivateFacadeMixin):
         studio_id: str,
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
-        return await BillingEnrollmentManager(
-            self, stripe_service_cls=StripeService
-        ).add_student_billing_enrollment(
+        return await self._enrollment_manager().add_student_billing_enrollment(
             data,
             studio_id,
             actor_id,
@@ -336,9 +335,7 @@ class BillingService(BillingPrivateFacadeMixin):
         studio_id: str,
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
-        return await BillingEnrollmentManager(
-            self, stripe_service_cls=StripeService
-        ).update_enrollment(
+        return await self._enrollment_manager().update_enrollment(
             enrollment_id,
             data,
             studio_id,
@@ -352,10 +349,7 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: str | None = None,
     ) -> StudentBillingEnrollmentResponse:
-        return await BillingEnrollmentManager(
-            self,
-            stripe_service_cls=StripeService,
-        ).activate_enrollment(
+        return await self._enrollment_manager().activate_enrollment(
             enrollment_id,
             studio_id,
             actor_id,
@@ -370,9 +364,9 @@ class BillingService(BillingPrivateFacadeMixin):
         idempotency_key: str | None,
         reason_code: str,
     ) -> dict:
-        return await BillingEnrollmentManager(
-            self, stripe_service_cls=StripeService
-        ).schedule_period_end(enrollment_id, studio_id, actor_id, idempotency_key, reason_code)
+        return await self._enrollment_manager().schedule_period_end(
+            enrollment_id, studio_id, actor_id, idempotency_key, reason_code
+        )
 
     async def revoke_enrollment_period_end(
         self,
@@ -383,9 +377,7 @@ class BillingService(BillingPrivateFacadeMixin):
         idempotency_key: str | None,
         reason_code: str,
     ) -> dict:
-        return await BillingEnrollmentManager(
-            self, stripe_service_cls=StripeService
-        ).revoke_scheduled_transition(
+        return await self._enrollment_manager().revoke_scheduled_transition(
             transition_intent_id,
             expected_revision,
             studio_id,
@@ -402,14 +394,12 @@ class BillingService(BillingPrivateFacadeMixin):
         idempotency_key: str | None,
         reason_code: str,
     ) -> dict:
-        return await BillingEnrollmentManager(
-            self, stripe_service_cls=StripeService
-        ).cancel_immediate(enrollment_id, studio_id, actor_id, idempotency_key, reason_code)
+        return await self._enrollment_manager().cancel_immediate(
+            enrollment_id, studio_id, actor_id, idempotency_key, reason_code
+        )
 
     async def process_due_enrollment_transitions(self, *, worker_id: str, limit: int = 25) -> dict:
-        return await BillingEnrollmentManager(
-            self, stripe_service_cls=StripeService
-        ).process_due_transitions(
+        return await self._enrollment_manager().process_due_transitions(
             worker_id=worker_id,
             limit=limit,
         )
@@ -421,9 +411,7 @@ class BillingService(BillingPrivateFacadeMixin):
         studio_id: str,
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
-        return await BillingEnrollmentManager(
-            self, stripe_service_cls=StripeService
-        ).set_enrollment_status(
+        return await self._enrollment_manager().set_enrollment_status(
             enrollment_id,
             status_value,
             studio_id,

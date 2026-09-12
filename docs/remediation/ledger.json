@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "9d99ad53cddcbd03989671ff408e1ac30e47e9e0",
+  "last_reconciled_main": "df2ccedab3833e4306025c4eac20846496de97fe",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2429,12 +2429,12 @@
       "id": "BB1-09",
       "title": "Split billing files still share an implicit global owner",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "Payment and reconciliation now use concrete owners and projector interfaces. Their facade and webhook forwarding routes are removed, and the status loader targets Connect actions directly. Earlier changes covered plans, payers, projections, Connect, autopay and invoices. The remaining eight facade methods and four opaque owners belong to the enrollment family, so this finding stays pending. ACS1-07 remains separate.",
+      "disposition": "fixed",
+      "reason": "All billing owner/service back-references, opaque workflow owners, private facade forwarding and the reverse import cycle are removed. Concrete command, record and projection owners preserve existing behavior. Activation and transitions retain their distinct recovery responsibilities. This closes the architectural root cause; separate financial defects and ACS1-07 remain pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "32f686bd6b4f3ce416deeb48d4a8184090ba43eb",
-      "verification": "Coordinator verified 16 payment algorithms, the tenant-scoped query, 24 payment projector methods, 32 webhook methods, six reconciliation workflows, the conversion helper and remaining facade/service contracts. The final affected run passed 225 tests. Source loses 82 lines and 22 definitions; tests retain 180 cases, lose seven helper definitions and gain 65 physical lines for actual dependencies and failure evidence. PROGRAM-REFUND-01 records the separate pre-existing database recovery gap.",
+      "verified_against": "20fb542acf697029c6b8f13862943cabd206473e",
+      "verification": "Coordinator verified moved algorithms, all existing public service methods, the unchanged operator body apart from one payer lookup, and the identical relocated period helper. Final affected coverage passed 341 tests. The billing graph has zero opaque owner/service fields or arguments, whole-self constructor injection, dynamic owner fallback or BillingService import cycle. See enrollment-ownership-verification.md.",
       "source_paths": [
         "backend/app/services/billing_enrollments.py",
         "backend/app/services/billing_enrollment_stripe_lifecycle.py",
@@ -2447,29 +2447,30 @@
         185,
         186,
         187,
-        188
+        188,
+        189
       ],
       "track": "Sol",
       "root_cause": "untyped-billing-boundaries",
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "backend/app/services/billing_enrollments.py",
-          "line": 26,
-          "observation": "The Any service owner supplies storage, identity, projection and audit through private forwarding methods."
-        },
-        {
-          "path": "backend/app/services/billing_enrollment_stripe_lifecycle.py",
-          "line": 25,
-          "observation": "__getattr__ forwards unspecified dependencies to the manager."
+          "path": "backend/app/services/billing_enrollment_records.py",
+          "line": 14,
+          "observation": "Concrete record owner replaces the lifecycle fallback and shared-manager dependency."
         },
         {
           "path": "backend/app/services/billing_enrollments.py",
-          "line": 352,
-          "observation": "The manager constructs the lifecycle and delegates methods back into it."
+          "line": 30,
+          "observation": "Manager receives concrete client/account/settings dependencies; workflow dispatch passes real record owners."
+        },
+        {
+          "path": "backend/app/services/billing_service.py",
+          "line": 51,
+          "observation": "Plain public composition class; the private facade and all underlying owner back-references are removed."
         }
       ],
-      "next_change": "Remove the enrollment manager, activation, transition and lifecycle back-references with concrete record/account/projection dependencies. Delete the remaining facade after every caller is verified; inspect dynamic forwarding and bound callbacks before closing the architecture finding.",
+      "next_change": "None for BB1-09. Continue separately tracked financial correctness, test fidelity, I/O and presentation work; do not reopen the old shared-owner pattern.",
       "validation_plan": "For each selected billing responsibility, verify moved algorithms and public contracts, retain financial/tenant/idempotency behavior, remove obsolete fixture/forwarding code and require fresh independent exact-head review/CI. Re-enumerate owners and facade methods after each merge; do not close this umbrella after one family.",
       "scope_constraints": "Do not replace the coordinator, move blocking I/O ownership, flatten recovery workflows or alter enrollment/date semantics.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -13175,15 +13176,15 @@
     }
   },
   "current_counts": {
-    "pending": 185,
-    "fixed": 78,
+    "pending": 184,
+    "fixed": 79,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 156,
+    "Sol": 155,
     "Astra": 29
   },
   "execution_policy": {
@@ -13195,12 +13196,12 @@
   },
   "current_disposition_tracks": {
     "pending": {
-      "Sol": 156,
+      "Sol": 155,
       "Astra": 29
     },
     "fixed": {
       "Astra": 22,
-      "Sol": 56
+      "Sol": 57
     },
     "rejected_after_verification": {
       "Sol": 1

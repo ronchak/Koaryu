@@ -18,7 +18,7 @@ from tests.billing_lifecycle_helpers import (
     _FakeSupabase,
 )
 from stripe import CardError as StripeCardError, IdempotencyError as StripeIdempotencyError
-from app.services.billing_fees import application_fee_amount
+from app.services.billing_fees import application_fee_amount, application_fee_percent
 from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_payment_projection import BillingPaymentEventProjector
 from app.services.billing_payers import payment_method_fields_from_payment_method
@@ -138,7 +138,13 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             ({"platform_fee_bps": 100}, 1, 129),
         ]:
             with self.subTest(account=account):
-                self.assertEqual(service._application_fee_percent(account), percent)
+                self.assertEqual(
+                    application_fee_percent(
+                        account.get("platform_fee_bps"),
+                        service.settings.BILLING_PLATFORM_FEE_BPS,
+                    ),
+                    percent,
+                )
                 self.assertEqual(
                     application_fee_amount(
                         12900,

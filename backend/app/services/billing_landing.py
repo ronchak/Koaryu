@@ -11,6 +11,7 @@ from supabase import Client
 from app.core.deps import ProviderDependency, run_supabase_operation
 from app.core.provider_runtime import SupabaseProviderRuntime
 from app.schemas.billing import BillingLandingResponse, BillingLandingAggregatesResponse
+from app.services.billing_payments import payment_cohort_period
 from app.services.billing_service import BillingService
 from app.services.platform_billing_service import PlatformBillingService
 from app.services.studio_scope import get_platform_subscription_access
@@ -19,21 +20,6 @@ from app.services.supabase_rpc import execute_required_rpc
 
 BILLING_LANDING_REQUEST_TIMEOUT_SECONDS = 30.0
 ProjectionT = TypeVar("ProjectionT")
-
-
-def payment_cohort_period(as_of: datetime | None = None) -> tuple[datetime, datetime]:
-    observed = as_of or datetime.now(timezone.utc)
-    if observed.tzinfo is None:
-        observed = observed.replace(tzinfo=timezone.utc)
-    start = observed.astimezone(timezone.utc).replace(
-        day=1, hour=0, minute=0, second=0, microsecond=0
-    )
-    end = (
-        start.replace(year=start.year + 1, month=1)
-        if start.month == 12
-        else start.replace(month=start.month + 1)
-    )
-    return start, end
 
 
 async def _diagnostics(client: Client, studio_id: str, role: str):

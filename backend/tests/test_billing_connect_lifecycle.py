@@ -1060,9 +1060,6 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
             }
         )
         _FakeStripeService.onboarding_calls = []
-        service._audit = lambda *_args, **_kwargs: self.fail(
-            "Hot onboarding path should not wait on audit writes."
-        )
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             link = asyncio.run(
@@ -1086,6 +1083,12 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         )
         self.assertIn(
             "ordinary-request-1", _FakeStripeService.onboarding_calls[0]["idempotency_key"]
+        )
+        self.assertFalse(
+            any(
+                query["table"] == "audit_logs" and query["insert"] is not None
+                for query in service.supabase.query_log
+            )
         )
 
     def test_existing_connect_account_requires_caller_key_before_provider_call(self):

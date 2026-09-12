@@ -7,7 +7,8 @@ from fastapi import HTTPException, Response
 
 from app.api.v1.endpoints.billing import get_billing_landing as endpoint
 from app.schemas.billing import StudioPaymentAccountResponse
-from app.services.billing_landing import get_billing_landing, payment_cohort_period
+from app.services.billing_landing import get_billing_landing
+from app.services.billing_payments import payment_cohort_period
 from datetime import datetime, timezone
 from tests.billing_landing_fixtures import billing_system_status
 

@@ -60,6 +60,21 @@ def build_external_payment_request_hash(
     return stable_hash(payload)
 
 
+def payment_cohort_period(as_of: datetime | None = None) -> tuple[datetime, datetime]:
+    observed = as_of or datetime.now(timezone.utc)
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    start = observed.astimezone(timezone.utc).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
+    end = (
+        start.replace(year=start.year + 1, month=1)
+        if start.month == 12
+        else start.replace(month=start.month + 1)
+    )
+    return start, end
+
+
 class BillingPaymentManager:
     def __init__(
         self,
@@ -94,8 +109,6 @@ class BillingPaymentManager:
         *,
         as_of: datetime | None = None,
     ) -> BillingPaymentCohortSummaryResponse:
-        from app.services.billing_landing import payment_cohort_period
-
         period_start, period_end = payment_cohort_period(as_of)
         result = execute_required_rpc(
             self.supabase,

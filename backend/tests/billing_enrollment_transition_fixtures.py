@@ -5,14 +5,10 @@ from datetime import datetime, timedelta
 
 from postgrest.exceptions import APIError as PostgrestAPIError
 
-from app.services.billing_subscription_webhook_projection import (
-    BillingSubscriptionWebhookProjector,
-)
 from app.services.billing_enrollments import BillingEnrollmentManager
 from app.services.platform_billing_helpers import stable_hash
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from tests.billing_enrollment_activation_fixtures import (
-    _Facade,
     _Stripe,
     _enrollment,
     _group,
@@ -23,34 +19,6 @@ from tests.billing_enrollment_activation_fixtures import (
 
 PERIOD_END = "2026-09-01T00:00:00+00:00"
 PERIOD_END_EPOCH = 1788220800
-
-
-class _TransitionFacade(_Facade):
-    def _project_subscription(self, provider, account_id, event_type=""):
-        group = self._get_row_or_404(
-            "billing_subscriptions", "group_1", "studio_1", "Group not found."
-        )
-        group.update(
-            {
-                "stripe_account_id": account_id,
-                "status": "canceled"
-                if event_type == "customer.subscription.deleted"
-                else provider["status"],
-                "cancel_at_period_end": bool(provider.get("cancel_at_period_end")),
-            }
-        )
-        if event_type == "customer.subscription.deleted":
-            for enrollment in self.supabase.tables["student_billing_enrollments"]:
-                if enrollment.get("billing_subscription_id") == group["id"]:
-                    enrollment.update(
-                        {
-                            "status": "canceled",
-                            "billing_status": "unpaid",
-                            "stripe_subscription_id": None,
-                            "stripe_subscription_item_id": None,
-                        }
-                    )
-        return dict(group)
 
 
 class _TransitionStripe(_Stripe):
@@ -337,4 +305,9 @@ def _tables(*, peers=None):
 
 
 def _manager(facade):
-    return BillingEnrollmentManager(facade, stripe_service_cls=_TransitionStripe)
+    return BillingEnrollmentManager(
+        facade.supabase,
+        facade.connect_accounts,
+        facade.settings,
+        stripe_service_cls=_TransitionStripe,
+    )

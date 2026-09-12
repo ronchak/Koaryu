@@ -13,15 +13,15 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 78 |
+| Fixed | 79 |
 | Resolved indirectly | 2 |
-| Pending | 185 |
+| Pending | 184 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Total | 278 |
 
-Pending work is split between 29 Astra and 156 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
+Pending work is split between 29 Astra and 155 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -35,13 +35,15 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 ## Current bounded run
 
+[The final enrollment ownership change](docs/remediation/enrollment-ownership-verification.md) removes the private facade and closes BB1-09. Billing components have concrete owners and no dependency cycle back into BillingService. Financial and database findings remain separately tracked.
+
 The owner resumed work on September 12 with a 50-point weekly usage cap and a 45-point stop-new-batches threshold. [The run plan](docs/remediation/budget-refactor-plan.md) records scope, order, ownership and wind-down requirements. Sol implements one batch per fresh thread; the coordinator reviews and integrates; each PR gets a separate fresh reviewer. Database implementation and proofs are excluded from this run.
 
 [PR182](https://github.com/ronchak/Koaryu/pull/182) merged as `d6bab29209d2ee4650b8f01e0ece474ff519f422`. It pins Ruff/Prettier and separates mechanical formatting from future behavior changes. It closes no audit observation. [Formatter verification](docs/remediation/formatter-verification.md) records tests, mechanical equivalence and fifteen explicit source-test exceptions.
 
 Draft [PR180](https://github.com/ronchak/Koaryu/pull/180) remains committed and pushed with six pending findings. The owner redirected this run to billing architecture, adding BB1-09 ahead of the original 55 delegated findings. The prior display worker stopped before implementation. Four blocked prerequisites remain explicitly excluded. The paused [HANDOFF](docs/remediation/HANDOFF.md) is historical context until this run's final refresh. The [production packet](docs/remediation/PRODUCTION-RELEASE.md) remains preparation for a human operator, not execution authority for this run.
 
-PR183 merged as `91184e762f99be7e3ebb26d959701d365797e57b`. Plans now have one concrete owner; the separate sync workflow and three facade aliases are deleted. Production shrinks by 35 lines and ten definitions, and tests by 48 lines with unchanged cases. This is partial progress on BB1-09, which remains pending. See [plan ownership verification](docs/remediation/billing-plan-ownership-verification.md).
+PR183 merged as `91184e762f99be7e3ebb26d959701d365797e57b`. Plans now have one concrete owner; the separate sync workflow and three facade aliases are deleted. Production shrinks by 35 lines and ten definitions, and tests by 48 lines with unchanged cases. This began the BB1-09 ownership remediation. See [plan ownership verification](docs/remediation/billing-plan-ownership-verification.md).
 
 PR184 merged as `0559911b4c6fd7c57095ffcfbff73a7c2bbb49ba`, deleting 35 facade methods and four unused enrollment forwarders. All remaining methods and test assertions are unchanged. The facade has 33 methods left; BB1-09 remains pending. Across PR183/184, affected billing test files are 14 lines smaller with unchanged cases.
 
@@ -88,6 +90,8 @@ PR184 merged as `0559911b4c6fd7c57095ffcfbff73a7c2bbb49ba`, deleting 35 facade m
 | [187](https://github.com/ronchak/Koaryu/pull/187) | Concrete Connect/autopay ownership and shared ordinary audit/redirect rules | `32b1ff3` | [Connect/autopay ownership](docs/remediation/connect-autopay-ownership-verification.md) |
 
 | [188](https://github.com/ronchak/Koaryu/pull/188) | One concrete invoice owner and real projection/consent fixtures | `9d99ad5` | [Invoice ownership](docs/remediation/invoice-ownership-verification.md) |
+
+| [189](https://github.com/ronchak/Koaryu/pull/189) | Concrete payment/reconciliation ownership and real refund/RPC fixtures | `df2cced` | [Payment/reconciliation ownership](docs/remediation/payment-reconciliation-ownership-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 

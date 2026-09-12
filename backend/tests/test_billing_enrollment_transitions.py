@@ -19,11 +19,14 @@ from app.services.billing_enrollment_transitions import (
 from app.services.platform_billing_helpers import stable_hash
 from app.services.billing_provider_operations import BillingProviderStepCoordinator
 from app.services.stripe_mutation_policy import StripeMutationBlocked
-from tests.billing_enrollment_activation_fixtures import _enrollment, _plan
+from tests.billing_enrollment_activation_fixtures import (
+    _EnrollmentFixture,
+    _enrollment,
+    _plan,
+)
 from tests.billing_enrollment_transition_fixtures import (
     PERIOD_END,
     PERIOD_END_EPOCH,
-    _TransitionFacade,
     _TransitionStripe,
     _apply_scheduled_item_phase,
     _item,
@@ -57,7 +60,8 @@ def test_schedule_phases_accepts_real_stripe_direct_list_shape():
 
 def _workflow(facade, *, now=None):
     return BillingEnrollmentTransitionWorkflow(
-        _manager(facade),
+        facade.records,
+        facade.connect_accounts,
         stripe_service_cls=_TransitionStripe,
         clock=(lambda: now) if now is not None else None,
     )
@@ -116,7 +120,7 @@ def _reset_provider():
 
 
 def test_whole_schedule_replays_without_second_provider_mutation():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
 
@@ -147,7 +151,7 @@ def test_whole_schedule_replays_without_second_provider_mutation():
 
 
 def test_completed_schedule_replay_repairs_failed_audit_without_provider_io():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
     failed_once = False
@@ -199,7 +203,7 @@ def test_completed_schedule_replay_repairs_failed_audit_without_provider_io():
 
 
 def test_completed_schedule_replay_rejects_wrong_existing_audit_identity():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
     asyncio.run(
@@ -237,7 +241,7 @@ def test_exact_legacy_audit_satisfies_each_completed_action_without_provider_io(
     operation_type,
     state,
 ):
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     workflow = _workflow(facade)
     completed = workflow.schedule_period_end(
@@ -285,7 +289,7 @@ def test_exact_legacy_audit_satisfies_each_completed_action_without_provider_io(
 
 
 def test_duplicate_legacy_audits_fail_closed_without_deterministic_insert():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
     asyncio.run(
@@ -323,7 +327,7 @@ def test_duplicate_legacy_audits_fail_closed_without_deterministic_insert():
     ],
 )
 def test_malformed_legacy_audit_fails_closed_without_provider_io(mutate):
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
     asyncio.run(
@@ -354,7 +358,7 @@ def test_malformed_legacy_audit_fails_closed_without_provider_io(mutate):
 
 
 def test_audit_unique_race_rereads_and_validates_exact_winner_once():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
     raced = False
@@ -388,10 +392,10 @@ def test_audit_unique_race_rereads_and_validates_exact_winner_once():
 
 
 def test_whole_schedule_cannot_insert_intent_while_activation_lock_is_held():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     workflow = _workflow(facade)
-    token = workflow.lifecycle._claim_subscription_quantity_sync_lock("studio_1", "group_1")
+    token = workflow.records.claim_subscription_quantity_sync_lock("studio_1", "group_1")
 
     try:
         with pytest.raises(HTTPException) as blocked:
@@ -403,7 +407,7 @@ def test_whole_schedule_cannot_insert_intent_while_activation_lock_is_held():
                 "staff_requested",
             )
     finally:
-        workflow.lifecycle._release_subscription_quantity_sync_lock("studio_1", "group_1", token)
+        workflow.records.release_subscription_quantity_sync_lock("studio_1", "group_1", token)
 
     assert blocked.value.status_code == 409
     assert facade.supabase.billing_enrollment_transition_intents == {}
@@ -411,7 +415,7 @@ def test_whole_schedule_cannot_insert_intent_while_activation_lock_is_held():
 
 
 def test_transition_replay_is_bound_to_original_actor():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
     asyncio.run(
@@ -441,7 +445,7 @@ def test_immediate_item_delete_is_one_mutation_and_projects_only_target():
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -475,7 +479,7 @@ def test_immediate_replay_rejects_changed_reason_without_provider_retry():
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -499,7 +503,7 @@ def test_immediate_replay_rejects_changed_reason_without_provider_retry():
 
 
 def test_ambiguous_schedule_enters_reconciliation_and_same_key_does_not_retry():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     _TransitionStripe.provider_error = RuntimeError("provider timeout")
     manager = _manager(facade)
@@ -525,7 +529,7 @@ def test_ambiguous_schedule_enters_reconciliation_and_same_key_does_not_retry():
 
 
 def test_safe_to_retry_recovery_executes_one_mutation_with_the_original_provider_key():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     _TransitionStripe.provider_error = RuntimeError("provider timeout")
     workflow = _workflow(facade)
@@ -561,7 +565,7 @@ def test_safe_to_retry_recovery_executes_one_mutation_with_the_original_provider
 
 
 def test_operation_only_recovery_cannot_mutate_before_intent_authorization():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     _TransitionStripe.provider_error = RuntimeError("provider timeout")
     workflow = _workflow(facade)
@@ -594,7 +598,7 @@ def test_operation_only_recovery_cannot_mutate_before_intent_authorization():
 
 
 def test_reconcile_only_recovery_reads_back_without_a_second_provider_mutation():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     _TransitionStripe.provider_error = RuntimeError("provider response lost")
     workflow = _workflow(facade)
@@ -627,7 +631,7 @@ def test_reconcile_only_recovery_reads_back_without_a_second_provider_mutation()
 
 
 def test_identity_drift_between_claim_and_mutation_reconciles_without_provider_write(monkeypatch):
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     original = _TransitionStripe.retrieve_connected_subscription
     reads = 0
@@ -656,7 +660,7 @@ def test_identity_drift_between_claim_and_mutation_reconciles_without_provider_w
 
 
 def test_whole_due_uses_readback_without_second_provider_mutation():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
 
@@ -677,7 +681,7 @@ def test_whole_due_uses_readback_without_second_provider_mutation():
 
 
 def test_whole_due_completes_after_cancellation_webhook_projects_first():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
 
@@ -687,7 +691,7 @@ def test_whole_due_completes_after_cancellation_webhook_projects_first():
         )
     )
     _TransitionStripe.subscriptions["sub_1"]["status"] = "canceled"
-    facade._project_subscription(
+    facade.subscription_projector.project_subscription(
         copy.deepcopy(_TransitionStripe.subscriptions["sub_1"]),
         "acct_1",
         event_type="customer.subscription.deleted",
@@ -728,7 +732,7 @@ def test_whole_due_schedulable_provider_stays_retryable_through_explicit_grace(
     provider_status,
     elapsed,
 ):
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()], status=provider_status)
     boundary = datetime.fromisoformat(PERIOD_END)
     workflow = _workflow(facade, now=boundary + elapsed)
@@ -755,7 +759,7 @@ def test_whole_due_schedulable_provider_stays_retryable_through_explicit_grace(
 
 
 def test_whole_due_escalates_active_provider_after_grace_bound():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     boundary = datetime.fromisoformat(PERIOD_END)
     workflow = _workflow(
@@ -780,7 +784,7 @@ def test_whole_due_escalates_active_provider_after_grace_bound():
 
 
 def test_whole_due_grace_converges_after_cancellation_webhook():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     boundary = datetime.fromisoformat(PERIOD_END)
     workflow = _workflow(facade, now=boundary + timedelta(minutes=1))
@@ -790,7 +794,7 @@ def test_whole_due_grace_converges_after_cancellation_webhook():
 
     deferred = workflow.process_due(worker_id="worker_1", limit=25)
     _TransitionStripe.subscriptions["sub_1"]["status"] = "canceled"
-    facade._project_subscription(
+    facade.subscription_projector.project_subscription(
         copy.deepcopy(_TransitionStripe.subscriptions["sub_1"]),
         "acct_1",
         event_type="customer.subscription.deleted",
@@ -824,7 +828,7 @@ def test_item_provider_schedule_applies_before_due_readback_and_converges_source
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -866,7 +870,7 @@ def test_legacy_item_due_keeps_provider_mutation_owner_and_direct_execution_path
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -926,7 +930,7 @@ def test_invoice_link_item_schedule_normalizes_real_subscription_invoice_setting
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")],
@@ -978,7 +982,7 @@ def test_shared_item_rotation_webhook_does_not_split_family_before_due_cas():
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_1",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item(quantity=2)])
     manager = _manager(facade)
 
@@ -1000,7 +1004,7 @@ def test_shared_item_rotation_webhook_does_not_split_family_before_due_cas():
     provider = copy.deepcopy(_TransitionStripe.subscriptions["sub_1"])
     BillingSubscriptionWebhookProjector(
         facade.supabase,
-        facade._connect_accounts(),
+        facade.connect_accounts,
     ).project_subscription_items(
         provider,
         facade.supabase.tables["billing_subscriptions"][0],
@@ -1043,7 +1047,7 @@ def test_item_schedule_revoke_releases_exact_schedule_once_without_canceling_sub
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -1090,7 +1094,7 @@ def test_attached_item_schedule_blocks_immediate_sibling_mutation():
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -1120,7 +1124,7 @@ def test_item_due_waits_for_provider_phase_through_grace_without_local_cancellat
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -1165,7 +1169,7 @@ def test_item_schedule_update_step_recovery_reuses_exact_step_key():
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1227,7 +1231,7 @@ def test_item_schedule_step_reconcile_only_reads_exact_provider_state_without_re
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1270,7 +1274,7 @@ def test_item_schedule_create_policy_denial_terminally_rejects_without_provider_
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1316,7 +1320,7 @@ def test_item_schedule_update_policy_denial_preserves_schedule_until_recovery_an
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )
@@ -1368,7 +1372,7 @@ def test_item_due_replacement_item_id_rebinds_every_surviving_shared_enrollment(
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_1",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item(quantity=2)])
     boundary = datetime.fromisoformat(PERIOD_END)
     workflow = _workflow(
@@ -1423,7 +1427,7 @@ def test_item_due_release_lost_response_converges_without_duplicate_release():
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -1484,7 +1488,7 @@ def test_item_due_reclaim_after_release_before_completion_does_not_release_twice
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -1528,7 +1532,7 @@ def test_item_due_release_failure_reconciles_with_owned_schedule_still_attached(
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -1566,7 +1570,7 @@ def test_item_due_never_releases_schedule_with_mismatched_owner_metadata():
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -1611,7 +1615,7 @@ def test_item_due_exact_schedule_readback_failure_never_projects(
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -1675,7 +1679,7 @@ def test_item_due_recovery_rejects_copied_metadata_on_different_schedule_id():
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     facade.supabase.tables["billing_plans"].append(_plan(id="plan_2", stripe_price_id="price_2"))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
@@ -1722,7 +1726,7 @@ def test_item_due_recovery_rejects_copied_metadata_on_different_schedule_id():
 
 
 def test_whole_due_unconfirmed_readback_marks_source_reconciliation_without_mutation():
-    facade = _TransitionFacade(_tables())
+    facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
     manager = _manager(facade)
     scheduled = asyncio.run(
@@ -1751,7 +1755,7 @@ def test_item_due_fact_drift_fails_before_provider_operation_or_mutation():
         stripe_subscription_id="sub_1",
         stripe_subscription_item_id="si_2",
     )
-    facade = _TransitionFacade(_tables(peers=[peer]))
+    facade = _EnrollmentFixture(_tables(peers=[peer]))
     _TransitionStripe.subscriptions["sub_1"] = _provider(
         items=[_item(), _item("si_2", price_id="price_2")]
     )

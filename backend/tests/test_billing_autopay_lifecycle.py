@@ -16,7 +16,7 @@ from app.schemas.billing import (
     StudentBillingEnrollmentUpdate,
 )
 from app.services.platform_billing_helpers import stable_hash
-from app.services.billing_autopay import BillingAutopayManager
+from app.services.billing_autopay import BillingAutopayManager, payer_autopay_authorized
 from app.services.billing_provider_operations import payer_setup_operation_disposition
 from app.services.stripe_service import StripeService
 from app.services.stripe_mutation_policy import StripeMutationBlocked
@@ -806,7 +806,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         payer["autopay_terms_accepted_at"] = "2026-08-26T12:05:00+00:00"
         service.supabase = _AutopayOperationSupabase(tables)
 
-        self.assertFalse(service._payer_autopay_authorized(payer))
+        self.assertFalse(
+            payer_autopay_authorized(service.supabase, service._connect_accounts(), payer)
+        )
 
     def test_abandoned_replacement_setup_keeps_existing_consent_enabled(self):
         service, database = self._enabled_payer_replacement_setup()
@@ -2800,9 +2802,13 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             projector._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = database.tables["billing_payers"][0]
-        self.assertTrue(service._payer_autopay_authorized(payer))
+        self.assertTrue(
+            payer_autopay_authorized(service.supabase, service._connect_accounts(), payer)
+        )
         database.consent["revoked_at"] = "2026-08-26T12:10:00+00:00"
-        self.assertFalse(service._payer_autopay_authorized(payer))
+        self.assertFalse(
+            payer_autopay_authorized(service.supabase, service._connect_accounts(), payer)
+        )
 
     def test_missing_provider_consent_never_enables_autopay(self):
         service, database, session = self._prepared_consent_setup()
