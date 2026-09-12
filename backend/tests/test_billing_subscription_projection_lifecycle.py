@@ -345,7 +345,7 @@ class BillingSubscriptionProjectionLifecycleTest(BillingPaymentsLifecycleTestBas
             }
         )
 
-        service._update_invoice_from_stripe(
+        service._webhook_projector().update_invoice_from_stripe(
             "invoice_1",
             "studio_1",
             {

@@ -73,6 +73,14 @@ class BillingService(BillingPrivateFacadeMixin):
             stripe_service_cls=StripeService,
         )
 
+    def _invoice_manager(self) -> BillingInvoiceManager:
+        return BillingInvoiceManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        )
+
     def project_connect_event(self, event: dict[str, Any]) -> None:
         self._webhook_projector().project_connect_event(event)
 
@@ -438,9 +446,7 @@ class BillingService(BillingPrivateFacadeMixin):
         ).disable_autopay(payer_id, studio_id, actor_id)
 
     async def list_invoices(self, studio_id: str) -> list[BillingInvoiceResponse]:
-        return await BillingInvoiceManager(self, stripe_service_cls=StripeService).list_invoices(
-            studio_id
-        )
+        return await self._invoice_manager().list_invoices(studio_id)
 
     async def create_invoice(
         self,
@@ -449,7 +455,7 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: Optional[str] = None,
     ) -> BillingInvoiceResponse:
-        return await BillingInvoiceManager(self, stripe_service_cls=StripeService).create_invoice(
+        return await self._invoice_manager().create_invoice(
             data,
             studio_id,
             actor_id,
@@ -463,7 +469,7 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: Optional[str] = None,
     ) -> BillingInvoiceResponse:
-        return await BillingInvoiceManager(self, stripe_service_cls=StripeService).finalize_invoice(
+        return await self._invoice_manager().finalize_invoice(
             invoice_id,
             studio_id,
             actor_id,
@@ -477,9 +483,7 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: Optional[str] = None,
     ) -> BillingInvoiceResponse:
-        return await BillingInvoiceManager(
-            self, stripe_service_cls=StripeService
-        ).retry_invoice_payment(
+        return await self._invoice_manager().retry_invoice_payment(
             invoice_id,
             studio_id,
             actor_id,
@@ -493,7 +497,7 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: Optional[str] = None,
     ) -> BillingInvoiceResponse:
-        return await BillingInvoiceManager(self, stripe_service_cls=StripeService).void_invoice(
+        return await self._invoice_manager().void_invoice(
             invoice_id,
             studio_id,
             actor_id,
@@ -503,9 +507,7 @@ class BillingService(BillingPrivateFacadeMixin):
     async def reconcile_invoice(
         self, invoice_id: str, studio_id: str, actor_id: str
     ) -> BillingInvoiceResponse:
-        return await BillingInvoiceManager(
-            self, stripe_service_cls=StripeService
-        ).reconcile_invoice(
+        return await self._invoice_manager().reconcile_invoice(
             invoice_id,
             studio_id,
             actor_id,

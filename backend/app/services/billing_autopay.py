@@ -49,6 +49,48 @@ AUTOPAY_EXISTING_CONSENT_UNVERIFIED_DETAIL = (
 )
 
 
+def payer_autopay_authorized(
+    client: Client,
+    connect_accounts: BillingConnectAccountStore,
+    payer: dict[str, Any],
+) -> bool:
+    if (
+        payer.get("autopay_status") != "enabled"
+        or not payer.get("autopay_terms_accepted_at")
+        or not payer.get("default_payment_method_id")
+        or not payer.get("stripe_account_id")
+        or not payer.get("studio_id")
+        or not payer.get("id")
+    ):
+        return False
+    account = connect_accounts.by_stripe_account(payer["stripe_account_id"])
+    if not account or account.get("studio_id") != payer.get("studio_id"):
+        return False
+    raw_generation = (account.get("metadata") or {}).get("connect_account_generation") or 1
+    try:
+        generation = int(raw_generation)
+    except (TypeError, ValueError):
+        return False
+    if generation <= 0:
+        return False
+    try:
+        consent = BillingProviderOperationCoordinator(client).read_active_payer_consent(
+            studio_id=payer["studio_id"],
+            payer_id=payer["id"],
+            terms_version=AUTOPAY_TERMS_VERSION,
+            stripe_connected_account_id=payer["stripe_account_id"],
+            connect_account_generation=generation,
+        )
+    except Exception:
+        return False
+    return bool(
+        consent.get("completed_at")
+        and not consent.get("revoked_at")
+        and not consent.get("superseded_at")
+        and consent.get("accepted_at") == payer.get("autopay_terms_accepted_at")
+    )
+
+
 class BillingAutopayManager:
     def __init__(
         self,

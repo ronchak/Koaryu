@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import copy
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
 import httpx
@@ -11,10 +12,9 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 from stripe import CardError as StripeCardError
 
 from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceItemCreate
-from app.services.billing_fees import application_fee_amount
-from app.services.billing_payers import recompute_payer_balance
-from app.services.billing_invoice_operations import (
-    BillingInvoiceOperationWorkflow,
+from app.services.billing_connect_accounts import BillingConnectAccountStore
+from app.services.billing_invoices import (
+    BillingInvoiceManager,
     INVOICE_CREATE_AMBIGUOUS_DETAIL,
     INVOICE_FINALIZE_AMBIGUOUS_DETAIL,
     INVOICE_FINALIZE_PREREAD_UNAVAILABLE_DETAIL,
@@ -24,7 +24,6 @@ from app.services.billing_invoice_operations import (
     INVOICE_VOID_PREREAD_UNAVAILABLE_DETAIL,
     INVOICE_VOID_AMBIGUOUS_DETAIL,
 )
-from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_provider_operations import (
     AUTOPAY_TERMS_VERSION,
     BillingProviderOperationContext,
@@ -33,7 +32,7 @@ from app.services.billing_provider_operations import (
     IDEMPOTENCY_CONFLICT_DETAIL,
     OPERATION_TERMINAL_DETAIL,
 )
-from app.services.platform_billing_helpers import build_idempotency_key, stable_hash
+from app.services.platform_billing_helpers import stable_hash
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
 from tests.fakes.billing_balance import BillingBalanceRpcMixin
@@ -79,22 +78,10 @@ class _InvoiceSupabase(BillingBalanceRpcMixin, BillingProviderOperationRpcMixin,
         return result
 
 
-class _Accounts:
-    def __init__(self, account: dict):
-        self.account = account
-
-    def ensure_row(self, studio_id: str) -> dict:
-        return {"studio_id": studio_id, **self.account}
-
-    def by_stripe_account(self, account_id: str) -> dict | None:
-        if account_id != self.account.get("stripe_connected_account_id"):
-            return None
-        return {"studio_id": "studio_1", **self.account}
-
-
-class _Facade:
+class _InvoiceFixture:
     def __init__(self, *, payer: dict | None = None, invoice: dict | None = None):
         self.account = {
+            "studio_id": "studio_1",
             "stripe_connected_account_id": "acct_1",
             "charges_enabled": True,
             "status": "charges_enabled",
@@ -108,90 +95,15 @@ class _Facade:
                 "billing_invoices": [invoice] if invoice else [],
                 "billing_invoice_items": [],
                 "audit_logs": [],
+                "studio_payment_accounts": [self.account],
             }
         )
-        self.projection_failures = 0
-        self.customer_sync_calls = 0
-
-    def _connect_accounts(self):
-        return _Accounts(self.account)
-
-    def _get_row_or_404(self, table, record_id, studio_id, detail):
-        row = next(
-            (
-                candidate
-                for candidate in self.supabase.tables.setdefault(table, [])
-                if candidate.get("id") == record_id and candidate.get("studio_id") == studio_id
-            ),
-            None,
+        self.settings = SimpleNamespace(BILLING_PLATFORM_FEE_BPS=50)
+        self.connect_accounts = BillingConnectAccountStore(
+            self.supabase,
+            settings=self.settings,
+            stripe_service_cls=_Stripe,
         )
-        if row is None:
-            raise HTTPException(status_code=404, detail=detail)
-        return row
-
-    def _ensure_record_in_studio(self, table, record_id, studio_id, detail):
-        self._get_row_or_404(table, record_id, studio_id, detail)
-
-    def _sync_payer_customer(self, *_args, **_kwargs):
-        self.customer_sync_calls += 1
-        raise AssertionError("invoice workflows must not synchronize a payer")
-
-    @staticmethod
-    def _payer_autopay_authorized(payer):
-        return bool(payer.get("verified_consent"))
-
-    @staticmethod
-    def _application_fee_amount(amount_cents, account):
-        return application_fee_amount(amount_cents, account.get("platform_fee_bps"), default_bps=50)
-
-    @staticmethod
-    def _idempotency_key(*parts):
-        return build_idempotency_key(*parts)
-
-    def _audit(self, studio_id, actor_id, action, entity_id, metadata):
-        self.supabase.tables["audit_logs"].append(
-            {
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": action,
-                "entity_id": entity_id,
-                "metadata": metadata,
-            }
-        )
-
-    def _update_invoice_from_stripe(self, invoice_id, studio_id, provider, account_id):
-        if self.projection_failures:
-            self.projection_failures -= 1
-            raise RuntimeError("local projection failed")
-        invoice = self._get_row_or_404(
-            "billing_invoices", invoice_id, studio_id, "Invoice not found."
-        )
-        invoice.update(
-            {
-                "stripe_invoice_id": provider["id"],
-                "stripe_account_id": account_id,
-                "stripe_customer_id": provider.get("customer"),
-                "status": provider["status"],
-                "amount_due_cents": int(provider.get("amount_due") or 0),
-                "amount_paid_cents": int(provider.get("amount_paid") or 0),
-                "amount_remaining_cents": int(provider.get("amount_remaining") or 0),
-                "currency": provider.get("currency") or invoice.get("currency"),
-                "updated_at": "2026-08-27T00:01:00Z",
-            }
-        )
-        return dict(invoice)
-
-    @staticmethod
-    def _validate_invoice_item_refs(_item, _studio_id):
-        return None
-
-    @staticmethod
-    def _date_to_epoch(value):
-        parsed = date.fromisoformat(value)
-        return int(datetime.combine(parsed, time.min, tzinfo=timezone.utc).timestamp())
-
-    def _recompute_payer_balance(self, studio_id, payer_id):
-        recompute_payer_balance(self.supabase, studio_id, payer_id)
 
 
 class _Stripe:
@@ -254,6 +166,10 @@ class _Stripe:
             "amount_remaining": 0,
             "currency": "usd",
             "customer": payload["customer_id"],
+            "collection_method": payload["collection_method"],
+            "due_date": payload["due_date"],
+            "default_payment_method": payload["default_payment_method"],
+            "application_fee_amount": payload["application_fee_amount"],
             "metadata": copy.deepcopy(payload["metadata"]),
         }
         self.__class__.invoices[provider_id] = invoice
@@ -337,7 +253,6 @@ def _payer(**overrides):
         "stripe_customer_id": "cus_1",
         "connect_account_generation": 2,
         "default_payment_method_id": None,
-        "verified_consent": False,
         **overrides,
     }
 
@@ -406,7 +321,13 @@ def _seed_retry_provider(invoice: dict) -> None:
         "currency": invoice["currency"],
         "customer": invoice["stripe_customer_id"],
         "collection_method": invoice.get("collection_method") or "send_invoice",
+        "due_date": (
+            int(datetime.fromisoformat(f"{invoice['due_date']}T00:00:00+00:00").timestamp())
+            if invoice.get("due_date")
+            else None
+        ),
         "default_payment_method": invoice.get("default_payment_method_id"),
+        "application_fee_amount": invoice.get("application_fee_amount_cents"),
         "metadata": {
             "studio_id": invoice["studio_id"],
             "payer_id": invoice["payer_id"],
@@ -415,7 +336,7 @@ def _seed_retry_provider(invoice: dict) -> None:
     }
 
 
-def _seed_autopay_consent(facade: _Facade, invoice: dict) -> None:
+def _seed_autopay_consent(facade: _InvoiceFixture, invoice: dict) -> None:
     facade.supabase.tables["billing_payer_payment_consents"] = [_active_consent()]
     _Stripe.setup_intents["seti_1"] = {
         "id": "seti_1",
@@ -449,12 +370,35 @@ def _create_data(amount: int = 5000):
     )
 
 
-def _manager(facade: _Facade, *, utc_today=None) -> BillingInvoiceManager:
+def _manager(facade: _InvoiceFixture, *, utc_today=None) -> BillingInvoiceManager:
     return BillingInvoiceManager(
-        facade,
+        facade.supabase,
+        facade.connect_accounts,
+        facade.settings,
         stripe_service_cls=_Stripe,
         utc_today=utc_today,
     )
+
+
+def _fail_next_invoice_projection(facade: _InvoiceFixture) -> list[tuple[str, str, str, str]]:
+    observed = []
+
+    def fail_invoice_projection(query, rows):
+        facade.supabase.on_update_query = None
+        target = query._matched_rows(rows)[0]
+        provider_id = query.update_payload["stripe_invoice_id"]
+        observed.append(
+            (
+                query.name,
+                target["id"],
+                target["studio_id"],
+                _Stripe.invoices[provider_id]["status"],
+            )
+        )
+        raise RuntimeError("local projection failed")
+
+    facade.supabase.on_update_query = fail_invoice_projection
+    return observed
 
 
 @pytest.fixture(autouse=True)
@@ -462,7 +406,7 @@ def _reset_stripe():
     _Stripe.reset()
 
 
-def _operation(facade: _Facade, operation_type: str) -> dict:
+def _operation(facade: _InvoiceFixture, operation_type: str) -> dict:
     return next(
         row
         for row in facade.supabase.billing_provider_operations.values()
@@ -484,7 +428,7 @@ def test_invoice_mutations_reject_ambiguous_legacy_generation_before_provider(
     workflow: str,
     invoice_status: str,
 ):
-    facade = _Facade(invoice=_open_invoice(status=invoice_status, metadata=metadata))
+    facade = _InvoiceFixture(invoice=_open_invoice(status=invoice_status, metadata=metadata))
     manager = _manager(facade)
 
     with pytest.raises(HTTPException) as blocked:
@@ -512,18 +456,17 @@ def test_invoice_mutations_reject_ambiguous_legacy_generation_before_provider(
 
 def test_create_requires_byte_bounded_key_and_exact_payer_generation():
     for key in (None, "é" * 128):
-        facade = _Facade()
+        facade = _InvoiceFixture()
         with pytest.raises(HTTPException) as exc:
             _manager(facade).create_invoice_sync(_create_data(), "studio_1", "actor_1", key)
         assert exc.value.status_code == 400
         assert facade.supabase.billing_provider_operations == {}
 
-    facade = _Facade(payer=_payer(connect_account_generation=1))
+    facade = _InvoiceFixture(payer=_payer(connect_account_generation=1))
     with pytest.raises(HTTPException) as exc:
         _manager(facade).create_invoice_sync(_create_data(), "studio_1", "actor_1", "invoice-key")
     assert exc.value.status_code == 409
     assert facade.supabase.billing_provider_operations == {}
-    assert facade.customer_sync_calls == 0
     assert _Stripe.invoice_create_calls == []
 
 
@@ -531,7 +474,7 @@ def test_create_requires_byte_bounded_key_and_exact_payer_generation():
     "change,detail", [({"due_date": "2026-99-99"}, "YYYY-MM-DD"), ({"currency": "eur"}, "USD")]
 )
 def test_create_rejects_invalid_new_intent_before_local_or_provider_claim(change, detail):
-    facade = _Facade()
+    facade = _InvoiceFixture()
     with pytest.raises(HTTPException) as invalid:
         _manager(facade).create_invoice_sync(
             _create_data().model_copy(update=change), "studio_1", "actor_1", "invalid-invoice"
@@ -544,7 +487,7 @@ def test_create_rejects_invalid_new_intent_before_local_or_provider_claim(change
 
 
 def test_create_due_date_freshness_does_not_block_exact_replay_after_midnight():
-    facade = _Facade()
+    facade = _InvoiceFixture()
     observed_today = {"value": date(2099, 9, 14)}
     manager = _manager(
         facade,
@@ -584,7 +527,7 @@ def test_create_due_date_freshness_does_not_block_exact_replay_after_midnight():
 
 
 def test_create_records_step_evidence_and_replays_without_duplicates():
-    facade = _Facade()
+    facade = _InvoiceFixture()
     manager = _manager(facade)
 
     first = manager.create_invoice_sync(_create_data(), "studio_1", "actor_1", "invoice-key")
@@ -599,7 +542,6 @@ def test_create_records_step_evidence_and_replays_without_duplicates():
     assert _Stripe.invoice_create_calls[0]["due_date"] == 4093113600  # 2099-09-15 UTC
     assert _Stripe.invoice_create_calls[0]["collection_method"] == "send_invoice"
     assert all(item["currency"] == "usd" for item in _Stripe.item_create_calls)
-    assert facade.customer_sync_calls == 0
     assert len(facade.supabase.tables["billing_invoice_items"]) == 2
     assert len(facade.supabase.tables["audit_logs"]) == 1
     parent = _operation(facade, "invoice.create")
@@ -642,10 +584,9 @@ def test_historical_non_usd_invoice_uses_saved_attempts_and_replays(stage, error
         due_date=data.due_date,
         metadata={"connect_account_generation": 2, "provider_workflow": "invoice.create"},
     )
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     manager = _manager(facade)
     invoice["request_hash"] = manager._invoice_request_hash(data)
-    workflow = BillingInvoiceOperationWorkflow(manager, stripe_service_cls=_Stripe)
     items = [item.model_dump() for item in data.items]
     desired_hash = stable_hash(
         {
@@ -664,7 +605,7 @@ def test_historical_non_usd_invoice_uses_saved_attempts_and_replays(stage, error
         }
     )
     operations = BillingProviderOperationCoordinator(facade.supabase)
-    context, claimed = workflow._claim_parent(
+    context, claimed = manager._claim_parent(
         operations,
         studio_id="studio_1",
         actor_id="actor_1",
@@ -676,7 +617,7 @@ def test_historical_non_usd_invoice_uses_saved_attempts_and_replays(stage, error
     )
     operation = claimed["operation"]
     if stage != "unregistered":
-        spec = workflow._invoice_step_plan(
+        spec = manager._invoice_step_plan(
             invoice,
             payer=_payer(),
             context=context,
@@ -696,7 +637,7 @@ def test_historical_non_usd_invoice_uses_saved_attempts_and_replays(stage, error
             "confirmed": 3,
         }[stage]
         for order in range(1, attempted_steps + 1):
-            step = workflow._step_context(context, spec, order)
+            step = manager._step_context(context, spec, order)
             current = client.transition_step(
                 step, client.claim_step(step)["step"], "provider_request_in_flight"
             )
@@ -748,7 +689,7 @@ def test_historical_non_usd_invoice_uses_saved_attempts_and_replays(stage, error
 
 
 def test_create_changed_payload_conflicts_without_more_provider_calls():
-    facade = _Facade()
+    facade = _InvoiceFixture()
     manager = _manager(facade)
     manager.create_invoice_sync(_create_data(), "studio_1", "actor_1", "invoice-key")
 
@@ -761,7 +702,7 @@ def test_create_changed_payload_conflicts_without_more_provider_calls():
 
 
 def test_create_old_key_replays_after_later_key_without_duplicate_audit():
-    facade = _Facade()
+    facade = _InvoiceFixture()
     manager = _manager(facade)
 
     first = manager.create_invoice_sync(_create_data(), "studio_1", "actor_1", "invoice-old")
@@ -777,7 +718,7 @@ def test_create_old_key_replays_after_later_key_without_duplicate_audit():
 
 @pytest.mark.parametrize("lost_step", [1, 2])
 def test_create_lost_step_response_resumes_without_duplicate_provider_call(lost_step):
-    facade = _Facade()
+    facade = _InvoiceFixture()
     facade.supabase.lose_step_success_response_once = lost_step
     manager = _manager(facade)
 
@@ -794,12 +735,13 @@ def test_create_lost_step_response_resumes_without_duplicate_provider_call(lost_
 
 
 def test_create_provider_success_local_failure_marks_reconciliation_and_never_retries():
-    facade = _Facade()
-    facade.projection_failures = 1
+    facade = _InvoiceFixture()
+    observed_projection = _fail_next_invoice_projection(facade)
     manager = _manager(facade)
 
     with pytest.raises(HTTPException) as exc:
         manager.create_invoice_sync(_create_data(), "studio_1", "actor_1", "projection-key")
+    assert observed_projection == [("billing_invoices", "invoice_created_1", "studio_1", "draft")]
     assert exc.value.status_code == 503
     assert exc.value.detail == INVOICE_CREATE_AMBIGUOUS_DETAIL
     parent = _operation(facade, "invoice.create")
@@ -813,7 +755,7 @@ def test_create_provider_success_local_failure_marks_reconciliation_and_never_re
 
 
 def test_create_readback_identity_mismatch_marks_reconciliation():
-    facade = _Facade()
+    facade = _InvoiceFixture()
     _Stripe.readback_overrides = {"customer": "cus_other"}
 
     with pytest.raises(HTTPException) as exc:
@@ -826,7 +768,7 @@ def test_create_readback_identity_mismatch_marks_reconciliation():
 
 
 def test_create_partial_item_failure_marks_step_and_parent_reconciliation():
-    facade = _Facade()
+    facade = _InvoiceFixture()
     _Stripe.item_exception_on_call = 2
     manager = _manager(facade)
 
@@ -856,18 +798,14 @@ def test_create_autopay_requires_verified_consent_and_passes_exact_method():
         description="Tuition",
         collection_mode="autopay",
     )
-    facade = _Facade(payer=_payer(default_payment_method_id="pm_1"))
+    facade = _InvoiceFixture(payer=_payer(default_payment_method_id="pm_1"))
     with pytest.raises(HTTPException) as exc:
         _manager(facade).create_invoice_sync(data, "studio_1", "actor_1", "autopay-key")
     assert exc.value.status_code == 409
     assert _Stripe.invoice_create_calls == []
 
-    facade = _Facade(
-        payer=_payer(
-            default_payment_method_id="pm_1",
-            verified_consent=True,
-        )
-    )
+    facade = _InvoiceFixture(payer=_autopay_payer())
+    facade.supabase.tables["billing_payer_payment_consents"] = [_active_consent()]
     result = _manager(facade).create_invoice_sync(data, "studio_1", "actor_1", "autopay-key")
     assert result.status == "draft"
     assert _Stripe.invoice_create_calls[0]["default_payment_method"] == "pm_1"
@@ -875,10 +813,10 @@ def test_create_autopay_requires_verified_consent_and_passes_exact_method():
 
 
 def test_create_completed_local_identity_drift_is_sanitized_without_provider_retry():
-    facade = _Facade()
+    facade = _InvoiceFixture()
     manager = _manager(facade)
     result = manager.create_invoice_sync(_create_data(), "studio_1", "actor_1", "drift-key")
-    local = facade._get_row_or_404("billing_invoices", result.id, "studio_1", "Invoice not found.")
+    local = facade.supabase.tables["billing_invoices"][0]
     local["stripe_invoice_id"] = "in_corrupt"
 
     with pytest.raises(HTTPException) as exc:
@@ -891,7 +829,7 @@ def test_create_completed_local_identity_drift_is_sanitized_without_provider_ret
 
 
 def test_create_projected_local_identity_drift_marks_reconciliation():
-    facade, _payer, invoke = _local_closeout_case("create")
+    facade, _payer, _manager_instance, invoke = _local_closeout_case("create")
     original_complete = facade.supabase._rpc_complete_billing_provider_operation_v1
 
     def fail_complete(params):
@@ -919,7 +857,7 @@ def test_create_projected_local_identity_drift_marks_reconciliation():
 
 def test_finalize_send_registers_two_steps_and_replays_without_duplicates():
     invoice = _draft_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
 
@@ -947,7 +885,7 @@ def test_finalize_send_registers_two_steps_and_replays_without_duplicates():
 
 def test_finalize_send_does_not_hold_the_autopay_consent_guard():
     invoice = _draft_invoice()
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     committed_changes = []
@@ -979,7 +917,7 @@ def test_finalize_send_does_not_hold_the_autopay_consent_guard():
 
 def test_finalize_completed_replay_does_not_require_fresh_provider_read():
     invoice = _draft_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
     first = asyncio.run(
@@ -1001,7 +939,7 @@ def test_finalize_completed_replay_does_not_require_fresh_provider_read():
 @pytest.mark.parametrize("workflow", ("finalize", "void"))
 def test_closeout_terminal_replay_mismatch_is_safe_before_provider_access(workflow):
     invoice = _draft_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
 
     def reject_terminal_replay(_params):
@@ -1049,7 +987,7 @@ def test_closeout_terminal_replay_near_miss_uses_generic_safe_path(
     near_miss,
 ):
     invoice = _draft_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
 
     def reject_near_miss(_params):
@@ -1088,7 +1026,7 @@ def test_closeout_terminal_replay_near_miss_uses_generic_safe_path(
 
 def test_finalize_new_claim_fails_definitively_when_provider_preread_fails():
     invoice = _draft_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     _Stripe.retrieve_exception = TimeoutError("provider read unavailable")
 
@@ -1138,7 +1076,7 @@ def test_finalize_new_claim_fails_definitively_when_provider_preread_fails():
 
 def test_finalize_new_claim_terminally_rejects_deterministic_preread_drift():
     invoice = _draft_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     _Stripe.readback_overrides = {"customer": "cus_other"}
 
@@ -1162,7 +1100,7 @@ def test_finalize_new_claim_terminally_rejects_deterministic_preread_drift():
 
 def test_finalize_partial_send_failure_never_repeats_finalize_or_send():
     invoice = _draft_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     _Stripe.send_exception = TimeoutError("raw send timeout")
     manager = _manager(facade)
@@ -1190,7 +1128,7 @@ def test_finalize_autopay_uses_one_parent_mutation_without_step_plan():
         collection_method="charge_automatically",
         default_payment_method_id="pm_1",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     _Stripe.invoices["in_existing"]["metadata"]["benign_invoice_note"] = "ok"
@@ -1223,7 +1161,7 @@ def test_finalize_autopay_rejects_material_metadata_drift_with_benign_extras(
         collection_method="charge_automatically",
         default_payment_method_id="pm_1",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     _Stripe.invoices["in_existing"]["metadata"]["benign_invoice_note"] = "ok"
@@ -1251,8 +1189,8 @@ def test_finalize_autopay_projection_failure_recovers_by_readback_only():
         collection_method="charge_automatically",
         default_payment_method_id="pm_1",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
-    facade.projection_failures = 1
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
+    observed_projection = _fail_next_invoice_projection(facade)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     manager = _manager(facade)
@@ -1261,6 +1199,7 @@ def test_finalize_autopay_projection_failure_recovers_by_readback_only():
         asyncio.run(
             manager.finalize_invoice(invoice["id"], "studio_1", "actor_1", "finalize-projection")
         )
+    assert observed_projection == [("billing_invoices", "invoice_existing", "studio_1", "open")]
     assert first.value.status_code == 503
     assert _operation(facade, "invoice.finalize")["state"] == "reconciliation_required"
     facade.supabase.advance_billing_provider_clock(seconds=31)
@@ -1293,7 +1232,7 @@ def test_finalize_autopay_rejects_nonexact_consent_before_provider_mutation(
         collection_method="charge_automatically",
         default_payment_method_id=provider_method,
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     facade.supabase.tables["billing_payer_payment_consents"][0].update(consent_overrides)
@@ -1321,7 +1260,7 @@ def test_finalize_autopay_rechecks_consent_after_setup_intent_read(
         collection_method="charge_automatically",
         default_payment_method_id="pm_1",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
 
@@ -1349,7 +1288,7 @@ def test_finalize_autopay_owner_blocks_disable_inside_provider_mutation_boundary
         collection_method="charge_automatically",
         default_payment_method_id="pm_1",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     blocked_changes = []
@@ -1401,7 +1340,7 @@ def test_finalize_autopay_owner_blocks_disable_inside_provider_mutation_boundary
 
 def test_void_resource_replays_without_duplicate_provider_mutation():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
 
@@ -1422,7 +1361,7 @@ def test_void_resource_replays_without_duplicate_provider_mutation():
 
 def test_void_projected_replay_completes_from_exact_local_evidence_offline():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
     first = asyncio.run(
@@ -1446,7 +1385,7 @@ def test_void_projected_replay_completes_from_exact_local_evidence_offline():
 
 def test_void_completed_replay_fails_closed_on_corrupt_local_projection():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
     asyncio.run(manager.void_invoice(invoice["id"], "studio_1", "actor_1", "void-local-corrupt"))
@@ -1466,7 +1405,7 @@ def test_void_completed_replay_fails_closed_on_corrupt_local_projection():
 
 def test_void_fresh_claim_rejects_provider_identity_mismatch_before_mutation():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     _Stripe.readback_overrides = {"customer": "cus_other"}
 
@@ -1487,7 +1426,7 @@ def test_void_fresh_claim_rejects_provider_identity_mismatch_before_mutation():
 
 def test_void_preread_failure_is_terminal_and_new_key_can_retry():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
     _Stripe.retrieve_exception = TimeoutError("provider preread unavailable")
@@ -1529,7 +1468,7 @@ def test_local_void_records_timestamp_without_provider_mutation():
         stripe_account_id=None,
         stripe_customer_id=None,
     )
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     manager = _manager(facade)
 
     result = asyncio.run(
@@ -1555,13 +1494,14 @@ def test_invoice_request_rejects_more_items_than_durable_step_limit():
 
 def test_void_provider_success_projection_failure_recovers_by_readback_only():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
-    facade.projection_failures = 1
+    facade = _InvoiceFixture(invoice=invoice)
+    observed_projection = _fail_next_invoice_projection(facade)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
 
     with pytest.raises(HTTPException) as first:
         asyncio.run(manager.void_invoice(invoice["id"], "studio_1", "actor_1", "void-projection"))
+    assert observed_projection == [("billing_invoices", "invoice_existing", "studio_1", "void")]
     assert first.value.status_code == 503
     assert _operation(facade, "invoice.void")["state"] == "reconciliation_required"
     facade.supabase.advance_billing_provider_clock(seconds=31)
@@ -1581,7 +1521,7 @@ def test_closeout_expired_adoption_acquires_canonical_lease_and_mutates_once(wor
         if workflow == "finalize"
         else _open_invoice()
     )
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     operations = BillingProviderOperationCoordinator(facade.supabase)
     operation_type = f"invoice.{workflow}"
@@ -1645,7 +1585,7 @@ def test_closeout_active_adoption_is_busy_without_provider_mutation(workflow, ac
         if workflow == "finalize"
         else _open_invoice()
     )
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     operations = BillingProviderOperationCoordinator(facade.supabase)
     operation_type = f"invoice.{workflow}"
@@ -1709,7 +1649,7 @@ def test_closeout_completed_adoption_replays_without_duplicate_mutation(workflow
         if workflow == "finalize"
         else _open_invoice()
     )
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
     first = asyncio.run(
@@ -1728,7 +1668,7 @@ def test_closeout_completed_adoption_replays_without_duplicate_mutation(workflow
 
 def test_retry_success_and_old_key_replay_pay_and_audit_once():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
 
@@ -1774,10 +1714,10 @@ def test_retry_base_hash_matches_v33_sql_vectors_and_canonical_uuid_spellings():
         "stripe_invoice_id": 'in_escaped\\quote"',
         "stripe_account_id": 'acct_escaped\\quote"',
     }
-    assert BillingInvoiceOperationWorkflow._retry_base_request_sha256(first, 1) == (
+    assert BillingInvoiceManager._retry_base_request_sha256(first, 1) == (
         "dcd80bb09de6446f4200bb177677a626986134020c6aa296a87b6fac4d4e7dd9"
     )
-    assert BillingInvoiceOperationWorkflow._retry_base_request_sha256(escaped, 27) == (
+    assert BillingInvoiceManager._retry_base_request_sha256(escaped, 27) == (
         "daefff3c53d776e2cd7197905f80cf860ffb37329bdceef3f642406217e0893c"
     )
     alternate = {
@@ -1785,9 +1725,9 @@ def test_retry_base_hash_matches_v33_sql_vectors_and_canonical_uuid_spellings():
         "studio_id": "{00000000-0000-4000-8000-000000000001}",
         "id": "{00000000-0000-4000-8000-000000000002}".upper(),
     }
-    assert BillingInvoiceOperationWorkflow._retry_base_request_sha256(
+    assert BillingInvoiceManager._retry_base_request_sha256(
         alternate, 1
-    ) == BillingInvoiceOperationWorkflow._retry_base_request_sha256(first, 1)
+    ) == BillingInvoiceManager._retry_base_request_sha256(first, 1)
 
 
 def test_fake_v33_recomputes_canonical_base_and_never_echoes_wrong_digest():
@@ -1808,9 +1748,9 @@ def test_fake_v33_recomputes_canonical_base_and_never_echoes_wrong_digest():
         stripe_account_id="acct_v33",
         connect_account_generation=1,
     )
-    facade = _Facade(payer=payer, invoice=invoice)
+    facade = _InvoiceFixture(payer=payer, invoice=invoice)
     operations = BillingProviderOperationCoordinator(facade.supabase)
-    canonical_hash = BillingInvoiceOperationWorkflow._retry_base_request_sha256(invoice, 1)
+    canonical_hash = BillingInvoiceManager._retry_base_request_sha256(invoice, 1)
     claimed = operations.claim_resource(
         studio_id="{00000000-0000-4000-8000-000000000001}",
         actor_id="actor_1",
@@ -1829,7 +1769,7 @@ def test_fake_v33_recomputes_canonical_base_and_never_echoes_wrong_digest():
     assert claimed["operation"]["studio_id"] == studio_id
     assert claimed["operation"]["request_sha256"] == canonical_hash
 
-    wrong_facade = _Facade(payer=payer, invoice=invoice)
+    wrong_facade = _InvoiceFixture(payer=payer, invoice=invoice)
     wrong = BillingProviderOperationCoordinator(wrong_facade.supabase).claim_resource(
         studio_id=studio_id,
         actor_id="actor_1",
@@ -1864,7 +1804,7 @@ def test_retry_rejects_uncertified_v33_claim_before_evidence_reads(mutation):
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     original_claim = facade.supabase._rpc_claim_billing_provider_operation_resource_v1
@@ -1920,7 +1860,7 @@ def test_retry_rejects_v33_claim_identity_drift_without_side_effects(
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     original_claim = facade.supabase._rpc_claim_billing_provider_operation_resource_v1
@@ -1969,7 +1909,7 @@ def test_retry_autopay_requires_enabled_unrevoked_consent_before_provider_mutati
         collection_method="charge_automatically",
         default_payment_method_id="pm_1",
     )
-    facade = _Facade(payer=_autopay_payer(**payer_overrides), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(**payer_overrides), invoice=invoice)
     facade.supabase.tables["billing_payer_payment_consents"] = [
         _active_consent(**consent_overrides)
     ]
@@ -2006,7 +1946,7 @@ def test_retry_autopay_rejects_payment_method_or_generation_drift_before_pay(
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(
+    facade = _InvoiceFixture(
         payer=_autopay_payer(**payer_overrides),
         invoice=invoice,
     )
@@ -2046,7 +1986,7 @@ def test_retry_autopay_pays_failed_invoice_with_replacement_consent_method():
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     _Stripe.invoices["in_existing"]["metadata"]["benign_invoice_note"] = "ok"
@@ -2083,7 +2023,7 @@ def test_retry_autopay_rejects_provider_and_consent_identity_mismatch_after_clai
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     _Stripe.invoices["in_existing"]["customer"] = provider_customer
@@ -2110,7 +2050,7 @@ def test_retry_autopay_consent_replacement_after_claim_prevents_provider_pay():
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     original_claim = facade.supabase._rpc_claim_billing_provider_operation_resource_v1
@@ -2144,7 +2084,7 @@ def test_retry_autopay_initial_provider_snapshot_unavailable_resumes_same_key():
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     manager = _manager(facade)
@@ -2217,7 +2157,7 @@ def test_retry_active_consent_nonavailability_errors_never_release(
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     original_read = facade.supabase._rpc_read_active_billing_payer_payment_consent_v1
@@ -2308,7 +2248,7 @@ def test_retry_autopay_final_provider_reread_unavailable_resumes_same_key():
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     manager = _manager(facade)
@@ -2374,7 +2314,7 @@ def test_retry_autopay_transient_local_consent_read_releases_and_recovers(
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     manager = _manager(facade)
@@ -2447,11 +2387,11 @@ def test_retry_autopay_payer_read_unavailable_releases_and_recovers_same_key(
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     manager = _manager(facade)
-    original_get = facade._get_row_or_404
+    original_get = manager._get_row_or_404
     failed_once = False
 
     def fail_payer_read_once(table, record_id, studio_id, detail):
@@ -2484,7 +2424,7 @@ def test_retry_autopay_payer_read_unavailable_releases_and_recovers_same_key(
             raise TimeoutError("sensitive payer timeout")
         return original_get(table, record_id, studio_id, detail)
 
-    facade._get_row_or_404 = fail_payer_read_once
+    manager._get_row_or_404 = fail_payer_read_once
     request_key = f"retry-payer-read-{failure_mode}"
 
     with pytest.raises(HTTPException) as unavailable:
@@ -2538,11 +2478,11 @@ def test_retry_payer_postgrest_availability_releases_at_every_phase_and_recovers
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     manager = _manager(facade)
-    original_get = facade._get_row_or_404
+    original_get = manager._get_row_or_404
     payer_reads = 0
 
     def fail_payer_phase(table, record_id, studio_id, detail):
@@ -2560,7 +2500,7 @@ def test_retry_payer_postgrest_availability_releases_at_every_phase_and_recovers
                 )
         return original_get(table, record_id, studio_id, detail)
 
-    facade._get_row_or_404 = fail_payer_phase
+    manager._get_row_or_404 = fail_payer_phase
     request_key = f"retry-payer-{error_code}-{fail_on_read}"
 
     with pytest.raises(HTTPException) as unavailable:
@@ -2592,7 +2532,7 @@ def test_retry_autopay_missing_payer_is_invalid_not_local_outage():
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     facade.supabase.tables["billing_payers"] = []
     _seed_retry_provider(invoice)
 
@@ -2614,19 +2554,21 @@ def test_retry_autopay_payer_authorization_status_is_not_local_outage():
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
+    manager = _manager(facade)
+    original_get = manager._get_row_or_404
 
     def deny_payer_read(table, record_id, studio_id, detail):
         if table == "billing_payers":
             raise HTTPException(status_code=403, detail="Payer read is forbidden.")
-        return _Facade._get_row_or_404(facade, table, record_id, studio_id, detail)
+        return original_get(table, record_id, studio_id, detail)
 
-    facade._get_row_or_404 = deny_payer_read
+    manager._get_row_or_404 = deny_payer_read
 
     with pytest.raises(HTTPException) as forbidden:
         asyncio.run(
-            _manager(facade).retry_invoice_payment(
+            manager.retry_invoice_payment(
                 invoice["id"], "studio_1", "actor_1", "retry-payer-forbidden"
             )
         )
@@ -2650,19 +2592,21 @@ def test_retry_autopay_payer_programming_error_propagates_without_release(
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
+    manager = _manager(facade)
+    original_get = manager._get_row_or_404
 
     def fail_payer_programming_read(table, record_id, studio_id, detail):
         if table == "billing_payers":
             raise programming_error
-        return _Facade._get_row_or_404(facade, table, record_id, studio_id, detail)
+        return original_get(table, record_id, studio_id, detail)
 
-    facade._get_row_or_404 = fail_payer_programming_read
+    manager._get_row_or_404 = fail_payer_programming_read
 
     with pytest.raises(type(programming_error)) as raised:
         asyncio.run(
-            _manager(facade).retry_invoice_payment(
+            manager.retry_invoice_payment(
                 invoice["id"], "studio_1", "actor_1", "retry-payer-programming-error"
             )
         )
@@ -2699,10 +2643,11 @@ def test_retry_payer_nonavailability_errors_never_release_at_any_phase(
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
-    original_get = facade._get_row_or_404
+    manager = _manager(facade)
+    original_get = manager._get_row_or_404
     payer_reads = 0
     programming_errors = {
         "type": TypeError("payer type bug"),
@@ -2738,12 +2683,12 @@ def test_retry_payer_nonavailability_errors_never_release_at_any_phase(
                 raise programming_errors[error_kind]
         return original_get(table, record_id, studio_id, detail)
 
-    facade._get_row_or_404 = fail_payer_phase
+    manager._get_row_or_404 = fail_payer_phase
 
     if error_kind == "missing":
         with pytest.raises(HTTPException) as rejected:
             asyncio.run(
-                _manager(facade).retry_invoice_payment(
+                manager.retry_invoice_payment(
                     invoice["id"],
                     "studio_1",
                     "actor_1",
@@ -2761,7 +2706,7 @@ def test_retry_payer_nonavailability_errors_never_release_at_any_phase(
         )
         with pytest.raises(expected_type):
             asyncio.run(
-                _manager(facade).retry_invoice_payment(
+                manager.retry_invoice_payment(
                     invoice["id"],
                     "studio_1",
                     "actor_1",
@@ -2783,7 +2728,7 @@ def test_retry_released_consent_first_terminalizes_and_allows_void_owner():
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     _Stripe.setup_intent_retrieve_exception = TimeoutError("provider unavailable")
@@ -2825,7 +2770,7 @@ def test_retry_reclaim_first_clears_marker_and_blocks_consent_change():
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     manager = _manager(facade)
@@ -2869,7 +2814,7 @@ def test_retry_autopay_preread_release_failure_is_sanitized_and_fail_closed(
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     _Stripe.setup_intent_retrieve_exception = TimeoutError("provider unavailable")
@@ -2905,7 +2850,7 @@ def test_retry_autopay_preread_release_failure_is_sanitized_and_fail_closed(
 
 def test_retry_preread_release_allows_immediate_different_owner_reclaim():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     operations = BillingProviderOperationCoordinator(facade.supabase)
     request_hash = stable_hash(
         {
@@ -3011,7 +2956,7 @@ def test_retry_preread_release_rejects_all_mutation_evidence_without_mutation(
     value,
 ):
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     operations = BillingProviderOperationCoordinator(facade.supabase)
     request_hash = stable_hash(
         {
@@ -3112,7 +3057,7 @@ def test_retry_autopay_provider_drift_after_claim_blocks_pay(target, field, valu
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     _Stripe.invoices["in_existing"]["metadata"]["benign_invoice_note"] = "ok"
@@ -3150,7 +3095,7 @@ def test_retry_autopay_legacy_started_resume_validates_then_pays_once():
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     legacy_hash = stable_hash(
@@ -3223,7 +3168,7 @@ def test_retry_autopay_completed_replay_after_revoke_has_no_provider_reads():
         collection_method="charge_automatically",
         default_payment_method_id="pm_1",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     manager = _manager(facade)
@@ -3265,7 +3210,7 @@ def test_retry_reclaims_released_same_key_without_recreating_missing_ledger():
         collection_method="charge_automatically",
         default_payment_method_id="pm_failed",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     operations = BillingProviderOperationCoordinator(facade.supabase)
@@ -3337,7 +3282,7 @@ def test_retry_reclaims_released_same_key_without_recreating_missing_ledger():
 
 def test_retry_terminal_historical_replay_allows_repointed_resource_pointer():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
     first = asyncio.run(
@@ -3365,7 +3310,7 @@ def test_retry_autopay_historical_legacy_hash_completed_replay_after_revoke():
         collection_method="charge_automatically",
         default_payment_method_id="pm_1",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     manager = _manager(facade)
@@ -3406,7 +3351,7 @@ def test_retry_autopay_rechecks_consent_after_setup_intent_read_before_pay(
         collection_method="charge_automatically",
         default_payment_method_id="pm_1",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
 
@@ -3438,7 +3383,7 @@ def test_retry_autopay_owner_blocks_revoke_inside_provider_mutation_boundary():
         collection_method="charge_automatically",
         default_payment_method_id="pm_1",
     )
-    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    facade = _InvoiceFixture(payer=_autopay_payer(), invoice=invoice)
     _seed_retry_provider(invoice)
     _seed_autopay_consent(facade, invoice)
     blocked_revocations = []
@@ -3474,7 +3419,7 @@ def test_retry_autopay_owner_blocks_revoke_inside_provider_mutation_boundary():
 
 def test_retry_lost_provider_response_uses_readback_without_second_pay():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     _Stripe.pay_exception = TimeoutError("raw timeout with secret")
     _Stripe.pay_exception_after_commit = True
@@ -3499,7 +3444,7 @@ def test_retry_lost_provider_response_uses_readback_without_second_pay():
 
 def test_retry_different_key_is_rejected_before_canonical_reconciliation_resume():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     _Stripe.pay_exception = TimeoutError("raw timeout")
     _Stripe.pay_exception_after_commit = True
@@ -3551,7 +3496,7 @@ def test_retry_caller_key_cannot_cross_invoice_resources():
         id="invoice_other",
         stripe_invoice_id="in_other",
     )
-    facade = _Facade(invoice=first)
+    facade = _InvoiceFixture(invoice=first)
     facade.supabase.tables["billing_invoices"].append(second)
     _seed_retry_provider(first)
     _seed_retry_provider(second)
@@ -3569,8 +3514,8 @@ def test_retry_caller_key_cannot_cross_invoice_resources():
 
 def test_retry_provider_success_local_failure_marks_reconciliation_then_readback_recovers():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
-    facade.projection_failures = 1
+    facade = _InvoiceFixture(invoice=invoice)
+    observed_projection = _fail_next_invoice_projection(facade)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
 
@@ -3578,6 +3523,7 @@ def test_retry_provider_success_local_failure_marks_reconciliation_then_readback
         asyncio.run(
             manager.retry_invoice_payment(invoice["id"], "studio_1", "actor_1", "retry-projection")
         )
+    assert observed_projection == [("billing_invoices", "invoice_existing", "studio_1", "paid")]
     assert exc.value.status_code == 503
     assert exc.value.detail == INVOICE_RETRY_AMBIGUOUS_DETAIL
     assert _operation(facade, "invoice.retry")["state"] == "reconciliation_required"
@@ -3592,7 +3538,7 @@ def test_retry_provider_success_local_failure_marks_reconciliation_then_readback
 
 def test_retry_requires_proof_bound_admin_recovery_before_second_provider_attempt():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     _Stripe.pay_exception = TimeoutError("provider request did not reach Stripe")
     manager = _manager(facade)
@@ -3655,7 +3601,7 @@ def test_retry_requires_proof_bound_admin_recovery_before_second_provider_attemp
 
 def test_retry_completed_projection_drift_is_sanitized_without_second_pay():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
     asyncio.run(manager.retry_invoice_payment(invoice["id"], "studio_1", "actor_1", "retry-drift"))
@@ -3674,7 +3620,7 @@ def test_retry_completed_projection_drift_is_sanitized_without_second_pay():
 
 def test_retry_projected_projection_drift_marks_reconciliation_without_second_pay():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     manager = _manager(facade)
     original_complete = facade.supabase._rpc_complete_billing_provider_operation_v1
@@ -3711,7 +3657,7 @@ def test_retry_projected_projection_drift_marks_reconciliation_without_second_pa
 def test_invoice_mutations_share_one_owner_across_finalize_void_and_retry():
     invoice = _open_invoice()
     invoice["status"] = "draft"
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     operations = BillingProviderOperationCoordinator(facade.supabase)
 
     finalize = operations.claim_resource(
@@ -3854,7 +3800,7 @@ def test_terminal_invoice_mutation_replaces_same_resource_and_keeps_old_key(
     resource_type: str,
 ):
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     operations = BillingProviderOperationCoordinator(facade.supabase)
     first = operations.claim_resource(
         studio_id="studio_1",
@@ -3923,7 +3869,7 @@ def test_terminal_invoice_mutation_replaces_same_resource_and_keeps_old_key(
         == second["operation"]["id"]
     )
     if operation_type in {"invoice.finalize", "invoice.void"}:
-        certified = BillingInvoiceOperationWorkflow._certified_invoice_closeout_identity(
+        certified = BillingInvoiceManager._certified_invoice_closeout_identity(
             historical,
             expected_studio_id="studio_1",
             expected_operation_type=operation_type,
@@ -3944,7 +3890,7 @@ def test_terminal_invoice_mutation_replaces_same_resource_and_keeps_old_key(
             },
         }
         with pytest.raises(HTTPException) as invalid:
-            BillingInvoiceOperationWorkflow._certified_invoice_closeout_identity(
+            BillingInvoiceManager._certified_invoice_closeout_identity(
                 tampered,
                 expected_studio_id="studio_1",
                 expected_operation_type=operation_type,
@@ -3961,7 +3907,7 @@ def test_terminal_invoice_mutation_replaces_same_resource_and_keeps_old_key(
 
 def test_retry_definitive_decline_is_terminal_and_sanitized():
     invoice = _open_invoice()
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     _seed_retry_provider(invoice)
     _Stripe.pay_exception = StripeCardError(
         "raw card details",
@@ -3984,7 +3930,7 @@ def test_retry_definitive_decline_is_terminal_and_sanitized():
 
 def _local_closeout_case(kind):
     invoice = _open_invoice() if kind == "retry" else None
-    facade = _Facade(invoice=invoice)
+    facade = _InvoiceFixture(invoice=invoice)
     if invoice:
         _seed_retry_provider(invoice)
     payer = facade.supabase.tables["billing_payers"][0]
@@ -4026,7 +3972,7 @@ def _local_closeout_case(kind):
             manager.retry_invoice_payment(invoice["id"], "studio_1", "actor_1", "local-closeout")
         )
 
-    return facade, payer, invoke
+    return facade, payer, manager, invoke
 
 
 def _grant_create_closeout_claim(facade):
@@ -4066,7 +4012,7 @@ def _assert_local_invoice_closeout(facade, payer, kind, *, expected_balance=None
 @pytest.mark.parametrize("kind", ["create", "retry"])
 @pytest.mark.parametrize("failure_stage", ["audit", "balance"])
 def test_invoice_local_closeout_failure_resumes_projected_work_offline(kind, failure_stage):
-    facade, payer, invoke = _local_closeout_case(kind)
+    facade, payer, manager, invoke = _local_closeout_case(kind)
     if failure_stage == "audit":
 
         def fail_audit(table, _payloads, _rows):
@@ -4093,7 +4039,7 @@ def test_invoice_local_closeout_failure_resumes_projected_work_offline(kind, fai
         # Provider/webhook progress is valid while local closeout is pending.
         invoice = facade.supabase.tables["billing_invoices"][0]
         status = "paid" if failure_stage == "audit" else "void"
-        facade._update_invoice_from_stripe(
+        manager.projector.update_invoice_from_stripe(
             invoice["id"],
             "studio_1",
             {
@@ -4131,7 +4077,7 @@ def test_completed_invoice_replay_repairs_legacy_local_facts_without_reopening(
     remaining,
     expected_balance,
 ):
-    facade, payer, invoke = _local_closeout_case(kind)
+    facade, payer, manager, invoke = _local_closeout_case(kind)
     invoke()
     invoice = facade.supabase.tables["billing_invoices"][0]
     provider = {
@@ -4140,7 +4086,7 @@ def test_completed_invoice_replay_repairs_legacy_local_facts_without_reopening(
         "amount_remaining": remaining,
         "amount_paid": 0 if later_status == "void" else invoice["amount_due_cents"] - remaining,
     }
-    progressed_invoice = facade._update_invoice_from_stripe(
+    progressed_invoice = manager.projector.update_invoice_from_stripe(
         invoice["id"], "studio_1", provider, "acct_1"
     )
     parent = _operation(facade, "invoice." + kind)
@@ -4179,7 +4125,7 @@ def test_completed_invoice_replay_repairs_legacy_local_facts_without_reopening(
 @pytest.mark.parametrize("kind", ["create", "retry"])
 @pytest.mark.parametrize("committed", [False, True])
 def test_invoice_closeout_survives_failure_before_or_after_completion(kind, committed):
-    facade, payer, invoke = _local_closeout_case(kind)
+    facade, payer, _manager_instance, invoke = _local_closeout_case(kind)
     original = facade.supabase._rpc_complete_billing_provider_operation_v1
 
     def fail_completion(params):
@@ -4207,7 +4153,7 @@ def test_invoice_closeout_survives_failure_before_or_after_completion(kind, comm
 
 @pytest.mark.parametrize("saved_state", ["projected", "provider_succeeded"])
 def test_retry_replay_requires_acquired_lease_before_local_or_provider_work(saved_state):
-    facade, payer, invoke = _local_closeout_case("retry")
+    facade, payer, _manager_instance, invoke = _local_closeout_case("retry")
     rpc_name = (
         "_rpc_complete_billing_provider_operation_v1"
         if saved_state == "projected"

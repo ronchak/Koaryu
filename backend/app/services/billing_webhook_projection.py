@@ -883,7 +883,7 @@ class BillingWebhookProjector:
         if local and is_stale_stripe_event(local, event_created):
             return
         if local:
-            local = self._update_invoice_from_stripe(
+            local = self.update_invoice_from_stripe(
                 local["id"], studio_id, invoice, account_id, event_created=event_created
             )
         else:
@@ -963,7 +963,7 @@ class BillingWebhookProjector:
             event_created=event_created,
         )
 
-    def _update_invoice_from_stripe(
+    def update_invoice_from_stripe(
         self,
         invoice_id: str,
         studio_id: str,
