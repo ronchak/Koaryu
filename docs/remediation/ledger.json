@@ -8024,8 +8024,8 @@
       "reason": "Eligibility failure remains explicitly unavailable after notice dismissal and uses the existing forced current-ladder retry. Loading still hides rank actions; only confirmed empty data shows the empty-program claim.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "3a248412c9a7ee2077c452b20ddf08e73fefa0fd",
-      "verification": "Coordinator reviewed final source/prop wiring and independently passed 57 targeted tests. Three named mounted contracts replace three weak presentation grep cases; full frontend remains 912 passing cases and the synthetic build passes. See student-display-truth-verification.md.",
+      "verified_against": "37db9a5ad350c4ba74dbbd56b021641cca8d4328",
+      "verification": "Coordinator reviewed final source/prop wiring and passed 57 targeted tests, then 16 mounted/import/records tests after independent-review feedback. Four named behavioral contracts replace three weak presentation grep cases and one copy-only label case. The full frontend remains 912 passing cases; the synthetic build passed on unchanged application source. See student-display-truth-verification.md.",
       "source_paths": [
         "frontend/src/components/belt-tracker/eligibility-panel.tsx"
       ],
@@ -8798,8 +8798,8 @@
       "reason": "Attendance and belt panels distinguish loading, incomplete, failed and empty reads. Known rank can remain visible, while unknown progress/history/count facts are labeled unavailable. Existing attendance counters and mutation guards remain.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "3a248412c9a7ee2077c452b20ddf08e73fefa0fd",
-      "verification": "Coordinator reviewed final source/prop wiring and independently passed 57 targeted tests. Three named mounted contracts replace three weak presentation grep cases; full frontend remains 912 passing cases and the synthetic build passes. See student-display-truth-verification.md.",
+      "verified_against": "37db9a5ad350c4ba74dbbd56b021641cca8d4328",
+      "verification": "Coordinator reviewed final source/prop wiring and passed 57 targeted tests, then 16 mounted/import/records tests after independent-review feedback. Four named behavioral contracts replace three weak presentation grep cases and one copy-only label case. The full frontend remains 912 passing cases; the synthetic build passed on unchanged application source. See student-display-truth-verification.md.",
       "source_paths": [
         "frontend/src/components/schedule/session-detail-modal.tsx",
         "frontend/src/components/students/student-detail-sidebar.tsx"
@@ -8898,8 +8898,8 @@
       "reason": "Displayed age uses calendar year/month/day against the existing business date, with birthday and non-leap February-29 behavior verified. Minor/guardian semantics are unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "3a248412c9a7ee2077c452b20ddf08e73fefa0fd",
-      "verification": "Coordinator reviewed final source/prop wiring and independently passed 57 targeted tests. Three named mounted contracts replace three weak presentation grep cases; full frontend remains 912 passing cases and the synthetic build passes. See student-display-truth-verification.md.",
+      "verified_against": "37db9a5ad350c4ba74dbbd56b021641cca8d4328",
+      "verification": "Coordinator reviewed final source/prop wiring and passed 57 targeted tests, then 16 mounted/import/records tests after independent-review feedback. Four named behavioral contracts replace three weak presentation grep cases and one copy-only label case. The full frontend remains 912 passing cases; the synthetic build passed on unchanged application source. See student-display-truth-verification.md.",
       "source_paths": [
         "frontend/src/components/students/student-detail-sidebar.tsx"
       ],
@@ -9190,7 +9190,7 @@
       "reason": "Mapping controls use per-instance React IDs plus column indexes, preserving mapping keys and label targets. Preview FileReader parsing rejects normalized duplicate headers through the promise, matching the existing backend duplicate-header rule.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "3a248412c9a7ee2077c452b20ddf08e73fefa0fd",
+      "verified_against": "37db9a5ad350c4ba74dbbd56b021641cca8d4328",
       "source_paths": [
         "frontend/src/components/students/student-import-mapping-step.tsx",
         "backend/app/services/student_import_csv.py",
@@ -9228,7 +9228,7 @@
       "delegated_batch": "docs/remediation/delegated/11-student-and-roster-presentation.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed final source/prop wiring and independently passed 57 targeted tests. Three named mounted contracts replace three weak presentation grep cases; full frontend remains 912 passing cases and the synthetic build passes. See student-display-truth-verification.md."
+      "verification": "Coordinator reviewed final source/prop wiring and passed 57 targeted tests, then 16 mounted/import/records tests after independent-review feedback. Four named behavioral contracts replace three weak presentation grep cases and one copy-only label case. The full frontend remains 912 passing cases; the synthetic build passed on unchanged application source. See student-display-truth-verification.md."
     },
     {
       "id": "FC2-15",
