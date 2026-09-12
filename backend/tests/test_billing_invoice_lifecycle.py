@@ -18,6 +18,7 @@ from tests.billing_lifecycle_helpers import (
     _FakeSupabase,
 )
 from stripe import CardError as StripeCardError, IdempotencyError as StripeIdempotencyError
+from app.services.billing_fees import application_fee_amount
 from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_payment_projection import BillingPaymentEventProjector
 from app.services.billing_payers import payment_method_fields_from_payment_method
@@ -138,7 +139,14 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         ]:
             with self.subTest(account=account):
                 self.assertEqual(service._application_fee_percent(account), percent)
-                self.assertEqual(service._application_fee_amount(12900, account), amount)
+                self.assertEqual(
+                    application_fee_amount(
+                        12900,
+                        account.get("platform_fee_bps"),
+                        service.settings.BILLING_PLATFORM_FEE_BPS,
+                    ),
+                    amount,
+                )
 
     def test_out_of_band_paid_invoice_projects_external_totals_without_fee(self):
         service = self.service()
@@ -278,7 +286,11 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_invoice_request_hash_is_stable_for_equivalent_payloads(self):
         service = self.service()
-        manager = BillingInvoiceManager(service)
+        manager = BillingInvoiceManager(
+            service.supabase,
+            service._connect_accounts(),
+            service.settings,
+        )
 
         first = BillingInvoiceCreate(
             payer_id="payer_1", amount_cents=12900, description="May tuition"
