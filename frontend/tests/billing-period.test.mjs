@@ -1,15 +1,31 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { formatBillingCalendarDate, formatDate } from "../src/lib/billing-page-utils.ts";
 import { formatBillingDate, subscriptionPeriodCopy } from "../src/lib/billing-period.ts";
 
 describe("formatBillingDate", () => {
-  it("keeps date-only billing boundaries on their Stripe calendar day", () => {
-    assert.equal(formatBillingDate("2026-05-01"), "May 1, 2026");
-  });
+  it("keeps billing calendar dates stable without changing timestamp display", () => {
+    const previousTimezone = process.env.TZ;
 
-  it("keeps midnight UTC billing boundaries on their Stripe calendar day", () => {
-    assert.equal(formatBillingDate("2026-05-01T00:00:00Z"), "May 1, 2026");
+    try {
+      process.env.TZ = "America/Los_Angeles";
+      assert.equal(formatBillingCalendarDate("2026-09-01"), "Sep 1, 2026");
+      assert.equal(formatDate("2026-09-01T00:00:00Z"), "Aug 31, 2026");
+
+      process.env.TZ = "UTC";
+      assert.equal(formatBillingCalendarDate("2026-09-01"), "Sep 1, 2026");
+      assert.equal(formatBillingCalendarDate(null), "Not set");
+      assert.equal(formatBillingCalendarDate(""), "Not set");
+      assert.equal(formatBillingDate("2026-05-01"), "May 1, 2026");
+      assert.equal(formatBillingDate("2026-05-01T00:00:00Z"), "May 1, 2026");
+    } finally {
+      if (previousTimezone === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTimezone;
+      }
+    }
   });
 });
 

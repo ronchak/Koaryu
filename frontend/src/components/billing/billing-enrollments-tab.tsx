@@ -4,7 +4,7 @@ import type { FormEvent } from "react";
 import { Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatDate } from "@/lib/billing-page-utils";
+import { formatBillingCalendarDate } from "@/lib/billing-page-utils";
 import type { BillingPayer, BillingPlan, StudentBillingEnrollment } from "@/types";
 import { SectionHeader, StatusPill } from "./billing-page-sections";
 
@@ -154,9 +154,9 @@ export function BillingEnrollmentsTab({
             </div>
             <div className="text-xs text-muted">
               <p className="mb-1 text-xs font-medium text-muted md:hidden">Dates</p>
-              <p>Start {formatDate(enrollment.start_date)}</p>
-              <p>End {formatDate(enrollment.end_date)}</p>
-              <p>Next {formatDate(enrollment.next_bill_on || enrollment.next_bill_date)}</p>
+              <p>Start {formatBillingCalendarDate(enrollment.start_date)}</p>
+              <p>End {formatBillingCalendarDate(enrollment.end_date)}</p>
+              <p>Next {formatBillingCalendarDate(enrollment.next_bill_on || enrollment.next_bill_date)}</p>
             </div>
             <div className="min-w-0 text-xs text-muted">
               <p className="mb-1 text-xs font-medium text-muted md:hidden">Billing state and actions</p>

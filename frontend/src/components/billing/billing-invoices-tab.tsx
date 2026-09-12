@@ -2,7 +2,7 @@
 
 import { AlertTriangle, ArrowUpRight, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatDate, formatMoney } from "@/lib/billing-page-utils";
+import { formatBillingCalendarDate, formatMoney } from "@/lib/billing-page-utils";
 import type { BillingInvoice, BillingPayer } from "@/types";
 import { SectionHeader, StatusPill } from "./billing-page-sections";
 
@@ -90,7 +90,7 @@ export function BillingInvoicesTab({
               </div>
               <div>
                 <p className="text-xs font-medium text-muted md:hidden">Due</p>
-                <p className="text-text-secondary">{formatDate(invoice.due_date)}</p>
+                <p className="text-text-secondary">{formatBillingCalendarDate(invoice.due_date)}</p>
               </div>
               <div>
                 <p className="text-xs font-medium text-muted md:hidden">Gross due</p>

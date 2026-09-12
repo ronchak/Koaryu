@@ -60,7 +60,7 @@ function loadBillingEnrollmentsTab() {
       };
     }
     if (specifier === "@/lib/billing-page-utils") {
-      return { formatDate: (value) => value ?? "Never" };
+      return { formatBillingCalendarDate: (value) => value ?? "Never" };
     }
     if (specifier === "./billing-page-sections") {
       return {
