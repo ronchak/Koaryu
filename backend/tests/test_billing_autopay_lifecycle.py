@@ -912,7 +912,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             "app.services.billing_service.StripeService",
             SuccessfulReplacementStripeService,
         ):
-            service._project_checkout_session(session, "acct_1", event_created=200)
+            projector = service._webhook_projector()
+            projector._project_checkout_session(session, "acct_1", event_created=200)
 
         self.assertEqual(payer["autopay_status"], "enabled")
         self.assertEqual(payer["default_payment_method_id"], "pm_replacement")
@@ -2358,7 +2359,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 raise RuntimeError("Stripe timeout")
 
         with patch("app.services.billing_service.StripeService", FailingStripeService):
-            service._project_checkout_session(session, "acct_1", event_created=200)
+            projector = service._webhook_projector()
+            projector._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payer["autopay_status"], "pending")
@@ -2386,7 +2388,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 }
 
         with patch("app.services.billing_service.StripeService", MismatchedStripeService):
-            service._project_checkout_session(session, "acct_1", event_created=200)
+            projector = service._webhook_projector()
+            projector._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payer["autopay_status"], "pending")
@@ -2426,8 +2429,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 }
 
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
-            service._project_checkout_session(session, "acct_1", event_created=200)
-            service._project_checkout_session(session, "acct_1", event_created=200)
+            projector = service._webhook_projector()
+            projector._project_checkout_session(session, "acct_1", event_created=200)
+            projector._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payer["autopay_status"], "enabled")
@@ -2489,8 +2493,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         database.before_insert = fail_first_audit
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            projector = service._webhook_projector()
             with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
-                service._project_checkout_session(session, "acct_1", event_created=200)
+                projector._project_checkout_session(session, "acct_1", event_created=200)
 
         self.assertEqual(database.operation["state"], "completed")
         self.assertEqual(
@@ -2501,8 +2506,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             ],
             [],
         )
-        service._project_checkout_session(session, "acct_1", event_created=200)
-        service._project_checkout_session(session, "acct_1", event_created=200)
+        projector = service._webhook_projector()
+        projector._project_checkout_session(session, "acct_1", event_created=200)
+        projector._project_checkout_session(session, "acct_1", event_created=200)
 
         self.assertEqual(len(SuccessfulStripeService.retrieve_calls), 1)
         audits = [
@@ -2535,7 +2541,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 }
 
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
-            service._project_checkout_session(session, "acct_1", event_created=200)
+            projector = service._webhook_projector()
+            projector._project_checkout_session(session, "acct_1", event_created=200)
 
         audit = next(
             row
@@ -2548,7 +2555,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             "setup_request_id": database.setup_request["id"],
             "terms_version": "koaryu-autopay-v1",
         }
-        service._project_checkout_session(session, "acct_1", event_created=200)
+        projector = service._webhook_projector()
+        projector._project_checkout_session(session, "acct_1", event_created=200)
 
         consent_audits = [
             row
@@ -2574,11 +2582,12 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             },
         }
 
-        service._project_checkout_session(session, "acct_1", event_created=200)
+        projector = service._webhook_projector()
+        projector._project_checkout_session(session, "acct_1", event_created=200)
         first_error = dict(
             database.tables["billing_payers"][0]["metadata"]["autopay_projection_error"]
         )
-        service._project_checkout_session(session, "acct_1", event_created=200)
+        projector._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = database.tables["billing_payers"][0]
         self.assertEqual(payer["autopay_status"], "pending")
@@ -2621,8 +2630,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                     "metadata": metadata,
                 }
 
+                projector = service._webhook_projector()
                 with self.assertRaises((RuntimeError, HTTPException)):
-                    service._project_checkout_session(session, account_id, event_created=200)
+                    projector._project_checkout_session(session, account_id, event_created=200)
 
                 self.assertEqual(database.tables["billing_payers"][0], before)
                 self.assertIsNone(database.operation)
@@ -2646,11 +2656,13 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 }
 
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
-            service._project_checkout_session(session, "acct_1", event_created=200)
+            projector = service._webhook_projector()
+            projector._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = database.tables["billing_payers"][0]
         payer["default_payment_method_id"] = None
-        service._project_checkout_session(session, "acct_1", event_created=200)
+        projector = service._webhook_projector()
+        projector._project_checkout_session(session, "acct_1", event_created=200)
 
         self.assertEqual(payer["autopay_status"], "pending")
         self.assertEqual(database.operation["state"], "reconciliation_required")
@@ -2660,7 +2672,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         )
 
         payer["default_payment_method_id"] = "pm_repaired"
-        service._project_checkout_session(session, "acct_1", event_created=200)
+        projector._project_checkout_session(session, "acct_1", event_created=200)
 
         self.assertEqual(database.operation["state"], "completed")
         self.assertEqual(payer["autopay_status"], "enabled")
@@ -2688,18 +2700,20 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 }
 
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            projector = service._webhook_projector()
             with self.assertRaisesRegex(
                 RuntimeError,
                 "completed_consent_payer_enable_failed",
             ):
-                service._project_checkout_session(session, "acct_1", event_created=200)
+                projector._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = database.tables["billing_payers"][0]
         self.assertEqual(database.operation["state"], "projected")
         self.assertIsNotNone(database.consent["completed_at"])
         payer["default_payment_method_id"] = None
 
-        service._project_checkout_session(session, "acct_1", event_created=200)
+        projector = service._webhook_projector()
+        projector._project_checkout_session(session, "acct_1", event_created=200)
 
         self.assertEqual(payer["autopay_status"], "pending")
         self.assertEqual(database.operation["state"], "reconciliation_required")
@@ -2733,8 +2747,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 }
 
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            projector = service._webhook_projector()
             with self.assertRaises(RuntimeError):
-                service._project_checkout_session(session, "acct_1", event_created=200)
+                projector._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = database.tables["billing_payers"][0]
         self.assertEqual(database.operation["state"], "projected")
@@ -2742,7 +2757,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(payer["autopay_status"], "pending")
         self.assertEqual(payer["default_payment_method_id"], "pm_123")
 
-        service._project_checkout_session(session, "acct_1", event_created=200)
+        projector = service._webhook_projector()
+        projector._project_checkout_session(session, "acct_1", event_created=200)
 
         self.assertEqual(database.operation["state"], "completed")
         self.assertEqual(payer["autopay_status"], "enabled")
@@ -2767,7 +2783,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 }
 
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
-            service._project_checkout_session(session, "acct_1", event_created=200)
+            projector = service._webhook_projector()
+            projector._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = database.tables["billing_payers"][0]
         self.assertTrue(service._payer_autopay_authorized(payer))
@@ -2778,7 +2795,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         service, database, session = self._prepared_consent_setup()
         session["consent"] = {}
 
-        service._project_checkout_session(session, "acct_1", event_created=200)
+        projector = service._webhook_projector()
+        projector._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = database.tables["billing_payers"][0]
         self.assertEqual(payer["autopay_status"], "pending")
@@ -2806,8 +2824,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                         "connect_account_generation": 2,
                     }
 
+                projector = service._webhook_projector()
                 try:
-                    service._project_checkout_session(session, "acct_1", event_created=200)
+                    projector._project_checkout_session(session, "acct_1", event_created=200)
                 except (AssertionError, HTTPException):
                     pass
 
@@ -2976,7 +2995,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 }
 
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
-            service._project_checkout_session(session, "acct_1", event_created=200)
+            projector = service._webhook_projector()
+            projector._project_checkout_session(session, "acct_1", event_created=200)
 
         database.tables["billing_payers"][0].setdefault("created_at", "2026-08-26T12:00:00+00:00")
         database.tables["billing_payers"][0].setdefault("updated_at", "2026-08-26T12:00:00+00:00")
@@ -2994,8 +3014,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         )
 
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            projector = service._webhook_projector()
             try:
-                service._project_checkout_session(session, "acct_1", event_created=201)
+                projector._project_checkout_session(session, "acct_1", event_created=201)
             except (AssertionError, HTTPException):
                 pass
         self.assertEqual(

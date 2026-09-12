@@ -39,9 +39,6 @@ class BillingEnrollmentManager:
     def _get_row_or_404(self, *args, **kwargs):
         return self.billing_service._get_row_or_404(*args, **kwargs)
 
-    def _ensure_connect_ready(self, studio_id: str) -> dict[str, Any]:
-        return self.billing_service._ensure_connect_ready(studio_id)
-
     def _connect_accounts(self):
         return self.billing_service._connect_accounts()
 
@@ -62,9 +59,6 @@ class BillingEnrollmentManager:
     def _application_fee_percent(self, account: dict[str, Any]) -> float:
         return self.billing_service._application_fee_percent(account)
 
-    def _application_fee_amount(self, amount_cents: int, account: dict[str, Any]) -> int:
-        return self.billing_service._application_fee_amount(amount_cents, account)
-
     def _project_subscription(
         self,
         subscription: Any,
@@ -78,22 +72,6 @@ class BillingEnrollmentManager:
             account_id,
             event_type=event_type,
         )
-
-    def _update_invoice_from_stripe(
-        self,
-        invoice_id: str,
-        studio_id: str,
-        stripe_invoice: Any,
-        account_id: str,
-    ) -> dict[str, Any]:
-        return self.billing_service._update_invoice_from_stripe(
-            invoice_id, studio_id, stripe_invoice, account_id
-        )
-
-    def _stripe_account_for_enrollment_subscription(
-        self, enrollment: dict[str, Any]
-    ) -> Optional[str]:
-        return self.billing_service._stripe_account_for_enrollment_subscription(enrollment)
 
     async def list_subscriptions(self, studio_id: str) -> list[BillingSubscriptionResponse]:
         result = (

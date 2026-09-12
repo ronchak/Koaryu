@@ -18,6 +18,7 @@ from tests.billing_lifecycle_helpers import (
     _FakeSupabase,
 )
 from stripe import CardError as StripeCardError, IdempotencyError as StripeIdempotencyError
+from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_payment_projection import BillingPaymentEventProjector
 from app.services.billing_plans import BillingPlanManager
 from app.services.billing_provider_operations import (
@@ -140,8 +141,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_out_of_band_paid_invoice_projects_external_totals_without_fee(self):
         service = self.service()
+        projector = service._webhook_projector()
 
-        projection = service._invoice_projection(
+        projection = projector._invoice_projection(
             {
                 "id": "in_123",
                 "status": "paid",
@@ -162,8 +164,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_invoice_projection_does_not_clear_missing_application_fee(self):
         service = self.service()
+        projector = service._webhook_projector()
 
-        projection = service._invoice_projection(
+        projection = projector._invoice_projection(
             {
                 "id": "in_123",
                 "status": "paid",
@@ -276,6 +279,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_invoice_request_hash_is_stable_for_equivalent_payloads(self):
         service = self.service()
+        manager = BillingInvoiceManager(service)
 
         first = BillingInvoiceCreate(
             payer_id="payer_1", amount_cents=12900, description="May tuition"
@@ -289,7 +293,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         )
 
         self.assertEqual(
-            service._invoice_request_hash(first), service._invoice_request_hash(second)
+            manager._invoice_request_hash(first), manager._invoice_request_hash(second)
         )
 
     def test_finalize_invoice_sanitizes_hosted_invoice_send_failures(self):
@@ -1376,8 +1380,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        payment = service._link_adjustments_to_payment(
+        payment = payment_events._link_adjustments_to_payment(
             {
                 "id": "payment_1",
                 "studio_id": "studio_1",
@@ -1960,8 +1965,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 ],
             }
         )
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_dispute(
+        payment_events._project_dispute(
             {
                 "id": "dp_1",
                 "charge": "ch_1",
@@ -2244,6 +2250,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             }
         ]
         service.supabase = _FakeSupabase(tables)
+        payment_events = service._webhook_projector()._payment_events()
 
         service._project_refund(
             {
@@ -2257,7 +2264,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             "acct_1",
             event_created=200,
         )
-        service._project_dispute(
+        payment_events._project_dispute(
             {
                 "id": "dp_1",
                 "charge": "ch_replayed",
@@ -2282,8 +2289,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
     def test_dispute_without_status_is_unknown_and_requires_reconciliation(self):
         service = self.service()
         service.supabase = _FakeSupabase(_settled_payment_tables())
+        payment_events = service._webhook_projector()._payment_events()
 
-        service._project_dispute(
+        payment_events._project_dispute(
             {
                 "id": "dp_missing_status",
                 "charge": "ch_1",
@@ -2317,9 +2325,10 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                     "amount": 200,
                     "metadata": {"studio_id": "studio_1"},
                 }
+                payment_events = service._webhook_projector()._payment_events()
 
-                service._project_dispute(dispute, "acct_1", event_created=100)
-                service._project_dispute(
+                payment_events._project_dispute(dispute, "acct_1", event_created=100)
+                payment_events._project_dispute(
                     {**dispute, "status": terminal_status},
                     "acct_1",
                     event_created=200,
@@ -2497,8 +2506,9 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                     }
                 ]
                 service.supabase = _FakeSupabase(tables)
+                payment_events = service._webhook_projector()._payment_events()
 
-                service._link_adjustments_to_payment(
+                payment_events._link_adjustments_to_payment(
                     service.supabase.tables["billing_payments"][0],
                     "acct_1",
                 )
