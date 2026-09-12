@@ -51,36 +51,46 @@ class FakeAlertDatabase:
             self.fail_execute_once = None
             return _RaisingQuery()
         if name == "operational_alert_metric_counts":
-            return _Query([
-                {"rule_id": rule.rule_id, "observed_count": 0, "checked_at": "2026-08-01T00:00:00Z"}
-                for rule in APPLICATION_ALERT_RULES
-            ])
+            return _Query(
+                [
+                    {
+                        "rule_id": rule.rule_id,
+                        "observed_count": 0,
+                        "checked_at": "2026-08-01T00:00:00Z",
+                    }
+                    for rule in APPLICATION_ALERT_RULES
+                ]
+            )
         if name == "evaluate_operational_alert":
-            return _Query({
-                "episode_id": None,
-                "lifecycle_event": "unchanged",
-                "outbox_id": None,
-            })
+            return _Query(
+                {
+                    "episode_id": None,
+                    "lifecycle_event": "unchanged",
+                    "outbox_id": None,
+                }
+            )
         if name == "claim_operational_alert_delivery":
             if self.remaining_claims < 1:
                 return _Query([])
             claim_number = self.remaining_claims
             self.remaining_claims -= 1
             role = "backup" if claim_number % 2 == 0 else "primary"
-            return _Query({
-                "delivery_id": "delivery-1",
-                "episode_id": "episode-1",
-                "attempt_id": "attempt-1",
-                "attempt_key": params["p_attempt_key"],
-                "rule_id": APPLICATION_ALERT_RULES[0].rule_id,
-                "event_kind": "escalated" if role == "backup" else "triggered",
-                "destination_role": role,
-                "destination_id": f"{role}-owner",
-                "attempt_number": 1,
-                "observed_count": 1,
-                "observed_at": "2026-08-01T00:00:00Z",
-                "commit_sha": COMMIT_SHA,
-            })
+            return _Query(
+                {
+                    "delivery_id": "delivery-1",
+                    "episode_id": "episode-1",
+                    "attempt_id": "attempt-1",
+                    "attempt_key": params["p_attempt_key"],
+                    "rule_id": APPLICATION_ALERT_RULES[0].rule_id,
+                    "event_kind": "escalated" if role == "backup" else "triggered",
+                    "destination_role": role,
+                    "destination_id": f"{role}-owner",
+                    "attempt_number": 1,
+                    "observed_count": 1,
+                    "observed_at": "2026-08-01T00:00:00Z",
+                    "commit_sha": COMMIT_SHA,
+                }
+            )
         if name in {
             "complete_operational_alert_delivery",
             "fail_operational_alert_delivery",
@@ -89,11 +99,13 @@ class FakeAlertDatabase:
         if name == "record_operational_alert_heartbeat":
             return _Query({"worker_id": params["p_worker_id"], "sequence": 1})
         if name == "acknowledge_operational_alert":
-            return _Query({
-                "episode_id": params["p_episode_id"],
-                "lifecycle_event": "acknowledged",
-                "acknowledged_by_role": params["p_actor_role"],
-            })
+            return _Query(
+                {
+                    "episode_id": params["p_episode_id"],
+                    "lifecycle_event": "acknowledged",
+                    "acknowledged_by_role": params["p_actor_role"],
+                }
+            )
         raise AssertionError(f"unexpected RPC: {name}")
 
 
@@ -242,8 +254,7 @@ class OperationalAlertServiceTest(unittest.TestCase):
         self.assertNotIn("complete_operational_alert_delivery", names)
         self.assertNotIn("record_operational_alert_heartbeat", names)
         failure = next(
-            params for name, params in database.events
-            if name == "fail_operational_alert_delivery"
+            params for name, params in database.events if name == "fail_operational_alert_delivery"
         )
         self.assertEqual(failure["p_error_code"], "destination_timeout")
 
@@ -317,8 +328,7 @@ class OperationalAlertServiceTest(unittest.TestCase):
         )
 
         claims = [
-            params for name, params in database.events
-            if name == "claim_operational_alert_delivery"
+            params for name, params in database.events if name == "claim_operational_alert_delivery"
         ]
         self.assertGreaterEqual(len(claims), 3)
         self.assertEqual(claims[0], claims[1])
@@ -356,7 +366,9 @@ class OperationalAlertServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(result["acknowledged_by_role"], "backup")
-        rpc = next(params for name, params in database.events if name == "acknowledge_operational_alert")
+        rpc = next(
+            params for name, params in database.events if name == "acknowledge_operational_alert"
+        )
         self.assertEqual(rpc["p_actor_ref"], "backup-owner")
 
     def test_incomplete_aggregate_snapshot_fails_closed(self):
@@ -365,7 +377,9 @@ class OperationalAlertServiceTest(unittest.TestCase):
 
         def rpc(name, params):
             if name == "operational_alert_metric_counts":
-                return _Query([{"rule_id": APPLICATION_ALERT_RULES[0].rule_id, "observed_count": 0}])
+                return _Query(
+                    [{"rule_id": APPLICATION_ALERT_RULES[0].rule_id, "observed_count": 0}]
+                )
             return original_rpc(name, params)
 
         database.rpc = rpc
@@ -404,18 +418,21 @@ class HttpsAlertDestinationTest(unittest.TestCase):
         url = "https://alerts.example.com/koaryu/primary"
         fingerprint = hashlib.sha256(url.encode()).hexdigest()
         backup_url = "https://alerts.example.com/koaryu/backup"
-        return HttpsAlertDestination({
-            "primary": HttpsDestinationConfig(
-                "primary-owner", url, "alerts.example.com", fingerprint, "P" * 40
-            ),
-            "backup": HttpsDestinationConfig(
-                "backup-owner",
-                backup_url,
-                "alerts.example.com",
-                hashlib.sha256(backup_url.encode()).hexdigest(),
-                "B" * 40,
-            ),
-        }, transport=self._Transport(handler))
+        return HttpsAlertDestination(
+            {
+                "primary": HttpsDestinationConfig(
+                    "primary-owner", url, "alerts.example.com", fingerprint, "P" * 40
+                ),
+                "backup": HttpsDestinationConfig(
+                    "backup-owner",
+                    backup_url,
+                    "alerts.example.com",
+                    hashlib.sha256(backup_url.encode()).hexdigest(),
+                    "B" * 40,
+                ),
+            },
+            transport=self._Transport(handler),
+        )
 
     @staticmethod
     def _envelope():
@@ -444,22 +461,24 @@ class HttpsAlertDestinationTest(unittest.TestCase):
                         OperationalAlertError,
                         "credential is invalid",
                     ):
-                        HttpsAlertDestination({
-                            "primary": HttpsDestinationConfig(
-                                "primary-owner",
-                                primary_url,
-                                "alerts.example.com",
-                                hashlib.sha256(primary_url.encode()).hexdigest(),
-                                secrets_by_role["primary"],
-                            ),
-                            "backup": HttpsDestinationConfig(
-                                "backup-owner",
-                                backup_url,
-                                "alerts.example.com",
-                                hashlib.sha256(backup_url.encode()).hexdigest(),
-                                secrets_by_role["backup"],
-                            ),
-                        })
+                        HttpsAlertDestination(
+                            {
+                                "primary": HttpsDestinationConfig(
+                                    "primary-owner",
+                                    primary_url,
+                                    "alerts.example.com",
+                                    hashlib.sha256(primary_url.encode()).hexdigest(),
+                                    secrets_by_role["primary"],
+                                ),
+                                "backup": HttpsDestinationConfig(
+                                    "backup-owner",
+                                    backup_url,
+                                    "alerts.example.com",
+                                    hashlib.sha256(backup_url.encode()).hexdigest(),
+                                    secrets_by_role["backup"],
+                                ),
+                            }
+                        )
                     transport.assert_not_called()
 
     def test_strict_receipt_and_stable_idempotency_header(self):

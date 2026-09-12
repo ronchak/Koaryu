@@ -35,9 +35,7 @@ VALID_PRODUCTION_SETTINGS = {
 VALID_STAGING_SETTINGS = {
     **VALID_PRODUCTION_SETTINGS,
     "SUPABASE_URL": "https://nxgsektqsgrtyfhawxbc.supabase.co",
-    "FRONTEND_URL": (
-        "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"
-    ),
+    "FRONTEND_URL": ("https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"),
     "STRIPE_MODE": "test",
     "STRIPE_SECRET_KEY": _synthetic_stripe_key("sk", "test"),
     "STRIPE_RESTRICTED_KEY": _synthetic_stripe_key("rk", "test"),
@@ -123,9 +121,7 @@ class HostedConfigValidationTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "FRONTEND_URL") as error:
                     settings.validate_runtime_configuration()
 
-                rendered_error = "".join(
-                    traceback.format_exception(error.exception)
-                )
+                rendered_error = "".join(traceback.format_exception(error.exception))
                 self.assertNotIn(url, rendered_error)
 
     def test_readiness_rejects_malformed_webhook_secrets_before_permissive_return(self):
@@ -252,7 +248,9 @@ class HostedConfigValidationTest(unittest.TestCase):
             **VALID_PRODUCTION_SETTINGS,
         )
 
-        with self.assertRaisesRegex(RuntimeError, "DEMO_RESET_STUDIO_IDS must be empty in production"):
+        with self.assertRaisesRegex(
+            RuntimeError, "DEMO_RESET_STUDIO_IDS must be empty in production"
+        ):
             settings.validate_runtime_configuration()
 
     def test_production_rejects_placeholder_shaped_values(self):
@@ -263,10 +261,12 @@ class HostedConfigValidationTest(unittest.TestCase):
                 "SUPABASE_SERVICE_ROLE_KEY": "your-supabase-service-role-key",
                 "STRIPE_SECRET_KEY": "sk_live_or_test_your_key",
                 "STRIPE_RESTRICTED_KEY": "rk_live_or_test_your_key",
-                "STRIPE_CONNECT_WEBHOOK_SECRET": ",".join((
-                    _synthetic_webhook_secret("connect_platform_scope"),
-                    _synthetic_webhook_secret("connect_connected_scope"),
-                )),
+                "STRIPE_CONNECT_WEBHOOK_SECRET": ",".join(
+                    (
+                        _synthetic_webhook_secret("connect_platform_scope"),
+                        _synthetic_webhook_secret("connect_connected_scope"),
+                    )
+                ),
             },
         )
 
@@ -365,7 +365,10 @@ class HostedConfigValidationTest(unittest.TestCase):
             },
         )
 
-        with patch.dict("os.environ", {}, clear=True), self.assertRaisesRegex(RuntimeError, "RENDER_GIT_COMMIT"):
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            self.assertRaisesRegex(RuntimeError, "RENDER_GIT_COMMIT"),
+        ):
             settings.validate_production_configuration()
 
         with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=True):
@@ -380,7 +383,10 @@ class HostedConfigValidationTest(unittest.TestCase):
             },
         )
 
-        with patch.dict("os.environ", {}, clear=True), self.assertRaisesRegex(RuntimeError, "RENDER_GIT_COMMIT"):
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            self.assertRaisesRegex(RuntimeError, "RENDER_GIT_COMMIT"),
+        ):
             production_settings.validate_production_configuration()
 
         with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "b" * 40}, clear=True):
@@ -393,8 +399,11 @@ class HostedConfigValidationTest(unittest.TestCase):
                 "CORE_SELF_CHECKOUT_ENABLED": True,
             },
         )
-        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "b" * 40}, clear=True), self.assertRaisesRegex(
-            RuntimeError, "CORE_SELF_CHECKOUT_ENABLED may only be true in production"
+        with (
+            patch.dict("os.environ", {"RENDER_GIT_COMMIT": "b" * 40}, clear=True),
+            self.assertRaisesRegex(
+                RuntimeError, "CORE_SELF_CHECKOUT_ENABLED may only be true in production"
+            ),
         ):
             staging_settings.validate_runtime_configuration()
 
@@ -403,8 +412,11 @@ class HostedConfigValidationTest(unittest.TestCase):
                 ENVIRONMENT=environment,
                 CORE_SELF_CHECKOUT_ENABLED=True,
             )
-            with self.subTest(environment=environment), self.assertRaisesRegex(
-                RuntimeError, "CORE_SELF_CHECKOUT_ENABLED may only be true in production"
+            with (
+                self.subTest(environment=environment),
+                self.assertRaisesRegex(
+                    RuntimeError, "CORE_SELF_CHECKOUT_ENABLED may only be true in production"
+                ),
             ):
                 permissive_settings.validate_runtime_configuration()
 
@@ -568,7 +580,9 @@ class HostedConfigValidationTest(unittest.TestCase):
             **VALID_STAGING_SETTINGS,
         )
 
-        with self.assertRaisesRegex(RuntimeError, "SUPABASE_ALLOW_LEGACY_HS256 must be false in staging"):
+        with self.assertRaisesRegex(
+            RuntimeError, "SUPABASE_ALLOW_LEGACY_HS256 must be false in staging"
+        ):
             settings.validate_runtime_configuration()
 
 

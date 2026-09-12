@@ -92,7 +92,9 @@ class DashboardBootstrapService:
         )
 
     @staticmethod
-    def _fetch_with_isolated_client(method_name: str, studio_id: str, postgrest_client_timeout: float):
+    def _fetch_with_isolated_client(
+        method_name: str, studio_id: str, postgrest_client_timeout: float
+    ):
         client = create_supabase_client(postgrest_client_timeout=postgrest_client_timeout)
         try:
             service = DashboardBootstrapService(client)
@@ -102,17 +104,20 @@ class DashboardBootstrapService:
                 close_supabase_client(client)
 
     @staticmethod
-    def _timed_fetch_with_isolated_client(label: str, method_name: str, studio_id: str, postgrest_client_timeout: float):
+    def _timed_fetch_with_isolated_client(
+        label: str, method_name: str, studio_id: str, postgrest_client_timeout: float
+    ):
         started = time.perf_counter()
-        result = DashboardBootstrapService._fetch_with_isolated_client(method_name, studio_id, postgrest_client_timeout)
+        result = DashboardBootstrapService._fetch_with_isolated_client(
+            method_name, studio_id, postgrest_client_timeout
+        )
         duration_ms = (time.perf_counter() - started) * 1000
         return result, (label, duration_ms)
 
     @staticmethod
     def server_timing_value(timings: dict[str, float]) -> str:
         return ", ".join(
-            f"koaryu_{label};dur={duration_ms:.1f}"
-            for label, duration_ms in timings.items()
+            f"koaryu_{label};dur={duration_ms:.1f}" for label, duration_ms in timings.items()
         )
 
     def _fetch_belt_ladders(self, studio_id: str):
@@ -147,9 +152,12 @@ class DashboardBootstrapService:
         result = self._fetch_studio_summary(auth.studio_id)
         if not result.data:
             raise HTTPException(status_code=404, detail="Studio not found")
-        return DashboardWorkspaceResponse(auth=auth, studio=DashboardBootstrapStudioSummary(
-            **{**result.data, "timezone": studio_today(result.data.get("timezone"))[1]}
-        ))
+        return DashboardWorkspaceResponse(
+            auth=auth,
+            studio=DashboardBootstrapStudioSummary(
+                **{**result.data, "timezone": studio_today(result.data.get("timezone"))[1]}
+            ),
+        )
 
     async def get_dashboard_bootstrap(
         self,
@@ -187,7 +195,10 @@ class DashboardBootstrapService:
             try:
                 result, (_label, duration_ms) = await asyncio.to_thread(
                     self._timed_fetch_with_isolated_client,
-                    label, method_name, studio_id, postgrest_client_timeout,
+                    label,
+                    method_name,
+                    studio_id,
+                    postgrest_client_timeout,
                 )
                 value = project(result)
                 timings[label] = duration_ms
@@ -201,7 +212,14 @@ class DashboardBootstrapService:
                     or (label == "studio" and error.status_code == 404)
                 ):
                     raise
-                if getattr(error, "code", None) in {"42501", "28000", "28P01", "PGRST301", "PGRST302", "PGRST303"}:
+                if getattr(error, "code", None) in {
+                    "42501",
+                    "28000",
+                    "28P01",
+                    "PGRST301",
+                    "PGRST302",
+                    "PGRST303",
+                }:
                     raise
                 errors[label] = {
                     "studio": "Studio details could not be loaded. Please retry.",
@@ -211,19 +229,27 @@ class DashboardBootstrapService:
                     "programs": "Programs could not be loaded. Please retry.",
                 }[label]
                 timings[label] = (time.perf_counter() - started) * 1000
-                logger.warning("Dashboard bootstrap projection unavailable", extra={
-                    "dataset": label, "error_type": type(error).__name__,
-                })
+                logger.warning(
+                    "Dashboard bootstrap projection unavailable",
+                    extra={
+                        "dataset": label,
+                        "error_type": type(error).__name__,
+                    },
+                )
                 return None
 
         def studio_projection(result):
             if not result.data:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Studio not found")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Studio not found"
+                )
             return DashboardBootstrapStudioSummary(**result.data)
 
         def students_projection(result):
             students = StudentService(self.supabase).rows_to_responses(
-                result.data or [], include_guardians=False, include_photo_urls=False,
+                result.data or [],
+                include_guardians=False,
+                include_photo_urls=False,
             )
             total = getattr(result, "count", None)
             return students, total if total is not None else len(students)
@@ -231,11 +257,21 @@ class DashboardBootstrapService:
         studio, student_projection, leads, belt_ladders, programs = await asyncio.gather(
             load_projection("studio", "_fetch_studio_summary", studio_projection),
             load_projection("students", "_fetch_students", students_projection),
-            load_projection("leads", "_fetch_leads", lambda result: [LeadResponse(**row) for row in (result.data or [])]),
-            load_projection("belts", "_fetch_belt_ladders", lambda result: [self._build_ladder_response(row) for row in (result.data or [])]),
+            load_projection(
+                "leads",
+                "_fetch_leads",
+                lambda result: [LeadResponse(**row) for row in (result.data or [])],
+            ),
+            load_projection(
+                "belts",
+                "_fetch_belt_ladders",
+                lambda result: [self._build_ladder_response(row) for row in (result.data or [])],
+            ),
             load_projection("programs", "_fetch_programs", lambda result: result),
         )
-        students, students_total = student_projection if student_projection is not None else ([], None)
+        students, students_total = (
+            student_projection if student_projection is not None else ([], None)
+        )
         belt_ladders = belt_ladders if belt_ladders is not None else []
         timings["total"] = (time.perf_counter() - total_started) * 1000
 

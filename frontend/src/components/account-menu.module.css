@@ -8,20 +8,24 @@
 }
 
 .root[data-state="open"] {
-  animation: menuOpen var(--product-motion-open-duration, 180ms) var(--product-motion-ease, ease-out) both;
+  animation: menuOpen var(--product-motion-open-duration, 180ms)
+    var(--product-motion-ease, ease-out) both;
 }
 
 .root[data-state="closed"] {
-  animation: menuClose var(--product-motion-open-duration, 180ms) var(--product-motion-ease, ease-out) both;
+  animation: menuClose var(--product-motion-open-duration, 180ms)
+    var(--product-motion-ease, ease-out) both;
   pointer-events: none;
 }
 
 .submenuPanel {
-  animation: submenuOpen var(--product-motion-open-duration, 180ms) var(--product-motion-ease, ease-out) both;
+  animation: submenuOpen var(--product-motion-open-duration, 180ms)
+    var(--product-motion-ease, ease-out) both;
 }
 
 .submenuContent {
-  animation: submenuContentOpen var(--product-motion-open-duration, 180ms) var(--product-motion-ease, ease-out) both;
+  animation: submenuContentOpen var(--product-motion-open-duration, 180ms)
+    var(--product-motion-ease, ease-out) both;
 }
 
 @keyframes menuOpen {

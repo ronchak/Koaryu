@@ -285,10 +285,7 @@ class ReportExportService:
             writer.writeheader()
             for row in rows:
                 self.budget.check_output_row()
-                writer.writerow({
-                    column: _csv_value(row.get(column))
-                    for column in report.columns
-                })
+                writer.writerow({column: _csv_value(row.get(column)) for column in report.columns})
                 self.budget.consume_output_row()
                 self.budget.check_elapsed()
 
@@ -316,19 +313,27 @@ class ReportExportService:
         return build_quiet_churn_watchlist(self._fetch_intelligence_dataset(studio_id), self.today)
 
     def _build_first_90_days_onboarding_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_first_90_days_onboarding(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_first_90_days_onboarding(
+            self._fetch_intelligence_dataset(studio_id), self.today
+        )
 
     def _build_lead_quality_after_enrollment_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_lead_quality_after_enrollment(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_lead_quality_after_enrollment(
+            self._fetch_intelligence_dataset(studio_id), self.today
+        )
 
     def _build_belt_momentum_testing_pipeline_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_belt_momentum_testing_pipeline(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_belt_momentum_testing_pipeline(
+            self._fetch_intelligence_dataset(studio_id), self.today
+        )
 
     def _build_revenue_leakage_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_revenue_leakage(self._fetch_intelligence_dataset(studio_id), self.today)
 
     def _build_schedule_utilization_demand_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_schedule_utilization_demand(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_schedule_utilization_demand(
+            self._fetch_intelligence_dataset(studio_id), self.today
+        )
 
     def _build_family_account_health_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_family_account_health(self._fetch_intelligence_dataset(studio_id), self.today)
@@ -337,7 +342,9 @@ class ReportExportService:
         return build_lifecycle_segmentation(self._fetch_intelligence_dataset(studio_id), self.today)
 
     def _build_instructor_staff_impact_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_instructor_staff_impact(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_instructor_staff_impact(
+            self._fetch_intelligence_dataset(studio_id), self.today
+        )
 
     def _build_data_hygiene_readiness_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_data_hygiene_readiness(self._fetch_intelligence_dataset(studio_id), self.today)
@@ -408,7 +415,9 @@ class ReportExportService:
                 "subscription_comped": subscription.get("comped"),
                 "subscription_metadata": subscription.get("metadata"),
                 "payment_account_status": payment_account.get("status"),
-                "payment_account_stripe_connected_account_id": payment_account.get("stripe_connected_account_id"),
+                "payment_account_stripe_connected_account_id": payment_account.get(
+                    "stripe_connected_account_id"
+                ),
                 "payment_account_charges_enabled": payment_account.get("charges_enabled"),
                 "payment_account_payouts_enabled": payment_account.get("payouts_enabled"),
                 "payment_account_details_submitted": payment_account.get("details_submitted"),
@@ -468,9 +477,7 @@ class ReportExportService:
         dataset = self._report_data().fetch_staff_dataset(studio_id)
         role_rows = dataset["staff_roles"]
         profile_map = {
-            row.get("user_id"): row
-            for row in dataset["staff_profiles"]
-            if row.get("user_id")
+            row.get("user_id"): row for row in dataset["staff_profiles"] if row.get("user_id")
         }
         auth_users = dataset["auth_users"]
         return [

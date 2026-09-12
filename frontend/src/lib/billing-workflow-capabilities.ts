@@ -6,7 +6,8 @@ export function enabledBillingWorkflowIds(
   isPreviewMode: boolean,
 ) {
   if (role !== "admin" && role !== "front_desk") return new Set<string>();
-  if (isPreviewMode) return new Set(status?.workflow_capabilities.map(({ workflow_id }) => workflow_id) ?? []);
+  if (isPreviewMode)
+    return new Set(status?.workflow_capabilities.map(({ workflow_id }) => workflow_id) ?? []);
   return new Set(
     status?.workflow_capabilities
       .filter(({ enabled }) => enabled)

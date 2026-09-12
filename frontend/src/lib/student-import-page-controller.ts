@@ -22,10 +22,7 @@ import {
   type ActiveStudentImportOperation,
   type StudentImportStage,
 } from "@/lib/student-import-page-model";
-import type {
-  ConfigStoreContextValue,
-  StudentsStoreContextValue,
-} from "@/lib/store-contexts";
+import type { ConfigStoreContextValue, StudentsStoreContextValue } from "@/lib/store-contexts";
 import { hasStaffPermission } from "@/lib/staff-permissions";
 import type { CsvImportOptions, CsvImportResult, CsvParseResponse } from "@/types";
 
@@ -60,7 +57,8 @@ export function useStudentImportPageController({
   } | null>(null);
   const [importResult, setImportResult] = useState<CsvImportResult | null>(null);
   const [importOptions, setImportOptions] = useState<CsvImportOptions>(DEFAULT_IMPORT_OPTIONS);
-  const [submittedImportOptions, setSubmittedImportOptions] = useState<CsvImportOptions>(DEFAULT_IMPORT_OPTIONS);
+  const [submittedImportOptions, setSubmittedImportOptions] =
+    useState<CsvImportOptions>(DEFAULT_IMPORT_OPTIONS);
   const [importKeyState, setImportKeyState] = useState<{
     input: CsvImportKeyInput;
     key: string | null;
@@ -110,13 +108,13 @@ export function useStudentImportPageController({
     };
   }, [file, fileContentHash, importOptions, mapping, rowCount]);
   const activeImportKey = areCsvImportKeyInputsEqual(importKeyState?.input, importKeyInput)
-    ? importKeyState?.key ?? null
+    ? (importKeyState?.key ?? null)
     : null;
   const importKeyError = areCsvImportKeyInputsEqual(importKeyState?.input, importKeyInput)
-    ? importKeyState?.error ?? null
+    ? (importKeyState?.error ?? null)
     : null;
   const validationResult = areCsvImportKeyInputsEqual(validationState?.input, importKeyInput)
-    ? validationState?.result ?? null
+    ? (validationState?.result ?? null)
     : null;
 
   useEffect(() => {
@@ -126,21 +124,24 @@ export function useStudentImportPageController({
 
     let canceled = false;
 
-    void buildStableImportKey(importKeyInput).then((nextImportKey) => {
-      if (!canceled) {
-        setImportKeyState({ input: importKeyInput, key: nextImportKey, error: null });
-      }
-    }).catch((error) => {
-      if (!canceled) {
-        setImportKeyState({
-          input: importKeyInput,
-          key: null,
-          error: error instanceof Error
-            ? error.message
-            : "Koaryu could not prepare a duplicate-safe import key.",
-        });
-      }
-    });
+    void buildStableImportKey(importKeyInput)
+      .then((nextImportKey) => {
+        if (!canceled) {
+          setImportKeyState({ input: importKeyInput, key: nextImportKey, error: null });
+        }
+      })
+      .catch((error) => {
+        if (!canceled) {
+          setImportKeyState({
+            input: importKeyInput,
+            key: null,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Koaryu could not prepare a duplicate-safe import key.",
+          });
+        }
+      });
 
     return () => {
       canceled = true;
@@ -148,7 +149,7 @@ export function useStudentImportPageController({
   }, [importKeyInput]);
 
   async function handleFile(nextFile: File) {
-    const requestId = fileRequestRef.current += 1;
+    const requestId = (fileRequestRef.current += 1);
     validationRequestRef.current += 1;
     importRequestRef.current += 1;
 
@@ -200,8 +201,9 @@ export function useStudentImportPageController({
           token,
           {
             timeoutMs: 190000,
-            timeoutMessage: "Parsing this CSV is taking longer than expected. Please try again in a moment.",
-          }
+            timeoutMessage:
+              "Parsing this CSV is taking longer than expected. Please try again in a moment.",
+          },
         );
         if (fileRequestRef.current !== requestId) {
           return;
@@ -232,7 +234,7 @@ export function useStudentImportPageController({
     if (isImporting) {
       return;
     }
-    const requestId = validationRequestRef.current += 1;
+    const requestId = (validationRequestRef.current += 1);
     const requestFile = file;
     const requestRows = rows;
     const requestMapping = mapping;
@@ -241,11 +243,11 @@ export function useStudentImportPageController({
     const requestStage = stage;
     const requestInput = requestFileContentHash
       ? {
-        rowCount: requestRowCount,
-        mapping: requestMapping,
-        options: nextOptions,
-        contentHash: requestFileContentHash,
-      }
+          rowCount: requestRowCount,
+          mapping: requestMapping,
+          options: nextOptions,
+          contentHash: requestFileContentHash,
+        }
       : null;
     setActiveOperation("validation");
     setErrorMessage(null);
@@ -258,7 +260,12 @@ export function useStudentImportPageController({
       }
 
       if (isPreviewMode) {
-        const result = buildPreviewValidationResult(requestRows, requestMapping, nextOptions, splitCsvImportFullName);
+        const result = buildPreviewValidationResult(
+          requestRows,
+          requestMapping,
+          nextOptions,
+          splitCsvImportFullName,
+        );
         if (validationRequestRef.current !== requestId) {
           return;
         }
@@ -270,10 +277,13 @@ export function useStudentImportPageController({
 
         const formData = new FormData();
         formData.append("file", requestFile);
-        formData.append("payload", JSON.stringify({
-          mapping: requestMapping,
-          options: nextOptions,
-        }));
+        formData.append(
+          "payload",
+          JSON.stringify({
+            mapping: requestMapping,
+            options: nextOptions,
+          }),
+        );
 
         const result = await api.postForm<CsvImportResult>(
           "/students/import/validate",
@@ -281,8 +291,9 @@ export function useStudentImportPageController({
           token,
           {
             timeoutMs: 190000,
-            timeoutMessage: "Validation is taking longer than expected. Please wait a moment and try again.",
-          }
+            timeoutMessage:
+              "Validation is taking longer than expected. Please wait a moment and try again.",
+          },
         );
 
         if (validationRequestRef.current !== requestId) {
@@ -324,7 +335,10 @@ export function useStudentImportPageController({
     }
 
     if (!requestImportKey) {
-      setErrorMessage(importKeyError || "Koaryu is still preparing this file for a duplicate-safe import. Try again in a moment.");
+      setErrorMessage(
+        importKeyError ||
+          "Koaryu is still preparing this file for a duplicate-safe import. Try again in a moment.",
+      );
       return;
     }
     if (!requestValidationResult) {
@@ -332,14 +346,20 @@ export function useStudentImportPageController({
       return;
     }
 
-    const requestId = importRequestRef.current += 1;
+    const requestId = (importRequestRef.current += 1);
     setActiveOperation("import");
     setErrorMessage(null);
 
     try {
-      const result = await importStudents(requestFile, requestRows, requestMapping, requestOptions, {
-        importKey: requestImportKey,
-      });
+      const result = await importStudents(
+        requestFile,
+        requestRows,
+        requestMapping,
+        requestOptions,
+        {
+          importKey: requestImportKey,
+        },
+      );
       if (importRequestRef.current !== requestId) {
         return;
       }
@@ -360,7 +380,10 @@ export function useStudentImportPageController({
     }
   }
 
-  async function handleOptionToggle<K extends keyof CsvImportOptions>(key: K, value: CsvImportOptions[K]) {
+  async function handleOptionToggle<K extends keyof CsvImportOptions>(
+    key: K,
+    value: CsvImportOptions[K],
+  ) {
     if (activeOperation !== null) {
       return;
     }

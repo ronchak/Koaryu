@@ -29,11 +29,13 @@ class _Response:
 
 
 def _config() -> BillingTransitionCronConfig:
-    return BillingTransitionCronConfig.from_environment({
-        "ENVIRONMENT": "staging",
-        "KOARYU_BACKEND_API_URL": "https://koaryu-staging.onrender.com/api/v1",
-        "BILLING_TRANSITION_WORKER_SECRET": "s" * 40,
-    })
+    return BillingTransitionCronConfig.from_environment(
+        {
+            "ENVIRONMENT": "staging",
+            "KOARYU_BACKEND_API_URL": "https://koaryu-staging.onrender.com/api/v1",
+            "BILLING_TRANSITION_WORKER_SECRET": "s" * 40,
+        }
+    )
 
 
 def test_cron_configuration_pins_environment_url_and_secret():
@@ -60,9 +62,7 @@ def test_cron_configuration_pins_environment_url_and_secret():
 
 
 def test_cron_posts_to_exact_internal_route_without_logging_secret():
-    response = _Response(
-        b'{"claimed":2,"completed":2,"reconciliation_required":0,"failed":0}'
-    )
+    response = _Response(b'{"claimed":2,"completed":2,"reconciliation_required":0,"failed":0}')
     with patch(
         "app.services.billing_transition_cron._NO_REDIRECT_OPENER.open",
         return_value=response,
@@ -131,14 +131,17 @@ def test_redirect_handler_never_constructs_a_forwarded_request(status_code: int)
     from app.services.billing_transition_cron import _RejectRedirectHandler
 
     request = object()
-    assert _RejectRedirectHandler().redirect_request(
-        request,
-        None,
-        status_code,
-        "redirect",
-        {"Location": "https://attacker.invalid/capture"},
-        "https://attacker.invalid/capture",
-    ) is None
+    assert (
+        _RejectRedirectHandler().redirect_request(
+            request,
+            None,
+            status_code,
+            "redirect",
+            {"Location": "https://attacker.invalid/capture"},
+            "https://attacker.invalid/capture",
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -169,12 +172,15 @@ def test_cron_main_prints_fixed_result_without_response_values(
     result: dict[str, int],
     expected_output: str,
 ):
-    with patch(
-        "app.services.billing_transition_cron.BillingTransitionCronConfig.from_environment",
-        return_value=_config(),
-    ), patch(
-        "app.services.billing_transition_cron.process_due_billing_transitions",
-        return_value=result,
+    with (
+        patch(
+            "app.services.billing_transition_cron.BillingTransitionCronConfig.from_environment",
+            return_value=_config(),
+        ),
+        patch(
+            "app.services.billing_transition_cron.process_due_billing_transitions",
+            return_value=result,
+        ),
     ):
         main()
 
@@ -182,12 +188,15 @@ def test_cron_main_prints_fixed_result_without_response_values(
 
 
 def test_cron_main_prints_nothing_when_processing_requires_attention(capsys):
-    with patch(
-        "app.services.billing_transition_cron.BillingTransitionCronConfig.from_environment",
-        return_value=_config(),
-    ), patch(
-        "app.services.billing_transition_cron.process_due_billing_transitions",
-        side_effect=RuntimeError("Billing transition cron requires operator attention."),
+    with (
+        patch(
+            "app.services.billing_transition_cron.BillingTransitionCronConfig.from_environment",
+            return_value=_config(),
+        ),
+        patch(
+            "app.services.billing_transition_cron.process_due_billing_transitions",
+            side_effect=RuntimeError("Billing transition cron requires operator attention."),
+        ),
     ):
         with pytest.raises(RuntimeError):
             main()

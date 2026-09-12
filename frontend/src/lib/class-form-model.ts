@@ -1,4 +1,12 @@
-export const FULL_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export const FULL_DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
 export type ClassFormMode = "single" | "weekly";
 
@@ -39,8 +47,7 @@ export interface WeeklyClassTemplateSubmitPayload {
 }
 
 export type ClassFormSubmitPayload =
-  | SingleSessionFormSubmitPayload
-  | WeeklyClassTemplateSubmitPayload;
+  SingleSessionFormSubmitPayload | WeeklyClassTemplateSubmitPayload;
 
 export interface ClassFormInitialValues {
   mode?: ClassFormMode;
@@ -124,7 +131,7 @@ export function getDayOfWeekFromDate(value: string) {
 
 export function buildClassFormInitialState(
   initialValues?: ClassFormInitialValues,
-  defaultMode: ClassFormMode = "weekly"
+  defaultMode: ClassFormMode = "weekly",
 ): ClassFormState {
   const today = todayDateString();
   const date = initialValues?.date || initialValues?.startDate || today;
@@ -145,7 +152,7 @@ export function buildClassFormInitialState(
 
 export function buildClassFormResetKey(
   initialValues: ClassFormInitialValues | undefined,
-  defaultMode: ClassFormMode
+  defaultMode: ClassFormMode,
 ) {
   return JSON.stringify([
     defaultMode,
@@ -162,7 +169,10 @@ export function buildClassFormResetKey(
   ]);
 }
 
-export function buildClassFormModeState(form: ClassFormState, nextMode: ClassFormMode): Partial<ClassFormState> {
+export function buildClassFormModeState(
+  form: ClassFormState,
+  nextMode: ClassFormMode,
+): Partial<ClassFormState> {
   if (nextMode === form.mode) {
     return {};
   }

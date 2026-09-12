@@ -66,15 +66,7 @@ export function StudentFormLoading() {
   );
 }
 
-function SortIcon({
-  col,
-  sortKey,
-  sortDir,
-}: {
-  col: SortKey;
-  sortKey: SortKey;
-  sortDir: SortDir;
-}) {
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
   if (sortKey !== col) {
     return <ChevronUp aria-hidden="true" className="w-3 h-3 opacity-20" />;
   }
@@ -87,7 +79,11 @@ function SortIcon({
 
 type RosterSortState = "ascending" | "descending";
 
-function getSortState(col: SortKey, sortKey: SortKey, sortDir: SortDir): RosterSortState | undefined {
+function getSortState(
+  col: SortKey,
+  sortKey: SortKey,
+  sortDir: SortDir,
+): RosterSortState | undefined {
   if (sortKey !== col) {
     return undefined;
   }
@@ -106,7 +102,8 @@ function getSortButtonLabel(label: string, col: SortKey, sortKey: SortKey, sortD
 
 function getStudentName(row: StudentRosterRow) {
   const { student } = row;
-  const fullName = `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`.trim();
+  const fullName =
+    `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`.trim();
   return fullName || row.displayName;
 }
 
@@ -123,9 +120,7 @@ export function StudentRosterLoadError({
       <p className="text-sm text-text-secondary text-center max-w-md">
         Koaryu could not load the student roster right now.
       </p>
-      <p className="mt-2 text-xs text-muted text-center max-w-xl break-words">
-        {activeLoadError}
-      </p>
+      <p className="mt-2 text-xs text-muted text-center max-w-xl break-words">{activeLoadError}</p>
       <Button variant="secondary" size="sm" className="mt-4" onClick={onRetry}>
         Try again
       </Button>
@@ -157,9 +152,7 @@ export function StudentRosterEmptyState({
   return (
     <div className="flex flex-col items-center justify-center py-20">
       <User aria-hidden="true" className="w-8 h-8 text-muted mb-3" />
-      <p className="text-sm text-text-secondary">
-        {state.message}
-      </p>
+      <p className="text-sm text-text-secondary">{state.message}</p>
       {state.showClearFilters ? (
         <button
           onClick={onClearFilters}
@@ -236,184 +229,206 @@ export function StudentRosterTable({
         </label>
       ) : null}
       <table className={styles.rosterTable}>
-      <thead>
-        <tr className="border-b border-border">
-          {canManageRoster ? (
-            <th data-column="select" className="w-14 p-0">
-              <label className={styles.checkboxTarget}>
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleSelectAll}
-                  className={styles.checkboxControl}
-                />
-                <span className="sr-only">
-                  {allSelected ? "Deselect all visible students" : "Select all visible students"}
-                </span>
-              </label>
-            </th>
-          ) : null}
-          <th
-            data-column="name"
-            aria-sort={getSortState("name", sortKey, sortDir)}
-            className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
-          >
-            <button
-              type="button"
-              onClick={() => handleSort("name")}
-              aria-label={getSortButtonLabel("name", "name", sortKey, sortDir)}
-              className="flex items-center gap-1 cursor-pointer"
-            >
-              Name
-              <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
-            </button>
-          </th>
-          <th
-            data-column="status"
-            aria-sort={getSortState("status", sortKey, sortDir)}
-            className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
-          >
-            <button
-              type="button"
-              onClick={() => handleSort("status")}
-              aria-label={getSortButtonLabel("status", "status", sortKey, sortDir)}
-              className="flex items-center gap-1 cursor-pointer"
-            >
-              Status
-              <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
-            </button>
-          </th>
-          <th data-column="programs" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
-            Programs
-          </th>
-          <th data-column="contact" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
-            Contact
-          </th>
-          <th data-column="tags" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
-            Tags
-          </th>
-          <th
-            data-column="member-since"
-            aria-sort={getSortState("membership_start_date", sortKey, sortDir)}
-            className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
-          >
-            <button
-              type="button"
-              onClick={() => handleSort("membership_start_date")}
-              aria-label={getSortButtonLabel("member since date", "membership_start_date", sortKey, sortDir)}
-              className="flex items-center gap-1 cursor-pointer"
-            >
-              Member since
-              <SortIcon col="membership_start_date" sortKey={sortKey} sortDir={sortDir} />
-            </button>
-          </th>
-          {inactivityThreshold && (
-            <th data-column="inactive" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
-              Days inactive
-            </th>
-          )}
-        </tr>
-      </thead>
-      <tbody>
-        {filtered.map((row) => {
-          const { student } = row;
-          const isSelected = selectedIds.has(student.id);
-          const studentName = getStudentName(row);
-          return (
-            <tr
-              key={student.id}
-              data-student-id={student.id}
-              data-state={student.status}
-              data-focused={focusedStudentId === student.id || undefined}
-              onFocusCapture={() => onFocusStudent(student.id)}
-              onPointerEnter={onHoverStudent ? () => onHoverStudent(student.id) : undefined}
-              onClick={() => onOpenStudent(student.id)}
-              className={styles.rosterRow}
-              data-selected={isSelected || undefined}
-            >
-              {canManageRoster ? (
-                <td
-                  data-label="Select"
-                  className="p-0"
-                >
-                  <label
-                    className={styles.checkboxTarget}
-                    onClick={stopStudentSelectionPropagation}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onClick={stopStudentSelectionPropagation}
-                      onChange={() => toggleSelect(student.id)}
-                      className={styles.checkboxControl}
-                    />
-                    <span className="sr-only">
-                      {isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
-                    </span>
-                  </label>
-                </td>
-              ) : null}
-              <th scope="row" data-label="Student" className={styles.studentCell}>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenStudent(student.id);
-                  }}
-                  data-open-student
-                  aria-label={`Open ${studentName} profile`}
-                  className={styles.studentIdentityButton}
-                >
-                  <StudentAvatar student={student} />
-                  <div className={styles.studentIdentityCopy}>
-                    <p className={styles.studentName}>
-                      {student.preferred_name || student.legal_first_name}{" "}
-                      {student.legal_last_name}
-                    </p>
-                    {student.is_minor && <p className={styles.studentMeta}>Minor</p>}
-                  </div>
-                </button>
+        <thead>
+          <tr className="border-b border-border">
+            {canManageRoster ? (
+              <th data-column="select" className="w-14 p-0">
+                <label className={styles.checkboxTarget}>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    className={styles.checkboxControl}
+                  />
+                  <span className="sr-only">
+                    {allSelected ? "Deselect all visible students" : "Select all visible students"}
+                  </span>
+                </label>
               </th>
-              <td data-label="Status" className={styles.statusCell}>
-                <StatusBadge status={student.status} />
-              </td>
-              <td data-label="Programs" className={styles.programCell}>
-                <div className={styles.programSummary}>
-                  {row.programs.length > 0 ? (
-                    <>
-                      <ProgramBadge program={row.programs[0]} />
-                      {row.programs.length > 1 ? (
-                        <span className={styles.overflowCount}>+{row.programs.length - 1}</span>
-                      ) : null}
-                    </>
-                  ) : (
-                    <ProgramBadge program={programs.find((program) => program.id === student.program_id)} />
-                  )}
-                </div>
-              </td>
-              <td data-column="contact" data-label="Contact" className={styles.contactCell}>
-                {row.contact}
-              </td>
-              <td data-column="tags" data-label="Tags" className={styles.tagsCell}>
-                <div className={styles.tagSummary}>
-                  {row.visibleTags[0] ? <span>{row.visibleTags[0]}</span> : <span aria-hidden="true">—</span>}
-                  {row.visibleTags.length + row.hiddenTagCount > 1 ? (
-                    <span className={styles.overflowCount}>+{row.visibleTags.length + row.hiddenTagCount - 1}</span>
-                  ) : null}
-                </div>
-              </td>
-              <td data-label="Member since" className={styles.memberSinceCell}>
-                {formatDate(student.membership_start_date)}
-              </td>
-              {inactivityThreshold && (
-                <td data-label="Days inactive" className={styles.inactiveCell}>
-                  {inactivityByStudentId.get(student.id) || `${inactivityThreshold}+`}
+            ) : null}
+            <th
+              data-column="name"
+              aria-sort={getSortState("name", sortKey, sortDir)}
+              className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
+            >
+              <button
+                type="button"
+                onClick={() => handleSort("name")}
+                aria-label={getSortButtonLabel("name", "name", sortKey, sortDir)}
+                className="flex items-center gap-1 cursor-pointer"
+              >
+                Name
+                <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
+              </button>
+            </th>
+            <th
+              data-column="status"
+              aria-sort={getSortState("status", sortKey, sortDir)}
+              className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
+            >
+              <button
+                type="button"
+                onClick={() => handleSort("status")}
+                aria-label={getSortButtonLabel("status", "status", sortKey, sortDir)}
+                className="flex items-center gap-1 cursor-pointer"
+              >
+                Status
+                <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
+              </button>
+            </th>
+            <th
+              data-column="programs"
+              className="px-4 py-3 text-left text-xs font-medium text-text-secondary"
+            >
+              Programs
+            </th>
+            <th
+              data-column="contact"
+              className="px-4 py-3 text-left text-xs font-medium text-text-secondary"
+            >
+              Contact
+            </th>
+            <th
+              data-column="tags"
+              className="px-4 py-3 text-left text-xs font-medium text-text-secondary"
+            >
+              Tags
+            </th>
+            <th
+              data-column="member-since"
+              aria-sort={getSortState("membership_start_date", sortKey, sortDir)}
+              className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
+            >
+              <button
+                type="button"
+                onClick={() => handleSort("membership_start_date")}
+                aria-label={getSortButtonLabel(
+                  "member since date",
+                  "membership_start_date",
+                  sortKey,
+                  sortDir,
+                )}
+                className="flex items-center gap-1 cursor-pointer"
+              >
+                Member since
+                <SortIcon col="membership_start_date" sortKey={sortKey} sortDir={sortDir} />
+              </button>
+            </th>
+            {inactivityThreshold && (
+              <th
+                data-column="inactive"
+                className="px-4 py-3 text-left text-xs font-medium text-text-secondary"
+              >
+                Days inactive
+              </th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((row) => {
+            const { student } = row;
+            const isSelected = selectedIds.has(student.id);
+            const studentName = getStudentName(row);
+            return (
+              <tr
+                key={student.id}
+                data-student-id={student.id}
+                data-state={student.status}
+                data-focused={focusedStudentId === student.id || undefined}
+                onFocusCapture={() => onFocusStudent(student.id)}
+                onPointerEnter={onHoverStudent ? () => onHoverStudent(student.id) : undefined}
+                onClick={() => onOpenStudent(student.id)}
+                className={styles.rosterRow}
+                data-selected={isSelected || undefined}
+              >
+                {canManageRoster ? (
+                  <td data-label="Select" className="p-0">
+                    <label
+                      className={styles.checkboxTarget}
+                      onClick={stopStudentSelectionPropagation}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onClick={stopStudentSelectionPropagation}
+                        onChange={() => toggleSelect(student.id)}
+                        className={styles.checkboxControl}
+                      />
+                      <span className="sr-only">
+                        {isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
+                      </span>
+                    </label>
+                  </td>
+                ) : null}
+                <th scope="row" data-label="Student" className={styles.studentCell}>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenStudent(student.id);
+                    }}
+                    data-open-student
+                    aria-label={`Open ${studentName} profile`}
+                    className={styles.studentIdentityButton}
+                  >
+                    <StudentAvatar student={student} />
+                    <div className={styles.studentIdentityCopy}>
+                      <p className={styles.studentName}>
+                        {student.preferred_name || student.legal_first_name}{" "}
+                        {student.legal_last_name}
+                      </p>
+                      {student.is_minor && <p className={styles.studentMeta}>Minor</p>}
+                    </div>
+                  </button>
+                </th>
+                <td data-label="Status" className={styles.statusCell}>
+                  <StatusBadge status={student.status} />
                 </td>
-              )}
-            </tr>
-          );
-        })}
-      </tbody>
+                <td data-label="Programs" className={styles.programCell}>
+                  <div className={styles.programSummary}>
+                    {row.programs.length > 0 ? (
+                      <>
+                        <ProgramBadge program={row.programs[0]} />
+                        {row.programs.length > 1 ? (
+                          <span className={styles.overflowCount}>+{row.programs.length - 1}</span>
+                        ) : null}
+                      </>
+                    ) : (
+                      <ProgramBadge
+                        program={programs.find((program) => program.id === student.program_id)}
+                      />
+                    )}
+                  </div>
+                </td>
+                <td data-column="contact" data-label="Contact" className={styles.contactCell}>
+                  {row.contact}
+                </td>
+                <td data-column="tags" data-label="Tags" className={styles.tagsCell}>
+                  <div className={styles.tagSummary}>
+                    {row.visibleTags[0] ? (
+                      <span>{row.visibleTags[0]}</span>
+                    ) : (
+                      <span aria-hidden="true">—</span>
+                    )}
+                    {row.visibleTags.length + row.hiddenTagCount > 1 ? (
+                      <span className={styles.overflowCount}>
+                        +{row.visibleTags.length + row.hiddenTagCount - 1}
+                      </span>
+                    ) : null}
+                  </div>
+                </td>
+                <td data-label="Member since" className={styles.memberSinceCell}>
+                  {formatDate(student.membership_start_date)}
+                </td>
+                {inactivityThreshold && (
+                  <td data-label="Days inactive" className={styles.inactiveCell}>
+                    {inactivityByStudentId.get(student.id) || `${inactivityThreshold}+`}
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
       </table>
     </>
   );
@@ -496,7 +511,9 @@ export function StudentRosterReadingRail({
 
       {student.tags.length > 0 ? (
         <div className={styles.readingTags} aria-label="Student tags">
-          {student.tags.map((tag) => <span key={tag}>{tag}</span>)}
+          {student.tags.map((tag) => (
+            <span key={tag}>{tag}</span>
+          ))}
         </div>
       ) : null}
 
@@ -512,7 +529,7 @@ export function StudentRosterReadingRail({
         size="sm"
         className={styles.openRecordButton}
         data-open-student
-                      onClick={() => onOpenStudent(student.id)}
+        onClick={() => onOpenStudent(student.id)}
       >
         Open full record
       </Button>

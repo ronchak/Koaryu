@@ -69,9 +69,7 @@ def _reason(value: str) -> str:
     if not normalized:
         raise argparse.ArgumentTypeError("reason must not be empty")
     if len(normalized) > MAX_REASON_LENGTH:
-        raise argparse.ArgumentTypeError(
-            f"reason must be {MAX_REASON_LENGTH} characters or fewer"
-        )
+        raise argparse.ArgumentTypeError(f"reason must be {MAX_REASON_LENGTH} characters or fewer")
     if any(unicodedata.category(character) == "Cc" for character in normalized):
         raise argparse.ArgumentTypeError("reason must not contain control characters")
     return normalized
@@ -110,7 +108,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands.add_parser("list", help="List studios whose comp flag is currently enabled.")
 
-    status_parser = commands.add_parser("status", help="Show one studio's subscription and comp provenance.")
+    status_parser = commands.add_parser(
+        "status", help="Show one studio's subscription and comp provenance."
+    )
     _add_selector(status_parser)
 
     commands.add_parser(
@@ -132,7 +132,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _paginate(query_factory: Callable[[], Any], *, page_size: int = PAGE_SIZE) -> list[dict[str, Any]]:
+def _paginate(
+    query_factory: Callable[[], Any], *, page_size: int = PAGE_SIZE
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     offset = 0
     while True:
@@ -145,9 +147,7 @@ def _paginate(query_factory: Callable[[], Any], *, page_size: int = PAGE_SIZE) -
 
 
 def _all_studios(supabase: Any) -> list[dict[str, Any]]:
-    return _paginate(
-        lambda: supabase.table("studios").select("id,name,slug").order("id")
-    )
+    return _paginate(lambda: supabase.table("studios").select("id,name,slug").order("id"))
 
 
 def _resolve_studio(
@@ -243,11 +243,14 @@ def _list_comps(supabase: Any, stdout: TextIO) -> None:
     studios = {row["id"]: row for row in _all_studios(supabase)}
     rows = [
         _display_row(
-            studios.get(subscription["studio_id"], {
-                "id": subscription["studio_id"],
-                "name": None,
-                "slug": None,
-            }),
+            studios.get(
+                subscription["studio_id"],
+                {
+                    "id": subscription["studio_id"],
+                    "name": None,
+                    "slug": None,
+                },
+            ),
             subscription,
         )
         for subscription in subscriptions
@@ -273,9 +276,7 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
     # live subscription.
     subscriptions = _paginate(
         lambda: (
-            supabase.table("studio_subscriptions")
-            .select(SUBSCRIPTION_COLUMNS)
-            .order("studio_id")
+            supabase.table("studio_subscriptions").select(SUBSCRIPTION_COLUMNS).order("studio_id")
         )
     )
     studios = {row["id"]: row for row in _all_studios(supabase)}
@@ -284,25 +285,15 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
         provenance = _comp_provenance(subscription)
         comped = bool(subscription.get("comped"))
         recorded_state = provenance.get("state") if provenance else None
-        provenance_disagrees = (
-            recorded_state == "granted" and not comped
-        ) or (
+        provenance_disagrees = (recorded_state == "granted" and not comped) or (
             recorded_state == "revoked" and comped
         )
-        legacy_status_entitled = (
-            subscription.get("status") == "comped" and not comped
-        )
-        unusable_grant_timestamp = (
-            comped and _has_unusable_grant_timestamp(provenance)
-        )
-        live_subscription_with_comp = (
-            comped and _has_live_stripe_subscription(subscription)
-        )
+        legacy_status_entitled = subscription.get("status") == "comped" and not comped
+        unusable_grant_timestamp = comped and _has_unusable_grant_timestamp(provenance)
+        live_subscription_with_comp = comped and _has_live_stripe_subscription(subscription)
         stripe_customer_needs_confirmation = (
             comped
-            and _has_stripe_subscription_id(
-                subscription.get("stripe_customer_id")
-            )
+            and _has_stripe_subscription_id(subscription.get("stripe_customer_id"))
             and not _has_live_stripe_subscription(subscription)
         )
         if not (
@@ -314,11 +305,14 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
         ):
             continue
         display = _display_row(
-            studios.get(subscription["studio_id"], {
-                "id": subscription["studio_id"],
-                "name": None,
-                "slug": None,
-            }),
+            studios.get(
+                subscription["studio_id"],
+                {
+                    "id": subscription["studio_id"],
+                    "name": None,
+                    "slug": None,
+                },
+            ),
             subscription,
         )
         display["drift_reasons"] = [
@@ -511,7 +505,9 @@ def _planned_change(
                 "source": "comp_studio_cli",
                 "previous": bool(subscription.get("comped")),
             },
-        } if changes_anything else {
+        }
+        if changes_anything
+        else {
             "outcome": "no_change",
             "status": status_after,
             "status_note": status_note,
@@ -710,11 +706,13 @@ def _warn_if_still_entitled(
     """
     if command != "revoke":
         return False
-    access = _platform_subscription_access_from_row({
-        "status": status,
-        "comped": False,
-        "trial_end": trial_end,
-    })
+    access = _platform_subscription_access_from_row(
+        {
+            "status": status,
+            "comped": False,
+            "trial_end": trial_end,
+        }
+    )
     if not access["subscription_required"]:
         print(
             f"WARNING: Access is NOT removed. Status is still {status!r}, which entitles "

@@ -34,15 +34,42 @@ function options(overrides = {}) {
     isPreviewMode: false,
     isStudentRosterSnapshotCurrent: () => true,
     normalizeStudentIds: (ids) => [...new Set(ids.map((id) => id.trim()).filter(Boolean))],
-    onStudentMutation: () => { state.mutations += 1; },
-    persistStudents: (next) => { state.persisted.push(next); state.students = next; },
-    postArchive: async (token, ids) => { state.posts.push({ token, ids }); },
+    onStudentMutation: () => {
+      state.mutations += 1;
+    },
+    persistStudents: (next) => {
+      state.persisted.push(next);
+      state.students = next;
+    },
+    postArchive: async (token, ids) => {
+      state.posts.push({ token, ids });
+    },
     previewStudentPhotoUrlsRef: { current: { one: "blob:one" } },
-    revokeObjectURL: (url) => { state.revoked.push(url); },
-    studentMutationEpochRef: { get current() { return state.epoch; }, set current(value) { state.epoch = value; } },
-    studentRosterRequestSequenceRef: { get current() { return state.requestSequence; }, set current(value) { state.requestSequence = value; } },
+    revokeObjectURL: (url) => {
+      state.revoked.push(url);
+    },
+    studentMutationEpochRef: {
+      get current() {
+        return state.epoch;
+      },
+      set current(value) {
+        state.epoch = value;
+      },
+    },
+    studentRosterRequestSequenceRef: {
+      get current() {
+        return state.requestSequence;
+      },
+      set current(value) {
+        state.requestSequence = value;
+      },
+    },
     studentsMayBePartial: true,
-    studentsRef: { get current() { return state.students; } },
+    studentsRef: {
+      get current() {
+        return state.students;
+      },
+    },
   };
   return { state, options: { ...base, ...overrides } };
 }
@@ -52,13 +79,18 @@ describe("student bulk archive action", () => {
     const { state, options: actionOptions } = options();
     await deleteStudentsAction(actionOptions);
     assert.deepEqual(state.posts, [{ token: "token", ids: ["one", "two"] }]);
-    assert.deepEqual(state.students.map((student) => student.id), ["three"]);
+    assert.deepEqual(
+      state.students.map((student) => student.id),
+      ["three"],
+    );
     assert.equal(state.mutations, 1);
   });
 
   it("suppresses a stale request completion", async () => {
     const { state, options: actionOptions } = options({
-      postArchive: async () => { state.current = false; },
+      postArchive: async () => {
+        state.current = false;
+      },
     });
     await deleteStudentsAction(actionOptions);
     assert.deepEqual(state.students, students);
@@ -70,7 +102,9 @@ describe("student bulk archive action", () => {
     const original = new Error("network timeout");
     const refreshedStudents = [students[2]];
     const { state, options: actionOptions } = options({
-      postArchive: async () => { throw original; },
+      postArchive: async () => {
+        throw original;
+      },
       refreshedStudents,
       isStudentRosterSnapshotCurrent: () => true,
     });
@@ -83,12 +117,17 @@ describe("student bulk archive action", () => {
   it("cleans preview state without making a network request", async () => {
     const { state, options: actionOptions } = options({
       isPreviewMode: true,
-      postArchive: async () => { throw new Error("network call"); },
+      postArchive: async () => {
+        throw new Error("network call");
+      },
     });
     await deleteStudentsAction(actionOptions);
     assert.deepEqual(state.posts, []);
     assert.deepEqual(state.revoked, ["blob:one"]);
-    assert.deepEqual(state.persisted[0].map((student) => student.id), ["three"]);
+    assert.deepEqual(
+      state.persisted[0].map((student) => student.id),
+      ["three"],
+    );
     assert.equal(state.mutations, 1);
   });
 });

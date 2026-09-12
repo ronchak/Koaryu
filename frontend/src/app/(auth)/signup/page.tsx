@@ -28,7 +28,9 @@ export default function SignupPage() {
     setConfirmPasswordError("");
 
     if (password !== confirmPassword) {
-      setConfirmPasswordError("Passwords do not match. Please enter the same password in both fields.");
+      setConfirmPasswordError(
+        "Passwords do not match. Please enter the same password in both fields.",
+      );
       return;
     }
 
@@ -64,7 +66,9 @@ export default function SignupPage() {
     }
 
     if (!data.session) {
-      setNotice("Check your email to confirm your account, then sign in to finish setting up your studio.");
+      setNotice(
+        "Check your email to confirm your account, then sign in to finish setting up your studio.",
+      );
       setIsLoading(false);
       return;
     }
@@ -79,12 +83,8 @@ export default function SignupPage() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-text-primary mb-1">
-        Create your account
-      </h2>
-      <p className="text-sm text-text-secondary mb-5">
-        Set up your studio in under two minutes.
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mb-1">Create your account</h2>
+      <p className="text-sm text-text-secondary mb-5">Set up your studio in under two minutes.</p>
 
       <form onSubmit={handleSignup} className="space-y-4">
         <Input
@@ -132,20 +132,10 @@ export default function SignupPage() {
           error={confirmPasswordError}
         />
 
-        {error && (
-          <p className="text-xs text-danger">{error}</p>
-        )}
-        {notice && (
-          <p className="text-xs text-success">{notice}</p>
-        )}
+        {error && <p className="text-xs text-danger">{error}</p>}
+        {notice && <p className="text-xs text-success">{notice}</p>}
 
-        <Button
-          type="submit"
-          variant="primary"
-          size="lg"
-          isLoading={isLoading}
-          className="w-full"
-        >
+        <Button type="submit" variant="primary" size="lg" isLoading={isLoading} className="w-full">
           Create account
         </Button>
       </form>

@@ -98,10 +98,7 @@ export function useBillingActionRuntime({
       return result;
     } catch (err) {
       if (onTerminalIdempotencyError) {
-        clearBillingIdempotencyKeyAfterTerminalError(
-          err,
-          onTerminalIdempotencyError,
-        );
+        clearBillingIdempotencyKeyAfterTerminalError(err, onTerminalIdempotencyError);
       }
       setError(err instanceof Error ? err.message : errorMessage);
       return null;

@@ -32,7 +32,9 @@ PAYER_SYNC_AMBIGUOUS_DETAIL = (
 
 
 class BillingPayerManager:
-    def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
+    def __init__(
+        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+    ):
         self.billing_service = billing_service
         self.stripe_service_cls = stripe_service_cls
 
@@ -55,7 +57,9 @@ class BillingPayerManager:
     def _idempotency_key(self, *parts: str) -> str:
         return self.billing_service._idempotency_key(*parts)
 
-    def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
+    def _audit(
+        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
+    ) -> None:
         self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
 
     async def list_payers(self, studio_id: str) -> list[BillingPayerResponse]:
@@ -68,20 +72,32 @@ class BillingPayerManager:
         )
         return [BillingPayerResponse(**row) for row in (result.data or [])]
 
-    async def create_payer(self, data: BillingPayerCreate, studio_id: str, actor_id: str) -> BillingPayerResponse:
+    async def create_payer(
+        self, data: BillingPayerCreate, studio_id: str, actor_id: str
+    ) -> BillingPayerResponse:
         row = data.model_dump()
         row["studio_id"] = studio_id
         if row.get("guardian_id"):
-            self._ensure_record_in_studio("guardians", row["guardian_id"], studio_id, "Guardian not found.")
+            self._ensure_record_in_studio(
+                "guardians", row["guardian_id"], studio_id, "Guardian not found."
+            )
         result = self.supabase.table("billing_payers").insert(row).execute()
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create payer.")
         payer = result.data[0]
-        self._audit(studio_id, actor_id, "billing.payer_created", payer["id"], {"display_name": data.display_name})
+        self._audit(
+            studio_id,
+            actor_id,
+            "billing.payer_created",
+            payer["id"],
+            {"display_name": data.display_name},
+        )
         return BillingPayerResponse(**payer)
 
     async def get_payer(self, payer_id: str, studio_id: str) -> BillingPayerResponse:
-        return BillingPayerResponse(**self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found."))
+        return BillingPayerResponse(
+            **self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
+        )
 
     async def update_payer(
         self,
@@ -93,10 +109,18 @@ class BillingPayerManager:
         self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
         update = data.model_dump(exclude_unset=True)
         if update.get("guardian_id"):
-            self._ensure_record_in_studio("guardians", update["guardian_id"], studio_id, "Guardian not found.")
+            self._ensure_record_in_studio(
+                "guardians", update["guardian_id"], studio_id, "Guardian not found."
+            )
         if not update:
             return await self.get_payer(payer_id, studio_id)
-        result = self.supabase.table("billing_payers").update(update).eq("id", payer_id).eq("studio_id", studio_id).execute()
+        result = (
+            self.supabase.table("billing_payers")
+            .update(update)
+            .eq("id", payer_id)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
         if not result.data:
             raise HTTPException(status_code=404, detail="Payer not found.")
         payer = result.data[0]
@@ -274,30 +298,25 @@ class BillingPayerManager:
             if recovery
             else (
                 "update"
-                if payer.get("stripe_customer_id")
-                and payer.get("stripe_account_id") == account_id
+                if payer.get("stripe_customer_id") and payer.get("stripe_account_id") == account_id
                 else "create"
             )
         )
         target_customer_id = (
             self._payer_sync_evidence(operation)[1]
             if recovery
-            else (
-                str(payer.get("stripe_customer_id"))
-                if sync_mode == "update"
-                else None
-            )
+            else (str(payer.get("stripe_customer_id")) if sync_mode == "update" else None)
         )
         if recovery and (
             (sync_mode == "create" and payer.get("stripe_customer_id") is not None)
             or (
                 sync_mode == "update"
-                and str(payer.get("stripe_customer_id") or "")
-                != str(target_customer_id or "")
+                and str(payer.get("stripe_customer_id") or "") != str(target_customer_id or "")
             )
         ):
             coordinator.reject_recovery_source_drift_v2(
-                context, operation,
+                context,
+                operation,
                 error_code="payer_sync_recovery_source_drift",
             )
             raise HTTPException(status_code=409, detail=PAYER_SYNC_AMBIGUOUS_DETAIL)
@@ -356,9 +375,10 @@ class BillingPayerManager:
                 result_code=f"payer_sync_{sync_mode}_started",
                 result_summary=saved_summary,
             )
-            if disposition == "recovery_safe_retry" and int(
-                operation.get("provider_request_attempt_count") or 0
-            ) != 2:
+            if (
+                disposition == "recovery_safe_retry"
+                and int(operation.get("provider_request_attempt_count") or 0) != 2
+            ):
                 raise HTTPException(status_code=503, detail=PAYER_SYNC_AMBIGUOUS_DETAIL)
             try:
                 if sync_mode == "update":
@@ -503,10 +523,8 @@ class BillingPayerManager:
                 test_clock_id=test_clock_id,
             )
             != context.request_sha256
-            or operation.get("stripe_connected_account_id")
-            != context.stripe_connected_account_id
-            or operation.get("connect_account_generation")
-            != context.connect_account_generation
+            or operation.get("stripe_connected_account_id") != context.stripe_connected_account_id
+            or operation.get("connect_account_generation") != context.connect_account_generation
             or operation.get("provider_object_id") != payer.get("stripe_customer_id")
             or operation.get("state") != "completed"
             or operation.get("result_code") != "payer_sync_completed"
@@ -514,16 +532,14 @@ class BillingPayerManager:
         ):
             raise RuntimeError("payer_sync_audit_identity_mismatch")
 
-        audit_id = str(uuid5(
-            NAMESPACE_URL,
-            f"koaryu:billing.payer_synced:{context.operation_id}",
-        ))
+        audit_id = str(
+            uuid5(
+                NAMESPACE_URL,
+                f"koaryu:billing.payer_synced:{context.operation_id}",
+            )
+        )
         existing = (
-            self.supabase.table("audit_logs")
-            .select("*")
-            .eq("id", audit_id)
-            .limit(1)
-            .execute()
+            self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
         )
         if existing.data:
             self._validate_payer_sync_audit_row(
@@ -561,24 +577,22 @@ class BillingPayerManager:
                 raise RuntimeError("payer_sync_legacy_audit_identity_mismatch")
             return
         try:
-            self.supabase.table("audit_logs").insert({
-                "id": audit_id,
-                "studio_id": context.studio_id,
-                "actor_id": context.actor_id,
-                "action": "billing.payer_synced",
-                "entity_type": "billing",
-                "entity_id": payer_id,
-                "metadata": expected_metadata,
-            }).execute()
+            self.supabase.table("audit_logs").insert(
+                {
+                    "id": audit_id,
+                    "studio_id": context.studio_id,
+                    "actor_id": context.actor_id,
+                    "action": "billing.payer_synced",
+                    "entity_type": "billing",
+                    "entity_id": payer_id,
+                    "metadata": expected_metadata,
+                }
+            ).execute()
         except PostgrestAPIError as exc:
             if getattr(exc, "code", None) != "23505":
                 raise
             winner = (
-                self.supabase.table("audit_logs")
-                .select("*")
-                .eq("id", audit_id)
-                .limit(1)
-                .execute()
+                self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
             )
             if not winner.data:
                 raise RuntimeError("payer_sync_audit_conflict_unverified") from exc
@@ -592,9 +606,7 @@ class BillingPayerManager:
                     metadata=expected_metadata,
                 )
             except RuntimeError as invariant_exc:
-                raise RuntimeError(
-                    "payer_sync_audit_conflict_unverified"
-                ) from invariant_exc
+                raise RuntimeError("payer_sync_audit_conflict_unverified") from invariant_exc
 
     @staticmethod
     def _validate_payer_sync_audit_row(
@@ -633,26 +645,20 @@ class BillingPayerManager:
         provider_test_clock = _stripe_id(_object_get(customer, "test_clock"))
         if (
             _stripe_id(customer) != customer_id
+            or (sync_mode == "update" and customer_id != payer.get("stripe_customer_id"))
             or (
-                sync_mode == "update"
-                and customer_id != payer.get("stripe_customer_id")
-            )
-            or (
-                sync_mode == "create"
-                and payer.get("stripe_customer_id") not in {None, customer_id}
+                sync_mode == "create" and payer.get("stripe_customer_id") not in {None, customer_id}
             )
             or str(_object_get(customer, "name") or "")
             != str(payer.get("display_name") or "Koaryu payer")
             or str(_object_get(customer, "email") or "") != str(payer.get("email") or "")
             or str(_object_get(customer, "phone") or "") != str(payer.get("phone") or "")
             or any(
-                str(_object_get(provider_address, key) or "")
-                != str(value or "")
+                str(_object_get(provider_address, key) or "") != str(value or "")
                 for key, value in address.items()
             )
             or any(
-                str(_object_get(provider_metadata, key) or "")
-                != str(value)
+                str(_object_get(provider_metadata, key) or "") != str(value)
                 for key, value in metadata.items()
             )
             or (sync_mode == "create" and provider_test_clock != test_clock_id)
@@ -712,7 +718,7 @@ class BillingPayerManager:
         if summary == create:
             return "create", None
         if summary.startswith(update_prefix):
-            target = summary[len(update_prefix):]
+            target = summary[len(update_prefix) :]
             BillingPayerManager._payer_sync_summary("update", target)
             return "update", target
         raise RuntimeError("payer_sync_saved_mode_invalid")
@@ -789,8 +795,7 @@ class BillingPayerManager:
             except PostgrestAPIError as exc:
                 if (
                     getattr(exc, "code", None) != "P0002"
-                    or getattr(exc, "message", None)
-                    != "billing_payer_active_consent_not_found"
+                    or getattr(exc, "message", None) != "billing_payer_active_consent_not_found"
                 ):
                     raise
         if (
@@ -824,9 +829,16 @@ class BillingPayerManager:
             .eq("studio_id", context.studio_id)
         )
         for field in (
-            "display_name", "email", "phone", "address_line1", "address_city",
-            "address_state", "address_zip", "stripe_account_id",
-            "stripe_customer_id", "connect_account_generation",
+            "display_name",
+            "email",
+            "phone",
+            "address_line1",
+            "address_city",
+            "address_state",
+            "address_zip",
+            "stripe_account_id",
+            "stripe_customer_id",
+            "connect_account_generation",
         ):
             value = payer.get(field)
             query = query.is_(field, "null") if value is None else query.eq(field, value)
@@ -842,11 +854,12 @@ class BillingPayerManager:
         context: BillingProviderOperationContext,
         operation: dict[str, Any],
     ) -> dict[str, Any]:
-        payer = self._get_row_or_404("billing_payers", payer_id, context.studio_id, "Payer not found.")
+        payer = self._get_row_or_404(
+            "billing_payers", payer_id, context.studio_id, "Payer not found."
+        )
         if (
             payer.get("stripe_account_id") != context.stripe_connected_account_id
-            or payer.get("connect_account_generation")
-            != context.connect_account_generation
+            or payer.get("connect_account_generation") != context.connect_account_generation
             or payer.get("stripe_customer_id") != operation.get("provider_object_id")
         ):
             raise RuntimeError("payer_sync_saved_result_mismatch")
@@ -881,7 +894,9 @@ class BillingPayerManager:
             detail=PAYER_SYNC_AMBIGUOUS_DETAIL,
         ) from exc
 
-    def _payer_id_for_customer(self, studio_id: str, account_id: Optional[str], customer_id: Optional[str]) -> Optional[str]:
+    def _payer_id_for_customer(
+        self, studio_id: str, account_id: Optional[str], customer_id: Optional[str]
+    ) -> Optional[str]:
         if not customer_id:
             return None
         query = (
@@ -891,7 +906,11 @@ class BillingPayerManager:
             .eq("stripe_customer_id", customer_id)
             .limit(1)
         )
-        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        query = (
+            query.eq("stripe_account_id", account_id)
+            if account_id
+            else query.is_("stripe_account_id", "null")
+        )
         result = query.execute()
         return result.data[0]["id"] if result.data else None
 
@@ -922,7 +941,11 @@ class BillingPayerManager:
     def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
         if not payer_id:
             return
-        execute_required_rpc(self.supabase, "recompute_billing_payer_balance_v1", {
-            "p_studio_id": studio_id,
-            "p_payer_id": payer_id,
-        })
+        execute_required_rpc(
+            self.supabase,
+            "recompute_billing_payer_balance_v1",
+            {
+                "p_studio_id": studio_id,
+                "p_payer_id": payer_id,
+            },
+        )

@@ -56,7 +56,9 @@ class StudentImportExecutor:
             receipts: dict[str, dict[str, Any]] = {}
             for receipt in import_run["receipts"]:
                 receipts.setdefault(receipt["kind"], {})[receipt["key"]] = receipt["result"]
-            _, planned_rows = self.planner.prepare_import(rows, mapping, studio_id, effective_options, receipts)
+            _, planned_rows = self.planner.prepare_import(
+                rows, mapping, studio_id, effective_options, receipts
+            )
             self.setup_writer.prepare(
                 planned_rows,
                 studio_id=studio_id,
@@ -64,17 +66,25 @@ class StudentImportExecutor:
                 processing_token=processing_token,
                 receipts=receipts,
             )
-            created_programs = [value["name"] for value in receipts.get("program", {}).values() if value["created"]]
-            created_ladders = [value["name"] for value in receipts.get("ladder", {}).values() if value["created"]]
+            created_programs = [
+                value["name"] for value in receipts.get("program", {}).values() if value["created"]
+            ]
+            created_ladders = [
+                value["name"] for value in receipts.get("ladder", {}).values() if value["created"]
+            ]
             created_belts = [
                 f"{value['name']} ({value['ladder_name']})"
-                for value in receipts.get("rank", {}).values() if value["created"]
+                for value in receipts.get("rank", {}).values()
+                if value["created"]
             ]
-            non_critical_errors = list(dict.fromkeys(
-                value["warning"]
-                for kind in ("program", "ladder", "rank")
-                for value in receipts.get(kind, {}).values() if value.get("warning")
-            ))
+            non_critical_errors = list(
+                dict.fromkeys(
+                    value["warning"]
+                    for kind in ("program", "ladder", "rank")
+                    for value in receipts.get(kind, {}).values()
+                    if value.get("warning")
+                )
+            )
 
             imported, imported_without_belt = self._import_valid_rows(
                 planned_rows=planned_rows,
@@ -116,7 +126,9 @@ class StudentImportExecutor:
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=STUDENT_IMPORT_FAILED_DETAIL,
                 ) from exc
-            self._mark_failed_safely(import_runs, import_run["id"], processing_token, str(exc.detail))
+            self._mark_failed_safely(
+                import_runs, import_run["id"], processing_token, str(exc.detail)
+            )
             raise
         except Exception as exc:
             logger.exception(
@@ -190,7 +202,9 @@ class StudentImportExecutor:
                 "pending_belt_name": row.get("pending_belt_name"),
                 "unresolved_belt_value": row.get("unresolved_belt_value"),
                 "belt_creation_target_ladder_id": row.get("belt_creation_target_ladder_id"),
-                "belt_creation_requires_new_ladder": row.get("belt_creation_requires_new_ladder", False),
+                "belt_creation_requires_new_ladder": row.get(
+                    "belt_creation_requires_new_ladder", False
+                ),
                 "imported_without_belt": row_imported_without_belt,
             }
             # Unknown failures abort this attempt. The same key recovers any
@@ -222,18 +236,22 @@ class StudentImportExecutor:
         guardian_fields: dict[str, Any],
         program_ids: list[str],
     ) -> str:
-        result = execute_required_rpc(self.supabase, "import_student_row_atomic", {
-            "p_student": mapped,
-            "p_studio_id": studio_id,
-            "p_import_run_id": import_run_id,
-            "p_processing_token": processing_token,
-            "p_row_number": row_number,
-            "p_guardian_name": guardian_fields["guardian_name"],
-            "p_guardian_email": guardian_fields["guardian_email"],
-            "p_guardian_phone": guardian_fields["guardian_phone"],
-            "p_guardian_relation": guardian_fields["guardian_relation"],
-            "p_program_ids": program_ids,
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "import_student_row_atomic",
+            {
+                "p_student": mapped,
+                "p_studio_id": studio_id,
+                "p_import_run_id": import_run_id,
+                "p_processing_token": processing_token,
+                "p_row_number": row_number,
+                "p_guardian_name": guardian_fields["guardian_name"],
+                "p_guardian_email": guardian_fields["guardian_email"],
+                "p_guardian_phone": guardian_fields["guardian_phone"],
+                "p_guardian_relation": guardian_fields["guardian_relation"],
+                "p_program_ids": program_ids,
+            },
+        )
         row = first_rpc_row(result) or {}
         student_id = row.get("student_id")
         if not student_id:

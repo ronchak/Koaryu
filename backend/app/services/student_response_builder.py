@@ -21,15 +21,17 @@ class StudentResponseBuilder:
         self.photo_store = photo_store
 
     def guardian_row_to_response(self, guardian_row: dict) -> GuardianResponse:
-        return GuardianResponse(**{
-            "id": guardian_row["id"],
-            "first_name": guardian_row["first_name"],
-            "last_name": guardian_row["last_name"],
-            "email": guardian_row.get("email"),
-            "phone": guardian_row.get("phone"),
-            "relation": guardian_row.get("relation"),
-            "is_primary_contact": guardian_row.get("is_primary_contact", False),
-        })
+        return GuardianResponse(
+            **{
+                "id": guardian_row["id"],
+                "first_name": guardian_row["first_name"],
+                "last_name": guardian_row["last_name"],
+                "email": guardian_row.get("email"),
+                "phone": guardian_row.get("phone"),
+                "relation": guardian_row.get("relation"),
+                "is_primary_contact": guardian_row.get("is_primary_contact", False),
+            }
+        )
 
     def guardian_from_link_row(self, row: dict) -> Optional[GuardianResponse]:
         if not isinstance(row, dict):
@@ -46,8 +48,7 @@ class StudentResponseBuilder:
     ) -> dict[str, list[GuardianResponse]]:
         ordered_student_ids = list(dict.fromkeys(student_ids))
         guardians_by_student_id: dict[str, list[GuardianResponse]] = {
-            student_id: []
-            for student_id in ordered_student_ids
+            student_id: [] for student_id in ordered_student_ids
         }
         if not ordered_student_ids:
             return guardians_by_student_id
@@ -72,7 +73,9 @@ class StudentResponseBuilder:
 
         return guardians_by_student_id
 
-    def fetch_guardians_for_student(self, student_id: str, studio_id: Optional[str] = None) -> list[GuardianResponse]:
+    def fetch_guardians_for_student(
+        self, student_id: str, studio_id: Optional[str] = None
+    ) -> list[GuardianResponse]:
         studio_map = {student_id: studio_id} if studio_id else None
         return self.fetch_guardians_for_students([student_id], studio_map).get(student_id, [])
 
@@ -107,8 +110,7 @@ class StudentResponseBuilder:
     ) -> dict[str, list[StudentProgramMembershipResponse]]:
         ordered_student_ids = list(dict.fromkeys(student_ids))
         memberships_by_student_id: dict[str, list[StudentProgramMembershipResponse]] = {
-            student_id: []
-            for student_id in ordered_student_ids
+            student_id: [] for student_id in ordered_student_ids
         }
         if not ordered_student_ids:
             return memberships_by_student_id
@@ -140,7 +142,9 @@ class StudentResponseBuilder:
 
         return memberships_by_student_id
 
-    def fetch_memberships_for_student(self, student_id: str, studio_id: Optional[str] = None) -> list[StudentProgramMembershipResponse]:
+    def fetch_memberships_for_student(
+        self, student_id: str, studio_id: Optional[str] = None
+    ) -> list[StudentProgramMembershipResponse]:
         studio_map = {student_id: studio_id} if studio_id else None
         return self.fetch_memberships_for_students([student_id], studio_map).get(student_id, [])
 
@@ -166,28 +170,22 @@ class StudentResponseBuilder:
         include_guardians: bool = True,
         include_photo_urls: bool = True,
     ) -> list[StudentResponse]:
-        student_ids = [
-            row["id"]
-            for row in rows
-            if row.get("id")
-        ]
+        student_ids = [row["id"] for row in rows if row.get("id")]
         student_studio_ids = {
-            row["id"]: row["studio_id"]
-            for row in rows
-            if row.get("id") and row.get("studio_id")
+            row["id"]: row["studio_id"] for row in rows if row.get("id") and row.get("studio_id")
         }
         guardians_by_student_id = (
             self.fetch_guardians_for_students([*student_ids], student_studio_ids)
             if include_guardians
             else {student_id: [] for student_id in student_ids}
         )
-        memberships_by_student_id = self.fetch_memberships_for_students(student_ids, student_studio_ids)
+        memberships_by_student_id = self.fetch_memberships_for_students(
+            student_ids, student_studio_ids
+        )
         photo_urls_by_path = (
-            self.photo_store.create_signed_urls([
-                row["photo_path"]
-                for row in rows
-                if row.get("photo_path")
-            ])
+            self.photo_store.create_signed_urls(
+                [row["photo_path"] for row in rows if row.get("photo_path")]
+            )
             if include_photo_urls
             else {}
         )
@@ -196,7 +194,9 @@ class StudentResponseBuilder:
                 row,
                 guardians=guardians_by_student_id.get(row.get("id"), []),
                 memberships=memberships_by_student_id.get(row.get("id"), []),
-                photo_url=photo_urls_by_path.get(row.get("photo_path")) if include_photo_urls else None,
+                photo_url=photo_urls_by_path.get(row.get("photo_path"))
+                if include_photo_urls
+                else None,
             )
             for row in rows
         ]
@@ -223,11 +223,7 @@ class StudentResponseBuilder:
             photo_url = self.photo_store.create_signed_url(photo_path)
 
         normalized_row = {
-            **{
-                k: v
-                for k, v in row.items()
-                if k not in ("deleted_at", "student_guardians")
-            },
+            **{k: v for k, v in row.items() if k not in ("deleted_at", "student_guardians")},
             "tags": row.get("tags") or [],
             "photo_url": photo_url,
         }

@@ -5,8 +5,11 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 from fastapi import HTTPException
 from app.schemas.lead import (
-    LeadCreate, LeadUpdate, LeadResponse,
-    LeadActivityCreate, LeadActivityResponse,
+    LeadCreate,
+    LeadUpdate,
+    LeadResponse,
+    LeadActivityCreate,
+    LeadActivityResponse,
     LeadConvert,
 )
 from app.services.studio_scope import ensure_staff_user_in_studio
@@ -26,11 +29,11 @@ class LeadService:
     async def list_leads(
         self, studio_id: str, stage: Optional[str] = None, source: Optional[str] = None
     ) -> list[LeadResponse]:
-        return [LeadResponse(**row) for row in fetch_lead_rows(self.supabase, studio_id, stage, source)]
+        return [
+            LeadResponse(**row) for row in fetch_lead_rows(self.supabase, studio_id, stage, source)
+        ]
 
-    async def create_lead(
-        self, data: LeadCreate, studio_id: str, actor_id: str
-    ) -> LeadResponse:
+    async def create_lead(self, data: LeadCreate, studio_id: str, actor_id: str) -> LeadResponse:
         row = data.model_dump()
         ensure_staff_user_in_studio(
             self.supabase,
@@ -51,22 +54,26 @@ class LeadService:
             raise HTTPException(status_code=500, detail="Failed to create lead")
 
         # Log activity
-        self.supabase.table("lead_activities").insert({
-            "studio_id": studio_id,
-            "lead_id": result.data[0]["id"],
-            "activity_type": "note",
-            "description": "Lead created",
-            "created_by": actor_id,
-        }).execute()
+        self.supabase.table("lead_activities").insert(
+            {
+                "studio_id": studio_id,
+                "lead_id": result.data[0]["id"],
+                "activity_type": "note",
+                "description": "Lead created",
+                "created_by": actor_id,
+            }
+        ).execute()
 
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "lead.created",
-            "entity_type": "lead",
-            "entity_id": result.data[0]["id"],
-            "metadata": {"name": f"{data.first_name} {data.last_name}"},
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "lead.created",
+                "entity_type": "lead",
+                "entity_id": result.data[0]["id"],
+                "metadata": {"name": f"{data.first_name} {data.last_name}"},
+            }
+        ).execute()
 
         return LeadResponse(**result.data[0])
 
@@ -95,19 +102,23 @@ class LeadService:
             studio_id,
             "Assigned staff member not found in this studio",
         )
-        ProgramService(self.supabase).ensure_program_active(studio_id, update_dict.get("program_id"))
+        ProgramService(self.supabase).ensure_program_active(
+            studio_id, update_dict.get("program_id")
+        )
 
         # Log stage change
         if "stage" in update_dict:
             old_lead = await self.get_lead(lead_id, studio_id)
             if old_lead.stage != update_dict["stage"]:
-                self.supabase.table("lead_activities").insert({
-                    "studio_id": studio_id,
-                    "lead_id": lead_id,
-                    "activity_type": "stage_change",
-                    "description": f"Stage changed from {old_lead.stage} to {update_dict['stage']}",
-                    "created_by": actor_id,
-                }).execute()
+                self.supabase.table("lead_activities").insert(
+                    {
+                        "studio_id": studio_id,
+                        "lead_id": lead_id,
+                        "activity_type": "stage_change",
+                        "description": f"Stage changed from {old_lead.stage} to {update_dict['stage']}",
+                        "created_by": actor_id,
+                    }
+                ).execute()
 
         try:
             result = (
@@ -118,7 +129,10 @@ class LeadService:
                 .execute()
             )
         except PostgrestAPIError as exc:
-            if exc.code not in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES or "program_id" not in update_dict:
+            if (
+                exc.code not in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES
+                or "program_id" not in update_dict
+            ):
                 raise
             update_dict.pop("program_id", None)
             if not update_dict:
@@ -134,9 +148,7 @@ class LeadService:
             raise HTTPException(status_code=404, detail="Lead not found")
         return LeadResponse(**result.data[0])
 
-    async def get_activities(
-        self, lead_id: str, studio_id: str
-    ) -> list[LeadActivityResponse]:
+    async def get_activities(self, lead_id: str, studio_id: str) -> list[LeadActivityResponse]:
         result = (
             self.supabase.table("lead_activities")
             .select("*")
@@ -166,7 +178,11 @@ class LeadService:
         """Convert a lead into a student record."""
         lead = await self.get_lead(lead_id, studio_id)
         program_service = ProgramService(self.supabase)
-        program_id = data.program_id or lead.program_id or program_service.get_unassigned_program_id(studio_id)
+        program_id = (
+            data.program_id
+            or lead.program_id
+            or program_service.get_unassigned_program_id(studio_id)
+        )
         program_service.ensure_program_active(studio_id, program_id)
         if lead.converted_student_id:
             return lead
@@ -180,20 +196,30 @@ class LeadService:
 
         membership_start_date = data.membership_start_date
         if not membership_start_date:
-            studio = self.supabase.table("studios").select("timezone").eq("id", studio_id).single().execute()
+            studio = (
+                self.supabase.table("studios")
+                .select("timezone")
+                .eq("id", studio_id)
+                .single()
+                .execute()
+            )
             membership_start_date = studio_today((studio.data or {}).get("timezone"))[0].isoformat()
 
-        result = execute_required_rpc(self.supabase, "convert_lead_to_student_atomic", {
-            "p_studio_id": studio_id,
-            "p_actor_id": actor_id,
-            "p_lead_id": lead_id,
-            "p_student_id": student_id,
-            "p_program_id": program_id,
-            "p_status": data.status,
-            "p_membership_start_date": membership_start_date,
-            "p_guardian_id": guardian_id,
-            "p_student_guardian_id": link_id,
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "convert_lead_to_student_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_lead_id": lead_id,
+                "p_student_id": student_id,
+                "p_program_id": program_id,
+                "p_status": data.status,
+                "p_membership_start_date": membership_start_date,
+                "p_guardian_id": guardian_id,
+                "p_student_guardian_id": link_id,
+            },
+        )
         converted = first_rpc_row(result)
         if not converted:
             raise HTTPException(

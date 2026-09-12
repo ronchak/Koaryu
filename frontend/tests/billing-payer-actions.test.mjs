@@ -66,7 +66,9 @@ describe("payer setup action", () => {
     let resolvePost;
     const post = (...args) => {
       calls.push(args);
-      return new Promise((resolve) => { resolvePost = resolve; });
+      return new Promise((resolve) => {
+        resolvePost = resolve;
+      });
     };
     let sequence = 0;
     const options = {
@@ -130,11 +132,10 @@ describe("payer setup action", () => {
         return { url: "https://checkout.stripe.test/setup" };
       },
     });
-    assert.deepEqual(calls.map((call) => call[3].headers["Idempotency-Key"]), [
-      "replacement-1",
-      "replacement-1",
-      "replacement-1",
-    ]);
+    assert.deepEqual(
+      calls.map((call) => call[3].headers["Idempotency-Key"]),
+      ["replacement-1", "replacement-1", "replacement-1"],
+    );
     assert.equal(sequence, 1);
   });
 
@@ -144,24 +145,27 @@ describe("payer setup action", () => {
     const calls = [];
     let sequence = 0;
     const attemptsByPayer = new Map();
-    const run = (payerSnapshot, post) => executePayerAutopaySetup({
-      attemptsByPayer,
-      copyLink: async () => true,
-      createKey: () => `replacement-${++sequence}`,
-      identity,
-      keysByPayer,
-      origin: "https://app.koaryu.test",
-      payer: payerSnapshot,
-      post: async (...args) => {
-        calls.push(args);
-        return post();
-      },
-      runtime: runtime().runtime,
-      storage,
-    });
+    const run = (payerSnapshot, post) =>
+      executePayerAutopaySetup({
+        attemptsByPayer,
+        copyLink: async () => true,
+        createKey: () => `replacement-${++sequence}`,
+        identity,
+        keysByPayer,
+        origin: "https://app.koaryu.test",
+        payer: payerSnapshot,
+        post: async (...args) => {
+          calls.push(args);
+          return post();
+        },
+        runtime: runtime().runtime,
+        storage,
+      });
     await run(payer(), () => {
       throw Object.assign(
-        new Error("The Stripe autopay setup session expired. Start a new setup with a new Idempotency-Key."),
+        new Error(
+          "The Stripe autopay setup session expired. Start a new setup with a new Idempotency-Key.",
+        ),
         { status: 409 },
       );
     });
@@ -170,11 +174,10 @@ describe("payer setup action", () => {
       payer({ stripe_payment_method_id: "pm-new", updated_at: "2026-08-30T01:00:00Z" }),
       () => ({ url: "https://checkout.stripe.test/replacement-3" }),
     );
-    assert.deepEqual(calls.map((call) => call[3].headers["Idempotency-Key"]), [
-      "replacement-1",
-      "replacement-2",
-      "replacement-3",
-    ]);
+    assert.deepEqual(
+      calls.map((call) => call[3].headers["Idempotency-Key"]),
+      ["replacement-1", "replacement-2", "replacement-3"],
+    );
   });
 
   it("preserves pending setup and the public return URL", async () => {
@@ -205,12 +208,20 @@ describe("payer setup action", () => {
     for (const storage of [
       undefined,
       {
-        getItem() { throw new Error("blocked"); },
-        removeItem() { throw new Error("blocked"); },
-        setItem() { throw new Error("blocked"); },
+        getItem() {
+          throw new Error("blocked");
+        },
+        removeItem() {
+          throw new Error("blocked");
+        },
+        setItem() {
+          throw new Error("blocked");
+        },
       },
       {
-        getItem() { return "completed-key"; },
+        getItem() {
+          return "completed-key";
+        },
         removeItem() {},
         setItem() {},
       },
@@ -219,27 +230,28 @@ describe("payer setup action", () => {
       const keysByPayer = new Map();
       const calls = [];
       let sequence = 0;
-      const run = () => executePayerAutopaySetup({
-        attemptsByPayer,
-        copyLink: async () => true,
-        createKey: () => `fallback-${++sequence}`,
-        identity,
-        keysByPayer,
-        origin: "https://app.koaryu.test",
-        payer: payer(),
-        post: async (...args) => {
-          calls.push(args);
-          throw Object.assign(new Error("Provider outcome is ambiguous."), { status: 503 });
-        },
-        runtime: runtime().runtime,
-        storage,
-      });
+      const run = () =>
+        executePayerAutopaySetup({
+          attemptsByPayer,
+          copyLink: async () => true,
+          createKey: () => `fallback-${++sequence}`,
+          identity,
+          keysByPayer,
+          origin: "https://app.koaryu.test",
+          payer: payer(),
+          post: async (...args) => {
+            calls.push(args);
+            throw Object.assign(new Error("Provider outcome is ambiguous."), { status: 503 });
+          },
+          runtime: runtime().runtime,
+          storage,
+        });
       await run();
       await run();
-      assert.deepEqual(calls.map((call) => call[3].headers["Idempotency-Key"]), [
-        "fallback-1",
-        "fallback-1",
-      ]);
+      assert.deepEqual(
+        calls.map((call) => call[3].headers["Idempotency-Key"]),
+        ["fallback-1", "fallback-1"],
+      );
       assert.equal(sequence, 1);
     }
   });
@@ -250,33 +262,35 @@ describe("payer setup action", () => {
     const keysByPayer = new Map();
     const calls = [];
     let sequence = 0;
-    const run = (payerSnapshot) => executePayerAutopaySetup({
-      attemptsByPayer,
-      copyLink: async () => true,
-      createKey: () => `baseline-${++sequence}`,
-      identity,
-      keysByPayer,
-      origin: "https://app.koaryu.test",
-      payer: payerSnapshot,
-      post: async (...args) => {
-        calls.push(args);
-        return { url: "https://checkout.stripe.test/setup" };
-      },
-      runtime: runtime().runtime,
-      storage,
-    });
+    const run = (payerSnapshot) =>
+      executePayerAutopaySetup({
+        attemptsByPayer,
+        copyLink: async () => true,
+        createKey: () => `baseline-${++sequence}`,
+        identity,
+        keysByPayer,
+        origin: "https://app.koaryu.test",
+        payer: payerSnapshot,
+        post: async (...args) => {
+          calls.push(args);
+          return { url: "https://checkout.stripe.test/setup" };
+        },
+        runtime: runtime().runtime,
+        storage,
+      });
     await run(payer({ updated_at: "2026-08-30T00:00:00Z" }));
     await run(payer({ updated_at: "2026-08-30T02:00:00Z" }));
-    await run(payer({
-      autopay_authorized_at: "2026-08-30T03:00:00Z",
-      stripe_payment_method_id: "pm-new",
-      updated_at: "2026-08-30T03:00:00Z",
-    }));
-    assert.deepEqual(calls.map((call) => call[3].headers["Idempotency-Key"]), [
-      "baseline-1",
-      "baseline-1",
-      "baseline-2",
-    ]);
+    await run(
+      payer({
+        autopay_authorized_at: "2026-08-30T03:00:00Z",
+        stripe_payment_method_id: "pm-new",
+        updated_at: "2026-08-30T03:00:00Z",
+      }),
+    );
+    assert.deepEqual(
+      calls.map((call) => call[3].headers["Idempotency-Key"]),
+      ["baseline-1", "baseline-1", "baseline-2"],
+    );
   });
 
   it("prefers sent in-memory B over stale valid durable A after a no-op write", async () => {
@@ -285,24 +299,25 @@ describe("payer setup action", () => {
     const keysByPayer = new Map();
     const calls = [];
     let sequence = 0;
-    const run = (payerSnapshot, activeStorage, shouldFail = false) => executePayerAutopaySetup({
-      attemptsByPayer,
-      copyLink: async () => true,
-      createKey: () => `coherent-${++sequence}`,
-      identity,
-      keysByPayer,
-      origin: "https://app.koaryu.test",
-      payer: payerSnapshot,
-      post: async (...args) => {
-        calls.push(args);
-        if (shouldFail) {
-          throw Object.assign(new Error("Provider outcome is ambiguous."), { status: 503 });
-        }
-        return { url: "https://checkout.stripe.test/setup" };
-      },
-      runtime: runtime().runtime,
-      storage: activeStorage,
-    });
+    const run = (payerSnapshot, activeStorage, shouldFail = false) =>
+      executePayerAutopaySetup({
+        attemptsByPayer,
+        copyLink: async () => true,
+        createKey: () => `coherent-${++sequence}`,
+        identity,
+        keysByPayer,
+        origin: "https://app.koaryu.test",
+        payer: payerSnapshot,
+        post: async (...args) => {
+          calls.push(args);
+          if (shouldFail) {
+            throw Object.assign(new Error("Provider outcome is ambiguous."), { status: 503 });
+          }
+          return { url: "https://checkout.stripe.test/setup" };
+        },
+        runtime: runtime().runtime,
+        storage: activeStorage,
+      });
     await run(payer(), storage);
     const durableA = storage.values.get(storage.key);
     const noOpWriteStorage = {
@@ -316,11 +331,10 @@ describe("payer setup action", () => {
     });
     await run(changedSetup, noOpWriteStorage, true);
     await run(changedSetup, noOpWriteStorage, true);
-    assert.deepEqual(calls.map((call) => call[3].headers["Idempotency-Key"]), [
-      "coherent-1",
-      "coherent-2",
-      "coherent-2",
-    ]);
+    assert.deepEqual(
+      calls.map((call) => call[3].headers["Idempotency-Key"]),
+      ["coherent-1", "coherent-2", "coherent-2"],
+    );
     assert.equal(sequence, 2, "retry must not mint unsent C");
   });
 
@@ -356,7 +370,9 @@ describe("payer setup action", () => {
       post: async (...args) => {
         calls.push(args);
         throw Object.assign(
-          new Error("The Stripe autopay setup session expired. Start a new setup with a new Idempotency-Key."),
+          new Error(
+            "The Stripe autopay setup session expired. Start a new setup with a new Idempotency-Key.",
+          ),
           { status: 409 },
         );
       },
@@ -421,7 +437,9 @@ describe("payer setup action", () => {
         calls.push(args);
         accessible = false;
         throw Object.assign(
-          new Error("The Stripe autopay setup session expired. Start a new setup with a new Idempotency-Key."),
+          new Error(
+            "The Stripe autopay setup session expired. Start a new setup with a new Idempotency-Key.",
+          ),
           { status: 409 },
         );
       },

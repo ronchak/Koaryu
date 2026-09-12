@@ -9,7 +9,8 @@ export type DashboardSummaryInactivityCounts = ApiContracts.ApiDashboardSummaryI
 export type DashboardSummaryNewStudentCounts = ApiContracts.ApiDashboardSummaryNewStudentCounts;
 export type DashboardSummaryOperationalCounts = ApiContracts.ApiDashboardSummaryOperationalCounts;
 export type DashboardSummaryChurnCounts = ApiContracts.ApiDashboardSummaryChurnCounts;
-export type DashboardSummaryTestReadinessCounts = ApiContracts.ApiDashboardSummaryTestReadinessCounts;
+export type DashboardSummaryTestReadinessCounts =
+  ApiContracts.ApiDashboardSummaryTestReadinessCounts;
 export type DashboardSummaryBillingCounts = ApiContracts.ApiDashboardSummaryBillingCounts;
 export type DashboardSummarySetupFlags = ApiContracts.ApiDashboardSummarySetupFlags;
 export type DashboardSummaryRecentStudent = ApiContracts.ApiDashboardSummaryRecentStudent;

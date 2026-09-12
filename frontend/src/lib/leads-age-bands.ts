@@ -1,6 +1,7 @@
 import type { Lead } from "@/types";
 
-export type LeadAgeBandId = "overdue-8" | "overdue-3" | "overdue-1" | "today" | "upcoming" | "unscheduled";
+export type LeadAgeBandId =
+  "overdue-8" | "overdue-3" | "overdue-1" | "today" | "upcoming" | "unscheduled";
 
 export const LEAD_AGE_BANDS: { id: LeadAgeBandId; label: string }[] = [
   { id: "overdue-8", label: "8+ days overdue" },
@@ -14,7 +15,7 @@ export const LEAD_AGE_BANDS: { id: LeadAgeBandId; label: string }[] = [
 function dayDifference(date: string, today: string) {
   const dayMs = 24 * 60 * 60 * 1000;
   return Math.round(
-    (new Date(`${today}T00:00:00`).getTime() - new Date(`${date}T00:00:00`).getTime()) / dayMs
+    (new Date(`${today}T00:00:00`).getTime() - new Date(`${date}T00:00:00`).getTime()) / dayMs,
   );
 }
 

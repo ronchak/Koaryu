@@ -1,5 +1,8 @@
 import type { NextRequest } from "next/server";
-import { buildPrivateProxyHeaders, buildPrivateProxyJsonHeaders } from "../../../../lib/proxy-headers.ts";
+import {
+  buildPrivateProxyHeaders,
+  buildPrivateProxyJsonHeaders,
+} from "../../../../lib/proxy-headers.ts";
 import {
   getProxyRequestBodyError,
   getProxyRequestBodyLimit,
@@ -34,7 +37,7 @@ function getBackendApiBase() {
 
 async function forwardRequest(
   request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
+  context: { params: Promise<{ path: string[] }> },
 ) {
   try {
     const { path } = await context.params;
@@ -42,14 +45,14 @@ async function forwardRequest(
     if (!backendApiBase) {
       return Response.json(
         { detail: "Backend API URL is not configured." },
-        { status: 503, headers: buildPrivateProxyJsonHeaders() }
+        { status: 503, headers: buildPrivateProxyJsonHeaders() },
       );
     }
 
     const targetUrl = buildProxyTargetUrl(backendApiBase, request.url, path);
     const headers = buildUpstreamProxyRequestHeaders(
       request.headers,
-      request.cookies.get(ACTIVE_STUDIO_COOKIE)?.value
+      request.cookies.get(ACTIVE_STUDIO_COOKIE)?.value,
     );
 
     const init: RequestInit = {
@@ -59,13 +62,15 @@ async function forwardRequest(
     };
 
     if (request.method !== "GET" && request.method !== "HEAD") {
-      init.body = await readBoundedProxyRequestBody(
-        request,
-        getProxyRequestBodyLimit(path)
-      );
+      init.body = await readBoundedProxyRequestBody(request, getProxyRequestBodyLimit(path));
     }
 
-    const upstream = await fetchProxyUpstream(targetUrl, init, request.signal, proxyRequestTimeout(`/${path.join("/")}`, request.method));
+    const upstream = await fetchProxyUpstream(
+      targetUrl,
+      init,
+      request.signal,
+      proxyRequestTimeout(`/${path.join("/")}`, request.method),
+    );
     const responseHeaders = buildPrivateProxyHeaders(upstream.headers);
 
     return new Response(upstream.body, {
@@ -76,7 +81,7 @@ async function forwardRequest(
     if (error instanceof ProxyUpstreamTimeoutError) {
       return Response.json(
         { detail: error.message },
-        { status: 504, headers: buildPrivateProxyJsonHeaders() }
+        { status: 504, headers: buildPrivateProxyJsonHeaders() },
       );
     }
     if (error instanceof Error && error.name === "AbortError") {
@@ -86,14 +91,14 @@ async function forwardRequest(
     if (requestBodyError) {
       return Response.json(
         { detail: requestBodyError.detail },
-        { status: requestBodyError.status, headers: buildPrivateProxyJsonHeaders() }
+        { status: requestBodyError.status, headers: buildPrivateProxyJsonHeaders() },
       );
     }
 
     if (error instanceof UnsafeProxyPathError) {
       return Response.json(
         { detail: "Invalid API proxy path." },
-        { status: 400, headers: buildPrivateProxyJsonHeaders() }
+        { status: 400, headers: buildPrivateProxyJsonHeaders() },
       );
     }
 
@@ -103,42 +108,33 @@ async function forwardRequest(
       {
         detail: "Could not reach the backend API. Confirm the backend server is running.",
       },
-      { status: 502, headers: buildPrivateProxyJsonHeaders() }
+      { status: 502, headers: buildPrivateProxyJsonHeaders() },
     );
   }
 }
 
-export async function GET(
-  request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
-) {
+export async function GET(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return forwardRequest(request, context);
 }
 
-export async function POST(
-  request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
-) {
+export async function POST(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return forwardRequest(request, context);
 }
 
 export async function PATCH(
   request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
+  context: { params: Promise<{ path: string[] }> },
 ) {
   return forwardRequest(request, context);
 }
 
-export async function PUT(
-  request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
-) {
+export async function PUT(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return forwardRequest(request, context);
 }
 
 export async function DELETE(
   request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
+  context: { params: Promise<{ path: string[] }> },
 ) {
   return forwardRequest(request, context);
 }

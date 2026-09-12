@@ -131,21 +131,35 @@ function renderWithStoreContexts(child) {
   };
 
   return renderToStaticMarkup(
-    React.createElement(ConfigStoreContext.Provider, { value: config },
-      React.createElement(DashboardStoreContext.Provider, { value: dashboard },
-        React.createElement(StudentsStoreContext.Provider, { value: students },
-          React.createElement(ProgramsStoreContext.Provider, { value: programs },
-            React.createElement(LeadsStoreContext.Provider, { value: leads },
-              React.createElement(BeltsStoreContext.Provider, { value: belts },
-                React.createElement(ScheduleStoreContext.Provider, { value: schedule },
-                  React.createElement(StudioStoreContext.Provider, { value: studio }, child)
-                )
-              )
-            )
-          )
-        )
-      )
-    )
+    React.createElement(
+      ConfigStoreContext.Provider,
+      { value: config },
+      React.createElement(
+        DashboardStoreContext.Provider,
+        { value: dashboard },
+        React.createElement(
+          StudentsStoreContext.Provider,
+          { value: students },
+          React.createElement(
+            ProgramsStoreContext.Provider,
+            { value: programs },
+            React.createElement(
+              LeadsStoreContext.Provider,
+              { value: leads },
+              React.createElement(
+                BeltsStoreContext.Provider,
+                { value: belts },
+                React.createElement(
+                  ScheduleStoreContext.Provider,
+                  { value: schedule },
+                  React.createElement(StudioStoreContext.Provider, { value: studio }, child),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
   );
 }
 
@@ -159,15 +173,15 @@ describe("store context contracts", () => {
       return React.createElement(
         "output",
         null,
-        `${config.token}:${store.studioName}:${store.students.length}:${store.leads.length}:${store.currentRole}`
-          + `:${studio.staffProfilesAvailable}:${studio.legalFirstName}:${studio.legalLastName}`
-          + `:${typeof studio.updateUserLegalName}:${typeof studio.updateStaffLegalName}:${Object.hasOwn(config, "staffProfilesAvailable")}`
+        `${config.token}:${store.studioName}:${store.students.length}:${store.leads.length}:${store.currentRole}` +
+          `:${studio.staffProfilesAvailable}:${studio.legalFirstName}:${studio.legalLastName}` +
+          `:${typeof studio.updateUserLegalName}:${typeof studio.updateStaffLegalName}:${Object.hasOwn(config, "staffProfilesAvailable")}`,
       );
     }
 
     assert.equal(
       renderWithStoreContexts(React.createElement(Probe)),
-      "<output>token_1:North Dojo:1:1:admin:true:Ari:Lane:function:function:false</output>"
+      "<output>token_1:North Dojo:1:1:admin:true:Ari:Lane:function:function:false</output>",
     );
   });
 
@@ -179,7 +193,7 @@ describe("store context contracts", () => {
 
     assert.throws(
       () => renderToStaticMarkup(React.createElement(MissingProviderProbe)),
-      /useStudentStore must be used within StoreProvider/
+      /useStudentStore must be used within StoreProvider/,
     );
   });
 });

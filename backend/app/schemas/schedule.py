@@ -18,12 +18,7 @@ def _parse_schedule_time(value: str) -> time:
 
 
 def _parse_schedule_date(value: str) -> date:
-    if (
-        not isinstance(value, str)
-        or len(value) != 10
-        or value[4] != "-"
-        or value[7] != "-"
-    ):
+    if not isinstance(value, str) or len(value) != 10 or value[4] != "-" or value[7] != "-":
         raise ValueError("Date must use YYYY-MM-DD format")
     try:
         return date.fromisoformat(value)
@@ -33,11 +28,12 @@ def _parse_schedule_date(value: str) -> date:
 
 # ---- Class Template ----
 
+
 class ClassTemplateCreate(BaseModel):
     name: str
     day_of_week: int = Field(ge=0, le=6)  # 0=Sunday
-    start_time: str   # HH:MM
-    end_time: str     # HH:MM
+    start_time: str  # HH:MM
+    end_time: str  # HH:MM
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     instructor_id: Optional[str] = None
@@ -61,7 +57,11 @@ class ClassTemplateCreate(BaseModel):
     def validate_schedule_window(self):
         if _parse_schedule_time(self.end_time) <= _parse_schedule_time(self.start_time):
             raise ValueError("End time must be after start time")
-        if self.end_date and self.start_date and _parse_schedule_date(self.end_date) < _parse_schedule_date(self.start_date):
+        if (
+            self.end_date
+            and self.start_date
+            and _parse_schedule_date(self.end_date) < _parse_schedule_date(self.start_date)
+        ):
             raise ValueError("End date cannot be before start date")
         return self
 
@@ -94,9 +94,17 @@ class ClassTemplateUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_schedule_window(self):
-        if self.start_time and self.end_time and _parse_schedule_time(self.end_time) <= _parse_schedule_time(self.start_time):
+        if (
+            self.start_time
+            and self.end_time
+            and _parse_schedule_time(self.end_time) <= _parse_schedule_time(self.start_time)
+        ):
             raise ValueError("End time must be after start time")
-        if self.end_date and self.start_date and _parse_schedule_date(self.end_date) < _parse_schedule_date(self.start_date):
+        if (
+            self.end_date
+            and self.start_date
+            and _parse_schedule_date(self.end_date) < _parse_schedule_date(self.start_date)
+        ):
             raise ValueError("End date cannot be before start date")
         return self
 
@@ -119,6 +127,7 @@ class ClassTemplateResponse(BaseModel):
 
 
 # ---- Class Session ----
+
 
 class ClassSessionCreate(BaseModel):
     template_id: Optional[str] = None
@@ -173,6 +182,7 @@ class ClassSessionDeleteScope(BaseModel):
 
 # ---- Attendance ----
 
+
 class AttendanceCheckIn(BaseModel):
     session_id: str
     student_id: str
@@ -202,6 +212,7 @@ class AttendanceBulkCheckIn(BaseModel):
 
 
 # ---- Page read model ----
+
 
 class ScheduleWindowRange(BaseModel):
     start_date: str

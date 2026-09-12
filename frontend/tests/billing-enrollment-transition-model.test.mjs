@@ -19,7 +19,8 @@ const require = createRequire(import.meta.url);
 
 function loadBillingEnrollmentsTab() {
   const source = fs.readFileSync(
-    path.join(root, "src/components/billing/billing-enrollments-tab.tsx"), "utf8",
+    path.join(root, "src/components/billing/billing-enrollments-tab.tsx"),
+    "utf8",
   );
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
@@ -40,17 +41,23 @@ function loadBillingEnrollmentsTab() {
     }
     if (specifier === "@/components/ui/button") {
       return {
-        Button: (props) => React.createElement(
-          "button",
-          Object.fromEntries(Object.entries(props).filter(([key]) => (
-            !["children", "isLoading", "size", "variant"].includes(key)
-          ))),
-          props.children,
-        ),
+        Button: (props) =>
+          React.createElement(
+            "button",
+            Object.fromEntries(
+              Object.entries(props).filter(
+                ([key]) => !["children", "isLoading", "size", "variant"].includes(key),
+              ),
+            ),
+            props.children,
+          ),
       };
     }
     if (specifier === "@/components/ui/input") {
-      return { Input: ({ label, ...props }) => React.createElement("label", null, label, React.createElement("input", props)) };
+      return {
+        Input: ({ label, ...props }) =>
+          React.createElement("label", null, label, React.createElement("input", props)),
+      };
     }
     if (specifier === "@/lib/billing-page-utils") {
       return { formatDate: (value) => value ?? "Never" };
@@ -64,11 +71,12 @@ function loadBillingEnrollmentsTab() {
     throw new Error(`Unexpected component import: ${specifier}`);
   };
 
-  Function("require", "module", "exports", compiled)(
-    testRequire,
-    componentModule,
-    componentModule.exports,
-  );
+  Function(
+    "require",
+    "module",
+    "exports",
+    compiled,
+  )(testRequire, componentModule, componentModule.exports);
   return componentModule.exports.BillingEnrollmentsTab;
 }
 
@@ -92,38 +100,40 @@ function renderEnrollmentActions({ scheduled, workflows }) {
   };
   const noop = () => {};
 
-  return renderToStaticMarkup(React.createElement(BillingEnrollmentsTab, {
-    billingEnrollments: [enrollment],
-    billingPayers: [],
-    billingPlans: [],
-    billingStudentOptions: [],
-    canManageRoutineBilling: true,
-    canSubmitEnrollmentForm: false,
-    canUseWorkflow: (workflowId) => workflows.has(workflowId),
-    enrollmentEndDate: "",
-    enrollmentNextBillDate: "",
-    enrollmentPayerId: "",
-    enrollmentPlanId: "",
-    enrollmentStartDate: "",
-    enrollmentStudentId: "",
-    isActionLoading: false,
-    isEnrollmentPayerSelectDisabled: false,
-    isLoadingAction: () => false,
-    onCreateEnrollment: noop,
-    onEnrollmentActivate: noop,
-    onEnrollmentCancelImmediate: noop,
-    onEnrollmentEndDateChange: noop,
-    onEnrollmentNextBillDateChange: noop,
-    onEnrollmentPayerChange: noop,
-    onEnrollmentPlanChange: noop,
-    onEnrollmentRevokeScheduled: noop,
-    onEnrollmentSchedulePeriodEnd: noop,
-    onEnrollmentStartDateChange: noop,
-    onEnrollmentStudentChange: noop,
-    payerNameById: new Map([["payer-1", "Payer"]]),
-    planNameById: new Map([["plan-1", "Plan"]]),
-    studentNameById: new Map([["student-1", "Student"]]),
-  }));
+  return renderToStaticMarkup(
+    React.createElement(BillingEnrollmentsTab, {
+      billingEnrollments: [enrollment],
+      billingPayers: [],
+      billingPlans: [],
+      billingStudentOptions: [],
+      canManageRoutineBilling: true,
+      canSubmitEnrollmentForm: false,
+      canUseWorkflow: (workflowId) => workflows.has(workflowId),
+      enrollmentEndDate: "",
+      enrollmentNextBillDate: "",
+      enrollmentPayerId: "",
+      enrollmentPlanId: "",
+      enrollmentStartDate: "",
+      enrollmentStudentId: "",
+      isActionLoading: false,
+      isEnrollmentPayerSelectDisabled: false,
+      isLoadingAction: () => false,
+      onCreateEnrollment: noop,
+      onEnrollmentActivate: noop,
+      onEnrollmentCancelImmediate: noop,
+      onEnrollmentEndDateChange: noop,
+      onEnrollmentNextBillDateChange: noop,
+      onEnrollmentPayerChange: noop,
+      onEnrollmentPlanChange: noop,
+      onEnrollmentRevokeScheduled: noop,
+      onEnrollmentSchedulePeriodEnd: noop,
+      onEnrollmentStartDateChange: noop,
+      onEnrollmentStudentChange: noop,
+      payerNameById: new Map([["payer-1", "Payer"]]),
+      planNameById: new Map([["plan-1", "Plan"]]),
+      studentNameById: new Map([["student-1", "Student"]]),
+    }),
+  );
 }
 
 function storage() {
@@ -190,15 +200,27 @@ describe("billing enrollment transition request keys", () => {
       resourceId: "transition-1",
       storage: persisted,
     };
-    assert.equal(resolveEnrollmentTransitionRequestKey({ ...base, createKey: () => "key-1" }), "key-1");
-    assert.equal(resolveEnrollmentTransitionRequestKey({ ...base, createKey: () => "wrong" }), "key-1");
-    assert.equal(resolveEnrollmentTransitionRequestKey({
-      ...base,
-      createKey: () => "key-2",
-      startNewRequest: true,
-    }), "key-2");
+    assert.equal(
+      resolveEnrollmentTransitionRequestKey({ ...base, createKey: () => "key-1" }),
+      "key-1",
+    );
+    assert.equal(
+      resolveEnrollmentTransitionRequestKey({ ...base, createKey: () => "wrong" }),
+      "key-1",
+    );
+    assert.equal(
+      resolveEnrollmentTransitionRequestKey({
+        ...base,
+        createKey: () => "key-2",
+        startNewRequest: true,
+      }),
+      "key-2",
+    );
     clearEnrollmentTransitionRequestKey(base);
-    assert.equal(resolveEnrollmentTransitionRequestKey({ ...base, createKey: () => "key-3" }), "key-3");
+    assert.equal(
+      resolveEnrollmentTransitionRequestKey({ ...base, createKey: () => "key-3" }),
+      "key-3",
+    );
     assert.deepEqual(enrollmentTransitionRequestOptions("key-3"), {
       headers: { "Idempotency-Key": "key-3" },
     });
@@ -206,9 +228,15 @@ describe("billing enrollment transition request keys", () => {
 
   it("keeps working when browser storage is blocked", () => {
     const blocked = {
-      getItem() { throw new Error("blocked"); },
-      removeItem() { throw new Error("blocked"); },
-      setItem() { throw new Error("blocked"); },
+      getItem() {
+        throw new Error("blocked");
+      },
+      removeItem() {
+        throw new Error("blocked");
+      },
+      setItem() {
+        throw new Error("blocked");
+      },
     };
     const keys = new Map();
     const options = {
@@ -218,19 +246,28 @@ describe("billing enrollment transition request keys", () => {
       resourceId: "enrollment",
       storage: blocked,
     };
-    assert.equal(resolveEnrollmentTransitionRequestKey({ ...options, createKey: () => "key-1" }), "key-1");
-    assert.equal(resolveEnrollmentTransitionRequestKey({ ...options, createKey: () => "wrong" }), "key-1");
+    assert.equal(
+      resolveEnrollmentTransitionRequestKey({ ...options, createKey: () => "key-1" }),
+      "key-1",
+    );
+    assert.equal(
+      resolveEnrollmentTransitionRequestKey({ ...options, createKey: () => "wrong" }),
+      "key-1",
+    );
   });
 
   it("wires named routes into capability-gated controls without clearing unknown attempts", () => {
     const actions = fs.readFileSync(
-      path.join(root, "src/lib/billing-enrollment-actions.ts"), "utf8",
+      path.join(root, "src/lib/billing-enrollment-actions.ts"),
+      "utf8",
     );
     const tab = fs.readFileSync(
-      path.join(root, "src/components/billing/billing-enrollments-tab.tsx"), "utf8",
+      path.join(root, "src/components/billing/billing-enrollments-tab.tsx"),
+      "utf8",
     );
     const contracts = fs.readFileSync(
-      path.join(root, "src/types/generated/api-contracts.ts"), "utf8",
+      path.join(root, "src/types/generated/api-contracts.ts"),
+      "utf8",
     );
 
     assert.match(actions, /enrollmentTransitionRequestOptions\(requestKey\)/);
@@ -262,10 +299,7 @@ describe("billing enrollment transition request keys", () => {
   it("renders immediate and period-end cancellation when no transition is scheduled", () => {
     const markup = renderEnrollmentActions({
       scheduled: null,
-      workflows: new Set([
-        "enrollment.cancel.immediate",
-        "enrollment.cancel.period_end.schedule",
-      ]),
+      workflows: new Set(["enrollment.cancel.immediate", "enrollment.cancel.period_end.schedule"]),
     });
 
     assert.match(markup, />Cancel now</);

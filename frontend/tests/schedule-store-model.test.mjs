@@ -74,23 +74,17 @@ function template(overrides = {}) {
 
 describe("schedule store model", () => {
   it("keeps reads GET-only and requires authorized materialization intent for POST", () => {
-    assert.deepEqual(
-      buildScheduleRangeRequest("2026-07-01", "2026-07-31", "read", true),
-      {
-        method: "GET",
-        path: "/schedule/window?start_date=2026-07-01&end_date=2026-07-31",
-      }
-    );
-    assert.deepEqual(
-      buildScheduleRangeRequest("2026-07-01", "2026-07-31", "materialize", true),
-      {
-        method: "POST",
-        path: "/schedule/window/materialize?start_date=2026-07-01&end_date=2026-07-31",
-      }
-    );
+    assert.deepEqual(buildScheduleRangeRequest("2026-07-01", "2026-07-31", "read", true), {
+      method: "GET",
+      path: "/schedule/window?start_date=2026-07-01&end_date=2026-07-31",
+    });
+    assert.deepEqual(buildScheduleRangeRequest("2026-07-01", "2026-07-31", "materialize", true), {
+      method: "POST",
+      path: "/schedule/window/materialize?start_date=2026-07-01&end_date=2026-07-31",
+    });
     assert.equal(
       buildScheduleRangeRequest("2026-07-01", "2026-07-31", "materialize", false).method,
-      "GET"
+      "GET",
     );
   });
 
@@ -120,7 +114,7 @@ describe("schedule store model", () => {
       "2026-07-01",
       "2026-07-31",
       "read",
-      true
+      true,
     );
     const materialized = await fetchScheduleWindowRange(
       transport,
@@ -128,7 +122,7 @@ describe("schedule store model", () => {
       "2026-07-01",
       "2026-07-31",
       "materialize",
-      true
+      true,
     );
 
     assert.equal(read, payload);
@@ -161,15 +155,8 @@ describe("schedule store model", () => {
     };
 
     await assert.rejects(
-      fetchScheduleWindowRange(
-        transport,
-        "token-1",
-        "2026-07-01",
-        "2026-07-31",
-        "read",
-        true
-      ),
-      /schedule window unavailable/
+      fetchScheduleWindowRange(transport, "token-1", "2026-07-01", "2026-07-31", "read", true),
+      /schedule window unavailable/,
     );
     assert.equal(requests, 1);
   });
@@ -179,17 +166,21 @@ describe("schedule store model", () => {
 
     assert.equal(
       await discardSupersededScheduleWindowFailure(
-        async () => { throw failure; },
-        () => false
+        async () => {
+          throw failure;
+        },
+        () => false,
       ),
-      undefined
+      undefined,
     );
     await assert.rejects(
       discardSupersededScheduleWindowFailure(
-        async () => { throw failure; },
-        () => true
+        async () => {
+          throw failure;
+        },
+        () => true,
       ),
-      /schedule window unavailable/
+      /schedule window unavailable/,
     );
   });
 
@@ -239,10 +230,7 @@ describe("schedule store model", () => {
     assert.equal(afterOldFinisher, newMutation);
     assert.equal(afterOldFinisher.mutationsInFlight, 1);
 
-    const afterNewFinisher = finishScheduleMutationState(
-      afterOldFinisher,
-      newMutation.generation
-    );
+    const afterNewFinisher = finishScheduleMutationState(afterOldFinisher, newMutation.generation);
     assert.equal(afterNewFinisher.mutationsInFlight, 0);
     assert.equal(afterNewFinisher.dataRevision, newMutation.dataRevision + 1);
   });
@@ -257,10 +245,7 @@ describe("schedule store model", () => {
     assert.equal(refreshedAuth.hasAuthoritativeSnapshot, false);
     assert.equal(shouldReconcileSchedule(refreshedAuth), false);
 
-    const settled = finishScheduleMutationState(
-      refreshedAuth,
-      oldTokenMutation.generation
-    );
+    const settled = finishScheduleMutationState(refreshedAuth, oldTokenMutation.generation);
     assert.equal(settled.mutationsInFlight, 0);
     assert.equal(shouldReconcileSchedule(settled), true);
   });
@@ -269,7 +254,7 @@ describe("schedule store model", () => {
     const farFutureRange = { startDate: "2027-01-01", endDate: "2027-01-31" };
     const coordinator = setScheduleRequestedRangeState(
       createScheduleCoordinatorState(),
-      farFutureRange
+      farFutureRange,
     );
 
     assert.deepEqual(
@@ -277,20 +262,16 @@ describe("schedule store model", () => {
         startDate: "2026-06-09",
         endDate: "2026-09-07",
       }),
-      farFutureRange
+      farFutureRange,
     );
-    assert.equal(
-      resetScheduleCoordinatorState(coordinator).requestedRange,
-      null
-    );
+    assert.equal(resetScheduleCoordinatorState(coordinator).requestedRange, null);
     assert.deepEqual(
       refreshScheduleCoordinatorAuthState(coordinator).requestedRange,
-      farFutureRange
+      farFutureRange,
     );
   });
 
   it("retries range and attendance supersession before claiming a committed range", async () => {
-
     const outcomes = [
       { committed: false, value: "range-superseded" },
       { committed: false, value: "attendance-superseded" },
@@ -321,7 +302,7 @@ describe("schedule store model", () => {
         return { committed: true, value: "settled-range" };
       },
       3,
-      () => settlement
+      () => settlement,
     ).then((value) => {
       settled = true;
       return value;
@@ -355,7 +336,7 @@ describe("schedule store model", () => {
       () => {
         gateCalls += 1;
         return gateCalls === 1 ? Promise.resolve() : secondSettlement;
-      }
+      },
     );
 
     await new Promise((resolve) => setImmediate(resolve));
@@ -370,26 +351,26 @@ describe("schedule store model", () => {
   it("fails closed when a range remains superseded", async () => {
     await assert.rejects(
       runScheduleRangeRefreshWithRetry(async () => ({ committed: false, value: [] }), 2),
-      /superseded/
+      /superseded/,
     );
   });
 
   it("preserves mutations only for a same-user token refresh", () => {
     assert.equal(
       shouldPreserveScheduleMutationsOnAuthChange("TOKEN_REFRESHED", "user-1", "user-1"),
-      true
+      true,
     );
     assert.equal(
       shouldPreserveScheduleMutationsOnAuthChange("SIGNED_IN", "user-1", "user-1"),
-      false
+      false,
     );
     assert.equal(
       shouldPreserveScheduleMutationsOnAuthChange("TOKEN_REFRESHED", "user-1", "user-2"),
-      false
+      false,
     );
     assert.equal(
       shouldPreserveScheduleMutationsOnAuthChange("TOKEN_REFRESHED", null, "user-1"),
-      false
+      false,
     );
   });
 
@@ -448,18 +429,30 @@ describe("schedule store model", () => {
       releaseRead = resolve;
     });
 
-    const initialRead = requestReconciliation(async () => {
-      calls.push("initial-read");
-      markReadStarted();
-      await readBlocked;
-    }, () => true, "read");
+    const initialRead = requestReconciliation(
+      async () => {
+        calls.push("initial-read");
+        markReadStarted();
+        await readBlocked;
+      },
+      () => true,
+      "read",
+    );
     await readStarted;
-    const materialize = requestReconciliation(async () => {
-      calls.push("materialize");
-    }, () => true, "materialize");
-    const laterRead = requestReconciliation(async () => {
-      calls.push("later-read");
-    }, () => true, "read");
+    const materialize = requestReconciliation(
+      async () => {
+        calls.push("materialize");
+      },
+      () => true,
+      "materialize",
+    );
+    const laterRead = requestReconciliation(
+      async () => {
+        calls.push("later-read");
+      },
+      () => true,
+      "read",
+    );
 
     releaseRead();
     await Promise.all([initialRead, materialize, laterRead]);
@@ -480,16 +473,24 @@ describe("schedule store model", () => {
       releaseRead = resolve;
     });
 
-    const read = requestReconciliation(async () => {
-      calls.push("read");
-      markReadStarted();
-      await readBlocked;
-      authoritative = true;
-    }, () => !authoritative, "read");
+    const read = requestReconciliation(
+      async () => {
+        calls.push("read");
+        markReadStarted();
+        await readBlocked;
+        authoritative = true;
+      },
+      () => !authoritative,
+      "read",
+    );
     await readStarted;
-    const materialize = requestReconciliation(async () => {
-      calls.push("materialize");
-    }, () => !authoritative, "materialize");
+    const materialize = requestReconciliation(
+      async () => {
+        calls.push("materialize");
+      },
+      () => !authoritative,
+      "materialize",
+    );
 
     releaseRead();
     await Promise.all([read, materialize]);
@@ -512,16 +513,26 @@ describe("schedule store model", () => {
     });
     const isExecutionSafe = () => mutationSettled;
 
-    const read = requestReconciliation(async () => {
-      calls.push("read");
-      markReadStarted();
-      await readBlocked;
-      authoritative = true;
-    }, () => !authoritative, "read", isExecutionSafe);
+    const read = requestReconciliation(
+      async () => {
+        calls.push("read");
+        markReadStarted();
+        await readBlocked;
+        authoritative = true;
+      },
+      () => !authoritative,
+      "read",
+      isExecutionSafe,
+    );
     await readStarted;
-    const forcedMaterialize = requestReconciliation(async () => {
-      calls.push("materialize-during-mutation");
-    }, () => !authoritative, "materialize", isExecutionSafe);
+    const forcedMaterialize = requestReconciliation(
+      async () => {
+        calls.push("materialize-during-mutation");
+      },
+      () => !authoritative,
+      "materialize",
+      isExecutionSafe,
+    );
 
     mutationSettled = false;
     releaseRead();
@@ -529,9 +540,14 @@ describe("schedule store model", () => {
     assert.deepEqual(calls, ["read"]);
 
     mutationSettled = true;
-    await requestReconciliation(async () => {
-      calls.push("materialize-after-settlement");
-    }, () => !authoritative, "materialize", isExecutionSafe);
+    await requestReconciliation(
+      async () => {
+        calls.push("materialize-after-settlement");
+      },
+      () => !authoritative,
+      "materialize",
+      isExecutionSafe,
+    );
 
     assert.deepEqual(calls, ["read", "materialize-after-settlement"]);
   });
@@ -550,15 +566,27 @@ describe("schedule store model", () => {
     });
     const isExecutionSafe = () => mutationSettled;
 
-    const oldRead = requestReconciliation(async () => {
-      calls.push("old-read");
-      markReadStarted();
-      await readBlocked;
-    }, () => true, "read", isExecutionSafe, 1);
+    const oldRead = requestReconciliation(
+      async () => {
+        calls.push("old-read");
+        markReadStarted();
+        await readBlocked;
+      },
+      () => true,
+      "read",
+      isExecutionSafe,
+      1,
+    );
     await readStarted;
-    const oldMaterialize = requestReconciliation(async () => {
-      calls.push("old-materialize");
-    }, () => true, "materialize", isExecutionSafe, 1);
+    const oldMaterialize = requestReconciliation(
+      async () => {
+        calls.push("old-materialize");
+      },
+      () => true,
+      "materialize",
+      isExecutionSafe,
+      1,
+    );
 
     mutationSettled = false;
     releaseRead();
@@ -566,9 +594,15 @@ describe("schedule store model", () => {
     assert.deepEqual(calls, ["old-read"]);
 
     mutationSettled = true;
-    await requestReconciliation(async () => {
-      calls.push("new-auth-read");
-    }, () => true, "read", isExecutionSafe, 2);
+    await requestReconciliation(
+      async () => {
+        calls.push("new-auth-read");
+      },
+      () => true,
+      "read",
+      isExecutionSafe,
+      2,
+    );
 
     assert.deepEqual(calls, ["old-read", "new-auth-read"]);
   });
@@ -585,15 +619,27 @@ describe("schedule store model", () => {
       releaseRead = resolve;
     });
 
-    const oldRead = requestReconciliation(async () => {
-      calls.push("old-read");
-      markReadStarted();
-      await readBlocked;
-    }, () => true, "read", () => true, 1);
+    const oldRead = requestReconciliation(
+      async () => {
+        calls.push("old-read");
+        markReadStarted();
+        await readBlocked;
+      },
+      () => true,
+      "read",
+      () => true,
+      1,
+    );
     await readStarted;
-    const oldMaterialize = requestReconciliation(async () => {
-      calls.push("stale-materialize");
-    }, () => true, "materialize", () => true, 1);
+    const oldMaterialize = requestReconciliation(
+      async () => {
+        calls.push("stale-materialize");
+      },
+      () => true,
+      "materialize",
+      () => true,
+      1,
+    );
 
     requestReconciliation.invalidate(2);
     releaseRead();
@@ -616,15 +662,27 @@ describe("schedule store model", () => {
     });
     const isExecutionSafe = () => mutationSettled;
 
-    const read = requestReconciliation(async () => {
-      calls.push("read-before-refresh");
-      markReadStarted();
-      await readBlocked;
-    }, () => true, "read", isExecutionSafe, 7);
+    const read = requestReconciliation(
+      async () => {
+        calls.push("read-before-refresh");
+        markReadStarted();
+        await readBlocked;
+      },
+      () => true,
+      "read",
+      isExecutionSafe,
+      7,
+    );
     await readStarted;
-    const materialize = requestReconciliation(async () => {
-      calls.push("materialize-after-refresh");
-    }, () => true, "materialize", isExecutionSafe, 7);
+    const materialize = requestReconciliation(
+      async () => {
+        calls.push("materialize-after-refresh");
+      },
+      () => true,
+      "materialize",
+      isExecutionSafe,
+      7,
+    );
 
     mutationSettled = false;
     releaseRead();
@@ -632,9 +690,15 @@ describe("schedule store model", () => {
     assert.deepEqual(calls, ["read-before-refresh"]);
 
     mutationSettled = true;
-    await requestReconciliation(async () => {
-      calls.push("same-user-auth-read");
-    }, () => true, "read", isExecutionSafe, 7);
+    await requestReconciliation(
+      async () => {
+        calls.push("same-user-auth-read");
+      },
+      () => true,
+      "read",
+      isExecutionSafe,
+      7,
+    );
 
     assert.deepEqual(calls, ["read-before-refresh", "materialize-after-refresh"]);
   });
@@ -642,12 +706,24 @@ describe("schedule store model", () => {
   it("does not let an unsafe old active request restore itself over a newer generation", async () => {
     const requestReconciliation = createScheduleReconciliationQueue();
     const calls = [];
-    const oldMaterialize = requestReconciliation(async () => {
-      calls.push("old-materialize");
-    }, () => true, "materialize", () => false, 1);
-    const newRead = requestReconciliation(async () => {
-      calls.push("new-read");
-    }, () => true, "read", () => true, 2);
+    const oldMaterialize = requestReconciliation(
+      async () => {
+        calls.push("old-materialize");
+      },
+      () => true,
+      "materialize",
+      () => false,
+      1,
+    );
+    const newRead = requestReconciliation(
+      async () => {
+        calls.push("new-read");
+      },
+      () => true,
+      "read",
+      () => true,
+      2,
+    );
 
     await Promise.all([oldMaterialize, newRead]);
 
@@ -672,7 +748,7 @@ describe("schedule store model", () => {
       async () => {
         reconciledGeneration = generation;
       },
-      () => reconciledGeneration !== generation
+      () => reconciledGeneration !== generation,
     );
     releaseOldGeneration();
     await Promise.all([initial, refreshed]);
@@ -693,17 +769,23 @@ describe("schedule store model", () => {
       releaseFailingAttempt = resolve;
     });
 
-    const initial = requestReconciliation(async () => {
-      attempts += 1;
-      markFailingAttemptStarted();
-      await failingAttemptBlocked;
-      throw new Error("old token rejected");
-    }, () => !authoritative);
+    const initial = requestReconciliation(
+      async () => {
+        attempts += 1;
+        markFailingAttemptStarted();
+        await failingAttemptBlocked;
+        throw new Error("old token rejected");
+      },
+      () => !authoritative,
+    );
     await failingAttemptStarted;
-    const replacement = requestReconciliation(async () => {
-      attempts += 1;
-      authoritative = true;
-    }, () => !authoritative);
+    const replacement = requestReconciliation(
+      async () => {
+        attempts += 1;
+        authoritative = true;
+      },
+      () => !authoritative,
+    );
     releaseFailingAttempt();
     await Promise.all([initial, replacement]);
 
@@ -716,15 +798,21 @@ describe("schedule store model", () => {
     let attempts = 0;
 
     await assert.rejects(
-      requestReconciliation(async () => {
-        attempts += 1;
-        throw new Error("network unavailable");
-      }, () => true),
-      /network unavailable/
+      requestReconciliation(
+        async () => {
+          attempts += 1;
+          throw new Error("network unavailable");
+        },
+        () => true,
+      ),
+      /network unavailable/,
     );
-    await requestReconciliation(async () => {
-      attempts += 1;
-    }, () => true);
+    await requestReconciliation(
+      async () => {
+        attempts += 1;
+      },
+      () => true,
+    );
 
     assert.equal(attempts, 2);
   });
@@ -733,12 +821,18 @@ describe("schedule store model", () => {
     const requestReconciliation = createScheduleReconciliationQueue();
     let attempts = 0;
 
-    await requestReconciliation(async () => {
-      attempts += 1;
-    }, () => false);
-    await requestReconciliation(async () => {
-      attempts += 1;
-    }, () => true);
+    await requestReconciliation(
+      async () => {
+        attempts += 1;
+      },
+      () => false,
+    );
+    await requestReconciliation(
+      async () => {
+        attempts += 1;
+      },
+      () => true,
+    );
 
     assert.equal(attempts, 1);
   });
@@ -756,8 +850,14 @@ describe("schedule store model", () => {
 
     const merged = mergeSessionsForRange(current, fetched, "2026-05-05", "2026-05-20");
 
-    assert.deepEqual(merged.map((item) => item.id), ["before", "new-early", "new-late", "after"]);
-    assert.equal(compareSessions(session("a", "2026-05-01", "18:00"), session("b", "2026-05-01", "19:00")) < 0, true);
+    assert.deepEqual(
+      merged.map((item) => item.id),
+      ["before", "new-early", "new-late", "after"],
+    );
+    assert.equal(
+      compareSessions(session("a", "2026-05-01", "18:00"), session("b", "2026-05-01", "19:00")) < 0,
+      true,
+    );
   });
 
   it("replaces attendance for fetched sessions and normalizes missing student names", () => {
@@ -771,10 +871,13 @@ describe("schedule store model", () => {
 
     const merged = mergeAttendanceForSessions(current, fetched, ["session-1"]);
 
-    assert.deepEqual(merged.map((item) => [item.id, item.session_id, item.student_name]), [
-      ["old-2", "session-2", undefined],
-      ["new-1", "session-1", ""],
-    ]);
+    assert.deepEqual(
+      merged.map((item) => [item.id, item.session_id, item.student_name]),
+      [
+        ["old-2", "session-2", undefined],
+        ["new-1", "session-1", ""],
+      ],
+    );
   });
 
   it("updates session attendance counts with status deltas and a zero floor", () => {
@@ -790,8 +893,10 @@ describe("schedule store model", () => {
 
   it("builds preview recurring session dates through the template end date", () => {
     assert.deepEqual(
-      getPreviewTemplateSessionDates(template({ start_date: "2026-05-04", end_date: "2026-05-18" })),
-      ["2026-05-04", "2026-05-11", "2026-05-18"]
+      getPreviewTemplateSessionDates(
+        template({ start_date: "2026-05-04", end_date: "2026-05-18" }),
+      ),
+      ["2026-05-04", "2026-05-11", "2026-05-18"],
     );
     assert.equal(getPreviewTemplateSessionDates(template({ start_date: "2026-05-04" })).length, 13);
   });

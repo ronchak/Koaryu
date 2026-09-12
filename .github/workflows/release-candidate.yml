@@ -81,6 +81,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Verify frontend formatting
+        run: npm run format:check
+
       - name: Install Chromium for mounted lifecycle tests
         run: npx playwright install --with-deps chromium
 
@@ -151,6 +154,9 @@ jobs:
 
       - name: Verify dependency consistency
         run: python -m pip check
+
+      - name: Verify backend formatting
+        run: python -m ruff format --check .
 
       - name: Verify hash-pinned dependency locks
         run: |

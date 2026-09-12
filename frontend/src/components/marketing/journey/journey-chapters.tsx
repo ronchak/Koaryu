@@ -90,11 +90,7 @@ function MorningChapter({ chapter }: { chapter: JourneyMorningChapter }) {
   );
 }
 
-function ProductIntroChapter({
-  chapter,
-}: {
-  chapter: JourneyProductIntroChapter;
-}) {
+function ProductIntroChapter({ chapter }: { chapter: JourneyProductIntroChapter }) {
   return (
     <article className={`${styles.framedPlane} ${styles.darkPlane}`}>
       <p className={styles.kicker}>{chapter.kicker}</p>
@@ -153,11 +149,7 @@ function UseCasesChapter({ chapter }: { chapter: JourneyUseCasesChapter }) {
   );
 }
 
-function TransitionChapter({
-  chapter,
-}: {
-  chapter: JourneyTransitionChapter;
-}) {
+function TransitionChapter({ chapter }: { chapter: JourneyTransitionChapter }) {
   return (
     <div className={styles.transitionCopy}>
       <p className={styles.kicker}>{chapter.kicker}</p>
@@ -241,11 +233,7 @@ function FaqChapter({ chapter }: { chapter: JourneyFaqChapter }) {
     <div className={styles.faqShell}>
       <nav className={styles.faqIndex} aria-label="FAQ topics">
         {chapter.groups.map((group, groupIndex) => (
-          <Link
-            key={group.title}
-            href={`#${FAQ_HASHES[groupIndex]}`}
-            data-faq-topic={groupIndex}
-          >
+          <Link key={group.title} href={`#${FAQ_HASHES[groupIndex]}`} data-faq-topic={groupIndex}>
             {group.title}
           </Link>
         ))}
@@ -286,11 +274,7 @@ function FaqChapter({ chapter }: { chapter: JourneyFaqChapter }) {
                         +
                       </span>
                     </button>
-                    <div
-                      id={answerId}
-                      className={styles.faqAnswer}
-                      data-faq-answer=""
-                    >
+                    <div id={answerId} className={styles.faqAnswer} data-faq-answer="">
                       <p>{item.answer}</p>
                     </div>
                   </div>

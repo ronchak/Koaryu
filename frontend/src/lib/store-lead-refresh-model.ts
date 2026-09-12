@@ -3,7 +3,12 @@ import type { ResourceScope } from "@/lib/store-resource-scope";
 import type { Lead } from "@/types";
 
 export async function refreshLiveLeadDataset({
-  beginLiveAuthRequest, scopeRef, fetchLeads, setLeads, setLeadsLoaded, setLeadsLoadError,
+  beginLiveAuthRequest,
+  scopeRef,
+  fetchLeads,
+  setLeads,
+  setLeadsLoaded,
+  setLeadsLoadError,
 }: {
   beginLiveAuthRequest: BeginLiveAuthRequest;
   scopeRef: StoreRef<ResourceScope>;

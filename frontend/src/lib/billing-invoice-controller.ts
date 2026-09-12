@@ -60,15 +60,16 @@ export function useBillingInvoiceController({
       setMessage(successMessage);
       return;
     }
-    const requestKey = action !== "reconcile"
-      ? resolvePersistedInvoiceOperationRequestKey({
-          identity: operationIdentity,
-          keysByTarget: operationKeysRef.current,
-          operation: `invoice.${action}`,
-          startNewRequest: options.startNewRequest,
-          targetId: invoiceId,
-        })
-      : null;
+    const requestKey =
+      action !== "reconcile"
+        ? resolvePersistedInvoiceOperationRequestKey({
+            identity: operationIdentity,
+            keysByTarget: operationKeysRef.current,
+            operation: `invoice.${action}`,
+            startNewRequest: options.startNewRequest,
+            targetId: invoiceId,
+          })
+        : null;
     if (!token || !claimAction(actionKey)) return;
     try {
       const path = `/billing/invoices/${invoiceId}/${action}`;

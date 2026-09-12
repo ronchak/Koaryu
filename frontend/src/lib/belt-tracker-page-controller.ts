@@ -79,7 +79,9 @@ export function useBeltTrackerPageController({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [dismissedLoadNotices, setDismissedLoadNotices] = useState<Set<string>>(new Set());
   const [isSwitchingLadder, setIsSwitchingLadder] = useState(false);
-  const [collapsedEligibilityGroups, setCollapsedEligibilityGroups] = useState<Set<string>>(new Set());
+  const [collapsedEligibilityGroups, setCollapsedEligibilityGroups] = useState<Set<string>>(
+    new Set(),
+  );
   const [addBeltModal, setAddBeltModal] = useState(false);
   const [addTipForGroup, setAddTipForGroup] = useState<number | null>(null);
   const [editRankId, setEditRankId] = useState<string | null>(null);
@@ -109,65 +111,65 @@ export function useBeltTrackerPageController({
     ladderByProgramId,
     selectedProgram,
   } = useMemo(
-    () => buildBeltTrackerProgramState({
-      beltLadders,
-      currentLadderId,
-      programs,
-      selectedProgramId,
-      storeBeltRanks: beltRanks,
-    }),
-    [beltLadders, beltRanks, currentLadderId, programs, selectedProgramId]
+    () =>
+      buildBeltTrackerProgramState({
+        beltLadders,
+        currentLadderId,
+        programs,
+        selectedProgramId,
+        storeBeltRanks: beltRanks,
+      }),
+    [beltLadders, beltRanks, currentLadderId, programs, selectedProgramId],
   );
 
   const ownedDraft = draft?.ladderId === currentLadder?.id ? draft : null;
   const ladderRanks = ownedDraft?.ranks ?? activeLadderRanks;
   const eligibilityRanks = activeLadderRanks;
-  const subRankTerm = ownedDraft?.subRankTerm
-    ?? (currentLadder?.sub_rank_term || storeSubRankTerm);
+  const subRankTerm = ownedDraft?.subRankTerm ?? (currentLadder?.sub_rank_term || storeSubRankTerm);
   const groups = useMemo(() => groupRanks(ladderRanks), [ladderRanks]);
-  const editRank = editRankId ? ladderRanks.find((rank) => rank.id === editRankId) ?? null : null;
-  const deleteRank = deleteRankId ? ladderRanks.find((rank) => rank.id === deleteRankId) ?? null : null;
-  const tipCount = useMemo(
-    () => ladderRanks.filter((rank) => rank.is_tip).length,
-    [ladderRanks]
-  );
+  const editRank = editRankId ? (ladderRanks.find((rank) => rank.id === editRankId) ?? null) : null;
+  const deleteRank = deleteRankId
+    ? (ladderRanks.find((rank) => rank.id === deleteRankId) ?? null)
+    : null;
+  const tipCount = useMemo(() => ladderRanks.filter((rank) => rank.is_tip).length, [ladderRanks]);
   const rankById = useMemo(
     () => new Map(eligibilityRanks.map((rank) => [rank.id, rank])),
-    [eligibilityRanks]
+    [eligibilityRanks],
   );
   const previousRankByCurrentRankId = useMemo(() => {
     const orderedRanks = [...eligibilityRanks].sort(
-      (left, right) => left.display_order - right.display_order
+      (left, right) => left.display_order - right.display_order,
     );
-    return new Map(
-      orderedRanks.slice(1).map((rank, index) => [rank.id, orderedRanks[index]])
-    );
+    return new Map(orderedRanks.slice(1).map((rank, index) => [rank.id, orderedRanks[index]]));
   }, [eligibilityRanks]);
   const demotionTargetRank = demoteEntry?.current_rank_id
-    ? previousRankByCurrentRankId.get(demoteEntry.current_rank_id) ?? null
+    ? (previousRankByCurrentRankId.get(demoteEntry.current_rank_id) ?? null)
     : null;
-  const eligibilityMatchesLadder = Boolean(currentLadder?.id && eligibilityLadderId === currentLadder.id);
+  const eligibilityMatchesLadder = Boolean(
+    currentLadder?.id && eligibilityLadderId === currentLadder.id,
+  );
   const visibleEligibility = useMemo(
-    () => eligibilityMatchesLadder ? eligibility : [],
-    [eligibility, eligibilityMatchesLadder]
+    () => (eligibilityMatchesLadder ? eligibility : []),
+    [eligibility, eligibilityMatchesLadder],
   );
   const isEligibilityLoading = Boolean(
-    currentLadder
-      && (
-        isSwitchingLadder
-        || eligibilityPendingLadderId === currentLadder.id
-        || (!eligibilityMatchesLadder && !eligibilityLoadError)
-      )
+    currentLadder &&
+    (isSwitchingLadder ||
+      eligibilityPendingLadderId === currentLadder.id ||
+      (!eligibilityMatchesLadder && !eligibilityLoadError)),
   );
   const eligibilityGroups = useMemo(
     () => buildEligibilityGroups(visibleEligibility, eligibilityRanks),
-    [eligibilityRanks, visibleEligibility]
+    [eligibilityRanks, visibleEligibility],
   );
 
-  const isLoadNoticeDismissed = useCallback((key: string, message: string | null) => {
-    const noticeKey = buildLoadNoticeDismissalKey(key, message);
-    return Boolean(noticeKey && dismissedLoadNotices.has(noticeKey));
-  }, [dismissedLoadNotices]);
+  const isLoadNoticeDismissed = useCallback(
+    (key: string, message: string | null) => {
+      const noticeKey = buildLoadNoticeDismissalKey(key, message);
+      return Boolean(noticeKey && dismissedLoadNotices.has(noticeKey));
+    },
+    [dismissedLoadNotices],
+  );
 
   const dismissLoadNotice = useCallback((key: string, message: string | null) => {
     const noticeKey = buildLoadNoticeDismissalKey(key, message);
@@ -175,53 +177,85 @@ export function useBeltTrackerPageController({
     setDismissedLoadNotices((current) => new Set(current).add(noticeKey));
   }, []);
 
-  const handleSelectLadder = useCallback(async (nextLadderId: string) => {
-    if (!nextLadderId || nextLadderId === currentLadderId) {
-      return;
-    }
+  const handleSelectLadder = useCallback(
+    async (nextLadderId: string) => {
+      if (!nextLadderId || nextLadderId === currentLadderId) {
+        return;
+      }
 
-    setIsSwitchingLadder(true);
-    setLadderError(null);
-    try {
-      await setCurrentLadder(nextLadderId);
-      setCollapsedEligibilityGroups(new Set());
-    } catch (error) {
-      console.error("Failed to switch belt ladder", error);
-      setLadderError("Could not switch ladders right now. Please try again.");
-    } finally {
-      setIsSwitchingLadder(false);
-    }
-  }, [currentLadderId, setCurrentLadder]);
+      setIsSwitchingLadder(true);
+      setLadderError(null);
+      try {
+        await setCurrentLadder(nextLadderId);
+        setCollapsedEligibilityGroups(new Set());
+      } catch (error) {
+        console.error("Failed to switch belt ladder", error);
+        setLadderError("Could not switch ladders right now. Please try again.");
+      } finally {
+        setIsSwitchingLadder(false);
+      }
+    },
+    [currentLadderId, setCurrentLadder],
+  );
 
-  const handleSelectProgram = useCallback((nextProgramId: string | null) => {
-    if (dirty || saveInFlightRef.current || isSwitchingLadder || editingTerm
-      || addBeltModal || addTipForGroup !== null || editRankId || deleteRankId) return;
-    setSelectedProgramId(nextProgramId);
-    const nextLadder = nextProgramId ? ladderByProgramId.get(nextProgramId) : null;
-    if (nextLadder && !dirty) {
-      void handleSelectLadder(nextLadder.id);
-    }
-  }, [addBeltModal, addTipForGroup, deleteRankId, dirty, editRankId, editingTerm, handleSelectLadder, isSwitchingLadder, ladderByProgramId]);
+  const handleSelectProgram = useCallback(
+    (nextProgramId: string | null) => {
+      if (
+        dirty ||
+        saveInFlightRef.current ||
+        isSwitchingLadder ||
+        editingTerm ||
+        addBeltModal ||
+        addTipForGroup !== null ||
+        editRankId ||
+        deleteRankId
+      )
+        return;
+      setSelectedProgramId(nextProgramId);
+      const nextLadder = nextProgramId ? ladderByProgramId.get(nextProgramId) : null;
+      if (nextLadder && !dirty) {
+        void handleSelectLadder(nextLadder.id);
+      }
+    },
+    [
+      addBeltModal,
+      addTipForGroup,
+      deleteRankId,
+      dirty,
+      editRankId,
+      editingTerm,
+      handleSelectLadder,
+      isSwitchingLadder,
+      ladderByProgramId,
+    ],
+  );
 
-  const updateRanks = useCallback((updater: (current: typeof ladderRanks) => typeof ladderRanks) => {
-    if (saveInFlightRef.current || !currentLadder || !currentProgramReady || isSwitchingLadder) return;
-    setSaveError(null);
-    setLadderError(null);
-    setActionMessage(null);
-    setDraft((currentDraft) => {
-      if (currentDraft && currentDraft.ladderId !== currentLadder.id) return currentDraft;
-      const current = currentDraft ?? {
-        ladderId: currentLadder.id,
-        ranks: activeLadderRanks,
-        subRankTerm: currentLadder.sub_rank_term || storeSubRankTerm,
-      };
-      return { ...current, ranks: updater(current.ranks) };
-    });
-  }, [activeLadderRanks, currentLadder, currentProgramReady, isSwitchingLadder, storeSubRankTerm]);
+  const updateRanks = useCallback(
+    (updater: (current: typeof ladderRanks) => typeof ladderRanks) => {
+      if (saveInFlightRef.current || !currentLadder || !currentProgramReady || isSwitchingLadder)
+        return;
+      setSaveError(null);
+      setLadderError(null);
+      setActionMessage(null);
+      setDraft((currentDraft) => {
+        if (currentDraft && currentDraft.ladderId !== currentLadder.id) return currentDraft;
+        const current = currentDraft ?? {
+          ladderId: currentLadder.id,
+          ranks: activeLadderRanks,
+          subRankTerm: currentLadder.sub_rank_term || storeSubRankTerm,
+        };
+        return { ...current, ranks: updater(current.ranks) };
+      });
+    },
+    [activeLadderRanks, currentLadder, currentProgramReady, isSwitchingLadder, storeSubRankTerm],
+  );
 
-  const handleReorderRanks = useCallback((nextRanks: typeof ladderRanks) => {
-    updateRanks(() => nextRanks);
-  }, [updateRanks]);
+  const handleReorderRanks = useCallback(
+    (nextRanks: typeof ladderRanks) => {
+      updateRanks(() => nextRanks);
+    },
+    [updateRanks],
+  );
   const rankDrag = useBeltRankDrag({ groups, onReorderRanks: handleReorderRanks });
 
   function handleAddBelt(data: RankFormData) {
@@ -267,16 +301,30 @@ export function useBeltTrackerPageController({
   function toggleCollapse(id: string) {
     setCollapsed((current) => {
       const next = new Set(current);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
   async function handleSaveRanks() {
-    if (saveInFlightRef.current || !draft || editingTerm || addBeltModal
-      || addTipForGroup !== null || editRankId || deleteRankId) return;
+    if (
+      saveInFlightRef.current ||
+      !draft ||
+      editingTerm ||
+      addBeltModal ||
+      addTipForGroup !== null ||
+      editRankId ||
+      deleteRankId
+    )
+      return;
     setSaveError(null);
-    if (!currentLadder || !currentProgramReady || currentLadder.id !== draft.ladderId || isSwitchingLadder) {
+    if (
+      !currentLadder ||
+      !currentProgramReady ||
+      currentLadder.id !== draft.ladderId ||
+      isSwitchingLadder
+    ) {
       setSaveError("Program ranks are still loading. Please try again in a moment.");
       return;
     }
@@ -311,7 +359,8 @@ export function useBeltTrackerPageController({
 
   function handleSubmitSubRankTerm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saveInFlightRef.current || !currentLadder || !currentProgramReady || isSwitchingLadder) return;
+    if (saveInFlightRef.current || !currentLadder || !currentProgramReady || isSwitchingLadder)
+      return;
     const nextTerm = normalizeSubRankTermDraft(termDraft);
     setSaveError(null);
     setActionMessage(null);
@@ -322,7 +371,9 @@ export function useBeltTrackerPageController({
         ranks: activeLadderRanks,
         subRankTerm: currentLadder.sub_rank_term || storeSubRankTerm,
       };
-      return nextTerm === current.subRankTerm ? currentDraft : { ...current, subRankTerm: nextTerm };
+      return nextTerm === current.subRankTerm
+        ? currentDraft
+        : { ...current, subRankTerm: nextTerm };
     });
     setTermDraft(nextTerm);
     setEditingTerm(false);
@@ -340,15 +391,18 @@ export function useBeltTrackerPageController({
     });
   }
 
-  const handleStartPromotion = useCallback((entry: EligibilityEntry) => {
-    if (!canPromoteStudents) return;
-    if (!entry.next_rank_id) {
-      return;
-    }
-    setPromotionError(null);
-    setPromotionNotes("");
-    setPromoteEntry(entry);
-  }, [canPromoteStudents]);
+  const handleStartPromotion = useCallback(
+    (entry: EligibilityEntry) => {
+      if (!canPromoteStudents) return;
+      if (!entry.next_rank_id) {
+        return;
+      }
+      setPromotionError(null);
+      setPromotionNotes("");
+      setPromoteEntry(entry);
+    },
+    [canPromoteStudents],
+  );
 
   async function handleConfirmPromotion() {
     if (!canPromoteStudents || !promoteEntry || promotionInFlightRef.current) return;
@@ -370,9 +424,7 @@ export function useBeltTrackerPageController({
     setIsPromoting(true);
     setPromotionError(null);
     try {
-      await promoteStudent(
-        buildPromotionRequestBody(promoteEntry, targetRankId, promotionNotes)
-      );
+      await promoteStudent(buildPromotionRequestBody(promoteEntry, targetRankId, promotionNotes));
       setActionMessage(`${promoteEntry.student_name} promoted to ${promoteEntry.next_rank_name}.`);
       setPromoteEntry(null);
       setPromotionNotes("");
@@ -380,7 +432,7 @@ export function useBeltTrackerPageController({
       console.error("Failed to promote student", error);
       if (error instanceof Error && (error as Error & { committed?: boolean }).committed) {
         setActionMessage(
-          `${promoteEntry.student_name} was promoted. Refresh needed to show the latest ranks.`
+          `${promoteEntry.student_name} was promoted. Refresh needed to show the latest ranks.`,
         );
         setPromoteEntry(null);
         setPromotionNotes("");
@@ -393,21 +445,20 @@ export function useBeltTrackerPageController({
     }
   }
 
-  const handleStartDemotion = useCallback((entry: EligibilityEntry) => {
-    if (!canPromoteStudents || !entry.current_rank_id) return;
-    if (!previousRankByCurrentRankId.has(entry.current_rank_id)) return;
-    setDemotionError(null);
-    setDemotionReason("");
-    setDemoteEntry(entry);
-  }, [canPromoteStudents, previousRankByCurrentRankId]);
+  const handleStartDemotion = useCallback(
+    (entry: EligibilityEntry) => {
+      if (!canPromoteStudents || !entry.current_rank_id) return;
+      if (!previousRankByCurrentRankId.has(entry.current_rank_id)) return;
+      setDemotionError(null);
+      setDemotionReason("");
+      setDemoteEntry(entry);
+    },
+    [canPromoteStudents, previousRankByCurrentRankId],
+  );
 
   async function handleConfirmDemotion() {
-    if (
-      !canPromoteStudents
-      || !demoteEntry
-      || !demotionTargetRank
-      || demotionInFlightRef.current
-    ) return;
+    if (!canPromoteStudents || !demoteEntry || !demotionTargetRank || demotionInFlightRef.current)
+      return;
 
     const reason = demotionReason.trim();
     if (!reason) {
@@ -426,16 +477,14 @@ export function useBeltTrackerPageController({
         program_id: demoteEntry.program_id,
         reason,
       });
-      setActionMessage(
-        `${demoteEntry.student_name} demoted to ${demotionTargetRank.name}.`
-      );
+      setActionMessage(`${demoteEntry.student_name} demoted to ${demotionTargetRank.name}.`);
       setDemoteEntry(null);
       setDemotionReason("");
     } catch (error) {
       console.error("Failed to demote student", error);
       if (error instanceof Error && (error as Error & { committed?: boolean }).committed) {
         setActionMessage(
-          `${demoteEntry.student_name} was demoted. Refresh needed to show the latest ranks.`
+          `${demoteEntry.student_name} was demoted. Refresh needed to show the latest ranks.`,
         );
         setDemoteEntry(null);
         setDemotionReason("");
@@ -533,18 +582,26 @@ export function useBeltTrackerPageController({
       isProgramsLoadErrorDismissed: isLoadNoticeDismissed("programs", programsLoadError),
       isSaving,
       ladderError,
-      onAddBelt: () => { if (!saveInFlightRef.current) setAddBeltModal(true); },
-      onAddTip: (index: number) => { if (!saveInFlightRef.current) setAddTipForGroup(index); },
+      onAddBelt: () => {
+        if (!saveInFlightRef.current) setAddBeltModal(true);
+      },
+      onAddTip: (index: number) => {
+        if (!saveInFlightRef.current) setAddTipForGroup(index);
+      },
       onBeltDragEnd: rankDrag.onBeltDragEnd,
       onBeltDragOver: rankDrag.onBeltDragOver,
       onBeltDragStart: rankDrag.onBeltDragStart,
       onBeltDrop: rankDrag.onBeltDrop,
-      onDeleteRank: (id: string) => { if (!saveInFlightRef.current) setDeleteRankId(id); },
+      onDeleteRank: (id: string) => {
+        if (!saveInFlightRef.current) setDeleteRankId(id);
+      },
       onDiscardChanges: handleDiscardChanges,
       onDismissLadderError: () => setLadderError(null),
       onDismissProgramsLoadError: () => dismissLoadNotice("programs", programsLoadError),
       onDismissSaveError: () => setSaveError(null),
-      onEditRank: (id: string) => { if (!saveInFlightRef.current) setEditRankId(id); },
+      onEditRank: (id: string) => {
+        if (!saveInFlightRef.current) setEditRankId(id);
+      },
       onMoveBelt: rankDrag.onMoveBelt,
       onMoveTip: rankDrag.onMoveTip,
       onSaveRanks: handleSaveRanks,
@@ -555,7 +612,9 @@ export function useBeltTrackerPageController({
       },
       onStopEditingTerm: () => setEditingTerm(false),
       onSubmitSubRankTerm: handleSubmitSubRankTerm,
-      onTermDraftChange: (value: string) => { if (!saveInFlightRef.current) setTermDraft(value); },
+      onTermDraftChange: (value: string) => {
+        if (!saveInFlightRef.current) setTermDraft(value);
+      },
       onTipDragEnd: rankDrag.onTipDragEnd,
       onTipDragOver: rankDrag.onTipDragOver,
       onTipDragStart: rankDrag.onTipDragStart,
@@ -573,7 +632,12 @@ export function useBeltTrackerPageController({
       beltPrograms,
       canConfigureBelts,
       dirty,
-      isEditing: isSaving || editingTerm || addBeltModal || addTipForGroup !== null || Boolean(editRankId || deleteRankId),
+      isEditing:
+        isSaving ||
+        editingTerm ||
+        addBeltModal ||
+        addTipForGroup !== null ||
+        Boolean(editRankId || deleteRankId),
       isSwitchingLadder,
       onDismissActionMessage: () => setActionMessage(null),
       onSelectProgram: handleSelectProgram,

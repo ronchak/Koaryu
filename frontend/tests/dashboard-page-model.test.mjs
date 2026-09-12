@@ -95,13 +95,20 @@ describe("dashboard page model", () => {
       onHoldStudents: 2,
     });
     assert.deepEqual(
-      buildDashboardNewStudentStats(students, "2026-05-24", "2026-05-10", "2026-04-24", "2026-02-23", "2026-01-01"),
+      buildDashboardNewStudentStats(
+        students,
+        "2026-05-24",
+        "2026-05-10",
+        "2026-04-24",
+        "2026-02-23",
+        "2026-01-01",
+      ),
       {
         new14: 1,
         new30: 2,
         new90: 3,
         newYearToDate: 3,
-      }
+      },
     );
     assert.deepEqual(buildDashboardChurnStats(students), {
       inactiveStudents: 1,
@@ -110,28 +117,42 @@ describe("dashboard page model", () => {
       churnRate: 2 / 6,
     });
     assert.deepEqual(
-      buildDashboardLeadStats([
-        lead("due", { follow_up_date: "2026-05-24" }),
-        lead("future", { follow_up_date: "2026-05-25" }),
-        lead("enrolled", { stage: "enrolled" }),
-        lead("lost", { stage: "closed_lost" }),
-      ], "2026-05-24"),
+      buildDashboardLeadStats(
+        [
+          lead("due", { follow_up_date: "2026-05-24" }),
+          lead("future", { follow_up_date: "2026-05-25" }),
+          lead("enrolled", { stage: "enrolled" }),
+          lead("lost", { stage: "closed_lost" }),
+        ],
+        "2026-05-24",
+      ),
       {
         activeLeads: 2,
         enrolledLeads: 1,
         dueTodayLeads: 1,
-      }
+      },
     );
-    assert.deepEqual(buildDashboardBeltStats([{ is_tip: false }, { is_tip: true }, { is_tip: true }]), {
-      beltCount: 1,
-      tipCount: 2,
-    });
-    assert.deepEqual(buildDashboardInactivityStats([{ daysInactive: 10 }, { daysInactive: 14 }, { daysInactive: 30 }, { daysInactive: 90 }]), {
-      watch14: 3,
-      watch30: 2,
-      watch90: 1,
-      highestRiskStudents: [{ daysInactive: 14 }, { daysInactive: 30 }, { daysInactive: 90 }],
-    });
+    assert.deepEqual(
+      buildDashboardBeltStats([{ is_tip: false }, { is_tip: true }, { is_tip: true }]),
+      {
+        beltCount: 1,
+        tipCount: 2,
+      },
+    );
+    assert.deepEqual(
+      buildDashboardInactivityStats([
+        { daysInactive: 10 },
+        { daysInactive: 14 },
+        { daysInactive: 30 },
+        { daysInactive: 90 },
+      ]),
+      {
+        watch14: 3,
+        watch30: 2,
+        watch90: 1,
+        highestRiskStudents: [{ daysInactive: 14 }, { daysInactive: 30 }, { daysInactive: 90 }],
+      },
+    );
     assert.deepEqual(
       buildDashboardTestReadinessStats([
         { is_eligible: true },
@@ -141,7 +162,7 @@ describe("dashboard page model", () => {
       {
         readyToTest: 1,
         needsApproval: 1,
-      }
+      },
     );
   });
 
@@ -169,23 +190,41 @@ describe("dashboard page model", () => {
         sessionsWithCapacity: 1,
         utilizationRate: 0.2,
         averageAttendance: 3.5,
-      }
+      },
     );
   });
 
   it("builds recent student rows from summary, local full roster, or partial-roster guardrails", () => {
     assert.deepEqual(
       buildDashboardRecentStudentRows(
-        [{ id: "summary-student", display_name: "Summary Student", status: "active", started_on: null }],
+        [
+          {
+            id: "summary-student",
+            display_name: "Summary Student",
+            status: "active",
+            started_on: null,
+          },
+        ],
         [student("local")],
-        false
+        false,
       ),
-      [{ id: "summary-student", displayName: "Summary Student", status: "active", startedOn: null }]
+      [
+        {
+          id: "summary-student",
+          displayName: "Summary Student",
+          status: "active",
+          startedOn: null,
+        },
+      ],
     );
     assert.deepEqual(buildDashboardRecentStudentRows(null, [student("partial")], true), []);
     assert.deepEqual(
-      buildDashboardRecentStudentRows(null, [student("local", { preferred_name: "Ace", legal_last_name: "Stone" })], false),
-      [{ id: "local", displayName: "Ace Stone", status: "active", startedOn: "2026-05-01" }]
+      buildDashboardRecentStudentRows(
+        null,
+        [student("local", { preferred_name: "Ace", legal_last_name: "Stone" })],
+        false,
+      ),
+      [{ id: "local", displayName: "Ace Stone", status: "active", startedOn: "2026-05-01" }],
     );
   });
 });

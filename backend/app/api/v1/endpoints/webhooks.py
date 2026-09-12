@@ -9,6 +9,7 @@ from app.services.webhook_service import StripeWebhookService
 
 router = APIRouter(prefix="/webhooks/stripe", tags=["stripe-webhooks"])
 
+
 async def read_stripe_webhook_payload(request: Request) -> bytes:
     content_length = request.headers.get("content-length")
     if content_length is not None:
@@ -36,8 +37,10 @@ async def stripe_platform_webhook(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     payload = await read_stripe_webhook_payload(request)
+
     async def _provider_operation(client):
         return await StripeWebhookService(client).handle_platform_webhook(payload, stripe_signature)
+
     return await run_supabase_operation(supabase, _provider_operation)
 
 
@@ -48,6 +51,8 @@ async def stripe_connect_webhook(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     payload = await read_stripe_webhook_payload(request)
+
     async def _provider_operation(client):
         return await StripeWebhookService(client).handle_connect_webhook(payload, stripe_signature)
+
     return await run_supabase_operation(supabase, _provider_operation)

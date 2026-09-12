@@ -165,9 +165,7 @@ def test_access_repair_follower_wait_uses_total_deadline_without_cancelling_lead
             with pytest.raises(HTTPException) as timed_out:
                 await run_supabase_operation(
                     runtime,
-                    lambda _client: (_ for _ in ()).throw(
-                        AccessRepairInFlight(completion)
-                    ),
+                    lambda _client: (_ for _ in ()).throw(AccessRepairInFlight(completion)),
                 )
             assert timed_out.value.status_code == 504
             assert timed_out.value.detail == "Provider operation timed out."
@@ -236,24 +234,31 @@ def test_all_request_provider_dependencies_are_wrapped_and_lane_mapping_is_expli
                 and call.func.id == "run_supabase_operation"
             ]
             assert len(calls) == 1, f"{path.name}:{node.name} has no single provider boundary"
-            lane = next(
-                keyword.value.value
-                for keyword in calls[0].keywords
-                if keyword.arg == "lane"
-            ) if calls[0].keywords else "interactive"
+            lane = (
+                next(keyword.value.value for keyword in calls[0].keywords if keyword.arg == "lane")
+                if calls[0].keywords
+                else "interactive"
+            )
             lane_by_function[node.name] = lane
             for call in ast.walk(node):
                 if not isinstance(call, ast.Call) or not call.args:
                     continue
                 if isinstance(call.func, ast.Name) and call.func.id.endswith("Service"):
                     assert not (
-                        isinstance(call.args[0], ast.Name)
-                        and call.args[0].id == "supabase"
+                        isinstance(call.args[0], ast.Name) and call.args[0].id == "supabase"
                     ), f"{path.name}:{node.name} constructs a service from the dependency"
 
-    for name in ("get_dashboard_workspace", "get_billing_landing", "get_invoices_page", "get_payments_page", "get_payment"):
+    for name in (
+        "get_dashboard_workspace",
+        "get_billing_landing",
+        "get_invoices_page",
+        "get_payments_page",
+        "get_payment",
+    ):
         assert lane_by_function[name] == "interactive"
-    assert {name for name, lane in lane_by_function.items() if lane == "bulk"} == EXPECTED_BULK_FUNCTIONS
+    assert {
+        name for name, lane in lane_by_function.items() if lane == "bulk"
+    } == EXPECTED_BULK_FUNCTIONS
 
 
 def test_student_photo_body_is_read_before_interactive_provider_admission():
@@ -262,8 +267,7 @@ def test_student_photo_body_is_read_before_interactive_provider_admission():
     upload = next(
         node
         for node in tree.body
-        if isinstance(node, ast.AsyncFunctionDef)
-        and node.name == "upload_student_photo"
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "upload_student_photo"
     )
     provider_operation = next(
         node
@@ -281,8 +285,7 @@ def test_student_photo_body_is_read_before_interactive_provider_admission():
         for node in ast.walk(statement)
     )
     assert not any(
-        isinstance(node, ast.Name) and node.id == "file"
-        for node in ast.walk(provider_operation)
+        isinstance(node, ast.Name) and node.id == "file" for node in ast.walk(provider_operation)
     )
 
 
@@ -302,4 +305,5 @@ def test_outer_request_deadline_records_timeout_without_releasing_active_work():
             release.set()
             await asyncio.to_thread(runtime.shutdown)
         assert runtime.interactive_snapshot().active == 0
+
     asyncio.run(scenario())

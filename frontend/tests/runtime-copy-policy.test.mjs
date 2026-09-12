@@ -33,7 +33,7 @@ describe("runtime copy policy", () => {
         return forbiddenPatterns
           .filter((pattern) => pattern.test(source))
           .map((pattern) => `${path}: ${pattern}`);
-      })
+      }),
     );
 
     assert.deepEqual(violations, []);

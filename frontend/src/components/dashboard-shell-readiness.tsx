@@ -4,7 +4,11 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { DASHBOARD_PERFORMANCE_ROUTES, markDashboardReadiness } from "@/lib/performance";
 
-export function DashboardShellReadiness({ identityGeneration, identityReady, shellVisible }: {
+export function DashboardShellReadiness({
+  identityGeneration,
+  identityReady,
+  shellVisible,
+}: {
   identityGeneration: number;
   identityReady: boolean;
   shellVisible: boolean;
@@ -13,7 +17,10 @@ export function DashboardShellReadiness({ identityGeneration, identityReady, she
   useEffect(() => {
     const route = DASHBOARD_PERFORMANCE_ROUTES.find((label) => pathname === `/${label}`);
     if (!route) return;
-    return markDashboardReadiness(route, identityGeneration, { shell: shellVisible, identity: identityReady });
+    return markDashboardReadiness(route, identityGeneration, {
+      shell: shellVisible,
+      identity: identityReady,
+    });
   }, [identityGeneration, identityReady, pathname, shellVisible]);
   return null;
 }

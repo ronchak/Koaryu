@@ -117,7 +117,7 @@ describe("studio store model", () => {
         defaultRankIds: ["kids-rank"],
         defaultSubRankTerm: "Tip",
         defaultLadderName: "Kids",
-      }
+      },
     );
 
     const fallbackResolved = resolvePreviewLadderHydrationDefaults({
@@ -128,7 +128,7 @@ describe("studio store model", () => {
     });
     assert.deepEqual(
       [fallbackResolved.previewLadders[0].id, fallbackResolved.selectedPreviewLadder?.id],
-      ["fallback", "fallback"]
+      ["fallback", "fallback"],
     );
   });
 
@@ -142,20 +142,35 @@ describe("studio store model", () => {
       storedSubRankTerm: "Chevron",
       storedLadderName: "Youth",
       primaryEligibilityLadderId: "adult",
-      primaryEligibilityRows: [{ student_id: "student-1", student_name: "Ava", classes_since_promo: 0, classes_required: 0, days_at_rank: 0, days_required: 0, classes_met: true, time_met: true, needs_approval: false, is_eligible: true }],
+      primaryEligibilityRows: [
+        {
+          student_id: "student-1",
+          student_name: "Ava",
+          classes_since_promo: 0,
+          classes_required: 0,
+          days_at_rank: 0,
+          days_required: 0,
+          classes_met: true,
+          time_met: true,
+          needs_approval: false,
+          is_eligible: true,
+        },
+      ],
     });
 
     assert.deepEqual(
-      hydrated.hydratedLadders.map((item) => [item.id, item.name, item.sub_rank_term, item.ranks[0].id]),
+      hydrated.hydratedLadders.map((item) => [
+        item.id,
+        item.name,
+        item.sub_rank_term,
+        item.ranks[0].id,
+      ]),
       [
         ["adult", "Adults", "Stripe", "adult-rank"],
         ["kids", "Youth", "Chevron", "persisted"],
-      ]
+      ],
     );
-    assert.deepEqual(
-      [hydrated.eligibilityLadderId, hydrated.eligibilityRows.length],
-      ["kids", 0]
-    );
+    assert.deepEqual([hydrated.eligibilityLadderId, hydrated.eligibilityRows.length], ["kids", 0]);
   });
 
   it("builds the preview demo reset response with fixture counts and sorted sessions", () => {

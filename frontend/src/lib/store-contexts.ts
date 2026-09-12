@@ -40,10 +40,7 @@ import type {
   SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
 import type { StudentListQuery } from "@/lib/student-list-page";
-import type {
-  DemoResetResponse,
-  StudioDataClearResponse,
-} from "@/lib/studio-store-model";
+import type { DemoResetResponse, StudioDataClearResponse } from "@/lib/studio-store-model";
 import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
 
 export interface StoreContextValue {
@@ -79,24 +76,24 @@ export interface StoreContextValue {
   bulkAddTagsToStudents: (
     studentIds: string[],
     tags: string[],
-    options?: { refreshMode?: "full" | "local" }
+    options?: { refreshMode?: "full" | "local" },
   ) => Promise<BulkStudentTagUpdateResponse>;
   bulkUpdateStudentStatus: (
     studentIds: string[],
     status: StudentStatus,
-    options?: { refreshMode?: "full" | "local" }
+    options?: { refreshMode?: "full" | "local" },
   ) => Promise<BulkStudentStatusUpdateResponse>;
   importStudents: (
     file: File,
     rows: Record<string, string>[],
     mapping: Record<string, string>,
     options: CsvImportOptions,
-    request?: { importKey?: string }
+    request?: { importKey?: string },
   ) => Promise<CsvImportResult>;
   refreshStudents: () => Promise<Student[]>;
   listStudentsPage: (
     query?: StudentListQuery,
-    options?: { signal?: AbortSignal; timeoutMs?: number | null }
+    options?: { signal?: AbortSignal; timeoutMs?: number | null },
   ) => Promise<StudentRosterPageResponse>;
 
   programs: Program[];
@@ -123,8 +120,14 @@ export interface StoreContextValue {
   beltRanks: BeltRank[];
   currentLadderId: string | null;
   setCurrentLadder: (ladderId: string) => Promise<void>;
-  loadEligibilityForLadder: (ladderId?: string | null, options?: { force?: boolean }) => Promise<EligibilityEntry[]>;
-  setBeltRanks: (ranks: BeltRank[], options: { ladderId: string; subRankTerm?: string }) => Promise<void>;
+  loadEligibilityForLadder: (
+    ladderId?: string | null,
+    options?: { force?: boolean },
+  ) => Promise<EligibilityEntry[]>;
+  setBeltRanks: (
+    ranks: BeltRank[],
+    options: { ladderId: string; subRankTerm?: string },
+  ) => Promise<void>;
   ladderName: string;
   setLadderName: (name: string) => void;
   subRankTerm: string;
@@ -136,7 +139,7 @@ export interface StoreContextValue {
   promotionHistoryByStudent: Record<string, Promotion[]>;
   loadPromotionHistory: (
     studentId: string,
-    options?: { force?: boolean; signal?: AbortSignal }
+    options?: { force?: boolean; signal?: AbortSignal },
   ) => Promise<Promotion[]>;
   demoteStudent: (data: DemoteStudent) => Promise<Promotion>;
   promoteStudent: (data: PromoteStudent) => Promise<Promotion>;
@@ -148,7 +151,7 @@ export interface StoreContextValue {
   refreshScheduleRange: (
     startDate: string,
     endDate: string,
-    intent: ScheduleRangeRefreshIntent
+    intent: ScheduleRangeRefreshIntent,
   ) => Promise<ClassSession[]>;
   refreshSessionAttendance: (sessionId: string) => Promise<SessionAttendanceRefreshResult>;
   refreshSchedule: () => Promise<void>;
@@ -176,7 +179,7 @@ export interface StoreContextValue {
   updateStaffLegalName: (
     userId: string,
     firstName: string,
-    lastName: string
+    lastName: string,
   ) => Promise<StaffLegalNameResponse>;
   refreshStaff: (includeArchived?: boolean) => Promise<StaffMember[]>;
   inviteStaff: (data: StaffInviteCreate) => Promise<StaffMember>;
@@ -185,7 +188,7 @@ export interface StoreContextValue {
   scheduleStaffDeletion: (
     id: string,
     confirmationName: string,
-    reason?: string
+    reason?: string,
   ) => Promise<StaffDeletionRequestResponse>;
   updateStaffRole: (id: string, role: StaffRoleName) => Promise<StaffMember>;
   removeStaff: (id: string) => Promise<void>;

@@ -41,13 +41,7 @@ class StudioService:
 
     async def get_studio(self, studio_id: str) -> StudioResponse:
         """Get studio by ID."""
-        result = (
-            self.supabase.table("studios")
-            .select("*")
-            .eq("id", studio_id)
-            .single()
-            .execute()
-        )
+        result = self.supabase.table("studios").select("*").eq("id", studio_id).single().execute()
 
         if not result.data:
             raise HTTPException(
@@ -72,12 +66,7 @@ class StudioService:
         if "owner_id" in update_data:
             self._validate_owner_transfer(studio_id, user_id, update_data["owner_id"])
 
-        result = (
-            self.supabase.table("studios")
-            .update(update_data)
-            .eq("id", studio_id)
-            .execute()
-        )
+        result = self.supabase.table("studios").update(update_data).eq("id", studio_id).execute()
 
         if not result.data:
             raise HTTPException(
@@ -101,11 +90,7 @@ class StudioService:
 
     def _validate_owner_transfer(self, studio_id: str, actor_id: str, next_owner_id: str) -> None:
         studio = (
-            self.supabase.table("studios")
-            .select("owner_id")
-            .eq("id", studio_id)
-            .limit(1)
-            .execute()
+            self.supabase.table("studios").select("owner_id").eq("id", studio_id).limit(1).execute()
         )
         if not studio.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Studio not found")

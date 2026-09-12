@@ -20,7 +20,11 @@
   --product-control-surface: color-mix(in srgb, var(--product-paper) 92%, var(--product-wood) 8%);
   --product-control-ink: var(--product-ink);
   --product-control-rule: color-mix(in srgb, var(--product-wood) 38%, transparent);
-  --product-alert-surface: color-mix(in srgb, var(--product-paper) 92%, var(--product-vermilion) 8%);
+  --product-alert-surface: color-mix(
+    in srgb,
+    var(--product-paper) 92%,
+    var(--product-vermilion) 8%
+  );
   --product-alert-ink: var(--product-vermilion);
   --product-alert-rule: color-mix(in srgb, var(--product-vermilion) 42%, transparent);
   --product-shadow-card: 0 6px 18px rgb(67 51 25 / 10%);
@@ -30,7 +34,7 @@
   --product-motion-gather-duration: 180ms;
   --product-motion-settle-duration: 180ms;
   --product-motion-change-duration: 120ms;
-  --product-motion-ease: cubic-bezier(.16, 1, .3, 1);
+  --product-motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   --bg: var(--product-ground);
   --surface: var(--product-paper);
@@ -51,8 +55,8 @@
   background: var(--product-ground);
   color: var(--product-ink);
   font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Inter,
-    "Segoe UI", Roboto, sans-serif;
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Inter, "Segoe UI", Roboto,
+    sans-serif;
 }
 
 .navigationPending {
@@ -83,15 +87,21 @@
 }
 
 @keyframes navigationPendingReveal {
-  to { opacity: 1; }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes navigationIconHide {
-  to { opacity: 0; }
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes navigationPendingSpin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .identityPlaceholder {
@@ -158,7 +168,8 @@
 }
 
 .routeTravel {
-  animation: product-route-travel var(--product-motion-travel-duration) var(--product-motion-ease) backwards;
+  animation: product-route-travel var(--product-motion-travel-duration) var(--product-motion-ease)
+    backwards;
 }
 
 @keyframes product-route-travel {

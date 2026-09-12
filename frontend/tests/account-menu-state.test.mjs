@@ -11,10 +11,13 @@ import { formatRoleLabel } from "../src/lib/role-label.ts";
 
 describe("account menu state extraction", () => {
   it("uses one label mapping for known, unknown, and missing roles", () => {
-    assert.deepEqual(
-      ["admin", "front_desk", "instructor", "unknown", null].map(formatRoleLabel),
-      ["Admin", "Front desk", "Instructor", "Member", "Member"]
-    );
+    assert.deepEqual(["admin", "front_desk", "instructor", "unknown", null].map(formatRoleLabel), [
+      "Admin",
+      "Front desk",
+      "Instructor",
+      "Member",
+      "Member",
+    ]);
   });
 
   it("keeps viewport positioning in a pure helper", () => {
@@ -23,7 +26,7 @@ describe("account menu state extraction", () => {
         compactLayout: false,
         hasSubmenu: true,
       }),
-      ACCOUNT_MENU_WIDTH + ACCOUNT_SUBMENU_WIDTH + ACCOUNT_MENU_GAP
+      ACCOUNT_MENU_WIDTH + ACCOUNT_SUBMENU_WIDTH + ACCOUNT_MENU_GAP,
     );
 
     assert.deepEqual(
@@ -38,7 +41,7 @@ describe("account menu state extraction", () => {
         compactLayout: false,
         top: 148,
         maxHeight: 544,
-      }
+      },
     );
 
     assert.deepEqual(
@@ -53,7 +56,7 @@ describe("account menu state extraction", () => {
         compactLayout: true,
         bottom: 208,
         maxHeight: 484,
-      }
+      },
     );
   });
 });

@@ -70,17 +70,30 @@ def resolve_belt_rank_reference(
         return None, None, None
 
     program_label = format_program_label(raw_program_value)
-    confirmed = belt_rank_lookup.get("confirmed_ranks", {}).get((resolved_program_id, normalize_header(value)))
+    confirmed = belt_rank_lookup.get("confirmed_ranks", {}).get(
+        (resolved_program_id, normalize_header(value))
+    )
     if confirmed is not None:
         rank_id = confirmed["rank_id"]
         current = belt_rank_lookup["rank_meta"].get(rank_id)
-        if (current is None or current.get("ladder_id") != confirmed["ladder_id"]
-                or current.get("program_id") != confirmed["program_id"]):
-            return None, "unavailable", "The belt confirmed by this import is no longer available in its program. Reconcile the saved setup before importing this row."
+        if (
+            current is None
+            or current.get("ladder_id") != confirmed["ladder_id"]
+            or current.get("program_id") != confirmed["program_id"]
+        ):
+            return (
+                None,
+                "unavailable",
+                "The belt confirmed by this import is no longer available in its program. Reconcile the saved setup before importing this row.",
+            )
         return rank_id, None, None
     if raw_program_value and not resolved_program_id:
-        return None, "missing", (
-            f"Current belt '{raw_value}' could not be matched until {program_label} is set up in this studio."
+        return (
+            None,
+            "missing",
+            (
+                f"Current belt '{raw_value}' could not be matched until {program_label} is set up in this studio."
+            ),
         )
 
     try:
@@ -102,8 +115,12 @@ def resolve_belt_rank_reference(
             if belt_program_id is None and sole_ladder_id and belt_ladder_id == sole_ladder_id:
                 return parsed_uuid, None, None
             if belt_program_id != resolved_program_id:
-                return None, "missing", (
-                    f"Current belt '{raw_value}' does not belong to the ladder for {program_label}."
+                return (
+                    None,
+                    "missing",
+                    (
+                        f"Current belt '{raw_value}' does not belong to the ladder for {program_label}."
+                    ),
                 )
         return parsed_uuid, None, None
 
@@ -120,34 +137,60 @@ def resolve_belt_rank_reference(
         if len(program_rank_ids) == 1:
             return program_rank_ids[0], None, None
         if len(program_rank_ids) > 1:
-            return None, "ambiguous", (
-                f"Current belt '{raw_value}' matches multiple belt ranks in the ladder for {program_label}."
+            return (
+                None,
+                "ambiguous",
+                (
+                    f"Current belt '{raw_value}' matches multiple belt ranks in the ladder for {program_label}."
+                ),
             )
 
-        program_ladders = belt_rank_lookup.get("ladders_by_program", {}).get(resolved_program_id, [])
+        program_ladders = belt_rank_lookup.get("ladders_by_program", {}).get(
+            resolved_program_id, []
+        )
         if not program_ladders:
             sole_ladder_id = belt_rank_lookup.get("sole_ladder_id")
             unscoped_ladder_ids = belt_rank_lookup.get("unscoped_ladder_ids", [])
-            if sole_ladder_id and len(unscoped_ladder_ids) == 1 and unscoped_ladder_ids[0] == sole_ladder_id:
-                unscoped_rank_ids = belt_rank_lookup.get("unscoped_rank_name_lookup", {}).get(normalized_name, [])
+            if (
+                sole_ladder_id
+                and len(unscoped_ladder_ids) == 1
+                and unscoped_ladder_ids[0] == sole_ladder_id
+            ):
+                unscoped_rank_ids = belt_rank_lookup.get("unscoped_rank_name_lookup", {}).get(
+                    normalized_name, []
+                )
                 if len(unscoped_rank_ids) == 1:
                     return unscoped_rank_ids[0], None, None
                 if len(unscoped_rank_ids) > 1:
-                    return None, "ambiguous", (
-                        f"Current belt '{raw_value}' matches multiple belt ranks in the default ladder for {program_label}."
+                    return (
+                        None,
+                        "ambiguous",
+                        (
+                            f"Current belt '{raw_value}' matches multiple belt ranks in the default ladder for {program_label}."
+                        ),
                     )
             if not program_ladders:
-                return None, "missing", (
-                    f"Current belt '{raw_value}' was not found because {program_label} does not have a belt ladder yet."
+                return (
+                    None,
+                    "missing",
+                    (
+                        f"Current belt '{raw_value}' was not found because {program_label} does not have a belt ladder yet."
+                    ),
                 )
 
-        return None, "missing", (
-            f"Current belt '{raw_value}' was not found in the belt ladder for {program_label}."
+        return (
+            None,
+            "missing",
+            (f"Current belt '{raw_value}' was not found in the belt ladder for {program_label}."),
         )
 
     global_rank_ids = belt_rank_lookup.get("name_to_rank_ids", {}).get(normalized_name, [])
     if len(global_rank_ids) > 1:
-        return None, "ambiguous", f"Current belt '{raw_value}' matches multiple belt ranks in this studio"
+        return (
+            None,
+            "ambiguous",
+            f"Current belt '{raw_value}' matches multiple belt ranks in this studio",
+        )
     if len(global_rank_ids) == 1:
         return global_rank_ids[0], None, None
 
@@ -166,10 +209,9 @@ def classify_belt_creation_target(
         ladders = belt_rank_lookup.get("ladders_by_program", {}).get(resolved_program_id, [])
         if len(ladders) == 1:
             ladder_id = ladders[0]
-            ladder_name = (
-                (belt_rank_lookup.get("ladder_meta", {}).get(ladder_id) or {}).get("name")
-                or "the matching ladder"
-            )
+            ladder_name = (belt_rank_lookup.get("ladder_meta", {}).get(ladder_id) or {}).get(
+                "name"
+            ) or "the matching ladder"
             return {
                 "mode": "existing_ladder",
                 "ladder_id": ladder_id,
@@ -263,22 +305,26 @@ def normalize_import_status(
 
     if options.status_alias_mode == "normalize" and value in STATUS_ALIASES:
         normalized = STATUS_ALIASES[value]
-        issues.append(make_import_issue(
-            "normalized_status",
-            f"Status '{raw_value}' will be imported as '{normalized}'.",
-            severity="warning",
-            field="status",
-            value=raw_value,
-        ))
+        issues.append(
+            make_import_issue(
+                "normalized_status",
+                f"Status '{raw_value}' will be imported as '{normalized}'.",
+                severity="warning",
+                field="status",
+                value=raw_value,
+            )
+        )
         return normalized
 
     if value not in VALID_STATUSES:
-        issues.append(make_import_issue(
-            "invalid_status",
-            f'Koaryu does not recognize "{raw_value}" as a student status. Use Active, Trialing, Paused, Inactive, or Canceled, or skip the Status column.',
-            field="status",
-            value=raw_value,
-        ))
+        issues.append(
+            make_import_issue(
+                "invalid_status",
+                f'Koaryu does not recognize "{raw_value}" as a student status. Use Active, Trialing, Paused, Inactive, or Canceled, or skip the Status column.',
+                field="status",
+                value=raw_value,
+            )
+        )
         return value
 
     return value
@@ -334,17 +380,21 @@ def build_import_row_plan(
         mapped[koaryu_field] = value
 
     if not mapped.get("legal_first_name"):
-        row_issues.append(make_import_issue(
-            "missing_first_name",
-            "Missing required field: first name",
-            field="legal_first_name",
-        ))
+        row_issues.append(
+            make_import_issue(
+                "missing_first_name",
+                "Missing required field: first name",
+                field="legal_first_name",
+            )
+        )
     if not mapped.get("legal_last_name"):
-        row_issues.append(make_import_issue(
-            "missing_last_name",
-            "Missing required field: last name",
-            field="legal_last_name",
-        ))
+        row_issues.append(
+            make_import_issue(
+                "missing_last_name",
+                "Missing required field: last name",
+                field="legal_last_name",
+            )
+        )
 
     if mapped.get("status") and isinstance(mapped["status"], str):
         mapped["status"] = normalize_import_status(mapped["status"], options, row_issues)
@@ -360,12 +410,14 @@ def build_import_row_plan(
             continue
         parsed_date, date_error = parse_import_date(mapped.get(field_name), field_label)
         if date_error:
-            row_issues.append(make_import_issue(
-                f"invalid_{field_name}",
-                date_error,
-                field=field_name,
-                value=mapped.get(field_name),
-            ))
+            row_issues.append(
+                make_import_issue(
+                    f"invalid_{field_name}",
+                    date_error,
+                    field=field_name,
+                    value=mapped.get(field_name),
+                )
+            )
         elif parsed_date:
             mapped[field_name] = parsed_date
 
@@ -373,7 +425,11 @@ def build_import_row_plan(
     if program_lookup and mapped.get("program_id"):
         confirmed_program = program_lookup["confirmed"].get(normalize_header(raw_program or ""))
         if confirmed_program is not None:
-            program_id, program_error_code, program_error = confirmed_program["program_id"], None, None
+            program_id, program_error_code, program_error = (
+                confirmed_program["program_id"],
+                None,
+                None,
+            )
         else:
             program_id, program_error_code, program_error = resolve_named_import_reference(
                 mapped.get("program_id"),
@@ -383,52 +439,62 @@ def build_import_row_plan(
                 ambiguous_names=program_lookup["ambiguous_names"],
             )
         if program_error_code == "ambiguous":
-            row_issues.append(make_import_issue(
-                "ambiguous_program",
-                program_error or "Program matches multiple records in this studio",
-                field="program_id",
-                value=raw_program,
-                suggested_action="Choose the correct Program column value or clean up duplicate programs in this studio.",
-            ))
+            row_issues.append(
+                make_import_issue(
+                    "ambiguous_program",
+                    program_error or "Program matches multiple records in this studio",
+                    field="program_id",
+                    value=raw_program,
+                    suggested_action="Choose the correct Program column value or clean up duplicate programs in this studio.",
+                )
+            )
         elif program_error_code == "missing":
             if options.create_missing_programs:
                 plan["pending_program_name"] = raw_program
-                row_issues.append(make_import_issue(
-                    "missing_program",
-                    f"Program '{raw_program}' will be created during import.",
-                    severity="warning",
-                    field="program_id",
-                    value=raw_program,
-                ))
+                row_issues.append(
+                    make_import_issue(
+                        "missing_program",
+                        f"Program '{raw_program}' will be created during import.",
+                        severity="warning",
+                        field="program_id",
+                        value=raw_program,
+                    )
+                )
             else:
-                row_issues.append(make_import_issue(
-                    "missing_program",
-                    program_error or f"Program '{raw_program}' was not found in this studio",
-                    field="program_id",
-                    value=raw_program,
-                    suggested_action="Turn on 'Create missing programs' or remove the Program mapping.",
-                ))
+                row_issues.append(
+                    make_import_issue(
+                        "missing_program",
+                        program_error or f"Program '{raw_program}' was not found in this studio",
+                        field="program_id",
+                        value=raw_program,
+                        suggested_action="Turn on 'Create missing programs' or remove the Program mapping.",
+                    )
+                )
         elif program_id:
             plan["resolved_program_id"] = program_id
             program = program_lookup["records"].get(program_id)
             if program is None or program.get("archived_at"):
-                row_issues.append(make_import_issue(
-                    "unavailable_program",
-                    f"Program '{raw_program}' is archived or no longer available. Restore it or choose an active program before importing this row.",
-                    field="program_id",
-                    value=raw_program,
-                ))
+                row_issues.append(
+                    make_import_issue(
+                        "unavailable_program",
+                        f"Program '{raw_program}' is archived or no longer available. Restore it or choose an active program before importing this row.",
+                        field="program_id",
+                        value=raw_program,
+                    )
+                )
 
     if program_lookup and not raw_program:
         confirmed_unassigned = program_lookup["confirmed"].get("__unassigned__")
         if confirmed_unassigned is not None:
             program = program_lookup["records"].get(confirmed_unassigned["program_id"])
             if program is None or program.get("archived_at"):
-                row_issues.append(make_import_issue(
-                    "unavailable_program",
-                    "The Unassigned program confirmed by this import is no longer available. Reconcile its saved setup before importing this row.",
-                    field="program_id",
-                ))
+                row_issues.append(
+                    make_import_issue(
+                        "unavailable_program",
+                        "The Unassigned program confirmed by this import is no longer available. Reconcile its saved setup before importing this row.",
+                        field="program_id",
+                    )
+                )
 
     if belt_rank_lookup and mapped.get("current_belt_rank_id"):
         raw_belt = mapped.get("current_belt_rank_id")
@@ -439,20 +505,24 @@ def build_import_row_plan(
             belt_rank_lookup=belt_rank_lookup,
         )
         if belt_rank_error_code == "unavailable":
-            row_issues.append(make_import_issue(
-                "unavailable_belt",
-                belt_rank_error,
-                field="current_belt_rank_id",
-                value=raw_belt,
-            ))
+            row_issues.append(
+                make_import_issue(
+                    "unavailable_belt",
+                    belt_rank_error,
+                    field="current_belt_rank_id",
+                    value=raw_belt,
+                )
+            )
         elif belt_rank_error_code == "ambiguous":
-            row_issues.append(make_import_issue(
-                "ambiguous_belt",
-                belt_rank_error or "Current belt matches multiple belt ranks in this studio",
-                field="current_belt_rank_id",
-                value=raw_belt,
-                suggested_action="Set up clearer belt ladders or remove the Current Belt mapping for this import.",
-            ))
+            row_issues.append(
+                make_import_issue(
+                    "ambiguous_belt",
+                    belt_rank_error or "Current belt matches multiple belt ranks in this studio",
+                    field="current_belt_rank_id",
+                    value=raw_belt,
+                    suggested_action="Set up clearer belt ladders or remove the Current Belt mapping for this import.",
+                )
+            )
         elif belt_rank_error_code == "missing":
             plan["unresolved_belt_value"] = raw_belt
             belt_creation_target = classify_belt_creation_target(
@@ -471,7 +541,8 @@ def build_import_row_plan(
             no_ladder_setup = belt_rank_lookup["ladder_count"] == 0
             issue_code = (
                 "missing_belt_ladder"
-                if no_ladder_setup or target_mode in {"create_program_ladder", "create_program_and_ladder"}
+                if no_ladder_setup
+                or target_mode in {"create_program_ladder", "create_program_and_ladder"}
                 else "missing_belt"
             )
             issue_message = (
@@ -481,77 +552,104 @@ def build_import_row_plan(
             )
             if options.create_missing_belts and target_mode == "existing_ladder":
                 plan["pending_belt_name"] = str(raw_belt).strip()
-                row_issues.append(make_import_issue(
-                    "missing_belt",
-                    f"Current belt '{raw_belt}' will be created in '{belt_creation_target['ladder_name']}' during import.",
-                    severity="warning",
-                    field="current_belt_rank_id",
-                    value=raw_belt,
-                ))
-            elif options.create_missing_belts and target_mode in {"create_program_ladder", "create_program_and_ladder"}:
-                plan["pending_belt_name"] = str(raw_belt).strip()
-                row_issues.append(make_import_issue(
-                    "missing_belt_ladder",
-                    f"Current belt '{raw_belt}' will be created in a new ladder for {belt_creation_target['program_label']} during import.",
-                    severity="warning",
-                    field="current_belt_rank_id",
-                    value=raw_belt,
-                ))
-            elif target_mode == "ambiguous_program_ladder":
-                row_issues.append(make_import_issue(
-                    "ambiguous_belt_ladder",
-                    f"{belt_creation_target['program_label']} has multiple belt ladders, so Koaryu cannot safely auto-create '{raw_belt}'.",
-                    field="current_belt_rank_id",
-                    value=raw_belt,
-                    suggested_action="Choose one ladder for this program in Belt Tracker before importing current belts.",
-                ))
-            elif target_mode == "program_required":
-                if options.import_without_unresolved_belt:
-                    row_issues.append(make_import_issue(
-                        issue_code,
-                        f"{issue_message} Map the Program column if you want Koaryu to create the right ladder and belt automatically. The student can still be imported; a configured program starts them at its first full belt, otherwise they remain unranked.",
+                row_issues.append(
+                    make_import_issue(
+                        "missing_belt",
+                        f"Current belt '{raw_belt}' will be created in '{belt_creation_target['ladder_name']}' during import.",
                         severity="warning",
                         field="current_belt_rank_id",
                         value=raw_belt,
-                        suggested_action="Map the Program column or set up the ladder manually in Belt Tracker.",
-                    ))
-                else:
-                    row_issues.append(make_import_issue(
-                        issue_code,
-                        f"{issue_message} Map the Program column if you want Koaryu to create the right ladder and belt automatically.",
+                    )
+                )
+            elif options.create_missing_belts and target_mode in {
+                "create_program_ladder",
+                "create_program_and_ladder",
+            }:
+                plan["pending_belt_name"] = str(raw_belt).strip()
+                row_issues.append(
+                    make_import_issue(
+                        "missing_belt_ladder",
+                        f"Current belt '{raw_belt}' will be created in a new ladder for {belt_creation_target['program_label']} during import.",
+                        severity="warning",
                         field="current_belt_rank_id",
                         value=raw_belt,
-                        suggested_action="Map the Program column or set up the ladder manually in Belt Tracker.",
-                    ))
+                    )
+                )
+            elif target_mode == "ambiguous_program_ladder":
+                row_issues.append(
+                    make_import_issue(
+                        "ambiguous_belt_ladder",
+                        f"{belt_creation_target['program_label']} has multiple belt ladders, so Koaryu cannot safely auto-create '{raw_belt}'.",
+                        field="current_belt_rank_id",
+                        value=raw_belt,
+                        suggested_action="Choose one ladder for this program in Belt Tracker before importing current belts.",
+                    )
+                )
+            elif target_mode == "program_required":
+                if options.import_without_unresolved_belt:
+                    row_issues.append(
+                        make_import_issue(
+                            issue_code,
+                            f"{issue_message} Map the Program column if you want Koaryu to create the right ladder and belt automatically. The student can still be imported; a configured program starts them at its first full belt, otherwise they remain unranked.",
+                            severity="warning",
+                            field="current_belt_rank_id",
+                            value=raw_belt,
+                            suggested_action="Map the Program column or set up the ladder manually in Belt Tracker.",
+                        )
+                    )
+                else:
+                    row_issues.append(
+                        make_import_issue(
+                            issue_code,
+                            f"{issue_message} Map the Program column if you want Koaryu to create the right ladder and belt automatically.",
+                            field="current_belt_rank_id",
+                            value=raw_belt,
+                            suggested_action="Map the Program column or set up the ladder manually in Belt Tracker.",
+                        )
+                    )
             elif options.import_without_unresolved_belt:
-                row_issues.append(make_import_issue(
-                    issue_code,
-                    f"{issue_message} The student can still be imported; a configured program starts them at its first full belt, otherwise they remain unranked.",
-                    severity="warning",
-                    field="current_belt_rank_id",
-                    value=raw_belt,
-                    suggested_action=(
-                        "Turn on 'Create missing belts' or set up the belt ladder in Belt Tracker to match these students later."
-                        if target_mode in {"existing_ladder", "create_program_ladder", "create_program_and_ladder"}
-                        else "Set up the belt ladder in Belt Tracker to match these students later."
-                    ),
-                ))
+                row_issues.append(
+                    make_import_issue(
+                        issue_code,
+                        f"{issue_message} The student can still be imported; a configured program starts them at its first full belt, otherwise they remain unranked.",
+                        severity="warning",
+                        field="current_belt_rank_id",
+                        value=raw_belt,
+                        suggested_action=(
+                            "Turn on 'Create missing belts' or set up the belt ladder in Belt Tracker to match these students later."
+                            if target_mode
+                            in {
+                                "existing_ladder",
+                                "create_program_ladder",
+                                "create_program_and_ladder",
+                            }
+                            else "Set up the belt ladder in Belt Tracker to match these students later."
+                        ),
+                    )
+                )
             else:
-                row_issues.append(make_import_issue(
-                    issue_code,
-                    (
-                        f"No belt ladder is set up for {belt_creation_target['program_label']} yet."
-                        if target_mode in {"create_program_ladder", "create_program_and_ladder"}
-                        else issue_message
-                    ),
-                    field="current_belt_rank_id",
-                    value=raw_belt,
-                    suggested_action=(
-                        "Turn on 'Create missing belts' or open Belt Tracker and add the missing belt ladder or belt ranks."
-                        if target_mode in {"existing_ladder", "create_program_ladder", "create_program_and_ladder"}
-                        else "Open Belt Tracker and add the missing ladder or belt ranks."
-                    ),
-                ))
+                row_issues.append(
+                    make_import_issue(
+                        issue_code,
+                        (
+                            f"No belt ladder is set up for {belt_creation_target['program_label']} yet."
+                            if target_mode in {"create_program_ladder", "create_program_and_ladder"}
+                            else issue_message
+                        ),
+                        field="current_belt_rank_id",
+                        value=raw_belt,
+                        suggested_action=(
+                            "Turn on 'Create missing belts' or open Belt Tracker and add the missing belt ladder or belt ranks."
+                            if target_mode
+                            in {
+                                "existing_ladder",
+                                "create_program_ladder",
+                                "create_program_and_ladder",
+                            }
+                            else "Open Belt Tracker and add the missing ladder or belt ranks."
+                        ),
+                    )
+                )
         elif belt_rank_id:
             plan["resolved_belt_rank_id"] = belt_rank_id
 
@@ -561,13 +659,15 @@ def build_import_row_plan(
         belt_meta = belt_rank_lookup["rank_meta"].get(resolved_belt_rank_id) or {}
         belt_program_id = belt_meta.get("program_id")
         if belt_program_id and belt_program_id != resolved_program_id:
-            row_issues.append(make_import_issue(
-                "belt_program_mismatch",
-                "The selected Program and Current Belt belong to different ladders.",
-                field="current_belt_rank_id",
-                value=mapped.get("current_belt_rank_id"),
-                suggested_action="Verify the Program mapping or remove the Current Belt mapping for this row.",
-            ))
+            row_issues.append(
+                make_import_issue(
+                    "belt_program_mismatch",
+                    "The selected Program and Current Belt belong to different ladders.",
+                    field="current_belt_rank_id",
+                    value=mapped.get("current_belt_rank_id"),
+                    suggested_action="Verify the Program mapping or remove the Current Belt mapping for this row.",
+                )
+            )
 
     plan["is_valid"] = not any(issue.severity == "error" for issue in row_issues)
     return plan

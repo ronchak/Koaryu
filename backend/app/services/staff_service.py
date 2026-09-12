@@ -78,11 +78,7 @@ def _normalize_identity_text(value: Any) -> Optional[str]:
 
 
 def _deletion_confirmation_name(row: dict, user: Any, email: str) -> str:
-    return (
-        _user_full_name(user)
-        or _normalize_identity_text(email)
-        or f"staff role {row['id']}"
-    )
+    return _user_full_name(user) or _normalize_identity_text(email) or f"staff role {row['id']}"
 
 
 def _staff_status(user: Any, archived_at: Any = None) -> str:
@@ -112,11 +108,7 @@ class StaffService:
         result = self._list_staff_role_rows(studio_id, include_archived=include_archived)
         rows = result.data or []
         profile_map = self._get_staff_profiles_for_user_ids(
-            list(dict.fromkeys(
-                row.get("user_id")
-                for row in rows
-                if row.get("user_id")
-            ))
+            list(dict.fromkeys(row.get("user_id") for row in rows if row.get("user_id")))
         )
 
         return [
@@ -192,11 +184,13 @@ class StaffService:
         try:
             profile_result = (
                 self.supabase.table("staff_profiles")
-                .insert({
-                    "user_id": user_id,
-                    "legal_first_name": data.legal_first_name,
-                    "legal_last_name": data.legal_last_name,
-                })
+                .insert(
+                    {
+                        "user_id": user_id,
+                        "legal_first_name": data.legal_first_name,
+                        "legal_last_name": data.legal_last_name,
+                    }
+                )
                 .execute()
             )
             if not profile_result.data:
@@ -302,7 +296,9 @@ class StaffService:
             self._raise_admin_integrity_conflict(exc)
 
         if not result.data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found."
+            )
 
         self._audit(
             studio_id,
@@ -472,10 +468,12 @@ class StaffService:
 
             result = (
                 self.supabase.table("staff_profiles")
-                .update({
-                    "legal_first_name": data.legal_first_name,
-                    "legal_last_name": data.legal_last_name,
-                })
+                .update(
+                    {
+                        "legal_first_name": data.legal_first_name,
+                        "legal_last_name": data.legal_last_name,
+                    }
+                )
                 .eq("user_id", target_user_id)
                 .execute()
             )
@@ -491,11 +489,13 @@ class StaffService:
             try:
                 result = (
                     self.supabase.table("staff_profiles")
-                    .insert({
-                        "user_id": target_user_id,
-                        "legal_first_name": data.legal_first_name,
-                        "legal_last_name": data.legal_last_name,
-                    })
+                    .insert(
+                        {
+                            "user_id": target_user_id,
+                            "legal_first_name": data.legal_first_name,
+                            "legal_last_name": data.legal_last_name,
+                        }
+                    )
                     .execute()
                 )
             except PostgrestAPIError as exc:
@@ -639,10 +639,7 @@ class StaffService:
 
     def _ensure_single_studio_membership_candidate(self, user_id: str, studio_id: str) -> None:
         result = (
-            self.supabase.table("staff_roles")
-            .select("studio_id")
-            .eq("user_id", user_id)
-            .execute()
+            self.supabase.table("staff_roles").select("studio_id").eq("user_id", user_id).execute()
         )
         if any(row.get("studio_id") != studio_id for row in (result.data or [])):
             raise HTTPException(
@@ -738,12 +735,7 @@ class StaffService:
     def _delete_invited_staff_profile(self, user_id: Optional[str]) -> None:
         if not user_id:
             return
-        (
-            self.supabase.table("staff_profiles")
-            .delete()
-            .eq("user_id", user_id)
-            .execute()
-        )
+        (self.supabase.table("staff_profiles").delete().eq("user_id", user_id).execute())
 
     def _delete_invited_auth_user(self, user_id: Optional[str]) -> None:
         if not user_id:
@@ -805,7 +797,9 @@ class StaffService:
             self._raise_admin_integrity_conflict(exc)
 
         if not result.data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found."
+            )
 
         self._audit(
             studio_id,
@@ -884,7 +878,9 @@ class StaffService:
                 .execute()
             )
         if not result.data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found."
+            )
         return result.data[0]
 
     def _ensure_owner_not_demoted_or_removed(
@@ -894,11 +890,7 @@ class StaffService:
         next_role: Optional[str],
     ) -> None:
         result = (
-            self.supabase.table("studios")
-            .select("owner_id")
-            .eq("id", studio_id)
-            .limit(1)
-            .execute()
+            self.supabase.table("studios").select("owner_id").eq("id", studio_id).limit(1).execute()
         )
         owner_id = result.data[0]["owner_id"] if result.data else None
         if owner_id == target_user_id and next_role != "admin":
@@ -913,11 +905,7 @@ class StaffService:
         target_user_id: Optional[str],
     ) -> None:
         result = (
-            self.supabase.table("studios")
-            .select("owner_id")
-            .eq("id", studio_id)
-            .limit(1)
-            .execute()
+            self.supabase.table("studios").select("owner_id").eq("id", studio_id).limit(1).execute()
         )
         owner_id = result.data[0]["owner_id"] if result.data else None
         if owner_id == target_user_id:
@@ -926,7 +914,9 @@ class StaffService:
                 detail=STAFF_OWNER_ARCHIVE_CONFLICT_DETAIL,
             )
 
-    def _ensure_more_than_one_admin(self, studio_id: str, departing_user_id: Optional[str] = None) -> None:
+    def _ensure_more_than_one_admin(
+        self, studio_id: str, departing_user_id: Optional[str] = None
+    ) -> None:
         result = (
             self.supabase.table("staff_roles")
             .select("user_id")
@@ -936,7 +926,8 @@ class StaffService:
             .execute()
         )
         active_admins = [
-            row for row in (result.data or [])
+            row
+            for row in (result.data or [])
             if (
                 row.get("user_id") != departing_user_id
                 and not self._has_scheduled_account_deletion(row.get("user_id"))
@@ -984,11 +975,13 @@ class StaffService:
         metadata: dict,
         entity_type: str = "staff_role",
     ) -> None:
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": action,
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "metadata": metadata,
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": action,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "metadata": metadata,
+            }
+        ).execute()

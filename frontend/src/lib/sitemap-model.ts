@@ -22,10 +22,17 @@ export function buildPublicSitemap({
   const useCaseRoutes = useCasePages.map((page) => `/use-cases/${page.slug}`);
   const studioTypeRoutes = studioTypePages.map((page) => `/studio-types/${page.slug}`);
 
-  return [...staticRoutes, ...featureRoutes, ...useCaseRoutes, ...studioTypeRoutes].map((route) => ({
-    url: `${baseUrl}${route || "/"}`,
-    lastModified: publicContentLastModified,
-    changeFrequency: route === "" ? "weekly" : "monthly",
-    priority: route === "" ? 1 : route === "/explore" || route === "/features" || route === "/use-cases" ? 0.8 : 0.7,
-  }));
+  return [...staticRoutes, ...featureRoutes, ...useCaseRoutes, ...studioTypeRoutes].map(
+    (route) => ({
+      url: `${baseUrl}${route || "/"}`,
+      lastModified: publicContentLastModified,
+      changeFrequency: route === "" ? "weekly" : "monthly",
+      priority:
+        route === ""
+          ? 1
+          : route === "/explore" || route === "/features" || route === "/use-cases"
+            ? 0.8
+            : 0.7,
+    }),
+  );
 }

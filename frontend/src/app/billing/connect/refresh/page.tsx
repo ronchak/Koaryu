@@ -35,7 +35,9 @@ export default function StripeConnectRefreshPage() {
     async function refreshStripeLink() {
       try {
         const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!session) {
           throw new Error("Sign in again to continue Stripe onboarding.");
         }
@@ -58,7 +60,7 @@ export default function StripeConnectRefreshPage() {
           {
             timeoutMs: 30000,
             headers: { "Idempotency-Key": createConnectOnboardingRequestKey() },
-          }
+          },
         );
 
         if (!cancelled) {
@@ -77,7 +79,9 @@ export default function StripeConnectRefreshPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Stripe onboarding could not be refreshed.");
+          setError(
+            err instanceof Error ? err.message : "Stripe onboarding could not be refreshed.",
+          );
         }
       }
     }

@@ -244,7 +244,9 @@ class DemoLeadSeeder:
                     "follow_up_date": follow_up,
                     "lost_reason": lost_reason,
                     "notes": notes,
-                    "converted_student_id": student_ids.get(converted_student_key) if converted_student_key else None,
+                    "converted_student_id": student_ids.get(converted_student_key)
+                    if converted_student_key
+                    else None,
                     "created_at": self._timestamp(created_offset, 13),
                     "updated_at": self._timestamp(created_offset, 13, 30),
                 }

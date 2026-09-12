@@ -41,7 +41,7 @@ export function calculateAccountMenuPanelWidth({
     return Math.min(
       ACCOUNT_MENU_WIDTH,
       (viewportWidth ?? ACCOUNT_MENU_WIDTH + ACCOUNT_MENU_VIEWPORT_GUTTER * 2) -
-        ACCOUNT_MENU_VIEWPORT_GUTTER * 2
+        ACCOUNT_MENU_VIEWPORT_GUTTER * 2,
     );
   }
 
@@ -65,13 +65,13 @@ export function calculateAccountMenuPosition({
   const maxLeft = viewportWidth - width - ACCOUNT_MENU_VIEWPORT_GUTTER;
   const left = Math.min(
     Math.max(triggerRect.left, ACCOUNT_MENU_VIEWPORT_GUTTER),
-    Math.max(ACCOUNT_MENU_VIEWPORT_GUTTER, maxLeft)
+    Math.max(ACCOUNT_MENU_VIEWPORT_GUTTER, maxLeft),
   );
 
   if (triggerRect.top > viewportHeight / 2) {
     const bottom = Math.max(
       ACCOUNT_MENU_VIEWPORT_GUTTER,
-      viewportHeight - triggerRect.top + ACCOUNT_MENU_GAP
+      viewportHeight - triggerRect.top + ACCOUNT_MENU_GAP,
     );
 
     return {
@@ -84,7 +84,7 @@ export function calculateAccountMenuPosition({
 
   const top = Math.min(
     triggerRect.bottom + ACCOUNT_MENU_GAP,
-    viewportHeight - ACCOUNT_MENU_VIEWPORT_GUTTER
+    viewportHeight - ACCOUNT_MENU_VIEWPORT_GUTTER,
   );
 
   return {

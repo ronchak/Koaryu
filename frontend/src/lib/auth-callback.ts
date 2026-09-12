@@ -1,12 +1,12 @@
 const DEFAULT_AUTH_CALLBACK_PATH = "/dashboard";
-const AUTH_CALLBACK_ALLOWED_NEXT_PATHS = new Set([
-  "/dashboard",
-  "/onboarding",
-  "/reset-password",
-]);
+const AUTH_CALLBACK_ALLOWED_NEXT_PATHS = new Set(["/dashboard", "/onboarding", "/reset-password"]);
 
 export function resolveAuthCallbackNextPath(requestedNextPath: string | null) {
-  if (!requestedNextPath || !requestedNextPath.startsWith("/") || requestedNextPath.startsWith("//")) {
+  if (
+    !requestedNextPath ||
+    !requestedNextPath.startsWith("/") ||
+    requestedNextPath.startsWith("//")
+  ) {
     return DEFAULT_AUTH_CALLBACK_PATH;
   }
 

@@ -24,8 +24,9 @@ export default function AccountDataPage() {
         <AccountSection title="Studio exports">
           <div className="space-y-4">
             <p className="text-sm leading-relaxed text-text-secondary">
-              Operational exports live in Reports because they are studio-level records, not just personal account
-              records. Use Reports for student, billing, attendance, staff, and audit CSVs.
+              Operational exports live in Reports because they are studio-level records, not just
+              personal account records. Use Reports for student, billing, attendance, staff, and
+              audit CSVs.
             </p>
             <Button asChild variant="secondary" size="sm">
               <Link href="/reports">
@@ -48,17 +49,23 @@ export default function AccountDataPage() {
           <div className="border-b border-border bg-surface p-4 md:border-b-0">
             <Database className="mb-3 h-4 w-4 text-accent" />
             <p className="text-sm font-medium text-text-primary">Export records</p>
-            <p className="mt-1 text-sm text-text-secondary">Use CSV reports for portable studio records.</p>
+            <p className="mt-1 text-sm text-text-secondary">
+              Use CSV reports for portable studio records.
+            </p>
           </div>
           <div className="border-b border-border bg-surface p-4 md:border-b-0">
             <ShieldCheck className="mb-3 h-4 w-4 text-accent" />
             <p className="text-sm font-medium text-text-primary">Preserve billing access</p>
-            <p className="mt-1 text-sm text-text-secondary">Platform access rows are preserved by demo cleanup tools.</p>
+            <p className="mt-1 text-sm text-text-secondary">
+              Platform access rows are preserved by demo cleanup tools.
+            </p>
           </div>
           <div className="bg-danger/5 p-4">
             <Trash2 className="mb-3 h-4 w-4 text-danger" />
             <p className="text-sm font-medium text-danger">Clear studio data</p>
-            <p className="mt-1 text-sm text-text-secondary">Only admins should use destructive cleanup from Settings.</p>
+            <p className="mt-1 text-sm text-text-secondary">
+              Only admins should use destructive cleanup from Settings.
+            </p>
           </div>
         </div>
         <div className="mt-4">
@@ -71,8 +78,8 @@ export default function AccountDataPage() {
             </Button>
           ) : (
             <AccountNotice>
-              Your role can review exports and privacy information, but only studio admins can clear or replace studio
-              data.
+              Your role can review exports and privacy information, but only studio admins can clear
+              or replace studio data.
             </AccountNotice>
           )}
         </div>

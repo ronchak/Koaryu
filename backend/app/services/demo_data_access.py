@@ -66,17 +66,27 @@ class DemoDataAccess:
         )
 
     def studio_name(self, studio_id: str) -> str:
-        result = self.supabase.table("studios").select("name").eq("id", studio_id).maybe_single().execute()
+        result = (
+            self.supabase.table("studios")
+            .select("name")
+            .eq("id", studio_id)
+            .maybe_single()
+            .execute()
+        )
         return (result.data or {}).get("name") or "My Studio"
 
     def clear_demo_surface(self, studio_id: str) -> None:
         self.clear_studio_surface(studio_id, include_platform_rows=False)
 
     def clear_studio_surface(self, studio_id: str, *, include_platform_rows: bool) -> None:
-        execute_required_rpc(self.supabase, "clear_studio_operational_data_atomic", {
-            "p_studio_id": studio_id,
-            "p_include_platform_rows": include_platform_rows,
-        })
+        execute_required_rpc(
+            self.supabase,
+            "clear_studio_operational_data_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_include_platform_rows": include_platform_rows,
+            },
+        )
 
     def update_studio_for_demo(self, studio_id: str) -> None:
         self.supabase.table("studios").update(
@@ -128,7 +138,9 @@ class DemoDataAccess:
                         "phase": phase,
                         "error_type": error.__class__.__name__,
                         "cleanup_succeeded": cleanup_succeeded,
-                        "cleanup_error_type": cleanup_error.__class__.__name__ if cleanup_error else None,
+                        "cleanup_error_type": cleanup_error.__class__.__name__
+                        if cleanup_error
+                        else None,
                     },
                     "created_at": self.timestamp_for(),
                 }

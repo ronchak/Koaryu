@@ -1,6 +1,14 @@
 "use client";
 
-import { Check, Languages, LayoutPanelLeft, LayoutPanelTop, Moon, Palette, Sun } from "lucide-react";
+import {
+  Check,
+  Languages,
+  LayoutPanelLeft,
+  LayoutPanelTop,
+  Moon,
+  Palette,
+  Sun,
+} from "lucide-react";
 import {
   AccountInfoRow,
   AccountNotice,
@@ -24,13 +32,8 @@ function labelNavigationPlacement(value: NavigationPlacement) {
 }
 
 export default function PersonalizationPage() {
-  const {
-    navigationPlacement,
-    preference,
-    resolvedTheme,
-    setNavigationPlacement,
-    setTheme,
-  } = useTheme();
+  const { navigationPlacement, preference, resolvedTheme, setNavigationPlacement, setTheme } =
+    useTheme();
 
   return (
     <AccountPageShell
@@ -43,7 +46,9 @@ export default function PersonalizationPage() {
       >
         <div id="appearance" className="space-y-6">
           <div role="group" aria-labelledby="theme-preference-label">
-            <p id="theme-preference-label" className="mb-2 text-sm font-medium text-text-primary">Theme</p>
+            <p id="theme-preference-label" className="mb-2 text-sm font-medium text-text-primary">
+              Theme
+            </p>
             <div className="grid border-y border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
               {(["system", "dark", "light"] as ThemePreference[]).map((theme) => {
                 const selected = preference === theme;
@@ -62,9 +67,13 @@ export default function PersonalizationPage() {
                       <Icon className="h-4 w-4 text-accent" />
                       {selected && <Check className="h-4 w-4 text-accent" />}
                     </span>
-                    <span className="block text-sm font-medium text-text-primary">{labelTheme(theme)}</span>
+                    <span className="block text-sm font-medium text-text-primary">
+                      {labelTheme(theme)}
+                    </span>
                     <span className="mt-1 block text-xs text-muted">
-                      {theme === "system" ? "Use your device setting." : `Always use ${labelTheme(theme).toLowerCase()} mode.`}
+                      {theme === "system"
+                        ? "Use your device setting."
+                        : `Always use ${labelTheme(theme).toLowerCase()} mode.`}
                     </span>
                   </button>
                 );
@@ -73,7 +82,12 @@ export default function PersonalizationPage() {
           </div>
 
           <div role="group" aria-labelledby="navigation-preference-label">
-            <p id="navigation-preference-label" className="mb-2 text-sm font-medium text-text-primary">Navigation</p>
+            <p
+              id="navigation-preference-label"
+              className="mb-2 text-sm font-medium text-text-primary"
+            >
+              Navigation
+            </p>
             <div className="grid border-y border-border sm:grid-cols-2 sm:divide-x sm:divide-border">
               {(["side", "top"] as NavigationPlacement[]).map((placement) => {
                 const selected = navigationPlacement === placement;
@@ -132,29 +146,35 @@ export default function PersonalizationPage() {
         title="Language"
         description="Koaryu is currently English-first. Language switching is planned for a later localization pass."
       >
-        <div id="language" className="grid border-y border-border sm:grid-cols-2 sm:divide-x sm:divide-border">
+        <div
+          id="language"
+          className="grid border-y border-border sm:grid-cols-2 sm:divide-x sm:divide-border"
+        >
           <div
             aria-current="true"
             className="border-b border-border bg-accent/10 p-4 text-left opacity-80 sm:border-b-0"
           >
             <Palette className="mb-3 h-4 w-4 text-accent" />
             <span className="block text-sm font-medium text-text-primary">Default</span>
-            <span className="mt-1 block text-xs text-muted">Koaryu currently uses the default English interface.</span>
+            <span className="mt-1 block text-xs text-muted">
+              Koaryu currently uses the default English interface.
+            </span>
           </div>
-          <div
-            className="bg-surface-raised p-4 text-left opacity-60"
-          >
+          <div className="bg-surface-raised p-4 text-left opacity-60">
             <Languages className="mb-3 h-4 w-4 text-accent" />
             <span className="block text-sm font-medium text-text-primary">English (US)</span>
-            <span className="mt-1 block text-xs text-muted">Language switching is planned for a later localization pass.</span>
+            <span className="mt-1 block text-xs text-muted">
+              Language switching is planned for a later localization pass.
+            </span>
           </div>
         </div>
       </AccountSection>
 
       <AccountSection title="What this affects">
         <AccountNotice>
-          Theme and desktop navigation are active today and stored in this browser/device. Density and language
-          are shown as read-only account settings until those preferences are implemented.
+          Theme and desktop navigation are active today and stored in this browser/device. Density
+          and language are shown as read-only account settings until those preferences are
+          implemented.
         </AccountNotice>
       </AccountSection>
     </AccountPageShell>

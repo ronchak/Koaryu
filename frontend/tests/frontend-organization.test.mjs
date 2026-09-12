@@ -1,19 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-  formatMoney,
-  requirementGroupItems,
-  statusTone,
-} from "../src/lib/billing-page-utils.ts";
+import { formatMoney, requirementGroupItems, statusTone } from "../src/lib/billing-page-utils.ts";
 import { buildBillingPageModel } from "../src/lib/billing-page-model.ts";
-import {
-  clearPreviewStorage,
-  KEYS,
-  load,
-  localId,
-  save,
-} from "../src/lib/store-storage.ts";
+import { clearPreviewStorage, KEYS, load, localId, save } from "../src/lib/store-storage.ts";
 import { buildPreviewStudentListPage } from "../src/lib/student-list-page.ts";
 
 function withMockStorage(callback) {
@@ -89,7 +79,7 @@ describe("frontend extracted helper behavior", () => {
           ],
         },
       ],
-      { programId: "program-b", sortKey: "name" }
+      { programId: "program-b", sortKey: "name" },
     );
 
     assert.equal(result.total, 1);
@@ -99,17 +89,14 @@ describe("frontend extracted helper behavior", () => {
   it("preserves billing metric, lookup, and formatting helper behavior", () => {
     assert.equal(formatMoney(12900), "$129");
     assert.match(statusTone("past_due"), /text-danger/);
-    assert.deepEqual(
-      requirementGroupItems(["company.tax_id"])[1],
-      {
-        id: "business-details",
-        label: "Business or legal details",
-        description: "Studio legal address, phone, tax ID, and ownership confirmation.",
-        matches: ["company.", "individual.address.", "individual.phone", "individual.id_number"],
-        dueFields: ["company.tax_id"],
-        complete: false,
-      }
-    );
+    assert.deepEqual(requirementGroupItems(["company.tax_id"])[1], {
+      id: "business-details",
+      label: "Business or legal details",
+      description: "Studio legal address, phone, tax ID, and ownership confirmation.",
+      matches: ["company.", "individual.address.", "individual.phone", "individual.id_number"],
+      dueFields: ["company.tax_id"],
+      complete: false,
+    });
 
     const model = buildBillingPageModel({
       billingMetricsAsOf: new Date("2026-05-15T12:00:00Z"),
@@ -174,12 +161,18 @@ describe("frontend extracted helper behavior", () => {
           processed_at: "2026-05-01T00:00:00Z",
         },
       ],
-      billingPlans: [{ id: "plan_1", studio_id: "studio_1", name: "Monthly", amount_cents: 12900, programs: [] }],
-      billingSubscriptions: [{ id: "sub_1", studio_id: "studio_1", payer_id: "payer_1", status: "active" }],
+      billingPlans: [
+        { id: "plan_1", studio_id: "studio_1", name: "Monthly", amount_cents: 12900, programs: [] },
+      ],
+      billingSubscriptions: [
+        { id: "sub_1", studio_id: "studio_1", payer_id: "payer_1", status: "active" },
+      ],
       isPreviewMode: false,
       previewEnrollments: [],
       programs: [],
-      students: [{ id: "student_1", legal_first_name: "Ari", legal_last_name: "Lane", status: "active" }],
+      students: [
+        { id: "student_1", legal_first_name: "Ari", legal_last_name: "Lane", status: "active" },
+      ],
     });
 
     assert.equal(model.paidRevenue, 12900);

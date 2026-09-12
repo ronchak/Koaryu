@@ -41,9 +41,7 @@ class SupabaseProviderRuntimeCleanupError(RuntimeError):
     def __init__(self, failures: list[BaseException]) -> None:
         self.failures = tuple(failures)
         self.causes = self.failures
-        super().__init__(
-            f"supabase provider runtime cleanup failed for {len(failures)} lane(s)"
-        )
+        super().__init__(f"supabase provider runtime cleanup failed for {len(failures)} lane(s)")
 
 
 Operation = Callable[[Client], ResultT | Awaitable[ResultT]]
@@ -70,7 +68,8 @@ class SupabaseProviderRuntime(Generic[ResultT]):
         try:
             interactive_executor = self._build_executor(
                 interactive,
-                client_factory or partial(
+                client_factory
+                or partial(
                     create_supabase_client,
                     postgrest_client_timeout=interactive.postgrest_client_timeout,
                 ),
@@ -79,7 +78,8 @@ class SupabaseProviderRuntime(Generic[ResultT]):
             )
             bulk_executor = self._build_executor(
                 bulk,
-                client_factory or partial(
+                client_factory
+                or partial(
                     create_supabase_client,
                     postgrest_client_timeout=bulk.postgrest_client_timeout,
                 ),

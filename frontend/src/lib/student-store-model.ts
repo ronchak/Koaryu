@@ -11,9 +11,7 @@ import type {
 const MINOR_AGE_MS = 18 * 365.25 * 24 * 60 * 60 * 1000;
 
 export function normalizeStudentIds(studentIds: string[]): string[] {
-  return Array.from(
-    new Set(studentIds.map((studentId) => studentId.trim()).filter(Boolean))
-  );
+  return Array.from(new Set(studentIds.map((studentId) => studentId.trim()).filter(Boolean)));
 }
 
 export function normalizeTags(tags: string[]): string[] {
@@ -24,7 +22,7 @@ export function applyAddedTagsToStudents(
   studentList: Student[],
   studentIds: string[],
   tagsToAdd: string[],
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): Student[] {
   const studentIdSet = new Set(studentIds);
 
@@ -45,7 +43,7 @@ export function applyStatusToStudents(
   studentList: Student[],
   studentIds: string[],
   status: StudentStatus,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): Student[] {
   const studentIdSet = new Set(studentIds);
 
@@ -74,8 +72,8 @@ export function findPreviewStartingRankId(
   const ranks = currentRanks.length > 0 ? currentRanks : ladder.ranks || [];
   return [...ranks]
     .filter((rank) => !rank.is_tip)
-    .sort((left, right) =>
-      left.display_order - right.display_order || left.id.localeCompare(right.id)
+    .sort(
+      (left, right) => left.display_order - right.display_order || left.id.localeCompare(right.id),
     )[0]?.id;
 }
 
@@ -94,7 +92,7 @@ export function buildPreviewStudent(
     idFactory: () => string;
     now?: Date;
     nowMs?: number;
-  }
+  },
 ): Student {
   const selectedProgramIds = data.program_ids?.length
     ? data.program_ids
@@ -109,7 +107,7 @@ export function buildPreviewStudent(
       index === 0 && data.current_belt_rank_id
         ? data.current_belt_rank_id
         : findPreviewStartingRankId(programId, beltLadders, beltRanks),
-    ])
+    ]),
   );
   const newStudent: Student = {
     id: idFactory(),
@@ -190,7 +188,7 @@ export function applyPreviewStudentUpdate(
     beltRanks?: BeltRank[];
     idFactory: () => string;
     now?: Date;
-  }
+  },
 ): Student {
   const nowIso = now.toISOString();
   const hasProgramUpdate = Object.hasOwn(data, "program_ids") || Object.hasOwn(data, "program_id");
@@ -215,15 +213,17 @@ export function applyPreviewStudentUpdate(
       : ["program-unassigned"];
   const existingMemberships = new Map(
     (student.program_memberships || [])
-      .filter((membership) => (
-        membership.status === "active" || membership.status === "paused"
-      ) && !membership.ended_at)
-      .map((membership) => [membership.program_id, membership])
+      .filter(
+        (membership) =>
+          (membership.status === "active" || membership.status === "paused") &&
+          !membership.ended_at,
+      )
+      .map((membership) => [membership.program_id, membership]),
   );
   const membershipStartWasSupplied = Object.hasOwn(data, "membership_start_date");
   const membershipStart = membershipStartWasSupplied
-    ? data.membership_start_date ?? null
-    : student.membership_start_date ?? null;
+    ? (data.membership_start_date ?? null)
+    : (student.membership_start_date ?? null);
   const memberships = selectedProgramIds.map((programId, index) => {
     const existing = existingMemberships.get(programId);
     const program = programs.find((item) => item.id === programId);
@@ -242,8 +242,8 @@ export function applyPreviewStudentUpdate(
       program_id: programId,
       program_name: program?.name,
       program_color_hex: program?.color_hex,
-      status: existing?.status ?? "active" as const,
-      started_at: existing ? existing.started_at ?? null : membershipStart,
+      status: existing?.status ?? ("active" as const),
+      started_at: existing ? (existing.started_at ?? null) : membershipStart,
       ended_at: null,
       current_belt_rank_id: currentBeltRankId,
       created_at: existing?.created_at ?? nowIso,

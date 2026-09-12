@@ -47,10 +47,10 @@ export function buildPayerSyncRequest(requestKey: string): PayerSyncRequest {
 
 function isBoundedStorageValue(value: string, maximumBytes: number) {
   return (
-    value.length > 0
-    && value === value.trim()
-    && !/[\u0000-\u001f\u007f]/.test(value)
-    && new TextEncoder().encode(value).byteLength <= maximumBytes
+    value.length > 0 &&
+    value === value.trim() &&
+    !/[\u0000-\u001f\u007f]/.test(value) &&
+    new TextEncoder().encode(value).byteLength <= maximumBytes
   );
 }
 
@@ -60,11 +60,7 @@ export function buildPayerOperationStorageKey(
   operation: PayerOperationKind,
 ) {
   const parts = [identity.userId, identity.studioId, payerId];
-  if (
-    parts.some(
-      (part) => !isBoundedStorageValue(part, MAX_PAYER_OPERATION_IDENTITY_BYTES),
-    )
-  ) {
+  if (parts.some((part) => !isBoundedStorageValue(part, MAX_PAYER_OPERATION_IDENTITY_BYTES))) {
     return null;
   }
   return [
@@ -106,13 +102,17 @@ function parsePersistedPayerSetupAttempt(value: string | null) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const attempt = parsed as Record<string, unknown>;
     if (
-      attempt.version !== 1
-      || !validPayerOperationRequestKey(attempt.requestKey)
-      || (attempt.disposition !== undefined && attempt.disposition !== "active" && attempt.disposition !== "terminal_cleanup_failed")
-      || (attempt.replacementBaseline !== null && typeof attempt.replacementBaseline !== "string")
-    ) return null;
+      attempt.version !== 1 ||
+      !validPayerOperationRequestKey(attempt.requestKey) ||
+      (attempt.disposition !== undefined &&
+        attempt.disposition !== "active" &&
+        attempt.disposition !== "terminal_cleanup_failed") ||
+      (attempt.replacementBaseline !== null && typeof attempt.replacementBaseline !== "string")
+    )
+      return null;
     return {
-      disposition: attempt.disposition === "terminal_cleanup_failed" ? "terminal_cleanup_failed" : "active",
+      disposition:
+        attempt.disposition === "terminal_cleanup_failed" ? "terminal_cleanup_failed" : "active",
       replacementBaseline: attempt.replacementBaseline as string | null,
       requestKey: attempt.requestKey as string,
       version: 1,
@@ -123,8 +123,9 @@ function parsePersistedPayerSetupAttempt(value: string | null) {
 }
 
 function validPayerOperationRequestKey(value: unknown): value is string {
-  return typeof value === "string"
-    && isBoundedStorageValue(value, MAX_PAYER_OPERATION_REQUEST_KEY_BYTES);
+  return (
+    typeof value === "string" && isBoundedStorageValue(value, MAX_PAYER_OPERATION_REQUEST_KEY_BYTES)
+  );
 }
 
 export function resolvePersistedPayerSetupRequestKey({
@@ -157,14 +158,13 @@ export function resolvePersistedPayerSetupRequestKey({
   const persistedAttempt = parsePersistedPayerSetupAttempt(storedValue);
   const activeAttempt = attemptsByPayer.get(memoryKey) ?? persistedAttempt;
   if (activeAttempt?.disposition === "terminal_cleanup_failed") {
-    throw new Error("The expired payer setup state could not be cleared from this browser. Clear site data or use another browser before creating another setup link.");
+    throw new Error(
+      "The expired payer setup state could not be cleared from this browser. Clear site data or use another browser before creating another setup link.",
+    );
   }
   const baseline = payerSetupBaseline(payer);
   const replacementEligible = isPayerSetupReplacementEligible(payer);
-  if (
-    activeAttempt
-    && (!replacementEligible || activeAttempt.replacementBaseline === baseline)
-  ) {
+  if (activeAttempt && (!replacementEligible || activeAttempt.replacementBaseline === baseline)) {
     attemptsByPayer.set(memoryKey, activeAttempt);
     keysByPayer.set(memoryKey, activeAttempt.requestKey);
     return activeAttempt.requestKey;
@@ -197,10 +197,11 @@ export function resolvePersistedPayerSetupRequestKey({
       storage.setItem(storageKey, serialized);
       const readback = parsePersistedPayerSetupAttempt(storage.getItem(storageKey));
       if (
-        !readback
-        || readback.requestKey !== requestKey
-        || readback.replacementBaseline !== baseline
-      ) return requestKey;
+        !readback ||
+        readback.requestKey !== requestKey ||
+        readback.replacementBaseline !== baseline
+      )
+        return requestKey;
     } catch {
       return requestKey;
     }
@@ -242,8 +243,9 @@ export function clearPersistedPayerSetupAttempt({
       // Preserve a fail-closed in-memory attempt below.
     }
   }
-  const existing = attemptsByPayer.get(memoryKey)
-    ?? (storage
+  const existing =
+    attemptsByPayer.get(memoryKey) ??
+    (storage
       ? parsePersistedPayerSetupAttempt(safePayerOperationStorageRead(storage, storageKey))
       : null);
   if (existing) {
@@ -286,16 +288,11 @@ export function resolvePersistedPayerOperationRequestKey({
   if (existing && !startNewRequest) {
     return existing;
   }
-  const storageKey = identity
-    ? buildPayerOperationStorageKey(identity, payerId, operation)
-    : null;
+  const storageKey = identity ? buildPayerOperationStorageKey(identity, payerId, operation) : null;
   if (!startNewRequest && storage && storageKey) {
     try {
       const persisted = storage.getItem(storageKey);
-      if (
-        persisted
-        && isBoundedStorageValue(persisted, MAX_PAYER_OPERATION_REQUEST_KEY_BYTES)
-      ) {
+      if (persisted && isBoundedStorageValue(persisted, MAX_PAYER_OPERATION_REQUEST_KEY_BYTES)) {
         keysByPayer.set(memoryKey, persisted);
         return persisted;
       }
@@ -333,9 +330,7 @@ export function clearPersistedPayerOperationRequestKey({
 }) {
   const memoryKey = payerOperationMemoryKey(identity, operation, payerId);
   keysByPayer.delete(memoryKey);
-  const storageKey = identity
-    ? buildPayerOperationStorageKey(identity, payerId, operation)
-    : null;
+  const storageKey = identity ? buildPayerOperationStorageKey(identity, payerId, operation) : null;
   if (storage && storageKey) {
     try {
       storage.removeItem(storageKey);
@@ -356,14 +351,14 @@ export function buildPayerAutopaySetupRequest(
 }
 
 export function isPayerSetupReplacementEligible(payer: PayerSetupState) {
-  return payer.autopay_status === "enabled"
-    || (payer.autopay_status === "disabled" && Boolean(payer.stripe_payment_method_id));
+  return (
+    payer.autopay_status === "enabled" ||
+    (payer.autopay_status === "disabled" && Boolean(payer.stripe_payment_method_id))
+  );
 }
 
 export function payerSetupActionLabel(payer: PayerSetupState) {
-  return isPayerSetupReplacementEligible(payer)
-    ? "Replace payment method"
-    : "Payer setup link";
+  return isPayerSetupReplacementEligible(payer) ? "Replace payment method" : "Payer setup link";
 }
 
 export function getPayerAutopaySetupReturnUrl(origin: string) {
@@ -372,8 +367,9 @@ export function getPayerAutopaySetupReturnUrl(origin: string) {
 
 export async function copyPayerAutopaySetupLink(
   url: string,
-  writeText: ((value: string) => Promise<void>) | undefined =
-    typeof navigator !== "undefined" ? navigator.clipboard?.writeText.bind(navigator.clipboard) : undefined,
+  writeText: ((value: string) => Promise<void>) | undefined = typeof navigator !== "undefined"
+    ? navigator.clipboard?.writeText.bind(navigator.clipboard)
+    : undefined,
 ) {
   if (!writeText) {
     return false;

@@ -6,7 +6,7 @@ import { FocusedOperationsSheet } from "@/components/operations/operations-surfa
 export default function AccessDeniedPage() {
   return (
     <FocusedOperationsSheet page="access-denied" eyebrow="Access denied">
-        <div className="text-center">
+      <div className="text-center">
         <h1 className="mt-2 text-lg font-semibold text-text-primary">
           This area is not available for your role
         </h1>
@@ -16,7 +16,7 @@ export default function AccessDeniedPage() {
         <Button asChild variant="primary" size="sm" className="mt-5">
           <Link href="/dashboard">Return to dashboard</Link>
         </Button>
-        </div>
+      </div>
     </FocusedOperationsSheet>
   );
 }

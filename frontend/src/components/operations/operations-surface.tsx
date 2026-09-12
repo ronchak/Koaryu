@@ -24,11 +24,7 @@ export function OperationsSurface({
   page: OperationsPage;
 }) {
   return (
-    <div
-      className={styles.surface}
-      data-operations-surface="v2"
-      data-operations-page={page}
-    >
+    <div className={styles.surface} data-operations-surface="v2" data-operations-page={page}>
       {children}
     </div>
   );
@@ -99,7 +95,12 @@ export function OperationsLoading({
 
   return (
     <OperationsSurface page={page}>
-      <div className={styles.loading} aria-busy="true" aria-live="polite" data-loading-family={page}>
+      <div
+        className={styles.loading}
+        aria-busy="true"
+        aria-live="polite"
+        data-loading-family={page}
+      >
         <div className={styles.loadingIntro}>
           <p className={styles.eyebrow}>Loading</p>
           <h1>{title}</h1>
@@ -108,13 +109,13 @@ export function OperationsLoading({
         <div className={styles.loadingWorkbench} aria-hidden="true">
           <div className={styles.loadingIndex}>
             {labels.map((label) => (
-              <span key={label}>
-                {label}
-              </span>
+              <span key={label}>{label}</span>
             ))}
           </div>
           <div className={styles.loadingRules}>
-            {Array.from({ length: page === "schedule" ? 8 : 6 }, (_, index) => <span key={index} />)}
+            {Array.from({ length: page === "schedule" ? 8 : 6 }, (_, index) => (
+              <span key={index} />
+            ))}
           </div>
         </div>
       </div>

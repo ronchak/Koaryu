@@ -106,7 +106,7 @@ function splitCsvImportFullName(rawValue: unknown): { firstName: string; lastNam
 function buildMappedImportRow(
   row: Record<string, string>,
   mapping: Record<string, string>,
-  targetCounts: Record<string, number>
+  targetCounts: Record<string, number>,
 ) {
   const mapped: Record<string, string> = {};
 
@@ -128,17 +128,18 @@ function buildMappedImportRow(
   return mapped;
 }
 
-function buildStatusImportIssues(
-  mapped: Record<string, string>,
-  options: CsvImportOptions,
-) {
+function buildStatusImportIssues(mapped: Record<string, string>, options: CsvImportOptions) {
   const rawStatus = (mapped.status || "").trim().toLowerCase();
   const statusValue = mapped.status || "";
   const rowIssues: PreviewImportRowIssue[] = [];
   let normalizedStatus = rawStatus;
   let normalized = false;
 
-  if (mapped.status && options.status_alias_mode === "normalize" && CSV_IMPORT_STATUS_ALIASES[rawStatus]) {
+  if (
+    mapped.status &&
+    options.status_alias_mode === "normalize" &&
+    CSV_IMPORT_STATUS_ALIASES[rawStatus]
+  ) {
     normalizedStatus = CSV_IMPORT_STATUS_ALIASES[rawStatus];
     mapped.status = normalizedStatus;
     normalized = true;
@@ -179,9 +180,14 @@ function buildImportedPreviewStudent({
   now: () => Date;
   nowMs: () => number;
 }): Student {
-  const tags = mapped.tags ? mapped.tags.split(",").map((tag) => tag.trim()).filter(Boolean) : [];
+  const tags = mapped.tags
+    ? mapped.tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    : [];
   const dob = mapped.date_of_birth || undefined;
-  const isMinor = dob ? (nowMs() - new Date(dob).getTime()) < MINOR_AGE_MS : false;
+  const isMinor = dob ? nowMs() - new Date(dob).getTime() < MINOR_AGE_MS : false;
   const createdAt = now().toISOString();
   const updatedAt = now().toISOString();
   const studentId = idFactory();
@@ -233,22 +239,27 @@ function buildImportedPreviewStudent({
   };
 }
 
-function buildImportedPreviewGuardians(mapped: Record<string, string>, studentId: string): Guardian[] {
+function buildImportedPreviewGuardians(
+  mapped: Record<string, string>,
+  studentId: string,
+): Guardian[] {
   const guardianName = mapped.guardian_name?.trim();
   if (!guardianName) {
     return [];
   }
 
   const { firstName, lastName } = splitCsvImportFullName(guardianName);
-  return [{
-    id: `${studentId}-guardian-primary`,
-    first_name: firstName || guardianName,
-    last_name: lastName || "",
-    email: mapped.guardian_email || undefined,
-    phone: mapped.guardian_phone || undefined,
-    relation: mapped.guardian_relation || undefined,
-    is_primary_contact: true,
-  }];
+  return [
+    {
+      id: `${studentId}-guardian-primary`,
+      first_name: firstName || guardianName,
+      last_name: lastName || "",
+      email: mapped.guardian_email || undefined,
+      phone: mapped.guardian_phone || undefined,
+      relation: mapped.guardian_relation || undefined,
+      is_primary_contact: true,
+    },
+  ];
 }
 
 export function buildPreviewStudentImportResult({
@@ -319,8 +330,12 @@ export function buildPreviewStudentImportResult({
         row_number: index + 2,
         data: mapped,
         issues: rowIssues,
-        errors: rowIssues.filter((issue) => issue.severity === "error").map((issue) => issue.message),
-        warnings: rowIssues.filter((issue) => issue.severity === "warning").map((issue) => issue.message),
+        errors: rowIssues
+          .filter((issue) => issue.severity === "error")
+          .map((issue) => issue.message),
+        warnings: rowIssues
+          .filter((issue) => issue.severity === "warning")
+          .map((issue) => issue.message),
         is_valid: isValid,
       });
     }
@@ -328,29 +343,29 @@ export function buildPreviewStudentImportResult({
     if (!isValid) continue;
 
     validRows += 1;
-    const status: StudentStatus = VALID_CSV_IMPORT_STATUSES.includes(statusIssues.normalizedStatus as StudentStatus)
+    const status: StudentStatus = VALID_CSV_IMPORT_STATUSES.includes(
+      statusIssues.normalizedStatus as StudentStatus,
+    )
       ? (statusIssues.normalizedStatus as StudentStatus)
       : "active";
 
-    const resolvedBeltRankId = previewResolution.beltRankId || (
-      previewResolution.programId
-        ? findPreviewStartingRankId(
-          previewResolution.programId,
-          beltLadders,
-          fallbackRanks,
-        )
-        : undefined
-    );
+    const resolvedBeltRankId =
+      previewResolution.beltRankId ||
+      (previewResolution.programId
+        ? findPreviewStartingRankId(previewResolution.programId, beltLadders, fallbackRanks)
+        : undefined);
 
-    importedStudents.push(buildImportedPreviewStudent({
-      mapped,
-      status,
-      programId: previewResolution.programId,
-      beltRankId: resolvedBeltRankId,
-      idFactory,
-      now,
-      nowMs,
-    }));
+    importedStudents.push(
+      buildImportedPreviewStudent({
+        mapped,
+        status,
+        programId: previewResolution.programId,
+        beltRankId: resolvedBeltRankId,
+        idFactory,
+        now,
+        nowMs,
+      }),
+    );
   }
 
   if (normalizedStatusCount > 0) {
@@ -367,9 +382,8 @@ export function buildPreviewStudentImportResult({
   }
 
   return {
-    students: importedStudents.length > 0
-      ? [...importedStudents, ...existingStudents]
-      : existingStudents,
+    students:
+      importedStudents.length > 0 ? [...importedStudents, ...existingStudents] : existingStudents,
     importedStudents,
     result: {
       total_rows: rows.length,

@@ -28,7 +28,9 @@ export function StudentImportSectionCard({
   } as const;
 
   return (
-    <section className={`bg-surface border overflow-hidden ${toneClasses[tone]} ${styles.worksheetSection}`}>
+    <section
+      className={`bg-surface border overflow-hidden ${toneClasses[tone]} ${styles.worksheetSection}`}
+    >
       <div className="px-4 py-3 border-b border-border flex items-start gap-2">
         {icon}
         <div>
@@ -83,8 +85,12 @@ export function StudentImportUploadStep({
         onKeyDown={handleUploadKeyDown}
       >
         <Upload className="w-8 h-8 text-muted mx-auto mb-3" />
-        <p className="text-sm text-text-primary mb-1">Drop your CSV file here, or click to select</p>
-        <p className="text-xs text-muted">Supports .csv files exported from Google Sheets, Excel, or another spreadsheet tool</p>
+        <p className="text-sm text-text-primary mb-1">
+          Drop your CSV file here, or click to select
+        </p>
+        <p className="text-xs text-muted">
+          Supports .csv files exported from Google Sheets, Excel, or another spreadsheet tool
+        </p>
         <input
           ref={fileInputRef}
           type="file"
@@ -121,14 +127,16 @@ export function StudentImportUploadStep({
               {column} *
             </span>
           ))}
-          {["Email", "Phone", "Date of Birth", "Status", "Program", "Current Belt"].map((column) => (
-            <span
-              key={column}
-              className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
-            >
-              {column}
-            </span>
-          ))}
+          {["Email", "Phone", "Date of Birth", "Status", "Program", "Current Belt"].map(
+            (column) => (
+              <span
+                key={column}
+                className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
+              >
+                {column}
+              </span>
+            ),
+          )}
         </div>
       </div>
     </div>
@@ -148,11 +156,12 @@ export function StudentImportDonePanel({
 }) {
   const importedCount = importResult.imported_count ?? 0;
   const importedAllValidatedRows = importedCount > 0 && importResult.valid_rows === importedCount;
-  const doneTitle = importedCount === 0
-    ? "No students were imported"
-    : importedAllValidatedRows
-    ? "Import complete"
-    : "Import finished with follow-up items";
+  const doneTitle =
+    importedCount === 0
+      ? "No students were imported"
+      : importedAllValidatedRows
+        ? "Import complete"
+        : "Import finished with follow-up items";
 
   return (
     <div className="text-center py-10">
@@ -169,46 +178,67 @@ export function StudentImportDonePanel({
       </div>
       <h2 className="text-xl font-semibold text-text-primary mb-2">{doneTitle}</h2>
       <p className="text-sm text-text-secondary mb-1">
-        <span className={`font-mono font-bold ${importedCount > 0 ? "text-success" : "text-danger"}`}>
+        <span
+          className={`font-mono font-bold ${importedCount > 0 ? "text-success" : "text-danger"}`}
+        >
           {importedCount}
         </span>{" "}
-        of{" "}
-        <span className="font-mono font-bold text-text-primary">{importResult.valid_rows}</span> validated rows were imported.
+        of <span className="font-mono font-bold text-text-primary">{importResult.valid_rows}</span>{" "}
+        validated rows were imported.
       </p>
       {importResult.error_rows > 0 ? (
         <p className="text-sm text-text-secondary">
-          <span className="text-danger font-mono">{importResult.error_rows}</span> rows still have blockers and were skipped.
+          <span className="text-danger font-mono">{importResult.error_rows}</span> rows still have
+          blockers and were skipped.
         </p>
       ) : null}
       {importResult.created_programs.length > 0 ? (
         <p className="text-sm text-text-secondary mt-2">
-          Created programs: <span className="font-medium text-text-primary">{importResult.created_programs.join(", ")}</span>
+          Created programs:{" "}
+          <span className="font-medium text-text-primary">
+            {importResult.created_programs.join(", ")}
+          </span>
         </p>
       ) : null}
       {importResult.created_ladders.length > 0 ? (
         <p className="text-sm text-text-secondary mt-1">
-          Created belt ladders: <span className="font-medium text-text-primary">{importResult.created_ladders.join(", ")}</span>
+          Created belt ladders:{" "}
+          <span className="font-medium text-text-primary">
+            {importResult.created_ladders.join(", ")}
+          </span>
         </p>
       ) : null}
       {importResult.created_belts.length > 0 ? (
         <p className="text-sm text-text-secondary mt-1">
-          Created belts: <span className="font-medium text-text-primary">{importResult.created_belts.join(", ")}</span>
+          Created belts:{" "}
+          <span className="font-medium text-text-primary">
+            {importResult.created_belts.join(", ")}
+          </span>
         </p>
       ) : null}
       {importResult.imported_without_belt_count > 0 ? (
         <p className="text-sm text-text-secondary mt-1">
-          {importResult.imported_without_belt_count} {pluralize(importResult.imported_without_belt_count, "student")} {importResult.imported_without_belt_count === 1 ? "had an" : "had"} unmatched belt {pluralize(importResult.imported_without_belt_count, "name")} saved to notes. Students in configured programs start at that program&apos;s first full belt; others remain unranked.
+          {importResult.imported_without_belt_count}{" "}
+          {pluralize(importResult.imported_without_belt_count, "student")}{" "}
+          {importResult.imported_without_belt_count === 1 ? "had an" : "had"} unmatched belt{" "}
+          {pluralize(importResult.imported_without_belt_count, "name")} saved to notes. Students in
+          configured programs start at that program&apos;s first full belt; others remain unranked.
         </p>
       ) : null}
       {importResult.normalized_status_count > 0 ? (
         <p className="text-sm text-text-secondary mt-1">
-          {importResult.normalized_status_count} status {pluralize(importResult.normalized_status_count, "value")} {importResult.normalized_status_count === 1 ? "was" : "were"} normalized during import.
+          {importResult.normalized_status_count} status{" "}
+          {pluralize(importResult.normalized_status_count, "value")}{" "}
+          {importResult.normalized_status_count === 1 ? "was" : "were"} normalized during import.
         </p>
       ) : null}
       {importResult.non_critical_errors?.length ? (
         <div className="mt-4 mx-auto max-w-2xl rounded-[14px] border border-warning/30 bg-warning/10 px-4 py-3 text-left">
           <p className="text-sm font-medium text-warning">
-            Saved with {importResult.non_critical_errors.length === 1 ? "one follow-up" : `${importResult.non_critical_errors.length} follow-ups`}
+            Saved with{" "}
+            {importResult.non_critical_errors.length === 1
+              ? "one follow-up"
+              : `${importResult.non_critical_errors.length} follow-ups`}
           </p>
           <ul className="mt-2 space-y-1 text-sm text-text-secondary">
             {importResult.non_critical_errors.map((item) => (
@@ -223,7 +253,9 @@ export function StudentImportDonePanel({
           importOptions.create_missing_programs ? "Create programs" : null,
           importOptions.create_missing_belts ? "Create ladders and belts" : null,
           importOptions.import_without_unresolved_belt ? "Import without unresolved belts" : null,
-        ].filter(Boolean).join(" · ") || "None"}
+        ]
+          .filter(Boolean)
+          .join(" · ") || "None"}
       </p>
       <div className="flex gap-3 justify-center mt-8">
         <Button variant="secondary" size="md" onClick={onImportAnother}>

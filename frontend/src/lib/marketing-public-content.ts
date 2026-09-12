@@ -28,7 +28,8 @@ export const marketingDetailPageDefaults = {
 
 export const marketingDetailNextStepsDefaults = {
   title: "Choose the next useful page",
-  description: "If this page made sense, the next step is either a related workflow, the broader product map, or a real setup.",
+  description:
+    "If this page made sense, the next step is either a related workflow, the broader product map, or a real setup.",
 };
 
 export const marketingIndexDefaults = {
@@ -41,21 +42,24 @@ const sharedPublicNextSteps: MarketingNextStep[] = [
   {
     eyebrow: "Product",
     title: "Compare the main features",
-    description: "See the product areas Koaryu already explains clearly: roster, belts, attendance, and billing visibility.",
+    description:
+      "See the product areas Koaryu already explains clearly: roster, belts, attendance, and billing visibility.",
     href: "/features",
     action: "Open features",
   },
   {
     eyebrow: "Workflows",
     title: "Start from a real studio problem",
-    description: "Browse use cases for spreadsheets, retention, trial follow-up, tuition cleanup, and belt test readiness.",
+    description:
+      "Browse use cases for spreadsheets, retention, trial follow-up, tuition cleanup, and belt test readiness.",
     href: "/use-cases",
     action: "Open use cases",
   },
   {
     eyebrow: "Setup",
     title: "Try Koaryu with your studio",
-    description: "Start setup when you are ready to see the product against a real roster and real operating work.",
+    description:
+      "Start setup when you are ready to see the product against a real roster and real operating work.",
     href: "/signup",
     action: "Start setup",
   },
@@ -65,7 +69,8 @@ export const indexNextSteps: MarketingNextStep[] = [
   {
     eyebrow: "Directory",
     title: "Use the Explore guide",
-    description: "Find the right product, workflow, or studio-fit page without guessing where to start.",
+    description:
+      "Find the right product, workflow, or studio-fit page without guessing where to start.",
     href: "/explore",
     action: "Open Explore",
   },
@@ -76,11 +81,7 @@ export const detailNextSteps = sharedPublicNextSteps;
 
 export function nextStepsForIndex(basePath: "/features" | "/use-cases"): MarketingNextStep[] {
   if (basePath === "/use-cases") {
-    return [
-      indexNextSteps[0],
-      sharedPublicNextSteps[0],
-      sharedPublicNextSteps[2],
-    ];
+    return [indexNextSteps[0], sharedPublicNextSteps[0], sharedPublicNextSteps[2]];
   }
 
   return indexNextSteps;

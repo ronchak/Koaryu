@@ -3,13 +3,23 @@ from typing import Any, Optional
 from supabase import Client
 from fastapi import UploadFile
 from app.schemas.student import (
-    StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
+    StudentCreate,
+    StudentUpdate,
+    StudentResponse,
+    StudentListResponse,
     GuardianResponse,
-    CsvImportOptions, CsvImportResult,
-    BulkTagUpdate, BulkStatusUpdate, BulkStudentArchiveRequest,
-    StudentListSortDir, StudentListSortKey, StudentStatus,
+    CsvImportOptions,
+    CsvImportResult,
+    BulkTagUpdate,
+    BulkStatusUpdate,
+    BulkStudentArchiveRequest,
+    StudentListSortDir,
+    StudentListSortKey,
+    StudentStatus,
     StudentRosterPageResponse,
-    StudentProgramMembershipCreate, StudentProgramMembershipResponse, StudentProgramMembershipUpdate,
+    StudentProgramMembershipCreate,
+    StudentProgramMembershipResponse,
+    StudentProgramMembershipUpdate,
 )
 from app.services.student_bulk_actions import StudentBulkActions
 from app.services.student_crud_actions import StudentCrudActions
@@ -229,9 +239,7 @@ class StudentService:
     ) -> StudentResponse:
         return await self._student_photo_actions().delete(student_id, studio_id, actor_id)
 
-    async def soft_delete_student(
-        self, student_id: str, studio_id: str, actor_id: str
-    ) -> None:
+    async def soft_delete_student(self, student_id: str, studio_id: str, actor_id: str) -> None:
         await self._crud_actions().soft_delete_student(student_id, studio_id, actor_id)
 
     async def list_program_memberships(
@@ -258,7 +266,9 @@ class StudentService:
         studio_id: str,
         actor_id: str,
     ) -> StudentProgramMembershipResponse:
-        return await self._membership_actions().update(student_id, membership_id, data, studio_id, actor_id)
+        return await self._membership_actions().update(
+            student_id, membership_id, data, studio_id, actor_id
+        )
 
     async def remove_program_membership(
         self,
@@ -271,9 +281,7 @@ class StudentService:
 
     # ---- Bulk Actions ----
 
-    async def bulk_update_tags(
-        self, data: BulkTagUpdate, studio_id: str, actor_id: str
-    ) -> int:
+    async def bulk_update_tags(self, data: BulkTagUpdate, studio_id: str, actor_id: str) -> int:
         return await self._bulk_actions().update_tags(data, studio_id, actor_id)
 
     async def bulk_update_status(
@@ -308,7 +316,9 @@ class StudentService:
     ) -> CsvImportResult:
         """Validate rows against the mapping. Returns a structured result."""
         effective_options = options or CsvImportOptions()
-        result, _ = self._import_planner().prepare_import(rows, mapping, studio_id, effective_options)
+        result, _ = self._import_planner().prepare_import(
+            rows, mapping, studio_id, effective_options
+        )
         return result
 
     async def execute_import(

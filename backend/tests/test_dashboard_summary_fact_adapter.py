@@ -36,7 +36,12 @@ def facts_for(cache_key):
         },
         "today": cache_key.local_date.isoformat(),
         "timezone": cache_key.timezone,
-        "students": {"total_students": 3, "active_students": 2, "trialing_students": 1, "on_hold_students": 0},
+        "students": {
+            "total_students": 3,
+            "active_students": 2,
+            "trialing_students": 1,
+            "on_hold_students": 0,
+        },
         "leads": {"active_leads": 1, "enrolled_leads": 0, "due_today_leads": 1},
         "schedule": {"today_sessions": 1},
         "belts": {"belt_count": 2, "tip_count": 1},
@@ -50,7 +55,12 @@ def facts_for(cache_key):
             "utilization_rate": 0.1,
             "average_attendance": 1.0,
         },
-        "churn": {"inactive_students": 0, "canceled_students": 0, "churn_marked_students": 0, "churn_rate": None},
+        "churn": {
+            "inactive_students": 0,
+            "canceled_students": 0,
+            "churn_marked_students": 0,
+            "churn_rate": None,
+        },
         "test_readiness": {"ready_to_test": None, "needs_approval": None, "available": False},
         "billing": {
             "can_view_billing": visible,
@@ -109,7 +119,12 @@ def test_accepted_rpc_maps_without_protected_table_fanout_and_uses_exact_params(
 def test_hidden_billing_shape_is_validated_and_identity_fields_fail_closed():
     requested_key = key(visibility="billing_hidden")
     valid = facts_for(requested_key)
-    assert DashboardSummaryService._validate_dashboard_facts(valid, requested_key)["billing"]["can_view_billing"] is False
+    assert (
+        DashboardSummaryService._validate_dashboard_facts(valid, requested_key)["billing"][
+            "can_view_billing"
+        ]
+        is False
+    )
 
     exposed = {**valid, "billing": {**valid["billing"], "payment_attention_count": 1}}
     try:
@@ -160,14 +175,16 @@ def test_cache_path_makes_one_rpc_for_concurrent_identical_misses_and_zero_on_hi
     cache = DashboardSummaryFactCache()
 
     async def exercise():
-        responses = await asyncio.gather(*[
-            DashboardSummaryService.get_dashboard_summary_from_fact_context(
-                rpc_client,
-                context,
-                cache=cache,
-            )
-            for _ in range(5)
-        ])
+        responses = await asyncio.gather(
+            *[
+                DashboardSummaryService.get_dashboard_summary_from_fact_context(
+                    rpc_client,
+                    context,
+                    cache=cache,
+                )
+                for _ in range(5)
+            ]
+        )
         await DashboardSummaryService.get_dashboard_summary_from_fact_context(
             rpc_client,
             context,
@@ -182,9 +199,11 @@ def test_cache_path_makes_one_rpc_for_concurrent_identical_misses_and_zero_on_hi
 
 
 def test_summary_endpoint_keeps_auth_outside_cache_and_uses_one_rpc_then_zero_on_hit():
-    rpc_client = RpcBackedSupabase({
-        "studios": [{"id": "endpoint-studio", "name": "River City", "timezone": "UTC"}],
-    })
+    rpc_client = RpcBackedSupabase(
+        {
+            "studios": [{"id": "endpoint-studio", "name": "River City", "timezone": "UTC"}],
+        }
+    )
     requested_key = DashboardSummaryCacheKey(
         studio_id="endpoint-studio",
         visibility="billing_visible",
@@ -197,30 +216,39 @@ def test_summary_endpoint_keeps_auth_outside_cache_and_uses_one_rpc_then_zero_on
     second_auth = auth("endpoint-user-2", studio_id="endpoint-studio")
     responses = []
 
-    with patch(
-        "app.services.dashboard_summary_service.AuthService._get_user_profile_sync",
-        side_effect=[first_auth, second_auth],
-    ), patch(
-        "app.services.dashboard_summary_service.ensure_platform_subscription_access"
-    ), patch.object(
-        DashboardSummaryService,
-        "_studio_today",
-        return_value=(date(2026, 5, 20), "UTC"),
+    with (
+        patch(
+            "app.services.dashboard_summary_service.AuthService._get_user_profile_sync",
+            side_effect=[first_auth, second_auth],
+        ),
+        patch("app.services.dashboard_summary_service.ensure_platform_subscription_access"),
+        patch.object(
+            DashboardSummaryService,
+            "_studio_today",
+            return_value=(date(2026, 5, 20), "UTC"),
+        ),
     ):
         for user_id in ("endpoint-user-1", "endpoint-user-2"):
             response = Response()
-            responses.append(asyncio.run(get_dashboard_summary(response, user_id, None, rpc_client)))
+            responses.append(
+                asyncio.run(get_dashboard_summary(response, user_id, None, rpc_client))
+            )
             assert response.headers["Cache-Control"] == "no-store, private"
             assert response.headers["Vary"] == "Authorization, X-Studio-Id, Cookie"
             assert "koaryu_summary_context" in response.headers["Server-Timing"]
 
-    assert rpc_client.rpc_calls == [("dashboard_summary_facts", {
-        "p_studio_id": "endpoint-studio",
-        "p_visibility": "billing_visible",
-        "p_timezone_name": "UTC",
-        "p_local_date": "2026-05-20",
-        "p_formula_version": "dashboard-summary-v1",
-    })]
+    assert rpc_client.rpc_calls == [
+        (
+            "dashboard_summary_facts",
+            {
+                "p_studio_id": "endpoint-studio",
+                "p_visibility": "billing_visible",
+                "p_timezone_name": "UTC",
+                "p_local_date": "2026-05-20",
+                "p_formula_version": "dashboard-summary-v1",
+            },
+        )
+    ]
     assert [response.auth.user.id for response in responses] == [
         "endpoint-user-1",
         "endpoint-user-2",
@@ -240,26 +268,34 @@ def test_no_studio_and_subscription_denial_never_reach_dashboard_rpc():
         AssertionError("no-studio request reached dashboard RPC")
     )
 
-    with patch(
-        "app.services.dashboard_summary_service.AuthService._get_user_profile_sync",
-        return_value=no_studio_auth,
-    ), patch(
-        "app.services.dashboard_summary_service.ensure_platform_subscription_access"
-    ) as ensure_access:
+    with (
+        patch(
+            "app.services.dashboard_summary_service.AuthService._get_user_profile_sync",
+            return_value=no_studio_auth,
+        ),
+        patch(
+            "app.services.dashboard_summary_service.ensure_platform_subscription_access"
+        ) as ensure_access,
+    ):
         response = Response()
-        payload = asyncio.run(get_dashboard_summary(response, "onboarding-user", None, no_studio_client))
+        payload = asyncio.run(
+            get_dashboard_summary(response, "onboarding-user", None, no_studio_client)
+        )
 
     ensure_access.assert_not_called()
     assert payload.studio is None
     assert no_studio_client.rpc_calls == []
 
     denied_client = RpcBackedSupabase()
-    with patch(
-        "app.services.dashboard_summary_service.AuthService._get_user_profile_sync",
-        return_value=auth("denied-user", studio_id="denied-studio"),
-    ), patch(
-        "app.services.dashboard_summary_service.ensure_platform_subscription_access",
-        side_effect=HTTPException(status_code=402, detail="subscription required"),
+    with (
+        patch(
+            "app.services.dashboard_summary_service.AuthService._get_user_profile_sync",
+            return_value=auth("denied-user", studio_id="denied-studio"),
+        ),
+        patch(
+            "app.services.dashboard_summary_service.ensure_platform_subscription_access",
+            side_effect=HTTPException(status_code=402, detail="subscription required"),
+        ),
     ):
         try:
             asyncio.run(get_dashboard_summary(Response(), "denied-user", None, denied_client))
@@ -290,25 +326,35 @@ def test_fresh_summary_bypasses_a_warm_cache_and_an_older_flight():
 
     async def exercise():
         old = facts_for(requested_key)
+
         async def old_loader():
             return old
+
         await cache.get_or_load(requested_key, old_loader)
-        cached, _ = await DashboardSummaryService.get_dashboard_summary_from_fact_context(client, context, cache=cache)
+        cached, _ = await DashboardSummaryService.get_dashboard_summary_from_fact_context(
+            client, context, cache=cache
+        )
         assert cached.students.total_students == 3
         assert calls == []
-        fresh, _ = await DashboardSummaryService.get_dashboard_summary_from_fact_context(client, context, cache=cache, fresh=True)
+        fresh, _ = await DashboardSummaryService.get_dashboard_summary_from_fact_context(
+            client, context, cache=cache, fresh=True
+        )
         assert fresh.students.total_students == 4
         assert calls == [1]
         # An in-flight read in any other worker cannot be joined by fresh=True.
         other_cache = DashboardSummaryFactCache()
         started, release = asyncio.Event(), asyncio.Event()
+
         async def slow_loader():
             started.set()
             await release.wait()
             return old
+
         pending = asyncio.create_task(other_cache.get_or_load(requested_key, slow_loader))
         await started.wait()
-        fresh, _ = await DashboardSummaryService.get_dashboard_summary_from_fact_context(client, context, cache=other_cache, fresh=True)
+        fresh, _ = await DashboardSummaryService.get_dashboard_summary_from_fact_context(
+            client, context, cache=other_cache, fresh=True
+        )
         assert fresh.students.total_students == 4
         release.set()
         await pending

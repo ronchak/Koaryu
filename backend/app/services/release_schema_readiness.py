@@ -74,8 +74,7 @@ def _validate_preflight(
         )
     if mismatches:
         raise ReleaseSchemaNotReadyError(
-            "Release schema preflight did not match exact head. "
-            + "; ".join(mismatches)
+            "Release schema preflight did not match exact head. " + "; ".join(mismatches)
         )
 
 
@@ -120,9 +119,7 @@ class HostedReleaseReadinessCache:
         *,
         check=assert_hosted_release_schema_ready,
         monotonic=time.monotonic,
-        run_check: Callable[[Callable[[], None]], Awaitable[None]] = (
-            _run_check_in_thread
-        ),
+        run_check: Callable[[Callable[[], None]], Awaitable[None]] = (_run_check_in_thread),
         success_ttl_seconds: float = HOSTED_READINESS_SUCCESS_TTL_SECONDS,
     ) -> None:
         if success_ttl_seconds <= 0:
@@ -138,10 +135,7 @@ class HostedReleaseReadinessCache:
     def _success_is_fresh(self) -> bool:
         now = self._monotonic()
         last_success = self._last_success_monotonic
-        return (
-            last_success is not None
-            and 0 <= now - last_success < self._success_ttl_seconds
-        )
+        return last_success is not None and 0 <= now - last_success < self._success_ttl_seconds
 
     async def _check_and_cache_success(self) -> None:
         await self._run_check(self._check)

@@ -53,19 +53,23 @@ class SupportService:
                 detail="Could not verify your support contact email. Please try again.",
             )
 
-        result = execute_required_rpc(self.supabase, "create_support_ticket", {
-            "p_studio_id": studio_id,
-            "p_created_by": user_id,
-            "p_requester_email": requester_email,
-            "p_requester_name": requester_name,
-            "p_topic": data.topic,
-            "p_severity": data.severity,
-            "p_subject": data.subject,
-            "p_details": data.details,
-            "p_page_url": data.page_url,
-            "p_user_agent": data.user_agent,
-            "p_browser_context": data.browser_context,
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "create_support_ticket",
+            {
+                "p_studio_id": studio_id,
+                "p_created_by": user_id,
+                "p_requester_email": requester_email,
+                "p_requester_name": requester_name,
+                "p_topic": data.topic,
+                "p_severity": data.severity,
+                "p_subject": data.subject,
+                "p_details": data.details,
+                "p_page_url": data.page_url,
+                "p_user_agent": data.user_agent,
+                "p_browser_context": data.browser_context,
+            },
+        )
         ticket = self._first_rpc_row(result.data)
         if not ticket:
             raise HTTPException(
@@ -129,12 +133,16 @@ class SupportService:
         except Exception as exc:
             detail = str(exc) or exc.__class__.__name__
             if "Support ticket not found" in detail:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support ticket not found.") from exc
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Support ticket not found."
+                ) from exc
             raise
 
         row = self._first_rpc_row(result.data)
         if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support ticket not found.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Support ticket not found."
+            )
         return self._to_response(row)
 
     def _is_admin(self, user_id: str, requested_studio_id: Optional[str]) -> bool:

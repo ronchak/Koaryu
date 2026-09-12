@@ -81,7 +81,12 @@ DISPUTE_ESTABLISHED_IDENTITY_FIELDS = (
 
 def dispute_state_category(status: Any) -> str:
     normalized = str(status or "").strip().lower()
-    if normalized in {"warning_needs_response", "warning_under_review", "warning_closed", "prevented"}:
+    if normalized in {
+        "warning_needs_response",
+        "warning_under_review",
+        "warning_closed",
+        "prevented",
+    }:
         return "warning"
     if normalized in {"needs_response", "under_review"}:
         return "active"
@@ -102,7 +107,9 @@ def _provider_timestamp(value: Any) -> str | None:
 
 
 class BillingPaymentEventProjector:
-    def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
+    def __init__(
+        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+    ):
         self.billing_service = billing_service
         self.stripe_service_cls = stripe_service_cls
 
@@ -176,10 +183,18 @@ class BillingPaymentEventProjector:
             return
         if local_invoice and is_stale_stripe_event(local_invoice, event_created):
             return
-        payer_id = metadata.get("payer_id") or (local_invoice or {}).get("payer_id") or self._payer_id_for_customer(studio_id, account_id, customer_id)
+        payer_id = (
+            metadata.get("payer_id")
+            or (local_invoice or {}).get("payer_id")
+            or self._payer_id_for_customer(studio_id, account_id, customer_id)
+        )
         if not payer_id and not local_invoice and metadata.get("product") != "koaryu_payments":
             return
-        status_value = "processing" if event_type == "payment_intent.processing" else ("succeeded" if event_type == "payment_intent.succeeded" else "failed")
+        status_value = (
+            "processing"
+            if event_type == "payment_intent.processing"
+            else ("succeeded" if event_type == "payment_intent.succeeded" else "failed")
+        )
         charge = self._latest_charge(intent)
         charge_id = _stripe_id(charge)
         connect_account_generation = self._connect_account_generation(account_id, studio_id)
@@ -221,8 +236,12 @@ class BillingPaymentEventProjector:
             # Without provider collection evidence, record first-observed success.
             # Existing timestamps are never restated by later observations.
             "processed_at": (
-                collected_at or _provider_timestamp(event_created) or datetime.now(timezone.utc).isoformat()
-            ) if status_value == "succeeded" else None,
+                collected_at
+                or _provider_timestamp(event_created)
+                or datetime.now(timezone.utc).isoformat()
+            )
+            if status_value == "succeeded"
+            else None,
         }
         if event_created is not None:
             row["last_stripe_event_created"] = event_created
@@ -237,7 +256,11 @@ class BillingPaymentEventProjector:
         )
         if existing.data:
             payment = self._update_existing_payment_projection(
-                row, existing.data[0], account_id, status_value, event_created,
+                row,
+                existing.data[0],
+                account_id,
+                status_value,
+                event_created,
             )
             if payment is None:
                 return
@@ -286,13 +309,21 @@ class BillingPaymentEventProjector:
             row = dict(incoming)
             if existing_payment.get("status") in {"disputed", "refunded"}:
                 row["status"] = existing_payment["status"]
-            elif existing_payment.get("status") == "succeeded" and status_value in {"processing", "failed"}:
+            elif existing_payment.get("status") == "succeeded" and status_value in {
+                "processing",
+                "failed",
+            }:
                 row["status"] = "succeeded"
                 row["failure_code"] = existing_payment.get("failure_code")
                 row["failure_message"] = existing_payment.get("failure_message")
-            if existing_payment.get("status") in {"succeeded", "disputed", "refunded"} and status_value != "succeeded":
+            if (
+                existing_payment.get("status") in {"succeeded", "disputed", "refunded"}
+                and status_value != "succeeded"
+            ):
                 row["amount_cents"] = existing_payment["amount_cents"]
-            initialize_timestamp = status_value == "succeeded" and existing_payment.get("processed_at") is None
+            initialize_timestamp = (
+                status_value == "succeeded" and existing_payment.get("processed_at") is None
+            )
             if not initialize_timestamp:
                 row.pop("processed_at")
             self._preserve_established_identity(
@@ -308,7 +339,8 @@ class BillingPaymentEventProjector:
                     row[field] = existing_payment[field]
             gross_amount = (
                 max(0, int(row.get("amount_cents") or 0))
-                if row.get("status") in {
+                if row.get("status")
+                in {
                     "succeeded",
                     "refunded",
                     "disputed",
@@ -334,8 +366,10 @@ class BillingPaymentEventProjector:
                 net_collected_amount,
             )
             query = (
-                self.supabase.table("billing_payments").update(row)
-                .eq("id", existing_payment["id"]).eq("studio_id", incoming["studio_id"])
+                self.supabase.table("billing_payments")
+                .update(row)
+                .eq("id", existing_payment["id"])
+                .eq("studio_id", incoming["studio_id"])
             )
             query = add_stripe_event_created_guard(query, event_created)
             if initialize_timestamp:
@@ -349,9 +383,12 @@ class BillingPaymentEventProjector:
             # money/state too, then retry this local projection once. Never retry
             # an exception or a provider call here, or recreate a deleted row.
             refreshed = (
-                self.supabase.table("billing_payments").select("*")
-                .eq("id", existing_payment["id"]).eq("studio_id", incoming["studio_id"])
-                .limit(1).execute()
+                self.supabase.table("billing_payments")
+                .select("*")
+                .eq("id", existing_payment["id"])
+                .eq("studio_id", incoming["studio_id"])
+                .limit(1)
+                .execute()
             )
             if not refreshed.data:
                 return
@@ -369,17 +406,21 @@ class BillingPaymentEventProjector:
         stripe_payment_intent_id: Optional[str],
     ) -> bool:
         update: dict[str, Any] = {
-            "last_payment_error": row.get("failure_message") if payment_status == "failed" else None,
+            "last_payment_error": row.get("failure_message")
+            if payment_status == "failed"
+            else None,
         }
         if (
             payment_status == "succeeded"
             and local_invoice.get("status") not in PAYMENT_PROJECTION_PRESERVED_INVOICE_STATUSES
         ):
-            update.update({
-                "stripe_payment_intent_id": stripe_payment_intent_id,
-                "application_fee_amount_cents": row["application_fee_amount_cents"],
-                "paid_at": datetime.now(timezone.utc).isoformat(),
-            })
+            update.update(
+                {
+                    "stripe_payment_intent_id": stripe_payment_intent_id,
+                    "application_fee_amount_cents": row["application_fee_amount_cents"],
+                    "paid_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
         if event_created is not None:
             update["last_stripe_event_created"] = event_created
         invoice_query = (
@@ -431,7 +472,9 @@ class BillingPaymentEventProjector:
             sanitized[key] = str(value)[:160]
         return sanitized
 
-    def _link_adjustments_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
+    def _link_adjustments_to_payment(
+        self, payment: dict[str, Any], account_id: Optional[str]
+    ) -> dict[str, Any]:
         charge_id = payment.get("stripe_charge_id")
         payment_id = payment.get("id")
         studio_id = payment.get("studio_id")
@@ -508,9 +551,13 @@ class BillingPaymentEventProjector:
         if payment.get("stripe_payment_intent_id"):
             adjustment_update["stripe_payment_intent_id"] = payment["stripe_payment_intent_id"]
         if refund_ids:
-            self.supabase.table("billing_refunds").update(adjustment_update).in_("id", refund_ids).execute()
+            self.supabase.table("billing_refunds").update(adjustment_update).in_(
+                "id", refund_ids
+            ).execute()
         if dispute_ids:
-            self.supabase.table("billing_disputes").update(adjustment_update).in_("id", dispute_ids).execute()
+            self.supabase.table("billing_disputes").update(adjustment_update).in_(
+                "id", dispute_ids
+            ).execute()
 
         current_payment = (
             self.supabase.table("billing_payments")
@@ -531,7 +578,7 @@ class BillingPaymentEventProjector:
         account_id: Optional[str],
         event_created: Optional[int] = None,
     ) -> None:
-        refunds = ((charge.get("refunds") or {}).get("data") or [])
+        refunds = (charge.get("refunds") or {}).get("data") or []
         for refund in refunds:
             self._project_refund(refund, account_id, charge=charge, event_created=event_created)
 
@@ -543,7 +590,13 @@ class BillingPaymentEventProjector:
         charge: Optional[dict[str, Any]] = None,
         event_created: Optional[int] = None,
     ) -> dict[str, Any]:
-        refund_dict = refund if isinstance(refund, dict) else refund.to_dict_recursive() if hasattr(refund, "to_dict_recursive") else dict(refund)
+        refund_dict = (
+            refund
+            if isinstance(refund, dict)
+            else refund.to_dict_recursive()
+            if hasattr(refund, "to_dict_recursive")
+            else dict(refund)
+        )
         charge_id = _stripe_id(refund_dict.get("charge")) or _stripe_id(charge)
         metadata = refund_dict.get("metadata") or {}
         metadata_studio_id = metadata.get("studio_id")
@@ -572,7 +625,8 @@ class BillingPaymentEventProjector:
             "payment_id": (payment or {}).get("id"),
             "stripe_refund_id": _stripe_id(refund_dict),
             "stripe_charge_id": charge_id,
-            "stripe_payment_intent_id": _stripe_id(refund_dict.get("payment_intent")) or (payment or {}).get("stripe_payment_intent_id"),
+            "stripe_payment_intent_id": _stripe_id(refund_dict.get("payment_intent"))
+            or (payment or {}).get("stripe_payment_intent_id"),
             "stripe_account_id": account_id,
             "connect_account_generation": connect_account_generation,
             "amount_cents": int(refund_dict.get("amount") or 0),
@@ -580,7 +634,9 @@ class BillingPaymentEventProjector:
             "reason": refund_dict.get("reason"),
             "metadata": self._sanitized_adjustment_metadata(metadata),
             "reconciliation_required": identity_mismatch,
-            "reconciliation_reason_code": ADJUSTMENT_IDENTITY_MISMATCH if identity_mismatch else None,
+            "reconciliation_reason_code": ADJUSTMENT_IDENTITY_MISMATCH
+            if identity_mismatch
+            else None,
         }
         if event_created is not None:
             row["last_stripe_event_created"] = event_created
@@ -601,16 +657,14 @@ class BillingPaymentEventProjector:
                 return current_refund
             current_status = str(current_refund.get("status") or "")
             incoming_status = str(row.get("status") or "")
-            if (
-                REFUND_STATUS_ORDER.get(current_status, -1)
-                > REFUND_STATUS_ORDER.get(incoming_status, -1)
-                or is_same_second_status_regression(
-                    current_refund.get("last_stripe_event_created"),
-                    event_created,
-                    current_status=current_status,
-                    incoming_status=incoming_status,
-                    status_order=REFUND_STATUS_ORDER,
-                )
+            if REFUND_STATUS_ORDER.get(current_status, -1) > REFUND_STATUS_ORDER.get(
+                incoming_status, -1
+            ) or is_same_second_status_regression(
+                current_refund.get("last_stripe_event_created"),
+                event_created,
+                current_status=current_status,
+                incoming_status=incoming_status,
+                status_order=REFUND_STATUS_ORDER,
             ):
                 row["status"] = current_status
             self._preserve_established_identity(
@@ -618,12 +672,8 @@ class BillingPaymentEventProjector:
                 current_refund,
                 REFUND_ESTABLISHED_IDENTITY_FIELDS,
             )
-            row["reconciliation_required"] = bool(
-                current_refund.get("reconciliation_required")
-            )
-            row["reconciliation_reason_code"] = current_refund.get(
-                "reconciliation_reason_code"
-            )
+            row["reconciliation_required"] = bool(current_refund.get("reconciliation_required"))
+            row["reconciliation_reason_code"] = current_refund.get("reconciliation_reason_code")
             established_payment = self._find_payment_by_charge(
                 row.get("stripe_account_id"),
                 row.get("stripe_charge_id"),
@@ -639,10 +689,15 @@ class BillingPaymentEventProjector:
                 )
             ):
                 payment = established_payment
-            query = self.supabase.table("billing_refunds").update(row).eq(
-                "id",
-                current_refund["id"],
-            ).eq("studio_id", studio_id)
+            query = (
+                self.supabase.table("billing_refunds")
+                .update(row)
+                .eq(
+                    "id",
+                    current_refund["id"],
+                )
+                .eq("studio_id", studio_id)
+            )
             query = add_stripe_event_created_guard(query, event_created)
             result = query.execute()
         else:
@@ -721,7 +776,9 @@ class BillingPaymentEventProjector:
             "reconciliation_reason_code": (
                 ADJUSTMENT_IDENTITY_MISMATCH
                 if identity_mismatch
-                else ADJUSTMENT_UNKNOWN_DISPUTE if state_category == "unknown" else None
+                else ADJUSTMENT_UNKNOWN_DISPUTE
+                if state_category == "unknown"
+                else None
             ),
         }
         if event_created is not None:
@@ -754,9 +811,15 @@ class BillingPaymentEventProjector:
                 status_order=DISPUTE_STATUS_ORDER,
             ):
                 row["status"] = current_status
-                row["state_category"] = current_dispute.get("state_category") or dispute_state_category(current_status)
-                row["reconciliation_required"] = bool(current_dispute.get("reconciliation_required"))
-                row["reconciliation_reason_code"] = current_dispute.get("reconciliation_reason_code")
+                row["state_category"] = current_dispute.get(
+                    "state_category"
+                ) or dispute_state_category(current_status)
+                row["reconciliation_required"] = bool(
+                    current_dispute.get("reconciliation_required")
+                )
+                row["reconciliation_reason_code"] = current_dispute.get(
+                    "reconciliation_reason_code"
+                )
             self._preserve_established_identity(
                 row,
                 current_dispute,
@@ -778,18 +841,21 @@ class BillingPaymentEventProjector:
             ):
                 payment = established_payment
                 if row.get("state_category") != "unknown":
-                    current_reason = current_dispute.get(
-                        "reconciliation_reason_code"
-                    )
+                    current_reason = current_dispute.get("reconciliation_reason_code")
                     if current_reason in DURABLE_ADJUSTMENT_RECONCILIATION_REASONS:
                         row["reconciliation_required"] = True
                         row["reconciliation_reason_code"] = current_reason
                     else:
                         row["reconciliation_required"] = False
                         row["reconciliation_reason_code"] = None
-            query = self.supabase.table("billing_disputes").update(row).eq("id", current_dispute["id"]).eq(
-                "studio_id",
-                studio_id,
+            query = (
+                self.supabase.table("billing_disputes")
+                .update(row)
+                .eq("id", current_dispute["id"])
+                .eq(
+                    "studio_id",
+                    studio_id,
+                )
             )
             query = add_stripe_event_created_guard(query, event_created)
             query.execute()
@@ -850,7 +916,9 @@ class BillingPaymentEventProjector:
 
         dispute_query = (
             self.supabase.table("billing_disputes")
-            .select("amount_cents, status, state_category, stripe_account_id, connect_account_generation, reconciliation_required")
+            .select(
+                "amount_cents, status, state_category, stripe_account_id, connect_account_generation, reconciliation_required"
+            )
             .eq("studio_id", studio_id)
             .eq("payment_id", payment_id)
         )
@@ -919,7 +987,9 @@ class BillingPaymentEventProjector:
             .eq("studio_id", studio_id)
             .execute()
         )
-        updated_payment = payment_result.data[0] if payment_result.data else {**payment, **payment_update}
+        updated_payment = (
+            payment_result.data[0] if payment_result.data else {**payment, **payment_update}
+        )
         return updated_payment
 
     def _refundable_amount_after_pending_refunds(
@@ -941,10 +1011,7 @@ class BillingPaymentEventProjector:
                 return confirmed_net
             refunds = (
                 self.supabase.table("billing_refunds")
-                .select(
-                    "amount_cents, status, stripe_account_id, "
-                    "connect_account_generation"
-                )
+                .select("amount_cents, status, stripe_account_id, connect_account_generation")
                 .eq("studio_id", studio_id)
                 .eq("payment_id", payment_id)
                 .execute()
@@ -1030,7 +1097,9 @@ class BillingPaymentEventProjector:
         }
         if status_value != "paid":
             invoice_update["paid_at"] = None
-        self.supabase.table("billing_invoices").update(invoice_update).eq("id", invoice_id).eq("studio_id", studio_id).execute()
+        self.supabase.table("billing_invoices").update(invoice_update).eq("id", invoice_id).eq(
+            "studio_id", studio_id
+        ).execute()
         self._recompute_payer_balance(studio_id, payer_id or invoice.get("payer_id"))
 
     def _project_payment_from_invoice(
@@ -1078,14 +1147,32 @@ class BillingPaymentEventProjector:
         stripe_invoice_id: Optional[str],
     ) -> Optional[dict[str, Any]]:
         if payment_intent_id:
-            query = self.supabase.table("billing_invoices").select("*").eq("stripe_payment_intent_id", payment_intent_id).limit(1)
-            query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+            query = (
+                self.supabase.table("billing_invoices")
+                .select("*")
+                .eq("stripe_payment_intent_id", payment_intent_id)
+                .limit(1)
+            )
+            query = (
+                query.eq("stripe_account_id", account_id)
+                if account_id
+                else query.is_("stripe_account_id", "null")
+            )
             result = query.execute()
             if result.data:
                 return result.data[0]
         if stripe_invoice_id:
-            query = self.supabase.table("billing_invoices").select("*").eq("stripe_invoice_id", stripe_invoice_id).limit(1)
-            query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+            query = (
+                self.supabase.table("billing_invoices")
+                .select("*")
+                .eq("stripe_invoice_id", stripe_invoice_id)
+                .limit(1)
+            )
+            query = (
+                query.eq("stripe_account_id", account_id)
+                if account_id
+                else query.is_("stripe_account_id", "null")
+            )
             result = query.execute()
             if result.data:
                 return result.data[0]
@@ -1111,7 +1198,11 @@ class BillingPaymentEventProjector:
             .is_("stripe_payment_intent_id", "null")
             .limit(2)
         )
-        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        query = (
+            query.eq("stripe_account_id", account_id)
+            if account_id
+            else query.is_("stripe_account_id", "null")
+        )
         rows = query.execute().data or []
         return rows[0] if len(rows) == 1 else None
 
@@ -1134,7 +1225,11 @@ class BillingPaymentEventProjector:
             .order("processed_at", desc=True)
             .limit(5)
         )
-        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        query = (
+            query.eq("stripe_account_id", account_id)
+            if account_id
+            else query.is_("stripe_account_id", "null")
+        )
         result = query.execute()
         candidates = []
         for row in result.data or []:
@@ -1152,17 +1247,34 @@ class BillingPaymentEventProjector:
     ) -> Optional[dict[str, Any]]:
         if not charge_id:
             return None
-        query = self.supabase.table("billing_payments").select("*").eq("stripe_charge_id", charge_id)
-        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        query = (
+            self.supabase.table("billing_payments").select("*").eq("stripe_charge_id", charge_id)
+        )
+        query = (
+            query.eq("stripe_account_id", account_id)
+            if account_id
+            else query.is_("stripe_account_id", "null")
+        )
         if studio_id:
             query = query.eq("studio_id", studio_id)
         rows = query.limit(2).execute().data or []
         return rows[0] if len(rows) == 1 else None
 
-    def _find_payment_by_intent(self, account_id: Optional[str], payment_intent_id: Optional[str]) -> Optional[dict[str, Any]]:
+    def _find_payment_by_intent(
+        self, account_id: Optional[str], payment_intent_id: Optional[str]
+    ) -> Optional[dict[str, Any]]:
         if not payment_intent_id:
             return None
-        query = self.supabase.table("billing_payments").select("*").eq("stripe_payment_intent_id", payment_intent_id).limit(1)
-        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        query = (
+            self.supabase.table("billing_payments")
+            .select("*")
+            .eq("stripe_payment_intent_id", payment_intent_id)
+            .limit(1)
+        )
+        query = (
+            query.eq("stripe_account_id", account_id)
+            if account_id
+            else query.is_("stripe_account_id", "null")
+        )
         result = query.execute()
         return result.data[0] if result.data else None

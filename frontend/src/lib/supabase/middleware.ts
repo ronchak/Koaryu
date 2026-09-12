@@ -22,7 +22,7 @@ function setStudioStateCookie(
   request: NextRequest,
   userId: string,
   hasStudio: boolean,
-  membershipStatus: StudioMembershipStatus
+  membershipStatus: StudioMembershipStatus,
 ) {
   response.cookies.set(
     STUDIO_STATE_COOKIE,
@@ -32,7 +32,7 @@ function setStudioStateCookie(
       maxAge: STUDIO_STATE_COOKIE_MAX_AGE_SECONDS,
       sameSite: "lax",
       secure: request.nextUrl.protocol === "https:",
-    }
+    },
   );
 }
 
@@ -45,11 +45,7 @@ function clearStudioStateCookie(response: NextResponse, request: NextRequest) {
   });
 }
 
-function setActiveStudioCookie(
-  response: NextResponse,
-  request: NextRequest,
-  studioId: string
-) {
+function setActiveStudioCookie(response: NextResponse, request: NextRequest, studioId: string) {
   response.cookies.set(ACTIVE_STUDIO_COOKIE, studioId, {
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
@@ -107,38 +103,37 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      global: { fetch: (input, init) => fetch(input, {
-        ...init,
-        signal: AbortSignal.any([authSignal, ...(init?.signal ? [init.signal] : [])]),
-      }) },
+      global: {
+        fetch: (input, init) =>
+          fetch(input, {
+            ...init,
+            signal: AbortSignal.any([authSignal, ...(init?.signal ? [init.signal] : [])]),
+          }),
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet, headers) {
           if (authSignal.aborted) return;
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           const previousResponse = supabaseResponse;
           supabaseResponse = NextResponse.next({
             request,
           });
           copyResponseCookies(previousResponse, supabaseResponse);
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, options),
           );
           Object.entries(headers).forEach(([name, value]) =>
-            supabaseResponse.headers.set(name, value)
+            supabaseResponse.headers.set(name, value),
           );
         },
       },
-    }
+    },
   );
 
-  const isAuthRoute =
-    pathname.startsWith("/login")
-    || pathname.startsWith("/signup");
+  const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/signup");
   const isOnboardingRoute = pathname.startsWith("/onboarding");
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
   let authProfile: AuthProfileResponse | null = null;
@@ -150,7 +145,7 @@ export async function updateSession(request: NextRequest) {
       clearSearch?: boolean;
       clearActiveStudio?: boolean;
       clearStudioState?: boolean;
-    }
+    },
   ) {
     const url = request.nextUrl.clone();
     url.pathname = path;
@@ -199,9 +194,7 @@ export async function updateSession(request: NextRequest) {
   }
   const authenticatedUserId = user.id;
 
-  const studioStateCookie = parseStudioStateCookie(
-    request.cookies.get(STUDIO_STATE_COOKIE)?.value
-  );
+  const studioStateCookie = parseStudioStateCookie(request.cookies.get(STUDIO_STATE_COOKIE)?.value);
   let hasStudio: boolean | null =
     studioStateCookie?.userId === authenticatedUserId ? studioStateCookie.hasStudio : null;
   membershipStatus =
@@ -220,7 +213,7 @@ export async function updateSession(request: NextRequest) {
       request,
       authenticatedUserId,
       hasStudio,
-      profile.membership_status
+      profile.membership_status,
     );
     if (hasStudio && profile.studio_id) {
       setActiveStudioCookie(supabaseResponse, request, profile.studio_id);
@@ -241,7 +234,10 @@ export async function updateSession(request: NextRequest) {
     try {
       cacheAuthProfile(await requestAuthProfile(apiBaseUrl, session.access_token, request.signal));
     } catch (error) {
-      if (error instanceof AuthProfileRequestError && (error.status === 401 || error.status === 403)) {
+      if (
+        error instanceof AuthProfileRequestError &&
+        (error.status === 401 || error.status === 403)
+      ) {
         return redirectTo("/login", { clearStudioState: true });
       }
       console.error("Failed to resolve current user's studio in middleware", error);
@@ -264,7 +260,8 @@ export async function updateSession(request: NextRequest) {
     });
     if (membershipRedirect) {
       return redirectTo(membershipRedirect, {
-        clearActiveStudio: membershipStatus === "archived" || membershipRedirect === ACCOUNT_ARCHIVED_ROUTE,
+        clearActiveStudio:
+          membershipStatus === "archived" || membershipRedirect === ACCOUNT_ARCHIVED_ROUTE,
       });
     }
   }
@@ -284,9 +281,14 @@ export async function updateSession(request: NextRequest) {
       }
 
       try {
-        cacheAuthProfile(await requestAuthProfile(apiBaseUrl, session.access_token, request.signal));
+        cacheAuthProfile(
+          await requestAuthProfile(apiBaseUrl, session.access_token, request.signal),
+        );
       } catch (error) {
-        if (error instanceof AuthProfileRequestError && (error.status === 401 || error.status === 403)) {
+        if (
+          error instanceof AuthProfileRequestError &&
+          (error.status === 401 || error.status === 403)
+        ) {
           return redirectTo("/login", { clearStudioState: true });
         }
         console.error("Failed to resolve billing route authorization", error);
@@ -305,7 +307,8 @@ export async function updateSession(request: NextRequest) {
       });
       if (membershipRedirect) {
         return redirectTo(membershipRedirect, {
-          clearActiveStudio: membershipStatus === "archived" || membershipRedirect === ACCOUNT_ARCHIVED_ROUTE,
+          clearActiveStudio:
+            membershipStatus === "archived" || membershipRedirect === ACCOUNT_ARCHIVED_ROUTE,
         });
       }
     }

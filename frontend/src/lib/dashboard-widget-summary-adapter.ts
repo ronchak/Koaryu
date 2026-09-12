@@ -55,10 +55,10 @@ function optionalNonNegativeInteger(value: unknown): number | null {
 
 function parseTodaySchedule(value: unknown): DashboardTodayScheduleEnrichment {
   if (
-    !isRecord(value)
-    || value.available !== true
-    || typeof value.expected_counts_available !== "boolean"
-    || !Array.isArray(value.rows)
+    !isRecord(value) ||
+    value.available !== true ||
+    typeof value.expected_counts_available !== "boolean" ||
+    !Array.isArray(value.rows)
   ) {
     return unavailableTodaySchedule();
   }
@@ -70,13 +70,15 @@ function parseTodaySchedule(value: unknown): DashboardTodayScheduleEnrichment {
     const capacity = optionalNonNegativeInteger(candidate.capacity);
     const expectedCount = optionalNonNegativeInteger(candidate.expected_count);
     if (
-      typeof candidate.id !== "string"
-      || typeof candidate.start_time !== "string"
-      || typeof candidate.end_time !== "string"
-      || typeof candidate.name !== "string"
-      || attendanceCount === null
-      || (candidate.capacity !== null && candidate.capacity !== undefined && capacity === null)
-      || (candidate.expected_count !== null && candidate.expected_count !== undefined && expectedCount === null)
+      typeof candidate.id !== "string" ||
+      typeof candidate.start_time !== "string" ||
+      typeof candidate.end_time !== "string" ||
+      typeof candidate.name !== "string" ||
+      attendanceCount === null ||
+      (candidate.capacity !== null && candidate.capacity !== undefined && capacity === null) ||
+      (candidate.expected_count !== null &&
+        candidate.expected_count !== undefined &&
+        expectedCount === null)
     ) {
       return unavailableTodaySchedule();
     }
@@ -91,7 +93,11 @@ function parseTodaySchedule(value: unknown): DashboardTodayScheduleEnrichment {
     });
   }
   const parsedOverflowCount = optionalNonNegativeInteger(value.overflow_count);
-  if (value.overflow_count !== null && value.overflow_count !== undefined && parsedOverflowCount === null) {
+  if (
+    value.overflow_count !== null &&
+    value.overflow_count !== undefined &&
+    parsedOverflowCount === null
+  ) {
     return unavailableTodaySchedule();
   }
   const overflowCount = parsedOverflowCount ?? 0;
@@ -106,10 +112,10 @@ function parseEmergencyContacts(value: unknown): DashboardEmergencyContactsEnric
   const studentsWithContactName = nonNegativeInteger(value.students_with_contact_name);
   const studentsMissingContactName = nonNegativeInteger(value.students_missing_contact_name);
   if (
-    activeStudents === null
-    || studentsWithContactName === null
-    || studentsMissingContactName === null
-    || studentsWithContactName + studentsMissingContactName !== activeStudents
+    activeStudents === null ||
+    studentsWithContactName === null ||
+    studentsMissingContactName === null ||
+    studentsWithContactName + studentsMissingContactName !== activeStudents
   ) {
     return unavailableEmergencyContacts();
   }
@@ -117,7 +123,7 @@ function parseEmergencyContacts(value: unknown): DashboardEmergencyContactsEnric
 }
 
 export function readDashboardWidgetSummaryEnrichments(
-  summary: unknown
+  summary: unknown,
 ): DashboardWidgetSummaryEnrichments {
   if (!isRecord(summary)) {
     return {

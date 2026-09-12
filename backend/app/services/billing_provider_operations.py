@@ -11,9 +11,7 @@ from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 
-IDEMPOTENCY_CONFLICT_DETAIL = (
-    "Idempotency-Key was already used for a different billing request."
-)
+IDEMPOTENCY_CONFLICT_DETAIL = "Idempotency-Key was already used for a different billing request."
 OPERATION_CONCURRENT_DETAIL = (
     "Billing operation changed concurrently. Retry with the same Idempotency-Key."
 )
@@ -45,15 +43,9 @@ AUTOPAY_TERMS_VERSION = "koaryu-autopay-v1"
 AUTOPAY_DISABLE_SETUP_PENDING_DETAIL = (
     "Autopay cannot be disabled while a payer setup session or consent is pending."
 )
-AUTOPAY_DISABLE_SUBSCRIPTION_ACTIVE_DETAIL = (
-    "Autopay cannot be disabled while active provider subscriptions require the named cancellation workflow."
-)
-REFUND_PRIOR_SETTLING_DETAIL = (
-    "A prior refund for this payment is still settling. Wait for its final provider status before starting another refund."
-)
-RESOURCE_IDENTITY_RECONCILIATION_DETAIL = (
-    "The payer or payment provider identity requires reconciliation before this operation can continue."
-)
+AUTOPAY_DISABLE_SUBSCRIPTION_ACTIVE_DETAIL = "Autopay cannot be disabled while active provider subscriptions require the named cancellation workflow."
+REFUND_PRIOR_SETTLING_DETAIL = "A prior refund for this payment is still settling. Wait for its final provider status before starting another refund."
+RESOURCE_IDENTITY_RECONCILIATION_DETAIL = "The payer or payment provider identity requires reconciliation before this operation can continue."
 
 
 def payer_setup_operation_disposition(
@@ -69,7 +61,9 @@ def payer_setup_operation_disposition(
     operation = claimed.get("operation")
     outcome = str(claimed.get("outcome") or "")
     if not isinstance(operation, dict):
-        raise HTTPException(status_code=503, detail="Payer setup recovery state could not be verified.")
+        raise HTTPException(
+            status_code=503, detail="Payer setup recovery state could not be verified."
+        )
     exact_identity = (
         operation.get("studio_id") == studio_id
         and operation.get("actor_id") == actor_id
@@ -80,7 +74,9 @@ def payer_setup_operation_disposition(
         and operation.get("connect_account_generation") == connect_account_generation
     )
     if not exact_identity:
-        raise HTTPException(status_code=503, detail="Payer setup recovery state could not be verified.")
+        raise HTTPException(
+            status_code=503, detail="Payer setup recovery state could not be verified."
+        )
     if operation.get("state") != "recovery_authorized":
         return outcome
     try:
@@ -98,7 +94,9 @@ def payer_setup_operation_disposition(
         authorized_at = authorized_at.astimezone(timezone.utc)
         lease_expires_at = lease_expires_at.astimezone(timezone.utc)
     except (KeyError, TypeError, ValueError):
-        raise HTTPException(status_code=503, detail="Payer setup recovery state could not be verified.") from None
+        raise HTTPException(
+            status_code=503, detail="Payer setup recovery state could not be verified."
+        ) from None
     now = datetime.now(timezone.utc)
     if (
         outcome != "continued"
@@ -114,7 +112,9 @@ def payer_setup_operation_disposition(
         or authorized_at > now
         or lease_expires_at <= now
     ):
-        raise HTTPException(status_code=503, detail="Payer setup recovery state could not be verified.")
+        raise HTTPException(
+            status_code=503, detail="Payer setup recovery state could not be verified."
+        )
     return "recovery_safe_retry"
 
 
@@ -142,15 +142,10 @@ def provider_operation_disposition(claimed: dict[str, Any]) -> str:
             proof = str(operation["recovery_proof_sha256"])
             UUID(str(operation["recovery_actor_id"]))
             UUID(str(operation["lease_owner"]))
-            datetime.fromisoformat(
-                str(operation["recovery_authorized_at"]).replace("Z", "+00:00")
-            )
-            datetime.fromisoformat(
-                str(operation["lease_expires_at"]).replace("Z", "+00:00")
-            )
-            recovery_evidence_valid = (
-                len(proof) == 64
-                and all(character in "0123456789abcdef" for character in proof)
+            datetime.fromisoformat(str(operation["recovery_authorized_at"]).replace("Z", "+00:00"))
+            datetime.fromisoformat(str(operation["lease_expires_at"]).replace("Z", "+00:00"))
+            recovery_evidence_valid = len(proof) == 64 and all(
+                character in "0123456789abcdef" for character in proof
             )
         except (KeyError, TypeError, ValueError):
             recovery_evidence_valid = False
@@ -167,18 +162,18 @@ def provider_operation_disposition(claimed: dict[str, Any]) -> str:
                 detail="Billing operation recovery state could not be verified.",
             )
         if recovery_outcome == "provider_no_object_safe_to_retry":
-            if (
-                attempts != 1
-                or provider_object_id
-                or operation.get("provider_secondary_object_id")
-            ):
+            if attempts != 1 or provider_object_id or operation.get("provider_secondary_object_id"):
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Billing operation recovery state could not be verified.",
                 )
             return "recovery_safe_retry"
         if recovery_outcome == "provider_succeeded_reconcile_only":
-            if attempts not in {1, 2} or not expected_prefix or not provider_object_id.startswith(expected_prefix):
+            if (
+                attempts not in {1, 2}
+                or not expected_prefix
+                or not provider_object_id.startswith(expected_prefix)
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Billing operation recovery state could not be verified.",
@@ -248,14 +243,18 @@ def billing_provider_step_plan_sha256(steps: list[dict[str, str]]) -> str:
     }
     normalized: list[dict[str, str]] = []
     for step in steps:
-        if set(step) != required_keys or any(not isinstance(value, str) or not value for value in step.values()):
+        if set(step) != required_keys or any(
+            not isinstance(value, str) or not value for value in step.values()
+        ):
             raise ValueError("Billing provider step plan shape is invalid.")
-        normalized.append({
-            "step_name": step["step_name"],
-            "request_sha256": step["request_sha256"],
-            "provider_operation": step["provider_operation"],
-            "stripe_idempotency_key": step["stripe_idempotency_key"],
-        })
+        normalized.append(
+            {
+                "step_name": step["step_name"],
+                "request_sha256": step["request_sha256"],
+                "provider_operation": step["provider_operation"],
+                "stripe_idempotency_key": step["stripe_idempotency_key"],
+            }
+        )
     postgres_jsonb_text = json.dumps(normalized, ensure_ascii=False, separators=(", ", ": "))
     return hashlib.sha256(postgres_jsonb_text.encode("utf-8")).hexdigest()
 
@@ -311,7 +310,8 @@ class BillingProviderOperationCoordinator:
     ) -> dict[str, Any]:
         rpc_name = (
             "claim_billing_invoice_closeout_operation_v1"
-            if operation_type in {
+            if operation_type
+            in {
                 INVOICE_FINALIZE_OPERATION_TYPE,
                 INVOICE_VOID_OPERATION_TYPE,
             }
@@ -679,10 +679,10 @@ class BillingProviderOperationCoordinator:
                 connect_account_generation=connect_account_generation,
             )
         except PostgrestAPIError as exc:
-            if (
-                str(getattr(exc, "code", "") or "") == "P0002"
-                and "billing_payer_setup_request_not_found"
-                in str(getattr(exc, "message", "") or exc)
+            if str(
+                getattr(exc, "code", "") or ""
+            ) == "P0002" and "billing_payer_setup_request_not_found" in str(
+                getattr(exc, "message", "") or exc
             ):
                 return None
             raise
@@ -1019,17 +1019,19 @@ class BillingProviderOperationCoordinator:
                 },
             ).execute()
         except PostgrestAPIError as exc:
-            if (
-                str(getattr(exc, "code", "") or "") == "P0002"
-                and "billing_enrollment_transition_not_found"
-                in str(getattr(exc, "message", "") or exc)
+            if str(
+                getattr(exc, "code", "") or ""
+            ) == "P0002" and "billing_enrollment_transition_not_found" in str(
+                getattr(exc, "message", "") or exc
             ):
                 return None
             self._raise_safe_rpc_error(exc)
             raise
         envelope = result.data
         if not isinstance(envelope, dict) or not isinstance(envelope.get("intent"), dict):
-            raise HTTPException(status_code=503, detail="Billing transition replay could not be verified.")
+            raise HTTPException(
+                status_code=503, detail="Billing transition replay could not be verified."
+            )
         return envelope
 
     def revoke_enrollment_transition(
@@ -1080,8 +1082,12 @@ class BillingProviderOperationCoordinator:
         except PostgrestAPIError as exc:
             self._raise_safe_rpc_error(exc)
             raise
-        if not isinstance(result.data, list) or any(not isinstance(row, dict) for row in result.data):
-            raise HTTPException(status_code=503, detail="Billing transition due work could not be verified.")
+        if not isinstance(result.data, list) or any(
+            not isinstance(row, dict) for row in result.data
+        ):
+            raise HTTPException(
+                status_code=503, detail="Billing transition due work could not be verified."
+            )
         return result.data
 
     def start_due_enrollment_transition(
@@ -1321,7 +1327,10 @@ class BillingProviderOperationCoordinator:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=AUTOPAY_DISABLE_SUBSCRIPTION_ACTIVE_DETAIL,
             ) from exc
-        if code == "55000" and "billing_provider_operation_resource_prior_refund_unsettled" in message:
+        if (
+            code == "55000"
+            and "billing_provider_operation_resource_prior_refund_unsettled" in message
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=REFUND_PRIOR_SETTLING_DETAIL,

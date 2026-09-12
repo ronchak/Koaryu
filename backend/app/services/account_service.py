@@ -112,17 +112,19 @@ class AccountService:
         try:
             result = (
                 self.supabase.table("account_deletion_requests")
-                .insert({
-                    "user_id": target_user_id,
-                    "studio_id": studio_id,
-                    "requested_by": requested_by,
-                    "requester_email": requester_email,
-                    "status": "scheduled",
-                    "requested_at": now.isoformat(),
-                    "scheduled_for": scheduled_for.isoformat(),
-                    "reason": data.reason,
-                    "metadata": {"delay_days": DELETION_DELAY_DAYS},
-                })
+                .insert(
+                    {
+                        "user_id": target_user_id,
+                        "studio_id": studio_id,
+                        "requested_by": requested_by,
+                        "requester_email": requester_email,
+                        "status": "scheduled",
+                        "requested_at": now.isoformat(),
+                        "scheduled_for": scheduled_for.isoformat(),
+                        "reason": data.reason,
+                        "metadata": {"delay_days": DELETION_DELAY_DAYS},
+                    }
+                )
                 .execute()
             )
         except PostgrestAPIError as exc:
@@ -147,9 +149,15 @@ class AccountService:
                 detail="Failed to schedule account deletion.",
             )
 
-        self._audit(studio_id, requested_by, "account.deletion_scheduled", result.data[0]["id"], {
-            "scheduled_for": scheduled_for.isoformat(),
-        })
+        self._audit(
+            studio_id,
+            requested_by,
+            "account.deletion_scheduled",
+            result.data[0]["id"],
+            {
+                "scheduled_for": scheduled_for.isoformat(),
+            },
+        )
         return self._to_response(result.data[0])
 
     async def cancel_deletion(
@@ -164,11 +172,13 @@ class AccountService:
         now = datetime.now(timezone.utc).isoformat()
         result = (
             self.supabase.table("account_deletion_requests")
-            .update({
-                "status": "canceled",
-                "canceled_at": now,
-                "canceled_by": user_id,
-            })
+            .update(
+                {
+                    "status": "canceled",
+                    "canceled_at": now,
+                    "canceled_by": user_id,
+                }
+            )
             .eq("id", existing["id"])
             .eq("user_id", user_id)
             .eq("status", "scheduled")
@@ -198,22 +208,27 @@ class AccountService:
                     response.completed += 1
                 else:
                     response.failed += 1
-                    response.failures.append(AccountDeletionProcessFailure(
-                        request_id=request_id,
-                        user_id=None,
-                        detail="Account deletion claim was lost before completion.",
-                    ))
+                    response.failures.append(
+                        AccountDeletionProcessFailure(
+                            request_id=request_id,
+                            user_id=None,
+                            detail="Account deletion claim was lost before completion.",
+                        )
+                    )
                 continue
 
             try:
                 self._ensure_deletion_will_not_orphan_studios(user_id)
             except AccountAuthLookupError as exc:
                 response.failed += 1
-                response.failures.append(AccountDeletionProcessFailure(
-                    request_id=request_id,
-                    user_id=user_id,
-                    detail=str(exc) or "Could not verify survivor admin Auth status. Retry after the processing claim expires.",
-                ))
+                response.failures.append(
+                    AccountDeletionProcessFailure(
+                        request_id=request_id,
+                        user_id=user_id,
+                        detail=str(exc)
+                        or "Could not verify survivor admin Auth status. Retry after the processing claim expires.",
+                    )
+                )
                 continue
             except HTTPException as exc:
                 if self._mark_deletion_canceled(
@@ -224,11 +239,13 @@ class AccountService:
                     response.blocked += 1
                 else:
                     response.failed += 1
-                    response.failures.append(AccountDeletionProcessFailure(
-                        request_id=request_id,
-                        user_id=user_id,
-                        detail="Account deletion claim was lost before cancellation.",
-                    ))
+                    response.failures.append(
+                        AccountDeletionProcessFailure(
+                            request_id=request_id,
+                            user_id=user_id,
+                            detail="Account deletion claim was lost before cancellation.",
+                        )
+                    )
                 continue
 
             try:
@@ -237,28 +254,38 @@ class AccountService:
                     response.completed += 1
                 else:
                     response.failed += 1
-                    response.failures.append(AccountDeletionProcessFailure(
-                        request_id=request_id,
-                        user_id=user_id,
-                        detail="Account deletion claim was lost after Auth deletion.",
-                    ))
+                    response.failures.append(
+                        AccountDeletionProcessFailure(
+                            request_id=request_id,
+                            user_id=user_id,
+                            detail="Account deletion claim was lost after Auth deletion.",
+                        )
+                    )
             except Exception as exc:
                 response.failed += 1
-                response.failures.append(AccountDeletionProcessFailure(
-                    request_id=request_id,
-                    user_id=user_id,
-                    detail=str(exc) or exc.__class__.__name__,
-                ))
+                response.failures.append(
+                    AccountDeletionProcessFailure(
+                        request_id=request_id,
+                        user_id=user_id,
+                        detail=str(exc) or exc.__class__.__name__,
+                    )
+                )
 
         return response
 
     def _claim_due_deletion_requests(self, *, limit: int) -> list[tuple[dict[str, Any], str]]:
         claim_token = uuid.uuid4().hex
-        result = execute_required_rpc(self.supabase, "claim_due_account_deletion_requests", {
-            "p_limit": limit,
-            "p_processing_token": claim_token,
-            "p_stale_after_seconds": int(ACCOUNT_DELETION_PROCESSING_STALE_AFTER.total_seconds()),
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "claim_due_account_deletion_requests",
+            {
+                "p_limit": limit,
+                "p_processing_token": claim_token,
+                "p_stale_after_seconds": int(
+                    ACCOUNT_DELETION_PROCESSING_STALE_AFTER.total_seconds()
+                ),
+            },
+        )
         return [(row, claim_token) for row in rpc_rows(result)]
 
     def _get_scheduled_deletion_row(self, user_id: str) -> Optional[dict[str, Any]]:
@@ -273,12 +300,16 @@ class AccountService:
         return (result.data or [None])[0]
 
     def _mark_deletion_completed(self, request_id: str, *, processing_token: str) -> bool:
-        result = execute_required_rpc(self.supabase, "finish_account_deletion_request", {
-            "p_request_id": request_id,
-            "p_processing_token": processing_token,
-            "p_status": "completed",
-            "p_reason": None,
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "finish_account_deletion_request",
+            {
+                "p_request_id": request_id,
+                "p_processing_token": processing_token,
+                "p_status": "completed",
+                "p_reason": None,
+            },
+        )
         row = first_rpc_row(result) or {}
         return bool(row.get("updated"))
 
@@ -289,27 +320,32 @@ class AccountService:
         *,
         processing_token: str,
     ) -> bool:
-        result = execute_required_rpc(self.supabase, "finish_account_deletion_request", {
-            "p_request_id": request_id,
-            "p_processing_token": processing_token,
-            "p_status": "canceled",
-            "p_reason": reason[:500],
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "finish_account_deletion_request",
+            {
+                "p_request_id": request_id,
+                "p_processing_token": processing_token,
+                "p_status": "canceled",
+                "p_reason": reason[:500],
+            },
+        )
         row = first_rpc_row(result) or {}
         return bool(row.get("updated"))
 
-    def _resolve_requested_studio_id(self, user_id: str, requested_studio_id: Optional[str]) -> Optional[str]:
+    def _resolve_requested_studio_id(
+        self, user_id: str, requested_studio_id: Optional[str]
+    ) -> Optional[str]:
         try:
-            return resolve_staff_role_for_user(self.supabase, user_id, requested_studio_id)["studio_id"]
+            return resolve_staff_role_for_user(self.supabase, user_id, requested_studio_id)[
+                "studio_id"
+            ]
         except HTTPException:
             return None
 
     def _ensure_deletion_will_not_orphan_studios(self, user_id: str) -> None:
         owned_studios = (
-            self.supabase.table("studios")
-            .select("id")
-            .eq("owner_id", user_id)
-            .execute()
+            self.supabase.table("studios").select("id").eq("owner_id", user_id).execute()
         )
         if owned_studios.data:
             raise HTTPException(
@@ -348,7 +384,6 @@ class AccountService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Add another active admin before deleting this account.",
                 )
-
 
     def _get_auth_user(self, user_id: str) -> Any:
         try:
@@ -410,14 +445,16 @@ class AccountService:
     ) -> None:
         if not studio_id:
             return
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": action,
-            "entity_type": "account_deletion_request",
-            "entity_id": entity_id,
-            "metadata": metadata,
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": action,
+                "entity_type": "account_deletion_request",
+                "entity_id": entity_id,
+                "metadata": metadata,
+            }
+        ).execute()
 
     def _to_response(self, row: dict[str, Any]) -> AccountDeletionRequestResponse:
         return AccountDeletionRequestResponse(

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildProgramAttendanceRows, calculateAttendanceMetrics } from "../src/lib/report-metrics.ts";
+import {
+  buildProgramAttendanceRows,
+  calculateAttendanceMetrics,
+} from "../src/lib/report-metrics.ts";
 
 describe("calculateAttendanceMetrics", () => {
   it("preserves the reports route utilization display semantics", () => {

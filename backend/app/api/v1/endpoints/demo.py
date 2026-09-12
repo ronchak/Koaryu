@@ -90,6 +90,7 @@ async def reset_demo_studio(
         ensure_demo_studio_target(membership["studio_id"])
 
         return await DemoService(client).reset_demo_studio(membership["studio_id"], user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -127,6 +128,7 @@ async def clear_studio_data(
         ensure_demo_studio_target(membership["studio_id"])
 
         return await DemoService(client).clear_studio_data(membership["studio_id"])
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

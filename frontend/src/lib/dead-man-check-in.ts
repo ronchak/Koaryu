@@ -1,11 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { isSafeHeaderSecret } from "./header-secret.ts";
-import {
-  parsePinnedJson,
-  pinnedHttpsRequest,
-  type PinnedHttpsResponse,
-} from "./pinned-https.ts";
+import { parsePinnedJson, pinnedHttpsRequest, type PinnedHttpsResponse } from "./pinned-https.ts";
 
 type WorkerId = "evaluator" | "deletion-worker";
 
@@ -38,20 +34,21 @@ function configuredDestination(workerId: WorkerId) {
   try {
     const parsed = new URL(raw);
     if (
-      parsed.protocol !== "https:"
-      || parsed.username
-      || parsed.password
-      || parsed.search
-      || parsed.hash
-      || (parsed.port && parsed.port !== "443")
-      || parsed.hostname === "localhost"
-      || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(parsed.hostname)
-      || parsed.hostname.startsWith("[")
-      || [".localhost", ".local", ".test", ".invalid", ".example"].some(
-        (suffix) => parsed.hostname.endsWith(suffix),
-      )
-      || parsed.hostname !== expectedHostname
-    ) return null;
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash ||
+      (parsed.port && parsed.port !== "443") ||
+      parsed.hostname === "localhost" ||
+      /^\d{1,3}(?:\.\d{1,3}){3}$/.test(parsed.hostname) ||
+      parsed.hostname.startsWith("[") ||
+      [".localhost", ".local", ".test", ".invalid", ".example"].some((suffix) =>
+        parsed.hostname.endsWith(suffix),
+      ) ||
+      parsed.hostname !== expectedHostname
+    )
+      return null;
   } catch {
     return null;
   }
@@ -73,7 +70,10 @@ export function validateDeadManCheckInConfiguration({
   if (!configuredDestination(workerId)) {
     throw new Error("dead-man destination is not safely configured");
   }
-  if (!SHA_PATTERN.test(commitSha) || !["development", "test", "staging", "production"].includes(environment)) {
+  if (
+    !SHA_PATTERN.test(commitSha) ||
+    !["development", "test", "staging", "production"].includes(environment)
+  ) {
     throw new Error("dead-man identity is invalid");
   }
 }
@@ -119,7 +119,10 @@ export async function sendDeadManCheckIn({
   if (response.status < 200 || response.status >= 300) {
     throw new Error("dead-man destination rejected the check-in");
   }
-  if ((response.headers["content-type"] ?? "").split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+  if (
+    (response.headers["content-type"] ?? "").split(";", 1)[0].trim().toLowerCase() !==
+    "application/json"
+  ) {
     throw new Error("dead-man receipt content type is invalid");
   }
   const parsed = parsePinnedJson(response);
@@ -127,13 +130,13 @@ export async function sendDeadManCheckIn({
     throw new Error("dead-man receipt is invalid");
   }
   if (
-    !parsed
-    || typeof parsed !== "object"
-    || Array.isArray(parsed)
-    || Object.keys(parsed).length !== 1
-    || !("receipt_id" in parsed)
-    || typeof parsed.receipt_id !== "string"
-    || !RECEIPT_PATTERN.test(parsed.receipt_id)
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    Object.keys(parsed).length !== 1 ||
+    !("receipt_id" in parsed) ||
+    typeof parsed.receipt_id !== "string" ||
+    !RECEIPT_PATTERN.test(parsed.receipt_id)
   ) {
     throw new Error("dead-man receipt is invalid");
   }

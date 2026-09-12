@@ -172,18 +172,12 @@ describe("Journey wheel and nested-scroll model", () => {
     assert.equal(canScrollablePanelMove(middle, 1), true);
     assert.equal(canScrollablePanelMove(middle, -1), true);
     assert.equal(
-      canScrollablePanelMove(
-        { scrollTop: 300, scrollHeight: 500, clientHeight: 200 },
-        1
-      ),
-      false
+      canScrollablePanelMove({ scrollTop: 300, scrollHeight: 500, clientHeight: 200 }, 1),
+      false,
     );
     assert.equal(
-      canScrollablePanelMove(
-        { scrollTop: 0, scrollHeight: 500, clientHeight: 200 },
-        -1
-      ),
-      false
+      canScrollablePanelMove({ scrollTop: 0, scrollHeight: 500, clientHeight: 200 }, -1),
+      false,
     );
 
     const consumed = reduceWheelGesture(INITIAL_WHEEL_GESTURE_STATE, {
@@ -219,7 +213,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         interactiveTarget: true,
         panel: scrollablePanel,
       }),
-      { action: "none" }
+      { action: "none" },
     );
     assert.deepEqual(
       decideJourneyKey({
@@ -228,7 +222,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         interactiveTarget: false,
         panel: scrollablePanel,
       }),
-      { action: "panel-scroll", direction: 1, amount: "page" }
+      { action: "panel-scroll", direction: 1, amount: "page" },
     );
     assert.deepEqual(
       decideJourneyKey({
@@ -242,7 +236,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         direction: -1,
         amount: "edge",
         edge: "first",
-      }
+      },
     );
   });
 
@@ -255,7 +249,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         rootContainsActive: false,
       }),
       true,
-      "fresh-load body focus must keep global chapter keys live"
+      "fresh-load body focus must keep global chapter keys live",
     );
     assert.equal(
       shouldHandleJourneyKeyboardFocus({
@@ -264,7 +258,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         activeIsDocumentElement: false,
         rootContainsActive: true,
       }),
-      true
+      true,
     );
     assert.equal(
       shouldHandleJourneyKeyboardFocus({
@@ -274,7 +268,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         rootContainsActive: false,
       }),
       false,
-      "focus outside Journey must retain its own keyboard behavior"
+      "focus outside Journey must retain its own keyboard behavior",
     );
   });
 
@@ -293,7 +287,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         interactiveTarget: false,
         panel: null,
       }),
-      { action: "chapter", direction: -1 }
+      { action: "chapter", direction: -1 },
     );
     assert.deepEqual(
       decideJourneyKey({
@@ -302,7 +296,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         interactiveTarget: false,
         panel: null,
       }),
-      { action: "chapter-edge", edge: "last" }
+      { action: "chapter-edge", edge: "last" },
     );
     assert.deepEqual(
       decideJourneyKey({
@@ -311,7 +305,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         interactiveTarget: false,
         panel: { scrollTop: 300, scrollHeight: 500, clientHeight: 200 },
       }),
-      { action: "chapter", direction: 1 }
+      { action: "chapter", direction: 1 },
     );
   });
 
@@ -323,7 +317,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         panelMoved: false,
         panelCanScroll: false,
       }),
-      0
+      0,
     );
     assert.equal(
       decideTouchChapter({
@@ -332,7 +326,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         panelMoved: false,
         panelCanScroll: false,
       }),
-      1
+      1,
     );
     assert.equal(
       decideTouchChapter({
@@ -341,7 +335,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         panelMoved: false,
         panelCanScroll: false,
       }),
-      -1
+      -1,
     );
     assert.equal(
       decideTouchChapter({
@@ -350,7 +344,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         panelMoved: true,
         panelCanScroll: false,
       }),
-      0
+      0,
     );
     assert.equal(
       decideTouchChapter({
@@ -359,7 +353,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         panelMoved: false,
         panelCanScroll: true,
       }),
-      0
+      0,
     );
   });
 

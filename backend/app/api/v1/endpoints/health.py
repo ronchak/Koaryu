@@ -31,9 +31,7 @@ def _set_health_headers(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store, max-age=0"
 
 
-def _health_payload(
-    state: str, *, configured_mode: str | None = None
-) -> dict[str, str | None]:
+def _health_payload(state: str, *, configured_mode: str | None = None) -> dict[str, str | None]:
     payload = {
         "status": state,
         "version": "1.0.0",

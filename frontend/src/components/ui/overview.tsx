@@ -11,7 +11,9 @@ export function OverviewPanel({
   className?: string;
 }) {
   return (
-    <section className={`overflow-hidden rounded-[6px] border border-border bg-surface ${className}`}>
+    <section
+      className={`overflow-hidden rounded-[6px] border border-border bg-surface ${className}`}
+    >
       {children}
     </section>
   );
@@ -35,10 +37,14 @@ export function OverviewPanelHeader({
   className?: string;
 }) {
   return (
-    <div className={`flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5 ${className}`}>
+    <div
+      className={`flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5 ${className}`}
+    >
       <div className="min-w-0">
         {eyebrow ? (
-          <p className="mb-1 text-[11px] font-medium uppercase tracking-widest text-muted">{eyebrow}</p>
+          <p className="mb-1 text-[11px] font-medium uppercase tracking-widest text-muted">
+            {eyebrow}
+          </p>
         ) : null}
         <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
         {description ? (
@@ -115,7 +121,12 @@ export function SetupStepList({ steps }: { steps: SetupStep[] }) {
 
         if (step.href) {
           return (
-            <Link key={step.id} href={step.href} prefetch={crmLinkPrefetch(step.href)} className={className}>
+            <Link
+              key={step.id}
+              href={step.href}
+              prefetch={crmLinkPrefetch(step.href)}
+              className={className}
+            >
               {content}
             </Link>
           );

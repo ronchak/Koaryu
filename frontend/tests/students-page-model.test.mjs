@@ -87,19 +87,34 @@ describe("students page model", () => {
           legal_last_name: "Stone",
           preferred_name: "Ace",
           is_minor: true,
-          guardians: [{ id: "g-1", first_name: "Gina", last_name: "Stone", email: "guardian@example.test", is_primary_contact: true }],
+          guardians: [
+            {
+              id: "g-1",
+              first_name: "Gina",
+              last_name: "Stone",
+              email: "guardian@example.test",
+              is_primary_contact: true,
+            },
+          ],
           tags: ["paid", "vip", "trial"],
           program_memberships: [
             membership("kids", { program_name: "Kids BJJ" }),
-            membership("adults", { program_name: "Adults", status: "ended", ended_at: "2026-05-01" }),
+            membership("adults", {
+              program_name: "Adults",
+              status: "ended",
+              ended_at: "2026-05-01",
+            }),
           ],
         }),
       ],
-      [program("kids", "Kids BJJ"), program("adults", "Adults")]
+      [program("kids", "Kids BJJ"), program("adults", "Adults")],
     );
 
     assert.equal(rows[0].displayName, "Stone, Ace");
-    assert.deepEqual(rows[0].programs.map((item) => item.id), ["kids"]);
+    assert.deepEqual(
+      rows[0].programs.map((item) => item.id),
+      ["kids"],
+    );
     assert.equal(rows[0].contact, "guardian@example.test");
     assert.deepEqual(rows[0].visibleTags, ["paid", "vip"]);
     assert.equal(rows[0].hiddenTagCount, 1);
@@ -134,7 +149,7 @@ describe("students page model", () => {
           program_memberships: [membership("kids", { program_name: "Kids BJJ" })],
         }),
       ],
-      [program("kids", "Kids BJJ"), program("adults", "Adults")]
+      [program("kids", "Kids BJJ"), program("adults", "Adults")],
     );
 
     const filtered = filterStudentRows(rows, {
@@ -150,7 +165,10 @@ describe("students page model", () => {
       newStudentStartDate: "2026-05-18",
     });
 
-    assert.deepEqual(filtered.map((row) => row.student.id), ["ava"]);
+    assert.deepEqual(
+      filtered.map((row) => row.student.id),
+      ["ava"],
+    );
   });
 
   it("preserves server-provided paging order when derived roster filters are disabled", () => {
@@ -159,7 +177,7 @@ describe("students page model", () => {
         student("bo", { legal_first_name: "Bo", legal_last_name: "Brown", status: "paused" }),
         student("ava", { legal_first_name: "Ava", legal_last_name: "Aardvark", status: "active" }),
       ],
-      []
+      [],
     );
 
     const filtered = filterStudentRows(rows, {
@@ -170,34 +188,37 @@ describe("students page model", () => {
       usesDerivedRosterFilters: false,
     });
 
-    assert.deepEqual(filtered.map((row) => row.student.id), ["bo", "ava"]);
+    assert.deepEqual(
+      filtered.map((row) => row.student.id),
+      ["bo", "ava"],
+    );
   });
 
   it("derives new-student date windows without route-local date math", () => {
     assert.equal(
       getNewStudentStartDate({ today: "2026-05-24", isNewStudentYtd: true, newStudentDays: null }),
-      "2026-01-01"
+      "2026-01-01",
     );
     assert.equal(
       getNewStudentStartDate({ today: "2026-05-24", isNewStudentYtd: false, newStudentDays: 14 }),
-      "2026-05-10"
+      "2026-05-10",
     );
     assert.equal(
       getNewStudentStartDate({ today: "2026-05-24", isNewStudentYtd: false, newStudentDays: null }),
-      null
+      null,
     );
     assert.equal(formatDate(), "\u2014");
   });
 
   it("requests the complete inactivity window instead of the bootstrap range", () => {
-    assert.deepEqual(
-      buildInactivityScheduleDateRange("2026-07-11", 90),
-      { startDate: "2026-04-12", endDate: "2026-07-11" }
-    );
-    assert.deepEqual(
-      buildInactivityScheduleDateRange("2026-07-11", 14),
-      { startDate: "2026-06-27", endDate: "2026-07-11" }
-    );
+    assert.deepEqual(buildInactivityScheduleDateRange("2026-07-11", 90), {
+      startDate: "2026-04-12",
+      endDate: "2026-07-11",
+    });
+    assert.deepEqual(buildInactivityScheduleDateRange("2026-07-11", 14), {
+      startDate: "2026-06-27",
+      endDate: "2026-07-11",
+    });
   });
 
   it("centralizes query-driven roster filter state", () => {
@@ -215,7 +236,7 @@ describe("students page model", () => {
         isNewStudentYtd: true,
         newStudentDays: null,
         newStudentStartDate: "2026-01-01",
-      }
+      },
     );
 
     assert.deepEqual(
@@ -232,7 +253,7 @@ describe("students page model", () => {
         isNewStudentYtd: false,
         newStudentDays: 14,
         newStudentStartDate: "2026-05-10",
-      }
+      },
     );
   });
 
@@ -244,7 +265,7 @@ describe("students page model", () => {
         inactivityThreshold: null,
         pagedRosterEnabled: true,
       }),
-      false
+      false,
     );
     assert.equal(
       shouldUseDerivedRosterFilters({
@@ -253,7 +274,7 @@ describe("students page model", () => {
         inactivityThreshold: null,
         pagedRosterEnabled: true,
       }),
-      false
+      false,
     );
     assert.equal(
       shouldUseDerivedRosterFilters({
@@ -263,7 +284,7 @@ describe("students page model", () => {
         pagedRosterEnabled: true,
         isPreviewMode: true,
       }),
-      true
+      true,
     );
     assert.equal(
       shouldUseDerivedRosterFilters({
@@ -272,7 +293,7 @@ describe("students page model", () => {
         inactivityThreshold: null,
         pagedRosterEnabled: false,
       }),
-      true
+      true,
     );
   });
 
@@ -305,7 +326,7 @@ describe("students page model", () => {
         pageStart: 0,
         totalPages: 1,
         visibleTotal: 12,
-      }
+      },
     );
 
     assert.deepEqual(
@@ -336,7 +357,7 @@ describe("students page model", () => {
         pageStart: 101,
         totalPages: 3,
         visibleTotal: 121,
-      }
+      },
     );
   });
 
@@ -352,7 +373,7 @@ describe("students page model", () => {
         showAddStudent: false,
         showClearFilters: false,
         showImportCsv: false,
-      }
+      },
     );
 
     assert.deepEqual(
@@ -366,7 +387,7 @@ describe("students page model", () => {
         showAddStudent: true,
         showClearFilters: false,
         showImportCsv: true,
-      }
+      },
     );
 
     assert.deepEqual(
@@ -380,7 +401,7 @@ describe("students page model", () => {
         showAddStudent: false,
         showClearFilters: false,
         showImportCsv: true,
-      }
+      },
     );
 
     assert.deepEqual(
@@ -394,7 +415,7 @@ describe("students page model", () => {
         showAddStudent: false,
         showClearFilters: true,
         showImportCsv: false,
-      }
+      },
     );
   });
 
@@ -423,7 +444,7 @@ describe("students page model", () => {
     assert.equal(buildStudentRosterLoadState(base).activeLoadError, null);
     assert.equal(
       buildStudentRosterLoadState({ ...base, programsLoaded: false }).isInitialRosterLoading,
-      true
+      true,
     );
   });
 
@@ -463,11 +484,11 @@ describe("students page model", () => {
   it("appends the roster refresh warning without losing the primary success message", () => {
     assert.equal(
       withStudentRosterRefreshWarning("Student added to the roster."),
-      "Student added to the roster. Koaryu could not refresh the visible roster automatically; refresh the page if the list looks stale."
+      "Student added to the roster. Koaryu could not refresh the visible roster automatically; refresh the page if the list looks stale.",
     );
     assert.equal(
       withStudentRosterRefreshWarning(null),
-      "Koaryu could not refresh the visible roster automatically; refresh the page if the list looks stale."
+      "Koaryu could not refresh the visible roster automatically; refresh the page if the list looks stale.",
     );
   });
 });

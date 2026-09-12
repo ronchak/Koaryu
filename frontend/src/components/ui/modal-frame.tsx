@@ -3,8 +3,7 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 
 type ModalFrameLabel =
-  | { ariaLabel: string; ariaLabelledBy?: never }
-  | { ariaLabel?: never; ariaLabelledBy: string };
+  { ariaLabel: string; ariaLabelledBy?: never } | { ariaLabel?: never; ariaLabelledBy: string };
 
 type ModalFrameProps = ModalFrameLabel & {
   children: ReactNode;
@@ -41,9 +40,8 @@ export function ModalFrame({
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const previousActiveElement = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    const previousActiveElement =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const panel = panelRef.current;
 
     window.requestAnimationFrame(() => {
@@ -74,9 +72,9 @@ export function ModalFrame({
       return;
     }
 
-    const focusable = Array.from(
-      panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
-    ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+    const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+      (element) => element.offsetParent !== null || element === document.activeElement,
+    );
 
     if (focusable.length === 0) {
       event.preventDefault();
@@ -98,15 +96,8 @@ export function ModalFrame({
   }
 
   return (
-    <div
-      className={joinClassNames("koaryu-modal-root", rootClassName)}
-      onKeyDown={handleKeyDown}
-    >
-      <div
-        aria-hidden="true"
-        className="koaryu-modal-backdrop"
-        onClick={onBackdropClick}
-      />
+    <div className={joinClassNames("koaryu-modal-root", rootClassName)} onKeyDown={handleKeyDown}>
+      <div aria-hidden="true" className="koaryu-modal-backdrop" onClick={onBackdropClick} />
       <div
         ref={panelRef}
         role={role}

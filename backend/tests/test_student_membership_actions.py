@@ -33,9 +33,11 @@ class RecordingResponseBuilder:
 
 class StudentMembershipActionsTenantScopeTest(unittest.TestCase):
     def test_list_fetches_memberships_with_student_studio_scope(self):
-        supabase = TableBackedSupabase({
-            "students": [{"id": "student_1", "studio_id": "studio_1", "deleted_at": None}],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [{"id": "student_1", "studio_id": "studio_1", "deleted_at": None}],
+            }
+        )
         response_builder = RecordingResponseBuilder()
         actions = StudentMembershipActions(supabase, FakeMembershipStore(), response_builder)
 
@@ -50,12 +52,14 @@ class StudentMembershipActionsTenantScopeTest(unittest.TestCase):
             RecordingResponseBuilder(),
         )
         actions._ensure_student_exists = lambda *_args: None
-        missing_student = PostgrestAPIError({
-            "code": "P0002",
-            "message": "Student not found.",
-            "details": "",
-            "hint": "",
-        })
+        missing_student = PostgrestAPIError(
+            {
+                "code": "P0002",
+                "message": "Student not found.",
+                "details": "",
+                "hint": "",
+            }
+        )
 
         with (
             patch("app.services.student_membership_actions.ProgramService.ensure_program_active"),
@@ -65,12 +69,14 @@ class StudentMembershipActionsTenantScopeTest(unittest.TestCase):
             ),
             self.assertRaises(HTTPException) as raised,
         ):
-            asyncio.run(actions.add(
-                "student_1",
-                StudentProgramMembershipCreate(program_id="program_1"),
-                "studio_1",
-                "actor_1",
-            ))
+            asyncio.run(
+                actions.add(
+                    "student_1",
+                    StudentProgramMembershipCreate(program_id="program_1"),
+                    "studio_1",
+                    "actor_1",
+                )
+            )
 
         self.assertEqual(raised.exception.status_code, 404)
         self.assertEqual(raised.exception.detail, "Student not found")

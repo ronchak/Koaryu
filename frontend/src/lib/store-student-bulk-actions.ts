@@ -20,7 +20,7 @@ import type {
 
 type CommitStudents = (
   next: Student[] | ((current: Student[]) => Student[]),
-  options?: { mayBePartial?: boolean }
+  options?: { mayBePartial?: boolean },
 ) => void;
 
 interface UseStoreStudentBulkActionsOptions {
@@ -46,180 +46,198 @@ export function useStoreStudentBulkActions({
   studentsMayBePartial,
   studentsRef,
 }: UseStoreStudentBulkActionsOptions) {
-  const bulkAddTagsToStudents = useCallback(async (
-    studentIds: string[],
-    tags: string[],
-    options?: { refreshMode?: "full" | "local" }
-  ): Promise<BulkStudentTagUpdateResponse> => {
-    const normalizedStudentIds = normalizeStudentIds(studentIds);
-    const normalizedTags = normalizeTags(tags);
-    const shouldRefreshFullRoster = options?.refreshMode !== "local";
+  const bulkAddTagsToStudents = useCallback(
+    async (
+      studentIds: string[],
+      tags: string[],
+      options?: { refreshMode?: "full" | "local" },
+    ): Promise<BulkStudentTagUpdateResponse> => {
+      const normalizedStudentIds = normalizeStudentIds(studentIds);
+      const normalizedTags = normalizeTags(tags);
+      const shouldRefreshFullRoster = options?.refreshMode !== "local";
 
-    if (normalizedStudentIds.length === 0) {
-      throw new Error("Select at least one student.");
-    }
+      if (normalizedStudentIds.length === 0) {
+        throw new Error("Select at least one student.");
+      }
 
-    if (normalizedTags.length === 0) {
-      throw new Error("Enter at least one tag.");
-    }
+      if (normalizedTags.length === 0) {
+        throw new Error("Enter at least one tag.");
+      }
 
-    const payload: BulkStudentTagUpdateRequest = {
-      student_ids: normalizedStudentIds,
-      tags_to_add: normalizedTags,
-      tags_to_remove: [],
-    };
-
-    if (isPreviewMode) {
-      const selectedIdSet = new Set(normalizedStudentIds);
-      const nextStudents = applyAddedTagsToStudents(
-        studentsRef.current,
-        normalizedStudentIds,
-        normalizedTags
-      );
-      persistStudents(nextStudents);
-
-      return {
-        updated: studentsRef.current.filter((student) => selectedIdSet.has(student.id)).length,
+      const payload: BulkStudentTagUpdateRequest = {
+        student_ids: normalizedStudentIds,
+        tags_to_add: normalizedTags,
+        tags_to_remove: [],
       };
-    }
 
-    studentMutationEpochRef.current += 1;
-    const liveRequest = beginLiveAuthRequest();
+      if (isPreviewMode) {
+        const selectedIdSet = new Set(normalizedStudentIds);
+        const nextStudents = applyAddedTagsToStudents(
+          studentsRef.current,
+          normalizedStudentIds,
+          normalizedTags,
+        );
+        persistStudents(nextStudents);
 
-    let response: BulkStudentTagUpdateResponse;
-    try {
-      response = await api.post<BulkStudentTagUpdateResponse>(
-        "/students/bulk/tags",
-        payload,
-        liveRequest.token
-      );
-    } catch (error) {
-      if (canCommitLiveMutation(liveRequest)) {
-        onStudentMutation();
+        return {
+          updated: studentsRef.current.filter((student) => selectedIdSet.has(student.id)).length,
+        };
+      }
+
+      studentMutationEpochRef.current += 1;
+      const liveRequest = beginLiveAuthRequest();
+
+      let response: BulkStudentTagUpdateResponse;
+      try {
+        response = await api.post<BulkStudentTagUpdateResponse>(
+          "/students/bulk/tags",
+          payload,
+          liveRequest.token,
+        );
+      } catch (error) {
+        if (canCommitLiveMutation(liveRequest)) {
+          onStudentMutation();
+          try {
+            await refreshStudents();
+          } catch (refreshError) {
+            console.error("Failed to refresh students after bulk tag update error", refreshError);
+          }
+        }
+        throw error;
+      }
+      if (!canCommitLiveMutation(liveRequest)) {
+        return response;
+      }
+
+      if (shouldRefreshFullRoster) {
         try {
           await refreshStudents();
-        } catch (refreshError) {
-          console.error("Failed to refresh students after bulk tag update error", refreshError);
+        } catch (error) {
+          console.error("Failed to refresh students after bulk tag update", error);
+          if (canCommitLiveMutation(liveRequest)) {
+            commitStudents(
+              (current) => applyAddedTagsToStudents(current, normalizedStudentIds, normalizedTags),
+              {
+                mayBePartial: studentsMayBePartial,
+              },
+            );
+          }
         }
-      }
-      throw error;
-    }
-    if (!canCommitLiveMutation(liveRequest)) {
-      return response;
-    }
-
-    if (shouldRefreshFullRoster) {
-      try {
-        await refreshStudents();
-      } catch (error) {
-        console.error("Failed to refresh students after bulk tag update", error);
-        if (canCommitLiveMutation(liveRequest)) {
-          commitStudents((current) => applyAddedTagsToStudents(current, normalizedStudentIds, normalizedTags), {
+      } else {
+        commitStudents(
+          (current) => applyAddedTagsToStudents(current, normalizedStudentIds, normalizedTags),
+          {
             mayBePartial: studentsMayBePartial,
-          });
-        }
+          },
+        );
       }
-    } else {
-      commitStudents((current) => applyAddedTagsToStudents(current, normalizedStudentIds, normalizedTags), {
-        mayBePartial: studentsMayBePartial,
-      });
-    }
 
-    return response;
-  }, [
-    beginLiveAuthRequest,
-    commitStudents,
-    isPreviewMode,
-    onStudentMutation,
-    persistStudents,
-    refreshStudents,
-    studentMutationEpochRef,
-    studentsMayBePartial,
-    studentsRef,
-  ]);
+      return response;
+    },
+    [
+      beginLiveAuthRequest,
+      commitStudents,
+      isPreviewMode,
+      onStudentMutation,
+      persistStudents,
+      refreshStudents,
+      studentMutationEpochRef,
+      studentsMayBePartial,
+      studentsRef,
+    ],
+  );
 
-  const bulkUpdateStudentStatus = useCallback(async (
-    studentIds: string[],
-    status: StudentStatus,
-    options?: { refreshMode?: "full" | "local" }
-  ): Promise<BulkStudentStatusUpdateResponse> => {
-    const normalizedStudentIds = normalizeStudentIds(studentIds);
-    const shouldRefreshFullRoster = options?.refreshMode !== "local";
+  const bulkUpdateStudentStatus = useCallback(
+    async (
+      studentIds: string[],
+      status: StudentStatus,
+      options?: { refreshMode?: "full" | "local" },
+    ): Promise<BulkStudentStatusUpdateResponse> => {
+      const normalizedStudentIds = normalizeStudentIds(studentIds);
+      const shouldRefreshFullRoster = options?.refreshMode !== "local";
 
-    if (normalizedStudentIds.length === 0) {
-      throw new Error("Select at least one student.");
-    }
+      if (normalizedStudentIds.length === 0) {
+        throw new Error("Select at least one student.");
+      }
 
-    const payload: BulkStudentStatusUpdateRequest = {
-      student_ids: normalizedStudentIds,
-      status,
-    };
+      const payload: BulkStudentStatusUpdateRequest = {
+        student_ids: normalizedStudentIds,
+        status,
+      };
 
-    if (isPreviewMode) {
-      const selectedIdSet = new Set(normalizedStudentIds);
-      persistStudents(applyStatusToStudents(studentsRef.current, normalizedStudentIds, status));
+      if (isPreviewMode) {
+        const selectedIdSet = new Set(normalizedStudentIds);
+        persistStudents(applyStatusToStudents(studentsRef.current, normalizedStudentIds, status));
+        onStudentMutation();
+
+        return {
+          updated: studentsRef.current.filter((student) => selectedIdSet.has(student.id)).length,
+        };
+      }
+
+      studentMutationEpochRef.current += 1;
+      const liveRequest = beginLiveAuthRequest();
+
+      let response: BulkStudentStatusUpdateResponse;
+      try {
+        response = await api.post<BulkStudentStatusUpdateResponse>(
+          "/students/bulk/status",
+          payload,
+          liveRequest.token,
+        );
+      } catch (error) {
+        if (canCommitLiveMutation(liveRequest)) {
+          onStudentMutation();
+          try {
+            await refreshStudents();
+          } catch (refreshError) {
+            console.error(
+              "Failed to refresh students after bulk status update error",
+              refreshError,
+            );
+          }
+        }
+        throw error;
+      }
+      if (!canCommitLiveMutation(liveRequest)) {
+        return response;
+      }
+
+      if (shouldRefreshFullRoster) {
+        try {
+          await refreshStudents();
+        } catch (error) {
+          console.error("Failed to refresh students after bulk status update", error);
+          if (canCommitLiveMutation(liveRequest)) {
+            commitStudents(
+              (current) => applyStatusToStudents(current, normalizedStudentIds, status),
+              {
+                mayBePartial: studentsMayBePartial,
+              },
+            );
+          }
+        }
+      } else {
+        commitStudents((current) => applyStatusToStudents(current, normalizedStudentIds, status), {
+          mayBePartial: studentsMayBePartial,
+        });
+      }
+
       onStudentMutation();
-
-      return {
-        updated: studentsRef.current.filter((student) => selectedIdSet.has(student.id)).length,
-      };
-    }
-
-    studentMutationEpochRef.current += 1;
-    const liveRequest = beginLiveAuthRequest();
-
-    let response: BulkStudentStatusUpdateResponse;
-    try {
-      response = await api.post<BulkStudentStatusUpdateResponse>(
-        "/students/bulk/status",
-        payload,
-        liveRequest.token
-      );
-    } catch (error) {
-      if (canCommitLiveMutation(liveRequest)) {
-        onStudentMutation();
-        try {
-          await refreshStudents();
-        } catch (refreshError) {
-          console.error("Failed to refresh students after bulk status update error", refreshError);
-        }
-      }
-      throw error;
-    }
-    if (!canCommitLiveMutation(liveRequest)) {
       return response;
-    }
-
-    if (shouldRefreshFullRoster) {
-      try {
-        await refreshStudents();
-      } catch (error) {
-        console.error("Failed to refresh students after bulk status update", error);
-        if (canCommitLiveMutation(liveRequest)) {
-          commitStudents((current) => applyStatusToStudents(current, normalizedStudentIds, status), {
-            mayBePartial: studentsMayBePartial,
-          });
-        }
-      }
-    } else {
-      commitStudents((current) => applyStatusToStudents(current, normalizedStudentIds, status), {
-        mayBePartial: studentsMayBePartial,
-      });
-    }
-
-    onStudentMutation();
-    return response;
-  }, [
-    beginLiveAuthRequest,
-    commitStudents,
-    isPreviewMode,
-    onStudentMutation,
-    persistStudents,
-    refreshStudents,
-    studentMutationEpochRef,
-    studentsMayBePartial,
-    studentsRef,
-  ]);
+    },
+    [
+      beginLiveAuthRequest,
+      commitStudents,
+      isPreviewMode,
+      onStudentMutation,
+      persistStudents,
+      refreshStudents,
+      studentMutationEpochRef,
+      studentsMayBePartial,
+      studentsRef,
+    ],
+  );
 
   return {
     bulkAddTagsToStudents,

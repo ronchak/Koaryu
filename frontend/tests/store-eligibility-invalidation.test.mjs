@@ -8,32 +8,32 @@ describe("student eligibility invalidation", () => {
   it("invalidates preview eligibility after a committed CSV import", () => {
     const importActionsSource = readFileSync(
       new URL("../src/lib/store-student-import-actions.ts", import.meta.url),
-      "utf8"
+      "utf8",
     );
 
     assert.match(
       importActionsSource,
-      /execution\.importedStudents\.length > 0[\s\S]*persistStudents\(execution\.students\);[\s\S]*onStudentMutation\(\);/
+      /execution\.importedStudents\.length > 0[\s\S]*persistStudents\(execution\.students\);[\s\S]*onStudentMutation\(\);/,
     );
   });
 
   it("invalidates preview eligibility after bulk status changes and lead conversion", () => {
     const bulkActionsSource = readFileSync(
       new URL("../src/lib/store-student-bulk-actions.ts", import.meta.url),
-      "utf8"
+      "utf8",
     );
     const leadActionsSource = readFileSync(
       new URL("../src/lib/store-lead-actions.ts", import.meta.url),
-      "utf8"
+      "utf8",
     );
 
     assert.match(
       bulkActionsSource,
-      /if \(isPreviewMode\)[\s\S]*persistStudents\(applyStatusToStudents[\s\S]*onStudentMutation\(\);/
+      /if \(isPreviewMode\)[\s\S]*persistStudents\(applyStatusToStudents[\s\S]*onStudentMutation\(\);/,
     );
     assert.match(
       leadActionsSource,
-      /if \(isPreviewMode\)[\s\S]*persistStudents\(\[conversion\.student, \.\.\.studentsRef\.current\]\);[\s\S]*persistLeads[\s\S]*onStudentMutation\(\);/
+      /if \(isPreviewMode\)[\s\S]*persistStudents\(\[conversion\.student, \.\.\.studentsRef\.current\]\);[\s\S]*persistLeads[\s\S]*onStudentMutation\(\);/,
     );
   });
 
@@ -44,10 +44,14 @@ describe("student eligibility invalidation", () => {
     let cleared = 0;
 
     invalidateEligibilityAfterStudentMutation({
-      clearCurrentEligibility: () => { cleared += 1; },
+      clearCurrentEligibility: () => {
+        cleared += 1;
+      },
       currentLadderIdRef,
       eligibilityCacheRef,
-      onRefreshError: (error) => { throw error; },
+      onRefreshError: (error) => {
+        throw error;
+      },
       refreshEligibility: async (...args) => {
         calls.push(args);
         return [];

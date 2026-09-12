@@ -70,13 +70,7 @@ export function buildContentSecurityPolicy(env: SecurityHeaderEnvironment): stri
     // serves the signed student-photo URLs.
     "img-src": unique(["'self'", "data:", "blob:", supabaseOrigin]),
     "font-src": ["'self'"],
-    "connect-src": unique([
-      "'self'",
-      supabaseOrigin,
-      apiOrigin,
-      ...devConnect,
-      ...toolbarConnect,
-    ]),
+    "connect-src": unique(["'self'", supabaseOrigin, apiOrigin, ...devConnect, ...toolbarConnect]),
     "media-src": ["'none'"],
     "worker-src": ["'none'"],
     "object-src": ["'none'"],
@@ -119,7 +113,8 @@ export function securityHeaders(env: SecurityHeaderEnvironment): HeaderEntry[] {
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     {
       key: "Permissions-Policy",
-      value: "accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
+      value:
+        "accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
     },
     {
       key: "Strict-Transport-Security",

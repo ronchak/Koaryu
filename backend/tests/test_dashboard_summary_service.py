@@ -54,7 +54,9 @@ def assert_dashboard_student_columns(columns: str) -> None:
         raise AssertionError("Dashboard summary must not select full student rows.")
     leaked_columns = selected.intersection(STUDENT_PII_COLUMNS)
     if leaked_columns:
-        raise AssertionError(f"Dashboard summary selected student PII columns: {sorted(leaked_columns)}")
+        raise AssertionError(
+            f"Dashboard summary selected student PII columns: {sorted(leaked_columns)}"
+        )
 
 
 class FakeSupabase(TableBackedSupabase):
@@ -97,26 +99,30 @@ class DashboardSummaryServiceTest(unittest.TestCase):
 
     def fully_materialized_tables(self):
         tables = self.base_tables()
-        tables["class_sessions"].append({
-            "id": "generated-session",
-            "studio_id": "studio-1",
-            "template_id": "template-generated",
-            "name": "Advanced Class",
-            "date": "2026-05-20",
-            "start_time": "18:00:00",
-            "end_time": "19:00:00",
-            "status": "scheduled",
-            "deleted_at": None,
-            "capacity": 12,
-        })
+        tables["class_sessions"].append(
+            {
+                "id": "generated-session",
+                "studio_id": "studio-1",
+                "template_id": "template-generated",
+                "name": "Advanced Class",
+                "date": "2026-05-20",
+                "start_time": "18:00:00",
+                "end_time": "19:00:00",
+                "status": "scheduled",
+                "deleted_at": None,
+                "capacity": 12,
+            }
+        )
         return tables
 
     def test_test_readiness_counts_defers_full_eligibility_engine(self):
-        fake_supabase = FakeSupabase({
-            "attendance": [{"id": "attendance-1", "studio_id": "studio-1"}],
-            "promotions": [{"id": "promotion-1", "studio_id": "studio-1"}],
-            "student_program_memberships": [{"id": "membership-1", "studio_id": "studio-1"}],
-        })
+        fake_supabase = FakeSupabase(
+            {
+                "attendance": [{"id": "attendance-1", "studio_id": "studio-1"}],
+                "promotions": [{"id": "promotion-1", "studio_id": "studio-1"}],
+                "student_program_memberships": [{"id": "membership-1", "studio_id": "studio-1"}],
+            }
+        )
         service = DashboardSummaryService(fake_supabase)
 
         counts = service._test_readiness_counts("studio-1")
@@ -141,38 +147,225 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         today = "2026-05-20"
         return {
             "students": [
-                {"id": f"s-{index}", "studio_id": "studio-1", "legal_first_name": f"Student{index}", "legal_last_name": "One", "preferred_name": None, "status": "active", "hold_start_date": None, "hold_end_date": None, "membership_start_date": "2026-01-01", "created_at": "2026-01-01T00:00:00Z", "deleted_at": None, "emergency_contact_name": None if index == 248 else "" if index == 249 else f"Contact {index}"}
+                {
+                    "id": f"s-{index}",
+                    "studio_id": "studio-1",
+                    "legal_first_name": f"Student{index}",
+                    "legal_last_name": "One",
+                    "preferred_name": None,
+                    "status": "active",
+                    "hold_start_date": None,
+                    "hold_end_date": None,
+                    "membership_start_date": "2026-01-01",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "deleted_at": None,
+                    "emergency_contact_name": None
+                    if index == 248
+                    else ""
+                    if index == 249
+                    else f"Contact {index}",
+                }
                 for index in range(250)
-            ] + [
-                {"id": "trial", "studio_id": "studio-1", "legal_first_name": "Trial", "legal_last_name": "One", "preferred_name": None, "status": "trialing", "hold_start_date": None, "hold_end_date": None, "membership_start_date": "2026-05-10", "created_at": "2026-05-10T00:00:00Z", "deleted_at": None, "emergency_contact_name": "Trial Contact"},
-                {"id": "paused", "studio_id": "studio-1", "legal_first_name": "Paused", "legal_last_name": "One", "preferred_name": None, "status": "paused", "hold_start_date": today, "hold_end_date": None, "membership_start_date": "2026-04-01", "created_at": "2026-04-01T00:00:00Z", "deleted_at": None, "emergency_contact_name": "Paused Contact"},
-                {"id": "inactive", "studio_id": "studio-1", "legal_first_name": "Inactive", "legal_last_name": "One", "preferred_name": None, "status": "inactive", "hold_start_date": None, "hold_end_date": None, "membership_start_date": "2025-01-01", "created_at": "2025-01-01T00:00:00Z", "deleted_at": None},
-                {"id": "canceled", "studio_id": "studio-1", "legal_first_name": "Canceled", "legal_last_name": "One", "preferred_name": None, "status": "canceled", "hold_start_date": None, "hold_end_date": None, "membership_start_date": "2025-01-01", "created_at": "2025-01-01T00:00:00Z", "deleted_at": None},
-                {"id": "deleted", "studio_id": "studio-1", "legal_first_name": "Deleted", "legal_last_name": "One", "preferred_name": None, "status": "active", "hold_start_date": None, "hold_end_date": None, "membership_start_date": "2026-01-01", "created_at": "2026-01-01T00:00:00Z", "deleted_at": "2026-05-01T00:00:00Z", "emergency_contact_name": "Deleted Contact"},
-                {"id": "other-studio", "studio_id": "studio-2", "legal_first_name": "Other", "legal_last_name": "Studio", "preferred_name": None, "status": "active", "hold_start_date": None, "hold_end_date": None, "membership_start_date": "2026-01-01", "created_at": "2026-01-01T00:00:00Z", "deleted_at": None, "emergency_contact_name": "Other Contact"},
+            ]
+            + [
+                {
+                    "id": "trial",
+                    "studio_id": "studio-1",
+                    "legal_first_name": "Trial",
+                    "legal_last_name": "One",
+                    "preferred_name": None,
+                    "status": "trialing",
+                    "hold_start_date": None,
+                    "hold_end_date": None,
+                    "membership_start_date": "2026-05-10",
+                    "created_at": "2026-05-10T00:00:00Z",
+                    "deleted_at": None,
+                    "emergency_contact_name": "Trial Contact",
+                },
+                {
+                    "id": "paused",
+                    "studio_id": "studio-1",
+                    "legal_first_name": "Paused",
+                    "legal_last_name": "One",
+                    "preferred_name": None,
+                    "status": "paused",
+                    "hold_start_date": today,
+                    "hold_end_date": None,
+                    "membership_start_date": "2026-04-01",
+                    "created_at": "2026-04-01T00:00:00Z",
+                    "deleted_at": None,
+                    "emergency_contact_name": "Paused Contact",
+                },
+                {
+                    "id": "inactive",
+                    "studio_id": "studio-1",
+                    "legal_first_name": "Inactive",
+                    "legal_last_name": "One",
+                    "preferred_name": None,
+                    "status": "inactive",
+                    "hold_start_date": None,
+                    "hold_end_date": None,
+                    "membership_start_date": "2025-01-01",
+                    "created_at": "2025-01-01T00:00:00Z",
+                    "deleted_at": None,
+                },
+                {
+                    "id": "canceled",
+                    "studio_id": "studio-1",
+                    "legal_first_name": "Canceled",
+                    "legal_last_name": "One",
+                    "preferred_name": None,
+                    "status": "canceled",
+                    "hold_start_date": None,
+                    "hold_end_date": None,
+                    "membership_start_date": "2025-01-01",
+                    "created_at": "2025-01-01T00:00:00Z",
+                    "deleted_at": None,
+                },
+                {
+                    "id": "deleted",
+                    "studio_id": "studio-1",
+                    "legal_first_name": "Deleted",
+                    "legal_last_name": "One",
+                    "preferred_name": None,
+                    "status": "active",
+                    "hold_start_date": None,
+                    "hold_end_date": None,
+                    "membership_start_date": "2026-01-01",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "deleted_at": "2026-05-01T00:00:00Z",
+                    "emergency_contact_name": "Deleted Contact",
+                },
+                {
+                    "id": "other-studio",
+                    "studio_id": "studio-2",
+                    "legal_first_name": "Other",
+                    "legal_last_name": "Studio",
+                    "preferred_name": None,
+                    "status": "active",
+                    "hold_start_date": None,
+                    "hold_end_date": None,
+                    "membership_start_date": "2026-01-01",
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "deleted_at": None,
+                    "emergency_contact_name": "Other Contact",
+                },
             ],
             "leads": [
-                {"id": "lead-1", "studio_id": "studio-1", "stage": "inquiry", "follow_up_date": today},
-                {"id": "lead-2", "studio_id": "studio-1", "stage": "enrolled", "follow_up_date": today},
-                {"id": "lead-other", "studio_id": "studio-2", "stage": "inquiry", "follow_up_date": today},
+                {
+                    "id": "lead-1",
+                    "studio_id": "studio-1",
+                    "stage": "inquiry",
+                    "follow_up_date": today,
+                },
+                {
+                    "id": "lead-2",
+                    "studio_id": "studio-1",
+                    "stage": "enrolled",
+                    "follow_up_date": today,
+                },
+                {
+                    "id": "lead-other",
+                    "studio_id": "studio-2",
+                    "stage": "inquiry",
+                    "follow_up_date": today,
+                },
             ],
             "class_sessions": [
-                {"id": "live-session", "studio_id": "studio-1", "template_id": "template-live", "name": "Beginner Class", "date": today, "start_time": "09:00:00", "end_time": "10:00:00", "status": "scheduled", "deleted_at": None, "capacity": 10},
-                {"id": "canceled-session", "studio_id": "studio-1", "template_id": "template-canceled", "name": "Canceled Class", "date": today, "start_time": "11:00:00", "end_time": "12:00:00", "status": "canceled", "deleted_at": None, "capacity": 10},
-                {"id": "deleted-session", "studio_id": "studio-1", "template_id": "template-deleted", "name": "Deleted Class", "date": today, "start_time": "13:00:00", "end_time": "14:00:00", "status": "scheduled", "deleted_at": "2026-05-20T01:00:00Z", "capacity": 10},
+                {
+                    "id": "live-session",
+                    "studio_id": "studio-1",
+                    "template_id": "template-live",
+                    "name": "Beginner Class",
+                    "date": today,
+                    "start_time": "09:00:00",
+                    "end_time": "10:00:00",
+                    "status": "scheduled",
+                    "deleted_at": None,
+                    "capacity": 10,
+                },
+                {
+                    "id": "canceled-session",
+                    "studio_id": "studio-1",
+                    "template_id": "template-canceled",
+                    "name": "Canceled Class",
+                    "date": today,
+                    "start_time": "11:00:00",
+                    "end_time": "12:00:00",
+                    "status": "canceled",
+                    "deleted_at": None,
+                    "capacity": 10,
+                },
+                {
+                    "id": "deleted-session",
+                    "studio_id": "studio-1",
+                    "template_id": "template-deleted",
+                    "name": "Deleted Class",
+                    "date": today,
+                    "start_time": "13:00:00",
+                    "end_time": "14:00:00",
+                    "status": "scheduled",
+                    "deleted_at": "2026-05-20T01:00:00Z",
+                    "capacity": 10,
+                },
             ],
             "class_templates": [
-                {"id": "template-live", "studio_id": "studio-1", "day_of_week": 3, "start_date": "2026-01-01", "end_date": None, "is_active": True},
-                {"id": "template-canceled", "studio_id": "studio-1", "day_of_week": 3, "start_date": "2026-01-01", "end_date": None, "is_active": True},
-                {"id": "template-deleted", "studio_id": "studio-1", "day_of_week": 3, "start_date": "2026-01-01", "end_date": None, "is_active": True},
-                {"id": "template-generated", "studio_id": "studio-1", "day_of_week": 3, "start_date": "2026-01-01", "end_date": None, "is_active": True},
+                {
+                    "id": "template-live",
+                    "studio_id": "studio-1",
+                    "day_of_week": 3,
+                    "start_date": "2026-01-01",
+                    "end_date": None,
+                    "is_active": True,
+                },
+                {
+                    "id": "template-canceled",
+                    "studio_id": "studio-1",
+                    "day_of_week": 3,
+                    "start_date": "2026-01-01",
+                    "end_date": None,
+                    "is_active": True,
+                },
+                {
+                    "id": "template-deleted",
+                    "studio_id": "studio-1",
+                    "day_of_week": 3,
+                    "start_date": "2026-01-01",
+                    "end_date": None,
+                    "is_active": True,
+                },
+                {
+                    "id": "template-generated",
+                    "studio_id": "studio-1",
+                    "day_of_week": 3,
+                    "start_date": "2026-01-01",
+                    "end_date": None,
+                    "is_active": True,
+                },
             ],
             "attendance": [
-                {"id": "a-1", "studio_id": "studio-1", "student_id": "s-0", "session_id": "live-session", "status": "present", "checked_in_at": "2026-05-19T12:00:00Z"},
+                {
+                    "id": "a-1",
+                    "studio_id": "studio-1",
+                    "student_id": "s-0",
+                    "session_id": "live-session",
+                    "status": "present",
+                    "checked_in_at": "2026-05-19T12:00:00Z",
+                },
             ],
             "programs": [
-                {"id": "program-1", "studio_id": "studio-1", "is_system": False, "archived_at": None},
-                {"id": "program-system", "studio_id": "studio-1", "is_system": True, "archived_at": None},
+                {
+                    "id": "program-1",
+                    "studio_id": "studio-1",
+                    "is_system": False,
+                    "archived_at": None,
+                },
+                {
+                    "id": "program-system",
+                    "studio_id": "studio-1",
+                    "is_system": True,
+                    "archived_at": None,
+                },
             ],
             "belt_ladders": [
                 {"id": "ladder-1", "studio_id": "studio-1", "program_id": "program-1"},
@@ -187,8 +380,18 @@ class DashboardSummaryServiceTest(unittest.TestCase):
             ],
             "billing_invoices": [
                 {"id": "invoice-1", "studio_id": "studio-1", "status": "open", "due_date": today},
-                {"id": "invoice-2", "studio_id": "studio-1", "status": "uncollectible", "due_date": None},
-                {"id": "invoice-other", "studio_id": "studio-2", "status": "uncollectible", "due_date": None},
+                {
+                    "id": "invoice-2",
+                    "studio_id": "studio-1",
+                    "status": "uncollectible",
+                    "due_date": None,
+                },
+                {
+                    "id": "invoice-other",
+                    "studio_id": "studio-2",
+                    "status": "uncollectible",
+                    "due_date": None,
+                },
             ],
             "billing_plans": [
                 {"id": "plan-1", "studio_id": "studio-1", "archived_at": None},
@@ -229,8 +432,7 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         student_scan_queries = [
             entry
             for entry in service.supabase.log
-            if entry["table"] == "students"
-            and entry["range"] is not None
+            if entry["table"] == "students" and entry["range"] is not None
         ]
         self.assertEqual(len(student_scan_queries), 1)
         selected_student_columns = {
@@ -241,41 +443,49 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         self.assertNotIn("emergency_contact_relation", selected_student_columns)
         self.assertIn(("eq", "studio_id", "studio-1"), student_scan_queries[0]["filters"])
         self.assertIn(("is", "deleted_at", "null"), student_scan_queries[0]["filters"])
-        self.assertFalse(any(
-            entry["table"] == "students"
-            and any(key == "emergency_contact_name" for _operation, key, _value in entry["filters"])
-            for entry in service.supabase.log
-        ))
+        self.assertFalse(
+            any(
+                entry["table"] == "students"
+                and any(
+                    key == "emergency_contact_name" for _operation, key, _value in entry["filters"]
+                )
+                for entry in service.supabase.log
+            )
+        )
         self.assertEqual(len(service.supabase.log), 29)
 
         serialized = summary.model_dump(mode="json")
-        self.assertTrue({
-            "auth",
-            "studio",
-            "generated_at",
-            "today",
-            "timezone",
-            "students",
-            "leads",
-            "schedule",
-            "belts",
-            "inactivity",
-            "new_students",
-            "operational",
-            "churn",
-            "test_readiness",
-            "billing",
-            "setup",
-            "recent_students",
-            "actions",
-        }.issubset(serialized))
+        self.assertTrue(
+            {
+                "auth",
+                "studio",
+                "generated_at",
+                "today",
+                "timezone",
+                "students",
+                "leads",
+                "schedule",
+                "belts",
+                "inactivity",
+                "new_students",
+                "operational",
+                "churn",
+                "test_readiness",
+                "billing",
+                "setup",
+                "recent_students",
+                "actions",
+            }.issubset(serialized)
+        )
         self.assertEqual(
             {"payment_attention_count", "has_plans", "payments_ready"}
             - serialized["billing"].keys(),
             set(),
         )
 
-    def test_today_is_unavailable_when_template_is_unmaterialized_without_resurrecting_tombstones(self):
+    def test_today_is_unavailable_when_template_is_unmaterialized_without_resurrecting_tombstones(
+        self,
+    ):
         service = self.build_service(self.base_tables())
 
         schedule, today_schedule = service._today_schedule("studio-1", date(2026, 5, 20))
@@ -288,7 +498,9 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         self.assertNotIn("overflow_count", today_schedule.model_dump(mode="json"))
         self.assertFalse(any(entry["table"] == "attendance" for entry in service.supabase.log))
 
-        session_query = next(entry for entry in service.supabase.log if entry["table"] == "class_sessions")
+        session_query = next(
+            entry for entry in service.supabase.log if entry["table"] == "class_sessions"
+        )
         self.assertEqual(
             session_query["columns"],
             "id, template_id, name, start_time, end_time, capacity, status, deleted_at",
@@ -370,23 +582,53 @@ class DashboardSummaryServiceTest(unittest.TestCase):
                 "capacity": 20,
             }
             for session_id, start_time in session_specs
-        ] + [{
-            "id": "tomorrow-session",
-            "studio_id": "studio-1",
-            "template_id": None,
-            "name": "Tomorrow",
-            "date": "2026-05-21",
-            "start_time": "07:00:00",
-            "end_time": "08:00:00",
-            "status": "scheduled",
-            "deleted_at": None,
-            "capacity": 20,
-        }]
+        ] + [
+            {
+                "id": "tomorrow-session",
+                "studio_id": "studio-1",
+                "template_id": None,
+                "name": "Tomorrow",
+                "date": "2026-05-21",
+                "start_time": "07:00:00",
+                "end_time": "08:00:00",
+                "status": "scheduled",
+                "deleted_at": None,
+                "capacity": 20,
+            }
+        ]
         tables["attendance"] = [
-            {"id": "today-attendance", "studio_id": "studio-1", "student_id": "s-0", "session_id": "session-early", "status": "present", "checked_in_at": "2026-05-20T15:00:00Z"},
-            {"id": "absent-attendance", "studio_id": "studio-1", "student_id": "s-1", "session_id": "session-early", "status": "absent", "checked_in_at": "2026-05-20T15:00:00Z"},
-            {"id": "overflow-attendance", "studio_id": "studio-1", "student_id": "s-2", "session_id": "session-late", "status": "present", "checked_in_at": "2026-05-20T15:00:00Z"},
-            {"id": "other-studio-attendance", "studio_id": "studio-2", "student_id": "s-3", "session_id": "session-early", "status": "present", "checked_in_at": "2026-05-20T15:00:00Z"},
+            {
+                "id": "today-attendance",
+                "studio_id": "studio-1",
+                "student_id": "s-0",
+                "session_id": "session-early",
+                "status": "present",
+                "checked_in_at": "2026-05-20T15:00:00Z",
+            },
+            {
+                "id": "absent-attendance",
+                "studio_id": "studio-1",
+                "student_id": "s-1",
+                "session_id": "session-early",
+                "status": "absent",
+                "checked_in_at": "2026-05-20T15:00:00Z",
+            },
+            {
+                "id": "overflow-attendance",
+                "studio_id": "studio-1",
+                "student_id": "s-2",
+                "session_id": "session-late",
+                "status": "present",
+                "checked_in_at": "2026-05-20T15:00:00Z",
+            },
+            {
+                "id": "other-studio-attendance",
+                "studio_id": "studio-2",
+                "student_id": "s-3",
+                "session_id": "session-early",
+                "status": "present",
+                "checked_in_at": "2026-05-20T15:00:00Z",
+            },
         ]
         service = self.build_service(tables)
 
@@ -404,7 +646,9 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         self.assertIsNone(today_schedule.rows[0].expected_count)
         self.assertNotIn("expected_count", today_schedule.rows[0].model_dump(mode="json"))
 
-        attendance_queries = [entry for entry in service.supabase.log if entry["table"] == "attendance"]
+        attendance_queries = [
+            entry for entry in service.supabase.log if entry["table"] == "attendance"
+        ]
         self.assertEqual(len(attendance_queries), 1)
         attendance_query = attendance_queries[0]
         self.assertEqual(attendance_query["columns"], "session_id")
@@ -434,18 +678,20 @@ class DashboardSummaryServiceTest(unittest.TestCase):
 
         malformed_tables = self.base_tables()
         malformed_tables["class_templates"] = []
-        malformed_tables["class_sessions"] = [{
-            "id": "malformed-session",
-            "studio_id": "studio-1",
-            "template_id": None,
-            "name": "",
-            "date": "2026-05-20",
-            "start_time": "not-a-time",
-            "end_time": "10:00:00",
-            "status": "scheduled",
-            "deleted_at": None,
-            "capacity": 10,
-        }]
+        malformed_tables["class_sessions"] = [
+            {
+                "id": "malformed-session",
+                "studio_id": "studio-1",
+                "template_id": None,
+                "name": "",
+                "date": "2026-05-20",
+                "start_time": "not-a-time",
+                "end_time": "10:00:00",
+                "status": "scheduled",
+                "deleted_at": None,
+                "capacity": 10,
+            }
+        ]
         malformed_service = self.build_service(malformed_tables)
 
         malformed_schedule, malformed_today = malformed_service._today_schedule(
@@ -456,7 +702,9 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         self.assertEqual(malformed_schedule.today_sessions, 1)
         self.assertFalse(malformed_today.available)
         self.assertEqual(malformed_today.rows, [])
-        self.assertFalse(any(entry["table"] == "attendance" for entry in malformed_service.supabase.log))
+        self.assertFalse(
+            any(entry["table"] == "attendance" for entry in malformed_service.supabase.log)
+        )
 
     def test_studio_today_uses_valid_timezone_and_falls_back_to_utc(self):
         local_today, local_timezone = DashboardSummaryService._studio_today("America/Los_Angeles")
@@ -471,16 +719,21 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         self.assertEqual(malformed_today, datetime.now(timezone.utc).date())
 
     def test_no_studio_summary_does_not_read_protected_tables(self):
-        fake_supabase = FakeSupabase({"students": [{"id": "should-not-read", "studio_id": "studio-1"}]})
+        fake_supabase = FakeSupabase(
+            {"students": [{"id": "should-not-read", "studio_id": "studio-1"}]}
+        )
         service = DashboardSummaryService(fake_supabase)
         auth = auth_response(studio_id=None)
 
-        with patch(
-            "app.services.dashboard_summary_service.AuthService.get_user_profile",
-            new=AsyncMock(return_value=auth),
-        ), patch(
-            "app.services.dashboard_summary_service.ensure_platform_subscription_access"
-        ) as ensure_access:
+        with (
+            patch(
+                "app.services.dashboard_summary_service.AuthService.get_user_profile",
+                new=AsyncMock(return_value=auth),
+            ),
+            patch(
+                "app.services.dashboard_summary_service.ensure_platform_subscription_access"
+            ) as ensure_access,
+        ):
             summary, _timings = asyncio.run(service.get_dashboard_summary("user-1"))
 
         self.assertIsNone(summary.studio)
@@ -499,12 +752,15 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         fake_supabase = FakeSupabase(self.base_tables())
         service = DashboardSummaryService(fake_supabase)
 
-        with patch(
-            "app.services.dashboard_summary_service.AuthService.get_user_profile",
-            new=AsyncMock(return_value=auth_response()),
-        ), patch(
-            "app.services.dashboard_summary_service.ensure_platform_subscription_access",
-            side_effect=HTTPException(status_code=402, detail="subscription required"),
+        with (
+            patch(
+                "app.services.dashboard_summary_service.AuthService.get_user_profile",
+                new=AsyncMock(return_value=auth_response()),
+            ),
+            patch(
+                "app.services.dashboard_summary_service.ensure_platform_subscription_access",
+                side_effect=HTTPException(status_code=402, detail="subscription required"),
+            ),
         ):
             with self.assertRaises(HTTPException):
                 asyncio.run(service.get_dashboard_summary("user-1"))
@@ -512,12 +768,14 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         self.assertEqual(fake_supabase.log, [])
 
     def test_summary_store_uses_stable_order_for_ranged_fetches(self):
-        fake_supabase = FakeSupabase({
-            "students": [
-                {"id": "student-b", "studio_id": "studio-1"},
-                {"id": "student-a", "studio_id": "studio-1"},
-            ],
-        })
+        fake_supabase = FakeSupabase(
+            {
+                "students": [
+                    {"id": "student-b", "studio_id": "studio-1"},
+                    {"id": "student-a", "studio_id": "studio-1"},
+                ],
+            }
+        )
         store = DashboardSummaryStore(fake_supabase)
 
         rows = store.fetch_rows(
@@ -538,7 +796,9 @@ class DashboardSummaryServiceTest(unittest.TestCase):
 
     def test_summary_store_fetch_one_handles_empty_maybe_single_response(self):
         fake_supabase = MagicMock()
-        maybe_single_query = fake_supabase.table.return_value.select.return_value.maybe_single.return_value
+        maybe_single_query = (
+            fake_supabase.table.return_value.select.return_value.maybe_single.return_value
+        )
         maybe_single_query.execute.return_value = None
         store = DashboardSummaryStore(fake_supabase)
 

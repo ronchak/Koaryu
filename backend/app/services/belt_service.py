@@ -6,9 +6,16 @@ from supabase import Client
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 from app.schemas.belt import (
-    BeltLadderCreate, BeltLadderUpdate, BeltLadderSyncRequest, BeltLadderResponse,
-    BeltRankCreate, BeltRankUpdate, BeltRankResponse,
-    DemoteStudent, PromoteStudent, PromotionResponse,
+    BeltLadderCreate,
+    BeltLadderUpdate,
+    BeltLadderSyncRequest,
+    BeltLadderResponse,
+    BeltRankCreate,
+    BeltRankUpdate,
+    BeltRankResponse,
+    DemoteStudent,
+    PromoteStudent,
+    PromotionResponse,
     EligibilityEntry,
 )
 from app.services.belt_eligibility import BeltEligibilityCalculator
@@ -159,13 +166,7 @@ class BeltService:
                 for row in promotion_rows
             ]
 
-        student_ids = sorted(
-            {
-                row["student_id"]
-                for row in promotion_rows
-                if row.get("student_id")
-            }
-        )
+        student_ids = sorted({row["student_id"] for row in promotion_rows if row.get("student_id")})
         rank_ids = sorted(
             {
                 rank_id
@@ -187,7 +188,9 @@ class BeltService:
                 .execute()
             )
             students_by_id = {
-                row["id"]: f'{row.get("preferred_name") or row.get("legal_first_name") or ""} {row.get("legal_last_name") or ""}'.strip()
+                row[
+                    "id"
+                ]: f"{row.get('preferred_name') or row.get('legal_first_name') or ''} {row.get('legal_last_name') or ''}".strip()
                 for row in (students_result.data or [])
             }
 
@@ -199,22 +202,17 @@ class BeltService:
                 .eq("studio_id", studio_id)
                 .execute()
             )
-            ranks_by_id = {
-                row["id"]: row["name"]
-                for row in (ranks_result.data or [])
-            }
+            ranks_by_id = {row["id"]: row["name"] for row in (ranks_result.data or [])}
 
         return [
             PromotionResponse(
                 **row,
                 student_name=students_by_id.get(row["student_id"]),
                 from_rank_name=(
-                    row.get("from_rank_name_snapshot")
-                    or ranks_by_id.get(row.get("from_rank_id"))
+                    row.get("from_rank_name_snapshot") or ranks_by_id.get(row.get("from_rank_id"))
                 ),
                 to_rank_name=(
-                    row.get("to_rank_name_snapshot")
-                    or ranks_by_id.get(row.get("to_rank_id"))
+                    row.get("to_rank_name_snapshot") or ranks_by_id.get(row.get("to_rank_id"))
                 ),
             )
             for row in promotion_rows
@@ -250,14 +248,16 @@ class BeltService:
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create ladder")
 
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "belt_ladder.created",
-            "entity_type": "belt_ladder",
-            "entity_id": result.data[0]["id"],
-            "metadata": {"name": data.name},
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "belt_ladder.created",
+                "entity_type": "belt_ladder",
+                "entity_id": result.data[0]["id"],
+                "metadata": {"name": data.name},
+            }
+        ).execute()
 
         return BeltLadderResponse(**result.data[0], ranks=[])
 
@@ -279,9 +279,13 @@ class BeltService:
             studio_id,
             "Belt ladder not found",
         )
-        ProgramService(self.supabase).ensure_program_active(studio_id, update_dict.get("program_id"))
+        ProgramService(self.supabase).ensure_program_active(
+            studio_id, update_dict.get("program_id")
+        )
         current_ladder = self._get_ladder_row(ladder_id, studio_id)
-        if "program_id" in update_dict and update_dict.get("program_id") != current_ladder.get("program_id"):
+        if "program_id" in update_dict and update_dict.get("program_id") != current_ladder.get(
+            "program_id"
+        ):
             raise HTTPException(
                 status_code=409,
                 detail="A belt configuration cannot be moved to another program.",
@@ -325,14 +329,16 @@ class BeltService:
             except PostgrestAPIError:
                 pass
 
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "belt_ladder.updated",
-            "entity_type": "belt_ladder",
-            "entity_id": ladder_id,
-            "metadata": update_dict,
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "belt_ladder.updated",
+                "entity_type": "belt_ladder",
+                "entity_id": ladder_id,
+                "metadata": update_dict,
+            }
+        ).execute()
 
         ranks = await self.list_ranks(studio_id, ladder_id)
         return BeltLadderResponse(**result.data[0], ranks=ranks)
@@ -425,7 +431,9 @@ class BeltService:
 
     async def delete_rank(self, rank_id: str, studio_id: str) -> None:
         try:
-            self.supabase.table("belt_ranks").delete().eq("id", rank_id).eq("studio_id", studio_id).execute()
+            self.supabase.table("belt_ranks").delete().eq("id", rank_id).eq(
+                "studio_id", studio_id
+            ).execute()
         except PostgrestAPIError as exc:
             if getattr(exc, "code", None) == "P0001":
                 raise HTTPException(

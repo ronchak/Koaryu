@@ -1,4 +1,5 @@
 """Bounded stable invoice and payment history pages; totals are separate RPC reads."""
+
 import base64
 import json
 from datetime import datetime
@@ -8,12 +9,24 @@ from uuid import UUID
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from app.schemas.billing import BillingInvoicePageResponse, BillingPaymentPageResponse, BillingPaymentResponse
+from app.schemas.billing import (
+    BillingInvoicePageResponse,
+    BillingPaymentPageResponse,
+    BillingPaymentResponse,
+)
 
 
 def get_billing_payment(client, studio_id: str, payment_id: str) -> BillingPaymentResponse:
-    rows = (client.table("billing_payments").select("*")
-            .eq("studio_id", studio_id).eq("id", payment_id).limit(1).execute().data or [])
+    rows = (
+        client.table("billing_payments")
+        .select("*")
+        .eq("studio_id", studio_id)
+        .eq("id", payment_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
     if not rows:
         raise HTTPException(404, "Payment not found.")
     return BillingPaymentResponse.model_validate(rows[0])
@@ -52,17 +65,24 @@ def get_billing_page(
         # Bound the index scan by time; the OR predicate still breaks timestamp ties by ID.
         query = query.lte("created_at", stamp)
         query = query.or_(f"created_at.lt.{stamp},and(created_at.eq.{stamp},id.lt.{anchor.id})")
-    rows = query.order("created_at", desc=True).order("id", desc=True).limit(limit + 1).execute().data or []
+    rows = (
+        query.order("created_at", desc=True).order("id", desc=True).limit(limit + 1).execute().data
+        or []
+    )
     complete = len(rows) <= limit
     items = rows[:limit]
     next_cursor = None
     if not complete:
         last = items[-1]
-        next_cursor = base64.urlsafe_b64encode(json.dumps({
-            "studio_id": studio_id,
-            "dataset": dataset,
-            "created_at": last["created_at"],
-            "id": last["id"],
-        }).encode()).decode()
+        next_cursor = base64.urlsafe_b64encode(
+            json.dumps(
+                {
+                    "studio_id": studio_id,
+                    "dataset": dataset,
+                    "created_at": last["created_at"],
+                    "id": last["id"],
+                }
+            ).encode()
+        ).decode()
     response = BillingInvoicePageResponse if dataset == "invoices" else BillingPaymentPageResponse
     return response(items=items, next_cursor=next_cursor, complete=complete)

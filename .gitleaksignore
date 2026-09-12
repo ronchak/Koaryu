@@ -13,4 +13,4 @@ d77b7d55a458096765428aa3377229dd043fb553:scripts/check-env-examples.test.mjs:str
 # Public browser sessionStorage name, not a credential or access token.
 dcb03a391ccdcf566f4558573efe056126f7af86:frontend/src/lib/student-roster-location.ts:generic-api-key:25
 # The same identifier in the separate current-tree scan.
-frontend/src/lib/student-roster-location.ts:generic-api-key:25
+frontend/src/lib/student-roster-location.ts:generic-api-key:34

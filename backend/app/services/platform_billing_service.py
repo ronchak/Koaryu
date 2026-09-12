@@ -210,12 +210,12 @@ class PlatformBillingService:
         return status_response(
             row,
             self._email_usage(studio_id),
-            self_checkout_enabled=bool(
-                getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False)
-            ),
+            self_checkout_enabled=bool(getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False)),
         )
 
-    def get_access_status_row(self, studio_id: str, *, strict_repairs: bool = False) -> dict[str, Any]:
+    def get_access_status_row(
+        self, studio_id: str, *, strict_repairs: bool = False
+    ) -> dict[str, Any]:
         if strict_repairs:
             while True:
                 with _access_repair_metadata_lock:
@@ -265,7 +265,11 @@ class PlatformBillingService:
         # strict_repairs marks the authorization path. Only that path is
         # throttled; explicit billing reads still reconcile on every call.
         window = self._active_access_repair_window(studio_id) if strict_repairs else None
-        if strict_repairs and window is not None and window.row_fingerprint != self._row_fingerprint(row):
+        if (
+            strict_repairs
+            and window is not None
+            and window.row_fingerprint != self._row_fingerprint(row)
+        ):
             # The row is not the one the outcome was recorded for — webhook
             # projection or an Admin refresh rewrote it. The recorded outcome
             # says nothing about this row, so the window is void and the new
@@ -423,11 +427,7 @@ class PlatformBillingService:
         # retain studios that have since been fixed.
         with _access_repair_metadata_lock:
             snapshot = list(_access_repair_retry_after.items())
-        expired = [
-            (key, window)
-            for key, window in snapshot
-            if now >= window.retry_after
-        ]
+        expired = [(key, window) for key, window in snapshot if now >= window.retry_after]
         new_window = _AccessRepairWindow(
             now + seconds,
             replay_fault=replay_fault,
@@ -461,7 +461,10 @@ class PlatformBillingService:
             )
         row = self._repair_missing_subscription(row)
         row = self._repair_subscription_periods(row)
-        if row.get("stripe_subscription_id") and (row.get("status") or "") in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
+        if (
+            row.get("stripe_subscription_id")
+            and (row.get("status") or "") in LIVE_STRIPE_SUBSCRIPTION_STATUSES
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Koaryu Core billing is already active. Open the billing portal to manage this subscription.",
@@ -487,29 +490,53 @@ class PlatformBillingService:
             ),
         }
         normalize_idempotency_key(idempotency_key)
-        reservation = first_rpc_row(execute_required_rpc(
-            self.supabase,
-            "reserve_core_checkout_v2_atomic",
-            {"p_studio_id": studio_id},
-        )) or {}
+        reservation = (
+            first_rpc_row(
+                execute_required_rpc(
+                    self.supabase,
+                    "reserve_core_checkout_v2_atomic",
+                    {"p_studio_id": studio_id},
+                )
+            )
+            or {}
+        )
         reservation_outcome = reservation.get("outcome")
         if reservation_outcome == "existing" and reservation.get("session_url"):
-            self._audit(studio_id, actor_id, "platform_billing.checkout_reused", studio_id, {"customer_id": customer_id})
+            self._audit(
+                studio_id,
+                actor_id,
+                "platform_billing.checkout_reused",
+                studio_id,
+                {"customer_id": customer_id},
+            )
             return BillingLinkResponse(url=reservation["session_url"])
         if reservation_outcome == "comped":
-            raise HTTPException(status_code=409, detail="Koaryu Core access is comped for this studio. No checkout is required.")
+            raise HTTPException(
+                status_code=409,
+                detail="Koaryu Core access is comped for this studio. No checkout is required.",
+            )
         if reservation_outcome == "active":
-            raise HTTPException(status_code=409, detail="Koaryu Core billing is already active. Open the billing portal to manage this subscription.")
+            raise HTTPException(
+                status_code=409,
+                detail="Koaryu Core billing is already active. Open the billing portal to manage this subscription.",
+            )
         if reservation_outcome == "in_progress":
-            raise HTTPException(status_code=409, detail="Koaryu Core checkout is already being prepared. Try again in a moment.")
+            raise HTTPException(
+                status_code=409,
+                detail="Koaryu Core checkout is already being prepared. Try again in a moment.",
+            )
         reservation_token = reservation.get("reservation_token")
         checkout_epoch = reservation.get("checkout_epoch")
         if reservation_outcome != "reserved" or not reservation_token or checkout_epoch is None:
             raise HTTPException(status_code=500, detail="Failed to reserve Koaryu Core checkout.")
         trial_period_days = reservation.get("trial_period_days")
         if trial_period_days not in (None, 30):
-            self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
-            raise HTTPException(status_code=500, detail="Koaryu Core checkout returned invalid trial eligibility.")
+            self._release_core_checkout_reservation(
+                studio_id, str(reservation_token), int(checkout_epoch)
+            )
+            raise HTTPException(
+                status_code=500, detail="Koaryu Core checkout returned invalid trial eligibility."
+            )
         checkout_key = build_core_checkout_idempotency_key(
             studio_id,
             str(reservation_token),
@@ -527,23 +554,44 @@ class PlatformBillingService:
             )
         except Exception as exc:
             if not self._is_missing_stripe_customer_error(exc):
-                self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
+                self._release_core_checkout_reservation(
+                    studio_id, str(reservation_token), int(checkout_epoch)
+                )
                 raise
-            self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
+            self._release_core_checkout_reservation(
+                studio_id, str(reservation_token), int(checkout_epoch)
+            )
             customer_id = self._create_platform_customer(stripe_service, studio_id, studio)
-            reservation = first_rpc_row(execute_required_rpc(
-                self.supabase,
-                "reserve_core_checkout_v2_atomic",
-                {"p_studio_id": studio_id},
-            )) or {}
+            reservation = (
+                first_rpc_row(
+                    execute_required_rpc(
+                        self.supabase,
+                        "reserve_core_checkout_v2_atomic",
+                        {"p_studio_id": studio_id},
+                    )
+                )
+                or {}
+            )
             reservation_token = reservation.get("reservation_token")
             checkout_epoch = reservation.get("checkout_epoch")
-            if reservation.get("outcome") != "reserved" or not reservation_token or checkout_epoch is None:
-                raise HTTPException(status_code=409, detail="Koaryu Core checkout state changed. Start checkout again.")
+            if (
+                reservation.get("outcome") != "reserved"
+                or not reservation_token
+                or checkout_epoch is None
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Koaryu Core checkout state changed. Start checkout again.",
+                )
             trial_period_days = reservation.get("trial_period_days")
             if trial_period_days not in (None, 30):
-                self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
-                raise HTTPException(status_code=500, detail="Koaryu Core checkout returned invalid trial eligibility.")
+                self._release_core_checkout_reservation(
+                    studio_id, str(reservation_token), int(checkout_epoch)
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Koaryu Core checkout returned invalid trial eligibility.",
+                )
             checkout_key = build_core_checkout_idempotency_key(
                 studio_id,
                 str(reservation_token),
@@ -559,8 +607,14 @@ class PlatformBillingService:
                 **checkout_urls,
             )
         session_url = session["url"] if isinstance(session, dict) else session.url
-        session_id = session.get("id") if isinstance(session, dict) else getattr(session, "id", None)
-        expires_at = session.get("expires_at") if isinstance(session, dict) else getattr(session, "expires_at", None)
+        session_id = (
+            session.get("id") if isinstance(session, dict) else getattr(session, "id", None)
+        )
+        expires_at = (
+            session.get("expires_at")
+            if isinstance(session, dict)
+            else getattr(session, "expires_at", None)
+        )
         publish_args = {
             "p_studio_id": studio_id,
             "p_reservation_token": str(reservation_token),
@@ -570,11 +624,16 @@ class PlatformBillingService:
             "p_expires_at": expires_at,
         }
         try:
-            published = first_rpc_row(execute_required_rpc(
-                self.supabase,
-                "publish_core_checkout_atomic",
-                publish_args,
-            )) or {}
+            published = (
+                first_rpc_row(
+                    execute_required_rpc(
+                        self.supabase,
+                        "publish_core_checkout_atomic",
+                        publish_args,
+                    )
+                )
+                or {}
+            )
         except Exception:
             # Stripe already holds a live session, so failing here leaves it
             # untracked and the reservation held. Expiring blind is not safe
@@ -587,11 +646,16 @@ class PlatformBillingService:
                 uuid4().hex,
             )
             try:
-                published = first_rpc_row(execute_required_rpc(
-                    self.supabase,
-                    "publish_core_checkout_atomic",
-                    publish_args,
-                )) or {}
+                published = (
+                    first_rpc_row(
+                        execute_required_rpc(
+                            self.supabase,
+                            "publish_core_checkout_atomic",
+                            publish_args,
+                        )
+                    )
+                    or {}
+                )
             except Exception as exc:
                 # Still unprovable. Leaving a live session to its own expiry is
                 # recoverable; cancelling a checkout the studio may already have
@@ -608,20 +672,35 @@ class PlatformBillingService:
                 stripe_service.expire_core_checkout_session(
                     session_id=session_id,
                     studio_id=studio_id,
-                    idempotency_key=build_idempotency_key("core-checkout-expire", studio_id, session_id),
+                    idempotency_key=build_idempotency_key(
+                        "core-checkout-expire", studio_id, session_id
+                    ),
                 )
             if published.get("outcome") == "existing" and published.get("session_url"):
                 return BillingLinkResponse(url=published["session_url"])
-            raise HTTPException(status_code=409, detail="Koaryu Core checkout was invalidated. Start again if payment is still required.")
-        self._audit(studio_id, actor_id, "platform_billing.checkout_created", studio_id, {"customer_id": customer_id})
+            raise HTTPException(
+                status_code=409,
+                detail="Koaryu Core checkout was invalidated. Start again if payment is still required.",
+            )
+        self._audit(
+            studio_id,
+            actor_id,
+            "platform_billing.checkout_created",
+            studio_id,
+            {"customer_id": customer_id},
+        )
         return BillingLinkResponse(url=session_url)
 
     def _release_core_checkout_reservation(self, studio_id: str, token: str, epoch: int) -> None:
-        execute_required_rpc(self.supabase, "release_core_checkout_reservation_atomic", {
-            "p_studio_id": studio_id,
-            "p_reservation_token": token,
-            "p_checkout_epoch": epoch,
-        })
+        execute_required_rpc(
+            self.supabase,
+            "release_core_checkout_reservation_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_reservation_token": token,
+                "p_checkout_epoch": epoch,
+            },
+        )
 
     def _record_core_subscription_rejection(
         self,
@@ -684,7 +763,9 @@ class PlatformBillingService:
             session = stripe_service.create_customer_portal_session(
                 customer_id=customer_id,
                 studio_id=studio_id,
-                return_url=safe_redirect_url(return_url, f"{frontend_url}/billing", self.settings.FRONTEND_URL),
+                return_url=safe_redirect_url(
+                    return_url, f"{frontend_url}/billing", self.settings.FRONTEND_URL
+                ),
                 idempotency_key=build_idempotency_key("core-portal", studio_id, customer_id),
             )
         except Exception as exc:
@@ -704,13 +785,21 @@ class PlatformBillingService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Koaryu Core billing customer was repaired. Start checkout again to restore this subscription.",
             ) from exc
-        self._audit(studio_id, actor_id, "platform_billing.portal_created", studio_id, {"customer_id": customer_id})
+        self._audit(
+            studio_id,
+            actor_id,
+            "platform_billing.portal_created",
+            studio_id,
+            {"customer_id": customer_id},
+        )
         return BillingLinkResponse(url=session["url"] if isinstance(session, dict) else session.url)
 
-    def project_subscription_event(self, event: dict[str, Any], *, hydrate_subscription: bool = True) -> None:
+    def project_subscription_event(
+        self, event: dict[str, Any], *, hydrate_subscription: bool = True
+    ) -> None:
         event_type = event.get("type") or ""
         event_created = event.get("created")
-        data_object = ((event.get("data") or {}).get("object") or {})
+        data_object = (event.get("data") or {}).get("object") or {}
 
         if event_type == "checkout.session.completed":
             metadata = data_object.get("metadata") or {}
@@ -735,20 +824,14 @@ class PlatformBillingService:
                 and pending_session.get("id") == session_id
                 and (
                     not row.get("stripe_customer_id")
-                    or row.get("stripe_customer_id")
-                    == self._stripe_id(data_object.get("customer"))
+                    or row.get("stripe_customer_id") == self._stripe_id(data_object.get("customer"))
                 )
             )
             accepted = (
                 not bool(getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False))
                 or legacy_session_matches
             )
-            if (
-                reservation_token
-                and checkout_epoch is not None
-                and session_id
-                and subscription_id
-            ):
+            if reservation_token and checkout_epoch is not None and session_id and subscription_id:
                 accepted_result = execute_required_rpc(
                     self.supabase,
                     "accept_core_checkout_subscription_atomic",
@@ -766,7 +849,9 @@ class PlatformBillingService:
                     return
                 preserve_comp = acceptance_outcome == "retained_live"
                 accepted = acceptance_outcome in {
-                    "accepted", "already_accepted", "retained_live",
+                    "accepted",
+                    "already_accepted",
+                    "retained_live",
                 }
             else:
                 preserve_comp = False
@@ -776,9 +861,7 @@ class PlatformBillingService:
                         studio_id=studio_id,
                         subscription_id=subscription_id,
                         reason="invalid_paid_checkout_completion",
-                        compensation_required=(
-                            data_object.get("payment_status") == "paid"
-                        ),
+                        compensation_required=(data_object.get("payment_status") == "paid"),
                         session_id=session_id,
                         event_created=event_created,
                     )
@@ -845,7 +928,9 @@ class PlatformBillingService:
             metadata = data_object.get("metadata") or {}
             studio_id = metadata.get("studio_id")
             if not studio_id:
-                row = self._find_subscription_by_stripe_id(data_object.get("id"), data_object.get("customer"))
+                row = self._find_subscription_by_stripe_id(
+                    data_object.get("id"), data_object.get("customer")
+                )
                 studio_id = row.get("studio_id") if row else None
             if not studio_id:
                 return
@@ -874,7 +959,9 @@ class PlatformBillingService:
                     return
                 preserve_comp = acceptance_outcome == "retained_live"
                 accepted = acceptance_outcome in {
-                    "accepted", "already_accepted", "retained_live",
+                    "accepted",
+                    "already_accepted",
+                    "retained_live",
                 }
                 if not accepted:
                     if event_type == "customer.subscription.deleted":
@@ -882,10 +969,7 @@ class PlatformBillingService:
                         # rejected subscription that provider repair projected
                         # before the rejection was durable. Ignoring it left the
                         # local row active on a subscription Stripe had deleted.
-                        if (
-                            subscription_id
-                            and row.get("stripe_subscription_id") == subscription_id
-                        ):
+                        if subscription_id and row.get("stripe_subscription_id") == subscription_id:
                             self._update_subscription_row(
                                 studio_id,
                                 {
@@ -899,8 +983,7 @@ class PlatformBillingService:
                         subscription_id=subscription_id,
                         reason="invalid_paid_subscription_event",
                         compensation_required=(
-                            (data_object.get("status") or "")
-                            in PAID_STRIPE_SUBSCRIPTION_STATUSES
+                            (data_object.get("status") or "") in PAID_STRIPE_SUBSCRIPTION_STATUSES
                         ),
                         event_created=event_created,
                     )
@@ -927,14 +1010,14 @@ class PlatformBillingService:
             self._update_subscription_row(
                 studio_id,
                 update,
-                comp_clear_event_created=(
-                    NO_COMP_CLEAR_EVENT if preserve_comp else event_created
-                ),
+                comp_clear_event_created=(NO_COMP_CLEAR_EVENT if preserve_comp else event_created),
             )
             return
 
         if event_type in {"invoice.paid", "invoice.payment_failed"}:
-            row = self._find_subscription_by_stripe_id(data_object.get("subscription"), data_object.get("customer"))
+            row = self._find_subscription_by_stripe_id(
+                data_object.get("subscription"), data_object.get("customer")
+            )
             if not row:
                 return
             if self._is_stale_invoice_payment_event(row, event_created):
@@ -945,13 +1028,7 @@ class PlatformBillingService:
             self._update_subscription_row(row["studio_id"], update)
 
     def _studio_exists(self, studio_id: str) -> bool:
-        result = (
-            self.supabase.table("studios")
-            .select("id")
-            .eq("id", studio_id)
-            .limit(1)
-            .execute()
-        )
+        result = self.supabase.table("studios").select("id").eq("id", studio_id).limit(1).execute()
         return bool(result.data)
 
     @staticmethod
@@ -982,7 +1059,9 @@ class PlatformBillingService:
             raise HTTPException(status_code=500, detail="Failed to initialize Koaryu Core billing.")
         return insert_result.data[0]
 
-    def _create_platform_customer(self, stripe_service: StripeService, studio_id: str, studio: dict[str, Any]) -> str:
+    def _create_platform_customer(
+        self, stripe_service: StripeService, studio_id: str, studio: dict[str, Any]
+    ) -> str:
         customer = stripe_service.create_customer(
             name=studio.get("name") or "Koaryu studio",
             metadata={"studio_id": studio_id, "product": "koaryu_core"},
@@ -1015,7 +1094,10 @@ class PlatformBillingService:
         environment = getattr(self.settings, "ENVIRONMENT", "development")
         if isinstance(exc, AccessRepairProviderError):
             exc = exc.original
-        return self.is_noncritical_access_repair_error(exc) and environment.strip().lower() == "development"
+        return (
+            self.is_noncritical_access_repair_error(exc)
+            and environment.strip().lower() == "development"
+        )
 
     @staticmethod
     def _is_stripe_deployment_error(exc: Exception) -> bool:
@@ -1090,7 +1172,9 @@ class PlatformBillingService:
             )
         return result.data[0]
 
-    def _is_stale_subscription_event(self, row: dict[str, Any], event_created: Optional[int]) -> bool:
+    def _is_stale_subscription_event(
+        self, row: dict[str, Any], event_created: Optional[int]
+    ) -> bool:
         if event_created is None:
             return False
         last_created = row_metadata(row).get(SUBSCRIPTION_EVENT_METADATA_KEY)
@@ -1098,15 +1182,21 @@ class PlatformBillingService:
             last_created = row.get("last_stripe_event_created")
         return last_created is not None and int(last_created) > int(event_created)
 
-    def _is_stale_invoice_payment_event(self, row: dict[str, Any], event_created: Optional[int]) -> bool:
+    def _is_stale_invoice_payment_event(
+        self, row: dict[str, Any], event_created: Optional[int]
+    ) -> bool:
         if event_created is None:
             return False
         last_created = row_metadata(row).get(INVOICE_PAYMENT_EVENT_METADATA_KEY)
         return last_created is not None and int(last_created) > int(event_created)
 
     @staticmethod
-    def _merge_update_metadata(update: dict[str, Any], row: dict[str, Any], patch: dict[str, Any]) -> None:
-        update["metadata"] = merge_metadata({"metadata": update.get("metadata", row.get("metadata"))}, patch)
+    def _merge_update_metadata(
+        update: dict[str, Any], row: dict[str, Any], patch: dict[str, Any]
+    ) -> None:
+        update["metadata"] = merge_metadata(
+            {"metadata": update.get("metadata", row.get("metadata"))}, patch
+        )
 
     def _mark_subscription_event_created(
         self,
@@ -1123,7 +1213,9 @@ class PlatformBillingService:
         if previous is not None and int(previous) > event_created_int:
             return
         update["last_stripe_event_created"] = event_created_int
-        self._merge_update_metadata(update, row, {SUBSCRIPTION_EVENT_METADATA_KEY: event_created_int})
+        self._merge_update_metadata(
+            update, row, {SUBSCRIPTION_EVENT_METADATA_KEY: event_created_int}
+        )
 
     def _mark_invoice_payment_event_created(
         self,
@@ -1137,33 +1229,51 @@ class PlatformBillingService:
         previous = row_metadata(row).get(INVOICE_PAYMENT_EVENT_METADATA_KEY)
         if previous is not None and int(previous) > event_created_int:
             return
-        self._merge_update_metadata(update, row, {INVOICE_PAYMENT_EVENT_METADATA_KEY: event_created_int})
+        self._merge_update_metadata(
+            update, row, {INVOICE_PAYMENT_EVENT_METADATA_KEY: event_created_int}
+        )
 
-    def _find_subscription_by_stripe_id(self, subscription_id: Optional[str], customer_id: Optional[str]) -> Optional[dict[str, Any]]:
+    def _find_subscription_by_stripe_id(
+        self, subscription_id: Optional[str], customer_id: Optional[str]
+    ) -> Optional[dict[str, Any]]:
         query = self.supabase.table("studio_subscriptions").select("*")
         if subscription_id:
             result = query.eq("stripe_subscription_id", subscription_id).limit(1).execute()
             if result.data:
                 return result.data[0]
         if customer_id:
-            result = self.supabase.table("studio_subscriptions").select("*").eq("stripe_customer_id", customer_id).limit(1).execute()
+            result = (
+                self.supabase.table("studio_subscriptions")
+                .select("*")
+                .eq("stripe_customer_id", customer_id)
+                .limit(1)
+                .execute()
+            )
             if result.data:
                 return result.data[0]
         return None
 
-    def _repair_subscription_periods(self, row: dict[str, Any], *, strict_repairs: bool = False) -> dict[str, Any]:
+    def _repair_subscription_periods(
+        self, row: dict[str, Any], *, strict_repairs: bool = False
+    ) -> dict[str, Any]:
         if not self._should_repair_subscription_periods(row):
             return row
         subscription_id = row.get("stripe_subscription_id")
         try:
-            subscription = self._provider_call(StripeService().retrieve_subscription, subscription_id)
-            return self._update_subscription_row(row["studio_id"], self._project_subscription(subscription))
+            subscription = self._provider_call(
+                StripeService().retrieve_subscription, subscription_id
+            )
+            return self._update_subscription_row(
+                row["studio_id"], self._project_subscription(subscription)
+            )
         except Exception as exc:
             if strict_repairs and not self._can_degrade_access_repair(exc):
                 raise
             return row
 
-    def _repair_stale_subscription_state(self, row: dict[str, Any], *, strict_repairs: bool = False) -> dict[str, Any]:
+    def _repair_stale_subscription_state(
+        self, row: dict[str, Any], *, strict_repairs: bool = False
+    ) -> dict[str, Any]:
         if not self._should_repair_subscription_state(row):
             return row
         try:
@@ -1171,7 +1281,9 @@ class PlatformBillingService:
                 StripeService().retrieve_subscription,
                 row["stripe_subscription_id"],
             )
-            return self._update_subscription_row(row["studio_id"], self._project_subscription(subscription))
+            return self._update_subscription_row(
+                row["studio_id"], self._project_subscription(subscription)
+            )
         except Exception as exc:
             if strict_repairs and not self._can_degrade_access_repair(exc):
                 raise
@@ -1190,7 +1302,9 @@ class PlatformBillingService:
         # key is always present in practice; this only removes a latent trap.
         return not bool(row.get("comped", False))
 
-    def _repair_missing_subscription(self, row: dict[str, Any], *, strict_repairs: bool = False) -> dict[str, Any]:
+    def _repair_missing_subscription(
+        self, row: dict[str, Any], *, strict_repairs: bool = False
+    ) -> dict[str, Any]:
         if not self._should_repair_missing_subscription(row):
             return row
 
@@ -1232,9 +1346,7 @@ class PlatformBillingService:
         if reservation_token is None and checkout_epoch is None:
             return True
 
-        subscription_id = projector.stripe_id(
-            projector.object_get(subscription, "id")
-        )
+        subscription_id = projector.stripe_id(projector.object_get(subscription, "id"))
         # A subscription this studio already rejected is never a repair
         # candidate, however the provider still lists it. Relying on the
         # acceptance RPC to re-derive `invalid` was not enough: a transient
@@ -1276,9 +1388,7 @@ class PlatformBillingService:
                 studio_id=row["studio_id"],
                 subscription_id=subscription_id,
                 reason="invalid_paid_subscription_repair",
-                compensation_required=(
-                    subscription_status in PAID_STRIPE_SUBSCRIPTION_STATUSES
-                ),
+                compensation_required=(subscription_status in PAID_STRIPE_SUBSCRIPTION_STATUSES),
             )
             self._provider_call(
                 lambda: StripeService().cancel_core_subscription(
@@ -1369,7 +1479,9 @@ class PlatformBillingService:
         )
 
     def _get_studio(self, studio_id: str) -> dict[str, Any]:
-        result = self.supabase.table("studios").select("id, name").eq("id", studio_id).single().execute()
+        result = (
+            self.supabase.table("studios").select("id, name").eq("id", studio_id).single().execute()
+        )
         if not result.data:
             raise HTTPException(status_code=404, detail="Studio not found.")
         return result.data
@@ -1381,11 +1493,15 @@ class PlatformBillingService:
             period_end = period_start.replace(year=period_start.year + 1, month=1)
         else:
             period_end = period_start.replace(month=period_start.month + 1)
-        result = execute_required_rpc(self.supabase, "sum_email_usage_for_period", {
-            "p_studio_id": studio_id,
-            "p_period_start": period_start.isoformat(),
-            "p_period_end": period_end.isoformat(),
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "sum_email_usage_for_period",
+            {
+                "p_studio_id": studio_id,
+                "p_period_start": period_start.isoformat(),
+                "p_period_end": period_end.isoformat(),
+            },
+        )
         sent = self._email_usage_rpc_value(getattr(result, "data", 0))
         overage_count = max(0, sent - EMAIL_INCLUDED_PER_MONTH)
         return EmailUsageResponse(
@@ -1413,15 +1529,19 @@ class PlatformBillingService:
     def _stripe_id(cls, value: Any) -> Optional[str]:
         return PlatformSubscriptionProjector.stripe_id(value)
 
-    def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": action,
-            "entity_type": "billing",
-            "entity_id": entity_id,
-            "metadata": metadata,
-        }).execute()
+    def _audit(
+        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
+    ) -> None:
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": action,
+                "entity_type": "billing",
+                "entity_id": entity_id,
+                "metadata": metadata,
+            }
+        ).execute()
 
 
 # One ordered list, two consumers: the repair chain runs these in sequence, and

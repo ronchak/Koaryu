@@ -7,14 +7,12 @@ import type {
   StudentBillingEnrollmentCreate,
 } from "@/types";
 
-export type BillingFormPayloadResult<T> =
-  | { ok: true; payload: T }
-  | { ok: false; error: string };
+export type BillingFormPayloadResult<T> = { ok: true; payload: T } | { ok: false; error: string };
 
 export type ExternalBillingPaymentPayload = ExternalPaymentCreate;
 
 export function requiresPayerForStudentBillingEnrollment(
-  collectionMode: StudentBillingEnrollment["collection_mode"]
+  collectionMode: StudentBillingEnrollment["collection_mode"],
 ) {
   return collectionMode !== "external";
 }
@@ -33,10 +31,10 @@ export function canSubmitStudentBillingEnrollmentForm({
   planCount: number;
 }) {
   return Boolean(
-    canManageStudioBilling
-      && !isActionLoading
-      && planCount > 0
-      && (!requiresPayerForStudentBillingEnrollment(collectionMode) || payerCount > 0)
+    canManageStudioBilling &&
+    !isActionLoading &&
+    planCount > 0 &&
+    (!requiresPayerForStudentBillingEnrollment(collectionMode) || payerCount > 0),
   );
 }
 
@@ -49,8 +47,10 @@ export function shouldDisableStudentBillingEnrollmentPayerSelect({
   collectionMode: StudentBillingEnrollment["collection_mode"];
   payerCount: number;
 }) {
-  return !canManageStudioBilling
-    || (requiresPayerForStudentBillingEnrollment(collectionMode) && payerCount === 0);
+  return (
+    !canManageStudioBilling ||
+    (requiresPayerForStudentBillingEnrollment(collectionMode) && payerCount === 0)
+  );
 }
 
 function optionalText(value: string) {

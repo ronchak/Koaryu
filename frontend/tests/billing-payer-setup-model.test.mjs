@@ -42,10 +42,7 @@ describe("hidden payer autopay setup adapter", () => {
     const proxy = fs.readFileSync(path.join(root, "src/proxy.ts"), "utf8");
     assert.match(actions, /origin: window\.location\.origin/);
     assert.doesNotMatch(proxy, /payer-setup-complete/);
-    assert.equal(
-      fs.existsSync(path.join(root, "src/app/payer-setup-complete/page.tsx")),
-      true,
-    );
+    assert.equal(fs.existsSync(path.join(root, "src/app/payer-setup-complete/page.tsx")), true);
   });
 
   it("sends a new key on the first click for completed payer setup", () => {
@@ -62,10 +59,13 @@ describe("hidden payer autopay setup adapter", () => {
       payerId: "payer-1",
       storage,
     };
-    assert.equal(resolvePersistedPayerOperationRequestKey({
-      ...options,
-      createKey: () => "completed-key",
-    }), "completed-key");
+    assert.equal(
+      resolvePersistedPayerOperationRequestKey({
+        ...options,
+        createKey: () => "completed-key",
+      }),
+      "completed-key",
+    );
     const payer = {
       autopay_status: "enabled",
       stripe_payment_method_id: "saved-method",
@@ -115,12 +115,21 @@ describe("hidden payer autopay setup adapter", () => {
   });
 
   it("wires replacement intent into the first setup request and retains terminal recovery", () => {
-    const families = fs.readFileSync(path.join(root, "src/components/billing/billing-families-tab.tsx"), "utf8");
-    const setupAction = fs.readFileSync(path.join(root, "src/lib/billing-payer-setup-action.ts"), "utf8");
-    assert.match(setupAction, /if \(!runtime\.token \|\| !runtime\.claimAction\(action\)\) return null/);
+    const families = fs.readFileSync(
+      path.join(root, "src/components/billing/billing-families-tab.tsx"),
+      "utf8",
+    );
+    const setupAction = fs.readFileSync(
+      path.join(root, "src/lib/billing-payer-setup-action.ts"),
+      "utf8",
+    );
+    assert.match(
+      setupAction,
+      /if \(!runtime\.token \|\| !runtime\.claimAction\(action\)\) return null/,
+    );
     assert.ok(
-      setupAction.indexOf("runtime.claimAction(action)")
-        < setupAction.indexOf("resolvePersistedPayerSetupRequestKey({"),
+      setupAction.indexOf("runtime.claimAction(action)") <
+        setupAction.indexOf("resolvePersistedPayerSetupRequestKey({"),
     );
     assert.match(setupAction, /clearBillingIdempotencyKeyAfterTerminalError/);
     assert.match(families, /onAutopaySetup\(payer\)/);
@@ -130,18 +139,14 @@ describe("hidden payer autopay setup adapter", () => {
   it("copies the payer link and never navigates the staff browser", async () => {
     const copied = [];
     assert.equal(
-      await copyPayerAutopaySetupLink(
-        "https://checkout.stripe.test/setup",
-        async (value) => copied.push(value),
+      await copyPayerAutopaySetupLink("https://checkout.stripe.test/setup", async (value) =>
+        copied.push(value),
       ),
       true,
     );
     assert.deepEqual(copied, ["https://checkout.stripe.test/setup"]);
 
-    const source = fs.readFileSync(
-      path.join(root, "src/lib/billing-payer-actions.ts"),
-      "utf8",
-    );
+    const source = fs.readFileSync(path.join(root, "src/lib/billing-payer-actions.ts"), "utf8");
     assert.doesNotMatch(source, /window\.confirm|terms_accepted|location\.assign/);
   });
 
@@ -167,10 +172,7 @@ describe("hidden payer autopay setup adapter", () => {
     assert.equal(replay, first);
     assert.equal(fresh, "sync-key-2");
 
-    const source = fs.readFileSync(
-      path.join(root, "src/lib/billing-payer-actions.ts"),
-      "utf8",
-    );
+    const source = fs.readFileSync(path.join(root, "src/lib/billing-payer-actions.ts"), "utf8");
     assert.match(source, /resolvePersistedPayerOperationRequestKey/);
     assert.match(source, /requestOptions: \{ headers: request\.headers \}/);
   });
@@ -254,14 +256,8 @@ describe("hidden payer autopay setup adapter", () => {
 
     assert.equal(reopened, first);
 
-    const source = fs.readFileSync(
-      path.join(root, "src/lib/billing-payer-actions.ts"),
-      "utf8",
-    );
-    assert.doesNotMatch(
-      source,
-      /if \(link\?\.url\) \{\s*clearPersistedPayerOperationRequestKey/s,
-    );
+    const source = fs.readFileSync(path.join(root, "src/lib/billing-payer-actions.ts"), "utf8");
+    assert.doesNotMatch(source, /if \(link\?\.url\) \{\s*clearPersistedPayerOperationRequestKey/s);
   });
 
   it("separates persisted keys by user, studio, payer, and operation", () => {
@@ -315,14 +311,8 @@ describe("hidden payer autopay setup adapter", () => {
     assert.equal(values.size, 0);
     assert.equal(memory.size, 0);
 
-    const source = fs.readFileSync(
-      path.join(root, "src/lib/billing-payer-actions.ts"),
-      "utf8",
-    );
-    assert.match(
-      source,
-      /if \(result\) \{\s*clearPersistedPayerOperationRequestKey/s,
-    );
+    const source = fs.readFileSync(path.join(root, "src/lib/billing-payer-actions.ts"), "utf8");
+    assert.match(source, /if \(result\) \{\s*clearPersistedPayerOperationRequestKey/s);
   });
 
   it("keeps a scoped in-memory key when browser storage is blocked", () => {
@@ -365,20 +355,11 @@ describe("hidden payer autopay setup adapter", () => {
       path.join(root, "src/lib/billing-action-controller.ts"),
       "utf8",
     );
-    const model = fs.readFileSync(
-      path.join(root, "src/lib/billing-payer-setup-model.ts"),
-      "utf8",
-    );
+    const model = fs.readFileSync(path.join(root, "src/lib/billing-payer-setup-model.ts"), "utf8");
 
     assert.match(pageController, /currentUserId && currentStudioId/);
-    assert.match(
-      pageController,
-      /\{ userId: currentUserId, studioId: currentStudioId \}/,
-    );
-    assert.match(
-      actionController,
-      /useBillingPayerActions\(runtime, payerOperationIdentity\)/,
-    );
+    assert.match(pageController, /\{ userId: currentUserId, studioId: currentStudioId \}/);
+    assert.match(actionController, /useBillingPayerActions\(runtime, payerOperationIdentity\)/);
     assert.doesNotMatch(model, /\btoken\b|authorization/i);
   });
 });

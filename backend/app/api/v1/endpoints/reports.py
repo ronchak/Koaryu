@@ -57,30 +57,32 @@ async def export_report_csv(
 
             artifact = await service.build_csv_artifact_for_report(report, studio_id)
             service.budget.admit_provider_call()
-            client.table("audit_logs").insert({
-                "studio_id": studio_id,
-                "actor_id": user_id,
-                "action": "report.exported",
-                "entity_type": "report",
-                "entity_id": None,
-                "metadata": {
-                    "report_id": report.id,
-                    "filename": report.filename,
-                    "contains_sensitive_data": report.contains_sensitive_data,
-                    "min_role": report.min_role,
-                    "row_count": artifact.emitted_data_rows,
-                    "output_bytes": artifact.output_bytes,
-                    "spool_threshold_bytes": artifact.spool_threshold_bytes,
-                    "spool_rolled": artifact.spool_rolled,
-                    "budget": {
-                        "fetched_rows": artifact.budget.fetched_rows,
-                        "provider_calls_before_audit": artifact.budget.provider_calls,
-                        "emitted_rows": artifact.emitted_data_rows,
+            client.table("audit_logs").insert(
+                {
+                    "studio_id": studio_id,
+                    "actor_id": user_id,
+                    "action": "report.exported",
+                    "entity_type": "report",
+                    "entity_id": None,
+                    "metadata": {
+                        "report_id": report.id,
+                        "filename": report.filename,
+                        "contains_sensitive_data": report.contains_sensitive_data,
+                        "min_role": report.min_role,
+                        "row_count": artifact.emitted_data_rows,
                         "output_bytes": artifact.output_bytes,
-                        "elapsed_seconds": artifact.budget.elapsed_seconds,
+                        "spool_threshold_bytes": artifact.spool_threshold_bytes,
+                        "spool_rolled": artifact.spool_rolled,
+                        "budget": {
+                            "fetched_rows": artifact.budget.fetched_rows,
+                            "provider_calls_before_audit": artifact.budget.provider_calls,
+                            "emitted_rows": artifact.emitted_data_rows,
+                            "output_bytes": artifact.output_bytes,
+                            "elapsed_seconds": artifact.budget.elapsed_seconds,
+                        },
                     },
-                },
-            }).execute()
+                }
+            ).execute()
             service.budget.check_elapsed()
 
             if not lease.offer(artifact):

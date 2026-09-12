@@ -7,7 +7,10 @@ from unittest.mock import patch
 
 from app.schemas.billing import StudioPaymentAccountResponse
 from app.services.billing_system_status import BillingSystemStatusReporter
-from tests.fakes.billing_reads import BillingReadSupabase as RpcBackedSupabase, BillingReadSupabase as TableBackedSupabase
+from tests.fakes.billing_reads import (
+    BillingReadSupabase as RpcBackedSupabase,
+    BillingReadSupabase as TableBackedSupabase,
+)
 
 TEST_STRIPE_LIVE_KEY = "_".join(("sk", "live", "configured"))
 
@@ -43,11 +46,13 @@ class _PreflightSupabase(RpcBackedSupabase):
         return [{"eligible": self.begin, "studio_id": params["p_studio_id"]}]
 
     def _rpc_preflight_connect_onboarding_bootstrap_resume(self, params):
-        return [{
-            "eligible": self.resume,
-            "studio_id": params["p_studio_id"],
-            "phase": self.resume_phase,
-        }]
+        return [
+            {
+                "eligible": self.resume,
+                "studio_id": params["p_studio_id"],
+                "phase": self.resume_phase,
+            }
+        ]
 
     def _rpc_authorize_studio_live_billing_mutation_atomic(self, _params):
         return []
@@ -63,11 +68,13 @@ class _LiveGrantSupabase(_PreflightSupabase):
                 and row.get("enabled") is True
                 and params["p_operation"] in row.get("allowed_operations", [])
             ):
-                return [{
-                    "authorized": True,
-                    "studio_id": params["p_studio_id"],
-                    "checkpoint_id": "checkpoint_1",
-                }]
+                return [
+                    {
+                        "authorized": True,
+                        "studio_id": params["p_studio_id"],
+                        "checkpoint_id": "checkpoint_1",
+                    }
+                ]
         return []
 
 
@@ -78,16 +85,20 @@ def _settings(
     live_billing_enabled: bool = False,
     core_self_checkout_enabled: bool = False,
 ):
-    return type("Settings", (), {
-        "ENVIRONMENT": "production",
-        "STRIPE_MODE": stripe_mode,
-        "LIVE_BILLING_ENABLED": live_billing_enabled,
-        "CORE_SELF_CHECKOUT_ENABLED": core_self_checkout_enabled,
-        "STRIPE_SECRET_KEY": secret_key,
-        "STRIPE_KOARYU_CORE_PRICE_ID": "price_core",
-        "STRIPE_PLATFORM_WEBHOOK_SECRET": "whsec_platform",
-        "STRIPE_CONNECT_WEBHOOK_SECRET": "whsec_connect",
-    })()
+    return type(
+        "Settings",
+        (),
+        {
+            "ENVIRONMENT": "production",
+            "STRIPE_MODE": stripe_mode,
+            "LIVE_BILLING_ENABLED": live_billing_enabled,
+            "CORE_SELF_CHECKOUT_ENABLED": core_self_checkout_enabled,
+            "STRIPE_SECRET_KEY": secret_key,
+            "STRIPE_KOARYU_CORE_PRICE_ID": "price_core",
+            "STRIPE_PLATFORM_WEBHOOK_SECRET": "whsec_platform",
+            "STRIPE_CONNECT_WEBHOOK_SECRET": "whsec_connect",
+        },
+    )()
 
 
 def _ready_account() -> StudioPaymentAccountResponse:
@@ -102,7 +113,9 @@ def _ready_account() -> StudioPaymentAccountResponse:
     )
 
 
-def _processed_event(*, account_id: str | None, observed_at: datetime, livemode: bool = True) -> dict:
+def _processed_event(
+    *, account_id: str | None, observed_at: datetime, livemode: bool = True
+) -> dict:
     return {
         "stripe_account_id": account_id,
         "type": "invoice.paid" if account_id else "customer.subscription.updated",
@@ -115,7 +128,9 @@ def _processed_event(*, account_id: str | None, observed_at: datetime, livemode:
 
 
 class BillingSystemStatusReporterTest(unittest.TestCase):
-    def reporter(self, tables: dict, *, secret_key: str = TEST_STRIPE_LIVE_KEY) -> BillingSystemStatusReporter:
+    def reporter(
+        self, tables: dict, *, secret_key: str = TEST_STRIPE_LIVE_KEY
+    ) -> BillingSystemStatusReporter:
         async def load_account(_studio_id: str) -> StudioPaymentAccountResponse:
             return _ready_account()
 
@@ -131,12 +146,14 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         supabase = _LiveGrantSupabase(
             {
                 "studio_payment_accounts": [{"studio_id": "studio_1"}],
-                "studio_live_billing_authorizations": [{
-                    "studio_id": "studio_1",
-                    "scope": "connect_payments",
-                    "enabled": True,
-                    "allowed_operations": operations,
-                }],
+                "studio_live_billing_authorizations": [
+                    {
+                        "studio_id": "studio_1",
+                        "scope": "connect_payments",
+                        "enabled": True,
+                        "allowed_operations": operations,
+                    }
+                ],
                 "stripe_events": [
                     _processed_event(account_id=None, observed_at=now),
                     _processed_event(account_id="acct_1", observed_at=now),
@@ -160,16 +177,24 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
     def test_stale_processing_age_uses_processing_started_at_not_event_creation(self):
         now = datetime.now(timezone.utc)
 
-        self.assertFalse(BillingSystemStatusReporter.is_stale_webhook_processing({
-            "processing_status": "processing",
-            "processing_started_at": (now - timedelta(minutes=1)).isoformat(),
-            "created_at": (now - timedelta(days=3)).isoformat(),
-        }))
-        self.assertTrue(BillingSystemStatusReporter.is_stale_webhook_processing({
-            "processing_status": "processing",
-            "processing_started_at": (now - timedelta(minutes=11)).isoformat(),
-            "created_at": now.isoformat(),
-        }))
+        self.assertFalse(
+            BillingSystemStatusReporter.is_stale_webhook_processing(
+                {
+                    "processing_status": "processing",
+                    "processing_started_at": (now - timedelta(minutes=1)).isoformat(),
+                    "created_at": (now - timedelta(days=3)).isoformat(),
+                }
+            )
+        )
+        self.assertTrue(
+            BillingSystemStatusReporter.is_stale_webhook_processing(
+                {
+                    "processing_status": "processing",
+                    "processing_started_at": (now - timedelta(minutes=11)).isoformat(),
+                    "created_at": now.isoformat(),
+                }
+            )
+        )
 
     def test_test_mode_can_be_ready_without_claiming_live_payment_readiness(self):
         now = datetime.now(timezone.utc)
@@ -178,13 +203,15 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             return _ready_account()
 
         reporter = BillingSystemStatusReporter(
-            TableBackedSupabase({
-                "studio_payment_accounts": [{"studio_id": "studio_1"}],
-                "stripe_events": [
-                    _processed_event(account_id=None, observed_at=now, livemode=False),
-                    _processed_event(account_id="acct_1", observed_at=now, livemode=False),
-                ],
-            }),
+            TableBackedSupabase(
+                {
+                    "studio_payment_accounts": [{"studio_id": "studio_1"}],
+                    "stripe_events": [
+                        _processed_event(account_id=None, observed_at=now, livemode=False),
+                        _processed_event(account_id="acct_1", observed_at=now, livemode=False),
+                    ],
+                }
+            ),
             settings=_settings(
                 "sk_" + "test_configured",
                 stripe_mode="test",
@@ -203,11 +230,15 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertTrue(response.mutation_capabilities.core_subscription)
         self.assertTrue(response.mutation_capabilities.connect_onboarding)
         self.assertTrue(response.mutation_capabilities.connect_payments)
-        self.assertTrue(BillingSystemStatusReporter.is_stale_webhook_processing({
-            "processing_status": "processing",
-            "processing_started_at": None,
-            "created_at": (now - timedelta(minutes=11)).isoformat(),
-        }))
+        self.assertTrue(
+            BillingSystemStatusReporter.is_stale_webhook_processing(
+                {
+                    "processing_status": "processing",
+                    "processing_started_at": None,
+                    "created_at": (now - timedelta(minutes=11)).isoformat(),
+                }
+            )
+        )
 
     def test_live_accountless_onboarding_capability_uses_read_only_begin_preflight(self):
         now = datetime.now(timezone.utc)
@@ -284,10 +315,12 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertFalse(response.mutation_capabilities.connect_payments)
 
     def test_refund_only_live_grant_enables_only_refund_workflow(self):
-        response, supabase = self.live_grant_response([
-            "connected_capability.readiness",
-            "connected_refund.create",
-        ])
+        response, supabase = self.live_grant_response(
+            [
+                "connected_capability.readiness",
+                "connected_refund.create",
+            ]
+        )
 
         workflows = {
             capability.workflow_id: capability.enabled
@@ -311,12 +344,14 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         )
 
     def test_plan_only_live_grant_enables_only_plan_sync_workflow(self):
-        response, supabase = self.live_grant_response([
-            "connected_capability.readiness",
-            "connected_price.create",
-            "connected_product.create",
-            "connected_product.update",
-        ])
+        response, supabase = self.live_grant_response(
+            [
+                "connected_capability.readiness",
+                "connected_price.create",
+                "connected_product.create",
+                "connected_product.update",
+            ]
+        )
 
         workflows = {
             capability.workflow_id: capability.enabled
@@ -361,7 +396,8 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
 
         self.assertFalse(response.mutation_capabilities.connect_onboarding)
         onboarding_authorize_calls = [
-            params for name, params in supabase.rpc_calls
+            params
+            for name, params in supabase.rpc_calls
             if name == "authorize_studio_live_billing_mutation_atomic"
             and params.get("p_operation") == "connect_onboarding_link.create"
         ]
@@ -381,22 +417,32 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             },
         ]
 
-        response = asyncio.run(self.reporter({
-            "studio_payment_accounts": [{"studio_id": "studio_1"}],
-            "stripe_events": rows,
-        }).get_system_status("studio_1"))
+        response = asyncio.run(
+            self.reporter(
+                {
+                    "studio_payment_accounts": [{"studio_id": "studio_1"}],
+                    "stripe_events": rows,
+                }
+            ).get_system_status("studio_1")
+        )
 
         self.assertFalse(response.ready_for_live_payments)
         self.assertEqual(response.connect_webhooks.pending_count, 1)
-        processing_check = next(check for check in response.checks if check.name == "Connect webhook processing")
+        processing_check = next(
+            check for check in response.checks if check.name == "Connect webhook processing"
+        )
         self.assertEqual(processing_check.status, "fail")
 
     def test_platform_and_connected_health_share_one_scoped_rpc(self):
         now = datetime.now(timezone.utc)
-        reporter = self.reporter({"stripe_events": [
-            _processed_event(account_id=None, observed_at=now),
-            _processed_event(account_id="acct_1", observed_at=now),
-        ]})
+        reporter = self.reporter(
+            {
+                "stripe_events": [
+                    _processed_event(account_id=None, observed_at=now),
+                    _processed_event(account_id="acct_1", observed_at=now),
+                ]
+            }
+        )
         platform, connected = reporter.webhook_health_pair("acct_1")
         self.assertEqual(platform.latest_event_type, "customer.subscription.updated")
         self.assertEqual(connected.latest_event_type, "invoice.paid")
@@ -415,38 +461,40 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             )
             for index in range(60)
         ]
-        rows.extend([
-            {
-                "id": "older-pending",
-                "stripe_account_id": "acct_1",
-                "type": "invoice.payment_failed",
-                "livemode": False,
-                "processing_status": "pending",
-                "processing_started_at": None,
-                "processed_at": None,
-                "created_at": older.isoformat(),
-            },
-            {
-                "id": "older-stale-processing",
-                "stripe_account_id": "acct_1",
-                "type": "invoice.updated",
-                "livemode": True,
-                "processing_status": "processing",
-                "processing_started_at": older.isoformat(),
-                "processed_at": None,
-                "created_at": older.isoformat(),
-            },
-            {
-                "id": "older-null-start-processing",
-                "stripe_account_id": "acct_1",
-                "type": "invoice.updated",
-                "livemode": True,
-                "processing_status": "processing",
-                "processing_started_at": None,
-                "processed_at": None,
-                "created_at": older.isoformat(),
-            },
-        ])
+        rows.extend(
+            [
+                {
+                    "id": "older-pending",
+                    "stripe_account_id": "acct_1",
+                    "type": "invoice.payment_failed",
+                    "livemode": False,
+                    "processing_status": "pending",
+                    "processing_started_at": None,
+                    "processed_at": None,
+                    "created_at": older.isoformat(),
+                },
+                {
+                    "id": "older-stale-processing",
+                    "stripe_account_id": "acct_1",
+                    "type": "invoice.updated",
+                    "livemode": True,
+                    "processing_status": "processing",
+                    "processing_started_at": older.isoformat(),
+                    "processed_at": None,
+                    "created_at": older.isoformat(),
+                },
+                {
+                    "id": "older-null-start-processing",
+                    "stripe_account_id": "acct_1",
+                    "type": "invoice.updated",
+                    "livemode": True,
+                    "processing_status": "processing",
+                    "processing_started_at": None,
+                    "processed_at": None,
+                    "created_at": older.isoformat(),
+                },
+            ]
+        )
         reporter = self.reporter({"stripe_events": rows})
 
         health = reporter.webhook_health("acct_1")
@@ -465,10 +513,14 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             _processed_event(account_id="acct_1", observed_at=old, livemode=False),
         ]
 
-        response = asyncio.run(self.reporter({
-            "studio_payment_accounts": [{"studio_id": "studio_1"}],
-            "stripe_events": rows,
-        }).get_system_status("studio_1"))
+        response = asyncio.run(
+            self.reporter(
+                {
+                    "studio_payment_accounts": [{"studio_id": "studio_1"}],
+                    "stripe_events": rows,
+                }
+            ).get_system_status("studio_1")
+        )
 
         self.assertFalse(response.ready_for_live_payments)
         self.assertEqual(response.connect_webhooks.mode_mismatch_count, 1)
@@ -477,7 +529,9 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             "fail",
         )
         self.assertEqual(
-            next(check for check in response.checks if check.name == "Recent Connect webhook").status,
+            next(
+                check for check in response.checks if check.name == "Recent Connect webhook"
+            ).status,
             "fail",
         )
 
@@ -486,10 +540,12 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             raise RuntimeError("sk_live_secret-value req_sensitive")
 
         reporter = BillingSystemStatusReporter(
-            TableBackedSupabase({
-                "studio_payment_accounts": [{"studio_id": "studio_1"}],
-                "stripe_events": [],
-            }),
+            TableBackedSupabase(
+                {
+                    "studio_payment_accounts": [{"studio_id": "studio_1"}],
+                    "stripe_events": [],
+                }
+            ),
             settings=_settings(),
             connect_accounts=_ConnectAccounts(),
             payment_account_loader=fail_account,
@@ -497,11 +553,14 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
 
         with self.assertLogs("app.services.billing_system_status", level="ERROR") as captured_logs:
             response = asyncio.run(reporter.get_system_status("studio_1"))
-        detail = next(check.detail for check in response.checks if check.name == "Connect account refresh")
+        detail = next(
+            check.detail for check in response.checks if check.name == "Connect account refresh"
+        )
         log_record = next(
             record
             for record in captured_logs.records
-            if record.getMessage() == "Stripe Connect account refresh failed during billing readiness check"
+            if record.getMessage()
+            == "Stripe Connect account refresh failed during billing readiness check"
         )
 
         self.assertNotIn("sk_live_secret-value", detail)
@@ -528,11 +587,14 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         with self.assertLogs("app.services.billing_system_status", level="ERROR") as captured_logs:
             response = asyncio.run(reporter.get_system_status("studio_1"))
 
-        detail = next(check.detail for check in response.checks if check.name == "Connect account fallback")
+        detail = next(
+            check.detail for check in response.checks if check.name == "Connect account fallback"
+        )
         fallback_log = next(
             record
             for record in captured_logs.records
-            if record.getMessage() == "Stripe Connect account fallback failed during billing readiness check"
+            if record.getMessage()
+            == "Stripe Connect account fallback failed during billing readiness check"
         )
         self.assertNotIn("stored-connect-secret-detail", detail)
         self.assertEqual(detail.rsplit("Reference: ", 1)[1], fallback_log.error_id)
@@ -542,10 +604,12 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertNotIn("studio_1", repr(fallback_log.__dict__))
 
     def test_database_failure_detail_is_sanitized(self):
-        supabase = TableBackedSupabase({
-            "studio_payment_accounts": [{"studio_id": "studio_1"}],
-            "stripe_events": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "studio_payment_accounts": [{"studio_id": "studio_1"}],
+                "stripe_events": [],
+            }
+        )
         supabase.table_failures["studio_payment_accounts"] = RuntimeError(
             "postgres://secret-user:secret-password@db.example"
         )
@@ -561,7 +625,9 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         )
         with self.assertLogs("app.services.billing_system_status", level="ERROR") as captured_logs:
             response = asyncio.run(reporter.get_system_status("studio_1"))
-        detail = next(check.detail for check in response.checks if check.name == "Supabase billing read")
+        detail = next(
+            check.detail for check in response.checks if check.name == "Supabase billing read"
+        )
         database_log = next(
             record
             for record in captured_logs.records
@@ -577,10 +643,12 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertNotIn("studio_1", repr(database_log.__dict__))
 
     def test_webhook_query_failure_is_sanitized_and_correlated(self):
-        supabase = TableBackedSupabase({
-            "studio_payment_accounts": [{"studio_id": "studio_1"}],
-            "stripe_events": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "studio_payment_accounts": [{"studio_id": "studio_1"}],
+                "stripe_events": [],
+            }
+        )
         supabase.table_failures["stripe_events"] = RuntimeError("webhook-database-secret")
 
         async def load_account(_studio_id: str) -> StudioPaymentAccountResponse:
@@ -595,14 +663,20 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         with self.assertLogs("app.services.billing_system_status", level="ERROR") as captured_logs:
             response = asyncio.run(reporter.get_system_status("studio_1"))
 
-        platform_check = next(check for check in response.checks if check.name == "Platform webhook query")
+        platform_check = next(
+            check for check in response.checks if check.name == "Platform webhook query"
+        )
         self.assertEqual(platform_check.status, "fail")
         self.assertNotIn("webhook-database-secret", platform_check.detail)
         platform_reference = platform_check.detail.rsplit("Reference: ", 1)[1]
         self.assertIn(platform_reference, [record.error_id for record in captured_logs.records])
-        self.assertTrue(all(record.exception_type == "RuntimeError" for record in captured_logs.records))
+        self.assertTrue(
+            all(record.exception_type == "RuntimeError" for record in captured_logs.records)
+        )
         self.assertTrue(all(record.exc_info is None for record in captured_logs.records))
-        self.assertTrue(all("stripe_account_id" not in record.__dict__ for record in captured_logs.records))
+        self.assertTrue(
+            all("stripe_account_id" not in record.__dict__ for record in captured_logs.records)
+        )
         self.assertNotIn("studio_1", repr([record.__dict__ for record in captured_logs.records]))
 
 

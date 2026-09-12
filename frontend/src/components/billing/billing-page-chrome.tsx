@@ -18,15 +18,9 @@ import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
-import {
-  SetupStepList,
-  type SetupStep,
-} from "@/components/ui/overview";
+import { SetupStepList, type SetupStep } from "@/components/ui/overview";
 import { SectionHeader } from "./billing-page-sections";
-import {
-  BILLING_TABS,
-  type BillingTab,
-} from "@/lib/billing-page-state";
+import { BILLING_TABS, type BillingTab } from "@/lib/billing-page-state";
 
 export type { BillingTab } from "@/lib/billing-page-state";
 export type BillingSetupStep = SetupStep;
@@ -154,17 +148,25 @@ export function BillingSetupNavigation({
       <section className="overflow-hidden bg-surface" data-billing-setup-register="true">
         <div className="grid border-b border-border px-4 py-4 sm:grid-cols-[minmax(12rem,0.35fr)_1fr] sm:gap-8 sm:px-5">
           <div>
-            <p className="text-xs font-medium text-muted">{completedStepCount} of {steps.length} ready</p>
+            <p className="text-xs font-medium text-muted">
+              {completedStepCount} of {steps.length} ready
+            </p>
             <h2 className="mt-1 text-base font-semibold text-text-primary">Billing review</h2>
           </div>
           <p className="text-xs leading-5 text-text-secondary">
-            Review provider state, plans, and families before posting external payments or reconciling open invoices.
+            Review provider state, plans, and families before posting external payments or
+            reconciling open invoices.
           </p>
         </div>
         <SetupStepList steps={steps} />
       </section>
 
-      <nav className="rounded-[14px] bg-surface p-2 shadow-[var(--product-shadow-card)]" aria-label="Billing views" data-billing-book-index="six-views" data-print-hide="true">
+      <nav
+        className="rounded-[14px] bg-surface p-2 shadow-[var(--product-shadow-card)]"
+        aria-label="Billing views"
+        data-billing-book-index="six-views"
+        data-print-hide="true"
+      >
         <ol className="grid list-none grid-cols-2 gap-1 p-0 sm:grid-cols-3 xl:grid-cols-6">
           {BILLING_TABS.map((tab) => {
             const { icon: Icon, label } = BILLING_TAB_PRESENTATION[tab];
@@ -205,20 +207,12 @@ export function BillingFeedbackNotices({
   return (
     <>
       {message ? (
-        <DismissibleNotice
-          tone="success"
-          onDismiss={onDismissMessage}
-          className="text-xs"
-        >
+        <DismissibleNotice tone="success" onDismiss={onDismissMessage} className="text-xs">
           {message}
         </DismissibleNotice>
       ) : null}
       {error ? (
-        <DismissibleNotice
-          tone="danger"
-          onDismiss={onDismissError}
-          className="text-xs"
-        >
+        <DismissibleNotice tone="danger" onDismiss={onDismissError} className="text-xs">
           {error}
         </DismissibleNotice>
       ) : null}

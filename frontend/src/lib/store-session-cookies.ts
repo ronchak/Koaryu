@@ -16,7 +16,7 @@ export function clearStoredStudioSessionCookies() {
 export function syncStoredStudioSessionCookies(
   userId: string,
   studioId: string | null | undefined,
-  membershipStatus: StudioMembershipStatus = studioId ? "active" : "none"
+  membershipStatus: StudioMembershipStatus = studioId ? "active" : "none",
 ) {
   const hasStudio = membershipStatus === "active" && Boolean(studioId);
   setStudioStateCookie(userId, hasStudio, membershipStatus);

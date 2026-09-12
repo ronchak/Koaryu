@@ -78,7 +78,7 @@ function storeIdempotencyKey(payload: string, requestKey: string) {
   try {
     window.sessionStorage.setItem(
       ONBOARDING_IDEMPOTENCY_STORAGE_KEY,
-      JSON.stringify({ payload, requestKey })
+      JSON.stringify({ payload, requestKey }),
     );
   } catch {
     // Same-page retries still reuse the in-memory key when sessionStorage is unavailable.
@@ -148,7 +148,9 @@ export default function OnboardingPage() {
       idempotencyKeyRef.current = requestKey;
       storeIdempotencyKey(idempotencyPayload, requestKey);
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) {
         setError("You must be signed in to create a studio.");
         setIsLoading(false);
@@ -163,7 +165,7 @@ export default function OnboardingPage() {
           headers: {
             "Idempotency-Key": requestKey,
           },
-        }
+        },
       );
       idempotencyKeyRef.current = null;
       clearStoredIdempotencyKey();
@@ -192,9 +194,7 @@ export default function OnboardingPage() {
 
         {/* Onboarding card */}
         <div className="border-y border-border bg-surface py-6">
-          <h2 className="text-lg font-semibold text-text-primary mb-1">
-            Set up your studio
-          </h2>
+          <h2 className="text-lg font-semibold text-text-primary mb-1">Set up your studio</h2>
           <p className="text-sm text-text-secondary mb-6">
             Tell us about your dojo and you&apos;ll be ready to go.
           </p>
@@ -214,10 +214,7 @@ export default function OnboardingPage() {
             />
 
             <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="timezone"
-                className="text-sm text-text-secondary font-medium"
-              >
+              <label htmlFor="timezone" className="text-sm text-text-secondary font-medium">
                 Timezone
               </label>
               <select
@@ -238,9 +235,7 @@ export default function OnboardingPage() {
               </select>
             </div>
 
-            {error && (
-              <p className="text-xs text-danger">{error}</p>
-            )}
+            {error && <p className="text-xs text-danger">{error}</p>}
 
             <Button
               type="submit"

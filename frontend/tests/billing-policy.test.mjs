@@ -107,7 +107,10 @@ describe("billing policy", () => {
     assert.match(copy.coreSubscription, /Live Stripe.*authorized for this studio/i);
     assert.match(copy.connectOnboarding, /Live Stripe.*not authorized for this studio/i);
     assert.match(copy.connectPayments, /Live Stripe.*authorized for this studio/i);
-    assert.equal(copy.boundary, `${copy.coreSubscription} ${copy.connectOnboarding} ${copy.connectPayments}`);
+    assert.equal(
+      copy.boundary,
+      `${copy.coreSubscription} ${copy.connectOnboarding} ${copy.connectPayments}`,
+    );
   });
 
   it("distinguishes test, preview, and unloaded provider state", () => {
@@ -128,7 +131,10 @@ describe("billing policy", () => {
       connectOnboarding: true,
       connectPayments: true,
     });
-    assert.match(unloaded.boundary, /unavailable until provider mode and studio authorization load/i);
+    assert.match(
+      unloaded.boundary,
+      /unavailable until provider mode and studio authorization load/i,
+    );
 
     const preview = resolveBillingProviderCopy({
       isPreviewMode: true,

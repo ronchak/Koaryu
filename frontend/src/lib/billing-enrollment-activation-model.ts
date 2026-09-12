@@ -9,10 +9,10 @@ const STORAGE_PREFIX = "koaryu.billing.enrollment-activation.v1";
 
 function isBounded(value: string, maximumBytes: number) {
   return (
-    value.length > 0
-    && value === value.trim()
-    && !/[\u0000-\u001f\u007f]/.test(value)
-    && new TextEncoder().encode(value).byteLength <= maximumBytes
+    value.length > 0 &&
+    value === value.trim() &&
+    !/[\u0000-\u001f\u007f]/.test(value) &&
+    new TextEncoder().encode(value).byteLength <= maximumBytes
   );
 }
 

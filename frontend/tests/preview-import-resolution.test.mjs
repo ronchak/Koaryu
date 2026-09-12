@@ -90,16 +90,18 @@ describe("preview import resolution", () => {
         status_alias_mode: "normalize",
       },
       programs: [program("program-bjj", "Brazilian Jiu Jitsu")],
-      beltLadders: [{
-        id: "ladder-bjj",
-        studio_id: "mock-studio",
-        name: "BJJ",
-        program_id: "program-bjj",
-        sub_rank_term: "Stripe",
-        created_at: "2026-05-01T00:00:00.000Z",
-        updated_at: "2026-05-01T00:00:00.000Z",
-        ranks: [white, stripeOne],
-      }],
+      beltLadders: [
+        {
+          id: "ladder-bjj",
+          studio_id: "mock-studio",
+          name: "BJJ",
+          program_id: "program-bjj",
+          sub_rank_term: "Stripe",
+          created_at: "2026-05-01T00:00:00.000Z",
+          updated_at: "2026-05-01T00:00:00.000Z",
+          ranks: [white, stripeOne],
+        },
+      ],
       fallbackRanks: [white, stripeOne],
       existingStudents: [],
       idFactory: idFactory(),
@@ -134,12 +136,12 @@ describe("preview import resolution", () => {
         guardian.email,
         guardian.is_primary_contact,
       ]),
-      [["student-import-1-guardian-primary", "Mina", "Lane", "mina@example.test", true]]
+      [["student-import-1-guardian-primary", "Mina", "Lane", "mina@example.test", true]],
     );
 
     assert.deepEqual(
       execution.result.rows[1].issues.map((issue) => issue.code),
-      ["invalid_status", "unresolved_program", "unresolved_belt"]
+      ["invalid_status", "unresolved_program", "unresolved_belt"],
     );
   });
 
@@ -160,16 +162,18 @@ describe("preview import resolution", () => {
         status_alias_mode: "normalize",
       },
       programs: [program("program-bjj", "Brazilian Jiu Jitsu")],
-      beltLadders: [{
-        id: "ladder-bjj",
-        studio_id: "mock-studio",
-        name: "BJJ",
-        program_id: "program-bjj",
-        sub_rank_term: "Stripe",
-        created_at: "2026-05-01T00:00:00.000Z",
-        updated_at: "2026-05-01T00:00:00.000Z",
-        ranks: [stripe, white],
-      }],
+      beltLadders: [
+        {
+          id: "ladder-bjj",
+          studio_id: "mock-studio",
+          name: "BJJ",
+          program_id: "program-bjj",
+          sub_rank_term: "Stripe",
+          created_at: "2026-05-01T00:00:00.000Z",
+          updated_at: "2026-05-01T00:00:00.000Z",
+          ranks: [stripe, white],
+        },
+      ],
       fallbackRanks: [stripe, white],
       existingStudents: [],
       idFactory: idFactory(),
@@ -180,7 +184,7 @@ describe("preview import resolution", () => {
     assert.equal(execution.importedStudents[0].current_belt_rank_id, "rank-white");
     assert.equal(
       execution.importedStudents[0].program_memberships[0].current_belt_rank_id,
-      "rank-white"
+      "rank-white",
     );
   });
 
@@ -202,16 +206,18 @@ describe("preview import resolution", () => {
         status_alias_mode: "normalize",
       },
       programs: [program("program-bjj", "Brazilian Jiu Jitsu")],
-      beltLadders: [{
-        id: "ladder-bjj",
-        studio_id: "mock-studio",
-        name: "BJJ",
-        program_id: "program-bjj",
-        sub_rank_term: "Stripe",
-        created_at: "2026-05-01T00:00:00.000Z",
-        updated_at: "2026-05-01T00:00:00.000Z",
-        ranks: [stripe, white],
-      }],
+      beltLadders: [
+        {
+          id: "ladder-bjj",
+          studio_id: "mock-studio",
+          name: "BJJ",
+          program_id: "program-bjj",
+          sub_rank_term: "Stripe",
+          created_at: "2026-05-01T00:00:00.000Z",
+          updated_at: "2026-05-01T00:00:00.000Z",
+          ranks: [stripe, white],
+        },
+      ],
       fallbackRanks: [stripe, white],
       existingStudents: [],
       idFactory: idFactory(),
@@ -222,7 +228,7 @@ describe("preview import resolution", () => {
     assert.equal(execution.importedStudents[0].current_belt_rank_id, "rank-white");
     assert.equal(
       execution.result.rows[0].issues.find((issue) => issue.code === "unresolved_belt")?.message,
-      "Koaryu preview could not match \"Cerulean\" to an existing belt rank, so the imported student will start at the program's first full belt. The original belt text will be saved to notes on live import."
+      'Koaryu preview could not match "Cerulean" to an existing belt rank, so the imported student will start at the program\'s first full belt. The original belt text will be saved to notes on live import.',
     );
   });
 });

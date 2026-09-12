@@ -79,12 +79,14 @@ def auth_user(user_id: str, *, email: str, display_name: str) -> SimpleNamespace
 
 
 def postgrest_error(code: str) -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": code,
-        "message": "postgrest failure",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": code,
+            "message": "postgrest failure",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 class StaffExportAuthAdmin:
@@ -99,7 +101,7 @@ class StaffExportAuthAdmin:
         self.supabase.auth_list_calls.append((page, per_page))
         users = list(self.supabase.auth_users.values())
         start = (page - 1) * per_page
-        return users[start:start + per_page]
+        return users[start : start + per_page]
 
 
 class StaffExportSupabase(TableBackedSupabase):
@@ -122,13 +124,12 @@ class ReportExportServiceTest(unittest.TestCase):
         deferred_reports = build_billing_table_report_catalog(ReportExportService)
 
         self.assertTrue(deferred_reports)
-        self.assertTrue(all(
-            report.availability == "deferred_billing"
-            for report in deferred_reports.values()
-        ))
-        self.assertTrue(set(deferred_reports).isdisjoint(
-            report.id for report in service.list_reports()
-        ))
+        self.assertTrue(
+            all(report.availability == "deferred_billing" for report in deferred_reports.values())
+        )
+        self.assertTrue(
+            set(deferred_reports).isdisjoint(report.id for report in service.list_reports())
+        )
 
         for report_id in deferred_reports:
             with self.subTest(report_id=report_id), self.assertRaises(HTTPException) as context:
@@ -144,9 +145,7 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertNotIn("full_name", report.columns)
 
         csv_text, _ = asyncio.run(
-            ReportExportService(StaffExportSupabase({})).build_csv(
-                "staff_roles", "studio-1"
-            )
+            ReportExportService(StaffExportSupabase({})).build_csv("staff_roles", "studio-1")
         )
         self.assertEqual(
             next(csv.reader(StringIO(csv_text))),
@@ -237,9 +236,7 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertEqual(len(role_queries), 1)
         self.assertIn(("eq", "studio_id", "studio-1"), role_queries[0]["filters"])
 
-        profile_queries = [
-            query for query in supabase.log if query["table"] == "staff_profiles"
-        ]
+        profile_queries = [query for query in supabase.log if query["table"] == "staff_profiles"]
         self.assertEqual(len(profile_queries), 1)
         self.assertEqual(
             profile_queries[0]["filters"],
@@ -251,11 +248,13 @@ class ReportExportServiceTest(unittest.TestCase):
     def test_staff_roles_export_leaves_missing_profiles_blank(self):
         supabase = StaffExportSupabase(
             {
-                "staff_roles": [staff_role_row(
-                    "role-1",
-                    user_id="user-1",
-                    created_at="2026-01-01T00:00:00Z",
-                )],
+                "staff_roles": [
+                    staff_role_row(
+                        "role-1",
+                        user_id="user-1",
+                        created_at="2026-01-01T00:00:00Z",
+                    )
+                ],
                 "staff_profiles": [],
             },
             auth_users={
@@ -281,11 +280,13 @@ class ReportExportServiceTest(unittest.TestCase):
             with self.subTest(code=code):
                 supabase = StaffExportSupabase(
                     {
-                        "staff_roles": [staff_role_row(
-                            "role-1",
-                            user_id="user-1",
-                            created_at="2026-01-01T00:00:00Z",
-                        )],
+                        "staff_roles": [
+                            staff_role_row(
+                                "role-1",
+                                user_id="user-1",
+                                created_at="2026-01-01T00:00:00Z",
+                            )
+                        ],
                     },
                     auth_users={
                         "user-1": auth_user(
@@ -308,11 +309,13 @@ class ReportExportServiceTest(unittest.TestCase):
     def test_staff_roles_export_propagates_unrelated_profile_errors(self):
         supabase = StaffExportSupabase(
             {
-                "staff_roles": [staff_role_row(
-                    "role-1",
-                    user_id="user-1",
-                    created_at="2026-01-01T00:00:00Z",
-                )],
+                "staff_roles": [
+                    staff_role_row(
+                        "role-1",
+                        user_id="user-1",
+                        created_at="2026-01-01T00:00:00Z",
+                    )
+                ],
             },
             auth_users={
                 "user-1": auth_user(
@@ -326,9 +329,7 @@ class ReportExportServiceTest(unittest.TestCase):
         supabase.table_failures["staff_profiles"] = failure
 
         with self.assertRaises(PostgrestAPIError) as raised:
-            asyncio.run(
-                ReportExportService(supabase).build_csv("staff_roles", "studio-1")
-            )
+            asyncio.run(ReportExportService(supabase).build_csv("staff_roles", "studio-1"))
 
         self.assertIs(raised.exception, failure)
 
@@ -364,9 +365,11 @@ class ReportExportServiceTest(unittest.TestCase):
         )
 
     def test_paged_rows_rejects_exports_above_cap(self):
-        supabase = TableBackedSupabase({
-            "students": [student_row(index) for index in range(4)],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [student_row(index) for index in range(4)],
+            }
+        )
         fetcher = ReportExportDataFetcher(supabase)
 
         with self.assertRaises(HTTPException) as context:
@@ -387,10 +390,12 @@ class ReportExportServiceTest(unittest.TestCase):
             {"id": f"sg-{index:04d}", "student_id": "s-0000", "guardian_id": f"g-{index:04d}"}
             for index in range(1205)
         ]
-        supabase = TableBackedSupabase({
-            "students": students,
-            "student_guardians": relationships,
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": students,
+                "student_guardians": relationships,
+            }
+        )
         service = ReportExportService(supabase)
         service._active_report = service.get_report("family_account_health")
 
@@ -401,9 +406,13 @@ class ReportExportServiceTest(unittest.TestCase):
         student_queries = [entry for entry in supabase.log if entry["table"] == "students"]
         self.assertEqual([entry["range"] for entry in student_queries], [(0, 999), (1000, 1999)])
         self.assertEqual(student_queries[0]["orders"], (("id", False),))
-        guardian_queries = [entry for entry in supabase.log if entry["table"] == "student_guardians"]
+        guardian_queries = [
+            entry for entry in supabase.log if entry["table"] == "student_guardians"
+        ]
         self.assertGreaterEqual(len(guardian_queries), 2)
-        self.assertEqual([entry["range"] for entry in guardian_queries[:2]], [(0, 999), (1000, 1999)])
+        self.assertEqual(
+            [entry["range"] for entry in guardian_queries[:2]], [(0, 999), (1000, 1999)]
+        )
 
     def test_report_export_access_is_report_specific(self):
         service = ReportExportService(TableBackedSupabase({}))
@@ -418,21 +427,25 @@ class ReportExportServiceTest(unittest.TestCase):
         require_report_export_access(class_sessions_report, "front_desk")
 
     def test_export_report_csv_audits_sensitive_admin_export(self):
-        supabase = TableBackedSupabase({
-            "students": [student_row(1)],
-            "audit_logs": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [student_row(1)],
+                "audit_logs": [],
+            }
+        )
 
         with patch(
             "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
             return_value={"studio_id": "studio-1", "role": "admin"},
         ):
-            response = asyncio.run(export_report_csv(
-                "students",
-                user_id="user-1",
-                requested_studio_id="studio-1",
-                supabase=supabase,
-            ))
+            response = asyncio.run(
+                export_report_csv(
+                    "students",
+                    user_id="user-1",
+                    requested_studio_id="studio-1",
+                    supabase=supabase,
+                )
+            )
 
         body = asyncio.run(consume_streaming_response(response))
         self.assertIn(b"s-0001", body)
@@ -451,76 +464,90 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertEqual(audit["metadata"]["row_count"], 1)
 
     def test_export_report_csv_rejects_front_desk_sensitive_export_before_audit(self):
-        supabase = TableBackedSupabase({
-            "students": [student_row(1)],
-            "audit_logs": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [student_row(1)],
+                "audit_logs": [],
+            }
+        )
 
         with patch(
             "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
             return_value={"studio_id": "studio-1", "role": "front_desk"},
         ):
             with self.assertRaises(HTTPException) as context:
-                asyncio.run(export_report_csv(
-                    "students",
-                    user_id="user-1",
-                    requested_studio_id="studio-1",
-                    supabase=supabase,
-                ))
+                asyncio.run(
+                    export_report_csv(
+                        "students",
+                        user_id="user-1",
+                        requested_studio_id="studio-1",
+                        supabase=supabase,
+                    )
+                )
 
         self.assertEqual(context.exception.status_code, 403)
         self.assertEqual(supabase.tables["audit_logs"], [])
         self.assertFalse(any(query["table"] == "students" for query in supabase.log))
 
     def test_export_report_csv_rejects_instructor_before_data_or_audit(self):
-        supabase = TableBackedSupabase({
-            "students": [student_row(1)],
-            "audit_logs": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [student_row(1)],
+                "audit_logs": [],
+            }
+        )
 
         with patch(
             "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
             return_value={"studio_id": "studio-1", "role": "instructor"},
         ):
             with self.assertRaises(HTTPException) as context:
-                asyncio.run(export_report_csv(
-                    "students",
-                    user_id="user-1",
-                    requested_studio_id="studio-1",
-                    supabase=supabase,
-                ))
+                asyncio.run(
+                    export_report_csv(
+                        "students",
+                        user_id="user-1",
+                        requested_studio_id="studio-1",
+                        supabase=supabase,
+                    )
+                )
 
         self.assertEqual(context.exception.status_code, 403)
         self.assertEqual(supabase.tables["audit_logs"], [])
         self.assertFalse(any(query["table"] == "students" for query in supabase.log))
 
     def test_export_report_csv_rejects_deferred_billing_report_before_data_or_audit(self):
-        supabase = TableBackedSupabase({
-            "billing_payments": [{"id": "payment-1", "studio_id": "studio-1"}],
-            "audit_logs": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "billing_payments": [{"id": "payment-1", "studio_id": "studio-1"}],
+                "audit_logs": [],
+            }
+        )
 
         with patch(
             "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
             return_value={"studio_id": "studio-1", "role": "admin"},
         ):
             with self.assertRaises(HTTPException) as context:
-                asyncio.run(export_report_csv(
-                    "billing_payments",
-                    user_id="user-1",
-                    requested_studio_id="studio-1",
-                    supabase=supabase,
-                ))
+                asyncio.run(
+                    export_report_csv(
+                        "billing_payments",
+                        user_id="user-1",
+                        requested_studio_id="studio-1",
+                        supabase=supabase,
+                    )
+                )
 
         self.assertEqual(context.exception.status_code, 404)
         self.assertEqual(supabase.tables["audit_logs"], [])
         self.assertFalse(any(query["table"] == "billing_payments" for query in supabase.log))
 
     def test_export_report_csv_does_not_audit_completion_when_generation_fails(self):
-        supabase = TableBackedSupabase({
-            "students": [student_row(1)],
-            "audit_logs": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [student_row(1)],
+                "audit_logs": [],
+            }
+        )
 
         with (
             patch(
@@ -534,12 +561,14 @@ class ReportExportServiceTest(unittest.TestCase):
             ),
         ):
             with self.assertRaises(RuntimeError):
-                asyncio.run(export_report_csv(
-                    "students",
-                    user_id="user-1",
-                    requested_studio_id="studio-1",
-                    supabase=supabase,
-                ))
+                asyncio.run(
+                    export_report_csv(
+                        "students",
+                        user_id="user-1",
+                        requested_studio_id="studio-1",
+                        supabase=supabase,
+                    )
+                )
 
         self.assertEqual(supabase.tables["audit_logs"], [])
 

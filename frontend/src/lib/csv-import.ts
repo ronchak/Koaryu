@@ -29,7 +29,7 @@ function canonicalizeJson(value: unknown): unknown {
     Object.entries(value as Record<string, unknown>)
       .filter(([, entryValue]) => entryValue !== undefined)
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entryValue]) => [key, canonicalizeJson(entryValue)])
+      .map(([key, entryValue]) => [key, canonicalizeJson(entryValue)]),
   );
 }
 
@@ -52,10 +52,7 @@ async function digestTextSha256(value: string) {
     throw new Error("Secure hashing is unavailable in this browser.");
   }
 
-  const digest = await globalThis.crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(value)
-  );
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return bytesToHex(new Uint8Array(digest));
 }
 
@@ -71,7 +68,7 @@ function normalizePreviewLookupValue(value?: string | null) {
 
 function findBjjProgram(programs: Program[]) {
   return programs.find((program) =>
-    normalizePreviewLookupValue(program.name).includes("brazilian jiu jitsu")
+    normalizePreviewLookupValue(program.name).includes("brazilian jiu jitsu"),
   );
 }
 
@@ -87,8 +84,8 @@ export function resolvePreviewImportProgramId(value: string | undefined, program
   if (idMatch) return idMatch.id;
 
   const normalizedValue = normalizePreviewLookupValue(rawValue);
-  const nameMatch = programs.find((program) =>
-    normalizePreviewLookupValue(program.name) === normalizedValue
+  const nameMatch = programs.find(
+    (program) => normalizePreviewLookupValue(program.name) === normalizedValue,
   );
   if (nameMatch) return nameMatch.id;
 
@@ -116,17 +113,18 @@ export function resolvePreviewImportBeltRankId({
   const candidateLadders = programId
     ? beltLadders.filter((ladder) => ladder.program_id === programId)
     : beltLadders;
-  const candidateRanks = candidateLadders.length > 0
-    ? candidateLadders.flatMap((ladder) => ladder.ranks || [])
-    : fallbackRanks;
+  const candidateRanks =
+    candidateLadders.length > 0
+      ? candidateLadders.flatMap((ladder) => ladder.ranks || [])
+      : fallbackRanks;
   const allRanks = beltLadders.flatMap((ladder) => ladder.ranks || []);
 
   const idMatch = [...candidateRanks, ...allRanks].find((rank) => rank.id === rawValue);
   if (idMatch) return idMatch.id;
 
   const normalizedValue = normalizePreviewLookupValue(rawValue);
-  const nameMatch = candidateRanks.find((rank) =>
-    normalizePreviewLookupValue(rank.name) === normalizedValue
+  const nameMatch = candidateRanks.find(
+    (rank) => normalizePreviewLookupValue(rank.name) === normalizedValue,
   );
   if (nameMatch) return nameMatch.id;
 
@@ -160,11 +158,11 @@ export function resolvePreviewImportStudentIds({
   const shouldResolveBeltRank = !hasProgramValue || Boolean(programId);
   const beltRankId = shouldResolveBeltRank
     ? resolvePreviewImportBeltRankId({
-      value: beltRankValue,
-      programId,
-      beltLadders,
-      fallbackRanks,
-    })
+        value: beltRankValue,
+        programId,
+        beltLadders,
+        fallbackRanks,
+      })
     : undefined;
   const issues: PreviewImportRowIssue[] = [];
 
@@ -179,10 +177,11 @@ export function resolvePreviewImportStudentIds({
   }
   if (beltRankValue?.trim() && !beltRankId) {
     const hasConfiguredStartingRank = Boolean(
-      programId && beltLadders
+      programId &&
+      beltLadders
         .filter((ladder) => ladder.program_id === programId)
         .flatMap((ladder) => ladder.ranks || [])
-        .some((rank) => !rank.is_tip)
+        .some((rank) => !rank.is_tip),
     );
     issues.push({
       code: "unresolved_belt",
@@ -235,7 +234,7 @@ export async function buildStableImportKey(params: CsvImportKeyInput) {
 
 export function areCsvImportKeyInputsEqual(
   left: CsvImportKeyInput | null | undefined,
-  right: CsvImportKeyInput | null | undefined
+  right: CsvImportKeyInput | null | undefined,
 ) {
   if (!left || !right) {
     return left === right;
@@ -246,14 +245,11 @@ export function areCsvImportKeyInputsEqual(
 
 export function withCsvImportRefreshWarning<T extends CsvImportRefreshWarningTarget>(
   result: T,
-  message: string
+  message: string,
 ) {
   return {
     ...result,
     execution_status: "completed_with_warnings" as const,
-    non_critical_errors: [
-      ...(result.non_critical_errors || []),
-      message,
-    ],
+    non_critical_errors: [...(result.non_critical_errors || []), message],
   };
 }

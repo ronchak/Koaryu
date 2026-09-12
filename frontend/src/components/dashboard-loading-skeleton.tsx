@@ -47,7 +47,13 @@ export function DashboardLoadingSkeleton({
               <SkeletonBlock className="h-4 w-40" />
               <SkeletonBlock className="mt-2 h-3 w-full max-w-md" />
             </div>
-            <div className={variant === "calendar" ? "grid gap-px bg-border sm:grid-cols-7" : "divide-y divide-border"}>
+            <div
+              className={
+                variant === "calendar"
+                  ? "grid gap-px bg-border sm:grid-cols-7"
+                  : "divide-y divide-border"
+              }
+            >
               {Array.from({ length: variant === "calendar" ? 14 : 6 }).map((_, index) => (
                 <div key={index} className="bg-surface px-4 py-4">
                   <SkeletonBlock className="h-4 w-2/3" />

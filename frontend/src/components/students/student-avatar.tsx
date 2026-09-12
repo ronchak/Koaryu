@@ -29,12 +29,7 @@ function studentDisplayName(student: Student) {
   return `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`.trim();
 }
 
-export function StudentAvatar({
-  student,
-  size = "sm",
-  src,
-  className = "",
-}: StudentAvatarProps) {
+export function StudentAvatar({ student, size = "sm", src, className = "" }: StudentAvatarProps) {
   const imageSrc = src ?? student.photo_url ?? "";
   const [failedImageSrc, setFailedImageSrc] = useState<string | null>(null);
   const shouldShowImage = Boolean(imageSrc && failedImageSrc !== imageSrc);
@@ -58,9 +53,7 @@ export function StudentAvatar({
           onError={() => setFailedImageSrc(imageSrc)}
         />
       ) : (
-        <span className="font-semibold text-text-secondary">
-          {studentInitials(student)}
-        </span>
+        <span className="font-semibold text-text-secondary">{studentInitials(student)}</span>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 """Nested provider clients retain bounded I/O and their own thread ownership."""
+
 import asyncio
 import json
 import threading
@@ -43,7 +44,11 @@ def nested_provider():
                 release.wait(2)
                 return
             table = self.path.split("?")[0].split("/")[-1]
-            data = {"id": "studio-1", "name": "Fixture", "slug": "fixture", "timezone": "UTC"} if table == "studios" else []
+            data = (
+                {"id": "studio-1", "name": "Fixture", "slug": "fixture", "timezone": "UTC"}
+                if table == "studios"
+                else []
+            )
             payload = json.dumps(data).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -75,13 +80,17 @@ def lane(*, caller=2, transport=0.15):
 def bootstrap_auth():
     return AuthResponse(
         user=UserProfile(id="user-1", email="fixture@example.invalid", full_name="Fixture"),
-        staff_profiles_available=True, studio_id="studio-1", role="admin",
+        staff_profiles_available=True,
+        studio_id="studio-1",
+        role="admin",
     )
 
 
 @pytest.mark.parametrize("stalled", [False, True])
 @pytest.mark.parametrize("allow_partial", [False, True])
-def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_returns(nested_provider, stalled, allow_partial):
+def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_returns(
+    nested_provider, stalled, allow_partial
+):
     nested_provider.stall = stalled
     created = []
     closed = []
@@ -92,7 +101,9 @@ def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_ret
         client = create_supabase_client(**options)
         with lock:
             clients.append(client)
-            created.append((id(client), threading.get_ident(), client.postgrest.session.timeout.read))
+            created.append(
+                (id(client), threading.get_ident(), client.postgrest.session.timeout.read)
+            )
         return client
 
     def closer(client):
@@ -106,10 +117,14 @@ def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_ret
             # Initialize the parent client independently of the nested fault.
             parent_id = await runtime.run_interactive(lambda client: id(client))
             completed_payloads = []
+
             async def operation(client):
-                result = await DashboardBootstrapService(client).get_dashboard_bootstrap("user-1", provider_owned=True, allow_partial=allow_partial)
+                result = await DashboardBootstrapService(client).get_dashboard_bootstrap(
+                    "user-1", provider_owned=True, allow_partial=allow_partial
+                )
                 completed_payloads.append(result[0])
                 return result
+
             if stalled:
                 started = time.monotonic()
                 with pytest.raises(HTTPException) as error:
@@ -124,10 +139,14 @@ def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_ret
                 while runtime.interactive_snapshot().admitted:
                     assert time.monotonic() - started < 2
                     await asyncio.sleep(0.005)
-                assert runtime.interactive_snapshot().transport_timed_out == (0 if allow_partial else 1)
+                assert runtime.interactive_snapshot().transport_timed_out == (
+                    0 if allow_partial else 1
+                )
                 if allow_partial:
                     assert len(completed_payloads) == 1
-                    assert set(completed_payloads[0].dataset_errors.model_dump(exclude_none=True)) == {"studio", "students", "leads", "belts", "programs"}
+                    assert set(
+                        completed_payloads[0].dataset_errors.model_dump(exclude_none=True)
+                    ) == {"studio", "students", "leads", "belts", "programs"}
                     assert completed_payloads[0].students_total is None
             else:
                 response, _timings = await run_supabase_operation(runtime, operation)
@@ -135,22 +154,41 @@ def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_ret
                 assert response.students_total == 0
             assert len(created) == len(closed) == 5
             assert len({identity for identity, _thread, _timeout in created}) == 5
-            assert all(identity != parent_id and timeout == 0.15 for identity, _thread, timeout in created)
-            assert sorted(closed) == sorted((identity, thread) for identity, thread, _timeout in created)
+            assert all(
+                identity != parent_id and timeout == 0.15 for identity, _thread, timeout in created
+            )
+            assert sorted(closed) == sorted(
+                (identity, thread) for identity, thread, _timeout in created
+            )
             assert nested_provider.requests == 5
             assert runtime.interactive_snapshot().active == 0
             assert await runtime.run_interactive(lambda _client: "recovered") == "recovered"
         finally:
             await asyncio.to_thread(runtime.shutdown)
 
-    with patch("app.services.dashboard_bootstrap_service.create_supabase_client", side_effect=factory), patch("app.services.dashboard_bootstrap_service.close_supabase_client", side_effect=closer), patch("app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync", return_value=bootstrap_auth()), patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"):
+    with (
+        patch(
+            "app.services.dashboard_bootstrap_service.create_supabase_client", side_effect=factory
+        ),
+        patch("app.services.dashboard_bootstrap_service.close_supabase_client", side_effect=closer),
+        patch(
+            "app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync",
+            return_value=bootstrap_auth(),
+        ),
+        patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"),
+    ):
         asyncio.run(scenario())
 
 
 def test_isolated_live_authorization_stall_fails_closed_before_stripe_can_run(nested_provider):
     assert LIVE_AUTHORIZATION_POSTGREST_TIMEOUT_SECONDS == 10.0
     nested_provider.stall = True
-    settings = SimpleNamespace(STRIPE_MODE="live", STRIPE_SECRET_KEY="sk_live_fixture", LIVE_BILLING_ENABLED=True, CORE_SELF_CHECKOUT_ENABLED=False)
+    settings = SimpleNamespace(
+        STRIPE_MODE="live",
+        STRIPE_SECRET_KEY="sk_live_fixture",
+        LIVE_BILLING_ENABLED=True,
+        CORE_SELF_CHECKOUT_ENABLED=False,
+    )
     created = []
     closed = []
 
@@ -169,9 +207,23 @@ def test_isolated_live_authorization_stall_fails_closed_before_stripe_can_run(ne
         return store.supabase.table("authorization").select("*").execute()
 
     started = time.monotonic()
-    with patch("app.services.stripe_mutation_policy.LIVE_AUTHORIZATION_POSTGREST_TIMEOUT_SECONDS", 0.1), patch("app.services.stripe_mutation_policy.create_supabase_client", side_effect=factory), patch("app.services.stripe_mutation_policy.close_supabase_client", side_effect=closer), patch("app.services.stripe_mutation_policy.StudioLiveBillingAuthorizationStore.authorize", authorize), patch("app.services.stripe_service.get_settings", return_value=settings), patch.object(StripeService, "_stripe") as stripe_provider:
+    with (
+        patch(
+            "app.services.stripe_mutation_policy.LIVE_AUTHORIZATION_POSTGREST_TIMEOUT_SECONDS", 0.1
+        ),
+        patch("app.services.stripe_mutation_policy.create_supabase_client", side_effect=factory),
+        patch("app.services.stripe_mutation_policy.close_supabase_client", side_effect=closer),
+        patch(
+            "app.services.stripe_mutation_policy.StudioLiveBillingAuthorizationStore.authorize",
+            authorize,
+        ),
+        patch("app.services.stripe_service.get_settings", return_value=settings),
+        patch.object(StripeService, "_stripe") as stripe_provider,
+    ):
         with pytest.raises(httpx.ReadTimeout):
-            StripeService().cancel_core_subscription(subscription_id="sub-fixture", studio_id="studio-1")
+            StripeService().cancel_core_subscription(
+                subscription_id="sub-fixture", studio_id="studio-1"
+            )
         stripe_provider.assert_not_called()
     assert time.monotonic() - started < 1
     assert created == [0.1]

@@ -12,7 +12,9 @@ from app.services.platform_billing_helpers import (
 
 class PlatformBillingHelperTest(unittest.TestCase):
     def test_build_idempotency_key_hashes_long_final_stripe_keys(self):
-        key = build_idempotency_key("core-checkout", "studio-" + ("s" * 120), "request-" + ("r" * 255))
+        key = build_idempotency_key(
+            "core-checkout", "studio-" + ("s" * 120), "request-" + ("r" * 255)
+        )
 
         self.assertLessEqual(len(key), MAX_IDEMPOTENCY_KEY_LENGTH)
         self.assertRegex(key, r"^koaryu:core-checkout:[0-9a-f]{64}$")

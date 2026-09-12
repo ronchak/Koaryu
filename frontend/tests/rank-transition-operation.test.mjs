@@ -30,10 +30,7 @@ describe("rank transition operation receipts", () => {
       operationId: "11111111-1111-4111-8111-111111111111",
     };
     persistPendingRankTransition("promotion", "student-1", pending, session);
-    assert.deepEqual(
-      loadPendingRankTransition("promotion", "student-1", session),
-      pending,
-    );
+    assert.deepEqual(loadPendingRankTransition("promotion", "student-1", session), pending);
     assert.equal(loadPendingRankTransition("demotion", "student-1", session), null);
     clearPendingRankTransition("promotion", "student-1", session);
     assert.equal(loadPendingRankTransition("promotion", "student-1", session), null);

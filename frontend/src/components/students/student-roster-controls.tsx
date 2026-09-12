@@ -83,7 +83,8 @@ export function StudentRosterNotices({
                 Loading the full roster for dashboard details
               </p>
               <p className="mt-0.5 text-xs text-muted">
-                Koaryu is refreshing complete student data so retention and churn details are not based on the bootstrap sample.
+                Koaryu is refreshing complete student data so retention and churn details are not
+                based on the bootstrap sample.
               </p>
             </div>
           </DismissibleNotice>
@@ -152,7 +153,9 @@ export function StudentRosterToolbar({
         <select
           aria-label="Filter by status"
           value={statusFilter}
-          onChange={(event) => onStatusFilterChange(event.target.value as StudentRosterStatusFilter | "")}
+          onChange={(event) =>
+            onStatusFilterChange(event.target.value as StudentRosterStatusFilter | "")
+          }
           className={styles.rosterFilterSelect}
         >
           {STATUS_OPTIONS.map((option) => (
@@ -169,11 +172,13 @@ export function StudentRosterToolbar({
           className={styles.rosterFilterSelect}
         >
           <option value="">All programs</option>
-          {programs.filter((program) => !program.archived_at).map((program) => (
-            <option key={program.id} value={program.id}>
-              {program.name}
-            </option>
-          ))}
+          {programs
+            .filter((program) => !program.archived_at)
+            .map((program) => (
+              <option key={program.id} value={program.id}>
+                {program.name}
+              </option>
+            ))}
         </select>
       </div>
 
@@ -206,10 +211,10 @@ export function StudentRosterToolbar({
       ) : null}
 
       {canManageRoster && selectedCount > 0 ? (
-        <div className={`flex flex-wrap items-center gap-2 rounded-[14px] border border-border bg-surface-raised px-3 py-2 ${styles.selectionBand}`}>
-          <span className="text-xs text-text-secondary">
-            {selectedCount} selected
-          </span>
+        <div
+          className={`flex flex-wrap items-center gap-2 rounded-[14px] border border-border bg-surface-raised px-3 py-2 ${styles.selectionBand}`}
+        >
+          <span className="text-xs text-text-secondary">{selectedCount} selected</span>
           <span className="text-border">|</span>
           <button
             type="button"
@@ -293,7 +298,8 @@ export function StudentRosterBulkActionPanels({
                 Add tags to {selectedCount} selected {selectedCount === 1 ? "student" : "students"}
               </p>
               <p className="text-xs text-muted mt-1">
-                Enter one or more comma-separated tags. Existing tags stay in place and duplicates are ignored.
+                Enter one or more comma-separated tags. Existing tags stay in place and duplicates
+                are ignored.
               </p>
               <div className="mt-3 max-w-xl">
                 <Input
@@ -307,20 +313,10 @@ export function StudentRosterBulkActionPanels({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onCancelTags}
-                disabled={isAddingTags}
-              >
+              <Button variant="ghost" size="sm" onClick={onCancelTags} disabled={isAddingTags}>
                 Cancel
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                isLoading={isAddingTags}
-                onClick={onAddTags}
-              >
+              <Button variant="primary" size="sm" isLoading={isAddingTags} onClick={onAddTags}>
                 Add tag
               </Button>
             </div>
@@ -337,7 +333,8 @@ export function StudentRosterBulkActionPanels({
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-text-primary">
-                Change status for {selectedCount} selected {selectedCount === 1 ? "student" : "students"}
+                Change status for {selectedCount} selected{" "}
+                {selectedCount === 1 ? "student" : "students"}
               </p>
               <p className="text-xs text-muted mt-1">
                 This updates the membership status for every selected student at once.
@@ -401,27 +398,16 @@ export function StudentRosterBulkActionPanels({
                 </p>
               </div>
               <p className="text-xs text-muted mt-1">
-                This removes the selected students from the active roster and cannot be undone from the UI.
+                This removes the selected students from the active roster and cannot be undone from
+                the UI.
               </p>
-              {deleteError ? (
-                <p className="text-xs text-danger mt-2">{deleteError}</p>
-              ) : null}
+              {deleteError ? <p className="text-xs text-danger mt-2">{deleteError}</p> : null}
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onCancelDelete}
-                disabled={isDeleting}
-              >
+              <Button variant="ghost" size="sm" onClick={onCancelDelete} disabled={isDeleting}>
                 Cancel
               </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                isLoading={isDeleting}
-                onClick={onDeleteSelected}
-              >
+              <Button variant="danger" size="sm" isLoading={isDeleting} onClick={onDeleteSelected}>
                 <Trash2 className="w-3.5 h-3.5" />
                 Archive
               </Button>

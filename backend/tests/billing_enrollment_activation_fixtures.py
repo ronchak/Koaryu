@@ -24,29 +24,28 @@ class _ActivationSupabase(_FakeSupabase):
         if self.autopay_reservation_hook is not None:
             self.autopay_reservation_hook()
         if not self.autopay_consent_active:
-            raise PostgrestAPIError({
-                "code": "55000",
-                "message": "billing_autopay_activation_consent_invalid",
-                "details": "",
-                "hint": "",
-            })
+            raise PostgrestAPIError(
+                {
+                    "code": "55000",
+                    "message": "billing_autopay_activation_consent_invalid",
+                    "details": "",
+                    "hint": "",
+                }
+            )
         payer = next(
-            row for row in self.tables["billing_payers"]
-            if row["id"] == params["p_payer_id"]
+            row for row in self.tables["billing_payers"] if row["id"] == params["p_payer_id"]
         )
         enrollment = next(
-            row for row in self.tables["student_billing_enrollments"]
+            row
+            for row in self.tables["student_billing_enrollments"]
             if row["id"] == params["p_enrollment_id"]
         )
-        rejection = (enrollment.get("metadata") or {}).get(
-            "provider_activation_rejection"
-        )
+        rejection = (enrollment.get("metadata") or {}).get("provider_activation_rejection")
         if isinstance(rejection, dict):
-            if rejection.get("caller_request_key_sha256") == params[
-                "p_caller_request_key_sha256"
-            ]:
+            if rejection.get("caller_request_key_sha256") == params["p_caller_request_key_sha256"]:
                 operation = next(
-                    row for row in self.billing_provider_operations.values()
+                    row
+                    for row in self.billing_provider_operations.values()
                     if row["id"] == rejection["operation_id"]
                 )
                 return {
@@ -59,13 +58,11 @@ class _ActivationSupabase(_FakeSupabase):
             enrollment["metadata"].pop("provider_activation_rejection", None)
         group = next(
             (
-                row for row in self.tables.setdefault(
-                    "billing_subscriptions", []
-                )
+                row
+                for row in self.tables.setdefault("billing_subscriptions", [])
                 if row.get("payer_id") == params["p_payer_id"]
                 and row.get("collection_mode") == "autopay"
-                and row.get("status")
-                in {"pending", "trialing", "active", "incomplete", "past_due"}
+                and row.get("status") in {"pending", "trialing", "active", "incomplete", "past_due"}
             ),
             None,
         )
@@ -81,16 +78,10 @@ class _ActivationSupabase(_FakeSupabase):
                 "billing_interval": "monthly",
                 "currency": "usd",
                 "status": "pending",
-                "default_payment_method_id": payer[
-                    "default_payment_method_id"
-                ],
-                "application_fee_percent": params[
-                    "p_application_fee_percent"
-                ],
+                "default_payment_method_id": payer["default_payment_method_id"],
+                "application_fee_percent": params["p_application_fee_percent"],
                 "metadata": {
-                    "connect_account_generation": params[
-                        "p_connect_account_generation"
-                    ],
+                    "connect_account_generation": params["p_connect_account_generation"],
                     "activation_reservation": {
                         "version": 1,
                         "enrollment_id": params["p_enrollment_id"],
@@ -99,11 +90,9 @@ class _ActivationSupabase(_FakeSupabase):
             }
             self.tables["billing_subscriptions"].append(group)
             outcome = "created"
-        elif (
-            group.get("stripe_subscription_id") is None
-            and (group.get("metadata") or {}).get("activation_reservation")
-            == {"version": 1, "enrollment_id": params["p_enrollment_id"]}
-        ):
+        elif group.get("stripe_subscription_id") is None and (group.get("metadata") or {}).get(
+            "activation_reservation"
+        ) == {"version": 1, "enrollment_id": params["p_enrollment_id"]}:
             outcome = "created"
         return {
             "outcome": outcome,
@@ -118,18 +107,21 @@ class _ActivationSupabase(_FakeSupabase):
             self.fail_autopay_rejection_before_commit_once = False
             raise RuntimeError("autopay rejection cleanup failed before commit")
         operation = next(
-            row for row in self.billing_provider_operations.values()
+            row
+            for row in self.billing_provider_operations.values()
             if row["id"] == params["p_operation_id"]
         )
         group = next(
             (
-                row for row in self.tables["billing_subscriptions"]
+                row
+                for row in self.tables["billing_subscriptions"]
                 if row["id"] == params["p_billing_subscription_id"]
             ),
             None,
         )
         enrollment = next(
-            row for row in self.tables["student_billing_enrollments"]
+            row
+            for row in self.tables["student_billing_enrollments"]
             if row["id"] == params["p_enrollment_id"]
         )
         if (
@@ -147,21 +139,19 @@ class _ActivationSupabase(_FakeSupabase):
         )
         assert operation.get("provider_object_id") is None
         assert operation["revision"] == params["p_expected_operation_revision"]
-        intent = (enrollment.get("metadata") or {}).get(
-            "provider_activation_intent"
-        ) or {}
+        intent = (enrollment.get("metadata") or {}).get("provider_activation_intent") or {}
         metadata = (group or {}).get("metadata") or {}
         linked = [
-            row for row in self.tables["student_billing_enrollments"]
-            if row.get("billing_subscription_id") == params[
-                "p_billing_subscription_id"
-            ]
+            row
+            for row in self.tables["student_billing_enrollments"]
+            if row.get("billing_subscription_id") == params["p_billing_subscription_id"]
         ]
         safe = bool(
             group
             and group.get("stripe_subscription_id") is None
             and group.get("status") == "pending"
-            and metadata.get("activation_reservation") == {
+            and metadata.get("activation_reservation")
+            == {
                 "version": 1,
                 "enrollment_id": params["p_enrollment_id"],
             }
@@ -176,17 +166,17 @@ class _ActivationSupabase(_FakeSupabase):
             enrollment["metadata"]["provider_activation_rejection"] = {
                 "version": 1,
                 "operation_id": params["p_operation_id"],
-                "caller_request_key_sha256": params[
-                    "p_caller_request_key_sha256"
-                ],
+                "caller_request_key_sha256": params["p_caller_request_key_sha256"],
                 "request_sha256": params["p_request_sha256"],
             }
             self.tables["billing_subscriptions"].remove(group)
-        operation.update({
-            "state": "definitive_rejected",
-            "error_code": "provider_mutation_blocked",
-            "revision": operation["revision"] + 1,
-        })
+        operation.update(
+            {
+                "state": "definitive_rejected",
+                "error_code": "provider_mutation_blocked",
+                "revision": operation["revision"] + 1,
+            }
+        )
         result = {
             "outcome": "rejected",
             "operation": dict(operation),
@@ -242,12 +232,14 @@ class _Facade:
         return _Accounts(self.account)
 
     def _get_row_or_404(self, table, record_id, studio_id, detail):
-        row = next((
-            candidate
-            for candidate in self.supabase.tables.setdefault(table, [])
-            if candidate.get("id") == record_id
-            and candidate.get("studio_id") == studio_id
-        ), None)
+        row = next(
+            (
+                candidate
+                for candidate in self.supabase.tables.setdefault(table, [])
+                if candidate.get("id") == record_id and candidate.get("studio_id") == studio_id
+            ),
+            None,
+        )
         if row is None:
             raise HTTPException(status_code=404, detail=detail)
         return row
@@ -277,12 +269,14 @@ class _Facade:
         group = self._get_row_or_404(
             "billing_subscriptions", group_id, "studio_1", "Group not found."
         )
-        group.update({
-            "stripe_subscription_id": provider["id"],
-            "stripe_account_id": account_id,
-            "stripe_customer_id": provider["customer"],
-            "status": provider.get("status") or "active",
-        })
+        group.update(
+            {
+                "stripe_subscription_id": provider["id"],
+                "stripe_account_id": account_id,
+                "stripe_customer_id": provider["customer"],
+                "status": provider.get("status") or "active",
+            }
+        )
         return dict(group)
 
     def _recompute_payer_balance(self, _studio_id, _payer_id):
@@ -292,13 +286,15 @@ class _Facade:
         self.balance_recomputes += 1
 
     def _audit(self, studio_id, actor_id, action, entity_id, metadata):
-        self.supabase.tables.setdefault("audit_logs", []).append({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": action,
-            "entity_id": entity_id,
-            "metadata": metadata,
-        })
+        self.supabase.tables.setdefault("audit_logs", []).append(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": action,
+                "entity_id": entity_id,
+                "metadata": metadata,
+            }
+        )
 
 
 class _Stripe:
@@ -475,5 +471,3 @@ def _provider_subscription(*, items=None, status="active"):
         },
         "items": {"data": list(items or [])},
     }
-
-

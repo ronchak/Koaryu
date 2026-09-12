@@ -1,7 +1,4 @@
-import {
-  landingPageContent,
-  type JourneyChapterId,
-} from "../../../lib/landing-page-content.ts";
+import { landingPageContent, type JourneyChapterId } from "../../../lib/landing-page-content.ts";
 
 export const WHEEL_THRESHOLD = 14;
 export const WHEEL_LOCK_MS = 260;
@@ -37,16 +34,14 @@ export const JOURNEY_HASH_ALIASES = Object.freeze({
 } as const satisfies Readonly<Record<string, JourneyChapterId>>);
 
 const CHAPTER_INDEX = Object.freeze(
-  Object.fromEntries(
-    landingPageContent.chapters.map(({ id }, index) => [id, index])
-  ) as Record<JourneyChapterId, number>
+  Object.fromEntries(landingPageContent.chapters.map(({ id }, index) => [id, index])) as Record<
+    JourneyChapterId,
+    number
+  >,
 );
 
 const FAQ_HASH_INDEX = Object.freeze(
-  Object.fromEntries(FAQ_HASHES.map((hash, index) => [hash, index])) as Record<
-    FaqHash,
-    number
-  >
+  Object.fromEntries(FAQ_HASHES.map((hash, index) => [hash, index])) as Record<FaqHash, number>,
 );
 
 export interface ResolvedJourneyHash {
@@ -95,9 +90,7 @@ export function resolveJourneyHash(hash: string): ResolvedJourneyHash | null {
   }
 
   if (Object.prototype.hasOwnProperty.call(JOURNEY_HASH_ALIASES, normalized)) {
-    const chapterId = JOURNEY_HASH_ALIASES[
-      normalized as keyof typeof JOURNEY_HASH_ALIASES
-    ];
+    const chapterId = JOURNEY_HASH_ALIASES[normalized as keyof typeof JOURNEY_HASH_ALIASES];
     return {
       chapterId,
       chapterIndex: CHAPTER_INDEX[chapterId],
@@ -110,9 +103,7 @@ export function resolveJourneyHash(hash: string): ResolvedJourneyHash | null {
   return null;
 }
 
-export function decideJourneyHashChange(
-  hash: string
-): JourneyHashChangeDecision {
+export function decideJourneyHashChange(hash: string): JourneyHashChangeDecision {
   const normalized = hash.trim().replace(/^#/, "");
   if (!normalized) {
     return {
@@ -123,15 +114,13 @@ export function decideJourneyHashChange(
   }
 
   const resolved = resolveJourneyHash(hash);
-  return resolved
-    ? { action: "navigate", resolved }
-    : { action: "ignore" };
+  return resolved ? { action: "navigate", resolved } : { action: "ignore" };
 }
 
 export function normalizeWheelDelta(
   deltaY: number,
   deltaMode: number,
-  viewportHeight: number
+  viewportHeight: number,
 ): number {
   if (!Number.isFinite(deltaY)) {
     return 0;
@@ -142,9 +131,7 @@ export function normalizeWheelDelta(
   }
 
   if (deltaMode === 2) {
-    const safeHeight = Number.isFinite(viewportHeight) && viewportHeight > 0
-      ? viewportHeight
-      : 1;
+    const safeHeight = Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 1;
     return deltaY * safeHeight;
   }
 
@@ -157,18 +144,13 @@ export interface ScrollMetrics {
   readonly clientHeight: number;
 }
 
-export function canScrollablePanelMove(
-  metrics: ScrollMetrics,
-  direction: -1 | 1
-): boolean {
+export function canScrollablePanelMove(metrics: ScrollMetrics, direction: -1 | 1): boolean {
   if (metrics.scrollHeight <= metrics.clientHeight + 2) {
     return false;
   }
 
   const maximum = metrics.scrollHeight - metrics.clientHeight;
-  return direction > 0
-    ? metrics.scrollTop < maximum - 2
-    : metrics.scrollTop > 2;
+  return direction > 0 ? metrics.scrollTop < maximum - 2 : metrics.scrollTop > 2;
 }
 
 export interface WheelGestureState {
@@ -202,7 +184,7 @@ export interface WheelGestureResult {
 
 export function reduceWheelGesture(
   state: WheelGestureState,
-  input: WheelGestureInput
+  input: WheelGestureInput,
 ): WheelGestureResult {
   const magnitude = Math.abs(input.delta);
   const direction = input.delta > 0 ? 1 : input.delta < 0 ? -1 : 0;
@@ -237,8 +219,7 @@ export function reduceWheelGesture(
     const gap = now - state.lastAt;
     const deliberateMagnitude = Math.max(24, state.lastMagnitude * 1.75);
     const newGesture =
-      gap > NEW_GESTURE_GAP_MS ||
-      (now > state.lockUntil && magnitude > deliberateMagnitude);
+      gap > NEW_GESTURE_GAP_MS || (now > state.lockUntil && magnitude > deliberateMagnitude);
 
     if (!newGesture) {
       return {
@@ -319,12 +300,9 @@ export function shouldHandleJourneyKeyboardFocus(input: {
 export function nextFaqTopicIndex(
   currentIndex: number,
   key: string,
-  topicCount: number
+  topicCount: number,
 ): number | null {
-  if (
-    topicCount <= 0 ||
-    (key !== "ArrowDown" && key !== "ArrowUp")
-  ) {
+  if (topicCount <= 0 || (key !== "ArrowDown" && key !== "ArrowUp")) {
     return null;
   }
   const direction = key === "ArrowDown" ? 1 : -1;
@@ -351,19 +329,17 @@ export function decideJourneyKey(input: {
       };
     }
 
-    const panelDirection = input.key === " "
-      ? input.shiftKey
-        ? -1
-        : 1
-      : input.key === "ArrowDown" || input.key === "PageDown"
-        ? 1
-        : input.key === "ArrowUp" || input.key === "PageUp"
+    const panelDirection =
+      input.key === " "
+        ? input.shiftKey
           ? -1
-          : 0;
-    if (
-      panelDirection &&
-      canScrollablePanelMove(input.panel, panelDirection as -1 | 1)
-    ) {
+          : 1
+        : input.key === "ArrowDown" || input.key === "PageDown"
+          ? 1
+          : input.key === "ArrowUp" || input.key === "PageUp"
+            ? -1
+            : 0;
+    if (panelDirection && canScrollablePanelMove(input.panel, panelDirection as -1 | 1)) {
       return {
         action: "panel-scroll",
         direction: panelDirection as -1 | 1,
@@ -408,10 +384,7 @@ export function decideTouchChapter(input: {
   return distance > 0 ? 1 : -1;
 }
 
-export function sceneTransitionDuration(
-  origin: number,
-  destination: number
-): 940 | 1100 | 1260 {
+export function sceneTransitionDuration(origin: number, destination: number): 940 | 1100 | 1260 {
   const isPortalEndpointTransition =
     (Math.abs(origin - 0.288) < 0.001 && Math.abs(destination - 0.52) < 0.001) ||
     (Math.abs(origin - 0.52) < 0.001 && Math.abs(destination - 0.288) < 0.001);

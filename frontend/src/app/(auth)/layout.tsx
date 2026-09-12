@@ -5,11 +5,7 @@ import { AUTH_NOINDEX_METADATA } from "@/lib/auth-indexing";
 
 export const metadata: Metadata = AUTH_NOINDEX_METADATA;
 
-export default function AuthLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-bg">
       {/* Subtle top gradient line */}
@@ -31,9 +27,7 @@ export default function AuthLayout({
         </div>
 
         {/* Auth card */}
-        <div className="w-full bg-surface border border-border rounded-[6px] p-6">
-          {children}
-        </div>
+        <div className="w-full bg-surface border border-border rounded-[6px] p-6">{children}</div>
       </div>
     </div>
   );

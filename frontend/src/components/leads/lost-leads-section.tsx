@@ -10,11 +10,7 @@ interface LostLeadsSectionProps {
   onSelectLead: (leadId: string) => void;
 }
 
-export function LostLeadsSection({
-  lostLeads,
-  onClose,
-  onSelectLead,
-}: LostLeadsSectionProps) {
+export function LostLeadsSection({ lostLeads, onClose, onSelectLead }: LostLeadsSectionProps) {
   if (lostLeads.length === 0) {
     return null;
   }
@@ -22,9 +18,7 @@ export function LostLeadsSection({
   return (
     <div className="border-t border-border px-4 py-4 sm:px-6 lg:px-8">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-medium text-text-secondary">
-          Closed Lost
-        </h3>
+        <h3 className="text-xs font-medium text-text-secondary">Closed Lost</h3>
         <button
           type="button"
           aria-label="Hide closed lost leads"
@@ -43,9 +37,7 @@ export function LostLeadsSection({
             onClick={() => onSelectLead(lead.id)}
             className="min-w-0 rounded-[10px] bg-surface p-3 text-left opacity-60 transition-opacity cursor-pointer hover:opacity-100"
           >
-            <p className="break-words text-sm font-medium text-text-primary">
-              {fullName(lead)}
-            </p>
+            <p className="break-words text-sm font-medium text-text-primary">{fullName(lead)}</p>
             <p className="text-xs text-danger mt-1 capitalize">
               {lead.lost_reason?.replace(/_/g, " ") || "Unknown"}
             </p>

@@ -24,7 +24,7 @@ export function buildPrivateProxyHeaders(upstreamHeaders: Headers): Headers {
     (responseHeaders.get("vary") || "")
       .split(",")
       .map((value) => value.trim())
-      .filter(Boolean)
+      .filter(Boolean),
   );
   const varyKeys = new Set([...varyValues].map((value) => value.toLowerCase()));
   for (const value of DEFAULT_PRIVATE_VARY) {
@@ -38,7 +38,9 @@ export function buildPrivateProxyHeaders(upstreamHeaders: Headers): Headers {
 }
 
 export function buildPrivateProxyJsonHeaders(): Headers {
-  return buildPrivateProxyHeaders(new Headers({
-    "content-type": "application/json",
-  }));
+  return buildPrivateProxyHeaders(
+    new Headers({
+      "content-type": "application/json",
+    }),
+  );
 }

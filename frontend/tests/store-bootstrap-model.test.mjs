@@ -50,9 +50,19 @@ function dashboardSummary(studioId) {
       utilization_rate: null,
       average_attendance: 0,
     },
-    churn: { inactive_students: 0, canceled_students: 0, churn_marked_students: 0, churn_rate: null },
+    churn: {
+      inactive_students: 0,
+      canceled_students: 0,
+      churn_marked_students: 0,
+      churn_rate: null,
+    },
     test_readiness: { ready_to_test: null, needs_approval: null, available: false },
-    billing: { can_view_billing: false, payment_attention_count: null, has_plans: null, payments_ready: null },
+    billing: {
+      can_view_billing: false,
+      payment_attention_count: null,
+      has_plans: null,
+      payments_ready: null,
+    },
     setup: {
       has_programs: false,
       has_students: false,
@@ -83,28 +93,26 @@ describe("store bootstrap model", () => {
       full_name: "Session User",
     });
     assert.deepEqual(
-      buildAuthUserProfile(
-        {
-          user: {
-            id: "auth-user",
-            email: "auth@example.test",
-            full_name: null,
-            legal_first_name: "Authoritative",
-            legal_last_name: "Profile",
-          },
-          staff_profiles_available: true,
-          membership_status: "active",
-          studio_id: "studio-1",
-          role: "admin",
-        }
-      ),
+      buildAuthUserProfile({
+        user: {
+          id: "auth-user",
+          email: "auth@example.test",
+          full_name: null,
+          legal_first_name: "Authoritative",
+          legal_last_name: "Profile",
+        },
+        staff_profiles_available: true,
+        membership_status: "active",
+        studio_id: "studio-1",
+        role: "admin",
+      }),
       {
         id: "auth-user",
         email: "auth@example.test",
         full_name: null,
         legal_first_name: "Authoritative",
         legal_last_name: "Profile",
-      }
+      },
     );
 
     assert.equal(isStaffProfilesAvailable({ staff_profiles_available: true }), true);
@@ -113,18 +121,29 @@ describe("store bootstrap model", () => {
   });
 
   it("resolves bootstrap studio names and ladders with the same fallback order as the store", () => {
-    assert.equal(resolveBootstrapStudioName({ studio_name: "Preferred", studio: { name: "Fallback" } }), "Preferred");
-    assert.equal(resolveBootstrapStudioName({ studio_name: null, studio: { name: "Fallback" } }), "Fallback");
+    assert.equal(
+      resolveBootstrapStudioName({ studio_name: "Preferred", studio: { name: "Fallback" } }),
+      "Preferred",
+    );
+    assert.equal(
+      resolveBootstrapStudioName({ studio_name: null, studio: { name: "Fallback" } }),
+      "Fallback",
+    );
     assert.equal(resolveBootstrapStudioName({ studio_name: null, studio: null }), "");
 
     const primary = ladder("primary");
     assert.deepEqual(
-      resolveBootstrapLadders({ belt_ladders: [ladder("existing")], primary_belt_ladder: primary }).map((item) => item.id),
-      ["existing"]
+      resolveBootstrapLadders({
+        belt_ladders: [ladder("existing")],
+        primary_belt_ladder: primary,
+      }).map((item) => item.id),
+      ["existing"],
     );
     assert.deepEqual(
-      resolveBootstrapLadders({ belt_ladders: [], primary_belt_ladder: primary }).map((item) => item.id),
-      ["primary"]
+      resolveBootstrapLadders({ belt_ladders: [], primary_belt_ladder: primary }).map(
+        (item) => item.id,
+      ),
+      ["primary"],
     );
     assert.deepEqual(resolveBootstrapLadders({ belt_ladders: [], primary_belt_ladder: null }), []);
   });
@@ -140,7 +159,7 @@ describe("store bootstrap model", () => {
     assert.equal(archived.membership_status, "archived");
     assert.throws(
       () => parseAuthProfileResponse({ user: {}, staff_profiles_available: false }),
-      /explicit membership_status/
+      /explicit membership_status/,
     );
   });
 
@@ -162,19 +181,19 @@ describe("store bootstrap model", () => {
 
     assert.equal(
       isLiveAuthRequestCurrent({ ...request, currentToken: "token-1", currentGeneration: 2 }),
-      true
+      true,
     );
     assert.equal(
       isLiveAuthRequestCurrent({ ...request, currentToken: null, currentGeneration: 3 }),
-      false
+      false,
     );
     assert.equal(
       isLiveAuthRequestCurrent({ ...request, currentToken: "token-2", currentGeneration: 2 }),
-      false
+      false,
     );
     assert.equal(
       isLiveAuthRequestCurrent({ ...request, currentToken: "token-1", currentGeneration: 3 }),
-      false
+      false,
     );
   });
 });

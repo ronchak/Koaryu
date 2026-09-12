@@ -34,7 +34,7 @@ const ROLE_PERMISSIONS: Record<StaffRoleName, ReadonlySet<StaffPermission>> = {
 };
 export function hasStaffPermission(
   role: StaffRoleName | null,
-  permission: StaffPermission
+  permission: StaffPermission,
 ): boolean {
   return role ? ROLE_PERMISSIONS[role].has(permission) : false;
 }

@@ -42,16 +42,12 @@ def statm_for_bytes(rss_bytes, page_size=4096):
 
 def assert_message_matches_fields(test_case, record):
     _, message, fields = record
-    test_case.assertEqual(
-        message, json.dumps(fields, sort_keys=True, separators=(",", ":"))
-    )
+    test_case.assertEqual(message, json.dumps(fields, sort_keys=True, separators=(",", ":")))
     test_case.assertEqual(json.loads(message), fields)
 
 
 class ProcessRSSObservabilityTest(unittest.TestCase):
-    def make_observer(
-        self, *, clock=None, read_statm=None, page_size=4096, environment=None
-    ):
+    def make_observer(self, *, clock=None, read_statm=None, page_size=4096, environment=None):
         self.clock = clock or FakeClock()
         self.logger = RecordingLogger()
         return ProcessRSSObserver(
@@ -172,9 +168,7 @@ class ProcessRSSObservabilityTest(unittest.TestCase):
         immediate_clock.value = SAMPLE_INTERVAL_SECONDS
         immediate.observe()
         self.assertEqual(len(immediate_logger.records), 2)
-        self.assertEqual(
-            immediate_logger.records[-1][2]["threshold_state"], "critical"
-        )
+        self.assertEqual(immediate_logger.records[-1][2]["threshold_state"], "critical")
         self.assertEqual(self.logger.records[-1][2]["threshold_state"], "critical")
 
         clock.value += SAMPLE_INTERVAL_SECONDS
@@ -240,7 +234,9 @@ class ProcessRSSObservabilityTest(unittest.TestCase):
         self.assertNotIn(secret_sha, repr(fields))
 
     def test_unavailable_source_is_sanitized_and_does_not_raise(self):
-        secret_error = "SUPABASE_SERVICE_ROLE_KEY=secret customer@example.com https://private.invalid"
+        secret_error = (
+            "SUPABASE_SERVICE_ROLE_KEY=secret customer@example.com https://private.invalid"
+        )
         observer = self.make_observer(
             read_statm=lambda: (_ for _ in ()).throw(RuntimeError(secret_error))
         )
@@ -379,9 +375,7 @@ class ProcessRSSObservabilityTest(unittest.TestCase):
         )
 
         lines = [
-            line
-            for line in completed.stderr.splitlines()
-            if line.startswith(("INFO:", "WARNING:"))
+            line for line in completed.stderr.splitlines() if line.startswith(("INFO:", "WARNING:"))
         ]
         self.assertEqual(len(lines), 3, completed.stderr)
         self.assertTrue(lines[0].startswith("INFO:"), completed.stderr)

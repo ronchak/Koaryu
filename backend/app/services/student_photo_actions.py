@@ -151,10 +151,12 @@ class StudentPhotoActions:
 
         result = (
             self.supabase.table("students")
-            .update({
-                "photo_path": None,
-                "photo_updated_at": None,
-            })
+            .update(
+                {
+                    "photo_path": None,
+                    "photo_updated_at": None,
+                }
+            )
             .eq("id", student_id)
             .eq("studio_id", studio_id)
             .is_("deleted_at", "null")
@@ -180,11 +182,13 @@ class StudentPhotoActions:
         student_id: str,
         metadata: dict,
     ) -> None:
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": action,
-            "entity_type": "student",
-            "entity_id": student_id,
-            "metadata": metadata,
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": action,
+                "entity_type": "student",
+                "entity_id": student_id,
+                "metadata": metadata,
+            }
+        ).execute()

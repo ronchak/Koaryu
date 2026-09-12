@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 
-import { CAPTURE_ROUTES, blockedRequestCategory, sanitizeVisibleMarks, validateFunctionalCapture } from "./performance-capture-policy.mjs";
+import {
+  CAPTURE_ROUTES,
+  blockedRequestCategory,
+  sanitizeVisibleMarks,
+  validateFunctionalCapture,
+} from "./performance-capture-policy.mjs";
 
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -22,31 +27,45 @@ const REQUIRED_RESOURCES = new Set(Object.values(SAFE_RESOURCE_PATHS));
 const RENDER_RESOURCE_TYPES = new Set(["document", "script", "stylesheet", "image", "font"]);
 export const WEB_VITALS_STABILIZATION = Object.freeze({ timeout_ms: 10_000, quiet_window_ms: 500 });
 const SAFE_SERVER_TIMING_NAMES = new Set([
-  "koaryu_studio", "koaryu_students", "koaryu_leads", "koaryu_belts",
-  "koaryu_programs", "koaryu_total", "koaryu_route_total", "koaryu_request",
-  "koaryu_summary_student_rows", "koaryu_summary_student_counts",
-  "koaryu_summary_lead_counts", "koaryu_summary_schedule_counts",
-  "koaryu_summary_belt_counts", "koaryu_summary_inactivity_counts",
-  "koaryu_summary_new_student_counts", "koaryu_summary_operational_counts",
-  "koaryu_summary_churn_counts", "koaryu_summary_test_readiness",
-  "koaryu_summary_billing_counts", "koaryu_summary_setup_flags",
-  "koaryu_summary_recent_students", "koaryu_summary_total",
-  "koaryu_summary_route_total", "koaryu_summary_context", "koaryu_summary_facts",
+  "koaryu_studio",
+  "koaryu_students",
+  "koaryu_leads",
+  "koaryu_belts",
+  "koaryu_programs",
+  "koaryu_total",
+  "koaryu_route_total",
+  "koaryu_request",
+  "koaryu_summary_student_rows",
+  "koaryu_summary_student_counts",
+  "koaryu_summary_lead_counts",
+  "koaryu_summary_schedule_counts",
+  "koaryu_summary_belt_counts",
+  "koaryu_summary_inactivity_counts",
+  "koaryu_summary_new_student_counts",
+  "koaryu_summary_operational_counts",
+  "koaryu_summary_churn_counts",
+  "koaryu_summary_test_readiness",
+  "koaryu_summary_billing_counts",
+  "koaryu_summary_setup_flags",
+  "koaryu_summary_recent_students",
+  "koaryu_summary_total",
+  "koaryu_summary_route_total",
+  "koaryu_summary_context",
+  "koaryu_summary_facts",
 ]);
 
 export function sanitizeServerTiming(value) {
   if (!value) return [];
-  return value.split(",").map((entry) => entry.trim()).flatMap((entry) => {
-    const match = /^([a-z0-9_.-]+);dur=(\d+(?:\.\d+)?)$/i.exec(entry);
-    const name = match?.[1].toLowerCase();
-    const duration = match?.[2] ? Number(match[2]) : null;
-    if (
-      !name
-      || !SAFE_SERVER_TIMING_NAMES.has(name)
-      || !finiteNonnegative(duration)
-    ) return [];
-    return [{ name, duration_ms: duration }];
-  });
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .flatMap((entry) => {
+      const match = /^([a-z0-9_.-]+);dur=(\d+(?:\.\d+)?)$/i.exec(entry);
+      const name = match?.[1].toLowerCase();
+      const duration = match?.[2] ? Number(match[2]) : null;
+      if (!name || !SAFE_SERVER_TIMING_NAMES.has(name) || !finiteNonnegative(duration)) return [];
+      return [{ name, duration_ms: duration }];
+    });
 }
 
 export function classifyResource(value) {
@@ -64,7 +83,8 @@ export function classifyResource(value) {
 
 export async function openVerifiedBrowser(options, dependencies) {
   const verification = await dependencies.verifyDeployment(options);
-  if (verification?.verified !== true) throw new Error("exact deployed release verification did not succeed.");
+  if (verification?.verified !== true)
+    throw new Error("exact deployed release verification did not succeed.");
   const browser = await dependencies.launchBrowser();
   return { verification, browser };
 }
@@ -80,9 +100,9 @@ function roundRequired(value, name) {
 
 export function validateCapturedEvidence(evidence) {
   if (
-    evidence.blocked_requests.write_methods !== 0
-    || evidence.blocked_requests.unknown_origins !== 0
-    || (evidence.blocked_requests.provider_refresh_reads ?? 0) !== 0
+    evidence.blocked_requests.write_methods !== 0 ||
+    evidence.blocked_requests.unknown_origins !== 0 ||
+    (evidence.blocked_requests.provider_refresh_reads ?? 0) !== 0
   ) {
     throw new Error("dashboard evidence contains blocked writes or unknown origins.");
   }
@@ -94,10 +114,10 @@ export function validateCapturedEvidence(evidence) {
     }
     responseResources.add(entry.resource);
     if (
-      entry.server_timing.some((timing) => (
-        SAFE_SERVER_TIMING_NAMES.has(timing.name)
-        && finiteNonnegative(timing.duration_ms)
-      ))
+      entry.server_timing.some(
+        (timing) =>
+          SAFE_SERVER_TIMING_NAMES.has(timing.name) && finiteNonnegative(timing.duration_ms),
+      )
     ) {
       serverTimingResources.add(entry.resource);
     }
@@ -114,17 +134,21 @@ export function validateCapturedEvidence(evidence) {
     }
     timingResources.add(entry.resource);
   }
-  for (const resource of evidence.route && evidence.route !== "dashboard" ? [] : REQUIRED_RESOURCES) {
+  for (const resource of evidence.route && evidence.route !== "dashboard"
+    ? []
+    : REQUIRED_RESOURCES) {
     if (
-      !responseResources.has(resource)
-      || !timingResources.has(resource)
-      || !serverTimingResources.has(resource)
+      !responseResources.has(resource) ||
+      !timingResources.has(resource) ||
+      !serverTimingResources.has(resource)
     ) {
       throw new Error(`required successful resource evidence is missing for ${resource}.`);
     }
   }
   const metrics = [
-    evidence.workflow === "disposable-staging-functional" && evidence.dashboard_ready_ms === null ? evidence.selected_required_data_ms : evidence.dashboard_ready_ms,
+    evidence.workflow === "disposable-staging-functional" && evidence.dashboard_ready_ms === null
+      ? evidence.selected_required_data_ms
+      : evidence.dashboard_ready_ms,
     evidence.dashboard_shell_ready_ms,
     evidence.navigation.dom_content_loaded_ms,
     evidence.navigation.load_event_ms,
@@ -141,45 +165,95 @@ export function validateCapturedEvidence(evidence) {
 export async function verifyPostCaptureRelease(options, initialVerification, verifyDeployment) {
   const verification = await verifyDeployment(options);
   if (
-    !verification?.verified
-    || verification.expected_sha !== initialVerification.expected_sha
-    || verification.environment !== initialVerification.environment
+    !verification?.verified ||
+    verification.expected_sha !== initialVerification.expected_sha ||
+    verification.environment !== initialVerification.environment
   ) {
     throw new Error("deployed release identity changed during performance capture.");
   }
   return verification;
 }
 
-export async function measureDashboardReady(page, route = "dashboard", { functional = false } = {}) {
+export async function measureDashboardReady(
+  page,
+  route = "dashboard",
+  { functional = false } = {},
+) {
   // These legacy attributes retain complete-data semantics. They are waits only;
   // timestamps come from marks written after committed UI had a paint opportunity.
   if (route === "dashboard" && !functional) {
-    await page.locator('[data-koaryu-dashboard-shell-ready="true"]').waitFor({ state: "visible", timeout: 20_000 });
-    await page.locator('[data-koaryu-dashboard-data-ready="true"]').waitFor({ state: "visible", timeout: 20_000 });
+    await page
+      .locator('[data-koaryu-dashboard-shell-ready="true"]')
+      .waitFor({ state: "visible", timeout: 20_000 });
+    await page
+      .locator('[data-koaryu-dashboard-data-ready="true"]')
+      .waitFor({ state: "visible", timeout: 20_000 });
   }
-  await page.waitForFunction(({ expectedRoute, requireLegacy }) => {
-    const started = performance.getEntriesByName("koaryu.navigation.started").filter((entry) => entry.detail?.route === expectedRoute).at(-1);
-    return started && performance.getEntriesByName(requireLegacy ? "koaryu.visible.legacy-complete" : "koaryu.visible.complete").some((entry) => entry.detail?.route === expectedRoute && entry.detail.navigation_generation === started.detail.navigation_generation);
-  }, { expectedRoute: route, requireLegacy: route === "dashboard" && !functional }, { timeout: 20_000 });
-  const entries = await page.evaluate(() => performance.getEntriesByType("mark").map(({ name, startTime, detail }) => ({ name, startTime, detail })));
+  await page.waitForFunction(
+    ({ expectedRoute, requireLegacy }) => {
+      const started = performance
+        .getEntriesByName("koaryu.navigation.started")
+        .filter((entry) => entry.detail?.route === expectedRoute)
+        .at(-1);
+      return (
+        started &&
+        performance
+          .getEntriesByName(
+            requireLegacy ? "koaryu.visible.legacy-complete" : "koaryu.visible.complete",
+          )
+          .some(
+            (entry) =>
+              entry.detail?.route === expectedRoute &&
+              entry.detail.navigation_generation === started.detail.navigation_generation,
+          )
+      );
+    },
+    { expectedRoute: route, requireLegacy: route === "dashboard" && !functional },
+    { timeout: 20_000 },
+  );
+  const entries = await page.evaluate(() =>
+    performance
+      .getEntriesByType("mark")
+      .map(({ name, startTime, detail }) => ({ name, startTime, detail })),
+  );
   const marks = sanitizeVisibleMarks(entries, route);
   const generation = marks.filter((entry) => entry.stage === "navigation.started").at(-1);
-  const current = marks.filter((entry) => entry.navigation_generation === generation?.navigation_generation && entry.identity_generation === generation?.identity_generation);
+  const current = marks.filter(
+    (entry) =>
+      entry.navigation_generation === generation?.navigation_generation &&
+      entry.identity_generation === generation?.identity_generation,
+  );
   const at = (stage) => current.find((entry) => entry.stage === stage)?.at_ms;
   const values = [at("shell"), at("identity"), at("useful"), at("complete")];
-  if (!values.every(finiteNonnegative) || (route === "dashboard" && !functional && !finiteNonnegative(at("legacy-complete")))) throw new Error("committed route/identity readiness evidence is incomplete.");
-  return { neutralShellReadyMs: marks.find((entry) => entry.stage === "shell")?.at_ms ?? at("shell"), dashboardShellReadyMs: at("shell"), dashboardReadyMs: route === "dashboard" ? (at("legacy-complete") ?? null) : at("complete"), selectedRequiredDataMs: at("complete"), identityReadyMs: at("identity"), usefulReadyMs: at("useful"), visibleMarks: marks };
+  if (
+    !values.every(finiteNonnegative) ||
+    (route === "dashboard" && !functional && !finiteNonnegative(at("legacy-complete")))
+  )
+    throw new Error("committed route/identity readiness evidence is incomplete.");
+  return {
+    neutralShellReadyMs: marks.find((entry) => entry.stage === "shell")?.at_ms ?? at("shell"),
+    dashboardShellReadyMs: at("shell"),
+    dashboardReadyMs: route === "dashboard" ? (at("legacy-complete") ?? null) : at("complete"),
+    selectedRequiredDataMs: at("complete"),
+    identityReadyMs: at("identity"),
+    usefulReadyMs: at("useful"),
+    visibleMarks: marks,
+  };
 }
 
 export function parseArgs(argv) {
-  const releaseArgs = parseReleaseVerifierArgs(argv.filter((_, index) => {
-    const previous = argv[index - 1];
-    return previous !== "--storage-state" && argv[index] !== "--storage-state";
-  }));
+  const releaseArgs = parseReleaseVerifierArgs(
+    argv.filter((_, index) => {
+      const previous = argv[index - 1];
+      return previous !== "--storage-state" && argv[index] !== "--storage-state";
+    }),
+  );
   const storageFlag = argv.indexOf("--storage-state");
   const storageState = storageFlag >= 0 ? argv[storageFlag + 1] : undefined;
   if (!storageState || !isAbsolute(storageState)) {
-    throw new Error("--storage-state must be an absolute path to an existing authenticated state file.");
+    throw new Error(
+      "--storage-state must be an absolute path to an existing authenticated state file.",
+    );
   }
   return { ...releaseArgs, storageState };
 }
@@ -192,16 +266,30 @@ function readVisualReadiness() {
   let imageFailed = false;
   for (const image of document.images) {
     const rect = image.getBoundingClientRect();
-    if (!rect.width || !rect.height || rect.bottom <= 0 || rect.right <= 0
-      || rect.top >= innerHeight || rect.left >= innerWidth
-      || getComputedStyle(image).visibility === "hidden") continue;
+    if (
+      !rect.width ||
+      !rect.height ||
+      rect.bottom <= 0 ||
+      rect.right <= 0 ||
+      rect.top >= innerHeight ||
+      rect.left >= innerWidth ||
+      getComputedStyle(image).visibility === "hidden"
+    )
+      continue;
     const source = image.currentSrc || image.src;
     if (!source) continue;
     let decode = evidence.imageDecodes.get(image);
     if (!decode || decode.source !== source) {
       decode = { source, ready: false, failed: false };
       evidence.imageDecodes.set(image, decode);
-      image.decode().then(() => { decode.ready = true; }, () => { decode.failed = true; });
+      image.decode().then(
+        () => {
+          decode.ready = true;
+        },
+        () => {
+          decode.failed = true;
+        },
+      );
     }
     imagesReady &&= image.complete && decode.ready;
     imageFailed ||= decode.failed;
@@ -216,7 +304,8 @@ function readVisualReadiness() {
 
 export async function stabilizeWebVitals(page, renderRequests, policy = WEB_VITALS_STABILIZATION) {
   const startedAt = performance.now();
-  const timeoutError = () => new Error("Web Vitals stabilization timed out; capture has no finalized LCP/CLS evidence.");
+  const timeoutError = () =>
+    new Error("Web Vitals stabilization timed out; capture has no finalized LCP/CLS evidence.");
   let quietSince = startedAt;
   let previous = null;
   while (performance.now() - startedAt < policy.timeout_ms) {
@@ -225,23 +314,48 @@ export async function stabilizeWebVitals(page, renderRequests, policy = WEB_VITA
     try {
       visual = await Promise.race([
         page.evaluate(readVisualReadiness),
-        new Promise((_, reject) => { timer = setTimeout(() => reject(timeoutError()), Math.max(0, policy.timeout_ms - (performance.now() - startedAt))); }),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(timeoutError()),
+            Math.max(0, policy.timeout_ms - (performance.now() - startedAt)),
+          );
+        }),
       ]);
     } finally {
       clearTimeout(timer);
     }
     const requests = renderRequests();
     const now = performance.now();
-    if (visual.image_failed) throw new Error("Web Vitals stabilization failed: visible image decoding failed.");
-    if (!visual.ready || requests.pending !== 0 || !previous
-      || visual.lcp !== previous.lcp || visual.cls !== previous.cls
-      || requests.revision !== previous.revision) quietSince = now;
-    if (visual.ready && requests.pending === 0 && now - quietSince >= policy.quiet_window_ms
-      && now - startedAt < policy.timeout_ms) {
-      return { status: "stabilized", timeout_ms: policy.timeout_ms, quiet_window_ms: policy.quiet_window_ms };
+    if (visual.image_failed)
+      throw new Error("Web Vitals stabilization failed: visible image decoding failed.");
+    if (
+      !visual.ready ||
+      requests.pending !== 0 ||
+      !previous ||
+      visual.lcp !== previous.lcp ||
+      visual.cls !== previous.cls ||
+      requests.revision !== previous.revision
+    )
+      quietSince = now;
+    if (
+      visual.ready &&
+      requests.pending === 0 &&
+      now - quietSince >= policy.quiet_window_ms &&
+      now - startedAt < policy.timeout_ms
+    ) {
+      return {
+        status: "stabilized",
+        timeout_ms: policy.timeout_ms,
+        quiet_window_ms: policy.quiet_window_ms,
+      };
     }
     previous = { lcp: visual.lcp, cls: visual.cls, revision: requests.revision };
-    await new Promise((resolve) => setTimeout(resolve, Math.min(50, Math.max(0, policy.timeout_ms - (performance.now() - startedAt)))));
+    await new Promise((resolve) =>
+      setTimeout(
+        resolve,
+        Math.min(50, Math.max(0, policy.timeout_ms - (performance.now() - startedAt))),
+      ),
+    );
   }
   throw timeoutError();
 }
@@ -251,10 +365,12 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
   if (!Object.hasOwn(CAPTURE_ROUTES, routeLabel)) throw new Error("unknown capture route.");
   if (options.functional) validateFunctionalCapture(options);
   const verifyDeployment = dependencies.verifyDeployment ?? verifyDeployedRelease;
-  const launchBrowser = dependencies.launchBrowser ?? (async () => {
-    const { chromium } = await import("playwright");
-    return chromium.launch({ headless: true });
-  });
+  const launchBrowser =
+    dependencies.launchBrowser ??
+    (async () => {
+      const { chromium } = await import("playwright");
+      return chromium.launch({ headless: true });
+    });
   const { verification, browser } = await openVerifiedBrowser(options, {
     verifyDeployment,
     launchBrowser,
@@ -275,14 +391,23 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
   let evidence;
 
   try {
-    const context = await browser.newContext({ storageState: options.storageState, serviceWorkers: "block" });
+    const context = await browser.newContext({
+      storageState: options.storageState,
+      serviceWorkers: "block",
+    });
     const page = await context.newPage();
     await page.route("**/*", async (route) => {
       const request = route.request();
-      const blockedCategory = blockedRequestCategory({ url: request.url(), method: request.method() }, {
-        allowedOrigins, frontendOrigin: options.frontendOrigin, backendOrigin: new URL(options.backendApi).origin,
-        supabaseOrigin: SUPABASE_ORIGINS[verification.environment], functional: options.functional === true,
-      });
+      const blockedCategory = blockedRequestCategory(
+        { url: request.url(), method: request.method() },
+        {
+          allowedOrigins,
+          frontendOrigin: options.frontendOrigin,
+          backendOrigin: new URL(options.backendApi).origin,
+          supabaseOrigin: SUPABASE_ORIGINS[verification.environment],
+          functional: options.functional === true,
+        },
+      );
       if (blockedCategory) {
         blocked[blockedCategory] += 1;
         return route.abort("blockedbyclient");
@@ -293,7 +418,10 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
     page.on("request", (request) => {
       if (!acceptingRequestEvents) return;
       if (RENDER_RESOURCE_TYPES.has(request.resourceType())) renderRequestRevision += 1;
-      requestStarts.set(request, { started_at_ms: performance.now(), generation: navigationGeneration });
+      requestStarts.set(request, {
+        started_at_ms: performance.now(),
+        generation: navigationGeneration,
+      });
     });
     page.on("requestfinished", (request) => {
       if (!acceptingRequestEvents) return;
@@ -303,7 +431,21 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       const endedAt = performance.now();
       const completion = (async () => {
         const sizes = await request.sizes();
-        requests.push({ route: routeLabel, navigation_generation: start.generation, resource: classifyResource(request.url()) ?? "other", initiator: ["document", "fetch", "xhr", "script", "stylesheet", "image", "font"].includes(request.resourceType()) ? request.resourceType() : "other", outcome: "complete", status: requestStatuses.get(request) ?? 0, response_body_bytes: sizes.responseBodySize, started_at_ms: start.started_at_ms, ended_at_ms: endedAt });
+        requests.push({
+          route: routeLabel,
+          navigation_generation: start.generation,
+          resource: classifyResource(request.url()) ?? "other",
+          initiator: ["document", "fetch", "xhr", "script", "stylesheet", "image", "font"].includes(
+            request.resourceType(),
+          )
+            ? request.resourceType()
+            : "other",
+          outcome: "complete",
+          status: requestStatuses.get(request) ?? 0,
+          response_body_bytes: sizes.responseBodySize,
+          started_at_ms: start.started_at_ms,
+          ended_at_ms: endedAt,
+        });
         requestStatuses.delete(request);
       })();
       // The stabilization window can outlast a rejected lookup. Observe the
@@ -315,7 +457,18 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       if (!acceptingRequestEvents) return;
       const start = requestStarts.get(request);
       requestStarts.delete(request);
-      if (start) requests.push({ route: routeLabel, navigation_generation: start.generation, resource: classifyResource(request.url()) ?? "other", initiator: "other", outcome: "failed", status: 0, response_body_bytes: 0, started_at_ms: start.started_at_ms, ended_at_ms: performance.now() });
+      if (start)
+        requests.push({
+          route: routeLabel,
+          navigation_generation: start.generation,
+          resource: classifyResource(request.url()) ?? "other",
+          initiator: "other",
+          outcome: "failed",
+          status: 0,
+          response_body_bytes: 0,
+          started_at_ms: start.started_at_ms,
+          ended_at_ms: performance.now(),
+        });
     });
     page.on("response", (response) => {
       if (!acceptingRequestEvents) return;
@@ -343,16 +496,21 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       try {
         new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) {
-            if (entry.interactionId > 0) globalThis.__koaryuEvidence.interactions.push({
-              interaction_id: entry.interactionId,
-              category: entry.name.startsWith("key") ? "keyboard" : "pointer",
-              start_ms: entry.startTime,
-              duration_ms: entry.duration,
-            });
+            if (entry.interactionId > 0)
+              globalThis.__koaryuEvidence.interactions.push({
+                interaction_id: entry.interactionId,
+                category: entry.name.startsWith("key") ? "keyboard" : "pointer",
+                start_ms: entry.startTime,
+                duration_ms: entry.duration,
+              });
           }
         }).observe({ type: "event", buffered: true, durationThreshold: 16 });
         new PerformanceObserver((list) => {
-          for (const entry of list.getEntries()) globalThis.__koaryuEvidence.longTasks.push({ start_ms: entry.startTime, duration_ms: entry.duration });
+          for (const entry of list.getEntries())
+            globalThis.__koaryuEvidence.longTasks.push({
+              start_ms: entry.startTime,
+              duration_ms: entry.duration,
+            });
         }).observe({ type: "longtask", buffered: true });
       } catch {}
     });
@@ -362,13 +520,23 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       waitUntil: "domcontentloaded",
       timeout: 30_000,
     });
-    const { dashboardReadyMs, dashboardShellReadyMs, neutralShellReadyMs, identityReadyMs, usefulReadyMs, selectedRequiredDataMs, visibleMarks } = await measureDashboardReady(page, routeLabel, { functional: options.functional === true });
+    const {
+      dashboardReadyMs,
+      dashboardShellReadyMs,
+      neutralShellReadyMs,
+      identityReadyMs,
+      usefulReadyMs,
+      selectedRequiredDataMs,
+      visibleMarks,
+    } = await measureDashboardReady(page, routeLabel, { functional: options.functional === true });
     if (new URL(page.url()).pathname !== CAPTURE_ROUTES[routeLabel]) {
       throw new Error("authenticated storage state did not reach /dashboard.");
     }
 
     const webVitalsObservation = await stabilizeWebVitals(page, () => ({
-      pending: [...requestStarts.keys()].filter((request) => RENDER_RESOURCE_TYPES.has(request.resourceType())).length,
+      pending: [...requestStarts.keys()].filter((request) =>
+        RENDER_RESOURCE_TYPES.has(request.resourceType()),
+      ).length,
       revision: renderRequestRevision,
     }));
     const browserEvidence = await page.evaluate(() => {
@@ -378,22 +546,34 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       );
       const resources = performance.getEntriesByType("resource").flatMap((entry) => {
         let path;
-        try { path = new URL(entry.name).pathname; } catch { return []; }
+        try {
+          path = new URL(entry.name).pathname;
+        } catch {
+          return [];
+        }
         const resource = path.endsWith("/dashboard/bootstrap")
           ? "dashboard-bootstrap"
-          : path.endsWith("/dashboard/summary") ? "dashboard-summary" : null;
-        return resource ? [{
-          resource,
-          duration_ms: entry.duration,
-          response_start_ms: entry.responseStart,
-          transfer_bytes: entry.transferSize,
-        }] : [];
+          : path.endsWith("/dashboard/summary")
+            ? "dashboard-summary"
+            : null;
+        return resource
+          ? [
+              {
+                resource,
+                duration_ms: entry.duration,
+                response_start_ms: entry.responseStart,
+                transfer_bytes: entry.transferSize,
+              },
+            ]
+          : [];
       });
       return {
-        navigation: navigation ? {
-          dom_content_loaded_ms: navigation.domContentLoadedEventEnd,
-          load_event_ms: navigation.loadEventEnd,
-        } : null,
+        navigation: navigation
+          ? {
+              dom_content_loaded_ms: navigation.domContentLoadedEventEnd,
+              load_event_ms: navigation.loadEventEnd,
+            }
+          : null,
         first_contentful_paint_ms: paints["first-contentful-paint"] ?? null,
         largest_contentful_paint_ms: globalThis.__koaryuEvidence?.lcp ?? null,
         cumulative_layout_shift: globalThis.__koaryuEvidence?.cls ?? null,
@@ -409,7 +589,17 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
     acceptingRequestEvents = false;
     const requestSnapshotAt = performance.now();
     for (const [request, start] of requestStarts) {
-      requests.push({ route: routeLabel, navigation_generation: start.generation, resource: classifyResource(request.url()) ?? "other", initiator: "other", outcome: "pending-at-capture", status: requestStatuses.get(request) ?? 0, response_body_bytes: 0, started_at_ms: start.started_at_ms, ended_at_ms: requestSnapshotAt });
+      requests.push({
+        route: routeLabel,
+        navigation_generation: start.generation,
+        resource: classifyResource(request.url()) ?? "other",
+        initiator: "other",
+        outcome: "pending-at-capture",
+        status: requestStatuses.get(request) ?? 0,
+        response_body_bytes: 0,
+        started_at_ms: start.started_at_ms,
+        ended_at_ms: requestSnapshotAt,
+      });
     }
     await Promise.all(requestCompletions);
     evidence = validateCapturedEvidence({
@@ -425,12 +615,44 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       identity_ready_ms: roundRequired(identityReadyMs, "identity_ready_ms"),
       first_useful_content_ms: roundRequired(usefulReadyMs, "first_useful_content_ms"),
       visible_marks: visibleMarks,
-      requests: requests.map(({ route, navigation_generation, resource, initiator, outcome, status, response_body_bytes, started_at_ms, ended_at_ms }) => ({ route, navigation_generation, resource, initiator, outcome, status, response_body_bytes, start_ms: roundRequired(Math.max(0, started_at_ms - captureStartedAt), "request.start"), end_ms: outcome === "pending-at-capture" ? null : roundRequired(Math.max(0, ended_at_ms - captureStartedAt), "request.end"), observed_until_ms: roundRequired(Math.max(0, ended_at_ms - captureStartedAt), "request.observed_until") })),
+      requests: requests.map(
+        ({
+          route,
+          navigation_generation,
+          resource,
+          initiator,
+          outcome,
+          status,
+          response_body_bytes,
+          started_at_ms,
+          ended_at_ms,
+        }) => ({
+          route,
+          navigation_generation,
+          resource,
+          initiator,
+          outcome,
+          status,
+          response_body_bytes,
+          start_ms: roundRequired(Math.max(0, started_at_ms - captureStartedAt), "request.start"),
+          end_ms:
+            outcome === "pending-at-capture"
+              ? null
+              : roundRequired(Math.max(0, ended_at_ms - captureStartedAt), "request.end"),
+          observed_until_ms: roundRequired(
+            Math.max(0, ended_at_ms - captureStartedAt),
+            "request.observed_until",
+          ),
+        }),
+      ),
       captured_at: new Date().toISOString(),
       environment: verification.environment,
       exact_sha_verified: verification.expected_sha,
       privacy: "allowlisted-aggregate-timings-only",
-      dashboard_ready_ms: options.functional && dashboardReadyMs === null ? null : roundRequired(dashboardReadyMs, "dashboard_ready_ms"),
+      dashboard_ready_ms:
+        options.functional && dashboardReadyMs === null
+          ? null
+          : roundRequired(dashboardReadyMs, "dashboard_ready_ms"),
       selected_required_data_ms: roundRequired(selectedRequiredDataMs, "selected_required_data_ms"),
       dashboard_shell_ready_ms: roundRequired(dashboardShellReadyMs, "dashboard_shell_ready_ms"),
       blocked_requests: blocked,
@@ -441,7 +663,10 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
         ),
         load_event_ms: roundRequired(browserEvidence.navigation?.load_event_ms, "load_event_ms"),
       },
-      interactions: { source: "browser-lab-event-timing-not-field-inp", entries: browserEvidence.interactions },
+      interactions: {
+        source: "browser-lab-event-timing-not-field-inp",
+        entries: browserEvidence.interactions,
+      },
       browser_long_tasks: browserEvidence.long_tasks,
       web_vitals: {
         observation: webVitalsObservation,
@@ -461,7 +686,10 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       resources: browserEvidence.resources.map((entry) => ({
         resource: entry.resource,
         duration_ms: roundRequired(entry.duration_ms, `${entry.resource}.duration_ms`),
-        response_start_ms: roundRequired(entry.response_start_ms, `${entry.resource}.response_start_ms`),
+        response_start_ms: roundRequired(
+          entry.response_start_ms,
+          `${entry.resource}.response_start_ms`,
+        ),
         transfer_bytes: roundRequired(entry.transfer_bytes, `${entry.resource}.transfer_bytes`),
       })),
       server_timing: responseTimings,

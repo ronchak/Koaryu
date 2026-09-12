@@ -33,7 +33,15 @@ describe("resolveOrigin", () => {
   });
 
   it("drops values that are not parseable http(s) URLs", () => {
-    for (const value of [null, undefined, "", "   ", "not a url", "javascript:alert(1)", "ftp://x.test"]) {
+    for (const value of [
+      null,
+      undefined,
+      "",
+      "   ",
+      "not a url",
+      "javascript:alert(1)",
+      "ftp://x.test",
+    ]) {
       assert.equal(resolveOrigin(value), null, `expected ${String(value)} to be dropped`);
     }
   });

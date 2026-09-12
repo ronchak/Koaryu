@@ -14,7 +14,7 @@ type ParsedStudioStateCookie = {
 export function serializeStudioStateCookie(
   userId: string,
   hasStudio: boolean,
-  membershipStatus: StudioMembershipStatus = hasStudio ? "active" : "none"
+  membershipStatus: StudioMembershipStatus = hasStudio ? "active" : "none",
 ) {
   return `${userId}|${hasStudio ? "1" : "0"}|${membershipStatus}`;
 }
@@ -24,7 +24,7 @@ function isStudioMembershipStatus(value: string | undefined): value is StudioMem
 }
 
 export function parseStudioStateCookie(
-  value: string | null | undefined
+  value: string | null | undefined,
 ): ParsedStudioStateCookie | null {
   if (!value) {
     return null;
@@ -41,10 +41,10 @@ export function parseStudioStateCookie(
   const [userId, hasStudioFlag, membershipStatusFlag, ...rest] = decodedValue.split("|");
 
   if (
-    !userId
-    || rest.length > 0
-    || (hasStudioFlag !== "0" && hasStudioFlag !== "1")
-    || (membershipStatusFlag !== undefined && !isStudioMembershipStatus(membershipStatusFlag))
+    !userId ||
+    rest.length > 0 ||
+    (hasStudioFlag !== "0" && hasStudioFlag !== "1") ||
+    (membershipStatusFlag !== undefined && !isStudioMembershipStatus(membershipStatusFlag))
   ) {
     return null;
   }
@@ -61,7 +61,7 @@ export function parseStudioStateCookie(
 export function setStudioStateCookie(
   userId: string,
   hasStudio: boolean,
-  membershipStatus: StudioMembershipStatus = hasStudio ? "active" : "none"
+  membershipStatus: StudioMembershipStatus = hasStudio ? "active" : "none",
 ) {
   if (typeof document === "undefined") {
     return;
@@ -69,7 +69,7 @@ export function setStudioStateCookie(
 
   const parts = [
     `${STUDIO_STATE_COOKIE}=${encodeURIComponent(
-      serializeStudioStateCookie(userId, hasStudio, membershipStatus)
+      serializeStudioStateCookie(userId, hasStudio, membershipStatus),
     )}`,
     "Path=/",
     `Max-Age=${STUDIO_STATE_COOKIE_MAX_AGE_SECONDS}`,
@@ -88,12 +88,7 @@ export function clearStudioStateCookie() {
     return;
   }
 
-  const parts = [
-    `${STUDIO_STATE_COOKIE}=`,
-    "Path=/",
-    "Max-Age=0",
-    "SameSite=Lax",
-  ];
+  const parts = [`${STUDIO_STATE_COOKIE}=`, "Path=/", "Max-Age=0", "SameSite=Lax"];
 
   if (window.location.protocol === "https:") {
     parts.push("Secure");
@@ -108,9 +103,7 @@ function readCookieValue(name: string): string | null {
   }
 
   const prefix = `${name}=`;
-  const entry = document.cookie
-    .split("; ")
-    .find((cookiePart) => cookiePart.startsWith(prefix));
+  const entry = document.cookie.split("; ").find((cookiePart) => cookiePart.startsWith(prefix));
 
   if (!entry) {
     return null;
@@ -151,12 +144,7 @@ export function clearActiveStudioIdCookie() {
     return;
   }
 
-  const parts = [
-    `${ACTIVE_STUDIO_COOKIE}=`,
-    "Path=/",
-    "Max-Age=0",
-    "SameSite=Lax",
-  ];
+  const parts = [`${ACTIVE_STUDIO_COOKIE}=`, "Path=/", "Max-Age=0", "SameSite=Lax"];
 
   if (window.location.protocol === "https:") {
     parts.push("Secure");

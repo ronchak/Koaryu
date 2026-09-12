@@ -18,11 +18,17 @@ class FakeUserResponse:
 
 class FakeAuthAdmin:
     def get_user_by_id(self, user_id):
-        return FakeUserResponse(type("User", (), {
-            "id": user_id,
-            "email": f"{user_id}@example.com",
-            "user_metadata": {"full_name": "Test User"},
-        })())
+        return FakeUserResponse(
+            type(
+                "User",
+                (),
+                {
+                    "id": user_id,
+                    "email": f"{user_id}@example.com",
+                    "user_metadata": {"full_name": "Test User"},
+                },
+            )()
+        )
 
 
 class FakeAuth:
@@ -31,10 +37,12 @@ class FakeAuth:
 
 class FakeSupabase(RpcBackedSupabase):
     def __init__(self):
-        super().__init__({
-            "support_tickets": [],
-            "support_ticket_events": [],
-        })
+        super().__init__(
+            {
+                "support_tickets": [],
+                "support_ticket_events": [],
+            }
+        )
         self.auth = FakeAuth()
         self.insert_defaults = {
             "support_tickets": {
@@ -66,32 +74,37 @@ class FakeSupabase(RpcBackedSupabase):
             "updated_at": "2026-05-20T00:00:00+00:00",
         }
         self.tables["support_tickets"].append(ticket)
-        self.tables["support_ticket_events"].append({
-            "id": "event_1",
-            "ticket_id": ticket["id"],
-            "studio_id": ticket["studio_id"],
-            "actor_id": ticket["created_by"],
-            "event_type": "ticket.created",
-            "message": "Support ticket created.",
-            "metadata": {
-                "topic": ticket["topic"],
-                "severity": ticket["severity"],
-            },
-            "created_at": "2026-05-20T00:00:00+00:00",
-        })
+        self.tables["support_ticket_events"].append(
+            {
+                "id": "event_1",
+                "ticket_id": ticket["id"],
+                "studio_id": ticket["studio_id"],
+                "actor_id": ticket["created_by"],
+                "event_type": "ticket.created",
+                "message": "Support ticket created.",
+                "metadata": {
+                    "topic": ticket["topic"],
+                    "severity": ticket["severity"],
+                },
+                "created_at": "2026-05-20T00:00:00+00:00",
+            }
+        )
         return [dict(ticket)]
 
     def _rpc_support_triage_list_tickets(self, params):
         statuses = set(params.get("p_statuses") or ["open", "triaging", "waiting_on_customer"])
         severities = set(params.get("p_severities") or ["urgent", "high", "normal", "low"])
-        topics = set(params.get("p_topics") or [
-            "billing",
-            "account_access",
-            "student_records",
-            "bug_report",
-            "product_question",
-            "other",
-        ])
+        topics = set(
+            params.get("p_topics")
+            or [
+                "billing",
+                "account_access",
+                "student_records",
+                "bug_report",
+                "product_question",
+                "other",
+            ]
+        )
         limit = params.get("p_limit") or 50
         severity_rank = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
         rows = [
@@ -101,7 +114,13 @@ class FakeSupabase(RpcBackedSupabase):
             and row.get("severity") in severities
             and row.get("topic") in topics
         ]
-        rows.sort(key=lambda row: (severity_rank.get(row.get("severity"), 4), row.get("created_at", ""), row.get("id", "")))
+        rows.sort(
+            key=lambda row: (
+                severity_rank.get(row.get("severity"), 4),
+                row.get("created_at", ""),
+                row.get("id", ""),
+            )
+        )
         return [dict(row) for row in rows[:limit]]
 
     def _rpc_support_triage_update_ticket(self, params):
@@ -114,24 +133,34 @@ class FakeSupabase(RpcBackedSupabase):
                 previous_status = row.get("status")
                 if status:
                     row["status"] = status
-                    row["resolved_at"] = "2026-05-20T01:00:00+00:00" if status in {"resolved", "closed"} else None
+                    row["resolved_at"] = (
+                        "2026-05-20T01:00:00+00:00" if status in {"resolved", "closed"} else None
+                    )
                 row["updated_at"] = "2026-05-20T01:00:00+00:00"
-                event_type = "ticket.triaged" if status and note else "ticket.status_changed" if status else "ticket.note_added"
-                self.tables["support_ticket_events"].append({
-                    "id": "event_1",
-                    "ticket_id": ticket_id,
-                    "studio_id": row.get("studio_id"),
-                    "actor_id": None,
-                    "event_type": event_type,
-                    "message": note,
-                    "metadata": {
-                        **metadata,
-                        "actor": "internal_support_triage",
-                        "previous_status": previous_status,
-                        "next_status": row.get("status"),
-                    },
-                    "created_at": "2026-05-20T01:00:00+00:00",
-                })
+                event_type = (
+                    "ticket.triaged"
+                    if status and note
+                    else "ticket.status_changed"
+                    if status
+                    else "ticket.note_added"
+                )
+                self.tables["support_ticket_events"].append(
+                    {
+                        "id": "event_1",
+                        "ticket_id": ticket_id,
+                        "studio_id": row.get("studio_id"),
+                        "actor_id": None,
+                        "event_type": event_type,
+                        "message": note,
+                        "metadata": {
+                            **metadata,
+                            "actor": "internal_support_triage",
+                            "previous_status": previous_status,
+                            "next_status": row.get("status"),
+                        },
+                        "created_at": "2026-05-20T01:00:00+00:00",
+                    }
+                )
                 return [dict(row)]
         return []
 
@@ -156,7 +185,9 @@ class SupportServiceTest(unittest.TestCase):
         self.assertEqual(ticket.requester_email, "user_1@example.com")
         self.assertEqual(ticket.status, "open")
         self.assertEqual(len(supabase.tables["support_ticket_events"]), 1)
-        self.assertEqual(supabase.tables["support_ticket_events"][0]["event_type"], "ticket.created")
+        self.assertEqual(
+            supabase.tables["support_ticket_events"][0]["event_type"], "ticket.created"
+        )
         self.assertEqual([name for name, _params in supabase.rpc_calls], ["create_support_ticket"])
 
     def test_non_admin_lists_only_own_tickets(self):
@@ -191,12 +222,15 @@ class SupportServiceTest(unittest.TestCase):
                 "updated_at": "2026-05-20T00:00:00+00:00",
             },
         ]
-        supabase.select_assertions["support_tickets"] = (
-            lambda columns: self.assertEqual(columns, SUPPORT_TICKET_COLUMNS)
+        supabase.select_assertions["support_tickets"] = lambda columns: self.assertEqual(
+            columns, SUPPORT_TICKET_COLUMNS
         )
         service = SupportService(supabase)
 
-        with patch("app.services.support_service.resolve_admin_staff_role_for_user", side_effect=HTTPException(403, "not admin")):
+        with patch(
+            "app.services.support_service.resolve_admin_staff_role_for_user",
+            side_effect=HTTPException(403, "not admin"),
+        ):
             tickets = asyncio.run(service.list_tickets("studio_1", "user_1", "studio_1"))
 
         self.assertEqual([ticket.id for ticket in tickets], ["ticket_1"])
@@ -233,12 +267,15 @@ class SupportServiceTest(unittest.TestCase):
                 "updated_at": "2026-05-20T00:00:00+00:00",
             },
         ]
-        supabase.select_assertions["support_tickets"] = (
-            lambda columns: self.assertEqual(columns, SUPPORT_TICKET_COLUMNS)
+        supabase.select_assertions["support_tickets"] = lambda columns: self.assertEqual(
+            columns, SUPPORT_TICKET_COLUMNS
         )
         service = SupportService(supabase)
 
-        with patch("app.services.support_service.resolve_admin_staff_role_for_user", return_value={"studio_id": "studio_1", "role": "admin"}):
+        with patch(
+            "app.services.support_service.resolve_admin_staff_role_for_user",
+            return_value={"studio_id": "studio_1", "role": "admin"},
+        ):
             tickets = asyncio.run(service.list_tickets("studio_1", "admin_1", "studio_1"))
 
         self.assertEqual([ticket.id for ticket in tickets], ["ticket_1", "ticket_2"])
@@ -343,63 +380,83 @@ class SupportServiceTest(unittest.TestCase):
         ]
         service = SupportService(supabase)
 
-        tickets = asyncio.run(service.list_triage_tickets(SupportTriageFilters(
-            statuses=["waiting_on_customer"],
-            severities=["urgent"],
-            topics=["billing"],
-        )))
+        tickets = asyncio.run(
+            service.list_triage_tickets(
+                SupportTriageFilters(
+                    statuses=["waiting_on_customer"],
+                    severities=["urgent"],
+                    topics=["billing"],
+                )
+            )
+        )
 
         self.assertEqual([ticket.id for ticket in tickets], ["ticket_1"])
 
     def test_triage_update_changes_status_and_inserts_event_atomically(self):
         supabase = FakeSupabase()
-        supabase.tables["support_tickets"] = [{
-            "id": "ticket_1",
-            "studio_id": "studio_1",
-            "created_by": "user_1",
-            "requester_email": "user_1@example.com",
-            "topic": "billing",
-            "severity": "urgent",
-            "subject": "Billing question",
-            "details": "How does billing work?",
-            "browser_context": {},
-            "status": "open",
-            "created_at": "2026-05-20T00:00:00+00:00",
-            "updated_at": "2026-05-20T00:00:00+00:00",
-        }]
+        supabase.tables["support_tickets"] = [
+            {
+                "id": "ticket_1",
+                "studio_id": "studio_1",
+                "created_by": "user_1",
+                "requester_email": "user_1@example.com",
+                "topic": "billing",
+                "severity": "urgent",
+                "subject": "Billing question",
+                "details": "How does billing work?",
+                "browser_context": {},
+                "status": "open",
+                "created_at": "2026-05-20T00:00:00+00:00",
+                "updated_at": "2026-05-20T00:00:00+00:00",
+            }
+        ]
         service = SupportService(supabase)
 
-        ticket = asyncio.run(service.triage_ticket(
-            "ticket_1",
-            SupportTicketTriageUpdate(status="triaging", note="Looking into this.", metadata={"source": "test"}),
-        ))
+        ticket = asyncio.run(
+            service.triage_ticket(
+                "ticket_1",
+                SupportTicketTriageUpdate(
+                    status="triaging", note="Looking into this.", metadata={"source": "test"}
+                ),
+            )
+        )
 
         self.assertEqual(ticket.status, "triaging")
         self.assertIsNone(ticket.resolved_at)
         self.assertEqual(len(supabase.tables["support_ticket_events"]), 1)
-        self.assertEqual(supabase.tables["support_ticket_events"][0]["event_type"], "ticket.triaged")
-        self.assertEqual(supabase.tables["support_ticket_events"][0]["metadata"]["previous_status"], "open")
+        self.assertEqual(
+            supabase.tables["support_ticket_events"][0]["event_type"], "ticket.triaged"
+        )
+        self.assertEqual(
+            supabase.tables["support_ticket_events"][0]["metadata"]["previous_status"], "open"
+        )
 
     def test_triage_update_sets_and_clears_resolved_at(self):
         supabase = FakeSupabase()
-        supabase.tables["support_tickets"] = [{
-            "id": "ticket_1",
-            "studio_id": "studio_1",
-            "created_by": "user_1",
-            "requester_email": "user_1@example.com",
-            "topic": "billing",
-            "severity": "normal",
-            "subject": "Billing question",
-            "details": "How does billing work?",
-            "browser_context": {},
-            "status": "open",
-            "created_at": "2026-05-20T00:00:00+00:00",
-            "updated_at": "2026-05-20T00:00:00+00:00",
-        }]
+        supabase.tables["support_tickets"] = [
+            {
+                "id": "ticket_1",
+                "studio_id": "studio_1",
+                "created_by": "user_1",
+                "requester_email": "user_1@example.com",
+                "topic": "billing",
+                "severity": "normal",
+                "subject": "Billing question",
+                "details": "How does billing work?",
+                "browser_context": {},
+                "status": "open",
+                "created_at": "2026-05-20T00:00:00+00:00",
+                "updated_at": "2026-05-20T00:00:00+00:00",
+            }
+        ]
         service = SupportService(supabase)
 
-        resolved = asyncio.run(service.triage_ticket("ticket_1", SupportTicketTriageUpdate(status="resolved")))
-        reopened = asyncio.run(service.triage_ticket("ticket_1", SupportTicketTriageUpdate(status="open")))
+        resolved = asyncio.run(
+            service.triage_ticket("ticket_1", SupportTicketTriageUpdate(status="resolved"))
+        )
+        reopened = asyncio.run(
+            service.triage_ticket("ticket_1", SupportTicketTriageUpdate(status="open"))
+        )
 
         self.assertEqual(resolved.status, "resolved")
         self.assertIsNotNone(resolved.resolved_at)

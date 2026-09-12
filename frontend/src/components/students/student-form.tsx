@@ -37,16 +37,19 @@ export function StudentForm(props: StudentFormProps) {
   const isEdit = !!initialData;
   const submitFormPayload = (data: StudentCreate | StudentUpdate) => {
     if (initialData) {
-      return (props.onSubmit as (data: StudentUpdate) => Promise<void> | void)(data as StudentUpdate);
+      return (props.onSubmit as (data: StudentUpdate) => Promise<void> | void)(
+        data as StudentUpdate,
+      );
     }
     return (props.onSubmit as (data: StudentCreate) => Promise<void> | void)(data as StudentCreate);
   };
-  const { error, outcomeUnknown, fields, handleSubmit, setField, setTab, tab } = useStudentFormState({
-    initialData,
-    businessDate,
-    includeLifecycleFields: canManageLifecycle,
-    onSubmit: submitFormPayload,
-  });
+  const { error, outcomeUnknown, fields, handleSubmit, setField, setTab, tab } =
+    useStudentFormState({
+      initialData,
+      businessDate,
+      includeLifecycleFields: canManageLifecycle,
+      onSubmit: submitFormPayload,
+    });
   const statusSelectId = "student-form-status";
   const notesId = "student-form-notes";
 
@@ -57,86 +60,84 @@ export function StudentForm(props: StudentFormProps) {
       ariaLabelledBy="student-form-title"
       onBackdropClick={onClose}
     >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-4 border-b border-border">
-          <h2 id="student-form-title" className="text-base font-semibold text-text-primary">
-            {isEdit ? "Edit student" : "Add student"}
-          </h2>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-4 border-b border-border">
+        <h2 id="student-form-title" className="text-base font-semibold text-text-primary">
+          {isEdit ? "Edit student" : "Add student"}
+        </h2>
+        <button
+          type="button"
+          aria-label={isEdit ? "Close edit student dialog" : "Close add student dialog"}
+          onClick={onClose}
+          className="text-muted hover:text-text-secondary transition-colors cursor-pointer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Tab nav */}
+      <div className="flex gap-1 border-b border-border p-1">
+        {studentFormTabs.map((t) => (
           <button
-            type="button"
-            aria-label={isEdit ? "Close edit student dialog" : "Close add student dialog"}
-            onClick={onClose}
-            className="text-muted hover:text-text-secondary transition-colors cursor-pointer"
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`min-h-11 rounded-[10px] px-4 py-2.5 text-sm cursor-pointer transition-[color,background-color] duration-150 ${
+              tab === t.id
+                ? "bg-surface-raised text-text-primary"
+                : "text-muted hover:bg-surface-raised/60 hover:text-text-secondary"
+            }`}
           >
-            <X className="w-4 h-4" />
+            {t.label}
           </button>
-        </div>
+        ))}
+      </div>
 
-        {/* Tab nav */}
-        <div className="flex gap-1 border-b border-border p-1">
-          {studentFormTabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`min-h-11 rounded-[10px] px-4 py-2.5 text-sm cursor-pointer transition-[color,background-color] duration-150 ${
-                tab === t.id
-                  ? "bg-surface-raised text-text-primary"
-                  : "text-muted hover:bg-surface-raised/60 hover:text-text-secondary"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div className="px-4 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
-            {/* ---- Basic Info Tab ---- */}
-            {tab === "info" && (
-              <>
-                <div className={`grid gap-3 ${canManageLifecycle ? "grid-cols-2" : "grid-cols-1"}`}>
-                  <Input
-                    label="Legal first name *"
-                    value={fields.legalFirst}
-                    onChange={(e) => setField("legalFirst", e.target.value)}
-                    placeholder="Aiko"
-                    required
-                  />
-                  <Input
-                    label="Legal last name *"
-                    value={fields.legalLast}
-                    onChange={(e) => setField("legalLast", e.target.value)}
-                    placeholder="Tanaka"
-                    required
-                  />
-                </div>
+      <form onSubmit={handleSubmit}>
+        <div className="px-4 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+          {/* ---- Basic Info Tab ---- */}
+          {tab === "info" && (
+            <>
+              <div className={`grid gap-3 ${canManageLifecycle ? "grid-cols-2" : "grid-cols-1"}`}>
                 <Input
-                  label="Preferred name"
-                  value={fields.preferredName}
-                  onChange={(e) => setField("preferredName", e.target.value)}
-                  placeholder="Goes by..."
+                  label="Legal first name *"
+                  value={fields.legalFirst}
+                  onChange={(e) => setField("legalFirst", e.target.value)}
+                  placeholder="Aiko"
+                  required
                 />
-                <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    label="Date of birth"
-                    type="date"
-                    value={fields.dob}
-                    onChange={(e) => setField("dob", e.target.value)}
-                  />
-                  {canManageLifecycle ? (
-                    <Input
-                      label="Membership start"
-                      type="date"
-                      value={fields.membershipStart}
-                      onChange={(e) => setField("membershipStart", e.target.value)}
-                    />
-                  ) : null}
-                </div>
+                <Input
+                  label="Legal last name *"
+                  value={fields.legalLast}
+                  onChange={(e) => setField("legalLast", e.target.value)}
+                  placeholder="Tanaka"
+                  required
+                />
+              </div>
+              <Input
+                label="Preferred name"
+                value={fields.preferredName}
+                onChange={(e) => setField("preferredName", e.target.value)}
+                placeholder="Goes by..."
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Date of birth"
+                  type="date"
+                  value={fields.dob}
+                  onChange={(e) => setField("dob", e.target.value)}
+                />
                 {canManageLifecycle ? (
-                  <div className="rounded-[14px] border border-border bg-surface-raised/50 p-4">
-                  <p className="text-xs font-medium text-text-secondary mb-3">
-                    Hold / Vacation
-                  </p>
+                  <Input
+                    label="Membership start"
+                    type="date"
+                    value={fields.membershipStart}
+                    onChange={(e) => setField("membershipStart", e.target.value)}
+                  />
+                ) : null}
+              </div>
+              {canManageLifecycle ? (
+                <div className="rounded-[14px] border border-border bg-surface-raised/50 p-4">
+                  <p className="text-xs font-medium text-text-secondary mb-3">Hold / Vacation</p>
                   <div className="grid grid-cols-2 gap-3">
                     <Input
                       label="Hold start"
@@ -152,13 +153,19 @@ export function StudentForm(props: StudentFormProps) {
                     />
                   </div>
                   <p className="mt-2 text-xs text-muted">
-                    Students on an active hold are excluded from inactivity alerts until the hold ends.
+                    Students on an active hold are excluded from inactivity alerts until the hold
+                    ends.
                   </p>
-                  </div>
-                ) : null}
-                {canManageLifecycle ? (
-                  <div className="flex flex-col gap-1.5">
-                  <label htmlFor={statusSelectId} className="text-sm text-text-secondary font-medium">Status</label>
+                </div>
+              ) : null}
+              {canManageLifecycle ? (
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    htmlFor={statusSelectId}
+                    className="text-sm text-text-secondary font-medium"
+                  >
+                    Status
+                  </label>
                   <select
                     id={statusSelectId}
                     value={fields.status}
@@ -171,183 +178,189 @@ export function StudentForm(props: StudentFormProps) {
                     <option value="paused">Paused</option>
                     <option value="canceled">Canceled</option>
                   </select>
-                  </div>
-                ) : null}
-                {canManageLifecycle ? (
-                  <ProgramPicker
-                    programs={programs}
-                    label="Programs"
-                    multiple
-                    values={fields.programIds}
-                    onChange={() => undefined}
-                    onChangeMany={(programIds) => setField("programIds", programIds)}
-                  />
-                ) : null}
-                <Input
-                  label="Tags"
-                  value={fields.tags}
-                  onChange={(e) => setField("tags", e.target.value)}
-                  placeholder="youth, competition, beginner (comma-separated)"
-                  hint="Separate multiple tags with commas"
-                />
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor={notesId} className="text-sm text-text-secondary font-medium">Notes</label>
-                  <textarea
-                    id={notesId}
-                    value={fields.notes}
-                    onChange={(e) => setField("notes", e.target.value)}
-                    placeholder="Any additional notes about this student..."
-                    rows={3}
-                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
-                  />
                 </div>
-              </>
-            )}
+              ) : null}
+              {canManageLifecycle ? (
+                <ProgramPicker
+                  programs={programs}
+                  label="Programs"
+                  multiple
+                  values={fields.programIds}
+                  onChange={() => undefined}
+                  onChangeMany={(programIds) => setField("programIds", programIds)}
+                />
+              ) : null}
+              <Input
+                label="Tags"
+                value={fields.tags}
+                onChange={(e) => setField("tags", e.target.value)}
+                placeholder="youth, competition, beginner (comma-separated)"
+                hint="Separate multiple tags with commas"
+              />
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor={notesId} className="text-sm text-text-secondary font-medium">
+                  Notes
+                </label>
+                <textarea
+                  id={notesId}
+                  value={fields.notes}
+                  onChange={(e) => setField("notes", e.target.value)}
+                  placeholder="Any additional notes about this student..."
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
+                />
+              </div>
+            </>
+          )}
 
-            {/* ---- Contact Tab ---- */}
-            {tab === "contact" && (
-              <>
+          {/* ---- Contact Tab ---- */}
+          {tab === "contact" && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Email"
+                  type="email"
+                  value={fields.email}
+                  onChange={(e) => setField("email", e.target.value)}
+                  placeholder="student@email.com"
+                />
+                <Input
+                  label="Phone"
+                  type="tel"
+                  value={fields.phone}
+                  onChange={(e) => setField("phone", formatPhoneInput(e.target.value))}
+                  placeholder="(555) 000-0000"
+                />
+              </div>
+              <Input
+                label="Address"
+                value={fields.addressLine1}
+                onChange={(e) => setField("addressLine1", e.target.value)}
+                placeholder="123 Main St"
+              />
+              <div className="grid grid-cols-3 gap-3">
+                <Input
+                  label="City"
+                  value={fields.city}
+                  onChange={(e) => setField("city", e.target.value)}
+                  placeholder="San Diego"
+                />
+                <Input
+                  label="State"
+                  value={fields.state}
+                  onChange={(e) => setField("state", e.target.value)}
+                  placeholder="CA"
+                />
+                <Input
+                  label="ZIP"
+                  value={fields.zip}
+                  onChange={(e) => setField("zip", e.target.value)}
+                  placeholder="92101"
+                />
+              </div>
+              <div className="pt-2">
+                <p className="text-xs font-medium text-text-secondary mb-3">Emergency Contact</p>
                 <div className="grid grid-cols-2 gap-3">
                   <Input
-                    label="Email"
-                    type="email"
-                    value={fields.email}
-                    onChange={(e) => setField("email", e.target.value)}
-                    placeholder="student@email.com"
+                    label="Name"
+                    value={fields.emergencyName}
+                    onChange={(e) => setField("emergencyName", e.target.value)}
+                    placeholder="Full name"
                   />
                   <Input
-                    label="Phone"
+                    label="Relation"
+                    value={fields.emergencyRelation}
+                    onChange={(e) => setField("emergencyRelation", e.target.value)}
+                    placeholder="Mother, Coach..."
+                  />
+                </div>
+                <div className="mt-3">
+                  <Input
+                    label="Emergency phone"
                     type="tel"
-                    value={fields.phone}
-                    onChange={(e) => setField("phone", formatPhoneInput(e.target.value))}
+                    value={fields.emergencyPhone}
+                    onChange={(e) => setField("emergencyPhone", formatPhoneInput(e.target.value))}
                     placeholder="(555) 000-0000"
                   />
                 </div>
-                <Input
-                  label="Address"
-                  value={fields.addressLine1}
-                  onChange={(e) => setField("addressLine1", e.target.value)}
-                  placeholder="123 Main St"
-                />
-                <div className="grid grid-cols-3 gap-3">
-                  <Input
-                    label="City"
-                    value={fields.city}
-                    onChange={(e) => setField("city", e.target.value)}
-                    placeholder="San Diego"
-                  />
-                  <Input
-                    label="State"
-                    value={fields.state}
-                    onChange={(e) => setField("state", e.target.value)}
-                    placeholder="CA"
-                  />
-                  <Input
-                    label="ZIP"
-                    value={fields.zip}
-                    onChange={(e) => setField("zip", e.target.value)}
-                    placeholder="92101"
-                  />
-                </div>
-                <div className="pt-2">
-                  <p className="text-xs font-medium text-text-secondary mb-3">
-                    Emergency Contact
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Input
-                      label="Name"
-                      value={fields.emergencyName}
-                      onChange={(e) => setField("emergencyName", e.target.value)}
-                      placeholder="Full name"
-                    />
-                    <Input
-                      label="Relation"
-                      value={fields.emergencyRelation}
-                      onChange={(e) => setField("emergencyRelation", e.target.value)}
-                      placeholder="Mother, Coach..."
-                    />
-                  </div>
-                  <div className="mt-3">
-                    <Input
-                      label="Emergency phone"
-                      type="tel"
-                      value={fields.emergencyPhone}
-                      onChange={(e) => setField("emergencyPhone", formatPhoneInput(e.target.value))}
-                      placeholder="(555) 000-0000"
-                    />
-                  </div>
-                </div>
-              </>
-            )}
+              </div>
+            </>
+          )}
 
-            {/* ---- Guardian Tab ---- */}
-            {tab === "guardian" && (
-              <>
-                <div className="p-3 bg-surface-raised rounded-[14px] border border-border mb-4">
-                  <p className="text-xs text-text-secondary">
-                    {isEdit
-                      ? "Guardian details are shown for reference during this edit. Student profile fields save from here."
-                      : "Add a parent or guardian if this student is a minor. You can add more after saving."}
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    label="Guardian first name"
-                    value={fields.guardianFirst}
-                    onChange={(e) => setField("guardianFirst", e.target.value)}
-                    placeholder="Kenji"
-                    disabled={isEdit}
-                  />
-                  <Input
-                    label="Guardian last name"
-                    value={fields.guardianLast}
-                    onChange={(e) => setField("guardianLast", e.target.value)}
-                    placeholder="Tanaka"
-                    disabled={isEdit}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    label="Email"
-                    type="email"
-                    value={fields.guardianEmail}
-                    onChange={(e) => setField("guardianEmail", e.target.value)}
-                    placeholder="guardian@email.com"
-                    disabled={isEdit}
-                  />
-                  <Input
-                    label="Phone"
-                    type="tel"
-                    value={fields.guardianPhone}
-                    onChange={(e) => setField("guardianPhone", formatPhoneInput(e.target.value))}
-                    placeholder="(555) 000-0000"
-                    disabled={isEdit}
-                  />
-                </div>
+          {/* ---- Guardian Tab ---- */}
+          {tab === "guardian" && (
+            <>
+              <div className="p-3 bg-surface-raised rounded-[14px] border border-border mb-4">
+                <p className="text-xs text-text-secondary">
+                  {isEdit
+                    ? "Guardian details are shown for reference during this edit. Student profile fields save from here."
+                    : "Add a parent or guardian if this student is a minor. You can add more after saving."}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <Input
-                  label="Relation"
-                  value={fields.guardianRelation}
-                  onChange={(e) => setField("guardianRelation", e.target.value)}
-                  placeholder="Mother, Father, Grandparent..."
+                  label="Guardian first name"
+                  value={fields.guardianFirst}
+                  onChange={(e) => setField("guardianFirst", e.target.value)}
+                  placeholder="Kenji"
                   disabled={isEdit}
                 />
-              </>
-            )}
-          </div>
+                <Input
+                  label="Guardian last name"
+                  value={fields.guardianLast}
+                  onChange={(e) => setField("guardianLast", e.target.value)}
+                  placeholder="Tanaka"
+                  disabled={isEdit}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Email"
+                  type="email"
+                  value={fields.guardianEmail}
+                  onChange={(e) => setField("guardianEmail", e.target.value)}
+                  placeholder="guardian@email.com"
+                  disabled={isEdit}
+                />
+                <Input
+                  label="Phone"
+                  type="tel"
+                  value={fields.guardianPhone}
+                  onChange={(e) => setField("guardianPhone", formatPhoneInput(e.target.value))}
+                  placeholder="(555) 000-0000"
+                  disabled={isEdit}
+                />
+              </div>
+              <Input
+                label="Relation"
+                value={fields.guardianRelation}
+                onChange={(e) => setField("guardianRelation", e.target.value)}
+                placeholder="Mother, Father, Grandparent..."
+                disabled={isEdit}
+              />
+            </>
+          )}
+        </div>
 
-          {/* Footer */}
-          <div className="px-4 py-4 border-t border-border flex items-center justify-between">
-            {error && <p className="text-xs text-danger">{error}</p>}
-            <div className={`flex gap-2 ${error ? "" : "ml-auto"}`}>
-              <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="primary" size="sm" isLoading={isLoading} disabled={outcomeUnknown}>
-                {isEdit ? "Save changes" : "Add student"}
-              </Button>
-            </div>
+        {/* Footer */}
+        <div className="px-4 py-4 border-t border-border flex items-center justify-between">
+          {error && <p className="text-xs text-danger">{error}</p>}
+          <div className={`flex gap-2 ${error ? "" : "ml-auto"}`}>
+            <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              isLoading={isLoading}
+              disabled={outcomeUnknown}
+            >
+              {isEdit ? "Save changes" : "Add student"}
+            </Button>
           </div>
-        </form>
+        </div>
+      </form>
     </ModalFrame>
   );
 }

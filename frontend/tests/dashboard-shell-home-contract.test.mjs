@@ -38,7 +38,15 @@ describe("dashboard shell and Home source contracts", () => {
     const readIndex = homeSource.indexOf("readDashboardLayout(");
     assert.ok(effectIndex >= 0 && readIndex > effectIndex);
     assert.doesNotMatch(homeSource.slice(0, effectIndex), /localStorage|readDashboardLayout\(/);
-    for (const label of ["Add panels", "Customize", "Cancel", "Done", "Reset", "Resize", "Remove"]) {
+    for (const label of [
+      "Add panels",
+      "Customize",
+      "Cancel",
+      "Done",
+      "Reset",
+      "Resize",
+      "Remove",
+    ]) {
       assert.ok(homeSource.includes(label), label);
     }
     assert.doesNotMatch(homeSource, /Earlier|Later|\bArrow(?:Up|Down)\s*,/);
@@ -57,45 +65,60 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /onPointerCancel=\{onPointerCancel\}/);
     assert.match(homeSource, /onLostPointerCapture=\{onLostPointerCapture\}/);
     assert.match(homeSource, /moveDashboardLayoutItem\(/);
-    assert.match(homeSource, /updateLayoutInMemory\(\{ \.\.\.layoutRef\.current, items: nextItems \}\)/);
+    assert.match(
+      homeSource,
+      /updateLayoutInMemory\(\{ \.\.\.layoutRef\.current, items: nextItems \}\)/,
+    );
     assert.match(homeSource, /saveLayout\(layoutRef\.current\)/);
     assert.match(homeSource, /keyboardMoveRef\.current/);
     assert.match(homeSource, /event\.key\.startsWith\("Arrow"\)/);
     assert.match(homeSource, /aria-pressed=\{isPickedUp\}/);
-    assert.match(homeSource, /aria-label=\{isPickedUp[\s\S]*move picked up[\s\S]*Press Space or Enter to pick up/);
-    assert.match(homeSource, /aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Space Enter Escape"/);
-    assert.match(homeSource, /keyboardMoveRef\.current\?\.widgetId \?\? dragRef\.current\?\.widgetId/);
-    assert.match(homeSource, /is already picked up\. Drop or cancel it before starting another move/);
+    assert.match(
+      homeSource,
+      /aria-label=\{isPickedUp[\s\S]*move picked up[\s\S]*Press Space or Enter to pick up/,
+    );
+    assert.match(
+      homeSource,
+      /aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Space Enter Escape"/,
+    );
+    assert.match(
+      homeSource,
+      /keyboardMoveRef\.current\?\.widgetId \?\? dragRef\.current\?\.widgetId/,
+    );
+    assert.match(
+      homeSource,
+      /is already picked up\. Drop or cancel it before starting another move/,
+    );
     const pointerMoveSource = homeSource.slice(
       homeSource.indexOf("const onPointerMove"),
-      homeSource.indexOf("const onPointerUp")
+      homeSource.indexOf("const onPointerUp"),
     );
     assert.match(pointerMoveSource, /movePointerDrag/);
     assert.doesNotMatch(pointerMoveSource, /saveLayout/);
     const movePointerSource = homeSource.slice(
       homeSource.indexOf("const movePointerDrag"),
-      homeSource.indexOf("const finishPointerDrag")
+      homeSource.indexOf("const finishPointerDrag"),
     );
     assert.match(movePointerSource, /reflowDragAtPointer/);
     const dragCommitSource = homeSource.slice(
       homeSource.indexOf("const commitDragTarget"),
-      homeSource.indexOf("const reflowDragAtPointer")
+      homeSource.indexOf("const reflowDragAtPointer"),
     );
     assert.match(dragCommitSource, /updateLayoutInMemory/);
     assert.match(dragCommitSource, /session\.beforeLayout\.items\.map/);
     const pointerUpSource = homeSource.slice(
       homeSource.indexOf("const onPointerUp"),
-      homeSource.indexOf("const onPointerCancel")
+      homeSource.indexOf("const onPointerCancel"),
     );
     assert.match(pointerUpSource, /finishPointerDrag/);
     const finishPointerSource = homeSource.slice(
       homeSource.indexOf("const finishPointerDrag"),
-      homeSource.indexOf("const onPointerMove")
+      homeSource.indexOf("const onPointerMove"),
     );
     assert.equal(finishPointerSource.match(/saveLayout\(layoutRef\.current\)/g)?.length, 1);
     const pointerCancelSource = homeSource.slice(
       homeSource.indexOf("const onPointerCancel"),
-      homeSource.indexOf("const addableWidgets")
+      homeSource.indexOf("const addableWidgets"),
     );
     assert.match(pointerCancelSource, /if \(session\.active\) cancelActiveMove\(\)/);
     assert.match(pointerCancelSource, /else clearDragSession\(\)/);
@@ -115,8 +138,14 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /focusTarget/);
     assert.doesNotMatch(homeSource, /Open source/);
     assert.match(homeSource, /isMaterialState\(model\.state\)/);
-    assert.match(homeSource, /data-koaryu-dashboard-shell-ready=\{layoutResolved \? "true" : "false"\}/);
-    assert.match(homeSource, /data-koaryu-dashboard-data-ready=\{layoutResolved && dataReady \? "true" : "false"\}/);
+    assert.match(
+      homeSource,
+      /data-koaryu-dashboard-shell-ready=\{layoutResolved \? "true" : "false"\}/,
+    );
+    assert.match(
+      homeSource,
+      /data-koaryu-dashboard-data-ready=\{layoutResolved && dataReady \? "true" : "false"\}/,
+    );
     assert.match(homeSource, /data-koaryu-dashboard-ready=\{layoutResolved \? "true" : "false"\}/);
     assert.match(homeSource, /aria-busy=\{!layoutResolved\}/);
     assert.match(homeSource, /disabled=\{!layoutResolved\}/);
@@ -157,7 +186,8 @@ describe("dashboard shell and Home source contracts", () => {
     const routeTravelRule = shellStyles.match(/\.routeTravel\s*\{[\s\S]*?\}/)?.[0] ?? "";
     assert.match(routeTravelRule, /animation:[^;]*\bbackwards;/);
     assert.doesNotMatch(routeTravelRule, /\b(?:both|forwards)\b/);
-    const darkProductRule = shellStyles.match(/:global\(\[data-theme="dark"\]\) \.shellRoot\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    const darkProductRule =
+      shellStyles.match(/:global\(\[data-theme="dark"\]\) \.shellRoot\s*\{[\s\S]*?\}/)?.[0] ?? "";
     for (const token of [
       "--product-ground",
       "--product-paper",
@@ -175,7 +205,10 @@ describe("dashboard shell and Home source contracts", () => {
       assert.ok(darkProductRule.includes(token), token);
     }
     assert.doesNotMatch(darkProductRule, /#f2ece0|#fbf8f0|#fffdf8|#fffefb/);
-    assert.match(shellStyles, /\.spine,[\s\S]*?background: var\(--product-sunk\);[\s\S]*?color: var\(--product-ink\);/);
+    assert.match(
+      shellStyles,
+      /\.spine,[\s\S]*?background: var\(--product-sunk\);[\s\S]*?color: var\(--product-ink\);/,
+    );
     assert.doesNotMatch(shellStyles, /#302719|#fffaf0|linear-gradient/);
   });
 
@@ -191,10 +224,19 @@ describe("dashboard shell and Home source contracts", () => {
       assert.ok(homeStyles.includes(`var(${token})`), token);
     }
     assert.match(shellStyles, /min-height:\s*100dvh/);
-    assert.match(shellStyles, /@media \(max-width: 1023px\)[\s\S]*\.shellRoot\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/);
-    assert.match(shellStyles, /@media \(max-width: 1023px\)[\s\S]*\.main,[\s\S]*min-height:\s*0;[\s\S]*flex:\s*1 0 auto;/);
+    assert.match(
+      shellStyles,
+      /@media \(max-width: 1023px\)[\s\S]*\.shellRoot\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/,
+    );
+    assert.match(
+      shellStyles,
+      /@media \(max-width: 1023px\)[\s\S]*\.main,[\s\S]*min-height:\s*0;[\s\S]*flex:\s*1 0 auto;/,
+    );
     assert.match(homeStyles, /min-height:\s*calc\(100dvh - 44px\)/);
-    assert.match(homeStyles, /@media \(max-width: 1023px\)[\s\S]*\.home\s*\{[\s\S]*min-height:\s*0;[\s\S]*flex:\s*1 0 auto;/);
+    assert.match(
+      homeStyles,
+      /@media \(max-width: 1023px\)[\s\S]*\.home\s*\{[\s\S]*min-height:\s*0;[\s\S]*flex:\s*1 0 auto;/,
+    );
     assert.match(shellStyles, /\.slugBand\s*\{[\s\S]*height:\s*44px;[\s\S]*max-height:\s*44px;/);
     assert.match(shellStyles, /\.studioName\s*\{[\s\S]*text-overflow:\s*ellipsis;/);
   });
@@ -204,23 +246,50 @@ describe("dashboard shell and Home source contracts", () => {
     assert.equal(homeSource.match(/className=\{styles\.sequence\}/g)?.length, 1);
     assert.match(homeSource, /layout\.items\.map\(renderWidget\)/);
     assert.equal(homeSource.match(/layout\.items\.map\(renderWidget\)/g)?.length, 1);
-    assert.doesNotMatch(homeSource, /positionedItems|layout\.items\.(?:filter|sort|toSorted|reduce)|primaryItems|compactItems/);
+    assert.doesNotMatch(
+      homeSource,
+      /positionedItems|layout\.items\.(?:filter|sort|toSorted|reduce)|primaryItems|compactItems/,
+    );
     assert.match(homeSource, /position \$\{index \+ 1\} of \$\{total\}/);
     assert.match(homeSource, /<footer className=\{styles\.widgetFooting\}>/);
     assert.match(homeSource, /model\.provenanceLabel/);
     assert.match(homeSource, /className=\{styles\.sourceLink\}/);
-    assert.doesNotMatch(homeSource, /Daily register|Operating workbench|Arrangement saved per user|catalog\.provenanceCopy|catalog\.windowCopy/);
+    assert.doesNotMatch(
+      homeSource,
+      /Daily register|Operating workbench|Arrangement saved per user|catalog\.provenanceCopy|catalog\.windowCopy/,
+    );
     assert.doesNotMatch(homeSource, /<p>\{studioDescription\}<\/p>/);
-    assert.match(homeStyles, /\.sequence\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(4,/);
-    assert.match(homeStyles, /grid-column:\s*var\(--dashboard-column\) \/ span var\(--dashboard-column-span\)/);
-    assert.match(homeStyles, /@media \(max-width: 1023px\)[\s\S]*?grid-template-columns:\s*repeat\(2,/);
-    assert.match(homeStyles, /@media \(max-width: 640px\)[\s\S]*?\.sequence\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
+    assert.match(
+      homeStyles,
+      /\.sequence\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(4,/,
+    );
+    assert.match(
+      homeStyles,
+      /grid-column:\s*var\(--dashboard-column\) \/ span var\(--dashboard-column-span\)/,
+    );
+    assert.match(
+      homeStyles,
+      /@media \(max-width: 1023px\)[\s\S]*?grid-template-columns:\s*repeat\(2,/,
+    );
+    assert.match(
+      homeStyles,
+      /@media \(max-width: 640px\)[\s\S]*?\.sequence\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/,
+    );
     assert.match(homeStyles, /\.dragHandle\s*\{[\s\S]*?touch-action:\s*none;/);
-    assert.match(homeStyles, /\.customizing \.widget:not\(\.attentionWidget\)\s*\{[\s\S]*?touch-action:\s*pan-y;/);
+    assert.match(
+      homeStyles,
+      /\.customizing \.widget:not\(\.attentionWidget\)\s*\{[\s\S]*?touch-action:\s*pan-y;/,
+    );
     assert.doesNotMatch(homeStyles, /\.pickedUp \.dragHandle/);
     assert.doesNotMatch(homeStyles, /data-size="4x[12]"/);
-    assert.match(homeStyles, /\.widget\s*\{[\s\S]*?border-radius:\s*14px;[\s\S]*?box-shadow:\s*var\(--product-shadow-card\);/);
-    assert.match(homeStyles, /\.widget\s*\{[\s\S]*?grid-template-rows:\s*44px minmax\(0, 1fr\) 44px;/);
+    assert.match(
+      homeStyles,
+      /\.widget\s*\{[\s\S]*?border-radius:\s*14px;[\s\S]*?box-shadow:\s*var\(--product-shadow-card\);/,
+    );
+    assert.match(
+      homeStyles,
+      /\.widget\s*\{[\s\S]*?grid-template-rows:\s*44px minmax\(0, 1fr\) 44px;/,
+    );
     assert.match(homeStyles, /data-density="tall"/);
     assert.match(homeStyles, /\.widgetBody\s*\{[\s\S]*?overflow:\s*clip;/);
     assert.match(homeStyles, /data-widget-id="needs_attention"/);
@@ -243,13 +312,19 @@ describe("dashboard shell and Home source contracts", () => {
       assert.doesNotMatch(styles, /box-shadow:\s*(?:inset\s+)?(?:-?\d+px\s+){2}0(?:px)?\b/);
     }
     assert.match(shellStyles, /--product-focus:\s*#2f5d8f/);
-    assert.match(shellStyles, /:global\(\[data-theme="dark"\]\) \.shellRoot[\s\S]*--product-focus:\s*#85aedc/);
+    assert.match(
+      shellStyles,
+      /:global\(\[data-theme="dark"\]\) \.shellRoot[\s\S]*--product-focus:\s*#85aedc/,
+    );
     assert.match(homeStyles, /outline:\s*2px solid var\(--product-focus\)/);
   });
 
   it("puts the 44px target on queue and brand anchors themselves", () => {
     assert.match(homeStyles, /\.queue a\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?flex:\s*1 1 auto;/);
-    assert.match(shellStyles, /\.brandLink,[\s\S]*?\.mobileBrand\s*\{[\s\S]*?min-width:\s*44px;[\s\S]*?min-height:\s*44px;/);
+    assert.match(
+      shellStyles,
+      /\.brandLink,[\s\S]*?\.mobileBrand\s*\{[\s\S]*?min-width:\s*44px;[\s\S]*?min-height:\s*44px;/,
+    );
     assert.match(accountMenuSource, /flex h-11 w-full cursor-pointer/);
     assert.match(accountMenuSource, /group flex min-h-11 items-center/);
     assert.match(accountMenuSource, /group flex h-11 w-full items-center/);
@@ -257,15 +332,32 @@ describe("dashboard shell and Home source contracts", () => {
   });
 
   it("keeps reduced motion hidden states, print aliases, and the two-level elevation ladder honest", () => {
-    const reducedShell = shellStyles.slice(shellStyles.lastIndexOf("@media (prefers-reduced-motion: reduce)"));
-    assert.match(reducedShell, /\.skipLink\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?clip-path:\s*inset\(100%\);/);
-    assert.match(reducedShell, /\.skipLink:focus-visible\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?clip-path:\s*inset\(0\);/);
-    assert.match(accountMenuStyles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.root\[data-state="closed"\][\s\S]*?display:\s*none;[\s\S]*?visibility:\s*hidden;[\s\S]*?opacity:\s*0;/);
+    const reducedShell = shellStyles.slice(
+      shellStyles.lastIndexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    assert.match(
+      reducedShell,
+      /\.skipLink\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?clip-path:\s*inset\(100%\);/,
+    );
+    assert.match(
+      reducedShell,
+      /\.skipLink:focus-visible\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?clip-path:\s*inset\(0\);/,
+    );
+    assert.match(
+      accountMenuStyles,
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.root\[data-state="closed"\][\s\S]*?display:\s*none;[\s\S]*?visibility:\s*hidden;[\s\S]*?opacity:\s*0;/,
+    );
     assert.doesNotMatch(accountMenuSource, /rotate-90|style=\{\{ transform:/);
     assert.doesNotMatch(overviewSource, /group-hover:translate-x/);
 
     const printShell = shellStyles.slice(shellStyles.indexOf("@media print"));
-    for (const token of ["--product-ground: #fff", "--product-ink: #111", "--product-rule-soft: #ccc", "--text-primary: #111", "--accent: #111"]) {
+    for (const token of [
+      "--product-ground: #fff",
+      "--product-ink: #111",
+      "--product-rule-soft: #ccc",
+      "--text-primary: #111",
+      "--accent: #111",
+    ]) {
       assert.ok(printShell.includes(token), token);
     }
     assert.match(printShell, /:global\(\[data-theme="dark"\]\) \.shellRoot/);
@@ -274,14 +366,18 @@ describe("dashboard shell and Home source contracts", () => {
     assert.doesNotMatch(printHome, /\border\s*:|grid-auto-flow\s*:|column-count\s*:/);
 
     const spineRule = shellStyles.match(/\.spine\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    const activeNavRule = shellStyles.match(/\.navLink\[aria-current="page"\]\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    const activeNavRule =
+      shellStyles.match(/\.navLink\[aria-current="page"\]\s*\{[\s\S]*?\}/)?.[0] ?? "";
     assert.doesNotMatch(spineRule, /box-shadow/);
     assert.doesNotMatch(activeNavRule, /box-shadow/);
   });
 
   it("owns authoritative studio identity in the split store and purges layouts at session cleanup", () => {
     assert.match(storeSource, /const \[currentStudioId, setCurrentStudioId\]/);
-    assert.match(storeSource, /authProfile\.membership_status === "active" \? authProfile\.studio_id \?\? null : null/);
+    assert.match(
+      storeSource,
+      /authProfile\.membership_status === "active" \? authProfile\.studio_id \?\? null : null/,
+    );
     assert.match(storeSource, /setCurrentStudioId\(null\)/);
     assert.match(sessionSource, /purgeDashboardLayoutNamespace\(\)/);
     assert.doesNotMatch(sessionSource, /koaryu-theme/);

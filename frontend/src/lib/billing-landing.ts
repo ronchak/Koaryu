@@ -1,4 +1,9 @@
-import type { ApiBillingLandingResponse, ApiBillingLandingAggregatesResponse, ApiBillingInvoicePageResponse, ApiBillingPaymentPageResponse } from "@/types/generated/api-contracts";
+import type {
+  ApiBillingLandingResponse,
+  ApiBillingLandingAggregatesResponse,
+  ApiBillingInvoicePageResponse,
+  ApiBillingPaymentPageResponse,
+} from "@/types/generated/api-contracts";
 
 export type BillingLanding = ApiBillingLandingResponse;
 export type BillingLandingAggregates = ApiBillingLandingAggregatesResponse;

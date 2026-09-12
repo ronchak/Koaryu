@@ -27,9 +27,8 @@ class StudentImportRunStore:
         normalized = value.strip()
         if not normalized:
             return None
-        if (
-            len(normalized) > MAX_IDEMPOTENCY_KEY_LENGTH
-            or any(ord(char) < 32 for char in normalized)
+        if len(normalized) > MAX_IDEMPOTENCY_KEY_LENGTH or any(
+            ord(char) < 32 for char in normalized
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -118,15 +117,19 @@ class StudentImportRunStore:
         effective_key: str,
         claim_token: str,
     ) -> tuple[dict[str, Any], Optional[CsvImportResult], str, Optional[str]]:
-        result = execute_required_rpc(self.supabase, "claim_student_import_run_v2", {
-            "p_studio_id": studio_id,
-            "p_actor_id": actor_id,
-            "p_operation": IMPORT_RUN_OPERATION,
-            "p_idempotency_key": effective_key,
-            "p_request_hash": request_hash,
-            "p_processing_token": claim_token,
-            "p_stale_after_seconds": IMPORT_RUN_STALE_AFTER_SECONDS,
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "claim_student_import_run_v2",
+            {
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_operation": IMPORT_RUN_OPERATION,
+                "p_idempotency_key": effective_key,
+                "p_request_hash": request_hash,
+                "p_processing_token": claim_token,
+                "p_stale_after_seconds": IMPORT_RUN_STALE_AFTER_SECONDS,
+            },
+        )
         claim = first_rpc_row(result) or {}
         claim_status = str(claim.get("claim_status") or "")
         run_row = claim.get("run_row")
@@ -167,13 +170,17 @@ class StudentImportRunStore:
         processing_token: str,
         result: CsvImportResult,
     ) -> CsvImportResult:
-        update_result = execute_required_rpc(self.supabase, "finish_student_import_run", {
-            "p_import_run_id": import_run_id,
-            "p_processing_token": processing_token,
-            "p_status": "completed",
-            "p_result_json": result.model_dump(mode="json"),
-            "p_error_message": None,
-        })
+        update_result = execute_required_rpc(
+            self.supabase,
+            "finish_student_import_run",
+            {
+                "p_import_run_id": import_run_id,
+                "p_processing_token": processing_token,
+                "p_status": "completed",
+                "p_result_json": result.model_dump(mode="json"),
+                "p_error_message": None,
+            },
+        )
         row = first_rpc_row(update_result) or {}
         run_row = row.get("run_row")
         if not row.get("updated") or not isinstance(run_row, dict):
@@ -191,12 +198,16 @@ class StudentImportRunStore:
         processing_token: str,
         message: str,
     ) -> bool:
-        update_result = execute_required_rpc(self.supabase, "finish_student_import_run", {
-            "p_import_run_id": import_run_id,
-            "p_processing_token": processing_token,
-            "p_status": "failed",
-            "p_result_json": None,
-            "p_error_message": message[:1000],
-        })
+        update_result = execute_required_rpc(
+            self.supabase,
+            "finish_student_import_run",
+            {
+                "p_import_run_id": import_run_id,
+                "p_processing_token": processing_token,
+                "p_status": "failed",
+                "p_result_json": None,
+                "p_error_message": message[:1000],
+            },
+        )
         row = first_rpc_row(update_result) or {}
         return bool(row.get("updated"))

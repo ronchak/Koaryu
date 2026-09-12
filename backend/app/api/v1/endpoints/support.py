@@ -26,6 +26,7 @@ async def create_support_ticket(
     async def _provider_operation(client):
         studio_id = _staff_studio_id(client, user_id, requested_studio_id)
         return await SupportService(client).create_ticket(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -42,6 +43,7 @@ async def list_support_tickets(
     async def _provider_operation(client):
         studio_id = _staff_studio_id(client, user_id, requested_studio_id)
         return await SupportService(client).list_tickets(studio_id, user_id, requested_studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

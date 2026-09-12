@@ -7,7 +7,10 @@ from unittest.mock import patch
 
 from fastapi import HTTPException, Response
 from app.api.v1.endpoints.dashboard import get_dashboard_summary
-from app.services.dashboard_summary_service import dashboard_summary_fact_cache, DASHBOARD_SUMMARY_FORMULA_VERSION
+from app.services.dashboard_summary_service import (
+    dashboard_summary_fact_cache,
+    DASHBOARD_SUMMARY_FORMULA_VERSION,
+)
 from tests.fakes.supabase import FakeResult, FakeRpcCall
 import json
 import os
@@ -50,14 +53,18 @@ class CountingTableBackedSupabase(TableBackedSupabase):
 
     def get_user_by_id(self, user_id):
         self.auth_call_count += 1
-        return SimpleNamespace(user=SimpleNamespace(id=user_id, email="fixture@example.invalid", user_metadata={}))
+        return SimpleNamespace(
+            user=SimpleNamespace(id=user_id, email="fixture@example.invalid", user_metadata={})
+        )
 
     def rpc(self, name, params):
         assert name == "dashboard_summary_facts"
         self.rpc_calls.append((name, params))
+
         def execute():
             self.record_table_result(FakeResult(self.facts))
             return self.facts
+
         return FakeRpcCall(execute)
 
     def table(self, name: str):
@@ -102,37 +109,154 @@ def build_tables(cardinalities: dict[str, int]) -> dict[str, list[dict[str, Any]
     tables = {
         "students": students,
         "leads": [
-            {"id": "fixture-lead-1", "studio_id": STUDIO_ID, "stage": "inquiry", "follow_up_date": "2026-05-20"},
-            {"id": "fixture-lead-2", "studio_id": STUDIO_ID, "stage": "enrolled", "follow_up_date": "2026-05-20"},
-            {"id": "fixture-lead-3", "studio_id": STUDIO_ID, "stage": "trial_scheduled", "follow_up_date": "2026-05-19"},
+            {
+                "id": "fixture-lead-1",
+                "studio_id": STUDIO_ID,
+                "stage": "inquiry",
+                "follow_up_date": "2026-05-20",
+            },
+            {
+                "id": "fixture-lead-2",
+                "studio_id": STUDIO_ID,
+                "stage": "enrolled",
+                "follow_up_date": "2026-05-20",
+            },
+            {
+                "id": "fixture-lead-3",
+                "studio_id": STUDIO_ID,
+                "stage": "trial_scheduled",
+                "follow_up_date": "2026-05-19",
+            },
         ],
         "class_sessions": [
-            {"id": "fixture-session-1", "studio_id": STUDIO_ID, "template_id": "fixture-template-1", "name": "Fixture Fundamentals", "date": "2026-05-20", "start_time": "09:00:00", "end_time": "10:00:00", "status": "scheduled", "deleted_at": None, "capacity": 20},
-            {"id": "fixture-session-2", "studio_id": STUDIO_ID, "template_id": "fixture-template-2", "name": "Fixture Advanced", "date": "2026-05-20", "start_time": "18:00:00", "end_time": "19:00:00", "status": "scheduled", "deleted_at": None, "capacity": 20},
-            {"id": "fixture-session-history", "studio_id": STUDIO_ID, "template_id": None, "name": "Fixture History", "date": "2026-05-01", "start_time": "18:00:00", "end_time": "19:00:00", "status": "scheduled", "deleted_at": None, "capacity": 20},
+            {
+                "id": "fixture-session-1",
+                "studio_id": STUDIO_ID,
+                "template_id": "fixture-template-1",
+                "name": "Fixture Fundamentals",
+                "date": "2026-05-20",
+                "start_time": "09:00:00",
+                "end_time": "10:00:00",
+                "status": "scheduled",
+                "deleted_at": None,
+                "capacity": 20,
+            },
+            {
+                "id": "fixture-session-2",
+                "studio_id": STUDIO_ID,
+                "template_id": "fixture-template-2",
+                "name": "Fixture Advanced",
+                "date": "2026-05-20",
+                "start_time": "18:00:00",
+                "end_time": "19:00:00",
+                "status": "scheduled",
+                "deleted_at": None,
+                "capacity": 20,
+            },
+            {
+                "id": "fixture-session-history",
+                "studio_id": STUDIO_ID,
+                "template_id": None,
+                "name": "Fixture History",
+                "date": "2026-05-01",
+                "start_time": "18:00:00",
+                "end_time": "19:00:00",
+                "status": "scheduled",
+                "deleted_at": None,
+                "capacity": 20,
+            },
         ],
         "class_templates": [
-            {"id": "fixture-template-1", "studio_id": STUDIO_ID, "day_of_week": 3, "start_date": "2026-01-01", "end_date": None, "is_active": True},
-            {"id": "fixture-template-2", "studio_id": STUDIO_ID, "day_of_week": 3, "start_date": "2026-01-01", "end_date": None, "is_active": True},
+            {
+                "id": "fixture-template-1",
+                "studio_id": STUDIO_ID,
+                "day_of_week": 3,
+                "start_date": "2026-01-01",
+                "end_date": None,
+                "is_active": True,
+            },
+            {
+                "id": "fixture-template-2",
+                "studio_id": STUDIO_ID,
+                "day_of_week": 3,
+                "start_date": "2026-01-01",
+                "end_date": None,
+                "is_active": True,
+            },
         ],
         "attendance": [
-            {"id": "fixture-attendance-1", "studio_id": STUDIO_ID, "student_id": students[0]["id"], "session_id": "fixture-session-1", "status": "present", "checked_in_at": "2026-05-20T16:00:00Z"},
-            {"id": "fixture-attendance-2", "studio_id": STUDIO_ID, "student_id": students[1 % student_count]["id"], "session_id": "fixture-session-2", "status": "present", "checked_in_at": "2026-05-21T01:00:00Z"},
-            {"id": "fixture-attendance-3", "studio_id": STUDIO_ID, "student_id": students[2 % student_count]["id"], "session_id": "fixture-session-history", "status": "present", "checked_in_at": "2026-05-01T01:00:00Z"},
+            {
+                "id": "fixture-attendance-1",
+                "studio_id": STUDIO_ID,
+                "student_id": students[0]["id"],
+                "session_id": "fixture-session-1",
+                "status": "present",
+                "checked_in_at": "2026-05-20T16:00:00Z",
+            },
+            {
+                "id": "fixture-attendance-2",
+                "studio_id": STUDIO_ID,
+                "student_id": students[1 % student_count]["id"],
+                "session_id": "fixture-session-2",
+                "status": "present",
+                "checked_in_at": "2026-05-21T01:00:00Z",
+            },
+            {
+                "id": "fixture-attendance-3",
+                "studio_id": STUDIO_ID,
+                "student_id": students[2 % student_count]["id"],
+                "session_id": "fixture-session-history",
+                "status": "present",
+                "checked_in_at": "2026-05-01T01:00:00Z",
+            },
         ],
         "programs": [
-            {"id": "fixture-program", "studio_id": STUDIO_ID, "is_system": False, "archived_at": None},
-            {"id": "fixture-system-program", "studio_id": STUDIO_ID, "is_system": True, "archived_at": None},
+            {
+                "id": "fixture-program",
+                "studio_id": STUDIO_ID,
+                "is_system": False,
+                "archived_at": None,
+            },
+            {
+                "id": "fixture-system-program",
+                "studio_id": STUDIO_ID,
+                "is_system": True,
+                "archived_at": None,
+            },
         ],
-        "belt_ladders": [{"id": "fixture-ladder", "studio_id": STUDIO_ID, "program_id": "fixture-program"}],
+        "belt_ladders": [
+            {"id": "fixture-ladder", "studio_id": STUDIO_ID, "program_id": "fixture-program"}
+        ],
         "belt_ranks": [
-            {"id": "fixture-rank", "studio_id": STUDIO_ID, "ladder_id": "fixture-ladder", "is_tip": False},
-            {"id": "fixture-tip", "studio_id": STUDIO_ID, "ladder_id": "fixture-ladder", "is_tip": True},
+            {
+                "id": "fixture-rank",
+                "studio_id": STUDIO_ID,
+                "ladder_id": "fixture-ladder",
+                "is_tip": False,
+            },
+            {
+                "id": "fixture-tip",
+                "studio_id": STUDIO_ID,
+                "ladder_id": "fixture-ladder",
+                "is_tip": True,
+            },
         ],
-        "billing_payers": [{"id": "fixture-payer", "studio_id": STUDIO_ID, "billing_status": "past_due"}],
+        "billing_payers": [
+            {"id": "fixture-payer", "studio_id": STUDIO_ID, "billing_status": "past_due"}
+        ],
         "billing_invoices": [
-            {"id": "fixture-invoice-open", "studio_id": STUDIO_ID, "status": "open", "due_date": "2026-05-20"},
-            {"id": "fixture-invoice-uncollectible", "studio_id": STUDIO_ID, "status": "uncollectible", "due_date": None},
+            {
+                "id": "fixture-invoice-open",
+                "studio_id": STUDIO_ID,
+                "status": "open",
+                "due_date": "2026-05-20",
+            },
+            {
+                "id": "fixture-invoice-uncollectible",
+                "studio_id": STUDIO_ID,
+                "status": "uncollectible",
+                "due_date": None,
+            },
         ],
         "billing_plans": [{"id": "fixture-plan", "studio_id": STUDIO_ID, "archived_at": None}],
         "studio_payment_accounts": [{"studio_id": STUDIO_ID, "charges_enabled": True}],
@@ -151,13 +275,48 @@ def build_tables(cardinalities: dict[str, int]) -> dict[str, list[dict[str, Any]
     for index, row in enumerate(tables["attendance"]):
         row["student_id"] = students[index % student_count]["id"]
         row["session_id"] = tables["class_sessions"][index % len(tables["class_sessions"])]["id"]
-    tables["student_program_memberships"] = [{"id": f"membership-{index}", "student_id": students[index % student_count]["id"], "program_id": "fixture-program", "studio_id": STUDIO_ID, "status": "active" if index < student_count else "inactive"} for index in range(cardinalities["student_program_memberships"])]
-    tables["billing_payments"] = [{"id": f"payment-{index}", "studio_id": STUDIO_ID, "status": "succeeded", "amount_cents": 100, "processed_at": "2026-05-20T00:00:00Z"} for index in range(cardinalities["billing_payments"])]
-    tables["stripe_events"] = [{"id": f"event-{index}", "stripe_event_id": f"evt_fixture_{index}", "stripe_account_id": "acct_fixture", "type": "invoice.paid", "payload": {}, "processing_status": "processed", "livemode": False} for index in range(cardinalities["stripe_events"])]
-    tables["staff_roles"] = [{"user_id": "fixture-user", "studio_id": STUDIO_ID, "role": "admin", "archived_at": None}]
-    tables["staff_profiles"] = [{"user_id": "fixture-user", "legal_first_name": "Fixture", "legal_last_name": "User"}]
+    tables["student_program_memberships"] = [
+        {
+            "id": f"membership-{index}",
+            "student_id": students[index % student_count]["id"],
+            "program_id": "fixture-program",
+            "studio_id": STUDIO_ID,
+            "status": "active" if index < student_count else "inactive",
+        }
+        for index in range(cardinalities["student_program_memberships"])
+    ]
+    tables["billing_payments"] = [
+        {
+            "id": f"payment-{index}",
+            "studio_id": STUDIO_ID,
+            "status": "succeeded",
+            "amount_cents": 100,
+            "processed_at": "2026-05-20T00:00:00Z",
+        }
+        for index in range(cardinalities["billing_payments"])
+    ]
+    tables["stripe_events"] = [
+        {
+            "id": f"event-{index}",
+            "stripe_event_id": f"evt_fixture_{index}",
+            "stripe_account_id": "acct_fixture",
+            "type": "invoice.paid",
+            "payload": {},
+            "processing_status": "processed",
+            "livemode": False,
+        }
+        for index in range(cardinalities["stripe_events"])
+    ]
+    tables["staff_roles"] = [
+        {"user_id": "fixture-user", "studio_id": STUDIO_ID, "role": "admin", "archived_at": None}
+    ]
+    tables["staff_profiles"] = [
+        {"user_id": "fixture-user", "legal_first_name": "Fixture", "legal_last_name": "User"}
+    ]
     tables["studio_subscriptions"] = [{"studio_id": STUDIO_ID, "status": "comped", "comped": True}]
-    tables["studios"] = [{"id": STUDIO_ID, "name": "Fixture Studio", "timezone": "America/Los_Angeles"}]
+    tables["studios"] = [
+        {"id": STUDIO_ID, "name": "Fixture Studio", "timezone": "America/Los_Angeles"}
+    ]
     return tables
 
 
@@ -179,9 +338,16 @@ def measure_profile(profile: str, git_sha: str) -> dict[str, Any]:
     # This old builder is a semantic reference only. Its execution and fake
     # provider rows are explicitly excluded from endpoint performance evidence.
     reference_client = CountingTableBackedSupabase(tables)
-    reference_auth = AuthResponse(user=UserProfile(id="fixture-user", email="fixture@example.invalid"), staff_profiles_available=True, studio_id=STUDIO_ID, role="admin")
+    reference_auth = AuthResponse(
+        user=UserProfile(id="fixture-user", email="fixture@example.invalid"),
+        staff_profiles_available=True,
+        studio_id=STUDIO_ID,
+        role="admin",
+    )
     reference, _ = DashboardSummaryService(reference_client)._build_summary_sync(
-        reference_auth, tables["studios"][0], today_override=date(2026, 5, 20),
+        reference_auth,
+        tables["studios"][0],
+        today_override=date(2026, 5, 20),
     )
     supabase = CountingTableBackedSupabase(tables)
     supabase.facts = reference.model_dump(mode="json", exclude={"auth", "generated_at"})
@@ -232,7 +398,11 @@ def measure_profile(profile: str, git_sha: str) -> dict[str, Any]:
         return hit_rpc_count, concurrent_rpc_count, invalidation_rpc_count, denied_rpc_count
 
     started = time.perf_counter()
-    with patch.object(DashboardSummaryService, "_studio_today", return_value=(date(2026, 5, 20), "America/Los_Angeles")):
+    with patch.object(
+        DashboardSummaryService,
+        "_studio_today",
+        return_value=(date(2026, 5, 20), "America/Los_Angeles"),
+    ):
         hit, concurrent, invalidated, denied = asyncio.run(exercise())
     total_duration_ms = (time.perf_counter() - started) * 1000
     dashboard_summary_fact_cache.invalidate(STUDIO_ID, domain="dashboard")
@@ -250,13 +420,17 @@ def measure_profile(profile: str, git_sha: str) -> dict[str, Any]:
             "concurrent_miss_rpc_count": concurrent,
             "invalidation_rpc_count": invalidated,
             "denied_rpc_count": denied,
-            "total_provider_call_count": supabase.auth_call_count + len(supabase.query_log) + len(supabase.rpc_calls),
+            "total_provider_call_count": supabase.auth_call_count
+            + len(supabase.query_log)
+            + len(supabase.rpc_calls),
             "returned_row_count": supabase.returned_row_count,
             "provider_response_bytes": supabase.provider_response_bytes,
             "serialized_response_payload_bytes": serialized_bytes,
             "total_duration_ms": round(total_duration_ms, 3),
             "max_stage_duration_ms": round(max(stage_durations, default=0), 3),
-            "slow_backend_stage_count": sum(value > manifest["backend_stage_threshold_ms"] for value in stage_durations),
+            "slow_backend_stage_count": sum(
+                value > manifest["backend_stage_threshold_ms"] for value in stage_durations
+            ),
             "peak_rss_bytes": _rss_bytes(),
             "data_ready": True,
         },
@@ -273,7 +447,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main() -> None:
     args = parse_args(sys.argv[1:])
     evidence = measure_profile(args.profile, args.git_sha)
-    os.write(sys.stdout.fileno(), (json.dumps(evidence, separators=(",", ":")) + "\n").encode("utf-8"))
+    os.write(
+        sys.stdout.fileno(), (json.dumps(evidence, separators=(",", ":")) + "\n").encode("utf-8")
+    )
 
 
 if __name__ == "__main__":

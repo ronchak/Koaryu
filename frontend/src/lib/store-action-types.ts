@@ -15,7 +15,7 @@ export type BeginLiveAuthRequest = () => LiveAuthRequest;
 export async function withCurrentLiveAuthRead<T>(
   beginRequest: BeginLiveAuthRequest,
   read: (request: LiveAuthRequest) => Promise<T>,
-  onRetryLimit: (error: Error) => void
+  onRetryLimit: (error: Error) => void,
 ): Promise<T> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const request = beginRequest();

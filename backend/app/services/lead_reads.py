@@ -1,4 +1,5 @@
 """Bounded live pagination, not a transactional snapshot of the collection."""
+
 import time
 from fastapi import HTTPException
 
@@ -29,7 +30,9 @@ def fetch_lead_rows(client, studio_id, stage=None, source=None):
             if not isinstance(total, int) or total < 0:
                 raise RuntimeError("Lead completeness could not be verified")
             if total > MAX_LEAD_READ_ROWS:
-                raise HTTPException(422, "Too many leads to load at once. Narrow the stage or source filter.")
+                raise HTTPException(
+                    422, "Too many leads to load at once. Narrow the stage or source filter."
+                )
         page = response.data or []
         if not isinstance(page, list) or len(rows) + len(page) > MAX_LEAD_READ_ROWS:
             raise RuntimeError("Lead read exceeded its row budget")

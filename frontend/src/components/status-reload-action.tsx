@@ -16,9 +16,11 @@ export function StatusReloadAction({
   return (
     <StatusAction
       icon={RefreshCcw}
-      onClick={() => returnTo === undefined
-        ? window.location.reload()
-        : window.location.assign(navigationRecoveryPath(returnTo))}
+      onClick={() =>
+        returnTo === undefined
+          ? window.location.reload()
+          : window.location.assign(navigationRecoveryPath(returnTo))
+      }
       variant="secondary"
     >
       {children}

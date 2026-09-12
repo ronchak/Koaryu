@@ -77,7 +77,8 @@ export function useSchedulePageController({
   const [programFilter, setProgramFilter] = useState("");
   const [selectedSessionSnapshot, setSelectedSession] = useState<ClassSession | null>(null);
   const selectedSession = selectedSessionSnapshot
-    ? sessions.find(session => session.id === selectedSessionSnapshot.id) ?? null : null;
+    ? (sessions.find((session) => session.id === selectedSessionSnapshot.id) ?? null)
+    : null;
   const [classFormInitialValues, setClassFormInitialValues] = useState<ClassFormInitialValues>();
   const [showAddClass, setShowAddClass] = useState(false);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
@@ -92,10 +93,10 @@ export function useSchedulePageController({
   const [studentRosterLoadError, setStudentRosterLoadError] = useState<string | null>(null);
   const [isRefreshingStudentRoster, setIsRefreshingStudentRoster] = useState(false);
   const [pendingAttendanceIds, setPendingAttendanceIds] = useState<ReadonlySet<string>>(
-    () => new Set()
+    () => new Set(),
   );
   const [attendanceToggleQueue] = useState(() =>
-    createAttendanceToggleQueue(setPendingAttendanceIds)
+    createAttendanceToggleQueue(setPendingAttendanceIds),
   );
   const [sessionAttendanceRefresh, setSessionAttendanceRefresh] =
     useState<SessionAttendanceRefreshState>(clearSessionAttendanceRefresh);
@@ -105,24 +106,24 @@ export function useSchedulePageController({
 
   const visibleRange = useMemo(
     () => getVisibleScheduleRange(currentDate, view),
-    [currentDate, view]
+    [currentDate, view],
   );
 
   const visibleRangeKey = `${visibleRange.start}:${visibleRange.end}`;
 
   useResumeRefresh(() => {
     resumedRangeRef.current = visibleRangeKey;
-    setRangeLoadAttempt(value => value + 1);
-    setAttendanceRefreshAttempt(value => value + 1);
+    setRangeLoadAttempt((value) => value + 1);
+    setAttendanceRefreshAttempt((value) => value + 1);
     void refreshPrograms({ includeArchived: true }).catch(() => undefined);
     if (selectedSession) {
       setIsRefreshingStudentRoster(true);
       setStudentRosterLoadError(null);
-      void refreshStudents().catch(() => setStudentRosterLoadError("Could not refresh the attendance roster."))
+      void refreshStudents()
+        .catch(() => setStudentRosterLoadError("Could not refresh the attendance roster."))
         .finally(() => setIsRefreshingStudentRoster(false));
     }
   });
-
 
   useEffect(() => {
     let cancelled = false;
@@ -150,7 +151,13 @@ export function useSchedulePageController({
     return () => {
       cancelled = true;
     };
-  }, [rangeLoadAttempt, refreshScheduleRange, visibleRange.end, visibleRange.start, visibleRangeKey]);
+  }, [
+    rangeLoadAttempt,
+    refreshScheduleRange,
+    visibleRange.end,
+    visibleRange.start,
+    visibleRangeKey,
+  ]);
 
   useEffect(() => {
     if (!selectedSession) {
@@ -175,13 +182,10 @@ export function useSchedulePageController({
     };
   }, [attendanceRefreshAttempt, refreshSessionAttendance, selectedSession]);
 
-  const activeStudents = useMemo(
-    () => getActiveScheduleStudents(students),
-    [students]
-  );
+  const activeStudents = useMemo(() => getActiveScheduleStudents(students), [students]);
   const selectedSessionAttendance = useMemo(
     () => getScheduleSessionAttendance(attendance, selectedSession),
-    [attendance, selectedSession]
+    [attendance, selectedSession],
   );
 
   function navigate(direction: number) {
@@ -228,12 +232,12 @@ export function useSchedulePageController({
       setActionMessage(
         payload.kind === "single_session"
           ? "Class added to the schedule."
-          : "Recurring class created and visible sessions refreshed."
+          : "Recurring class created and visible sessions refreshed.",
       );
     } catch (error) {
       console.error("Failed to create class", error);
       setCreateClassError(
-        error instanceof Error ? error.message : "Could not create this class. Please try again."
+        error instanceof Error ? error.message : "Could not create this class. Please try again.",
       );
     } finally {
       setIsCreatingClass(false);
@@ -261,16 +265,15 @@ export function useSchedulePageController({
     setDeleteInFlight(scope);
 
     try {
-      await deleteSession(
-        selectedSession.id,
-        scope === "series" ? "future_series" : "session"
-      );
+      await deleteSession(selectedSession.id, scope === "series" ? "future_series" : "session");
       setSelectedSession(null);
-      setActionMessage(scope === "series" ? "Recurring class series removed." : "Class removed from the schedule.");
+      setActionMessage(
+        scope === "series" ? "Recurring class series removed." : "Class removed from the schedule.",
+      );
     } catch (error) {
       console.error("Failed to delete session", error);
       setDeleteError(
-        error instanceof Error ? error.message : "Could not delete this class. Please try again."
+        error instanceof Error ? error.message : "Could not delete this class. Please try again.",
       );
     } finally {
       setDeleteInFlight(null);
@@ -331,7 +334,7 @@ export function useSchedulePageController({
       isRefreshingStudentRoster,
       isSelectedSessionAttendanceReady: isSessionAttendanceReady(
         sessionAttendanceRefresh,
-        selectedSession?.id ?? null
+        selectedSession?.id ?? null,
       ),
       pendingAttendanceIds,
       programFilter,
@@ -351,11 +354,12 @@ export function useSchedulePageController({
       templates,
       view,
       onCreateClass: handleCreateClass,
-      onDeleteSelectedSeries: canManageSchedule && selectedSession?.template_id
-        ? async () => {
-            await handleDeleteSelectedSession("series");
-          }
-        : undefined,
+      onDeleteSelectedSeries:
+        canManageSchedule && selectedSession?.template_id
+          ? async () => {
+              await handleDeleteSelectedSession("series");
+            }
+          : undefined,
       onDeleteSelectedSession: async () => {
         await handleDeleteSelectedSession("session");
       },

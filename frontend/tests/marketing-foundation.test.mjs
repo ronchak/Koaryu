@@ -4,23 +4,17 @@ import { describe, it } from "node:test";
 
 const rootSource = readFileSync(
   new URL("../src/components/marketing/marketing-root.tsx", import.meta.url),
-  "utf8"
+  "utf8",
 );
 const primitivesSource = readFileSync(
   new URL("../src/components/marketing/marketing-primitives.tsx", import.meta.url),
-  "utf8"
+  "utf8",
 );
 const foundationCss = readFileSync(
-  new URL(
-    "../src/components/marketing/marketing-foundation.module.css",
-    import.meta.url
-  ),
-  "utf8"
+  new URL("../src/components/marketing/marketing-foundation.module.css", import.meta.url),
+  "utf8",
 );
-const globalsCss = readFileSync(
-  new URL("../src/app/globals.css", import.meta.url),
-  "utf8"
-);
+const globalsCss = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
 const canonicalTokens = new Map([
   ["paper", "#f7f3e9"],
@@ -56,48 +50,41 @@ describe("marketing foundation", () => {
     assert.match(rootSource, /layout = "document"/);
     assert.match(rootSource, /data-layout=\{layout\}/);
     assert.match(foundationCss, /\.document\s*\{[^}]*min-height:\s*100dvh/s);
-    assert.match(
-      foundationCss,
-      /\.viewport\s*\{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden/s
-    );
+    assert.match(foundationCss, /\.viewport\s*\{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden/s);
     assert.doesNotMatch(
       `${rootSource}\n${primitivesSource}`,
-      /["']use client["']|\b(?:window|document|navigator)\s*\.|requestAnimationFrame|use(?:State|Effect|Ref)\s*\(/
+      /["']use client["']|\b(?:window|document|navigator)\s*\.|requestAnimationFrame|use(?:State|Effect|Ref)\s*\(/,
     );
   });
 
   it("defines the complete canonical palette only on the marketing root", () => {
     const rootRule = foundationCss.match(
-      /\[data-koaryu-marketing\]\.root\s*\{(?<body>[\s\S]*?)\n\}/
+      /\[data-koaryu-marketing\]\.root\s*\{(?<body>[\s\S]*?)\n\}/,
     );
     assert.ok(rootRule?.groups?.body, "marketing root rule must own the tokens");
 
     for (const [name, value] of canonicalTokens) {
       assert.match(
         rootRule.groups.body,
-        new RegExp(
-          `--koaryu-${escapeRegExp(name)}:\\s*${escapeRegExp(value)};`
-        ),
-        `missing --koaryu-${name}`
+        new RegExp(`--koaryu-${escapeRegExp(name)}:\\s*${escapeRegExp(value)};`),
+        `missing --koaryu-${name}`,
       );
       assert.equal(
-        foundationCss.match(
-          new RegExp(`--koaryu-${escapeRegExp(name)}:`, "g")
-        )?.length,
+        foundationCss.match(new RegExp(`--koaryu-${escapeRegExp(name)}:`, "g"))?.length,
         1,
-        `--koaryu-${name} must have one scoped definition`
+        `--koaryu-${name} must have one scoped definition`,
       );
     }
 
     assert.doesNotMatch(
       foundationCss,
-      /--(?:bg|surface(?:-[\w-]+)?|border|text-[\w-]+|accent(?:-[\w-]+)?):/
+      /--(?:bg|surface(?:-[\w-]+)?|border|text-[\w-]+|accent(?:-[\w-]+)?):/,
     );
   });
 
   it("keeps one inert fibre layer scoped to the marketing root", () => {
     const fibreRule = foundationCss.match(
-      /\[data-koaryu-marketing\]\.root::after\s*\{(?<body>[\s\S]*?)\n\}/
+      /\[data-koaryu-marketing\]\.root::after\s*\{(?<body>[\s\S]*?)\n\}/,
     );
     assert.ok(fibreRule?.groups?.body, "fibre must belong to the marketing root");
 
@@ -118,22 +105,19 @@ describe("marketing foundation", () => {
   it("uses the 44px, current-color, radius, focus, and hover contracts", () => {
     assert.match(
       foundationCss,
-      /\.actionLink\s*\{[^}]*min-height:\s*44px;[^}]*border:\s*1px solid currentColor;[^}]*border-radius:\s*7px/s
+      /\.actionLink\s*\{[^}]*min-height:\s*44px;[^}]*border:\s*1px solid currentColor;[^}]*border-radius:\s*7px/s,
     );
     assert.match(foundationCss, /\.primaryAction\s*\{[^}]*background:\s*currentColor/s);
     assert.match(foundationCss, /\.secondaryAction\s*\{[^}]*background:\s*transparent/s);
     assert.match(foundationCss, /\.actionLink:hover\s*\{[^}]*translateY\(-2px\)/s);
     assert.match(
       foundationCss,
-      /\.menuButton\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;[^}]*border-radius:\s*50%;[^}]*color:\s*inherit/s
+      /\.menuButton\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;[^}]*border-radius:\s*50%;[^}]*color:\s*inherit/s,
     );
     assert.match(
       foundationCss,
-      /\.menuButton:focus-visible\s*\{[^}]*outline:\s*2px solid currentColor;[^}]*outline-offset:\s*4px/s
+      /\.menuButton:focus-visible\s*\{[^}]*outline:\s*2px solid currentColor;[^}]*outline-offset:\s*4px/s,
     );
-    assert.doesNotMatch(
-      foundationCss,
-      /var\(--(?:bg|surface|border|text-[\w-]+|accent)/
-    );
+    assert.doesNotMatch(foundationCss, /var\(--(?:bg|surface|border|text-[\w-]+|accent)/);
   });
 });

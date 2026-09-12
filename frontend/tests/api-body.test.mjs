@@ -12,11 +12,11 @@ describe("serializeJsonRequestBody", () => {
     assert.equal(serializeJsonRequestBody(null), "null");
     assert.equal(serializeJsonRequestBody(false), "false");
     assert.equal(serializeJsonRequestBody(0), "0");
-    assert.equal(serializeJsonRequestBody(""), "\"\"");
+    assert.equal(serializeJsonRequestBody(""), '""');
   });
 
   it("keeps object and array request bodies unchanged semantically", () => {
-    assert.equal(serializeJsonRequestBody({ ok: true }), "{\"ok\":true}");
+    assert.equal(serializeJsonRequestBody({ ok: true }), '{"ok":true}');
     assert.equal(serializeJsonRequestBody([]), "[]");
   });
 });

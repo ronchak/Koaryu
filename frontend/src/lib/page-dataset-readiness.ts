@@ -32,7 +32,7 @@ export function loadedDataset({
 }
 
 export function resolvePageDatasetReadiness(
-  requiredDatasets: RequiredDataset[]
+  requiredDatasets: RequiredDataset[],
 ): PageDatasetReadiness {
   const failedDataset = requiredDatasets.find((dataset) => dataset.status === "error");
   if (failedDataset) {

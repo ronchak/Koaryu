@@ -6,7 +6,10 @@ import {
 import { PROXY_BODY_TIMEOUT_MS } from "./request-budget.ts";
 
 export class ProxyRequestBodyTimeoutError extends Error {
-  constructor() { super("Request upload timed out."); this.name = "ProxyRequestBodyTimeoutError"; }
+  constructor() {
+    super("Request upload timed out.");
+    this.name = "ProxyRequestBodyTimeoutError";
+  }
 }
 
 export class ProxyRequestBodyTooLargeError extends Error {
@@ -24,7 +27,8 @@ export class InvalidProxyContentLengthError extends Error {
 }
 
 export function getProxyRequestBodyError(error: unknown) {
-  if (error instanceof ProxyRequestBodyTimeoutError) return { status: 408, detail: error.message } as const;
+  if (error instanceof ProxyRequestBodyTimeoutError)
+    return { status: 408, detail: error.message } as const;
   if (error instanceof ProxyRequestBodyTooLargeError) {
     return { status: 413, detail: "Request body is too large." } as const;
   }
@@ -46,12 +50,7 @@ export function getProxyRequestBodyLimit(path: string[]) {
     return CSV_IMPORT_PROXY_REQUEST_MAX_BYTES;
   }
 
-  if (
-    path.length === 3 &&
-    path[0] === "students" &&
-    path[1].length > 0 &&
-    path[2] === "photo"
-  ) {
+  if (path.length === 3 && path[0] === "students" && path[1].length > 0 && path[2] === "photo") {
     return STUDENT_PHOTO_PROXY_REQUEST_MAX_BYTES;
   }
 
@@ -87,8 +86,13 @@ export async function readBoundedProxyRequestBody(
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   let expired = false;
-  const cancel = () => { void reader.cancel().catch(() => {}); };
-  const timeout = setTimeout(() => { expired = true; cancel(); }, timeoutMs);
+  const cancel = () => {
+    void reader.cancel().catch(() => {});
+  };
+  const timeout = setTimeout(() => {
+    expired = true;
+    cancel();
+  }, timeoutMs);
   request.signal?.addEventListener("abort", cancel, { once: true });
 
   try {

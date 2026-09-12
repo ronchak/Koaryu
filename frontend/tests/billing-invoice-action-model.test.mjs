@@ -23,15 +23,19 @@ function memoryStorage() {
 
 function blockedStorage() {
   return {
-    getItem: () => { throw new Error("blocked"); },
-    setItem: () => { throw new Error("blocked"); },
-    removeItem: () => { throw new Error("blocked"); },
+    getItem: () => {
+      throw new Error("blocked");
+    },
+    setItem: () => {
+      throw new Error("blocked");
+    },
+    removeItem: () => {
+      throw new Error("blocked");
+    },
   };
 }
 
-
 describe("billing invoice retry request keys", () => {
-
   it("persists exact retry identity and rotates only when explicitly requested", () => {
     const storage = memoryStorage();
     const memory = new Map();
@@ -63,7 +67,7 @@ describe("billing invoice retry request keys", () => {
   it("scopes retry keys by exact user, studio, and invoice", () => {
     const storage = memoryStorage();
     let sequence = 0;
-    const keyFor = (userId, studioId, targetId) => (
+    const keyFor = (userId, studioId, targetId) =>
       resolvePersistedInvoiceOperationRequestKey({
         createKey: () => `key-${++sequence}`,
         identity: { userId, studioId },
@@ -71,8 +75,7 @@ describe("billing invoice retry request keys", () => {
         operation: "invoice.retry",
         storage,
         targetId,
-      })
-    );
+      });
 
     const base = keyFor("user-1", "studio-1", "invoice-1");
     assert.notEqual(keyFor("user-2", "studio-1", "invoice-1"), base);
@@ -84,7 +87,7 @@ describe("billing invoice retry request keys", () => {
     const storage = memoryStorage();
     const identity = { userId: "admin-1", studioId: "studio-1" };
     let sequence = 0;
-    const resolve = (operation, memory = new Map()) => (
+    const resolve = (operation, memory = new Map()) =>
       resolvePersistedInvoiceOperationRequestKey({
         createKey: () => `invoice-key-${++sequence}`,
         identity,
@@ -92,8 +95,7 @@ describe("billing invoice retry request keys", () => {
         operation,
         storage,
         targetId: "invoice-1",
-      })
-    );
+      });
 
     const finalizeKey = resolve("invoice.finalize");
     const finalizeReload = resolve("invoice.finalize");

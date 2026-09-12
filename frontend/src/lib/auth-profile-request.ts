@@ -18,9 +18,7 @@ function retryDelay(response: Response): number | null {
   const value = response.headers.get("retry-after");
   if (value === null) return RETRY_DELAY_MS;
   const seconds = Number(value);
-  const delay = Number.isFinite(seconds)
-    ? seconds * 1_000
-    : Date.parse(value) - Date.now();
+  const delay = Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(value) - Date.now();
   if (!Number.isFinite(delay)) return RETRY_DELAY_MS;
   // Do not retry earlier than the provider permits or hold navigation for a
   // long outage. The caller will use the existing unavailable page instead.
@@ -51,9 +49,10 @@ export async function requestAuthProfile(
       throw new AuthProfileRequestError(response.status);
     } catch (error) {
       signal.throwIfAborted();
-      const retryable = error instanceof AuthProfileRequestError
-        ? RETRYABLE_STATUSES.has(error.status)
-        : error instanceof TypeError || timeout.aborted;
+      const retryable =
+        error instanceof AuthProfileRequestError
+          ? RETRYABLE_STATUSES.has(error.status)
+          : error instanceof TypeError || timeout.aborted;
       if (attempt === 1 || !retryable || delay === null) throw error;
     }
     await new Promise<void>((resolve, reject) => {

@@ -51,29 +51,31 @@ const NAV_ICONS: Record<string, LucideIcon> = {
 };
 
 function NavigationLinks({ pathname, role }: { pathname: string; role?: string | null }) {
-  return NAV_ITEMS.filter((item) => role && (!item.roles || item.roles.includes(role))).map((item) => {
-    const isActive = isActiveRoute(pathname, item.href);
-    const Icon = NAV_ICONS[item.icon] ?? LayoutDashboard;
-    return (
-      <li key={item.href}>
-        <IntentPrefetchLink
-          href={item.href}
-          data-koaryu-navigation-link="true"
-          prefetch={item.prefetch}
-          aria-current={isActive ? "page" : undefined}
-          aria-label={item.label}
-          title={item.label}
-          className={styles.navLink}
-        >
-          <span className={styles.navIconSlot}>
-            <Icon className={styles.navIcon} aria-hidden="true" size={17} strokeWidth={1.8} />
-            <NavigationPending />
-          </span>
-          <span className={styles.navLabel}>{item.label}</span>
-        </IntentPrefetchLink>
-      </li>
-    );
-  });
+  return NAV_ITEMS.filter((item) => role && (!item.roles || item.roles.includes(role))).map(
+    (item) => {
+      const isActive = isActiveRoute(pathname, item.href);
+      const Icon = NAV_ICONS[item.icon] ?? LayoutDashboard;
+      return (
+        <li key={item.href}>
+          <IntentPrefetchLink
+            href={item.href}
+            data-koaryu-navigation-link="true"
+            prefetch={item.prefetch}
+            aria-current={isActive ? "page" : undefined}
+            aria-label={item.label}
+            title={item.label}
+            className={styles.navLink}
+          >
+            <span className={styles.navIconSlot}>
+              <Icon className={styles.navIcon} aria-hidden="true" size={17} strokeWidth={1.8} />
+              <NavigationPending />
+            </span>
+            <span className={styles.navLabel}>{item.label}</span>
+          </IntentPrefetchLink>
+        </li>
+      );
+    },
+  );
 }
 
 export function Sidebar({

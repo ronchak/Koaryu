@@ -59,7 +59,9 @@ export default function ResetPasswordPage() {
       }
       setSuccess(true);
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Could not update your password.");
+      setError(
+        updateError instanceof Error ? updateError.message : "Could not update your password.",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -72,7 +74,12 @@ export default function ResetPasswordPage() {
         <p className="mb-5 text-sm text-text-secondary">
           Your Koaryu password has been updated. You can continue to the app from here.
         </p>
-        <Button type="button" size="lg" className="w-full" onClick={() => router.push("/dashboard")}>
+        <Button
+          type="button"
+          size="lg"
+          className="w-full"
+          onClick={() => router.push("/dashboard")}
+        >
           Continue to Koaryu
         </Button>
       </div>
@@ -83,7 +90,9 @@ export default function ResetPasswordPage() {
     return (
       <div className="text-center">
         <h2 className="mb-2 text-lg font-semibold text-text-primary">Checking reset link</h2>
-        <p className="text-sm text-text-secondary">One moment while Koaryu verifies your password reset session.</p>
+        <p className="text-sm text-text-secondary">
+          One moment while Koaryu verifies your password reset session.
+        </p>
       </div>
     );
   }
@@ -93,7 +102,8 @@ export default function ResetPasswordPage() {
       <div className="text-center">
         <h2 className="mb-2 text-lg font-semibold text-text-primary">Reset link required</h2>
         <p className="mb-5 text-sm text-text-secondary">
-          Open the password reset link from your email, or request a new reset from Account Settings while signed in.
+          Open the password reset link from your email, or request a new reset from Account Settings
+          while signed in.
         </p>
         <Link href="/login" className="text-sm font-medium text-accent hover:text-accent-hover">
           Back to sign in

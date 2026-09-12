@@ -41,39 +41,39 @@ for (const viewport of [
       .getByRole("link", { name: "Students", exact: true })
       .filter({ visible: true });
     await expect(studentsLink).toHaveCount(1);
-    await Promise.all([
-      page.waitForURL("**/students"),
-      studentsLink.click(),
-    ]);
+    await Promise.all([page.waitForURL("**/students"), studentsLink.click()]);
     await expect(page.getByRole("heading", { name: "Students", exact: true })).toBeVisible();
     expectNoPageErrors(pageErrors);
   });
 }
 
-previewSmokeTest("dataset-specific dashboard pages settle after reload and Connect return", async ({ page }) => {
-  const pageErrors: string[] = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await signInToPreview(page);
+previewSmokeTest(
+  "dataset-specific dashboard pages settle after reload and Connect return",
+  async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await signInToPreview(page);
 
-  for (const [path, heading] of [
-    ["/dashboard", "Dashboard"],
-    ["/students", "Students"],
-    ["/billing", "Billing"],
-    ["/reports", "Reports"],
-  ] as const) {
-    await page.goto(`${FRONTEND_URL}${path}`);
-    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
-    await page.reload();
-    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
-    await expect(page.getByText(/data is unavailable|reports are unavailable/i)).toHaveCount(0);
-  }
+    for (const [path, heading] of [
+      ["/dashboard", "Dashboard"],
+      ["/students", "Students"],
+      ["/billing", "Billing"],
+      ["/reports", "Reports"],
+    ] as const) {
+      await page.goto(`${FRONTEND_URL}${path}`);
+      await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+      await expect(page.getByText(/data is unavailable|reports are unavailable/i)).toHaveCount(0);
+    }
 
-  await page.goto(`${FRONTEND_URL}/billing?connect=return`);
-  await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
-  await expect(page.getByText("Loading billing...", { exact: true })).toHaveCount(0);
-  expectNoPageErrors(pageErrors);
-});
+    await page.goto(`${FRONTEND_URL}/billing?connect=return`);
+    await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+    await expect(page.getByText("Loading billing...", { exact: true })).toHaveCount(0);
+    expectNoPageErrors(pageErrors);
+  },
+);
 
 for (const viewport of [
   { name: "desktop", width: 1280, height: 900 },
@@ -92,9 +92,13 @@ for (const viewport of [
 
     await page.goto(`${FRONTEND_URL}/explore`);
     await expect(
-      page.getByRole("heading", { name: /find the page that matches what you need to understand/i }),
+      page.getByRole("heading", {
+        name: /find the page that matches what you need to understand/i,
+      }),
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: "Compare features", exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Compare features", exact: true }).first(),
+    ).toBeVisible();
 
     expectNoPageErrors(pageErrors);
   });

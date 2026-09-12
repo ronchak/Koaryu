@@ -1,6 +1,16 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Header, status as http_status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Query,
+    UploadFile,
+    File,
+    Form,
+    HTTPException,
+    Header,
+    status as http_status,
+)
 from typing import Optional
 from app.core.deps import ProviderDependency, run_supabase_operation
 from app.core.deps import (
@@ -18,7 +28,9 @@ from app.schemas.billing import (
     StudentBillingEnrollmentResponse,
 )
 from app.schemas.student import (
-    StudentCreate, StudentUpdate, StudentResponse,
+    StudentCreate,
+    StudentUpdate,
+    StudentResponse,
     StudentRosterPageResponse,
     StudentRosterCursorErrorResponse,
     BulkStudentUpdateResponse,
@@ -26,11 +38,13 @@ from app.schemas.student import (
     CsvImportResult,
     CsvParseResponse,
     BulkTagUpdate,
-    BulkStatusUpdate, BulkStudentArchiveRequest,
+    BulkStatusUpdate,
+    BulkStudentArchiveRequest,
     StudentListSortDir,
     StudentListSortKey,
     StudentStatus,
-    StudentProgramMembershipCreate, StudentProgramMembershipResponse,
+    StudentProgramMembershipCreate,
+    StudentProgramMembershipResponse,
     StudentProgramMembershipUpdate,
 )
 from app.services.billing_service import BillingService
@@ -152,7 +166,9 @@ async def list_students(
                 },
             ) from exc
         except ValueError as exc:
-            raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
 
     return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
 
@@ -167,6 +183,7 @@ async def create_student(
     async def _provider_operation(client):
         service = StudentService(client)
         return await service.create_student(data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -183,6 +200,7 @@ async def get_student(
     async def _provider_operation(client):
         service = StudentService(client)
         return await service.get_student(student_id, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -209,6 +227,7 @@ async def update_student(
     async def _provider_operation(client):
         service = StudentService(client)
         return await service.update_student(student_id, data, membership["studio_id"], user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -236,6 +255,7 @@ async def upload_student_photo(
             content_type,
             extension,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -253,6 +273,7 @@ async def delete_student_photo(
     async def _provider_operation(client):
         service = StudentService(client)
         return await service.delete_student_photo(student_id, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -270,6 +291,7 @@ async def delete_student(
     async def _provider_operation(client):
         service = StudentService(client)
         await service.soft_delete_student(student_id, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -286,6 +308,7 @@ async def list_student_programs(
     async def _provider_operation(client):
         service = StudentService(client)
         return await service.list_program_memberships(student_id, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -293,7 +316,9 @@ async def list_student_programs(
     )
 
 
-@router.post("/{student_id}/programs", response_model=StudentProgramMembershipResponse, status_code=201)
+@router.post(
+    "/{student_id}/programs", response_model=StudentProgramMembershipResponse, status_code=201
+)
 async def add_student_program(
     student_id: str,
     data: StudentProgramMembershipCreate,
@@ -304,6 +329,7 @@ async def add_student_program(
     async def _provider_operation(client):
         service = StudentService(client)
         return await service.add_program_membership(student_id, data, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -311,7 +337,9 @@ async def add_student_program(
     )
 
 
-@router.patch("/{student_id}/programs/{membership_id}", response_model=StudentProgramMembershipResponse)
+@router.patch(
+    "/{student_id}/programs/{membership_id}", response_model=StudentProgramMembershipResponse
+)
 async def update_student_program(
     student_id: str,
     membership_id: str,
@@ -322,7 +350,10 @@ async def update_student_program(
 ):
     async def _provider_operation(client):
         service = StudentService(client)
-        return await service.update_program_membership(student_id, membership_id, data, studio_id, user_id)
+        return await service.update_program_membership(
+            student_id, membership_id, data, studio_id, user_id
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -341,6 +372,7 @@ async def remove_student_program(
     async def _provider_operation(client):
         service = StudentService(client)
         await service.remove_program_membership(student_id, membership_id, studio_id, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -363,6 +395,7 @@ async def list_student_billing(
             require_platform_subscription=True,
         )["studio_id"]
         return await BillingService(client).list_student_billing(student_id, studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -370,7 +403,11 @@ async def list_student_billing(
     )
 
 
-@router.post("/{student_id}/billing/enrollments", response_model=StudentBillingEnrollmentResponse, status_code=201)
+@router.post(
+    "/{student_id}/billing/enrollments",
+    response_model=StudentBillingEnrollmentResponse,
+    status_code=201,
+)
 async def add_student_billing_enrollment(
     student_id: str,
     data: StudentBillingEnrollmentForStudentCreate,
@@ -385,16 +422,16 @@ async def add_student_billing_enrollment(
             requested_studio_id,
             require_platform_subscription=True,
         )["studio_id"]
-        if (
-            data.collection_mode != "external"
-            and not allows_provider_enrollment_preparation()
-        ):
+        if data.collection_mode != "external" and not allows_provider_enrollment_preparation():
             raise HTTPException(
                 status_code=http_status.HTTP_409_CONFLICT,
                 detail="Billing attachments currently support external collection only.",
             )
         payload = StudentBillingEnrollmentCreate(student_id=student_id, **data.model_dump())
-        return await BillingService(client).add_student_billing_enrollment(payload, studio_id, user_id)
+        return await BillingService(client).add_student_billing_enrollment(
+            payload, studio_id, user_id
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -413,6 +450,7 @@ async def bulk_update_tags(
         service = StudentService(client)
         count = await service.bulk_update_tags(data, studio_id, user_id)
         return {"updated": count}
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -431,6 +469,7 @@ async def bulk_update_status(
         service = StudentService(client)
         count = await service.bulk_update_status(data, studio_id, user_id)
         return {"updated": count}
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -469,6 +508,7 @@ async def parse_csv_headers(
     The client uses this to display the mapping UI.
     """
     content = await read_csv_import_upload(file)
+
     async def _provider_operation(client):
         service = StudentService(client)
         headers, rows = service.parse_csv(content)
@@ -479,20 +519,26 @@ async def parse_csv_headers(
             "preview_rows": rows[:3],  # First 3 rows for preview
             "total_rows": len(rows),
         }
+
     return await run_supabase_operation(supabase, _provider_operation, lane="bulk")
 
 
 @router.post("/import/validate", response_model=CsvImportResult)
 async def validate_csv_import(
     file: UploadFile = File(...),
-    payload: Optional[str] = Form(None, description="JSON string containing mapping and import options"),
-    mapping: Optional[str] = Query(None, description="Legacy JSON string of {csv_col: koaryu_field}"),
+    payload: Optional[str] = Form(
+        None, description="JSON string containing mapping and import options"
+    ),
+    mapping: Optional[str] = Query(
+        None, description="Legacy JSON string of {csv_col: koaryu_field}"
+    ),
     options: Optional[str] = Query(None, description="Legacy JSON string of import options"),
     supabase: ProviderDependency = Depends(get_supabase),
     studio_id: str = Depends(get_current_studio_id),
 ):
     """Validate a CSV file against a confirmed column mapping. Returns errors per row."""
     content = await read_csv_import_upload(file)
+
     async def _provider_operation(client):
         service = StudentService(client)
         headers, rows = service.parse_csv(content)
@@ -502,14 +548,19 @@ async def validate_csv_import(
             raise HTTPException(status_code=400, detail="Invalid import payload")
         validate_csv_import_mapping(request.mapping, headers=headers)
         return service.validate_import_rows(rows, request.mapping, request.options, studio_id)
+
     return await run_supabase_operation(supabase, _provider_operation, lane="bulk")
 
 
 @router.post("/import/execute", response_model=CsvImportResult)
 async def execute_csv_import(
     file: UploadFile = File(...),
-    payload: Optional[str] = Form(None, description="JSON string containing mapping and import options"),
-    mapping: Optional[str] = Query(None, description="Legacy JSON string of {csv_col: koaryu_field}"),
+    payload: Optional[str] = Form(
+        None, description="JSON string containing mapping and import options"
+    ),
+    mapping: Optional[str] = Query(
+        None, description="Legacy JSON string of {csv_col: koaryu_field}"
+    ),
     options: Optional[str] = Query(None, description="Legacy JSON string of import options"),
     request_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
@@ -518,6 +569,7 @@ async def execute_csv_import(
 ):
     """Execute the import for all valid rows. Skips invalid rows and returns summary."""
     content = await read_csv_import_upload(file)
+
     async def _provider_operation(client):
         service = StudentService(client)
         headers, rows = service.parse_csv(content)
@@ -534,4 +586,5 @@ async def execute_csv_import(
             user_id,
             request.idempotency_key or request_idempotency_key,
         )
+
     return await run_supabase_operation(supabase, _provider_operation, lane="bulk")

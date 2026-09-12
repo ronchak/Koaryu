@@ -57,8 +57,7 @@ export default function AboutPage() {
           "@context": "https://schema.org",
           "@type": "AboutPage",
           name: "About Koaryu",
-          description:
-            "Koaryu is a martial arts studio operating system for independent schools.",
+          description: "Koaryu is a martial arts studio operating system for independent schools.",
           url: "https://koaryu.app/about",
           isPartOf: {
             "@type": "WebSite",
@@ -74,25 +73,19 @@ export default function AboutPage() {
         cta="Start setup"
       />
 
-      <section
-        className={styles.aboutPositioning}
-        aria-labelledby="about-positioning-heading"
-      >
+      <section className={styles.aboutPositioning} aria-labelledby="about-positioning-heading">
         <div className={styles.aboutStatement}>
           <p className={styles.eyebrow}>Positioning</p>
           <h2 id="about-positioning-heading">
             Koaryu is intentionally narrower than generic gym software.
           </h2>
           <p>
-            The product is built around the rhythm of a martial arts school:
-            the student who misses class, the trial family waiting for a call,
-            the instructor reviewing promotions, and the owner who needs to
-            know whether the school is healthy before the evening rush.
+            The product is built around the rhythm of a martial arts school: the student who misses
+            class, the trial family waiting for a call, the instructor reviewing promotions, and the
+            owner who needs to know whether the school is healthy before the evening rush.
           </p>
           <div className={styles.editorialActions}>
-            <MarketingActionLink href="/features">
-              Explore features
-            </MarketingActionLink>
+            <MarketingActionLink href="/features">Explore features</MarketingActionLink>
             <MarketingActionLink href="/use-cases" variant="secondary">
               See use cases
             </MarketingActionLink>
@@ -112,15 +105,12 @@ export default function AboutPage() {
         <div className={styles.aboutScopeInner}>
           <p className={styles.aboutScopeEyebrow}>Koaryu</p>
           <div>
-            <h2 id="about-scope-heading">
-              Reliable daily operations for one independent studio.
-            </h2>
+            <h2 id="about-scope-heading">Reliable daily operations for one independent studio.</h2>
             <p>
-              Koaryu supports one studio per user with explicit Admin, Front
-              Desk, and Instructor boundaries. It centers the roster, ranks,
-              schedule, attendance, leads, and honest visibility into existing billing
-              records. Provider-backed billing changes and live Stripe activation are
-              currently unavailable.
+              Koaryu supports one studio per user with explicit Admin, Front Desk, and Instructor
+              boundaries. It centers the roster, ranks, schedule, attendance, leads, and honest
+              visibility into existing billing records. Provider-backed billing changes and live
+              Stripe activation are currently unavailable.
             </p>
           </div>
         </div>

@@ -54,7 +54,7 @@ describe("optimistic attendance toggle controller", () => {
     assert.equal(
       getAttendanceToggleTransition([record("excused")], sessionId, studentId).nextStatus,
       "present",
-      "legacy excused records re-enter the supported UI cycle at present"
+      "legacy excused records re-enter the supported UI cycle at present",
     );
   });
 
@@ -185,7 +185,11 @@ describe("optimistic attendance toggle controller", () => {
     });
 
     assert.deepEqual(attendance, [], "optimistic clear must remove all matching rows");
-    assert.equal(sessionCount, 0, "clearing stale countable duplicates must repair the session count");
+    assert.equal(
+      sessionCount,
+      0,
+      "clearing stale countable duplicates must repair the session count",
+    );
     request.resolve(null);
     await togglePromise;
     assert.deepEqual(attendance, []);

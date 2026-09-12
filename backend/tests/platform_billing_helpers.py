@@ -20,28 +20,25 @@ class FakeSupabase(RpcBackedSupabase):
     POSTGRES_END_EVENT_EPOCH = 9224318016000
 
     def __init__(self, rows: list[dict]):
-        studio_ids = {"studio_1"} | {
-            str(row["studio_id"])
-            for row in rows
-            if row.get("studio_id")
-        }
-        super().__init__({
-            "studio_subscriptions": rows,
-            "email_usage_events": [],
-            "studios": [
-                {"id": studio_id, "name": "Koaryu Test Studio"}
-                for studio_id in sorted(studio_ids)
-            ],
-            "audit_logs": [],
-        })
+        studio_ids = {"studio_1"} | {str(row["studio_id"]) for row in rows if row.get("studio_id")}
+        super().__init__(
+            {
+                "studio_subscriptions": rows,
+                "email_usage_events": [],
+                "studios": [
+                    {"id": studio_id, "name": "Koaryu Test Studio"}
+                    for studio_id in sorted(studio_ids)
+                ],
+                "audit_logs": [],
+            }
+        )
         self.on_update_query = self._apply_studio_subscription_update
         self._core_checkout_lock = Lock()
         self.before_reserve_core_checkout = None
 
     def _subscription_row(self, studio_id: str) -> dict:
         return next(
-            row for row in self.tables["studio_subscriptions"]
-            if row.get("studio_id") == studio_id
+            row for row in self.tables["studio_subscriptions"] if row.get("studio_id") == studio_id
         )
 
     def _rpc_reserve_core_checkout_v2_atomic(self, params: dict) -> list[dict]:
@@ -54,7 +51,11 @@ class FakeSupabase(RpcBackedSupabase):
             if row.get("comped") or row.get("status") == "comped":
                 return [{"outcome": "comped", "trial_period_days": None}]
             if row.get("stripe_subscription_id") and row.get("status") in {
-                "active", "trialing", "past_due", "unpaid", "paused",
+                "active",
+                "trialing",
+                "past_due",
+                "unpaid",
+                "paused",
             }:
                 return [{"outcome": "active", "trial_period_days": None}]
             metadata = dict(row.get("metadata") or {})
@@ -66,10 +67,9 @@ class FakeSupabase(RpcBackedSupabase):
                 and session.get("accepted_subscription_id")
             ):
                 accepted_subscription_id = session["accepted_subscription_id"]
-                if (
-                    row.get("stripe_subscription_id") != accepted_subscription_id
-                    or row.get("status") not in {"canceled", "incomplete_expired"}
-                ):
+                if row.get("stripe_subscription_id") != accepted_subscription_id or row.get(
+                    "status"
+                ) not in {"canceled", "incomplete_expired"}:
                     return [{"outcome": "active", "trial_period_days": None}]
                 acceptances[accepted_subscription_id] = dict(session)
                 metadata["core_checkout_acceptances"] = acceptances
@@ -79,23 +79,27 @@ class FakeSupabase(RpcBackedSupabase):
                 and session.get("url")
                 and int(session.get("expires_at") or 0) > 999999999
             ):
-                return [{
-                    "outcome": "existing",
-                    "reservation_token": session.get("token"),
-                    "checkout_epoch": session.get("epoch"),
-                    "session_id": session.get("id"),
-                    "session_url": session.get("url"),
-                    "expires_at": session.get("expires_at"),
-                    "trial_period_days": None,
-                }]
+                return [
+                    {
+                        "outcome": "existing",
+                        "reservation_token": session.get("token"),
+                        "checkout_epoch": session.get("epoch"),
+                        "session_id": session.get("id"),
+                        "session_url": session.get("url"),
+                        "expires_at": session.get("expires_at"),
+                        "trial_period_days": None,
+                    }
+                ]
             if isinstance(metadata.get("core_checkout_reservation"), dict):
                 reservation = metadata["core_checkout_reservation"]
-                return [{
-                    "outcome": "in_progress",
-                    "reservation_token": reservation["token"],
-                    "checkout_epoch": reservation["epoch"],
-                    "trial_period_days": None,
-                }]
+                return [
+                    {
+                        "outcome": "in_progress",
+                        "reservation_token": reservation["token"],
+                        "checkout_epoch": reservation["epoch"],
+                        "trial_period_days": None,
+                    }
+                ]
             trial_period_days = (
                 30
                 if row.get("stripe_subscription_id") is None
@@ -106,16 +110,20 @@ class FakeSupabase(RpcBackedSupabase):
             token = f"00000000-0000-4000-8000-{epoch:012d}"
             metadata["core_checkout_epoch"] = epoch
             metadata["core_checkout_reservation"] = {
-                "state": "reserved", "token": token, "epoch": epoch,
+                "state": "reserved",
+                "token": token,
+                "epoch": epoch,
             }
             metadata.pop("core_checkout_session", None)
             row["metadata"] = metadata
-            return [{
-                "outcome": "reserved",
-                "reservation_token": token,
-                "checkout_epoch": epoch,
-                "trial_period_days": trial_period_days,
-            }]
+            return [
+                {
+                    "outcome": "reserved",
+                    "reservation_token": token,
+                    "checkout_epoch": epoch,
+                    "trial_period_days": trial_period_days,
+                }
+            ]
 
     def _rpc_publish_core_checkout_atomic(self, params: dict) -> list[dict]:
         with self._core_checkout_lock:
@@ -129,11 +137,13 @@ class FakeSupabase(RpcBackedSupabase):
                 or reservation.get("epoch") != params["p_checkout_epoch"]
             ):
                 existing = metadata.get("core_checkout_session") or {}
-                return [{
-                    "outcome": "existing" if existing.get("url") else "stale",
-                    "session_id": existing.get("id"),
-                    "session_url": existing.get("url"),
-                }]
+                return [
+                    {
+                        "outcome": "existing" if existing.get("url") else "stale",
+                        "session_id": existing.get("id"),
+                        "session_url": existing.get("url"),
+                    }
+                ]
             metadata.pop("core_checkout_reservation", None)
             metadata["core_checkout_session"] = {
                 "state": "published",
@@ -144,11 +154,13 @@ class FakeSupabase(RpcBackedSupabase):
                 "expires_at": params["p_expires_at"],
             }
             row["metadata"] = metadata
-            return [{
-                "outcome": "published",
-                "session_id": params["p_session_id"],
-                "session_url": params["p_session_url"],
-            }]
+            return [
+                {
+                    "outcome": "published",
+                    "session_id": params["p_session_id"],
+                    "session_url": params["p_session_url"],
+                }
+            ]
 
     def _rpc_release_core_checkout_reservation_atomic(self, params: dict) -> bool:
         with self._core_checkout_lock:
@@ -221,11 +233,13 @@ class FakeSupabase(RpcBackedSupabase):
                 return "invalid"
             session.pop("url", None)
             session.pop("expires_at", None)
-            session.update({
-                "state": "completed",
-                "accepted_subscription_id": params["p_subscription_id"],
-                "completed_event_created": params.get("p_event_created"),
-            })
+            session.update(
+                {
+                    "state": "completed",
+                    "accepted_subscription_id": params["p_subscription_id"],
+                    "completed_event_created": params.get("p_event_created"),
+                }
+            )
             metadata["core_checkout_session"] = session
             acceptances[params["p_subscription_id"]] = dict(session)
             metadata["core_checkout_acceptances"] = acceptances
@@ -318,13 +332,8 @@ class FakeSupabase(RpcBackedSupabase):
             return False
 
         event_created = params.get("p_event_created")
-        if (
-            event_created is not None
-            and not (
-                self.POSTGRES_MIN_EVENT_EPOCH
-                <= event_created
-                < self.POSTGRES_END_EVENT_EPOCH
-            )
+        if event_created is not None and not (
+            self.POSTGRES_MIN_EVENT_EPOCH <= event_created < self.POSTGRES_END_EVENT_EPOCH
         ):
             return False
 
@@ -338,10 +347,7 @@ class FakeSupabase(RpcBackedSupabase):
             try:
                 granted_at_timestamp = self._parse_timestamp(granted_at)
                 utc_offset = granted_at_timestamp.utcoffset()
-                if (
-                    utc_offset is not None
-                    and abs(utc_offset) > self.POSTGRES_MAX_UTC_OFFSET
-                ):
+                if utc_offset is not None and abs(utc_offset) > self.POSTGRES_MAX_UTC_OFFSET:
                     return False
                 grant_epoch = granted_at_timestamp.timestamp()
             except (OSError, OverflowError, TypeError, ValueError):
@@ -381,5 +387,7 @@ class FakeSettings:
 
 class PlatformBillingServiceTestCase(unittest.TestCase):
     def service(self, rows: list[dict]) -> PlatformBillingService:
-        with patch("app.services.platform_billing_service.get_settings", return_value=FakeSettings()):
+        with patch(
+            "app.services.platform_billing_service.get_settings", return_value=FakeSettings()
+        ):
             return PlatformBillingService(FakeSupabase(rows))

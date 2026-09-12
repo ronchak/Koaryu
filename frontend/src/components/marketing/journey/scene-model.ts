@@ -43,11 +43,7 @@ export function mix(from: number, to: number, progress: number): number {
   return from + (to - from) * progress;
 }
 
-export function rangeProgress(
-  progress: number,
-  start: number,
-  end: number
-): number {
+export function rangeProgress(progress: number, start: number, end: number): number {
   if (end <= start) {
     return progress >= end ? 1 : 0;
   }
@@ -67,32 +63,17 @@ export function easeOut(progress: number): number {
 
 export function easeInOut(progress: number): number {
   const value = clamp(progress);
-  return value < 0.5
-    ? 2 * value * value
-    : 1 - (-2 * value + 2) ** 2 / 2;
+  return value < 0.5 ? 2 * value * value : 1 - (-2 * value + 2) ** 2 / 2;
 }
 
-export function frameForDimensions(
-  viewportWidth: number,
-  viewportHeight: number
-): SceneFrame {
-  const width = Number.isFinite(viewportWidth) && viewportWidth > 0
-    ? viewportWidth
-    : SCENE_WIDTH;
-  const height = Number.isFinite(viewportHeight) && viewportHeight > 0
-    ? viewportHeight
-    : SCENE_HEIGHT;
+export function frameForDimensions(viewportWidth: number, viewportHeight: number): SceneFrame {
+  const width = Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth : SCENE_WIDTH;
+  const height =
+    Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : SCENE_HEIGHT;
   const aspect = width / height;
   const viewBoxHeight = clamp(SCENE_WIDTH / aspect, SCENE_HEIGHT, 2000);
-  const visibleHalfWidth = Math.min(
-    SCENE_WIDTH / 2,
-    (viewBoxHeight / 2) * aspect
-  );
-  const studentSpread = clamp(
-    (visibleHalfWidth - 210) / (SCENE_WIDTH / 2 - 210),
-    0.34,
-    1
-  );
+  const visibleHalfWidth = Math.min(SCENE_WIDTH / 2, (viewBoxHeight / 2) * aspect);
+  const studentSpread = clamp((visibleHalfWidth - 210) / (SCENE_WIDTH / 2 - 210), 0.34, 1);
 
   return Object.freeze({
     viewBox: `0 ${round2(SCENE_HEIGHT / 2 - viewBoxHeight / 2)} ${SCENE_WIDTH} ${round2(viewBoxHeight)}`,
@@ -118,11 +99,7 @@ export function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-export function smoothPath(
-  points: readonly ScenePoint[],
-  closed = false,
-  tension = 1
-): string {
+export function smoothPath(points: readonly ScenePoint[], closed = false, tension = 1): string {
   const count = points.length;
   if (count < 2) {
     return "";
@@ -139,16 +116,10 @@ export function smoothPath(
   const last = closed ? count : count - 1;
 
   for (let index = 0; index < last; index += 1) {
-    const p0 = closed
-      ? pointAt(index - 1)
-      : points[Math.max(index - 1, 0)] ?? first;
+    const p0 = closed ? pointAt(index - 1) : (points[Math.max(index - 1, 0)] ?? first);
     const p1 = points[index % count] ?? first;
-    const p2 = closed
-      ? pointAt(index + 1)
-      : points[Math.min(index + 1, count - 1)] ?? first;
-    const p3 = closed
-      ? pointAt(index + 2)
-      : points[Math.min(index + 2, count - 1)] ?? first;
+    const p2 = closed ? pointAt(index + 1) : (points[Math.min(index + 1, count - 1)] ?? first);
+    const p3 = closed ? pointAt(index + 2) : (points[Math.min(index + 2, count - 1)] ?? first);
     const c1x = p1.x + ((p2.x - p0.x) / 6) * tension;
     const c1y = p1.y + ((p2.y - p0.y) / 6) * tension;
     const c2x = p2.x - ((p3.x - p1.x) / 6) * tension;
@@ -255,7 +226,7 @@ export function createCloudGeometry(seed = 1207): readonly CloudGeometry[] {
   return Object.freeze(
     clouds
       .sort((a, b) => a.tier - b.tier)
-      .map((cloud) => Object.freeze({ ...cloud, path: makeCloudPath(cloud.seed) }))
+      .map((cloud) => Object.freeze({ ...cloud, path: makeCloudPath(cloud.seed) })),
   );
 }
 
@@ -307,7 +278,8 @@ export function createPlankGeometry(seed = 88041): readonly PlankGeometry[] {
 
       const flat = uv.map((point) => flatWeavePoint(point.x, point.y));
       const center = flatWeavePoint(columnPosition, rowPosition);
-      const ribbonCenterX = SCENE_WIDTH / 2 + (center.x - SCENE_WIDTH / 2) * 1.72 + (random() - 0.5) * 140;
+      const ribbonCenterX =
+        SCENE_WIDTH / 2 + (center.x - SCENE_WIDTH / 2) * 1.72 + (random() - 0.5) * 140;
       const ribbonCenterY = center.y * 0.94 + 34 + (random() - 0.5) * 46;
       const ribbonWidth = 540 + random() * 520;
       const ribbonHeight = 34 + random() * 40;
@@ -345,12 +317,14 @@ export function createPlankGeometry(seed = 88041): readonly PlankGeometry[] {
   return Object.freeze(
     planks
       .sort((a, b) => a.rowPosition - b.rowPosition)
-      .map((plank) => Object.freeze({
-        ...plank,
-        uv: Object.freeze(plank.uv.map((point) => Object.freeze(point))),
-        flat: Object.freeze(plank.flat.map((point) => Object.freeze(point))),
-        cloud: Object.freeze(plank.cloud.map((point) => Object.freeze(point))),
-      }))
+      .map((plank) =>
+        Object.freeze({
+          ...plank,
+          uv: Object.freeze(plank.uv.map((point) => Object.freeze(point))),
+          flat: Object.freeze(plank.flat.map((point) => Object.freeze(point))),
+          cloud: Object.freeze(plank.cloud.map((point) => Object.freeze(point))),
+        }),
+      ),
   );
 }
 

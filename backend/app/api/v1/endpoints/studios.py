@@ -2,7 +2,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header
 from app.core.deps import ProviderDependency, run_supabase_operation
-from app.core.deps import get_current_user_id, get_current_studio_id, get_requested_studio_id, get_supabase
+from app.core.deps import (
+    get_current_user_id,
+    get_current_studio_id,
+    get_requested_studio_id,
+    get_supabase,
+)
 from app.schemas.studio import StudioCreate, StudioUpdate, StudioResponse
 from app.services.studio_scope import resolve_admin_staff_role_for_user
 from app.services.studio_service import StudioService
@@ -24,6 +29,7 @@ async def create_studio(
         """
         service = StudioService(client)
         return await service.create_studio(data, user_id, idempotency_key)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -40,6 +46,7 @@ async def get_current_studio(
         """Get the current user's studio."""
         service = StudioService(client)
         return await service.get_studio(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -64,6 +71,7 @@ async def update_current_studio(
         )
         service = StudioService(client)
         return await service.update_studio(membership["studio_id"], data, user_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

@@ -20,8 +20,8 @@
   background: var(--koaryu-paper);
   color: var(--koaryu-ink);
   font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Inter,
-    "Segoe UI", Roboto, sans-serif;
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Inter, "Segoe UI",
+    Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizelegibility;
 }

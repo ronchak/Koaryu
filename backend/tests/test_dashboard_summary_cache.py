@@ -57,7 +57,9 @@ def test_max_entry_eviction_is_bounded_and_deterministic_lru():
         await cache.get_or_load(make_key(local_date=date(2026, 5, 21)), lambda: load_for("b"))
         await cache.get_or_load(make_key(local_date=date(2026, 5, 20)), lambda: load_for("a-hit"))
         await cache.get_or_load(make_key(local_date=date(2026, 5, 22)), lambda: load_for("c"))
-        return await cache.get_or_load(make_key(local_date=date(2026, 5, 21)), lambda: load_for("b-reload"))
+        return await cache.get_or_load(
+            make_key(local_date=date(2026, 5, 21)), lambda: load_for("b-reload")
+        )
 
     assert run(exercise()) == {"label": "b-reload"}
     assert calls == ["a", "b", "c", "b-reload"]

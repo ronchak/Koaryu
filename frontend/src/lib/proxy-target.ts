@@ -6,7 +6,13 @@ export class UnsafeProxyPathError extends Error {
 }
 
 function encodeProxyPathSegment(segment: string) {
-  if (!segment || segment === "." || segment === ".." || segment.includes("/") || segment.includes("\\")) {
+  if (
+    !segment ||
+    segment === "." ||
+    segment === ".." ||
+    segment.includes("/") ||
+    segment.includes("\\")
+  ) {
     throw new UnsafeProxyPathError();
   }
 

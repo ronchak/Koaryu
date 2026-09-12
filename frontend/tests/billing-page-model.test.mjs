@@ -158,9 +158,14 @@ const DEFAULT_INPUT = {
 describe("billing page model", () => {
   it("uses complete landing counts without roster or list records", () => {
     const aggregate = {
-      active_student_count: 81, active_subscription_count: 30, failed_payer_count: 3,
-      open_invoice_amount_cents: 20100, has_billing_plans: true, has_family_accounts: true,
-      has_student_billing: true, has_collection_history: true,
+      active_student_count: 81,
+      active_subscription_count: 30,
+      failed_payer_count: 3,
+      open_invoice_amount_cents: 20100,
+      has_billing_plans: true,
+      has_family_accounts: true,
+      has_student_billing: true,
+      has_collection_history: true,
     };
     const model = buildBillingPageModel({ ...DEFAULT_INPUT, billingLandingAggregates: aggregate });
     assert.equal(model.activeStudents, 81);
@@ -203,7 +208,10 @@ describe("billing page model", () => {
         scope: "payment_cohort_net_of_confirmed_adjustments",
         disclosure: "test cohort",
       },
-      billingEnrollments: [enrollment("active-enrollment", "active"), enrollment("ended-enrollment", "ended")],
+      billingEnrollments: [
+        enrollment("active-enrollment", "active"),
+        enrollment("ended-enrollment", "ended"),
+      ],
       billingInvoices: [
         invoice("open-invoice", "open", 10000, 3000),
         invoice("draft-credit", "draft", 2000, 3000),
@@ -232,12 +240,19 @@ describe("billing page model", () => {
         program("archived", { archived_at: "2026-05-01" }),
       ],
       students: [
-        student("student-active", { preferred_name: "Ace", legal_first_name: "Ari", legal_last_name: "Stone" }),
+        student("student-active", {
+          preferred_name: "Ace",
+          legal_first_name: "Ari",
+          legal_last_name: "Stone",
+        }),
         student("student-inactive", { status: "inactive" }),
       ],
     });
 
-    assert.deepEqual(model.activePrograms.map((item) => item.id), ["kids"]);
+    assert.deepEqual(
+      model.activePrograms.map((item) => item.id),
+      ["kids"],
+    );
     assert.equal(model.activeStudents, 1);
     assert.deepEqual(model.billingStudentOptions, [{ id: "student-active", name: "Ace Stone" }]);
     assert.equal(model.paidRevenue, 12500);
@@ -258,34 +273,37 @@ describe("billing page model", () => {
   });
 
   it("date-bounds current-month collection totals and subtracts refunds", () => {
-    const totals = currentMonthPaymentTotals([
-      payment("current-stripe", "succeeded", 10000, {
-        processed_at: "2026-05-01T00:00:00.000Z",
-        refunded_amount_cents: 2500,
-      }),
-      payment("current-external", "externally_recorded", 4000, {
-        processed_at: "2026-05-31T23:59:59.999Z",
-      }),
-      payment("prior-month", "succeeded", 9000, {
-        processed_at: "2026-04-30T23:59:59.999Z",
-      }),
-      payment("next-month", "succeeded", 8000, {
-        processed_at: "2026-06-01T00:00:00.000Z",
-      }),
-      payment("fully-refunded", "refunded", 3000, {
-        processed_at: "2026-05-15T00:00:00.000Z",
-        refunded_amount_cents: 3000,
-      }),
-      payment("active-dispute", "disputed", 5000, {
-        processed_at: "2026-05-16T00:00:00.000Z",
-        refunded_amount_cents: 1000,
-        disputed_amount_cents: 2500,
-        net_collected_amount_cents: 1500,
-      }),
-      payment("failed", "failed", 7000, {
-        processed_at: "2026-05-15T00:00:00.000Z",
-      }),
-    ], new Date("2026-05-20T12:00:00.000Z"));
+    const totals = currentMonthPaymentTotals(
+      [
+        payment("current-stripe", "succeeded", 10000, {
+          processed_at: "2026-05-01T00:00:00.000Z",
+          refunded_amount_cents: 2500,
+        }),
+        payment("current-external", "externally_recorded", 4000, {
+          processed_at: "2026-05-31T23:59:59.999Z",
+        }),
+        payment("prior-month", "succeeded", 9000, {
+          processed_at: "2026-04-30T23:59:59.999Z",
+        }),
+        payment("next-month", "succeeded", 8000, {
+          processed_at: "2026-06-01T00:00:00.000Z",
+        }),
+        payment("fully-refunded", "refunded", 3000, {
+          processed_at: "2026-05-15T00:00:00.000Z",
+          refunded_amount_cents: 3000,
+        }),
+        payment("active-dispute", "disputed", 5000, {
+          processed_at: "2026-05-16T00:00:00.000Z",
+          refunded_amount_cents: 1000,
+          disputed_amount_cents: 2500,
+          net_collected_amount_cents: 1500,
+        }),
+        payment("failed", "failed", 7000, {
+          processed_at: "2026-05-15T00:00:00.000Z",
+        }),
+      ],
+      new Date("2026-05-20T12:00:00.000Z"),
+    );
 
     assert.deepEqual(totals, {
       externalPaymentTotal: 4000,
@@ -299,9 +317,12 @@ describe("billing page model", () => {
     const model = buildBillingPageModel({
       ...DEFAULT_INPUT,
       billingInvoices: [
-        {...invoice("partial-refund", "partially_refunded", 10000, 9000), amount_remaining_cents: 2500},
-        {...invoice("uncollectible", "uncollectible", 5000, 0), amount_remaining_cents: 4000},
-        {...invoice("paid", "paid", 10000, 10000), amount_remaining_cents: 8000},
+        {
+          ...invoice("partial-refund", "partially_refunded", 10000, 9000),
+          amount_remaining_cents: 2500,
+        },
+        { ...invoice("uncollectible", "uncollectible", 5000, 0), amount_remaining_cents: 4000 },
+        { ...invoice("paid", "paid", 10000, 10000), amount_remaining_cents: 8000 },
       ],
     });
 
@@ -309,20 +330,23 @@ describe("billing page model", () => {
   });
 
   it("falls back to created_at and excludes invalid or missing payment timestamps", () => {
-    const totals = currentMonthPaymentTotals([
-      payment("created-this-month", "succeeded", 2500, { processed_at: null }),
-      payment("invalid-date", "succeeded", 3000, {
-        processed_at: "not-a-date",
-      }),
-      {
-        id: "missing-date",
-        studio_id: "studio-1",
-        status: "succeeded",
-        amount_cents: 5000,
-        currency: "usd",
-        refunded_amount_cents: 0,
-      },
-    ], new Date("2026-05-20T12:00:00.000Z"));
+    const totals = currentMonthPaymentTotals(
+      [
+        payment("created-this-month", "succeeded", 2500, { processed_at: null }),
+        payment("invalid-date", "succeeded", 3000, {
+          processed_at: "not-a-date",
+        }),
+        {
+          id: "missing-date",
+          studio_id: "studio-1",
+          status: "succeeded",
+          amount_cents: 5000,
+          currency: "usd",
+          refunded_amount_cents: 0,
+        },
+      ],
+      new Date("2026-05-20T12:00:00.000Z"),
+    );
 
     assert.equal(totals.paidRevenue, 2500);
     assert.equal(totals.paymentCount, 1);
@@ -370,7 +394,7 @@ describe("billing page model", () => {
 
     assert.deepEqual(
       model.billingStudentOptions.map((option) => option.id),
-      ["student-akira", "student-jun", "student-omar"]
+      ["student-akira", "student-jun", "student-omar"],
     );
   });
 
@@ -378,9 +402,18 @@ describe("billing page model", () => {
     const payerIds = new Set(PREVIEW_PAYERS.map((payer) => payer.id));
     const invoiceIds = new Set(PREVIEW_INVOICES.map((invoice) => invoice.id));
 
-    assert.equal(PREVIEW_INVOICES.every((invoice) => payerIds.has(invoice.payer_id)), true);
-    assert.equal(PREVIEW_PAYMENTS.every((payment) => invoiceIds.has(payment.invoice_id)), true);
-    assert.equal(PREVIEW_ENROLLMENTS.every((enrollment) => payerIds.has(enrollment.payer_id)), true);
+    assert.equal(
+      PREVIEW_INVOICES.every((invoice) => payerIds.has(invoice.payer_id)),
+      true,
+    );
+    assert.equal(
+      PREVIEW_PAYMENTS.every((payment) => invoiceIds.has(payment.invoice_id)),
+      true,
+    );
+    assert.equal(
+      PREVIEW_ENROLLMENTS.every((enrollment) => payerIds.has(enrollment.payer_id)),
+      true,
+    );
 
     const model = buildBillingPageModel({
       ...DEFAULT_INPUT,

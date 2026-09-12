@@ -48,11 +48,7 @@ export function MarketingHeader() {
             </MarketingNavLink>
           ))}
         </nav>
-        <MarketingNavLink
-          href="/login"
-          prefetch={false}
-          className={styles.desktopSignIn}
-        >
+        <MarketingNavLink href="/login" prefetch={false} className={styles.desktopSignIn}>
           Sign in
         </MarketingNavLink>
         <details className={styles.mobileNavigation}>
@@ -107,18 +103,11 @@ export function PublicPageShell({ children }: { children: React.ReactNode }) {
 
 export function PageStructuredData({ data }: { data: Record<string, unknown> }) {
   return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
-    />
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />
   );
 }
 
-export function BreadcrumbJsonLd({
-  items,
-}: {
-  items: Array<{ name: string; url: string }>;
-}) {
+export function BreadcrumbJsonLd({ items }: { items: Array<{ name: string; url: string }> }) {
   return (
     <PageStructuredData
       data={{
@@ -243,8 +232,7 @@ export function MarketingIndexPage({
     basePath === "/features"
       ? { label: "Browse use cases", href: "/use-cases" }
       : { label: "Compare features", href: "/features" };
-  const indexFamilyClass =
-    basePath === "/features" ? styles.featureIndex : styles.useCaseIndex;
+  const indexFamilyClass = basePath === "/features" ? styles.featureIndex : styles.useCaseIndex;
 
   return (
     <PublicPageShell>
@@ -322,10 +310,7 @@ export function MarketingDetailPage({
         cta={page.primaryAction}
         ctaHref="#page-details"
       />
-      <section
-        className={`${styles.proofBand} ${familyClass}`}
-        aria-label="Product proof"
-      >
+      <section className={`${styles.proofBand} ${familyClass}`} aria-label="Product proof">
         <dl>
           {page.proof.map((item) => (
             <div key={item.label}>

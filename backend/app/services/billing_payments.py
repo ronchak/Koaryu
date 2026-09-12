@@ -29,9 +29,10 @@ from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 from app.services.stripe_service import StripeService
 
 
-
 EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL = "Idempotency-Key is required for external payments."
-PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL = "External payments must currently target one payer, not an invoice."
+PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL = (
+    "External payments must currently target one payer, not an invoice."
+)
 EXTERNAL_PAYMENT_USD_ONLY_DETAIL = "New external payments must use USD."
 REFUND_AMBIGUOUS_DETAIL = (
     "Refund outcome is not confirmed. Retry with the same Idempotency-Key after reconciliation."
@@ -51,7 +52,9 @@ def build_external_payment_request_hash(
 
 
 class BillingPaymentManager:
-    def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
+    def __init__(
+        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+    ):
         self.billing_service = billing_service
         self.stripe_service_cls = stripe_service_cls
 
@@ -71,7 +74,9 @@ class BillingPaymentManager:
     def _idempotency_key(self, *parts: str) -> str:
         return self.billing_service._idempotency_key(*parts)
 
-    def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
+    def _audit(
+        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
+    ) -> None:
         self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
 
     def _project_refund(self, refund: Any, account_id: str, **kwargs) -> dict[str, Any]:
@@ -97,11 +102,15 @@ class BillingPaymentManager:
         from app.services.billing_landing import payment_cohort_period
 
         period_start, period_end = payment_cohort_period(as_of)
-        result = execute_required_rpc(self.supabase, "billing_payment_cohort", {
-            "p_studio_id": studio_id,
-            "p_period_start": period_start.isoformat(),
-            "p_period_end": period_end.isoformat(),
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "billing_payment_cohort",
+            {
+                "p_studio_id": studio_id,
+                "p_period_start": period_start.isoformat(),
+                "p_period_end": period_end.isoformat(),
+            },
+        )
         return BillingPaymentCohortSummaryResponse.model_validate(result.data)
 
     async def record_external_payment(
@@ -115,27 +124,41 @@ class BillingPaymentManager:
             raise HTTPException(status_code=409, detail=PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL)
         request_key = normalize_idempotency_key(idempotency_key)
         if not request_key:
-            raise HTTPException(status_code=400, detail=EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL)
+            raise HTTPException(
+                status_code=400, detail=EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL
+            )
         request_hash = build_external_payment_request_hash(data, effective_payer_id=data.payer_id)
         try:
-            result = execute_required_rpc(self.supabase, "record_external_payment_v1", {
-                "p_studio_id": studio_id,
-                "p_actor_id": actor_id,
-                "p_payer_id": data.payer_id,
-                "p_amount_cents": data.amount_cents,
-                "p_currency": data.currency,
-                "p_external_method": data.external_method,
-                "p_note": data.note,
-                "p_idempotency_key": request_key,
-                "p_request_hash": request_hash,
-            })
+            result = execute_required_rpc(
+                self.supabase,
+                "record_external_payment_v1",
+                {
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_payer_id": data.payer_id,
+                    "p_amount_cents": data.amount_cents,
+                    "p_currency": data.currency,
+                    "p_external_method": data.external_method,
+                    "p_note": data.note,
+                    "p_idempotency_key": request_key,
+                    "p_request_hash": request_hash,
+                },
+            )
         except PostgrestAPIError as exc:
             rejection = {
                 ("P0001", "external_payment_request_conflict"): (
-                    409, "This idempotency key is already in use for a different external payment request."),
+                    409,
+                    "This idempotency key is already in use for a different external payment request.",
+                ),
                 ("22023", "external_payment_requires_usd"): (400, EXTERNAL_PAYMENT_USD_ONLY_DETAIL),
-                ("22023", "external_payment_invalid_key"): (400, EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL),
-                ("22023", "external_payment_invalid_request"): (400, "Invalid external payment request."),
+                ("22023", "external_payment_invalid_key"): (
+                    400,
+                    EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL,
+                ),
+                ("22023", "external_payment_invalid_request"): (
+                    400,
+                    "Invalid external payment request.",
+                ),
                 ("P0002", "external_payment_payer_not_found"): (404, "Payer not found."),
             }.get((getattr(exc, "code", None), getattr(exc, "message", None)))
             if rejection:
@@ -143,7 +166,10 @@ class BillingPaymentManager:
             raise
         row = first_rpc_row(result)
         if not row:
-            raise HTTPException(status_code=500, detail="External payment confirmation is unavailable. Retry the original request.")
+            raise HTTPException(
+                status_code=500,
+                detail="External payment confirmation is unavailable. Retry the original request.",
+            )
         payment = BillingPaymentResponse(**row)
         # The payment and original-actor audit have already committed together.
         # A failed balance refresh remains recoverable with this same request key.
@@ -166,9 +192,13 @@ class BillingPaymentManager:
                 status_code=400,
                 detail="Refund reason must be duplicate, fraudulent, or requested_by_customer.",
             )
-        payment = self._get_row_or_404("billing_payments", payment_id, studio_id, "Payment not found.")
+        payment = self._get_row_or_404(
+            "billing_payments", payment_id, studio_id, "Payment not found."
+        )
         if not payment.get("stripe_charge_id") or not payment.get("stripe_account_id"):
-            raise HTTPException(status_code=409, detail="Only Stripe payments can be refunded through Koaryu.")
+            raise HTTPException(
+                status_code=409, detail="Only Stripe payments can be refunded through Koaryu."
+            )
         payer_id = payment.get("payer_id")
         if not payer_id:
             raise HTTPException(
@@ -181,16 +211,18 @@ class BillingPaymentManager:
             studio_id=studio_id,
             account_id=account_id,
         )
-        request_sha256 = stable_hash({
-            "operation_type": PAYMENT_REFUND_OPERATION_TYPE,
-            "studio_id": studio_id,
-            "payment_id": payment_id,
-            "stripe_connected_account_id": account_id,
-            "connect_account_generation": generation,
-            "stripe_charge_id": payment["stripe_charge_id"],
-            "requested_amount_cents": data.amount_cents,
-            "reason": data.reason,
-        })
+        request_sha256 = stable_hash(
+            {
+                "operation_type": PAYMENT_REFUND_OPERATION_TYPE,
+                "studio_id": studio_id,
+                "payment_id": payment_id,
+                "stripe_connected_account_id": account_id,
+                "connect_account_generation": generation,
+                "stripe_charge_id": payment["stripe_charge_id"],
+                "requested_amount_cents": data.amount_cents,
+                "reason": data.reason,
+            }
+        )
         lease_owner = str(uuid4())
         coordinator = BillingProviderOperationCoordinator(self.supabase)
         claimed = coordinator.claim_resource(
@@ -230,8 +262,12 @@ class BillingPaymentManager:
                     requested_amount_cents=amount,
                 )
                 self._ensure_refund_audit(
-                    payment=payment, refund=row, data=data, amount=amount,
-                    operation=operation, context=context,
+                    payment=payment,
+                    refund=row,
+                    data=data,
+                    amount=amount,
+                    operation=operation,
+                    context=context,
                 )
             except Exception as exc:
                 raise HTTPException(
@@ -260,8 +296,12 @@ class BillingPaymentManager:
                 context, operation, result_code="payment_refund_completed"
             )
             self._ensure_refund_audit(
-                payment=payment, refund=row, data=data, amount=amount,
-                operation=operation, context=context,
+                payment=payment,
+                refund=row,
+                data=data,
+                amount=amount,
+                operation=operation,
+                context=context,
             )
             return BillingRefundResponse(**row)
         if operation.get("state") == "provider_succeeded":
@@ -299,8 +339,12 @@ class BillingPaymentManager:
                 context, operation, result_code="payment_refund_completed"
             )
             self._ensure_refund_audit(
-                payment=payment, refund=row, data=data, amount=amount,
-                operation=operation, context=context,
+                payment=payment,
+                refund=row,
+                data=data,
+                amount=amount,
+                operation=operation,
+                context=context,
             )
             return BillingRefundResponse(**row)
 
@@ -372,9 +416,10 @@ class BillingPaymentManager:
                 result_code=f"payment_refund_status_{provider_status}",
                 result_summary=f"amount_cents:{amount}",
             )
-            if disposition == "recovery_safe_retry" and int(
-                operation.get("provider_request_attempt_count") or 0
-            ) != 2:
+            if (
+                disposition == "recovery_safe_retry"
+                and int(operation.get("provider_request_attempt_count") or 0) != 2
+            ):
                 raise HTTPException(status_code=503, detail=REFUND_AMBIGUOUS_DETAIL)
         else:
             operation = coordinator.transition(
@@ -467,12 +512,14 @@ class BillingPaymentManager:
             "projected",
             result_code="payment_refund_projected",
         )
-        operation = coordinator.complete(
-            context, operation, result_code="payment_refund_completed"
-        )
+        operation = coordinator.complete(context, operation, result_code="payment_refund_completed")
         self._ensure_refund_audit(
-            payment=payment, refund=row, data=data, amount=amount,
-            operation=operation, context=context,
+            payment=payment,
+            refund=row,
+            data=data,
+            amount=amount,
+            operation=operation,
+            context=context,
         )
         return BillingRefundResponse(**row)
 
@@ -499,35 +546,32 @@ class BillingPaymentManager:
             "status": refund_status,
             "operation_id": context.operation_id,
         }
-        expected_request_sha256 = stable_hash({
-            "operation_type": PAYMENT_REFUND_OPERATION_TYPE,
-            "studio_id": context.studio_id,
-            "payment_id": payment_id,
-            "stripe_connected_account_id": context.stripe_connected_account_id,
-            "connect_account_generation": context.connect_account_generation,
-            "stripe_charge_id": payment.get("stripe_charge_id"),
-            "requested_amount_cents": data.amount_cents,
-            "reason": data.reason,
-        })
+        expected_request_sha256 = stable_hash(
+            {
+                "operation_type": PAYMENT_REFUND_OPERATION_TYPE,
+                "studio_id": context.studio_id,
+                "payment_id": payment_id,
+                "stripe_connected_account_id": context.stripe_connected_account_id,
+                "connect_account_generation": context.connect_account_generation,
+                "stripe_charge_id": payment.get("stripe_charge_id"),
+                "requested_amount_cents": data.amount_cents,
+                "reason": data.reason,
+            }
+        )
         if (
             not payment_id
             or payment.get("studio_id") != context.studio_id
-            or payment.get("stripe_account_id")
-            != context.stripe_connected_account_id
-            or payment.get("connect_account_generation")
-            != context.connect_account_generation
+            or payment.get("stripe_account_id") != context.stripe_connected_account_id
+            or payment.get("connect_account_generation") != context.connect_account_generation
             or operation.get("id") != context.operation_id
             or operation.get("studio_id") != context.studio_id
             or operation.get("actor_id") != context.actor_id
             or operation.get("operation_type") != PAYMENT_REFUND_OPERATION_TYPE
             or operation.get("request_sha256") != context.request_sha256
             or expected_request_sha256 != context.request_sha256
-            or operation.get("stripe_connected_account_id")
-            != context.stripe_connected_account_id
-            or operation.get("connect_account_generation")
-            != context.connect_account_generation
-            or operation.get("provider_object_id")
-            != refund.get("stripe_refund_id")
+            or operation.get("stripe_connected_account_id") != context.stripe_connected_account_id
+            or operation.get("connect_account_generation") != context.connect_account_generation
+            or operation.get("provider_object_id") != refund.get("stripe_refund_id")
             or operation.get("state") != "completed"
             or operation.get("result_code") != "payment_refund_completed"
             or self._refund_operation_amount(operation, data.amount_cents) != amount
@@ -541,22 +585,23 @@ class BillingPaymentManager:
             expected_amount=amount,
         )
 
-        audit_id = str(uuid5(
-            NAMESPACE_URL,
-            f"koaryu:{audit_action}:{context.operation_id}",
-        ))
+        audit_id = str(
+            uuid5(
+                NAMESPACE_URL,
+                f"koaryu:{audit_action}:{context.operation_id}",
+            )
+        )
         existing = (
-            self.supabase.table("audit_logs")
-            .select("*")
-            .eq("id", audit_id)
-            .limit(1)
-            .execute()
+            self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
         )
         if existing.data:
             self._validate_refund_audit_row(
-                existing.data[0], audit_id=audit_id,
-                studio_id=context.studio_id, actor_id=context.actor_id,
-                action=audit_action, payment_id=payment_id,
+                existing.data[0],
+                audit_id=audit_id,
+                studio_id=context.studio_id,
+                actor_id=context.actor_id,
+                action=audit_action,
+                payment_id=payment_id,
                 metadata=expected_metadata,
             )
             return
@@ -586,38 +631,37 @@ class BillingPaymentManager:
                 raise RuntimeError("payment_refund_legacy_audit_identity_mismatch")
             return
         try:
-            self.supabase.table("audit_logs").insert({
-                "id": audit_id,
-                "studio_id": context.studio_id,
-                "actor_id": context.actor_id,
-                "action": audit_action,
-                "entity_type": "billing",
-                "entity_id": payment_id,
-                "metadata": expected_metadata,
-            }).execute()
+            self.supabase.table("audit_logs").insert(
+                {
+                    "id": audit_id,
+                    "studio_id": context.studio_id,
+                    "actor_id": context.actor_id,
+                    "action": audit_action,
+                    "entity_type": "billing",
+                    "entity_id": payment_id,
+                    "metadata": expected_metadata,
+                }
+            ).execute()
         except PostgrestAPIError as exc:
             if getattr(exc, "code", None) != "23505":
                 raise
             winner = (
-                self.supabase.table("audit_logs")
-                .select("*")
-                .eq("id", audit_id)
-                .limit(1)
-                .execute()
+                self.supabase.table("audit_logs").select("*").eq("id", audit_id).limit(1).execute()
             )
             if not winner.data:
                 raise RuntimeError("payment_refund_audit_conflict_unverified") from exc
             try:
                 self._validate_refund_audit_row(
-                    winner.data[0], audit_id=audit_id,
-                    studio_id=context.studio_id, actor_id=context.actor_id,
-                    action=audit_action, payment_id=payment_id,
+                    winner.data[0],
+                    audit_id=audit_id,
+                    studio_id=context.studio_id,
+                    actor_id=context.actor_id,
+                    action=audit_action,
+                    payment_id=payment_id,
                     metadata=expected_metadata,
                 )
             except RuntimeError as invariant_exc:
-                raise RuntimeError(
-                    "payment_refund_audit_conflict_unverified"
-                ) from invariant_exc
+                raise RuntimeError("payment_refund_audit_conflict_unverified") from invariant_exc
 
     @staticmethod
     def _validate_refund_audit_row(
@@ -659,7 +703,8 @@ class BillingPaymentManager:
             != str(payment.get("stripe_charge_id") or "")
             or int(_object_get(refund, "amount") or 0) != amount
             or (_object_get(refund, "reason") or None) != reason
-            or dict(metadata) != {
+            or dict(metadata)
+            != {
                 "studio_id": studio_id,
                 "payment_id": payment_id,
                 "product": "koaryu_payments",
@@ -722,9 +767,11 @@ class BillingPaymentManager:
         else:
             value = getattr(refund, "status", None)
         normalized = str(value or "pending").strip().lower()
-        return normalized if normalized in {
-            "pending", "requires_action", "succeeded", "failed", "canceled"
-        } else "unknown"
+        return (
+            normalized
+            if normalized in {"pending", "requires_action", "succeeded", "failed", "canceled"}
+            else "unknown"
+        )
 
     def _load_refund_operation_result(
         self,
@@ -767,10 +814,15 @@ class BillingPaymentManager:
         coordinator = BillingProviderOperationCoordinator(self.supabase)
         result_code = str(operation.get("result_code") or "")
         prefix = "payment_refund_status_"
-        provider_status = result_code[len(prefix):] if result_code.startswith(prefix) else ""
+        provider_status = result_code[len(prefix) :] if result_code.startswith(prefix) else ""
         try:
             if provider_status not in {
-                "pending", "requires_action", "succeeded", "failed", "canceled", "unknown"
+                "pending",
+                "requires_action",
+                "succeeded",
+                "failed",
+                "canceled",
+                "unknown",
             }:
                 raise RuntimeError("payment_refund_saved_status_invalid")
             amount = self._refund_operation_amount(operation, data.amount_cents)
@@ -783,19 +835,22 @@ class BillingPaymentManager:
                 exc,
             )
         try:
-            row = self._project_refund({
-                "id": operation["provider_object_id"],
-                "charge": payment["stripe_charge_id"],
-                "payment_intent": payment.get("stripe_payment_intent_id"),
-                "amount": amount,
-                "reason": data.reason,
-                "status": provider_status,
-                "metadata": {
-                    "studio_id": context.studio_id,
-                    "payment_id": payment["id"],
-                    "product": "koaryu_payments",
+            row = self._project_refund(
+                {
+                    "id": operation["provider_object_id"],
+                    "charge": payment["stripe_charge_id"],
+                    "payment_intent": payment.get("stripe_payment_intent_id"),
+                    "amount": amount,
+                    "reason": data.reason,
+                    "status": provider_status,
+                    "metadata": {
+                        "studio_id": context.studio_id,
+                        "payment_id": payment["id"],
+                        "product": "koaryu_payments",
+                    },
                 },
-            }, context.stripe_connected_account_id)
+                context.stripe_connected_account_id,
+            )
             self._verify_refund_projection(
                 row,
                 payment=payment,
@@ -831,7 +886,9 @@ class BillingPaymentManager:
             or row.get("stripe_account_id") != context.stripe_connected_account_id
             or row.get("connect_account_generation") != context.connect_account_generation
             or row.get("reconciliation_required") is True
-            or (expected_amount is not None and int(row.get("amount_cents") or 0) != expected_amount)
+            or (
+                expected_amount is not None and int(row.get("amount_cents") or 0) != expected_amount
+            )
         ):
             raise RuntimeError("payment_refund_projection_not_converged")
 
@@ -861,17 +918,33 @@ class BillingPaymentManager:
             pass
         raise HTTPException(status_code=503, detail=REFUND_AMBIGUOUS_DETAIL) from exc
 
-    async def create_export_job(self, data: ExportJobCreate, studio_id: str, actor_id: str) -> ExportJobResponse:
-        result = self.supabase.table("export_jobs").insert({
-            "studio_id": studio_id,
-            "export_type": data.export_type,
-            "requested_by": actor_id,
-            "metadata": {"filters": data.filters, "async_required": True},
-        }).execute()
+    async def create_export_job(
+        self, data: ExportJobCreate, studio_id: str, actor_id: str
+    ) -> ExportJobResponse:
+        result = (
+            self.supabase.table("export_jobs")
+            .insert(
+                {
+                    "studio_id": studio_id,
+                    "export_type": data.export_type,
+                    "requested_by": actor_id,
+                    "metadata": {"filters": data.filters, "async_required": True},
+                }
+            )
+            .execute()
+        )
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create export job.")
-        self._audit(studio_id, actor_id, "billing.export_requested", result.data[0]["id"], {"export_type": data.export_type})
+        self._audit(
+            studio_id,
+            actor_id,
+            "billing.export_requested",
+            result.data[0]["id"],
+            {"export_type": data.export_type},
+        )
         return ExportJobResponse(**result.data[0])
 
     async def get_export_job(self, export_id: str, studio_id: str) -> ExportJobResponse:
-        return ExportJobResponse(**self._get_row_or_404("export_jobs", export_id, studio_id, "Export job not found."))
+        return ExportJobResponse(
+            **self._get_row_or_404("export_jobs", export_id, studio_id, "Export job not found.")
+        )

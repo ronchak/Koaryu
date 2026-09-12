@@ -49,7 +49,9 @@ def _student_name(student: dict[str, Any]) -> str:
 
 
 def _student_start_date(student: dict[str, Any]) -> Optional[date]:
-    return _parse_date(student.get("membership_start_date")) or _parse_date(student.get("created_at"))
+    return _parse_date(student.get("membership_start_date")) or _parse_date(
+        student.get("created_at")
+    )
 
 
 def _is_active_student(student: dict[str, Any]) -> bool:
@@ -100,7 +102,9 @@ class AttendanceEventIndex:
 
     def _record_lookup(self) -> None:
         if self.operation_counter is not None:
-            self.operation_counter["attendance_index_lookups"] = self.operation_counter.get("attendance_index_lookups", 0) + 1
+            self.operation_counter["attendance_index_lookups"] = (
+                self.operation_counter.get("attendance_index_lookups", 0) + 1
+            )
 
     @classmethod
     def from_data(
@@ -118,11 +122,15 @@ class AttendanceEventIndex:
         events_by_session: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for record in data.get("attendance", []):
             if operation_counter is not None:
-                operation_counter["attendance_rows_examined"] = operation_counter.get("attendance_rows_examined", 0) + 1
+                operation_counter["attendance_rows_examined"] = (
+                    operation_counter.get("attendance_rows_examined", 0) + 1
+                )
             if record.get("status") == "absent":
                 continue
             session = sessions_by_id.get(record.get("session_id")) or {}
-            event_date = _parse_date(session.get("date")) or _parse_date(record.get("checked_in_at"))
+            event_date = _parse_date(session.get("date")) or _parse_date(
+                record.get("checked_in_at")
+            )
             if not event_date:
                 continue
             event = {
@@ -136,7 +144,9 @@ class AttendanceEventIndex:
             }
             events.append(event)
             if operation_counter is not None:
-                operation_counter["event_objects_materialized"] = operation_counter.get("event_objects_materialized", 0) + 1
+                operation_counter["event_objects_materialized"] = (
+                    operation_counter.get("event_objects_materialized", 0) + 1
+                )
             student_id = event.get("student_id")
             if student_id is not None:
                 dates_by_student[student_id].append(event_date)
@@ -153,7 +163,15 @@ class AttendanceEventIndex:
         for dates in dates_by_student.values():
             dates.sort()
         all_dates.sort()
-        return cls(events, dates_by_student, all_dates, first_by_student, last_by_student, events_by_session, operation_counter)
+        return cls(
+            events,
+            dates_by_student,
+            all_dates,
+            first_by_student,
+            last_by_student,
+            events_by_session,
+            operation_counter,
+        )
 
     def __iter__(self):
         return iter(self.events)
@@ -214,16 +232,25 @@ def _active_billing_for_student(
     ]
     if not enrollments:
         return None, None, "no_billing_enrollment"
-    enrollment = sorted(enrollments, key=lambda row: str(row.get("created_at") or ""), reverse=True)[0]
+    enrollment = sorted(
+        enrollments, key=lambda row: str(row.get("created_at") or ""), reverse=True
+    )[0]
     payer = payers_by_id.get(enrollment.get("payer_id"))
-    status = enrollment.get("billing_status") or payer.get("billing_status") if payer else enrollment.get("billing_status")
+    status = (
+        enrollment.get("billing_status") or payer.get("billing_status")
+        if payer
+        else enrollment.get("billing_status")
+    )
     return enrollment, payer, status or "unknown"
 
 
 def _promotion_lookup(data: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
     for promotion in data.get("promotions", []):
-        key = promotion.get("student_program_membership_id") or f"student:{promotion.get('student_id')}:{promotion.get('program_id') or ''}"
+        key = (
+            promotion.get("student_program_membership_id")
+            or f"student:{promotion.get('student_id')}:{promotion.get('program_id') or ''}"
+        )
         promoted_at = _parse_date(promotion.get("promoted_at"))
         if not key or not promoted_at:
             continue
@@ -242,11 +269,24 @@ def _student_risk(
 ) -> dict[str, Any]:
     student_id = student["id"]
     last_visit = _last_event_date(events, student_id)
-    visits_14 = _count_events(events, student_id=student_id, start=today - timedelta(days=13), end=today)
-    visits_30 = _count_events(events, student_id=student_id, start=today - timedelta(days=29), end=today)
-    visits_previous_30 = _count_events(events, student_id=student_id, start=today - timedelta(days=59), end=today - timedelta(days=30))
-    visits_90 = _count_events(events, student_id=student_id, start=today - timedelta(days=89), end=today)
-    enrollment, payer, billing_status = _active_billing_for_student(student_id, enrollments_by_student, payers_by_id)
+    visits_14 = _count_events(
+        events, student_id=student_id, start=today - timedelta(days=13), end=today
+    )
+    visits_30 = _count_events(
+        events, student_id=student_id, start=today - timedelta(days=29), end=today
+    )
+    visits_previous_30 = _count_events(
+        events,
+        student_id=student_id,
+        start=today - timedelta(days=59),
+        end=today - timedelta(days=30),
+    )
+    visits_90 = _count_events(
+        events, student_id=student_id, start=today - timedelta(days=89), end=today
+    )
+    enrollment, payer, billing_status = _active_billing_for_student(
+        student_id, enrollments_by_student, payers_by_id
+    )
 
     risk_score = 0
     flags: list[str] = []
@@ -320,11 +360,15 @@ def _latest_by(rows: list[dict[str, Any]], key: str, date_key: str) -> dict[str,
     return latest
 
 
-def _last_first_visit(events: AttendanceEventIndex, student_id: str, *, first: bool) -> Optional[date]:
+def _last_first_visit(
+    events: AttendanceEventIndex, student_id: str, *, first: bool
+) -> Optional[date]:
     return events.first_visit(student_id) if first else events.last_visit(student_id)
 
 
-def _onboarding_status(days_since_start: int, visits_to_date: int, visits_first_7: int, visits_first_30: int) -> tuple[str, str]:
+def _onboarding_status(
+    days_since_start: int, visits_to_date: int, visits_first_7: int, visits_first_30: int
+) -> tuple[str, str]:
     if visits_to_date >= 5:
         return "habit_forming", "Keep momentum and introduce the next rank/progress checkpoint."
     if days_since_start >= 14 and visits_to_date == 0:
@@ -374,7 +418,10 @@ def _family_row(
     today: date,
 ) -> dict[str, Any]:
     active_students = [student for student in students if _is_active_student(student)]
-    visits_30 = sum(_count_events(events, student_id=student["id"], start=today - timedelta(days=29), end=today) for student in students)
+    visits_30 = sum(
+        _count_events(events, student_id=student["id"], start=today - timedelta(days=29), end=today)
+        for student in students
+    )
     at_risk = 0
     for student in active_students:
         risk = _student_risk(student, events, enrollments_by_student, payers_by_id, today)
@@ -382,7 +429,12 @@ def _family_row(
             at_risk += 1
     contact_missing = not contact.get("email") and not contact.get("phone")
     balance = int(contact.get("balance_cents") or 0)
-    priority = at_risk * 35 + (25 if contact.get("billing_status") in BILLING_RISK_STATUSES else 0) + (15 if contact_missing else 0) + min(25, balance // 5000)
+    priority = (
+        at_risk * 35
+        + (25 if contact.get("billing_status") in BILLING_RISK_STATUSES else 0)
+        + (15 if contact_missing else 0)
+        + min(25, balance // 5000)
+    )
     return {
         "household_key": household_key,
         "household_name": household_name,
@@ -399,7 +451,9 @@ def _family_row(
     }
 
 
-def _lifecycle_segment(student: dict[str, Any], risk: dict[str, Any], days_since_start: Any) -> tuple[str, str]:
+def _lifecycle_segment(
+    student: dict[str, Any], risk: dict[str, Any], days_since_start: Any
+) -> tuple[str, str]:
     if student.get("status") in {"inactive", "canceled"}:
         return "inactive_or_canceled", f"Student status is {student.get('status')}."
     if student.get("status") == "paused":
@@ -415,7 +469,15 @@ def _lifecycle_segment(student: dict[str, Any], risk: dict[str, Any], days_since
     return "quiet", "No visits in the last 30 days."
 
 
-def _hygiene_row(issue_type: str, severity: str, entity_type: str, entity_id: Any, student_id: Any, detail: str, action: str) -> dict[str, Any]:
+def _hygiene_row(
+    issue_type: str,
+    severity: str,
+    entity_type: str,
+    entity_id: Any,
+    student_id: Any,
+    detail: str,
+    action: str,
+) -> dict[str, Any]:
     return {
         "issue_type": issue_type,
         "severity": severity,

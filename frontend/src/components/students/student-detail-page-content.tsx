@@ -106,91 +106,100 @@ export function StudentDetailPageContent({
       {detailReady && loadError ? (
         <div className="px-6 pt-4" role="status">
           <p>Showing the last loaded details. {loadError}</p>
-          <Button variant="secondary" size="sm" onClick={onRetryDetail}>Retry student details</Button>
+          <Button variant="secondary" size="sm" onClick={onRetryDetail}>
+            Retry student details
+          </Button>
         </div>
       ) : null}
       {!detailReady ? (
         <div className="p-6" role={loadError ? "alert" : "status"}>
-          {loadError ? <>
-            <p>{loadError}</p>
-            <Button onClick={onRetryDetail}>Retry student details</Button>
-          </> : <RecordsLoading title="Loading student details"
-            description="Loading guardian, photo, and training details." variant="folio" />}
+          {loadError ? (
+            <>
+              <p>{loadError}</p>
+              <Button onClick={onRetryDetail}>Retry student details</Button>
+            </>
+          ) : (
+            <RecordsLoading
+              title="Loading student details"
+              description="Loading guardian, photo, and training details."
+              variant="folio"
+            />
+          )}
         </div>
       ) : (
-      <div className="flex-1 p-4 sm:p-6 lg:p-8">
-        <div className={`grid grid-cols-1 gap-6 lg:grid-cols-[minmax(14rem,0.34fr)_minmax(0,1fr)] ${styles.folioGrid}`}>
-          {canManageRoster && (showDeleteConfirm || deleteError) && (
-            <div className="col-span-1 rounded-[14px] bg-danger/5 px-4 py-3 lg:col-span-2">
-              <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />
-                    <p className="text-sm font-medium text-text-primary">Archive this student?</p>
+        <div className="flex-1 p-4 sm:p-6 lg:p-8">
+          <div
+            className={`grid grid-cols-1 gap-6 lg:grid-cols-[minmax(14rem,0.34fr)_minmax(0,1fr)] ${styles.folioGrid}`}
+          >
+            {canManageRoster && (showDeleteConfirm || deleteError) && (
+              <div className="col-span-1 rounded-[14px] bg-danger/5 px-4 py-3 lg:col-span-2">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />
+                      <p className="text-sm font-medium text-text-primary">Archive this student?</p>
+                    </div>
+                    <p className="text-xs text-muted mt-1">
+                      This removes {detail.fullName} from the active roster. Their history is
+                      preserved.
+                    </p>
+                    {deleteError ? <p className="text-xs text-danger mt-2">{deleteError}</p> : null}
                   </div>
-                  <p className="text-xs text-muted mt-1">
-                    This removes {detail.fullName} from the active roster. Their history is preserved.
-                  </p>
-                  {deleteError ? (
-                    <p className="text-xs text-danger mt-2">{deleteError}</p>
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onCancelDelete}
-                    disabled={isDeleting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    isLoading={isDeleting}
-                    onClick={onDeleteStudent}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Archive
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onCancelDelete}
+                      disabled={isDeleting}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      isLoading={isDeleting}
+                      onClick={onDeleteStudent}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Archive
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <StudentDetailSidebar
-            canManageRoster={canManageRoster}
-            student={student}
-            fullName={detail.fullName}
-            programs={programs}
-            activeProgramIds={detail.activeProgramIds}
-            photoPreviewUrl={photoPreviewUrl}
-            photoError={photoError}
-            isPhotoSaving={isPhotoSaving}
-            onPhotoSelected={onPhotoSelected}
-            onDeletePhoto={onDeletePhoto}
-            isCurrentHold={detail.isCurrentHold}
-            currentRank={detail.currentRank}
-            nextRank={detail.nextRank}
-            latestPromotionAt={detail.latestPromotion?.promoted_at}
-            promotionCount={promotionHistory.length}
-            isLoadingBeltData={isLoadingBeltData}
-            beltLoadError={beltLoadError}
-          />
+            <StudentDetailSidebar
+              canManageRoster={canManageRoster}
+              student={student}
+              fullName={detail.fullName}
+              programs={programs}
+              activeProgramIds={detail.activeProgramIds}
+              photoPreviewUrl={photoPreviewUrl}
+              photoError={photoError}
+              isPhotoSaving={isPhotoSaving}
+              onPhotoSelected={onPhotoSelected}
+              onDeletePhoto={onDeletePhoto}
+              isCurrentHold={detail.isCurrentHold}
+              currentRank={detail.currentRank}
+              nextRank={detail.nextRank}
+              latestPromotionAt={detail.latestPromotion?.promoted_at}
+              promotionCount={promotionHistory.length}
+              isLoadingBeltData={isLoadingBeltData}
+              beltLoadError={beltLoadError}
+            />
 
-          <StudentDetailSections
-            student={student}
-            primaryGuardian={detail.primaryGuardian}
-            currentRank={detail.currentRank}
-            promotionHistory={promotionHistory}
-            rankById={detail.rankById}
-            isCurrentHold={detail.isCurrentHold}
-            isLoadingBeltData={isLoadingBeltData}
-            beltLoadError={beltLoadError}
-          />
+            <StudentDetailSections
+              student={student}
+              primaryGuardian={detail.primaryGuardian}
+              currentRank={detail.currentRank}
+              promotionHistory={promotionHistory}
+              rankById={detail.rankById}
+              isCurrentHold={detail.isCurrentHold}
+              isLoadingBeltData={isLoadingBeltData}
+              beltLoadError={beltLoadError}
+            />
+          </div>
         </div>
-      </div>
-
       )}
       {showEdit && detailReady && (
         <StudentForm

@@ -89,16 +89,19 @@ describe("dead-man check-in", () => {
         await context.test(`${workerId}: ${JSON.stringify(value)}`, async () => {
           process.env[environmentKey] = value;
           let requested = false;
-          await assert.rejects(sendDeadManCheckIn({
-            workerId,
-            environment: "staging",
-            commitSha: "a".repeat(40),
-            sequence: 1,
-            requestImpl: async () => {
-              requested = true;
-              return pinnedJson({ receipt_id: "receipt" });
-            },
-          }), /not safely configured/);
+          await assert.rejects(
+            sendDeadManCheckIn({
+              workerId,
+              environment: "staging",
+              commitSha: "a".repeat(40),
+              sequence: 1,
+              requestImpl: async () => {
+                requested = true;
+                return pinnedJson({ receipt_id: "receipt" });
+              },
+            }),
+            /not safely configured/,
+          );
           assert.equal(requested, false);
           process.env[environmentKey] = fill.repeat(40);
         });
@@ -113,16 +116,19 @@ describe("dead-man check-in", () => {
     ]) {
       process.env[name] = value;
       let requested = false;
-      await assert.rejects(sendDeadManCheckIn({
-        workerId: "evaluator",
-        environment: "staging",
-        commitSha: "a".repeat(40),
-        sequence: 1,
-        requestImpl: async () => {
-          requested = true;
-          return pinnedJson({ receipt_id: "receipt" });
-        },
-      }), /not safely configured/);
+      await assert.rejects(
+        sendDeadManCheckIn({
+          workerId: "evaluator",
+          environment: "staging",
+          commitSha: "a".repeat(40),
+          sequence: 1,
+          requestImpl: async () => {
+            requested = true;
+            return pinnedJson({ receipt_id: "receipt" });
+          },
+        }),
+        /not safely configured/,
+      );
       assert.equal(requested, false);
       if (name.endsWith("URL_SHA256")) {
         process.env[name] = createHash("sha256").update(URL).digest("hex");
@@ -133,12 +139,15 @@ describe("dead-man check-in", () => {
   });
 
   it("requires a strict receipt", async () => {
-    await assert.rejects(sendDeadManCheckIn({
-      workerId: "evaluator",
-      environment: "staging",
-      commitSha: "a".repeat(40),
-      sequence: 1,
-      requestImpl: async () => pinnedJson({ receipt_id: "receipt", extra: true }),
-    }), /receipt is invalid/);
+    await assert.rejects(
+      sendDeadManCheckIn({
+        workerId: "evaluator",
+        environment: "staging",
+        commitSha: "a".repeat(40),
+        sequence: 1,
+        requestImpl: async () => pinnedJson({ receipt_id: "receipt", extra: true }),
+      }),
+      /receipt is invalid/,
+    );
   });
 });

@@ -54,10 +54,13 @@ describe("student import page model", () => {
     assert.equal(getStudentImportStageIndex("done"), 3);
     const limits = { maxBytes: 10 * 1024 * 1024, formattedLimit: "10 MB" };
 
-    assert.equal(getCsvImportFileRejection({ name: "students.xlsx", size: 100 }, limits), "Please upload a .csv file.");
+    assert.equal(
+      getCsvImportFileRejection({ name: "students.xlsx", size: 100 }, limits),
+      "Please upload a .csv file.",
+    );
     assert.equal(
       getCsvImportFileRejection({ name: "students.csv", size: 11 * 1024 * 1024 }, limits),
-      "This CSV is too large. Upload a file under 10 MB."
+      "This CSV is too large. Upload a file under 10 MB.",
     );
     assert.equal(getCsvImportFileRejection({ name: "students.CSV", size: 100 }, limits), null);
   });
@@ -70,7 +73,7 @@ describe("student import page model", () => {
         "Program Name": "program_id",
         "Payment Status": "",
         "Guardian Mobile": "guardian_phone",
-      }
+      },
     );
   });
 
@@ -81,12 +84,14 @@ describe("student import page model", () => {
 
   it("parses quoted commas, escaped quotes, and blank lines like the import preview", () => {
     assert.deepEqual(
-      parseCsvText('Name,Notes\n"Ari Lane","Loves throws, sweeps"\n\n"Bo ""The Bear"" Kim",Ready\n'),
+      parseCsvText(
+        'Name,Notes\n"Ari Lane","Loves throws, sweeps"\n\n"Bo ""The Bear"" Kim",Ready\n',
+      ),
       [
         ["Name", "Notes"],
         ["Ari Lane", "Loves throws, sweeps"],
         ['Bo "The Bear" Kim', "Ready"],
-      ]
+      ],
     );
   });
 
@@ -98,23 +103,22 @@ describe("student import page model", () => {
   it("normalizes import errors for page messaging", () => {
     assert.equal(getStudentImportErrorMessage(new Error("CSV failed")), "CSV failed");
     assert.equal(
-      getStudentImportErrorMessage(new Error("[object Object]", {
-        cause: { msg: "Backend rejected row 4" },
-      })),
-      "Backend rejected row 4"
+      getStudentImportErrorMessage(
+        new Error("[object Object]", {
+          cause: { msg: "Backend rejected row 4" },
+        }),
+      ),
+      "Backend rejected row 4",
     );
     assert.equal(
       getStudentImportErrorMessage({ detail: "Upload is too large" }),
-      "Upload is too large"
+      "Upload is too large",
     );
     assert.equal(
       getStudentImportErrorMessage({ code: "unknown_failure" }),
-      '{"code":"unknown_failure"}'
+      '{"code":"unknown_failure"}',
     );
-    assert.equal(
-      getStudentImportErrorMessage(null),
-      "Something went wrong. Please try again."
-    );
+    assert.equal(getStudentImportErrorMessage(null), "Something went wrong. Please try again.");
   });
 
   it("builds preview validation results with full-name splitting, notes merging, and status normalization", () => {
@@ -138,7 +142,7 @@ describe("student import page model", () => {
         "Office Notes": "notes",
       },
       DEFAULT_PREVIEW_OPTIONS,
-      splitCsvImportFullName
+      splitCsvImportFullName,
     );
 
     assert.equal(result.total_rows, 2);
@@ -152,29 +156,42 @@ describe("student import page model", () => {
     assert.equal(result.rows[0].data.notes, "Coach Notes: Strong guard\nOffice Notes: Paid cash");
     assert.deepEqual(
       result.rows[1].issues.map((issue) => issue.code),
-      ["missing_last_name", "invalid_status"]
+      ["missing_last_name", "invalid_status"],
     );
   });
 
   it("summarizes import preflight state by setup, blocking, warning, and clean result priority", () => {
     assert.match(
-      buildPreflightSummary(importResult({
-        setup_issues: [{ code: "missing_belt_ladder" }],
-        actions_available: { can_create_missing_belts: true },
-      })),
-      /create the missing program ladders/
+      buildPreflightSummary(
+        importResult({
+          setup_issues: [{ code: "missing_belt_ladder" }],
+          actions_available: { can_create_missing_belts: true },
+        }),
+      ),
+      /create the missing program ladders/,
     );
     assert.match(
-      buildPreflightSummary(importResult({
-        setup_issues: [{ code: "missing_belt" }],
-        actions_available: { can_create_missing_belts: false },
-      })),
-      /preserve the original belt text/
+      buildPreflightSummary(
+        importResult({
+          setup_issues: [{ code: "missing_belt" }],
+          actions_available: { can_create_missing_belts: false },
+        }),
+      ),
+      /preserve the original belt text/,
     );
-    assert.match(buildPreflightSummary(importResult({ setup_issues: [{ code: "ambiguous_belt_ladder" }] })), /more than one belt ladder/);
-    assert.match(buildPreflightSummary(importResult({ setup_issues: [{ code: "missing_program" }] })), /create them during import/);
+    assert.match(
+      buildPreflightSummary(importResult({ setup_issues: [{ code: "ambiguous_belt_ladder" }] })),
+      /more than one belt ladder/,
+    );
+    assert.match(
+      buildPreflightSummary(importResult({ setup_issues: [{ code: "missing_program" }] })),
+      /create them during import/,
+    );
     assert.match(buildPreflightSummary(importResult({ error_rows: 1 })), /blocking issues/);
-    assert.match(buildPreflightSummary(importResult({ warnings: [{ code: "normalized_status" }] })), /non-blocking warnings/);
+    assert.match(
+      buildPreflightSummary(importResult({ warnings: [{ code: "normalized_status" }] })),
+      /non-blocking warnings/,
+    );
     assert.equal(buildPreflightSummary(importResult()), "Your CSV looks ready to import.");
   });
 
@@ -185,22 +202,45 @@ describe("student import page model", () => {
           row_number: 4,
           data: { status: "current" },
           is_valid: true,
-          issues: [{ code: "normalized_status", severity: "warning", field: "status", value: "current", message: "Normalized" }],
+          issues: [
+            {
+              code: "normalized_status",
+              severity: "warning",
+              field: "status",
+              value: "current",
+              message: "Normalized",
+            },
+          ],
         },
         {
           row_number: 2,
           data: { status: "current" },
           is_valid: true,
-          issues: [{ code: "normalized_status", severity: "warning", field: "status", value: "current", message: "Normalized" }],
+          issues: [
+            {
+              code: "normalized_status",
+              severity: "warning",
+              field: "status",
+              value: "current",
+              message: "Normalized",
+            },
+          ],
         },
         {
           row_number: 3,
           data: { legal_last_name: "" },
           is_valid: false,
-          issues: [{ code: "missing_last_name", severity: "error", field: "legal_last_name", message: "Missing last name" }],
+          issues: [
+            {
+              code: "missing_last_name",
+              severity: "error",
+              field: "legal_last_name",
+              message: "Missing last name",
+            },
+          ],
         },
       ],
-      "warning"
+      "warning",
     );
 
     assert.equal(groups.length, 1);

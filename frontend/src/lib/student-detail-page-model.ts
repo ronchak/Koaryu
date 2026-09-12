@@ -11,7 +11,7 @@ export function validateStudentPhotoFile(
   options = {
     allowedTypes: STUDENT_PHOTO_TYPES,
     maxBytes: STUDENT_PHOTO_MAX_BYTES,
-  }
+  },
 ) {
   if (!options.allowedTypes.has(file.type)) {
     return "Choose a JPG, PNG, or WebP image.";
@@ -26,7 +26,7 @@ export function validateStudentPhotoFile(
 
 export function isStudentCurrentHold(
   student: Pick<Student, "status" | "hold_start_date" | "hold_end_date">,
-  today: string
+  today: string,
 ) {
   if (student.status === "paused") {
     return true;
@@ -45,17 +45,17 @@ export function isStudentCurrentHold(
 
 export function buildStudentRankById(beltLadders: BeltLadder[]) {
   const entries = beltLadders.flatMap((ladder) =>
-    ladder.ranks.map((rank) => [
-      rank.id,
-      { ...rank, ladderName: ladder.name } satisfies StudentRankWithContext,
-    ] as const)
+    ladder.ranks.map(
+      (rank) =>
+        [rank.id, { ...rank, ladderName: ladder.name } satisfies StudentRankWithContext] as const,
+    ),
   );
   return new Map<string, StudentRankWithContext>(entries);
 }
 
 export function getActiveStudentProgramIds(student: Student) {
   const activeMemberships = (student.program_memberships || []).filter(
-    (membership) => membership.status !== "ended" && !membership.ended_at
+    (membership) => membership.status !== "ended" && !membership.ended_at,
   );
 
   if (activeMemberships.length > 0) {
@@ -67,7 +67,7 @@ export function getActiveStudentProgramIds(student: Student) {
 
 export function buildStudentEditInitialData(
   student: Student,
-  activeProgramIds: string[]
+  activeProgramIds: string[],
 ): StudentFormInitialData {
   return {
     legal_first_name: student.legal_first_name,
@@ -117,7 +117,8 @@ export function buildStudentDetailModel({
   today,
 }: StudentDetailModelInput) {
   const fullName = `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`;
-  const primaryGuardian = student.guardians.find((guardian) => guardian.is_primary_contact) ?? student.guardians[0];
+  const primaryGuardian =
+    student.guardians.find((guardian) => guardian.is_primary_contact) ?? student.guardians[0];
   const rankById = buildStudentRankById(beltLadders);
   const currentRank = student.current_belt_rank_id
     ? rankById.get(student.current_belt_rank_id)

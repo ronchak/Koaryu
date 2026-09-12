@@ -17,14 +17,20 @@ class FakeAuthAdmin:
 
     def get_user_by_id(self, user_id):
         is_active = user_id not in self.supabase.inactive_user_ids
-        return FakeUserResponse(type("User", (), {
-            "id": user_id,
-            "email": f"{user_id}@example.com",
-            "email_confirmed_at": "2026-05-01T00:00:00+00:00" if is_active else None,
-            "confirmed_at": "2026-05-01T00:00:00+00:00" if is_active else None,
-            "last_sign_in_at": None,
-            "user_metadata": {},
-        })())
+        return FakeUserResponse(
+            type(
+                "User",
+                (),
+                {
+                    "id": user_id,
+                    "email": f"{user_id}@example.com",
+                    "email_confirmed_at": "2026-05-01T00:00:00+00:00" if is_active else None,
+                    "confirmed_at": "2026-05-01T00:00:00+00:00" if is_active else None,
+                    "last_sign_in_at": None,
+                    "user_metadata": {},
+                },
+            )()
+        )
 
 
 class FakeAuth:
@@ -34,10 +40,12 @@ class FakeAuth:
 
 class FakeSupabase(TableBackedSupabase):
     def __init__(self):
-        super().__init__({
-            "staff_roles": [],
-            "account_deletion_requests": [],
-        })
+        super().__init__(
+            {
+                "staff_roles": [],
+                "account_deletion_requests": [],
+            }
+        )
         self.inactive_user_ids = set()
         self.auth = FakeAuth(self)
 

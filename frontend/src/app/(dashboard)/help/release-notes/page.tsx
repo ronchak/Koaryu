@@ -13,11 +13,17 @@ export default async function ReleaseNotesPage() {
     >
       <div className="space-y-4">
         {releases.map((release) => (
-          <AccountSection key={release.version} title={`Version ${release.version}`} description={release.date}>
+          <AccountSection
+            key={release.version}
+            title={`Version ${release.version}`}
+            description={release.date}
+          >
             <div className="space-y-5">
               {release.sections.map((section) => (
                 <section key={`${release.version}-${section.title}`} className="space-y-3">
-                  <h3 className="text-xs font-medium uppercase tracking-wide text-muted">{section.title}</h3>
+                  <h3 className="text-xs font-medium uppercase tracking-wide text-muted">
+                    {section.title}
+                  </h3>
                   <ul className="space-y-3">
                     {section.items.map((item) => (
                       <li key={item} className="flex gap-3 text-sm text-text-secondary">

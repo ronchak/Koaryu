@@ -1,10 +1,7 @@
 import { api, ApiError } from "@/lib/api";
 import type { StudentListQuery } from "@/lib/student-list-page";
 import { buildStudentPagePath } from "@/lib/student-roster-query";
-import type {
-  Student,
-  StudentRosterPageResponse,
-} from "@/types";
+import type { Student, StudentRosterPageResponse } from "@/types";
 
 export { buildStudentPagePath } from "@/lib/student-roster-query";
 
@@ -33,7 +30,7 @@ export function decodeStudentRosterCursorError(error: unknown): StudentRosterCur
   }
 
   try {
-    const detail = error.detail ?? JSON.parse(error.message) as unknown;
+    const detail = error.detail ?? (JSON.parse(error.message) as unknown);
     if (!detail || typeof detail !== "object") {
       return null;
     }
@@ -49,11 +46,7 @@ export function decodeStudentRosterCursorError(error: unknown): StudentRosterCur
       return null;
     }
 
-    return new StudentRosterCursorError(
-      record.code,
-      record.message,
-      record.recover_to,
-    );
+    return new StudentRosterCursorError(record.code, record.message, record.recover_to);
   } catch {
     return null;
   }
@@ -62,13 +55,13 @@ export function decodeStudentRosterCursorError(error: unknown): StudentRosterCur
 export async function fetchStudentPage(
   authToken: string,
   query: StudentListQuery = {},
-  options?: StudentPageRequestOptions
+  options?: StudentPageRequestOptions,
 ): Promise<StudentRosterPageResponse> {
   try {
     return await api.get<StudentRosterPageResponse>(
       buildStudentPagePath(query),
       authToken,
-      options
+      options,
     );
   } catch (error) {
     throw decodeStudentRosterCursorError(error) || error;
@@ -77,7 +70,7 @@ export async function fetchStudentPage(
 
 export async function fetchAllStudents(
   authToken: string,
-  options?: { timeoutMs?: number | null }
+  options?: { timeoutMs?: number | null },
 ): Promise<Student[]> {
   const pageSize = 200;
   let cursor: string | null = null;
@@ -85,12 +78,16 @@ export async function fetchAllStudents(
   const seenCursors = new Set<string>();
 
   while (true) {
-    const result = await fetchStudentPage(authToken, {
-      page: 1,
-      pageSize,
-      fullRoster: true,
-      ...(cursor ? { cursor } : {}),
-    }, options);
+    const result = await fetchStudentPage(
+      authToken,
+      {
+        page: 1,
+        pageSize,
+        fullRoster: true,
+        ...(cursor ? { cursor } : {}),
+      },
+      options,
+    );
 
     collected.push(...result.items);
 

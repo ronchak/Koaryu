@@ -2,12 +2,18 @@ type AuthFailure = { name?: string; status?: number };
 type UserResult<T> = { data: { user: T | null }; error?: AuthFailure | null };
 
 export class AuthProviderUnavailable extends Error {
-  constructor() { super("Authentication is temporarily unavailable."); }
+  constructor() {
+    super("Authentication is temporarily unavailable.");
+  }
 }
 
 function transient(error: AuthFailure) {
-  return error.name === "AuthRetryableFetchError" || error.status === 0
-    || error.status === 429 || (error.status !== undefined && error.status >= 500);
+  return (
+    error.name === "AuthRetryableFetchError" ||
+    error.status === 0 ||
+    error.status === 429 ||
+    (error.status !== undefined && error.status >= 500)
+  );
 }
 
 function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -20,7 +26,10 @@ function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 /** Two reads at most within the caller's shared deadline, including SDK retries. */
-export async function requestAuthUser<T>(read: () => Promise<UserResult<T>>, signal: AbortSignal): Promise<T | null> {
+export async function requestAuthUser<T>(
+  read: () => Promise<UserResult<T>>,
+  signal: AbortSignal,
+): Promise<T | null> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     signal.throwIfAborted();
     try {
@@ -29,8 +38,13 @@ export async function requestAuthUser<T>(read: () => Promise<UserResult<T>>, sig
       // The SDK error omits Retry-After; do not retry a rate limit prematurely.
       if (result.error.status === 429) throw new AuthProviderUnavailable();
       if (!transient(result.error)) {
-        if (result.error.status === 400 || result.error.status === 401 || result.error.status === 403
-          || result.error.name === "AuthSessionMissingError") return null;
+        if (
+          result.error.status === 400 ||
+          result.error.status === 401 ||
+          result.error.status === 403 ||
+          result.error.name === "AuthSessionMissingError"
+        )
+          return null;
         throw new AuthProviderUnavailable();
       }
     } catch (error) {

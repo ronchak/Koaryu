@@ -24,11 +24,7 @@ def _settings(*, environment: str, mode: object = "test", key: str = "sk_test_fi
 
 class StagingProviderEnrollmentPolicyTest(unittest.TestCase):
     def test_allows_only_exact_staging_with_configured_test_mode(self):
-        self.assertTrue(
-            allows_provider_enrollment_preparation(
-                _settings(environment="staging")
-            )
-        )
+        self.assertTrue(allows_provider_enrollment_preparation(_settings(environment="staging")))
 
         denied_settings = (
             _settings(environment="production"),

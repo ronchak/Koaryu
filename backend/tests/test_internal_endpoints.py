@@ -88,12 +88,14 @@ class InternalEndpointTest(unittest.TestCase):
         _settings,
     ):
         service = billing_service_class.return_value
-        service.process_due_enrollment_transitions = AsyncMock(return_value={
-            "claimed": 2,
-            "completed": 1,
-            "reconciliation_required": 1,
-            "failed": 0,
-        })
+        service.process_due_enrollment_transitions = AsyncMock(
+            return_value={
+                "claimed": 2,
+                "completed": 1,
+                "reconciliation_required": 1,
+                "failed": 0,
+            }
+        )
 
         response = self.client.post(
             "/api/v1/internal/billing/enrollment-transitions/process-due?limit=7",
@@ -139,17 +141,19 @@ class InternalEndpointTest(unittest.TestCase):
         _settings,
     ):
         service = account_service_class.return_value
-        service.process_due_deletions = AsyncMock(return_value=AccountDeletionProcessResponse(
-            processed=1,
-            failed=1,
-            failures=[
-                AccountDeletionProcessFailure(
-                    request_id="delete_1",
-                    user_id="user_1",
-                    detail="Auth deletion failed",
-                )
-            ],
-        ))
+        service.process_due_deletions = AsyncMock(
+            return_value=AccountDeletionProcessResponse(
+                processed=1,
+                failed=1,
+                failures=[
+                    AccountDeletionProcessFailure(
+                        request_id="delete_1",
+                        user_id="user_1",
+                        detail="Auth deletion failed",
+                    )
+                ],
+            )
+        )
 
         response = self.client.post(
             "/api/v1/internal/account-deletions/process-due",
@@ -168,10 +172,12 @@ class InternalEndpointTest(unittest.TestCase):
         _settings,
     ):
         service = account_service_class.return_value
-        service.process_due_deletions = AsyncMock(return_value=AccountDeletionProcessResponse(
-            processed=1,
-            completed=1,
-        ))
+        service.process_due_deletions = AsyncMock(
+            return_value=AccountDeletionProcessResponse(
+                processed=1,
+                completed=1,
+            )
+        )
 
         response = self.client.post(
             "/api/v1/internal/account-deletions/process-due",
@@ -393,9 +399,7 @@ class InternalEndpointTest(unittest.TestCase):
             patch(
                 "app.api.v1.endpoints.internal.HttpsAlertDestination.from_settings"
             ) as destination_factory,
-            patch(
-                "app.api.v1.endpoints.internal.OperationalAlertService"
-            ) as service_class,
+            patch("app.api.v1.endpoints.internal.OperationalAlertService") as service_class,
             self.assertRaisesRegex(
                 internal.OperationalAlertDeadlineExceeded,
                 "deadline exceeded",
@@ -446,15 +450,20 @@ class InternalEndpointTest(unittest.TestCase):
                 return result
 
             with (
-                patch("app.api.v1.endpoints.internal.get_settings", return_value=EnabledAlertSettings()),
+                patch(
+                    "app.api.v1.endpoints.internal.get_settings",
+                    return_value=EnabledAlertSettings(),
+                ),
                 patch("app.api.v1.endpoints.internal.HttpsAlertDestination.from_settings"),
                 patch("app.api.v1.endpoints.internal.OperationalAlertService") as service_class,
             ):
                 service_class.return_value.evaluate.side_effect = blocking_evaluate
-                first = asyncio.create_task(internal.evaluate_operational_alerts(
-                    internal_secret=EnabledAlertSettings.OPERATIONAL_ALERT_WORKER_SECRET,
-                    supabase=object(),
-                ))
+                first = asyncio.create_task(
+                    internal.evaluate_operational_alerts(
+                        internal_secret=EnabledAlertSettings.OPERATIONAL_ALERT_WORKER_SECRET,
+                        supabase=object(),
+                    )
+                )
                 try:
                     self.assertTrue(await asyncio.to_thread(started.wait, 1))
                     first.cancel()
@@ -504,7 +513,9 @@ class InternalEndpointTest(unittest.TestCase):
 
         response = self.client.post(
             "/api/v1/internal/operational-alerts/11111111-1111-4111-8111-111111111111/acknowledge",
-            headers={"X-Internal-Secret": EnabledAlertSettings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET},
+            headers={
+                "X-Internal-Secret": EnabledAlertSettings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET
+            },
         )
 
         self.assertEqual(response.status_code, 200)
@@ -562,22 +573,24 @@ class InternalEndpointTest(unittest.TestCase):
     @patch("app.api.v1.endpoints.internal.SupportService")
     def test_support_triage_list_passes_filters(self, support_service_class, _settings):
         service = support_service_class.return_value
-        service.list_triage_tickets = AsyncMock(return_value=[
-            SupportTicketResponse(
-                id="ticket_1",
-                studio_id="studio_1",
-                created_by="user_1",
-                requester_email="user_1@example.com",
-                topic="billing",
-                severity="urgent",
-                subject="Billing failed",
-                details="Payment did not work.",
-                browser_context={},
-                status="open",
-                created_at="2026-05-20T00:00:00+00:00",
-                updated_at="2026-05-20T00:00:00+00:00",
-            )
-        ])
+        service.list_triage_tickets = AsyncMock(
+            return_value=[
+                SupportTicketResponse(
+                    id="ticket_1",
+                    studio_id="studio_1",
+                    created_by="user_1",
+                    requester_email="user_1@example.com",
+                    topic="billing",
+                    severity="urgent",
+                    subject="Billing failed",
+                    details="Payment did not work.",
+                    browser_context={},
+                    status="open",
+                    created_at="2026-05-20T00:00:00+00:00",
+                    updated_at="2026-05-20T00:00:00+00:00",
+                )
+            ]
+        )
 
         response = self.client.get(
             "/api/v1/internal/support/tickets?status=open&severity=urgent&topic=billing&limit=25",
@@ -605,28 +618,36 @@ class InternalEndpointTest(unittest.TestCase):
 
     @patch("app.api.v1.endpoints.internal.get_settings", return_value=FakeSettings())
     @patch("app.api.v1.endpoints.internal.SupportService")
-    def test_support_triage_update_changes_status_and_adds_note(self, support_service_class, _settings):
+    def test_support_triage_update_changes_status_and_adds_note(
+        self, support_service_class, _settings
+    ):
         ticket_id = "11111111-1111-4111-8111-111111111111"
         service = support_service_class.return_value
-        service.triage_ticket = AsyncMock(return_value=SupportTicketResponse(
-            id=ticket_id,
-            studio_id="studio_1",
-            created_by="user_1",
-            requester_email="user_1@example.com",
-            topic="bug_report",
-            severity="high",
-            subject="Import failed",
-            details="CSV import failed.",
-            browser_context={},
-            status="triaging",
-            created_at="2026-05-20T00:00:00+00:00",
-            updated_at="2026-05-20T01:00:00+00:00",
-        ))
+        service.triage_ticket = AsyncMock(
+            return_value=SupportTicketResponse(
+                id=ticket_id,
+                studio_id="studio_1",
+                created_by="user_1",
+                requester_email="user_1@example.com",
+                topic="bug_report",
+                severity="high",
+                subject="Import failed",
+                details="CSV import failed.",
+                browser_context={},
+                status="triaging",
+                created_at="2026-05-20T00:00:00+00:00",
+                updated_at="2026-05-20T01:00:00+00:00",
+            )
+        )
 
         response = self.client.patch(
             f"/api/v1/internal/support/tickets/{ticket_id}",
             headers={"X-Internal-Secret": "support-secret"},
-            json={"status": "triaging", "note": "Looking into this.", "metadata": {"source": "test"}},
+            json={
+                "status": "triaging",
+                "note": "Looking into this.",
+                "metadata": {"source": "test"},
+            },
         )
 
         self.assertEqual(response.status_code, 200)
@@ -638,7 +659,9 @@ class InternalEndpointTest(unittest.TestCase):
 
     @patch("app.api.v1.endpoints.internal.get_settings", return_value=FakeSettings())
     @patch("app.api.v1.endpoints.internal.SupportService")
-    def test_support_triage_update_rejects_malformed_ticket_id(self, support_service_class, _settings):
+    def test_support_triage_update_rejects_malformed_ticket_id(
+        self, support_service_class, _settings
+    ):
         response = self.client.patch(
             "/api/v1/internal/support/tickets/not-a-uuid",
             headers={"X-Internal-Secret": "support-secret"},

@@ -26,15 +26,17 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         )
 
     def test_get_status_repairs_missing_live_periods_once(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "active",
-            "comped": False,
-            "current_period_start": None,
-            "current_period_end": None,
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "active",
+                "comped": False,
+                "current_period_start": None,
+                "current_period_end": None,
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -59,15 +61,17 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         self.assertEqual(response.current_period_end, "1970-01-01T00:03:20+00:00")
 
     def test_get_access_status_repairs_stale_incomplete_subscription_status(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "incomplete",
-            "comped": False,
-            "current_period_start": None,
-            "current_period_end": None,
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "incomplete",
+                "comped": False,
+                "current_period_start": None,
+                "current_period_end": None,
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -93,16 +97,18 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["current_period_end"], "1970-01-01T00:03:20+00:00")
 
     def test_get_access_status_repairs_expired_trialing_state(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "trialing",
-            "comped": False,
-            "trial_end": "1970-01-01T00:05:00+00:00",
-            "current_period_start": "1970-01-01T00:01:40+00:00",
-            "current_period_end": "2999-01-01T00:03:20+00:00",
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "trialing",
+                "comped": False,
+                "trial_end": "1970-01-01T00:05:00+00:00",
+                "current_period_start": "1970-01-01T00:01:40+00:00",
+                "current_period_end": "2999-01-01T00:03:20+00:00",
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -127,16 +133,18 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["status"], "active")
 
     def test_get_status_repairs_trialing_subscription_missing_trial_end(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_subscription_id": "sub_123",
-            "stripe_customer_id": "cus_123",
-            "status": "trialing",
-            "comped": False,
-            "trial_end": None,
-            "current_period_start": "1970-01-01T00:01:40+00:00",
-            "current_period_end": "1970-01-01T00:03:20+00:00",
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_subscription_id": "sub_123",
+                "stripe_customer_id": "cus_123",
+                "status": "trialing",
+                "comped": False,
+                "trial_end": None,
+                "current_period_start": "1970-01-01T00:01:40+00:00",
+                "current_period_end": "1970-01-01T00:03:20+00:00",
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -162,13 +170,15 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         self.assertEqual(response.trial_end, "1970-01-01T00:05:00+00:00")
 
     def test_get_status_repairs_missing_subscription_from_customer(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_customer_id": "cus_123",
-            "stripe_subscription_id": None,
-            "status": "incomplete",
-            "comped": False,
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_customer_id": "cus_123",
+                "stripe_subscription_id": None,
+                "status": "incomplete",
+                "comped": False,
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -178,16 +188,20 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
                 FakeStripeService.calls += 1
                 assert customer_id == "cus_123"
                 return {
-                    "data": [{
-                        "id": "sub_123",
-                        "customer": "cus_123",
-                        "status": "trialing",
-                        "metadata": {"studio_id": "studio_1", "product": "koaryu_core"},
-                        "trial_start": 50,
-                        "trial_end": 300,
-                        "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
-                        "cancel_at_period_end": False,
-                    }]
+                    "data": [
+                        {
+                            "id": "sub_123",
+                            "customer": "cus_123",
+                            "status": "trialing",
+                            "metadata": {"studio_id": "studio_1", "product": "koaryu_core"},
+                            "trial_start": 50,
+                            "trial_end": 300,
+                            "items": {
+                                "data": [{"current_period_start": 100, "current_period_end": 200}]
+                            },
+                            "cancel_at_period_end": False,
+                        }
+                    ]
                 }
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
@@ -200,36 +214,42 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
 
     def test_missing_subscription_repair_accepts_exact_tokenized_checkout(self):
         token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_customer_id": "cus_123",
-            "stripe_subscription_id": None,
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {
-                "core_checkout_epoch": 1,
-                "core_checkout_session": {
-                    "state": "published",
-                    "token": token,
-                    "epoch": 1,
-                    "id": "cs_exact",
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_customer_id": "cus_123",
+                "stripe_subscription_id": None,
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {
+                    "core_checkout_epoch": 1,
+                    "core_checkout_session": {
+                        "state": "published",
+                        "token": token,
+                        "epoch": 1,
+                        "id": "cs_exact",
+                    },
                 },
-            },
-        }]
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
             def list_customer_subscriptions(self, _customer_id):
-                return {"data": [{
-                    "id": "sub_exact",
-                    "customer": "cus_123",
-                    "status": "trialing",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
-                    },
-                }]}
+                return {
+                    "data": [
+                        {
+                            "id": "sub_exact",
+                            "customer": "cus_123",
+                            "status": "trialing",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
+                    ]
+                }
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
             response = asyncio.run(service.get_status("studio_1"))
@@ -243,29 +263,35 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
 
     def test_missing_subscription_repair_rejects_and_cancels_stale_tokenized_checkout(self):
         stale_token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_customer_id": "cus_123",
-            "stripe_subscription_id": None,
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {"core_checkout_epoch": 2},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_customer_id": "cus_123",
+                "stripe_subscription_id": None,
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {"core_checkout_epoch": 2},
+            }
+        ]
         service = self.service(rows)
         canceled = []
 
         class FakeStripeService:
             def list_customer_subscriptions(self, _customer_id):
-                return {"data": [{
-                    "id": "sub_stale",
-                    "customer": "cus_123",
-                    "status": "active",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": stale_token,
-                        "core_checkout_epoch": "1",
-                    },
-                }]}
+                return {
+                    "data": [
+                        {
+                            "id": "sub_stale",
+                            "customer": "cus_123",
+                            "status": "active",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": stale_token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
+                    ]
+                }
 
             def cancel_core_subscription(self, **payload):
                 canceled.append(payload["subscription_id"])
@@ -287,37 +313,43 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
             "id": "cs_old",
             "accepted_subscription_id": "sub_old",
         }
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_customer_id": "cus_123",
-            "stripe_subscription_id": None,
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {
-                "core_checkout_epoch": 2,
-                "core_checkout_acceptances": {"sub_old": archived},
-                "core_checkout_session": {
-                    "state": "published",
-                    "token": new_token,
-                    "epoch": 2,
-                    "id": "cs_new",
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_customer_id": "cus_123",
+                "stripe_subscription_id": None,
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {
+                    "core_checkout_epoch": 2,
+                    "core_checkout_acceptances": {"sub_old": archived},
+                    "core_checkout_session": {
+                        "state": "published",
+                        "token": new_token,
+                        "epoch": 2,
+                        "id": "cs_new",
+                    },
                 },
-            },
-        }]
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
             def list_customer_subscriptions(self, _customer_id):
-                return {"data": [{
-                    "id": "sub_old",
-                    "customer": "cus_123",
-                    "status": "active",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": old_token,
-                        "core_checkout_epoch": "1",
-                    },
-                }]}
+                return {
+                    "data": [
+                        {
+                            "id": "sub_old",
+                            "customer": "cus_123",
+                            "status": "active",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": old_token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
+                    ]
+                }
 
             def cancel_core_subscription(self, **_payload):
                 raise AssertionError("historical accepted subscriptions are acknowledged only")
@@ -330,13 +362,15 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["metadata"]["core_checkout_session"]["id"], "cs_new")
 
     def test_get_status_does_not_repair_comped_customer(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_customer_id": "cus_123",
-            "stripe_subscription_id": None,
-            "status": "comped",
-            "comped": True,
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_customer_id": "cus_123",
+                "stripe_subscription_id": None,
+                "status": "comped",
+                "comped": True,
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
@@ -353,24 +387,24 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         self.assertEqual(response.status, "comped")
 
     def test_admin_status_leaves_broken_comped_provider_snapshot_untouched(self):
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_customer_id": "cus_local",
-            "stripe_subscription_id": "sub_local",
-            "status": "active",
-            "comped": True,
-            "trial_end": None,
-            "current_period_start": None,
-            "current_period_end": None,
-            "cancel_at_period_end": False,
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_customer_id": "cus_local",
+                "stripe_subscription_id": "sub_local",
+                "status": "active",
+                "comped": True,
+                "trial_end": None,
+                "current_period_start": None,
+                "current_period_end": None,
+                "cancel_at_period_end": False,
+            }
+        ]
         service = self.service(rows)
 
         class ProviderMustNotBeConsulted:
             def retrieve_subscription(self, subscription_id):
-                raise AssertionError(
-                    "Admin refresh must not reconcile a comped provider snapshot"
-                )
+                raise AssertionError("Admin refresh must not reconcile a comped provider snapshot")
 
         with patch(
             "app.services.platform_billing_service.StripeService",
@@ -392,11 +426,13 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         alone, so with the switch off the UI still offered checkout while
         StripeMutationPolicy rejected the operation.
         """
-        rows = [{
-            "studio_id": "studio_1",
-            "status": "incomplete",
-            "comped": False,
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "status": "incomplete",
+                "comped": False,
+            }
+        ]
         service = self.service(rows)
 
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
@@ -414,35 +450,41 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         still-live rejected subscription as the studio's active one.
         """
         rejected_token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_customer_id": "cus_123",
-            "stripe_subscription_id": None,
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {
-                "core_checkout_rejections": {
-                    "sub_rejected": {
-                        "subscription_id": "sub_rejected",
-                        "reason": "invalid_paid_subscription_event",
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_customer_id": "cus_123",
+                "stripe_subscription_id": None,
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {
+                    "core_checkout_rejections": {
+                        "sub_rejected": {
+                            "subscription_id": "sub_rejected",
+                            "reason": "invalid_paid_subscription_event",
+                        },
                     },
                 },
-            },
-        }]
+            }
+        ]
         service = self.service(rows)
 
         class FakeStripeService:
             def list_customer_subscriptions(self, _customer_id):
-                return {"data": [{
-                    "id": "sub_rejected",
-                    "customer": "cus_123",
-                    "status": "active",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": rejected_token,
-                        "core_checkout_epoch": "1",
-                    },
-                }]}
+                return {
+                    "data": [
+                        {
+                            "id": "sub_rejected",
+                            "customer": "cus_123",
+                            "status": "active",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": rejected_token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
+                    ]
+                }
 
             def cancel_core_subscription(self, **_payload):
                 pass
@@ -451,9 +493,7 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         # exact state the durable rejection exists for: a transient cancel
         # failure left the subscription live, and nothing in provider or
         # acceptance state still says it was rejected.
-        service.supabase._rpc_accept_core_checkout_subscription_atomic = (
-            lambda _params: "accepted"
-        )
+        service.supabase._rpc_accept_core_checkout_subscription_atomic = lambda _params: "accepted"
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
             response = asyncio.run(service.get_status("studio_1"))
@@ -465,14 +505,16 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
     def test_terminal_delete_clears_a_concurrently_projected_rejection(self):
         """The deleted event is the last chance to undo a projected rejection."""
         token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "stripe_customer_id": "cus_123",
-            "stripe_subscription_id": "sub_rejected",
-            "status": "active",
-            "comped": False,
-            "metadata": {"core_checkout_epoch": 2},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "stripe_customer_id": "cus_123",
+                "stripe_subscription_id": "sub_rejected",
+                "status": "active",
+                "comped": False,
+                "metadata": {"core_checkout_epoch": 2},
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
 
@@ -481,20 +523,24 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
                 raise AssertionError("a deleted subscription must not be cancelled again")
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "created": 100,
-                "type": "customer.subscription.deleted",
-                "data": {"object": {
-                    "id": "sub_rejected",
-                    "customer": "cus_123",
-                    "status": "canceled",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
+            service.project_subscription_event(
+                {
+                    "created": 100,
+                    "type": "customer.subscription.deleted",
+                    "data": {
+                        "object": {
+                            "id": "sub_rejected",
+                            "customer": "cus_123",
+                            "status": "canceled",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
                     },
-                }},
-            })
+                }
+            )
 
         self.assertIsNone(rows[0]["stripe_subscription_id"])
         self.assertEqual(rows[0]["status"], "incomplete")
@@ -502,12 +548,14 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
     def test_rejection_is_recorded_even_when_no_compensation_is_owed(self):
         """A trialing rejection owes no refund but must still be durable."""
         token = "00000000-0000-4000-8000-000000000001"
-        rows = [{
-            "studio_id": "studio_1",
-            "status": "incomplete",
-            "comped": False,
-            "metadata": {"core_checkout_epoch": 2},
-        }]
+        rows = [
+            {
+                "studio_id": "studio_1",
+                "status": "incomplete",
+                "comped": False,
+                "metadata": {"core_checkout_epoch": 2},
+            }
+        ]
         service = self.service(rows)
         service.settings.CORE_SELF_CHECKOUT_ENABLED = True
 
@@ -516,20 +564,24 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
                 pass
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "created": 100,
-                "type": "customer.subscription.updated",
-                "data": {"object": {
-                    "id": "sub_trial_rejected",
-                    "customer": "cus_123",
-                    "status": "trialing",
-                    "metadata": {
-                        "studio_id": "studio_1",
-                        "core_checkout_reservation_token": token,
-                        "core_checkout_epoch": "1",
+            service.project_subscription_event(
+                {
+                    "created": 100,
+                    "type": "customer.subscription.updated",
+                    "data": {
+                        "object": {
+                            "id": "sub_trial_rejected",
+                            "customer": "cus_123",
+                            "status": "trialing",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "core_checkout_reservation_token": token,
+                                "core_checkout_epoch": "1",
+                            },
+                        }
                     },
-                }},
-            })
+                }
+            )
 
         metadata = rows[0]["metadata"]
         self.assertIn("sub_trial_rejected", metadata["core_checkout_rejections"])

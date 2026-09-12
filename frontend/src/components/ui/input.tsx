@@ -7,11 +7,28 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, className = "", id, "aria-describedby": ariaDescribedBy, "aria-invalid": ariaInvalid, ...props }, ref) => {
+  (
+    {
+      label,
+      error,
+      hint,
+      className = "",
+      id,
+      "aria-describedby": ariaDescribedBy,
+      "aria-invalid": ariaInvalid,
+      ...props
+    },
+    ref,
+  ) => {
     const generatedId = useId();
     const inputId =
       id ||
-      `${label?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "input"}-${generatedId.replace(/:/g, "")}`;
+      `${
+        label
+          ?.toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || "input"
+      }-${generatedId.replace(/:/g, "")}`;
     const errorId = error ? `${inputId}-error` : undefined;
     const hintId = hint && !error ? `${inputId}-hint` : undefined;
     const describedBy = [ariaDescribedBy, errorId, hintId].filter(Boolean).join(" ") || undefined;
@@ -19,10 +36,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="flex flex-col gap-1.5">
         {label && (
-          <label
-            htmlFor={inputId}
-            className="text-sm text-text-secondary font-medium"
-          >
+          <label htmlFor={inputId} className="text-sm text-text-secondary font-medium">
             {label}
           </label>
         )}
@@ -45,14 +59,18 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           {...props}
         />
         {error && (
-          <p id={errorId} className="text-xs text-danger">{error}</p>
+          <p id={errorId} className="text-xs text-danger">
+            {error}
+          </p>
         )}
         {hint && !error && (
-          <p id={hintId} className="text-xs text-muted">{hint}</p>
+          <p id={hintId} className="text-xs text-muted">
+            {hint}
+          </p>
         )}
       </div>
     );
-  }
+  },
 );
 
 Input.displayName = "Input";

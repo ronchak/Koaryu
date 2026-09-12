@@ -58,16 +58,20 @@ class StudentCrudActions:
         student_dict["studio_id"] = studio_id
         student_dict = self.prepare_student_write(student_dict, for_creation=True)
 
-        result = execute_required_rpc(self.supabase, "write_student_profile_v2_atomic", {
-            "p_student_id": student_id,
-            "p_studio_id": studio_id,
-            "p_actor_id": actor_id,
-            "p_student": student_dict,
-            "p_program_ids": program_ids,
-            "p_guardians": [guardian.model_dump() for guardian in guardians_data],
-            "p_replace_programs": True,
-            "p_audit_action": "student.created",
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "write_student_profile_v2_atomic",
+            {
+                "p_student_id": student_id,
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_student": student_dict,
+                "p_program_ids": program_ids,
+                "p_guardians": [guardian.model_dump() for guardian in guardians_data],
+                "p_replace_programs": True,
+                "p_audit_action": "student.created",
+            },
+        )
         payload = first_rpc_row(result)
         if not payload or not isinstance(payload.get("result_student"), dict):
             raise HTTPException(status_code=500, detail="Failed to create student")
@@ -112,16 +116,20 @@ class StudentCrudActions:
 
         update_dict = self.prepare_student_write(update_dict, for_creation=False)
         try:
-            result = execute_required_rpc(self.supabase, "write_student_profile_v2_atomic", {
-                "p_student_id": student_id,
-                "p_studio_id": studio_id,
-                "p_actor_id": actor_id,
-                "p_student": update_dict,
-                "p_program_ids": program_ids,
-                "p_guardians": [],
-                "p_replace_programs": program_ids is not None,
-                "p_audit_action": "student.updated",
-            })
+            result = execute_required_rpc(
+                self.supabase,
+                "write_student_profile_v2_atomic",
+                {
+                    "p_student_id": student_id,
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_student": update_dict,
+                    "p_program_ids": program_ids,
+                    "p_guardians": [],
+                    "p_replace_programs": program_ids is not None,
+                    "p_audit_action": "student.updated",
+                },
+            )
         except PostgrestAPIError as exc:
             message = (getattr(exc, "message", None) or str(exc)).lower()
             if getattr(exc, "code", None) == "P0001" and (
@@ -139,8 +147,7 @@ class StudentCrudActions:
     def _write_response(self, payload: dict) -> StudentResponse:
         student = payload["result_student"]
         guardians = [
-            GuardianResponse.model_validate(row)
-            for row in payload.get("result_guardians") or []
+            GuardianResponse.model_validate(row) for row in payload.get("result_guardians") or []
         ]
         memberships = [
             StudentProgramMembershipResponse.model_validate(row)
@@ -161,13 +168,15 @@ class StudentCrudActions:
             photo_url=photo_url,
         )
 
-    async def soft_delete_student(
-        self, student_id: str, studio_id: str, actor_id: str
-    ) -> None:
-        result = execute_required_rpc(self.supabase, "soft_delete_student_atomic", {
-            "p_student_id": student_id,
-            "p_studio_id": studio_id,
-            "p_actor_id": actor_id,
-        })
+    async def soft_delete_student(self, student_id: str, studio_id: str, actor_id: str) -> None:
+        result = execute_required_rpc(
+            self.supabase,
+            "soft_delete_student_atomic",
+            {
+                "p_student_id": student_id,
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+            },
+        )
         if not result.data:
             raise HTTPException(status_code=404, detail="Student not found")

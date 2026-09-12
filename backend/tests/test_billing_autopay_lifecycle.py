@@ -29,30 +29,36 @@ from tests.billing_lifecycle_helpers import (
 
 
 def _operation_conflict() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "23505",
-        "message": "billing_provider_operation_request_conflict",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "23505",
+            "message": "billing_provider_operation_request_conflict",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 def _setup_request_not_found() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "P0002",
-        "message": "billing_payer_setup_request_not_found",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "P0002",
+            "message": "billing_payer_setup_request_not_found",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 def _autopay_disable_pending() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "55000",
-        "message": "billing_payer_autopay_disable_setup_pending",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "55000",
+            "message": "billing_payer_autopay_disable_setup_pending",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 class _AutopayOperationSupabase(_FakeSupabase):
@@ -118,14 +124,14 @@ class _AutopayOperationSupabase(_FakeSupabase):
         ):
             if self.setup_request is not None and not self.setup_request.get("superseded_at"):
                 self.setup_request["superseded_at"] = "2026-08-26T12:27:00+00:00"
-            self.closed_operations.append({
-                "operation": dict(self.operation),
-                "setup_request": (
-                    dict(self.setup_request)
-                    if self.setup_request is not None
-                    else None
-                ),
-            })
+            self.closed_operations.append(
+                {
+                    "operation": dict(self.operation),
+                    "setup_request": (
+                        dict(self.setup_request) if self.setup_request is not None else None
+                    ),
+                }
+            )
             self.operation = None
             self.setup_request = None
             self.consent = None
@@ -160,16 +166,13 @@ class _AutopayOperationSupabase(_FakeSupabase):
         if self.operation["revision"] != params["p_expected_revision"]:
             raise AssertionError("stale operation revision")
         self.operation["state"] = params["p_to_state"]
-        self.operation["provider_object_id"] = (
-            params.get("p_provider_object_id") or self.operation.get("provider_object_id")
-        )
-        self.operation["provider_secondary_object_id"] = (
-            params.get("p_provider_secondary_object_id")
-            or self.operation.get("provider_secondary_object_id")
-        )
-        self.operation["reconciliation_reason_code"] = params.get(
-            "p_reconciliation_reason_code"
-        )
+        self.operation["provider_object_id"] = params.get(
+            "p_provider_object_id"
+        ) or self.operation.get("provider_object_id")
+        self.operation["provider_secondary_object_id"] = params.get(
+            "p_provider_secondary_object_id"
+        ) or self.operation.get("provider_secondary_object_id")
+        self.operation["reconciliation_reason_code"] = params.get("p_reconciliation_reason_code")
         self.operation["error_code"] = params.get("p_error_code")
         self.operation["error_summary"] = params.get("p_error_summary")
         if params["p_to_state"] == "provider_request_in_flight":
@@ -211,9 +214,7 @@ class _AutopayOperationSupabase(_FakeSupabase):
         if self.fail_bind:
             raise RuntimeError("database projection failed")
         assert self.setup_request is not None
-        self.setup_request["stripe_checkout_session_id"] = params[
-            "p_stripe_checkout_session_id"
-        ]
+        self.setup_request["stripe_checkout_session_id"] = params["p_stripe_checkout_session_id"]
         self.setup_request["revision"] += 1
         return {"outcome": "bound", "setup_request": dict(self.setup_request)}
 
@@ -305,8 +306,7 @@ class _AutopayOperationSupabase(_FakeSupabase):
         assert self.setup_request is not None
         assert self.consent is not None
         payer = next(
-            row for row in self.tables["billing_payers"]
-            if row["id"] == params["p_payer_id"]
+            row for row in self.tables["billing_payers"] if row["id"] == params["p_payer_id"]
         )
         assert self.operation["state"] == "projected"
         assert payer["autopay_status"] == "enabled"
@@ -342,9 +342,9 @@ class _AutopayOperationSupabase(_FakeSupabase):
     def _rpc_disable_billing_payer_autopay_v1(self, params: dict) -> dict:
         self.disable_calls.append(dict(params))
         payer = next(
-            row for row in self.tables["billing_payers"]
-            if row["id"] == params["p_payer_id"]
-            and row["studio_id"] == params["p_studio_id"]
+            row
+            for row in self.tables["billing_payers"]
+            if row["id"] == params["p_payer_id"] and row["studio_id"] == params["p_studio_id"]
         )
         if (
             self.setup_request
@@ -352,7 +352,8 @@ class _AutopayOperationSupabase(_FakeSupabase):
             and not self.setup_request.get("superseded_at")
             and not self.setup_request.get("completed_at")
             and self.operation
-            and self.operation.get("state") in {
+            and self.operation.get("state")
+            in {
                 "started",
                 "provider_request_in_flight",
                 "provider_succeeded",
@@ -370,17 +371,21 @@ class _AutopayOperationSupabase(_FakeSupabase):
             and not self.consent.get("superseded_at")
         ):
             revoked_consent_id = self.consent["id"]
-            self.consent.update({
-                "revoked_at": params["p_disabled_at"],
-                "revoked_by": params["p_actor_id"],
-                "revocation_reason_code": params["p_reason_code"],
-            })
+            self.consent.update(
+                {
+                    "revoked_at": params["p_disabled_at"],
+                    "revoked_by": params["p_actor_id"],
+                    "revocation_reason_code": params["p_reason_code"],
+                }
+            )
             if self.setup_request:
                 self.setup_request["revoked_at"] = params["p_disabled_at"]
-        payer.update({
-            "autopay_status": "disabled",
-            "autopay_disabled_at": params["p_disabled_at"],
-        })
+        payer.update(
+            {
+                "autopay_status": "disabled",
+                "autopay_disabled_at": params["p_disabled_at"],
+            }
+        )
         return {
             "outcome": "disabled",
             "payer": dict(payer),
@@ -396,22 +401,19 @@ class _AutopayOperationSupabase(_FakeSupabase):
             "completed",
             "reconciliation_required",
         }
-        assert self.operation["provider_object_id"] == params[
-            "p_stripe_checkout_session_id"
-        ]
+        assert self.operation["provider_object_id"] == params["p_stripe_checkout_session_id"]
         if self.setup_request.get("stripe_checkout_session_id") is None:
             self.setup_request["stripe_checkout_session_id"] = params[
                 "p_stripe_checkout_session_id"
             ]
             self.setup_request["revision"] += 1
         else:
-            assert self.setup_request["stripe_checkout_session_id"] == params[
-                "p_stripe_checkout_session_id"
-            ]
+            assert (
+                self.setup_request["stripe_checkout_session_id"]
+                == params["p_stripe_checkout_session_id"]
+            )
         self.operation["state"] = "reconciliation_required"
-        self.operation["reconciliation_reason_code"] = params[
-            "p_reconciliation_reason_code"
-        ]
+        self.operation["reconciliation_reason_code"] = params["p_reconciliation_reason_code"]
         self.operation["revision"] += 1
         return {"outcome": "transitioned", "operation": dict(self.operation)}
 
@@ -425,27 +427,27 @@ class _AutopayOperationSupabase(_FakeSupabase):
         assert self.setup_request["payer_id"] == params["p_payer_id"]
         assert self.operation["caller_request_key"] == params["p_caller_request_key"]
         assert self.operation["request_sha256"] == params["p_request_sha256"]
-        assert self.operation["stripe_connected_account_id"] == params[
-            "p_stripe_connected_account_id"
-        ]
-        assert self.operation["connect_account_generation"] == params[
-            "p_connect_account_generation"
-        ]
+        assert (
+            self.operation["stripe_connected_account_id"] == params["p_stripe_connected_account_id"]
+        )
+        assert (
+            self.operation["connect_account_generation"] == params["p_connect_account_generation"]
+        )
         assert self.operation["revision"] == params["p_expected_operation_revision"]
         assert self.setup_request["revision"] == params["p_expected_setup_revision"]
         recovery_lifetime_rejection = (
             self.operation["state"] == "recovery_authorized"
-            and self.operation.get("recovery_outcome")
-            == "provider_no_object_safe_to_retry"
+            and self.operation.get("recovery_outcome") == "provider_no_object_safe_to_retry"
         )
         recovered_policy_rejection = (
             self.operation["state"] == "provider_request_in_flight"
             and self.operation["provider_request_attempt_count"] == 2
-            and self.operation.get("recovery_outcome")
-            == "provider_no_object_safe_to_retry"
+            and self.operation.get("recovery_outcome") == "provider_no_object_safe_to_retry"
             and bool(self.operation.get("recovery_proof_sha256"))
         )
-        assert self.operation["state"] == "provider_request_in_flight" or recovery_lifetime_rejection
+        assert (
+            self.operation["state"] == "provider_request_in_flight" or recovery_lifetime_rejection
+        )
         assert self.operation["provider_request_attempt_count"] == (
             2 if recovered_policy_rejection else 1
         )
@@ -466,18 +468,22 @@ class _AutopayOperationSupabase(_FakeSupabase):
             else "provider_mutation_blocked"
         )
         proof = self.operation.get("recovery_proof_sha256") if recovery_lifetime_rejection else None
-        self.setup_request.update({
-            "superseded_at": "2026-08-26T12:21:00+00:00",
-            "closed_at": "2026-08-26T12:21:00+00:00",
-            "close_reason_code": reason,
-            "provider_read_proof_sha256": proof,
-            "revision": self.setup_request["revision"] + 1,
-        })
-        self.operation.update({
-            "state": "definitive_rejected",
-            "error_code": reason,
-            "revision": self.operation["revision"] + 1,
-        })
+        self.setup_request.update(
+            {
+                "superseded_at": "2026-08-26T12:21:00+00:00",
+                "closed_at": "2026-08-26T12:21:00+00:00",
+                "close_reason_code": reason,
+                "provider_read_proof_sha256": proof,
+                "revision": self.setup_request["revision"] + 1,
+            }
+        )
+        self.operation.update(
+            {
+                "state": "definitive_rejected",
+                "error_code": reason,
+                "revision": self.operation["revision"] + 1,
+            }
+        )
         return {
             "outcome": "rejected",
             "setup_request": dict(self.setup_request),
@@ -498,21 +504,18 @@ class _AutopayOperationSupabase(_FakeSupabase):
         assert re.fullmatch(r"[0-9a-f]{64}", params["p_provider_read_proof_sha256"])
         assert self.operation["id"] == params["p_operation_id"]
         assert self.setup_request["id"] == params["p_setup_request_id"]
-        assert self.operation["provider_object_id"] == params[
-            "p_stripe_checkout_session_id"
-        ]
-        assert self.setup_request["stripe_checkout_session_id"] == params[
-            "p_stripe_checkout_session_id"
-        ]
+        assert self.operation["provider_object_id"] == params["p_stripe_checkout_session_id"]
+        assert (
+            self.setup_request["stripe_checkout_session_id"]
+            == params["p_stripe_checkout_session_id"]
+        )
         self.close_calls.append(dict(params))
         self.operation["state"] = "definitive_rejected"
         self.operation["error_code"] = "payer_setup_session_closed"
         self.operation["error_summary"] = params["p_close_reason_code"]
         self.operation["revision"] += 1
         self.setup_request["close_reason_code"] = params["p_close_reason_code"]
-        self.setup_request["provider_read_proof_sha256"] = params[
-            "p_provider_read_proof_sha256"
-        ]
+        self.setup_request["provider_read_proof_sha256"] = params["p_provider_read_proof_sha256"]
         self.setup_request["closed_at"] = "2026-08-26T12:31:00+00:00"
         self.setup_request["superseded_at"] = "2026-08-26T12:31:00+00:00"
         self.setup_request["revision"] += 1
@@ -536,23 +539,27 @@ def _autopay_tables(*, saved_card: bool = False) -> dict[str, list[dict]]:
         "metadata": {},
     }
     if saved_card:
-        payer.update({
-            "default_payment_method_id": "pm_saved",
-            "default_payment_method_brand": "visa",
-            "default_payment_method_last4": "4242",
-        })
+        payer.update(
+            {
+                "default_payment_method_id": "pm_saved",
+                "default_payment_method_brand": "visa",
+                "default_payment_method_last4": "4242",
+            }
+        )
     return {
-        "studio_payment_accounts": [{
-            "studio_id": "studio_1",
-            "stripe_connected_account_id": "acct_1",
-            "status": "charges_enabled",
-            "charges_enabled": True,
-            "payouts_enabled": True,
-            "details_submitted": True,
-            "requirements_due": [],
-            "platform_fee_bps": 50,
-            "metadata": {"connect_account_generation": 1},
-        }],
+        "studio_payment_accounts": [
+            {
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {"connect_account_generation": 1},
+            }
+        ],
         "billing_payers": [payer],
         "audit_logs": [],
     }
@@ -598,17 +605,23 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def _enabled_payer_replacement_setup(self):
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         tables = _autopay_tables(saved_card=True)
         payer = tables["billing_payers"][0]
-        payer.update({
-            "autopay_status": "enabled",
-            "autopay_authorized_at": "2026-08-26T12:06:00+00:00",
-            "autopay_terms_accepted_at": "2026-08-26T12:05:00+00:00",
-        })
+        payer.update(
+            {
+                "autopay_status": "enabled",
+                "autopay_authorized_at": "2026-08-26T12:06:00+00:00",
+                "autopay_terms_accepted_at": "2026-08-26T12:05:00+00:00",
+            }
+        )
         database = _AutopayOperationSupabase(tables)
         database.prior_consent = {
             "id": "00000000-0000-4000-8000-000000008099",
@@ -637,10 +650,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def _prepared_consent_setup(self):
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         service.supabase = database
         _FakeStripeService.retrieve_account_response = {
@@ -651,13 +668,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             "requirements": {"currently_due": []},
         }
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "autopay-key",
-            ))
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                )
+            )
         session = {
             "id": "cs_setup_1",
             "status": "complete",
@@ -713,53 +732,64 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(captured["expires_at"], 1_800_000_000)
         self.assertEqual(captured["stripe_account"], "acct_1")
         self.assertEqual(captured["idempotency_key"], "autopay-operation-key")
+
     def test_successful_invoice_payment_does_not_replace_payer_consent_method(self):
         service = self.service()
-        service.supabase = _FakeSupabase({
-            "billing_payments": [],
-            "billing_invoices": [{
-                "id": "invoice_1",
-                "studio_id": "studio_1",
-                "payer_id": "payer_1",
-                "stripe_invoice_id": "in_1",
-                "stripe_account_id": "acct_1",
-                "stripe_customer_id": "cus_1",
-                "status": "open",
-                "amount_due_cents": 200,
-                "amount_paid_cents": 0,
-                "amount_remaining_cents": 200,
-                "currency": "usd",
-                "application_fee_amount_cents": 1,
-                "created_at": "2026-05-18T19:00:00Z",
-            }],
-            "billing_disputes": [],
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "autopay_status": "enabled",
-                "default_payment_method_id": "pm_consented",
-                "default_payment_method_brand": "visa",
-                "default_payment_method_last4": "4242",
-            }],
-        })
+        service.supabase = _FakeSupabase(
+            {
+                "billing_payments": [],
+                "billing_invoices": [
+                    {
+                        "id": "invoice_1",
+                        "studio_id": "studio_1",
+                        "payer_id": "payer_1",
+                        "stripe_invoice_id": "in_1",
+                        "stripe_account_id": "acct_1",
+                        "stripe_customer_id": "cus_1",
+                        "status": "open",
+                        "amount_due_cents": 200,
+                        "amount_paid_cents": 0,
+                        "amount_remaining_cents": 200,
+                        "currency": "usd",
+                        "application_fee_amount_cents": 1,
+                        "created_at": "2026-05-18T19:00:00Z",
+                    }
+                ],
+                "billing_disputes": [],
+                "billing_payers": [
+                    {
+                        "id": "payer_1",
+                        "studio_id": "studio_1",
+                        "autopay_status": "enabled",
+                        "default_payment_method_id": "pm_consented",
+                        "default_payment_method_brand": "visa",
+                        "default_payment_method_last4": "4242",
+                    }
+                ],
+            }
+        )
 
-        service._project_payment_intent({
-            "id": "pi_1",
-            "status": "succeeded",
-            "amount": 200,
-            "amount_received": 200,
-            "application_fee_amount": 1,
-            "currency": "usd",
-            "customer": "cus_1",
-            "invoice": "in_1",
-            "latest_charge": "ch_1",
-            "payment_method": {
-                "id": "pm_1",
-                "type": "card",
-                "card": {"brand": "visa", "last4": "2167"},
+        service._project_payment_intent(
+            {
+                "id": "pi_1",
+                "status": "succeeded",
+                "amount": 200,
+                "amount_received": 200,
+                "application_fee_amount": 1,
+                "currency": "usd",
+                "customer": "cus_1",
+                "invoice": "in_1",
+                "latest_charge": "ch_1",
+                "payment_method": {
+                    "id": "pm_1",
+                    "type": "card",
+                    "card": {"brand": "visa", "last4": "2167"},
+                },
+                "metadata": {},
             },
-            "metadata": {},
-        }, "acct_1", "payment_intent.succeeded")
+            "acct_1",
+            "payment_intent.succeeded",
+        )
 
         payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payer["default_payment_method_id"], "pm_consented")
@@ -791,20 +821,19 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         }
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            link = asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "replacement-key",
-            ))
+            link = asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "replacement-key",
+                )
+            )
 
         self.assertEqual(link.url, "https://checkout.stripe.test/setup")
         self.assertEqual(
-            {
-                key: payer.get(key)
-                for key in prior_projection
-            },
+            {key: payer.get(key) for key in prior_projection},
             prior_projection,
         )
         self.assertIsNone(database.prior_consent["superseded_at"])
@@ -821,13 +850,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             with self.assertRaises(HTTPException) as blocked:
-                asyncio.run(service.create_autopay_setup_link(
-                    "payer_1",
-                    BillingPayerAutopaySetupRequest(),
-                    "studio_1",
-                    "user_1",
-                    "replacement-consent-read-unavailable",
-                ))
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "replacement-consent-read-unavailable",
+                    )
+                )
 
         self.assertEqual(blocked.exception.status_code, 503)
         self.assertIn("Existing autopay consent could not be verified", blocked.exception.detail)
@@ -842,13 +873,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         payer = database.tables["billing_payers"][0]
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "replacement-key",
-            ))
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "replacement-key",
+                )
+            )
 
         self.assertEqual(payer["autopay_status"], "enabled")
         self.assertEqual(payer["default_payment_method_id"], "pm_saved")
@@ -909,10 +942,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         PolicyBlockedStripeService.reset()
         PolicyBlockedStripeService.blocked = True
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         service.supabase = database
         PolicyBlockedStripeService.retrieve_account_response = {
@@ -939,13 +976,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             ),
             self.assertRaises(StripeMutationBlocked) as blocked,
         ):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "blocked-key",
-            ))
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "blocked-key",
+                )
+            )
 
         self.assertEqual(blocked.exception.status_code, 503)
         self.assertEqual(database.operation["state"], "definitive_rejected")
@@ -971,13 +1010,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             ),
             self.assertRaises(HTTPException) as same_key,
         ):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "blocked-key",
-            ))
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "blocked-key",
+                )
+            )
 
         self.assertEqual(same_key.exception.status_code, 409)
         PolicyBlockedStripeService.blocked = False
@@ -986,13 +1027,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             "app.services.billing_service.StripeService",
             PolicyBlockedStripeService,
         ):
-            recovered = asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "fresh-key",
-            ))
+            recovered = asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "fresh-key",
+                )
+            )
 
         self.assertEqual(recovered.url, "https://checkout.stripe.test/setup")
         self.assertEqual(len(PolicyBlockedStripeService.setup_calls), 1)
@@ -1004,20 +1047,26 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_autopay_setup_rejects_missing_or_malformed_idempotency_key(self):
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
 
         for value in ("", "   ", "é" * 128):
             with self.subTest(value=value), self.assertRaises(HTTPException) as context:
-                asyncio.run(service.create_autopay_setup_link(
-                    "payer_1",
-                    BillingPayerAutopaySetupRequest(),
-                    "studio_1",
-                    "user_1",
-                    value,
-                ))
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        value,
+                    )
+                )
 
             self.assertEqual(context.exception.status_code, 400)
             self.assertIn("Idempotency-Key", context.exception.detail)
@@ -1030,10 +1079,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 return value if tz is None else value.astimezone(tz)
 
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         service.supabase = _AutopayOperationSupabase(_autopay_tables(saved_card=True))
         service.supabase.operation_started_at = "2026-08-26T12:00:00+00:00"
         _FakeStripeService.retrieve_account_response = {
@@ -1049,15 +1102,17 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             patch("app.services.billing_service.StripeService", _FakeStripeService),
             patch("app.services.billing_autopay.datetime", AtTwelveTwenty),
         ):
-            link = asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(
-                    return_url="https://app.koaryu.test/billing",
-                ),
-                "studio_1",
-                "user_1",
-                "autopay-key",
-            ))
+            link = asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(
+                        return_url="https://app.koaryu.test/billing",
+                    ),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                )
+            )
 
         self.assertEqual(link.url, "https://checkout.stripe.test/setup")
         payer = service.supabase.tables["billing_payers"][0]
@@ -1094,10 +1149,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_lost_response_same_key_replays_without_second_stripe_mutation(self):
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         service.supabase = database
         _FakeStripeService.retrieve_account_response = {
@@ -1112,29 +1171,35 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         )
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            first = asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                request,
-                "studio_1",
-                "user_1",
-                "autopay-key",
-            ))
-            replay = asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                request,
-                "studio_1",
-                "user_1",
-                "autopay-key",
-            ))
-            database.operation["state"] = "completed"
-            with self.assertRaises(HTTPException) as completed:
-                asyncio.run(service.create_autopay_setup_link(
+            first = asyncio.run(
+                service.create_autopay_setup_link(
                     "payer_1",
                     request,
                     "studio_1",
                     "user_1",
                     "autopay-key",
-                ))
+                )
+            )
+            replay = asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    request,
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                )
+            )
+            database.operation["state"] = "completed"
+            with self.assertRaises(HTTPException) as completed:
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        request,
+                        "studio_1",
+                        "user_1",
+                        "autopay-key",
+                    )
+                )
 
         self.assertEqual(first.url, "https://checkout.stripe.test/setup")
         self.assertEqual(replay.url, first.url)
@@ -1153,10 +1218,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 return super().retrieve_connected_checkout_session(**payload)
 
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         service.supabase = database
         CountingStripeService.reset()
@@ -1184,24 +1253,40 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             patch("app.services.billing_service.StripeService", CountingStripeService),
             self.assertRaisesRegex(RuntimeError, "audit unavailable"),
         ):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1", request, "studio_1", "user_1", "audit-repair-key",
-            ))
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    request,
+                    "studio_1",
+                    "user_1",
+                    "audit-repair-key",
+                )
+            )
 
         self.assertEqual(database.operation["state"], "provider_succeeded")
-        self.assertEqual(
-            database.setup_request["stripe_checkout_session_id"], "cs_setup_1"
-        )
+        self.assertEqual(database.setup_request["stripe_checkout_session_id"], "cs_setup_1")
         self.assertEqual(database.tables["audit_logs"], [])
         CountingStripeService.checkout_retrieve_calls = []
 
         with patch("app.services.billing_service.StripeService", CountingStripeService):
-            repaired = asyncio.run(service.create_autopay_setup_link(
-                "payer_1", request, "studio_1", "user_1", "audit-repair-key",
-            ))
-            repeated = asyncio.run(service.create_autopay_setup_link(
-                "payer_1", request, "studio_1", "user_1", "audit-repair-key",
-            ))
+            repaired = asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    request,
+                    "studio_1",
+                    "user_1",
+                    "audit-repair-key",
+                )
+            )
+            repeated = asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    request,
+                    "studio_1",
+                    "user_1",
+                    "audit-repair-key",
+                )
+            )
 
         self.assertEqual(repaired.url, "https://checkout.stripe.test/setup")
         self.assertEqual(repeated.url, repaired.url)
@@ -1254,9 +1339,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         ):
             with self.subTest(mutation=mutation):
                 database.tables["audit_logs"] = [{**exact, **mutation}]
-                with self.assertRaisesRegex(
-                    RuntimeError, "autopay_setup_started_audit_conflict"
-                ):
+                with self.assertRaisesRegex(RuntimeError, "autopay_setup_started_audit_conflict"):
                     manager._audit_autopay_setup_started_once(
                         context=context,
                         payer_id="payer_1",
@@ -1264,9 +1347,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                     )
 
         database.tables["audit_logs"] = [dict(exact), {**exact, "id": "legacy-2"}]
-        with self.assertRaisesRegex(
-            RuntimeError, "autopay_setup_started_audit_conflict"
-        ):
+        with self.assertRaisesRegex(RuntimeError, "autopay_setup_started_audit_conflict"):
             manager._audit_autopay_setup_started_once(
                 context=context,
                 payer_id="payer_1",
@@ -1378,12 +1459,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                         rows.append(payload)
                     elif winner_kind == "malformed":
                         rows.append({**payload, "actor_id": "wrong-user"})
-                    raise PostgrestAPIError({
-                        "code": "23505",
-                        "message": "duplicate key",
-                        "details": "",
-                        "hint": "",
-                    })
+                    raise PostgrestAPIError(
+                        {
+                            "code": "23505",
+                            "message": "duplicate key",
+                            "details": "",
+                            "hint": "",
+                        }
+                    )
 
                 database.before_insert = race
                 if winner_kind == "exact":
@@ -1412,10 +1495,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             }
 
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         service.supabase = database
         StaffUrlStripeService.reset()
@@ -1436,13 +1523,25 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         )
         with patch("app.services.billing_service.StripeService", StaffUrlStripeService):
             with self.assertRaises(HTTPException) as first:
-                asyncio.run(service.create_autopay_setup_link(
-                    "payer_1", request, "studio_1", "user_1", "staff-url-key",
-                ))
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        request,
+                        "studio_1",
+                        "user_1",
+                        "staff-url-key",
+                    )
+                )
             with self.assertRaises(HTTPException) as replay:
-                asyncio.run(service.create_autopay_setup_link(
-                    "payer_1", request, "studio_1", "user_1", "staff-url-key",
-                ))
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        request,
+                        "studio_1",
+                        "user_1",
+                        "staff-url-key",
+                    )
+                )
 
         self.assertEqual(first.exception.status_code, 503)
         self.assertEqual(replay.exception.status_code, 409)
@@ -1461,10 +1560,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 return value if tz is None else value.astimezone(tz)
 
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         database.operation_started_at = "2026-08-26T12:00:00+00:00"
         service.supabase = database
@@ -1485,13 +1588,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             ),
             self.assertRaisesRegex(RuntimeError, "crash after setup request preparation"),
         ):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "autopay-key",
-            ))
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                )
+            )
 
         original_request_id = database.setup_request["id"]
         self.assertEqual(database.operation["state"], "started")
@@ -1501,13 +1606,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             patch("app.services.billing_service.StripeService", _FakeStripeService),
             patch("app.services.billing_autopay.datetime", AtTwelveTwentySeven),
         ):
-            recovered = asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "autopay-key",
-            ))
+            recovered = asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                )
+            )
 
         self.assertEqual(recovered.url, "https://checkout.stripe.test/setup")
         self.assertEqual(database.setup_request["id"], original_request_id)
@@ -1522,37 +1629,73 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             def now(cls, tz=None):
                 value = cls(2026, 8, 26, 12, 1, tzinfo=timezone.utc)
                 return value if tz is None else value.astimezone(tz)
+
         class AtTwelveThirtyOne(datetime):
             @classmethod
             def now(cls, tz=None):
                 value = cls(2026, 8, 26, 12, 31, tzinfo=timezone.utc)
                 return value if tz is None else value.astimezone(tz)
+
         service = self.service()
-        service.settings = type("Settings", (), {"BILLING_PLATFORM_FEE_BPS": 50, "FRONTEND_URL": "https://app.koaryu.test"})()
+        service.settings = type(
+            "Settings",
+            (),
+            {"BILLING_PLATFORM_FEE_BPS": 50, "FRONTEND_URL": "https://app.koaryu.test"},
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         database.operation_started_at = "2026-08-26T12:00:00+00:00"
         service.supabase = database
         _FakeStripeService.retrieve_account_response = {
-            "id": "acct_1", "charges_enabled": True, "payouts_enabled": True,
-            "details_submitted": True, "requirements": {"currently_due": []},
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
         }
-        with patch("app.services.billing_service.StripeService", _FakeStripeService), patch("app.services.billing_autopay.datetime", AtTwelveOhOne):
-            asyncio.run(service.create_autopay_setup_link("payer_1", BillingPayerAutopaySetupRequest(), "studio_1", "user_1", "recovery-key"))
+        with (
+            patch("app.services.billing_service.StripeService", _FakeStripeService),
+            patch("app.services.billing_autopay.datetime", AtTwelveOhOne),
+        ):
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "recovery-key",
+                )
+            )
         operation = database.operation
-        operation.update({
-            "state": "recovery_authorized", "provider_object_id": None,
-            "provider_secondary_object_id": None, "provider_request_id": None,
-            "recovery_outcome": "provider_no_object_safe_to_retry",
-            "recovery_proof_sha256": "a" * 64,
-            "recovery_actor_id": "00000000-0000-4000-8000-000000000202",
-            "recovery_authorized_at": "2026-08-26T12:30:00+00:00",
-            "lease_owner": "00000000-0000-4000-8000-000000000102",
-            "lease_expires_at": "2026-08-26T12:32:00+00:00",
-        })
+        operation.update(
+            {
+                "state": "recovery_authorized",
+                "provider_object_id": None,
+                "provider_secondary_object_id": None,
+                "provider_request_id": None,
+                "recovery_outcome": "provider_no_object_safe_to_retry",
+                "recovery_proof_sha256": "a" * 64,
+                "recovery_actor_id": "00000000-0000-4000-8000-000000000202",
+                "recovery_authorized_at": "2026-08-26T12:30:00+00:00",
+                "lease_owner": "00000000-0000-4000-8000-000000000102",
+                "lease_expires_at": "2026-08-26T12:32:00+00:00",
+            }
+        )
         database.setup_request["stripe_checkout_session_id"] = None
         prepare_count = len(database.prepare_calls)
-        with patch("app.services.billing_service.StripeService", _FakeStripeService), patch("app.services.billing_autopay.datetime", AtTwelveThirtyOne), patch("app.services.billing_provider_operations.datetime", AtTwelveThirtyOne):
-            asyncio.run(service.create_autopay_setup_link("payer_1", BillingPayerAutopaySetupRequest(), "studio_1", "user_1", "recovery-key"))
+        with (
+            patch("app.services.billing_service.StripeService", _FakeStripeService),
+            patch("app.services.billing_autopay.datetime", AtTwelveThirtyOne),
+            patch("app.services.billing_provider_operations.datetime", AtTwelveThirtyOne),
+        ):
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "recovery-key",
+                )
+            )
         self.assertEqual(len(database.prepare_calls), prepare_count)
         self.assertEqual(database.operation["provider_request_attempt_count"], 2)
         self.assertEqual(len(_FakeStripeService.setup_calls), 2)
@@ -1560,29 +1703,59 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
     def test_stale_no_object_recovery_closes_request_with_proof_and_requires_new_key(self):
         service, database, _session = self._prepared_consent_setup()
         operation = database.operation
-        operation.update({
-            "state": "recovery_authorized", "provider_object_id": None,
-            "provider_secondary_object_id": None, "provider_request_id": None,
-            "recovery_outcome": "provider_no_object_safe_to_retry",
-            "recovery_proof_sha256": "b" * 64,
-            "recovery_actor_id": "00000000-0000-4000-8000-000000000202",
-            "recovery_authorized_at": datetime.now(timezone.utc).isoformat(),
-            "lease_owner": "00000000-0000-4000-8000-000000000102",
-            "lease_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
-        })
+        operation.update(
+            {
+                "state": "recovery_authorized",
+                "provider_object_id": None,
+                "provider_secondary_object_id": None,
+                "provider_request_id": None,
+                "recovery_outcome": "provider_no_object_safe_to_retry",
+                "recovery_proof_sha256": "b" * 64,
+                "recovery_actor_id": "00000000-0000-4000-8000-000000000202",
+                "recovery_authorized_at": datetime.now(timezone.utc).isoformat(),
+                "lease_owner": "00000000-0000-4000-8000-000000000102",
+                "lease_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
+            }
+        )
         database.setup_request["stripe_checkout_session_id"] = None
-        database.setup_request["setup_request_expires_at"] = (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat()
+        database.setup_request["setup_request_expires_at"] = (
+            datetime.now(timezone.utc) + timedelta(minutes=20)
+        ).isoformat()
         call_count = len(_FakeStripeService.setup_calls)
-        with patch("app.services.billing_service.StripeService", _FakeStripeService), self.assertRaises(HTTPException) as rejected:
-            asyncio.run(service.create_autopay_setup_link("payer_1", BillingPayerAutopaySetupRequest(), "studio_1", "user_1", "autopay-key"))
+        with (
+            patch("app.services.billing_service.StripeService", _FakeStripeService),
+            self.assertRaises(HTTPException) as rejected,
+        ):
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                )
+            )
         self.assertEqual(rejected.exception.status_code, 409)
         self.assertEqual(len(_FakeStripeService.setup_calls), call_count)
         self.assertEqual(database.operation["error_code"], "setup_request_lifetime_insufficient")
-        self.assertEqual(database.setup_request["close_reason_code"], "setup_request_lifetime_insufficient")
+        self.assertEqual(
+            database.setup_request["close_reason_code"], "setup_request_lifetime_insufficient"
+        )
         self.assertEqual(database.setup_request["provider_read_proof_sha256"], "b" * 64)
         attempts = database.operation["provider_request_attempt_count"]
-        with patch("app.services.billing_service.StripeService", _FakeStripeService), self.assertRaises(HTTPException):
-            asyncio.run(service.create_autopay_setup_link("payer_1", BillingPayerAutopaySetupRequest(), "studio_1", "user_1", "autopay-key"))
+        with (
+            patch("app.services.billing_service.StripeService", _FakeStripeService),
+            self.assertRaises(HTTPException),
+        ):
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                )
+            )
         self.assertEqual(database.operation["provider_request_attempt_count"], attempts)
 
     def test_recovered_retry_blocked_by_policy_closes_without_provider_object(self):
@@ -1597,10 +1770,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 )
 
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         database.operation_started_at = datetime.now(timezone.utc).isoformat()
         service.supabase = database
@@ -1612,29 +1789,31 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             "requirements": {"currently_due": []},
         }
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "recovered-policy-key",
-            ))
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "recovered-policy-key",
+                )
+            )
 
         operation = database.operation
-        operation.update({
-            "state": "recovery_authorized",
-            "provider_object_id": None,
-            "provider_secondary_object_id": None,
-            "provider_request_id": None,
-            "recovery_outcome": "provider_no_object_safe_to_retry",
-            "recovery_proof_sha256": "c" * 64,
-            "recovery_actor_id": "00000000-0000-4000-8000-000000000202",
-            "recovery_authorized_at": datetime.now(timezone.utc).isoformat(),
-            "lease_owner": "00000000-0000-4000-8000-000000000102",
-            "lease_expires_at": (
-                datetime.now(timezone.utc) + timedelta(minutes=2)
-            ).isoformat(),
-        })
+        operation.update(
+            {
+                "state": "recovery_authorized",
+                "provider_object_id": None,
+                "provider_secondary_object_id": None,
+                "provider_request_id": None,
+                "recovery_outcome": "provider_no_object_safe_to_retry",
+                "recovery_proof_sha256": "c" * 64,
+                "recovery_actor_id": "00000000-0000-4000-8000-000000000202",
+                "recovery_authorized_at": datetime.now(timezone.utc).isoformat(),
+                "lease_owner": "00000000-0000-4000-8000-000000000102",
+                "lease_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
+            }
+        )
         database.setup_request["stripe_checkout_session_id"] = None
         RecoveryPolicyBlockedStripeService.retrieve_account_response = (
             _FakeStripeService.retrieve_account_response
@@ -1648,13 +1827,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             ),
             self.assertRaises(StripeMutationBlocked),
         ):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "recovered-policy-key",
-            ))
+            asyncio.run(
+                service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "recovered-policy-key",
+                )
+            )
 
         self.assertEqual(RecoveryPolicyBlockedStripeService.attempts, 1)
         self.assertEqual(database.operation["state"], "definitive_rejected")
@@ -1709,10 +1890,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         ExpiredCheckoutStripeService.reset()
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         service.supabase = database
         ExpiredCheckoutStripeService.retrieve_account_response = {
@@ -1725,34 +1910,40 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         with patch("app.services.billing_service.StripeService", ExpiredCheckoutStripeService):
             with patch("app.services.billing_autopay.datetime", AtTwelveOhOne):
-                first = asyncio.run(service.create_autopay_setup_link(
-                    "payer_1",
-                    BillingPayerAutopaySetupRequest(),
-                    "studio_1",
-                    "user_1",
-                    "autopay-key-old",
-                ))
+                first = asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key-old",
+                    )
+                )
             with (
                 patch("app.services.billing_autopay.datetime", AtTwelveThirtyOne),
                 self.assertRaises(HTTPException) as expired,
             ):
-                asyncio.run(service.create_autopay_setup_link(
-                    "payer_1",
-                    BillingPayerAutopaySetupRequest(),
-                    "studio_1",
-                    "user_1",
-                    "autopay-key-old",
-                ))
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key-old",
+                    )
+                )
 
             database.operation_started_at = "2026-08-26T12:31:00+00:00"
             with patch("app.services.billing_autopay.datetime", AtTwelveThirtyOne):
-                second = asyncio.run(service.create_autopay_setup_link(
-                    "payer_1",
-                    BillingPayerAutopaySetupRequest(),
-                    "studio_1",
-                    "user_1",
-                    "autopay-key-new",
-                ))
+                second = asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key-new",
+                    )
+                )
 
         self.assertEqual(expired.exception.status_code, 409)
         self.assertIn("new Idempotency-Key", expired.exception.detail)
@@ -1778,20 +1969,22 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(close["p_close_reason_code"], "checkout_session_expired")
         self.assertEqual(
             close["p_provider_read_proof_sha256"],
-            stable_hash({
-                "operation_id": close["p_operation_id"],
-                "setup_request_id": close["p_setup_request_id"],
-                "studio_id": "studio_1",
-                "payer_id": "payer_1",
-                "stripe_checkout_session_id": "cs_setup_1",
-                "stripe_connected_account_id": "acct_1",
-                "connect_account_generation": 1,
-                "checkout_session_status": "expired",
-                "checkout_session_expires_at": int(
-                    datetime(2026, 8, 26, 12, 30, tzinfo=timezone.utc).timestamp()
-                ),
-                "close_reason_code": "checkout_session_expired",
-            }),
+            stable_hash(
+                {
+                    "operation_id": close["p_operation_id"],
+                    "setup_request_id": close["p_setup_request_id"],
+                    "studio_id": "studio_1",
+                    "payer_id": "payer_1",
+                    "stripe_checkout_session_id": "cs_setup_1",
+                    "stripe_connected_account_id": "acct_1",
+                    "connect_account_generation": 1,
+                    "checkout_session_status": "expired",
+                    "checkout_session_expires_at": int(
+                        datetime(2026, 8, 26, 12, 30, tzinfo=timezone.utc).timestamp()
+                    ),
+                    "close_reason_code": "checkout_session_expired",
+                }
+            ),
         )
         self.assertNotIn("url", repr(close))
         old = database.closed_operations[0]
@@ -1809,10 +2002,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             with self.subTest(operation_state=operation_state):
                 _FakeStripeService.reset()
                 service = self.service()
-                service.settings = type("Settings", (), {
-                    "BILLING_PLATFORM_FEE_BPS": 50,
-                    "FRONTEND_URL": "https://app.koaryu.test",
-                })()
+                service.settings = type(
+                    "Settings",
+                    (),
+                    {
+                        "BILLING_PLATFORM_FEE_BPS": 50,
+                        "FRONTEND_URL": "https://app.koaryu.test",
+                    },
+                )()
                 database = _AutopayOperationSupabase(_autopay_tables())
                 service.supabase = database
                 _FakeStripeService.retrieve_account_response = {
@@ -1823,22 +2020,26 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                     "requirements": {"currently_due": []},
                 }
                 with patch("app.services.billing_service.StripeService", _FakeStripeService):
-                    asyncio.run(service.create_autopay_setup_link(
-                        "payer_1",
-                        BillingPayerAutopaySetupRequest(),
-                        "studio_1",
-                        "user_1",
-                        "autopay-key",
-                    ))
-                    database.operation["state"] = operation_state
-                    with self.assertRaises(HTTPException):
-                        asyncio.run(service.create_autopay_setup_link(
+                    asyncio.run(
+                        service.create_autopay_setup_link(
                             "payer_1",
                             BillingPayerAutopaySetupRequest(),
                             "studio_1",
                             "user_1",
                             "autopay-key",
-                        ))
+                        )
+                    )
+                    database.operation["state"] = operation_state
+                    with self.assertRaises(HTTPException):
+                        asyncio.run(
+                            service.create_autopay_setup_link(
+                                "payer_1",
+                                BillingPayerAutopaySetupRequest(),
+                                "studio_1",
+                                "user_1",
+                                "autopay-key",
+                            )
+                        )
 
                 self.assertEqual(database.close_calls, [])
                 self.assertEqual(len(_FakeStripeService.setup_calls), 1)
@@ -1860,10 +2061,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         UnknownStatusStripeService.reset()
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         service.supabase = database
         UnknownStatusStripeService.retrieve_account_response = {
@@ -1875,21 +2080,25 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         }
 
         with patch("app.services.billing_service.StripeService", UnknownStatusStripeService):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "autopay-key",
-            ))
-            with self.assertRaises(HTTPException) as ambiguous:
-                asyncio.run(service.create_autopay_setup_link(
+            asyncio.run(
+                service.create_autopay_setup_link(
                     "payer_1",
                     BillingPayerAutopaySetupRequest(),
                     "studio_1",
                     "user_1",
                     "autopay-key",
-                ))
+                )
+            )
+            with self.assertRaises(HTTPException) as ambiguous:
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key",
+                    )
+                )
 
         self.assertEqual(ambiguous.exception.status_code, 409)
         self.assertEqual(database.operation["state"], "provider_succeeded")
@@ -1898,10 +2107,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_projected_replay_completes_locally_without_provider_retry(self):
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         service.supabase = database
         _FakeStripeService.retrieve_account_response = {
@@ -1913,22 +2126,26 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         }
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "autopay-key",
-            ))
-            database.operation["state"] = "projected"
-            with self.assertRaises(HTTPException) as replay:
-                asyncio.run(service.create_autopay_setup_link(
+            asyncio.run(
+                service.create_autopay_setup_link(
                     "payer_1",
                     BillingPayerAutopaySetupRequest(),
                     "studio_1",
                     "user_1",
                     "autopay-key",
-                ))
+                )
+            )
+            database.operation["state"] = "projected"
+            with self.assertRaises(HTTPException) as replay:
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key",
+                    )
+                )
 
         self.assertEqual(replay.exception.status_code, 409)
         self.assertIn("local completion", replay.exception.detail)
@@ -1937,10 +2154,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_autopay_setup_requires_separately_synchronized_customer(self):
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         tables = _autopay_tables()
         tables["billing_payers"][0]["stripe_customer_id"] = None
         database = _AutopayOperationSupabase(tables)
@@ -1955,13 +2176,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             with self.assertRaises(HTTPException) as missing_customer:
-                asyncio.run(service.create_autopay_setup_link(
-                    "payer_1",
-                    BillingPayerAutopaySetupRequest(),
-                    "studio_1",
-                    "user_1",
-                    "autopay-key",
-                ))
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key",
+                    )
+                )
 
         self.assertEqual(missing_customer.exception.status_code, 409)
         self.assertIn("Sync this payer", missing_customer.exception.detail)
@@ -1970,10 +2193,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_same_key_with_different_request_hash_conflicts(self):
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         service.supabase = _AutopayOperationSupabase(_autopay_tables())
         _FakeStripeService.retrieve_account_response = {
             "id": "acct_1",
@@ -1984,25 +2211,29 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         }
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(
-                    return_url="https://app.koaryu.test/billing",
-                ),
-                "studio_1",
-                "user_1",
-                "autopay-key",
-            ))
-            with self.assertRaises(HTTPException) as conflict:
-                asyncio.run(service.create_autopay_setup_link(
+            asyncio.run(
+                service.create_autopay_setup_link(
                     "payer_1",
                     BillingPayerAutopaySetupRequest(
-                        return_url="https://app.koaryu.test/account",
+                        return_url="https://app.koaryu.test/billing",
                     ),
                     "studio_1",
                     "user_1",
                     "autopay-key",
-                ))
+                )
+            )
+            with self.assertRaises(HTTPException) as conflict:
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(
+                            return_url="https://app.koaryu.test/account",
+                        ),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key",
+                    )
+                )
 
         self.assertEqual(conflict.exception.status_code, 409)
         self.assertIn("different billing request", conflict.exception.detail)
@@ -2020,10 +2251,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         AmbiguousStripeService.reset()
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         service.supabase = database
         AmbiguousStripeService.retrieve_account_response = {
@@ -2036,21 +2271,25 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         with patch("app.services.billing_service.StripeService", AmbiguousStripeService):
             with self.assertRaises(HTTPException) as ambiguous:
-                asyncio.run(service.create_autopay_setup_link(
-                    "payer_1",
-                    BillingPayerAutopaySetupRequest(),
-                    "studio_1",
-                    "user_1",
-                    "autopay-key",
-                ))
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key",
+                    )
+                )
             with self.assertRaises(HTTPException) as replay:
-                asyncio.run(service.create_autopay_setup_link(
-                    "payer_1",
-                    BillingPayerAutopaySetupRequest(),
-                    "studio_1",
-                    "user_1",
-                    "autopay-key",
-                ))
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key",
+                    )
+                )
 
         self.assertEqual(ambiguous.exception.status_code, 503)
         self.assertEqual(replay.exception.status_code, 409)
@@ -2066,10 +2305,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_setup_projection_failure_marks_reconciliation_without_hosted_url(self):
         service = self.service()
-        service.settings = type("Settings", (), {
-            "BILLING_PLATFORM_FEE_BPS": 50,
-            "FRONTEND_URL": "https://app.koaryu.test",
-        })()
+        service.settings = type(
+            "Settings",
+            (),
+            {
+                "BILLING_PLATFORM_FEE_BPS": 50,
+                "FRONTEND_URL": "https://app.koaryu.test",
+            },
+        )()
         database = _AutopayOperationSupabase(_autopay_tables())
         database.fail_bind = True
         service.supabase = database
@@ -2083,13 +2326,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             with self.assertRaises(HTTPException) as failed:
-                asyncio.run(service.create_autopay_setup_link(
-                    "payer_1",
-                    BillingPayerAutopaySetupRequest(),
-                    "studio_1",
-                    "user_1",
-                    "autopay-key",
-                ))
+                asyncio.run(
+                    service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key",
+                    )
+                )
 
         self.assertEqual(failed.exception.status_code, 503)
         self.assertEqual(database.operation["state"], "reconciliation_required")
@@ -2196,7 +2441,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertIsNotNone(database.consent["completed_at"])
         self.assertEqual(len(SuccessfulStripeService.retrieve_calls), 1)
         consent_audits = [
-            row for row in database.tables["audit_logs"]
+            row
+            for row in database.tables["audit_logs"]
             if row["action"] == "billing.autopay_consent_recorded"
         ]
         self.assertEqual(len(consent_audits), 1)
@@ -2249,7 +2495,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(database.operation["state"], "completed")
         self.assertEqual(
             [
-                row for row in database.tables["audit_logs"]
+                row
+                for row in database.tables["audit_logs"]
                 if row["action"] == "billing.autopay_consent_recorded"
             ],
             [],
@@ -2259,7 +2506,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         self.assertEqual(len(SuccessfulStripeService.retrieve_calls), 1)
         audits = [
-            row for row in database.tables["audit_logs"]
+            row
+            for row in database.tables["audit_logs"]
             if row["action"] == "billing.autopay_consent_recorded"
         ]
         self.assertEqual(len(audits), 1)
@@ -2290,7 +2538,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             service._project_checkout_session(session, "acct_1", event_created=200)
 
         audit = next(
-            row for row in database.tables["audit_logs"]
+            row
+            for row in database.tables["audit_logs"]
             if row["action"] == "billing.autopay_consent_recorded"
         )
         audit["id"] = "legacy-random-id"
@@ -2302,7 +2551,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         service._project_checkout_session(session, "acct_1", event_created=200)
 
         consent_audits = [
-            row for row in database.tables["audit_logs"]
+            row
+            for row in database.tables["audit_logs"]
             if row["action"] == "billing.autopay_consent_recorded"
         ]
         self.assertEqual(consent_audits, [audit])
@@ -2326,9 +2576,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         service._project_checkout_session(session, "acct_1", event_created=200)
         first_error = dict(
-            database.tables["billing_payers"][0]["metadata"][
-                "autopay_projection_error"
-            ]
+            database.tables["billing_payers"][0]["metadata"]["autopay_projection_error"]
         )
         service._project_checkout_session(session, "acct_1", event_created=200)
 
@@ -2364,9 +2612,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 elif scenario == "account":
                     account_id = "acct_other"
                 else:
-                    database.tables["billing_payers"][0][
-                        "connect_account_generation"
-                    ] = 2
+                    database.tables["billing_payers"][0]["connect_account_generation"] = 2
                 before = dict(database.tables["billing_payers"][0])
                 session = {
                     "id": "cs_legacy_1",
@@ -2463,7 +2709,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         )
         self.assertEqual(len(SuccessfulStripeService.retrieve_calls), 1)
 
-    def test_crash_after_consent_completion_resumes_enable_and_finalizer_without_provider_work(self):
+    def test_crash_after_consent_completion_resumes_enable_and_finalizer_without_provider_work(
+        self,
+    ):
         service, database, session = self._prepared_consent_setup()
         database.fail_payer_enable_once = True
 
@@ -2572,9 +2820,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         cases = (
             (
                 "disable_autopay",
-                lambda service: service.disable_autopay(
-                    "payer_1", "studio_1", "user_1"
-                ),
+                lambda service: service.disable_autopay("payer_1", "studio_1", "user_1"),
                 "named cancellation workflow",
             ),
             (
@@ -2600,36 +2846,44 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             with self.subTest(operation=operation):
                 _FakeStripeService.reset()
                 service = self.service()
-                service.supabase = _AutopayOperationSupabase({
-                    "billing_payers": [{
-                        "id": "payer_1",
-                        "studio_id": "studio_1",
-                        "display_name": "Family One",
-                        "autopay_status": "enabled",
-                        "default_payment_method_id": "pm_123",
-                        "created_at": "2026-05-18T00:00:00Z",
-                        "updated_at": "2026-05-18T00:00:00Z",
-                    }],
-                    "billing_subscriptions": [{
-                        "id": "subscription_1",
-                        "studio_id": "studio_1",
-                        "payer_id": "payer_1",
-                        "collection_mode": "autopay",
-                        "status": "active",
-                        "stripe_subscription_id": "sub_1",
-                    }],
-                    "student_billing_enrollments": [{
-                        "id": "enrollment_1",
-                        "studio_id": "studio_1",
-                        "billing_subscription_id": "subscription_1",
-                        "collection_mode": "autopay",
-                        "status": "active",
-                        "stripe_subscription_id": "sub_1",
-                        "stripe_subscription_item_id": "si_1",
-                        "metadata": {},
-                    }],
-                    "audit_logs": [],
-                })
+                service.supabase = _AutopayOperationSupabase(
+                    {
+                        "billing_payers": [
+                            {
+                                "id": "payer_1",
+                                "studio_id": "studio_1",
+                                "display_name": "Family One",
+                                "autopay_status": "enabled",
+                                "default_payment_method_id": "pm_123",
+                                "created_at": "2026-05-18T00:00:00Z",
+                                "updated_at": "2026-05-18T00:00:00Z",
+                            }
+                        ],
+                        "billing_subscriptions": [
+                            {
+                                "id": "subscription_1",
+                                "studio_id": "studio_1",
+                                "payer_id": "payer_1",
+                                "collection_mode": "autopay",
+                                "status": "active",
+                                "stripe_subscription_id": "sub_1",
+                            }
+                        ],
+                        "student_billing_enrollments": [
+                            {
+                                "id": "enrollment_1",
+                                "studio_id": "studio_1",
+                                "billing_subscription_id": "subscription_1",
+                                "collection_mode": "autopay",
+                                "status": "active",
+                                "stripe_subscription_id": "sub_1",
+                                "stripe_subscription_item_id": "si_1",
+                                "metadata": {},
+                            }
+                        ],
+                        "audit_logs": [],
+                    }
+                )
                 state_tables = (
                     "billing_payers",
                     "billing_subscriptions",
@@ -2637,8 +2891,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                     "audit_logs",
                 )
                 state_before = {
-                    table: copy.deepcopy(service.supabase.tables[table])
-                    for table in state_tables
+                    table: copy.deepcopy(service.supabase.tables[table]) for table in state_tables
                 }
 
                 with (
@@ -2653,10 +2906,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 self.assertEqual(blocked.exception.status_code, 409)
                 self.assertIn(expected_detail, blocked.exception.detail)
                 self.assertEqual(
-                    {
-                        table: service.supabase.tables[table]
-                        for table in state_tables
-                    },
+                    {table: service.supabase.tables[table] for table in state_tables},
                     state_before,
                 )
                 self.assertEqual(_FakeStripeService.subscription_update_calls, [])
@@ -2666,29 +2916,31 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_disable_autopay_without_subscription_does_not_rewire_provider(self):
         service = self.service()
-        service.supabase = _AutopayOperationSupabase({
-            "billing_payers": [{
-                "id": "payer_1", "studio_id": "studio_1",
-                "display_name": "Family One", "autopay_status": "enabled",
-                "default_payment_method_id": "pm_123",
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
-            }],
-            "billing_subscriptions": [],
-            "audit_logs": [],
-        })
+        service.supabase = _AutopayOperationSupabase(
+            {
+                "billing_payers": [
+                    {
+                        "id": "payer_1",
+                        "studio_id": "studio_1",
+                        "display_name": "Family One",
+                        "autopay_status": "enabled",
+                        "default_payment_method_id": "pm_123",
+                        "created_at": "2026-05-18T00:00:00Z",
+                        "updated_at": "2026-05-18T00:00:00Z",
+                    }
+                ],
+                "billing_subscriptions": [],
+                "audit_logs": [],
+            }
+        )
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            response = asyncio.run(service.disable_autopay(
-                "payer_1", "studio_1", "user_1"
-            ))
+            response = asyncio.run(service.disable_autopay("payer_1", "studio_1", "user_1"))
 
         self.assertEqual(response.autopay_status, "disabled")
         self.assertEqual(_FakeStripeService.subscription_update_calls, [])
         self.assertEqual(
-            service.supabase.tables["audit_logs"][0]["metadata"][
-                "rewired_subscription_ids"
-            ],
+            service.supabase.tables["audit_logs"][0]["metadata"]["rewired_subscription_ids"],
             [],
         )
 
@@ -2726,12 +2978,8 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
             service._project_checkout_session(session, "acct_1", event_created=200)
 
-        database.tables["billing_payers"][0].setdefault(
-            "created_at", "2026-08-26T12:00:00+00:00"
-        )
-        database.tables["billing_payers"][0].setdefault(
-            "updated_at", "2026-08-26T12:00:00+00:00"
-        )
+        database.tables["billing_payers"][0].setdefault("created_at", "2026-08-26T12:00:00+00:00")
+        database.tables["billing_payers"][0].setdefault("updated_at", "2026-08-26T12:00:00+00:00")
         response = asyncio.run(service.disable_autopay("payer_1", "studio_1", "user_1"))
         self.assertEqual(response.autopay_status, "disabled")
         self.assertIsNotNone(database.consent["revoked_at"])
@@ -2754,34 +3002,41 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             database.tables["billing_payers"][0]["autopay_status"],
             "disabled",
         )
+
     def test_autopay_invoice_requires_authorized_payer_terms(self):
         service = self.service()
-        service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-                "status": "charges_enabled",
-                "charges_enabled": True,
-                "payouts_enabled": True,
-                "details_submitted": True,
-                "requirements_due": [],
-                "platform_fee_bps": 50,
-                "metadata": {"connect_account_generation": 1},
-            }],
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Rehearsal Payer",
-                "stripe_customer_id": "cus_1",
-                "stripe_account_id": "acct_1",
-                "connect_account_generation": 1,
-                "default_payment_method_id": "pm_123",
-                "autopay_status": "not_configured",
-                "billing_status": "current",
-            }],
-            "billing_invoices": [],
-            "billing_invoice_items": [],
-        })
+        service.supabase = _FakeSupabase(
+            {
+                "studio_payment_accounts": [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_connected_account_id": "acct_1",
+                        "status": "charges_enabled",
+                        "charges_enabled": True,
+                        "payouts_enabled": True,
+                        "details_submitted": True,
+                        "requirements_due": [],
+                        "platform_fee_bps": 50,
+                        "metadata": {"connect_account_generation": 1},
+                    }
+                ],
+                "billing_payers": [
+                    {
+                        "id": "payer_1",
+                        "studio_id": "studio_1",
+                        "display_name": "Rehearsal Payer",
+                        "stripe_customer_id": "cus_1",
+                        "stripe_account_id": "acct_1",
+                        "connect_account_generation": 1,
+                        "default_payment_method_id": "pm_123",
+                        "autopay_status": "not_configured",
+                        "billing_status": "current",
+                    }
+                ],
+                "billing_invoices": [],
+                "billing_invoice_items": [],
+            }
+        )
         _FakeStripeService.retrieve_account_response = {
             "id": "acct_1",
             "charges_enabled": True,
@@ -2792,85 +3047,99 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             with self.assertRaises(HTTPException) as context:
-                asyncio.run(service.create_invoice(
-                    BillingInvoiceCreate(
-                        payer_id="payer_1",
-                        collection_mode="autopay",
-                        amount_cents=200,
-                        description="Autopay consent rehearsal",
-                    ),
-                    "studio_1",
-                    "user_1",
-                    idempotency_key="autopay-consent-required",
-                ))
+                asyncio.run(
+                    service.create_invoice(
+                        BillingInvoiceCreate(
+                            payer_id="payer_1",
+                            collection_mode="autopay",
+                            amount_cents=200,
+                            description="Autopay consent rehearsal",
+                        ),
+                        "studio_1",
+                        "user_1",
+                        idempotency_key="autopay-consent-required",
+                    )
+                )
 
         self.assertEqual(context.exception.status_code, 409)
         self.assertIn("verified payer-owned consent", context.exception.detail)
 
     def test_autopay_enrollment_requires_authorized_payer_terms(self):
         service = self.service()
-        service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-                "status": "charges_enabled",
-                "charges_enabled": True,
-                "payouts_enabled": True,
-                "details_submitted": True,
-                "requirements_due": [],
-                "platform_fee_bps": 50,
-                "metadata": {"connect_account_generation": 2},
-            }],
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Rehearsal Payer",
-                "stripe_account_id": "acct_1",
-                "stripe_customer_id": "cus_1",
-                "connect_account_generation": 2,
-                "default_payment_method_id": "pm_123",
-                "autopay_status": "not_configured",
-                "billing_status": "current",
-            }],
-            "billing_plans": [{
-                "id": "plan_1",
-                "studio_id": "studio_1",
-                "name": "Live Autopay Rehearsal",
-                "status": "active",
-                "amount_cents": 200,
-                "currency": "usd",
-                "billing_interval": "monthly",
-                "trial_days": 0,
-                "stripe_account_id": "acct_1",
-                "stripe_product_id": "prod_1",
-                "stripe_price_id": "price_1",
-            }],
-            "billing_plan_prices": [{
-                "id": "plan_price_1",
-                "studio_id": "studio_1",
-                "billing_plan_id": "plan_1",
-                "stripe_account_id": "acct_1",
-                "stripe_product_id": "prod_1",
-                "stripe_price_id": "price_1",
-                "amount_cents": 200,
-                "currency": "usd",
-                "billing_interval": "monthly",
-                "recurring": True,
-                "active": True,
-                "metadata": {"connect_account_generation": 2},
-            }],
-            "student_billing_enrollments": [{
-                "id": "enrollment_1",
-                "studio_id": "studio_1",
-                "student_id": "student_1",
-                "payer_id": "payer_1",
-                "billing_plan_id": "plan_1",
-                "collection_mode": "autopay",
-                "status": "pending",
-                "billing_status": "no_payment_method",
-                "metadata": {},
-            }],
-        })
+        service.supabase = _FakeSupabase(
+            {
+                "studio_payment_accounts": [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_connected_account_id": "acct_1",
+                        "status": "charges_enabled",
+                        "charges_enabled": True,
+                        "payouts_enabled": True,
+                        "details_submitted": True,
+                        "requirements_due": [],
+                        "platform_fee_bps": 50,
+                        "metadata": {"connect_account_generation": 2},
+                    }
+                ],
+                "billing_payers": [
+                    {
+                        "id": "payer_1",
+                        "studio_id": "studio_1",
+                        "display_name": "Rehearsal Payer",
+                        "stripe_account_id": "acct_1",
+                        "stripe_customer_id": "cus_1",
+                        "connect_account_generation": 2,
+                        "default_payment_method_id": "pm_123",
+                        "autopay_status": "not_configured",
+                        "billing_status": "current",
+                    }
+                ],
+                "billing_plans": [
+                    {
+                        "id": "plan_1",
+                        "studio_id": "studio_1",
+                        "name": "Live Autopay Rehearsal",
+                        "status": "active",
+                        "amount_cents": 200,
+                        "currency": "usd",
+                        "billing_interval": "monthly",
+                        "trial_days": 0,
+                        "stripe_account_id": "acct_1",
+                        "stripe_product_id": "prod_1",
+                        "stripe_price_id": "price_1",
+                    }
+                ],
+                "billing_plan_prices": [
+                    {
+                        "id": "plan_price_1",
+                        "studio_id": "studio_1",
+                        "billing_plan_id": "plan_1",
+                        "stripe_account_id": "acct_1",
+                        "stripe_product_id": "prod_1",
+                        "stripe_price_id": "price_1",
+                        "amount_cents": 200,
+                        "currency": "usd",
+                        "billing_interval": "monthly",
+                        "recurring": True,
+                        "active": True,
+                        "metadata": {"connect_account_generation": 2},
+                    }
+                ],
+                "student_billing_enrollments": [
+                    {
+                        "id": "enrollment_1",
+                        "studio_id": "studio_1",
+                        "student_id": "student_1",
+                        "payer_id": "payer_1",
+                        "billing_plan_id": "plan_1",
+                        "collection_mode": "autopay",
+                        "status": "pending",
+                        "billing_status": "no_payment_method",
+                        "metadata": {},
+                    }
+                ],
+            }
+        )
         _FakeStripeService.retrieve_account_response = {
             "id": "acct_1",
             "charges_enabled": True,
@@ -2881,12 +3150,14 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             with self.assertRaises(HTTPException) as context:
-                asyncio.run(service.activate_enrollment(
-                    "enrollment_1",
-                    "studio_1",
-                    "user_1",
-                    "autopay-consent-required",
-                ))
+                asyncio.run(
+                    service.activate_enrollment(
+                        "enrollment_1",
+                        "studio_1",
+                        "user_1",
+                        "autopay-consent-required",
+                    )
+                )
 
         self.assertEqual(context.exception.status_code, 409)
         self.assertIn("verified payer consent", context.exception.detail)
@@ -2899,67 +3170,124 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "token": "other-worker",
                 "locked_at": "2026-08-26T00:00:00Z",
             }
-        groups = [{
-            "id": "subscription_1", "studio_id": "studio_1",
-            "payer_id": "payer_1", "stripe_account_id": "acct_1",
-            "stripe_customer_id": "cus_1", "stripe_subscription_id": "sub_1",
-            "collection_mode": "invoice_link", "billing_interval": "monthly",
-            "currency": "usd", "status": "active", "metadata": group_metadata,
-        }] if existing_group else []
-        peers = [{
-            "id": "enrollment_existing", "studio_id": "studio_1",
-            "student_id": "student_2", "payer_id": "payer_1",
-            "billing_plan_id": "plan_1",
-            "billing_subscription_id": "subscription_1",
-            "stripe_subscription_id": "sub_1",
-            "stripe_subscription_item_id": "si_existing",
-            "collection_mode": "invoice_link", "status": "active",
-            "billing_status": "current", "start_date": "2026-05-18",
-            "metadata": {}, "created_at": "2026-05-18T00:00:00Z",
-            "updated_at": "2026-05-18T00:00:00Z",
-        }] if existing_group else []
-        service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-                "status": "charges_enabled", "charges_enabled": True,
-                "platform_fee_bps": 50,
-                "metadata": {"connect_account_generation": 2},
-            }],
-            "billing_payers": [{
-                "id": "payer_1", "studio_id": "studio_1",
-                "stripe_account_id": "acct_1", "stripe_customer_id": "cus_1",
-                "connect_account_generation": 2,
-            }],
-            "billing_plans": [{
-                "id": "plan_1", "studio_id": "studio_1", "name": "Monthly Tuition",
-                "status": "active", "amount_cents": 200, "currency": "usd",
-                "billing_interval": "monthly", "trial_days": 0,
-                "stripe_account_id": "acct_1", "stripe_product_id": "prod_1",
-                "stripe_price_id": "price_1",
-            }],
-            "billing_plan_prices": [{
-                "id": "local_price_1", "studio_id": "studio_1",
-                "billing_plan_id": "plan_1", "stripe_account_id": "acct_1",
-                "stripe_product_id": "prod_1", "stripe_price_id": "price_1",
-                "amount_cents": 200, "currency": "usd",
-                "billing_interval": "monthly", "recurring": True, "active": True,
-                "metadata": {"connect_account_generation": 2},
-            }],
-            "billing_subscriptions": groups,
-            "student_billing_enrollments": [{
-                "id": "enrollment_1", "studio_id": "studio_1",
-                "student_id": "student_1", "payer_id": "payer_1",
-                "billing_plan_id": "plan_1", "collection_mode": "invoice_link",
-                "status": "pending", "billing_status": "no_payment_method",
-                "start_date": "2026-05-18", "metadata": {},
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
-            }, *peers],
-            "audit_logs": [],
-        })
+        groups = (
+            [
+                {
+                    "id": "subscription_1",
+                    "studio_id": "studio_1",
+                    "payer_id": "payer_1",
+                    "stripe_account_id": "acct_1",
+                    "stripe_customer_id": "cus_1",
+                    "stripe_subscription_id": "sub_1",
+                    "collection_mode": "invoice_link",
+                    "billing_interval": "monthly",
+                    "currency": "usd",
+                    "status": "active",
+                    "metadata": group_metadata,
+                }
+            ]
+            if existing_group
+            else []
+        )
+        peers = (
+            [
+                {
+                    "id": "enrollment_existing",
+                    "studio_id": "studio_1",
+                    "student_id": "student_2",
+                    "payer_id": "payer_1",
+                    "billing_plan_id": "plan_1",
+                    "billing_subscription_id": "subscription_1",
+                    "stripe_subscription_id": "sub_1",
+                    "stripe_subscription_item_id": "si_existing",
+                    "collection_mode": "invoice_link",
+                    "status": "active",
+                    "billing_status": "current",
+                    "start_date": "2026-05-18",
+                    "metadata": {},
+                    "created_at": "2026-05-18T00:00:00Z",
+                    "updated_at": "2026-05-18T00:00:00Z",
+                }
+            ]
+            if existing_group
+            else []
+        )
+        service.supabase = _FakeSupabase(
+            {
+                "studio_payment_accounts": [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_connected_account_id": "acct_1",
+                        "status": "charges_enabled",
+                        "charges_enabled": True,
+                        "platform_fee_bps": 50,
+                        "metadata": {"connect_account_generation": 2},
+                    }
+                ],
+                "billing_payers": [
+                    {
+                        "id": "payer_1",
+                        "studio_id": "studio_1",
+                        "stripe_account_id": "acct_1",
+                        "stripe_customer_id": "cus_1",
+                        "connect_account_generation": 2,
+                    }
+                ],
+                "billing_plans": [
+                    {
+                        "id": "plan_1",
+                        "studio_id": "studio_1",
+                        "name": "Monthly Tuition",
+                        "status": "active",
+                        "amount_cents": 200,
+                        "currency": "usd",
+                        "billing_interval": "monthly",
+                        "trial_days": 0,
+                        "stripe_account_id": "acct_1",
+                        "stripe_product_id": "prod_1",
+                        "stripe_price_id": "price_1",
+                    }
+                ],
+                "billing_plan_prices": [
+                    {
+                        "id": "local_price_1",
+                        "studio_id": "studio_1",
+                        "billing_plan_id": "plan_1",
+                        "stripe_account_id": "acct_1",
+                        "stripe_product_id": "prod_1",
+                        "stripe_price_id": "price_1",
+                        "amount_cents": 200,
+                        "currency": "usd",
+                        "billing_interval": "monthly",
+                        "recurring": True,
+                        "active": True,
+                        "metadata": {"connect_account_generation": 2},
+                    }
+                ],
+                "billing_subscriptions": groups,
+                "student_billing_enrollments": [
+                    {
+                        "id": "enrollment_1",
+                        "studio_id": "studio_1",
+                        "student_id": "student_1",
+                        "payer_id": "payer_1",
+                        "billing_plan_id": "plan_1",
+                        "collection_mode": "invoice_link",
+                        "status": "pending",
+                        "billing_status": "no_payment_method",
+                        "start_date": "2026-05-18",
+                        "metadata": {},
+                        "created_at": "2026-05-18T00:00:00Z",
+                        "updated_at": "2026-05-18T00:00:00Z",
+                    },
+                    *peers,
+                ],
+                "audit_logs": [],
+            }
+        )
         service.supabase.insert_defaults["billing_subscriptions"] = {
-            "id": "subscription_created", "metadata": {},
+            "id": "subscription_created",
+            "metadata": {},
             "created_at": "2026-05-18T00:00:00Z",
             "updated_at": "2026-05-18T00:00:00Z",
         }
@@ -2969,19 +3297,29 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         service = self._named_activation_service(existing_group=True)
         test_case = self
         _FakeStripeService.subscription_response = {
-            "id": "sub_1", "status": "active", "customer": "cus_1",
+            "id": "sub_1",
+            "status": "active",
+            "customer": "cus_1",
             "metadata": {
-                "studio_id": "studio_1", "payer_id": "payer_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
                 "billing_subscription_id": "subscription_1",
             },
-            "items": {"data": [{
-                "id": "si_existing", "price": {"id": "price_1"}, "quantity": 1,
-                "metadata": {
-                    "studio_id": "studio_1", "payer_id": "payer_1",
-                    "billing_plan_id": "plan_1",
-                    "billing_subscription_id": "subscription_1",
-                },
-            }]},
+            "items": {
+                "data": [
+                    {
+                        "id": "si_existing",
+                        "price": {"id": "price_1"},
+                        "quantity": 1,
+                        "metadata": {
+                            "studio_id": "studio_1",
+                            "payer_id": "payer_1",
+                            "billing_plan_id": "plan_1",
+                            "billing_subscription_id": "subscription_1",
+                        },
+                    }
+                ]
+            },
         }
 
         class ObservingStripeService(_FakeStripeService):
@@ -2998,15 +3336,13 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 return super().update_connected_subscription_item(**payload)
 
         with patch("app.services.billing_service.StripeService", ObservingStripeService):
-            response = asyncio.run(service.activate_enrollment(
-                "enrollment_1", "studio_1", "user_1", "quantity-key"
-            ))
+            response = asyncio.run(
+                service.activate_enrollment("enrollment_1", "studio_1", "user_1", "quantity-key")
+            )
 
         self.assertEqual(response.status, "active")
         self.assertEqual(response.stripe_subscription_item_id, "si_existing")
-        self.assertEqual(
-            _FakeStripeService.subscription_item_update_calls[-1]["quantity"], 2
-        )
+        self.assertEqual(_FakeStripeService.subscription_item_update_calls[-1]["quantity"], 2)
         self.assertNotIn(
             "stripe_quantity_sync_lock",
             service.supabase.tables["billing_subscriptions"][0]["metadata"],
@@ -3021,22 +3357,29 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 group = service.supabase.tables["billing_subscriptions"][0]
                 test_case.assertIn("stripe_quantity_sync_lock", group["metadata"])
                 response = {
-                    "id": "sub_created", "status": "active",
+                    "id": "sub_created",
+                    "status": "active",
                     "customer": payload["customer_id"],
                     "metadata": payload["metadata"],
-                    "items": {"data": [{
-                        "id": "si_created", "price": {"id": payload["price_id"]},
-                        "quantity": 1, "metadata": payload["item_metadata"],
-                    }]},
+                    "items": {
+                        "data": [
+                            {
+                                "id": "si_created",
+                                "price": {"id": payload["price_id"]},
+                                "quantity": 1,
+                                "metadata": payload["item_metadata"],
+                            }
+                        ]
+                    },
                 }
                 self.__class__.subscription_response = response
                 self.__class__.subscription_create_calls.append(payload)
                 return response
 
         with patch("app.services.billing_service.StripeService", ObservingStripeService):
-            response = asyncio.run(service.activate_enrollment(
-                "enrollment_1", "studio_1", "user_1", "create-key"
-            ))
+            response = asyncio.run(
+                service.activate_enrollment("enrollment_1", "studio_1", "user_1", "create-key")
+            )
 
         self.assertEqual(response.status, "active")
         self.assertEqual(response.stripe_subscription_id, "sub_created")
@@ -3051,9 +3394,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             with self.assertRaises(HTTPException) as blocked:
-                asyncio.run(service.activate_enrollment(
-                    "enrollment_1", "studio_1", "user_1", "locked-key"
-                ))
+                asyncio.run(
+                    service.activate_enrollment("enrollment_1", "studio_1", "user_1", "locked-key")
+                )
 
         self.assertEqual(blocked.exception.status_code, 409)
         self.assertEqual(_FakeStripeService.subscription_item_update_calls, [])

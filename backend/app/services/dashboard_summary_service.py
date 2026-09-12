@@ -112,9 +112,7 @@ class DashboardSummaryService:
         studio_row = self._fetch_studio_metadata(auth.studio_id)
         _local_date, normalized_timezone = self._studio_today(studio_row.get("timezone"))
         visibility: DashboardSummaryVisibility = (
-            "billing_visible"
-            if auth.role in BILLING_VISIBLE_ROLES
-            else "billing_hidden"
+            "billing_visible" if auth.role in BILLING_VISIBLE_ROLES else "billing_hidden"
         )
         return DashboardSummaryRequestContext(
             auth=auth,
@@ -204,10 +202,13 @@ class DashboardSummaryService:
         else:
             if billing.get("can_view_billing") is not False:
                 raise DashboardSummaryFactMismatch("hidden dashboard fact exposes billing")
-            if any(
-                billing.get(field) is not None
-                for field in ("payment_attention_count", "has_plans", "payments_ready")
-            ) or "amounts" in billing:
+            if (
+                any(
+                    billing.get(field) is not None
+                    for field in ("payment_attention_count", "has_plans", "payments_ready")
+                )
+                or "amounts" in billing
+            ):
                 raise DashboardSummaryFactMismatch("hidden dashboard fact contains billing data")
 
         try:
@@ -368,7 +369,9 @@ class DashboardSummaryService:
                 lambda query: query.eq("studio_id", studio_id).is_("deleted_at", "null"),
             ),
         )
-        student_counts = timed("student_counts", lambda: counts.student_counts(studio_id, student_rows, today))
+        student_counts = timed(
+            "student_counts", lambda: counts.student_counts(studio_id, student_rows, today)
+        )
         emergency_contacts = timed(
             "emergency_contacts",
             lambda: counts.emergency_contact_counts(student_rows, student_counts.active_students),
@@ -402,13 +405,21 @@ class DashboardSummaryService:
                 year_start,
             ),
         )
-        operational_counts = timed("operational_counts", lambda: self._operational_counts(studio_id, lookback_30, today))
-        churn_counts = timed("churn_counts", lambda: counts.churn_counts(studio_id, student_counts.total_students))
+        operational_counts = timed(
+            "operational_counts", lambda: self._operational_counts(studio_id, lookback_30, today)
+        )
+        churn_counts = timed(
+            "churn_counts", lambda: counts.churn_counts(studio_id, student_counts.total_students)
+        )
         test_readiness = timed("test_readiness", lambda: self._test_readiness_counts(studio_id))
-        billing_counts = timed("billing_counts", lambda: counts.billing_counts(studio_id, auth.role, today))
+        billing_counts = timed(
+            "billing_counts", lambda: counts.billing_counts(studio_id, auth.role, today)
+        )
         setup_flags = timed(
             "setup_flags",
-            lambda: counts.setup_flags(studio_id, student_counts, belt_counts, schedule_counts, billing_counts),
+            lambda: counts.setup_flags(
+                studio_id, student_counts, belt_counts, schedule_counts, billing_counts
+            ),
         )
         recent_students = timed("recent_students", lambda: counts.recent_students(studio_id))
         actions = build_dashboard_summary_actions(

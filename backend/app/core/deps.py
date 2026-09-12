@@ -115,9 +115,7 @@ async def run_supabase_operation(
                         # Shield the process-wide completion signal from one
                         # disconnected or timed-out follower. The surrounding
                         # deadline still bounds this caller's total wait.
-                        await asyncio.shield(
-                            asyncio.wrap_future(pending.completion)
-                        )
+                        await asyncio.shield(asyncio.wrap_future(pending.completion))
         except ProviderLaneSaturatedError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

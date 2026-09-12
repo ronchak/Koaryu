@@ -3,17 +3,20 @@ export type EnrollmentTransitionIdentity = {
   studioId: string;
 };
 
-export type EnrollmentTransitionAction = "schedule-period-end" | "revoke-scheduled" | "cancel-immediate";
+export type EnrollmentTransitionAction =
+  "schedule-period-end" | "revoke-scheduled" | "cancel-immediate";
 
 type StorageLike = Pick<Storage, "getItem" | "removeItem" | "setItem">;
 
 const STORAGE_PREFIX = "koaryu.billing.enrollment-transition.v1";
 
 function bounded(value: string, maximumBytes: number) {
-  return value.length > 0
-    && value === value.trim()
-    && !/[\u0000-\u001f\u007f]/.test(value)
-    && new TextEncoder().encode(value).byteLength <= maximumBytes;
+  return (
+    value.length > 0 &&
+    value === value.trim() &&
+    !/[\u0000-\u001f\u007f]/.test(value) &&
+    new TextEncoder().encode(value).byteLength <= maximumBytes
+  );
 }
 
 function storageKey(

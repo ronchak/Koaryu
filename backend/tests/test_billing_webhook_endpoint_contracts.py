@@ -54,10 +54,13 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertNotIn("url", response.json())
-        self.assertEqual(response.json(), {
-            "pending_url": "https://connect.stripe.test/setup/acct_1",
-            "delivery_receipt": "r" * 64,
-        })
+        self.assertEqual(
+            response.json(),
+            {
+                "pending_url": "https://connect.stripe.test/setup/acct_1",
+                "delivery_receipt": "r" * 64,
+            },
+        )
         admin_studio_id.assert_called_once_with(self.supabase, "user_1", "studio_1")
         service.create_connect_onboarding_link.assert_awaited_once_with(
             "studio_1",
@@ -101,7 +104,9 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
         self.assertEqual(rejected.status_code, 422)
 
     @patch("app.api.v1.endpoints.webhooks.StripeWebhookService")
-    def test_connect_webhook_endpoint_passes_raw_payload_signature_and_supabase(self, webhook_service_class):
+    def test_connect_webhook_endpoint_passes_raw_payload_signature_and_supabase(
+        self, webhook_service_class
+    ):
         service = webhook_service_class.return_value
         service.handle_connect_webhook = AsyncMock(
             return_value=WebhookProcessResponse(status="processed")
@@ -116,10 +121,14 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"received": True, "status": "processed"})
         webhook_service_class.assert_called_once_with(self.supabase)
-        service.handle_connect_webhook.assert_awaited_once_with(b'{"id":"evt_1"}', "t=1,v1=signature")
+        service.handle_connect_webhook.assert_awaited_once_with(
+            b'{"id":"evt_1"}', "t=1,v1=signature"
+        )
 
     @patch("app.api.v1.endpoints.webhooks.StripeWebhookService")
-    def test_platform_webhook_endpoint_passes_raw_payload_signature_and_supabase(self, webhook_service_class):
+    def test_platform_webhook_endpoint_passes_raw_payload_signature_and_supabase(
+        self, webhook_service_class
+    ):
         service = webhook_service_class.return_value
         service.handle_platform_webhook = AsyncMock(
             return_value=WebhookProcessResponse(status="processed")
@@ -140,7 +149,9 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
         )
 
     @patch("app.api.v1.endpoints.webhooks.StripeWebhookService")
-    def test_connect_webhook_endpoint_fails_closed_when_signature_validation_fails(self, webhook_service_class):
+    def test_connect_webhook_endpoint_fails_closed_when_signature_validation_fails(
+        self, webhook_service_class
+    ):
         service = webhook_service_class.return_value
         service.handle_connect_webhook = AsyncMock(
             side_effect=HTTPException(status_code=400, detail="Invalid Stripe webhook signature.")

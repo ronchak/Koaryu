@@ -61,11 +61,13 @@ class DashboardBootstrapServiceTest(unittest.TestCase):
         self.assertNotIn("expected_count", today_row_schema.get("required", []))
 
     def test_server_timing_value_uses_safe_labels_and_durations(self):
-        value = DashboardBootstrapService.server_timing_value({
-            "studio": 12.345,
-            "students": 4.0,
-            "total": 20.123,
-        })
+        value = DashboardBootstrapService.server_timing_value(
+            {
+                "studio": 12.345,
+                "students": 4.0,
+                "total": 20.123,
+            }
+        )
 
         self.assertEqual(
             value,
@@ -87,13 +89,15 @@ class DashboardBootstrapServiceTest(unittest.TestCase):
             self.assertEqual(studio_id, "studio-1")
             if label == "studio":
                 return (
-                    SimpleNamespace(data={
-                        "id": "studio-1",
-                        "name": "River City",
-                        "slug": "river-city",
-                        "timezone": "UTC",
-                        "logo_url": None,
-                    }),
+                    SimpleNamespace(
+                        data={
+                            "id": "studio-1",
+                            "name": "River City",
+                            "slug": "river-city",
+                            "timezone": "UTC",
+                            "logo_url": None,
+                        }
+                    ),
                     (label, 1.0),
                 )
             if label == "students":
@@ -104,19 +108,21 @@ class DashboardBootstrapServiceTest(unittest.TestCase):
                 return [], (label, 1.0)
             raise AssertionError(f"Unexpected bootstrap fetch label: {label}")
 
-        with patch(
-            "app.services.dashboard_bootstrap_service.AuthService.get_user_profile",
-            new=AsyncMock(return_value=auth),
-        ), patch(
-            "app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"
-        ) as ensure_access, patch.object(
-            DashboardBootstrapService,
-            "_timed_fetch_with_isolated_client",
-            side_effect=fake_timed_fetch,
+        with (
+            patch(
+                "app.services.dashboard_bootstrap_service.AuthService.get_user_profile",
+                new=AsyncMock(return_value=auth),
+            ),
+            patch(
+                "app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"
+            ) as ensure_access,
+            patch.object(
+                DashboardBootstrapService,
+                "_timed_fetch_with_isolated_client",
+                side_effect=fake_timed_fetch,
+            ),
         ):
-            payload, timings = asyncio.run(
-                service.get_dashboard_bootstrap("user-1")
-            )
+            payload, timings = asyncio.run(service.get_dashboard_bootstrap("user-1"))
 
         ensure_access.assert_called_once_with(supabase, "studio-1")
         self.assertIsNone(payload.summary)
@@ -129,24 +135,56 @@ class DashboardBootstrapServiceTest(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
 # Projection failures must be opt-in so deployed older frontends never mistake
 # missing data for a successful empty collection during a rolling release.
-def partial_bootstrap_case(*, failed=None, failure=None, enrichment_failure=False, allow_partial=True):
+def partial_bootstrap_case(
+    *, failed=None, failure=None, enrichment_failure=False, allow_partial=True
+):
     supabase = SimpleNamespace(options=SimpleNamespace(postgrest_client_timeout=10.0))
     service = DashboardBootstrapService(supabase)
     profile = AuthResponse(
-        user=UserProfile(id="partial-user", email="partial@example.test", legal_first_name="Partial", legal_last_name="User"),
-        staff_profiles_available=True, membership_status="active", studio_id="partial-studio", role="admin",
+        user=UserProfile(
+            id="partial-user",
+            email="partial@example.test",
+            legal_first_name="Partial",
+            legal_last_name="User",
+        ),
+        staff_profiles_available=True,
+        membership_status="active",
+        studio_id="partial-studio",
+        role="admin",
     )
-    student = StudentResponse(id="student-1", studio_id="partial-studio", legal_first_name="Healthy", legal_last_name="Student", status="active", created_at="2026-09-05", updated_at="2026-09-05")
-    program = ProgramResponse(id="program-1", studio_id="partial-studio", name="Healthy program", created_at="2026-09-05", updated_at="2026-09-05")
+    student = StudentResponse(
+        id="student-1",
+        studio_id="partial-studio",
+        legal_first_name="Healthy",
+        legal_last_name="Student",
+        status="active",
+        created_at="2026-09-05",
+        updated_at="2026-09-05",
+    )
+    program = ProgramResponse(
+        id="program-1",
+        studio_id="partial-studio",
+        name="Healthy program",
+        created_at="2026-09-05",
+        updated_at="2026-09-05",
+    )
 
     def fetch(label, _method, studio_id, timeout):
         assert studio_id == "partial-studio" and timeout == 10.0
         if label == failed:
             raise failure if failure is not None else TimeoutError("private provider detail")
         if label == "studio":
-            data = SimpleNamespace(data={"id": studio_id, "name": "Healthy studio", "slug": "healthy", "timezone": "UTC"})
+            data = SimpleNamespace(
+                data={
+                    "id": studio_id,
+                    "name": "Healthy studio",
+                    "slug": "healthy",
+                    "timezone": "UTC",
+                }
+            )
         elif label == "students":
             data = SimpleNamespace(data=[student.model_dump()], count=1)
         elif label == "programs":
@@ -155,8 +193,26 @@ def partial_bootstrap_case(*, failed=None, failure=None, enrichment_failure=Fals
             data = SimpleNamespace(data=[])
         return data, (label, 1.0)
 
-    with patch("app.services.dashboard_bootstrap_service.AuthService.get_user_profile", new=AsyncMock(return_value=profile)), patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"), patch.object(DashboardBootstrapService, "_timed_fetch_with_isolated_client", side_effect=fetch), patch("app.services.dashboard_bootstrap_service.StudentService.rows_to_responses", side_effect=TimeoutError("private membership enrichment detail") if enrichment_failure else None, return_value=[student]):
-        return asyncio.run(service.get_dashboard_bootstrap("partial-user", allow_partial=allow_partial))
+    with (
+        patch(
+            "app.services.dashboard_bootstrap_service.AuthService.get_user_profile",
+            new=AsyncMock(return_value=profile),
+        ),
+        patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"),
+        patch.object(
+            DashboardBootstrapService, "_timed_fetch_with_isolated_client", side_effect=fetch
+        ),
+        patch(
+            "app.services.dashboard_bootstrap_service.StudentService.rows_to_responses",
+            side_effect=TimeoutError("private membership enrichment detail")
+            if enrichment_failure
+            else None,
+            return_value=[student],
+        ),
+    ):
+        return asyncio.run(
+            service.get_dashboard_bootstrap("partial-user", allow_partial=allow_partial)
+        )
 
 
 @pytest.mark.parametrize("failed", ["studio", "students", "leads", "belts", "programs"])
@@ -194,7 +250,11 @@ def test_student_enrichment_failure_does_not_discard_healthy_programs_or_fabrica
 @pytest.mark.parametrize("status_code", [401, 402, 403])
 def test_projection_access_failures_remain_fatal(allow_partial, status_code):
     with pytest.raises(HTTPException) as result:
-        partial_bootstrap_case(failed="leads", failure=HTTPException(status_code=status_code), allow_partial=allow_partial)
+        partial_bootstrap_case(
+            failed="leads",
+            failure=HTTPException(status_code=status_code),
+            allow_partial=allow_partial,
+        )
     assert result.value.status_code == status_code
 
 
@@ -206,14 +266,21 @@ def test_legacy_bootstrap_still_rejects_partial_data():
 def test_partial_projection_opt_in_is_off_by_default_in_endpoint_and_service():
     import inspect
     from app.api.v1.endpoints.dashboard import get_dashboard_bootstrap
+
     assert inspect.signature(get_dashboard_bootstrap).parameters["allow_partial"].default is False
-    assert inspect.signature(DashboardBootstrapService.get_dashboard_bootstrap).parameters["allow_partial"].default is False
+    assert (
+        inspect.signature(DashboardBootstrapService.get_dashboard_bootstrap)
+        .parameters["allow_partial"]
+        .default
+        is False
+    )
 
 
 @pytest.mark.parametrize("allow_partial", [False, True])
 def test_bootstrap_endpoint_forwards_partial_opt_in_without_changing_private_headers(allow_partial):
     from fastapi import Response
     from app.api.v1.endpoints.dashboard import get_dashboard_bootstrap
+
     payload, timings = partial_bootstrap_case()
     client = object()
     provider = object()
@@ -223,9 +290,30 @@ def test_bootstrap_endpoint_forwards_partial_opt_in_without_changing_private_hea
         assert actual_provider is provider and lane == "interactive"
         return await operation(client)
 
-    with patch("app.api.v1.endpoints.dashboard.run_supabase_operation", side_effect=run_operation), patch.object(DashboardBootstrapService, "get_dashboard_bootstrap", new=AsyncMock(return_value=(payload, timings))) as bootstrap:
-        result = asyncio.run(get_dashboard_bootstrap(response, allow_partial=allow_partial, user_id="partial-user", requested_studio_id="partial-studio", supabase=provider))
-    bootstrap.assert_awaited_once_with("partial-user", "partial-studio", provider_owned=True, allow_partial=allow_partial, view="dashboard")
+    with (
+        patch("app.api.v1.endpoints.dashboard.run_supabase_operation", side_effect=run_operation),
+        patch.object(
+            DashboardBootstrapService,
+            "get_dashboard_bootstrap",
+            new=AsyncMock(return_value=(payload, timings)),
+        ) as bootstrap,
+    ):
+        result = asyncio.run(
+            get_dashboard_bootstrap(
+                response,
+                allow_partial=allow_partial,
+                user_id="partial-user",
+                requested_studio_id="partial-studio",
+                supabase=provider,
+            )
+        )
+    bootstrap.assert_awaited_once_with(
+        "partial-user",
+        "partial-studio",
+        provider_owned=True,
+        allow_partial=allow_partial,
+        view="dashboard",
+    )
     assert result is payload
     assert "private" in response.headers["cache-control"]
     assert "server-timing" in response.headers
@@ -233,17 +321,35 @@ def test_bootstrap_endpoint_forwards_partial_opt_in_without_changing_private_hea
 
 def test_workspace_does_not_load_feature_projections_and_keeps_subscription_enforcement():
     from unittest.mock import Mock
-    profile = AuthResponse(user=UserProfile(id="fixture-user", email="fixture@example.test"),
-                           staff_profiles_available=True, membership_status="active", studio_id="fixture-studio", role="admin")
+
+    profile = AuthResponse(
+        user=UserProfile(id="fixture-user", email="fixture@example.test"),
+        staff_profiles_available=True,
+        membership_status="active",
+        studio_id="fixture-studio",
+        role="admin",
+    )
     client = Mock()
     service = DashboardBootstrapService(client)
-    studio = {"id": "fixture-studio", "name": "Fixture", "slug": "fixture", "timezone": "America/Los_Angeles"}
-    with patch("app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync", return_value=profile), \
-         patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access") as access, \
-         patch.object(service, "_fetch_studio_summary", return_value=SimpleNamespace(data=studio)), \
-         patch.object(service, "_fetch_students") as students, \
-         patch.object(service, "_fetch_leads") as leads, \
-         patch.object(service, "_fetch_belt_ladders") as belts:
+    studio = {
+        "id": "fixture-studio",
+        "name": "Fixture",
+        "slug": "fixture",
+        "timezone": "America/Los_Angeles",
+    }
+    with (
+        patch(
+            "app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync",
+            return_value=profile,
+        ),
+        patch(
+            "app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"
+        ) as access,
+        patch.object(service, "_fetch_studio_summary", return_value=SimpleNamespace(data=studio)),
+        patch.object(service, "_fetch_students") as students,
+        patch.object(service, "_fetch_leads") as leads,
+        patch.object(service, "_fetch_belt_ladders") as belts,
+    ):
         result = service.get_workspace_sync("fixture-user", "fixture-studio")
         assert result.auth == profile
         assert result.studio.timezone == "America/Los_Angeles"
@@ -257,23 +363,41 @@ def test_workspace_does_not_load_feature_projections_and_keeps_subscription_enfo
         assert error.value.status_code == 402
 
 
-@pytest.mark.parametrize("view,expected", [
-    ("students", ["programs", "students", "studio"]),
-    ("schedule", ["programs", "studio"]),
-    ("settings", ["programs", "studio"]),
-    ("leads", ["leads", "programs", "studio"]),
-    ("reports", ["leads", "programs", "studio"]),
-    ("training", ["belts", "programs", "studio"]),
-])
+@pytest.mark.parametrize(
+    "view,expected",
+    [
+        ("students", ["programs", "students", "studio"]),
+        ("schedule", ["programs", "studio"]),
+        ("settings", ["programs", "studio"]),
+        ("leads", ["leads", "programs", "studio"]),
+        ("reports", ["leads", "programs", "studio"]),
+        ("training", ["belts", "programs", "studio"]),
+    ],
+)
 def test_bootstrap_omits_unrelated_route_queries(view, expected):
-    profile = AuthResponse(user=UserProfile(id="fixture-user", email="fixture@example.test"),
-                           staff_profiles_available=True, membership_status="active", studio_id="fixture-studio", role="admin")
-    service = DashboardBootstrapService(SimpleNamespace(options=SimpleNamespace(postgrest_client_timeout=10)))
+    profile = AuthResponse(
+        user=UserProfile(id="fixture-user", email="fixture@example.test"),
+        staff_profiles_available=True,
+        membership_status="active",
+        studio_id="fixture-studio",
+        role="admin",
+    )
+    service = DashboardBootstrapService(
+        SimpleNamespace(options=SimpleNamespace(postgrest_client_timeout=10))
+    )
     labels = []
+
     def fetch(label, *_args):
         labels.append(label)
         if label == "studio":
-            value = SimpleNamespace(data={"id": "fixture-studio", "name": "Fixture", "slug": "fixture", "timezone": "UTC"})
+            value = SimpleNamespace(
+                data={
+                    "id": "fixture-studio",
+                    "name": "Fixture",
+                    "slug": "fixture",
+                    "timezone": "UTC",
+                }
+            )
         elif label in {"students", "leads", "belts"} and label in expected:
             value = SimpleNamespace(data=[], count=0)
         elif label == "programs":
@@ -281,9 +405,17 @@ def test_bootstrap_omits_unrelated_route_queries(view, expected):
         else:
             raise AssertionError(f"Unrelated projection: {label}")
         return value, (label, 0)
-    with patch("app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync", return_value=profile), \
-         patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"), \
-         patch.object(service, "_timed_fetch_with_isolated_client", side_effect=fetch):
-        result, _ = asyncio.run(service.get_dashboard_bootstrap("fixture-user", provider_owned=True, view=view))
+
+    with (
+        patch(
+            "app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync",
+            return_value=profile,
+        ),
+        patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"),
+        patch.object(service, "_timed_fetch_with_isolated_client", side_effect=fetch),
+    ):
+        result, _ = asyncio.run(
+            service.get_dashboard_bootstrap("fixture-user", provider_owned=True, view=view)
+        )
     assert sorted(labels) == expected
     assert result.students == []

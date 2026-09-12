@@ -253,10 +253,11 @@
   background: color-mix(in srgb, var(--product-lifted) 94%, transparent);
   box-shadow: var(--product-shadow-lifted);
   transform: translate3d(
-    var(--dashboard-lift-translate-x, 0),
-    var(--dashboard-lift-translate-y, 0),
-    0
-  ) scale(1.012);
+      var(--dashboard-lift-translate-x, 0),
+      var(--dashboard-lift-translate-y, 0),
+      0
+    )
+    scale(1.012);
   transform-origin: var(--dashboard-lift-grab-x, 0) var(--dashboard-lift-grab-y, 0);
   will-change: transform, width, height;
 }
@@ -795,9 +796,15 @@
   background: var(--product-rule-soft);
 }
 
-.microBars span:nth-child(3n + 2) { height: 62%; }
-.microBars span:nth-child(3n) { height: 82%; }
-.microBars span[data-filled="true"] { background: var(--product-cobalt); }
+.microBars span:nth-child(3n + 2) {
+  height: 62%;
+}
+.microBars span:nth-child(3n) {
+  height: 82%;
+}
+.microBars span[data-filled="true"] {
+  background: var(--product-cobalt);
+}
 
 .setupSteps {
   display: flex;
@@ -1005,7 +1012,6 @@
     grid-column: var(--dashboard-tablet-column) / span var(--dashboard-column-span);
     grid-row: var(--dashboard-tablet-row) / span var(--dashboard-row-span);
   }
-
 }
 
 @media (max-width: 820px) {
@@ -1094,7 +1100,6 @@
   .widgetFooting::before {
     display: none;
   }
-
 }
 
 @media (max-width: 390px) {
@@ -1159,7 +1164,8 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .sequence[data-layout-resolved="true"] .widget:not(.lifted) {
-    animation: widget-gather var(--product-motion-gather-duration) var(--product-motion-ease) backwards;
+    animation: widget-gather var(--product-motion-gather-duration) var(--product-motion-ease)
+      backwards;
   }
 
   .sequence[data-layout-resolved="true"] .widget:nth-child(2n) {

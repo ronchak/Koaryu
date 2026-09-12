@@ -338,12 +338,14 @@ class StaffPermissionPolicyTest(unittest.TestCase):
         supabase = _supabase(
             _staff_role("instructor"),
             extra_tables={
-                "studio_subscriptions": [{
-                    "studio_id": "studio-a",
-                    "status": "active",
-                    "comped": False,
-                    "trial_end": None,
-                }],
+                "studio_subscriptions": [
+                    {
+                        "studio_id": "studio-a",
+                        "status": "active",
+                        "comped": False,
+                        "trial_end": None,
+                    }
+                ],
             },
         )
         test_app = FastAPI()
@@ -373,12 +375,14 @@ class StaffPermissionPolicyTest(unittest.TestCase):
         supabase = _supabase(
             _staff_role("instructor"),
             extra_tables={
-                "studio_subscriptions": [{
-                    "studio_id": "studio-a",
-                    "status": "active",
-                    "comped": False,
-                    "trial_end": None,
-                }],
+                "studio_subscriptions": [
+                    {
+                        "studio_id": "studio-a",
+                        "status": "active",
+                        "comped": False,
+                        "trial_end": None,
+                    }
+                ],
             },
         )
         test_app = FastAPI()
@@ -413,12 +417,14 @@ class StaffPermissionPolicyTest(unittest.TestCase):
         supabase = _supabase(
             _staff_role("instructor"),
             extra_tables={
-                "studio_subscriptions": [{
-                    "studio_id": "studio-a",
-                    "status": "active",
-                    "comped": False,
-                    "trial_end": None,
-                }],
+                "studio_subscriptions": [
+                    {
+                        "studio_id": "studio-a",
+                        "status": "active",
+                        "comped": False,
+                        "trial_end": None,
+                    }
+                ],
             },
         )
         test_app = FastAPI()

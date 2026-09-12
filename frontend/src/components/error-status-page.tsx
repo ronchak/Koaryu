@@ -95,11 +95,7 @@ export function ErrorStatusPage({
               {description}
             </p>
 
-            {actions && (
-              <div className="mt-7 flex flex-wrap items-center gap-3">
-                {actions}
-              </div>
-            )}
+            {actions && <div className="mt-7 flex flex-wrap items-center gap-3">{actions}</div>}
           </div>
 
           <aside className="relative overflow-hidden rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/20">
@@ -114,9 +110,7 @@ export function ErrorStatusPage({
             <div className="relative">
               <div className="flex items-start justify-between gap-5 border-b border-border pb-4">
                 <div>
-                  <p className="text-sm font-medium text-text-primary">
-                    Status trace
-                  </p>
+                  <p className="text-sm font-medium text-text-primary">Status trace</p>
                   <p className="mt-1 text-xs text-muted">Koaryu edge</p>
                 </div>
                 <span className="font-mono text-2xl font-semibold text-text-primary">
@@ -136,9 +130,7 @@ export function ErrorStatusPage({
                       }`}
                       aria-hidden="true"
                     />
-                    <span className="min-w-0 text-sm text-text-secondary">
-                      {item.label}
-                    </span>
+                    <span className="min-w-0 text-sm text-text-secondary">{item.label}</span>
                     <span className="min-w-0 text-right font-mono text-xs text-text-primary">
                       {item.value}
                     </span>

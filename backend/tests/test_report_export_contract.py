@@ -15,18 +15,14 @@ from app.services.report_export_service import ReportExportService
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "report_exports"
-EXPECTED_MANIFEST = json.loads(
-    (FIXTURE_DIR / "catalog_manifest.json").read_text(encoding="utf-8")
-)
+EXPECTED_MANIFEST = json.loads((FIXTURE_DIR / "catalog_manifest.json").read_text(encoding="utf-8"))
 INTELLIGENCE_FIXTURE = json.loads(
     (FIXTURE_DIR / "intelligence_fixture.json").read_text(encoding="utf-8")
 )
 EXPECTED_INTELLIGENCE_CSV = json.loads(
     (FIXTURE_DIR / "intelligence_expected_csv.json").read_text(encoding="utf-8")
 )
-EXPECTED_HEADERS = json.loads(
-    (FIXTURE_DIR / "catalog_headers.json").read_text(encoding="utf-8")
-)
+EXPECTED_HEADERS = json.loads((FIXTURE_DIR / "catalog_headers.json").read_text(encoding="utf-8"))
 EXPECTED_SOURCE_VOCABULARY = json.loads(
     (FIXTURE_DIR / "source_vocabulary.json").read_text(encoding="utf-8")
 )
@@ -60,9 +56,7 @@ class ReportExportContractTest(unittest.TestCase):
     def test_source_vocabulary_resolves_every_catalog_key_once(self):
         complete = build_complete_report_catalog(ReportExportService)
         catalog_source_keys = {
-            source_key
-            for report in complete.values()
-            for source_key in report.source_keys
+            source_key for report in complete.values() for source_key in report.source_keys
         }
         vocabulary_keys = set(REPORT_SOURCE_SPECS)
         expected_keys = {entry["key"] for entry in EXPECTED_SOURCE_VOCABULARY}
@@ -78,9 +72,7 @@ class ReportExportContractTest(unittest.TestCase):
             {"postgrest", "auth_admin"},
             {spec.provider for spec in REPORT_SOURCE_SPECS.values()},
         )
-        self.assertTrue(
-            all(spec.key == key for key, spec in REPORT_SOURCE_SPECS.items())
-        )
+        self.assertTrue(all(spec.key == key for key, spec in REPORT_SOURCE_SPECS.items()))
 
         with self.assertRaises(TypeError):
             REPORT_SOURCE_SPECS["students"] = REPORT_SOURCE_SPECS["students"]
@@ -125,8 +117,8 @@ class ReportExportContractTest(unittest.TestCase):
             with self.subTest(report_id=entry["id"]):
                 report = live[entry["id"]]
                 expected_header = EXPECTED_HEADERS[entry["id"]].encode("utf-8")
-                actual_header = ReportExportService(None)._write_csv(report.columns, []).encode(
-                    "utf-8"
+                actual_header = (
+                    ReportExportService(None)._write_csv(report.columns, []).encode("utf-8")
                 )
                 self.assertEqual(entry["filename"], report.filename)
                 self.assertEqual(expected_header, actual_header)
@@ -162,21 +154,50 @@ class ReportExportContractTest(unittest.TestCase):
 
     def test_formula_fixture_keeps_canceled_and_missing_session_semantics(self):
         self.assertIn(
-            {"id": "attendance-canceled", "session_id": "session-canceled", "student_id": "student-2", "status": "present", "checked_in_at": "2026-05-29T18:00:00Z"},
+            {
+                "id": "attendance-canceled",
+                "session_id": "session-canceled",
+                "student_id": "student-2",
+                "status": "present",
+                "checked_in_at": "2026-05-29T18:00:00Z",
+            },
             INTELLIGENCE_FIXTURE["attendance"],
         )
         self.assertIn(
-            {"id": "attendance-missing-session", "session_id": "session-does-not-exist", "student_id": "student-1", "status": "present", "checked_in_at": "2026-05-28T18:00:00Z"},
+            {
+                "id": "attendance-missing-session",
+                "session_id": "session-does-not-exist",
+                "student_id": "student-1",
+                "status": "present",
+                "checked_in_at": "2026-05-28T18:00:00Z",
+            },
             INTELLIGENCE_FIXTURE["attendance"],
         )
         self.assertIn("visits_30_days,3,", EXPECTED_INTELLIGENCE_CSV["owner_kpi_summary"])
-        self.assertIn(",2026-05-29,3,1,1,0,1,past_due,", EXPECTED_INTELLIGENCE_CSV["quiet_churn_watchlist"])
-        self.assertIn(",2,1,2,20,2,2,2,0,2.0,", EXPECTED_INTELLIGENCE_CSV["schedule_utilization_demand"])
+        self.assertIn(
+            ",2026-05-29,3,1,1,0,1,past_due,", EXPECTED_INTELLIGENCE_CSV["quiet_churn_watchlist"]
+        )
+        self.assertIn(
+            ",2,1,2,20,2,2,2,0,2.0,", EXPECTED_INTELLIGENCE_CSV["schedule_utilization_demand"]
+        )
 
     def test_csv_byte_contract_covers_special_values_and_injection_prefixes(self):
         columns = (
-            "comma", "quote", "lf", "crlf", "unicode", "null", "true", "false",
-            "nested", "equals", "plus", "minus", "at", "tab", "cr",
+            "comma",
+            "quote",
+            "lf",
+            "crlf",
+            "unicode",
+            "null",
+            "true",
+            "false",
+            "nested",
+            "equals",
+            "plus",
+            "minus",
+            "at",
+            "tab",
+            "cr",
         )
         row = {
             "comma": "a,b",
@@ -196,10 +217,10 @@ class ReportExportContractTest(unittest.TestCase):
             "cr": "\rformula",
         }
         expected = (
-            'comma,quote,lf,crlf,unicode,null,true,false,nested,equals,plus,minus,at,tab,cr\r\n'
+            "comma,quote,lf,crlf,unicode,null,true,false,nested,equals,plus,minus,at,tab,cr\r\n"
             '"a,b","say ""hi""","line1\nline2","line1\r\nline2",東京 🚀,,true,false,'
             '"{""a"": [2, 1], ""z"": ""last""}",\'=SUM(A1),\'+formula,\'-formula,'
-            '\'@formula,\'\tformula,"\'\rformula"\r\n'
+            "'@formula,'\tformula,\"'\rformula\"\r\n"
         ).encode("utf-8")
 
         actual = ReportExportService(None)._write_csv(columns, [row]).encode("utf-8")

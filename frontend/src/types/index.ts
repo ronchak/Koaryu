@@ -48,24 +48,27 @@ export type AccountDeletionRequest = ApiContracts.ApiAccountDeletionRequestRespo
 export type SubscriptionStatus = ApiContracts.ApiPlatformBillingStatusResponse["status"];
 export type BillingSubscriptionStatus = ApiContracts.ApiBillingSubscriptionResponse["status"];
 export type PaymentAccountStatus = ApiContracts.ApiStudioPaymentAccountResponse["status"];
-export type ConnectBusinessEntityType = NonNullable<ApiContracts.ApiConnectOnboardingLinkRequest["business_entity_type"]>;
+export type ConnectBusinessEntityType = NonNullable<
+  ApiContracts.ApiConnectOnboardingLinkRequest["business_entity_type"]
+>;
 
 export type BillingPlanStatus = ApiContracts.ApiBillingPlanResponse["status"];
 export type BillingInterval = ApiContracts.ApiBillingPlanResponse["billing_interval"];
 export type PayerBillingStatus = ApiContracts.ApiBillingPayerResponse["billing_status"];
 export type AutopayStatus = ApiContracts.ApiBillingPayerResponse["autopay_status"];
-export type BillingCollectionMode = ApiContracts.ApiStudentBillingEnrollmentResponse["collection_mode"];
+export type BillingCollectionMode =
+  ApiContracts.ApiStudentBillingEnrollmentResponse["collection_mode"];
 export type BillingEnrollmentStatus = ApiContracts.ApiStudentBillingEnrollmentResponse["status"];
 export type InvoiceStatus = ApiContracts.ApiBillingInvoiceResponse["status"];
 export type PaymentStatus = ApiContracts.ApiBillingPaymentResponse["status"];
 
 export type BillingLinkResponse = ApiContracts.ApiBillingLinkResponse;
 export type ConnectOnboardingLinkResponse = ApiContracts.ApiConnectOnboardingLinkResponse;
-export type ConnectOnboardingDeliveryAckResponse = ApiContracts.ApiConnectOnboardingDeliveryAckResponse;
-export type BillingActionRequest =
-  & ApiContracts.ApiConnectOnboardingLinkRequest
-  & ApiContracts.ApiPlatformCheckoutRequest
-  & ApiContracts.ApiPlatformPortalRequest;
+export type ConnectOnboardingDeliveryAckResponse =
+  ApiContracts.ApiConnectOnboardingDeliveryAckResponse;
+export type BillingActionRequest = ApiContracts.ApiConnectOnboardingLinkRequest &
+  ApiContracts.ApiPlatformCheckoutRequest &
+  ApiContracts.ApiPlatformPortalRequest;
 export type EmailUsage = ApiContracts.ApiEmailUsageResponse;
 export type PlatformBillingStatus = ApiContracts.ApiPlatformBillingStatusResponse;
 export type BillingSystemStatus = ApiContracts.ApiBillingSystemStatusResponse;

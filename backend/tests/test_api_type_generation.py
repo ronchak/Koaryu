@@ -39,7 +39,10 @@ class ApiTypeGenerationTest(unittest.TestCase):
         self.assertIn("options?: ApiCsvImportOptions;", generated_types)
         self.assertIn("export interface ApiClassSessionDeleteScope", generated_types)
         self.assertIn("export interface ApiStudentListQueryContract", generated_types)
-        self.assertIn('status?: "active" | "trialing" | "inactive" | "paused" | "canceled" | null;', generated_types)
+        self.assertIn(
+            'status?: "active" | "trialing" | "inactive" | "paused" | "canceled" | null;',
+            generated_types,
+        )
         self.assertIn("export interface ApiStudentRosterPageResponse", generated_types)
         self.assertIn("export interface ApiStudentRosterCursorErrorResponse", generated_types)
         self.assertIn("cursor?: string | null;", generated_types)

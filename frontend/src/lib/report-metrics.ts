@@ -19,7 +19,7 @@ export function getReportExportMinimumRole(reportId: string): ReportExportMinimu
 
 export function canRunReportExport(
   role: "admin" | "front_desk" | "instructor" | null | undefined,
-  reportId: string
+  reportId: string,
 ) {
   if (role === "admin") return true;
   return role === "front_desk" && getReportExportMinimumRole(reportId) === "front_desk";
@@ -144,13 +144,16 @@ export function buildProgramAttendanceRows(
   sessionRows: ReportProgramSessionMetricRow[],
   getProgramLabel: (programId: string | null) => string,
 ) {
-  const rows = new Map<string, {
-    programId: string | null;
-    label: string;
-    sessions: number;
-    attendance: number;
-    capacity: number;
-  }>();
+  const rows = new Map<
+    string,
+    {
+      programId: string | null;
+      label: string;
+      sessions: number;
+      attendance: number;
+      capacity: number;
+    }
+  >();
 
   for (const session of sessionRows) {
     const programId = session.program_id || null;
@@ -192,7 +195,7 @@ export function buildReportLeadMetrics(leads: Lead[]) {
       counts[source] = { total: 0, active: 0, enrolled: 0 };
       return counts;
     },
-    {} as Record<LeadSource, { total: number; active: number; enrolled: number }>
+    {} as Record<LeadSource, { total: number; active: number; enrolled: number }>,
   );
 
   for (const lead of leads) {
@@ -272,9 +275,7 @@ export function buildReportSessionRows({
   return sessions
     .filter(
       (session) =>
-        session.status !== "canceled" &&
-        session.date >= lookbackStart &&
-        session.date <= today
+        session.status !== "canceled" && session.date >= lookbackStart && session.date <= today,
     )
     .map((session) => {
       const attendees = attendanceBySession.get(session.id) ?? session.attendance_count ?? 0;
@@ -310,11 +311,9 @@ export function countUniqueReportAttendees({
     sessions
       .filter(
         (session) =>
-          session.status !== "canceled"
-          && session.date >= lookbackStart
-          && session.date <= today
+          session.status !== "canceled" && session.date >= lookbackStart && session.date <= today,
       )
-      .map((session) => session.id)
+      .map((session) => session.id),
   );
   const studentIds = new Set<string>();
 

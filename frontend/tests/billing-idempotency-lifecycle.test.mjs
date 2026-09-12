@@ -72,10 +72,11 @@ describe("billing idempotency-key lifecycle", () => {
       };
       assertTerminalRotation({
         clear: () => clearPersistedPayerOperationRequestKey(options),
-        resolve: (createKey) => resolvePersistedPayerOperationRequestKey({
-          ...options,
-          createKey,
-        }),
+        resolve: (createKey) =>
+          resolvePersistedPayerOperationRequestKey({
+            ...options,
+            createKey,
+          }),
       });
     }
   });
@@ -100,9 +101,8 @@ describe("billing idempotency-key lifecycle", () => {
       });
 
       assert.equal(
-        clearBillingIdempotencyKeyAfterTerminalError(
-          apiError(message, 409),
-          () => clearPersistedPayerOperationRequestKey(options),
+        clearBillingIdempotencyKeyAfterTerminalError(apiError(message, 409), () =>
+          clearPersistedPayerOperationRequestKey(options),
         ),
         true,
       );
@@ -137,10 +137,11 @@ describe("billing idempotency-key lifecycle", () => {
       };
       assertTerminalRotation({
         clear: () => clearEnrollmentActivationRequestKey(options),
-        resolve: (createKey) => resolveEnrollmentActivationRequestKey({
-          ...options,
-          createKey,
-        }),
+        resolve: (createKey) =>
+          resolveEnrollmentActivationRequestKey({
+            ...options,
+            createKey,
+          }),
       });
     }
     {
@@ -155,10 +156,11 @@ describe("billing idempotency-key lifecycle", () => {
       };
       assertTerminalRotation({
         clear: () => clearEnrollmentTransitionRequestKey(options),
-        resolve: (createKey) => resolveEnrollmentTransitionRequestKey({
-          ...options,
-          createKey,
-        }),
+        resolve: (createKey) =>
+          resolveEnrollmentTransitionRequestKey({
+            ...options,
+            createKey,
+          }),
       });
     }
     {
@@ -173,10 +175,11 @@ describe("billing idempotency-key lifecycle", () => {
       };
       assertTerminalRotation({
         clear: () => clearPersistedInvoiceOperationRequestKey(options),
-        resolve: (createKey) => resolvePersistedInvoiceOperationRequestKey({
-          ...options,
-          createKey,
-        }),
+        resolve: (createKey) =>
+          resolvePersistedInvoiceOperationRequestKey({
+            ...options,
+            createKey,
+          }),
       });
     }
   });
@@ -212,10 +215,7 @@ describe("billing idempotency-key lifecycle", () => {
       path.join(root, "src/lib/billing-payer-setup-action.ts"),
       "utf8",
     );
-    const planActions = fs.readFileSync(
-      path.join(root, "src/lib/billing-plan-actions.ts"),
-      "utf8",
-    );
+    const planActions = fs.readFileSync(path.join(root, "src/lib/billing-plan-actions.ts"), "utf8");
     const enrollmentActions = fs.readFileSync(
       path.join(root, "src/lib/billing-enrollment-actions.ts"),
       "utf8",

@@ -149,11 +149,7 @@ export function buildNewTipRank({
   };
 }
 
-export function appendTipToGroup(
-  groups: BeltGroup[],
-  groupIndex: number,
-  tipRank: BeltRank
-) {
+export function appendTipToGroup(groups: BeltGroup[], groupIndex: number, tipRank: BeltRank) {
   const nextGroups = cloneGroups(groups);
   const targetGroup = nextGroups[groupIndex];
   if (!targetGroup) {
@@ -164,11 +160,7 @@ export function appendTipToGroup(
   return flattenGroups(nextGroups);
 }
 
-export function updateRankFromForm(
-  ranks: BeltRank[],
-  rankId: string,
-  data: BeltRankFormInput
-) {
+export function updateRankFromForm(ranks: BeltRank[], rankId: string, data: BeltRankFormInput) {
   return ranks.map((rank) =>
     rank.id === rankId
       ? {
@@ -180,7 +172,7 @@ export function updateRankFromForm(
           min_months: data.min_months,
           requires_approval: data.requires_approval,
         }
-      : rank
+      : rank,
   );
 }
 
@@ -206,7 +198,11 @@ export function validatePromotionTarget({
     return "This promotion target is not part of the current belt ladder.";
   }
 
-  if (selectedProgram?.id && promoteEntry.program_id && promoteEntry.program_id !== selectedProgram.id) {
+  if (
+    selectedProgram?.id &&
+    promoteEntry.program_id &&
+    promoteEntry.program_id !== selectedProgram.id
+  ) {
     return "This student is queued in a different program. Switch programs before promoting.";
   }
 
@@ -216,7 +212,7 @@ export function validatePromotionTarget({
 export function buildPromotionRequestBody(
   promoteEntry: EligibilityEntry,
   targetRankId: string,
-  notes: string
+  notes: string,
 ): PromotionRequestBody {
   return {
     student_id: promoteEntry.student_id,
@@ -250,7 +246,9 @@ export function buildBeltTrackerProgramState({
     ladderByProgramId,
     selectedProgramId,
   });
-  const currentLadder = selectedProgram ? ladderByProgramId.get(selectedProgram.id) ?? null : null;
+  const currentLadder = selectedProgram
+    ? (ladderByProgramId.get(selectedProgram.id) ?? null)
+    : null;
   const currentProgramReady = Boolean(currentLadder && currentLadder.id === currentLadderId);
   const activeLadderRanks = currentLadder
     ? currentLadder.id === currentLadderId
@@ -274,10 +272,7 @@ function selectBeltTrackerProgram({
   currentStoreLadder,
   ladderByProgramId,
   selectedProgramId,
-}: Pick<
-  BeltTrackerProgramState,
-  "beltPrograms" | "currentStoreLadder" | "ladderByProgramId"
-> & {
+}: Pick<BeltTrackerProgramState, "beltPrograms" | "currentStoreLadder" | "ladderByProgramId"> & {
   selectedProgramId: string | null;
 }) {
   const selected = selectedProgramId
@@ -290,7 +285,9 @@ function selectBeltTrackerProgram({
     : null;
   if (currentProgram) return currentProgram;
 
-  return beltPrograms.find((program) => ladderByProgramId.has(program.id)) ?? beltPrograms[0] ?? null;
+  return (
+    beltPrograms.find((program) => ladderByProgramId.has(program.id)) ?? beltPrograms[0] ?? null
+  );
 }
 
 export function groupRanks(ranks: BeltRank[]): BeltGroup[] {
@@ -326,11 +323,7 @@ function cloneGroups(groups: BeltGroup[]) {
   return groups.map((group) => ({ ...group, tips: [...group.tips] }));
 }
 
-export function moveBeltGroup(
-  groups: BeltGroup[],
-  fromIndex: number | null,
-  dropIndex: number
-) {
+export function moveBeltGroup(groups: BeltGroup[], fromIndex: number | null, dropIndex: number) {
   if (fromIndex === null || fromIndex === dropIndex) {
     return null;
   }
@@ -349,7 +342,7 @@ export function moveTipWithinGroup(
   groups: BeltGroup[],
   from: TipDragPosition | null,
   dropGIdx: number,
-  dropTIdx: number
+  dropTIdx: number,
 ) {
   if (!from || (from.gIdx === dropGIdx && from.tIdx === dropTIdx)) {
     return null;
@@ -422,7 +415,7 @@ function compareEligibilityEntries(left: EligibilityEntry, right: EligibilityEnt
 
 export function buildEligibilityGroups(
   visibleEligibility: EligibilityEntry[],
-  eligibilityRanks: BeltRank[]
+  eligibilityRanks: BeltRank[],
 ): EligibilityGroup[] {
   const rankOrder = new Map(eligibilityRanks.map((rank, index) => [rank.id, index]));
   const rankById = new Map(eligibilityRanks.map((rank) => [rank.id, rank]));
@@ -453,10 +446,10 @@ export function buildEligibilityGroups(
       return {
         ...group,
         approvalCount: entries.filter(
-          (entry) => isEligibilityEntryReady(entry) && entry.needs_approval
+          (entry) => isEligibilityEntryReady(entry) && entry.needs_approval,
         ).length,
         eligibleCount: entries.filter(
-          (entry) => isEligibilityEntryReady(entry) && !entry.needs_approval
+          (entry) => isEligibilityEntryReady(entry) && !entry.needs_approval,
         ).length,
         entries,
       };

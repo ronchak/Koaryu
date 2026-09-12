@@ -23,7 +23,9 @@ SCHEDULED_TRANSITION_READ_BATCH_SIZE = 300
 
 
 class BillingEnrollmentManager:
-    def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
+    def __init__(
+        self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService
+    ):
         self.billing_service = billing_service
         self.stripe_service_cls = stripe_service_cls
 
@@ -49,7 +51,9 @@ class BillingEnrollmentManager:
     def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
         self.billing_service._recompute_payer_balance(studio_id, payer_id)
 
-    def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
+    def _audit(
+        self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]
+    ) -> None:
         self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
 
     def _idempotency_key(self, *parts: str) -> str:
@@ -82,9 +86,13 @@ class BillingEnrollmentManager:
         stripe_invoice: Any,
         account_id: str,
     ) -> dict[str, Any]:
-        return self.billing_service._update_invoice_from_stripe(invoice_id, studio_id, stripe_invoice, account_id)
+        return self.billing_service._update_invoice_from_stripe(
+            invoice_id, studio_id, stripe_invoice, account_id
+        )
 
-    def _stripe_account_for_enrollment_subscription(self, enrollment: dict[str, Any]) -> Optional[str]:
+    def _stripe_account_for_enrollment_subscription(
+        self, enrollment: dict[str, Any]
+    ) -> Optional[str]:
         return self.billing_service._stripe_account_for_enrollment_subscription(enrollment)
 
     async def list_subscriptions(self, studio_id: str) -> list[BillingSubscriptionResponse]:
@@ -112,7 +120,9 @@ class BillingEnrollmentManager:
             studio_id,
         )
 
-    async def list_student_billing(self, student_id: str, studio_id: str) -> list[StudentBillingEnrollmentResponse]:
+    async def list_student_billing(
+        self, student_id: str, studio_id: str
+    ) -> list[StudentBillingEnrollmentResponse]:
         self._ensure_record_in_studio("students", student_id, studio_id, "Student not found.")
         result = (
             self.supabase.table("student_billing_enrollments")
@@ -147,7 +157,7 @@ class BillingEnrollmentManager:
                 {
                     "p_studio_id": studio_id,
                     "p_enrollment_ids": enrollment_ids[
-                        start:start + SCHEDULED_TRANSITION_READ_BATCH_SIZE
+                        start : start + SCHEDULED_TRANSITION_READ_BATCH_SIZE
                     ],
                 },
             )
@@ -182,19 +192,34 @@ class BillingEnrollmentManager:
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
         if not data.student_id:
-            raise HTTPException(status_code=400, detail="Student is required for billing enrollment.")
+            raise HTTPException(
+                status_code=400, detail="Student is required for billing enrollment."
+            )
         self._ensure_record_in_studio("students", data.student_id, studio_id, "Student not found.")
-        self._ensure_record_in_studio("billing_plans", data.billing_plan_id, studio_id, "Billing plan not found.")
+        self._ensure_record_in_studio(
+            "billing_plans", data.billing_plan_id, studio_id, "Billing plan not found."
+        )
         if data.payer_id:
-            self._ensure_record_in_studio("billing_payers", data.payer_id, studio_id, "Payer not found.")
-        plan = self._get_row_or_404("billing_plans", data.billing_plan_id, studio_id, "Billing plan not found.")
-        if data.collection_mode != "external" and plan.get("billing_interval") == "fixed_term" and not data.end_date:
+            self._ensure_record_in_studio(
+                "billing_payers", data.payer_id, studio_id, "Payer not found."
+            )
+        plan = self._get_row_or_404(
+            "billing_plans", data.billing_plan_id, studio_id, "Billing plan not found."
+        )
+        if (
+            data.collection_mode != "external"
+            and plan.get("billing_interval") == "fixed_term"
+            and not data.end_date
+        ):
             raise HTTPException(status_code=400, detail="Fixed-term billing requires an end date.")
         row = data.model_dump(exclude_none=True)
         row["studio_id"] = studio_id
         if data.collection_mode != "external":
             row["status"] = "pending"
-        row.setdefault("billing_status", "externally_paid" if data.collection_mode == "external" else "no_payment_method")
+        row.setdefault(
+            "billing_status",
+            "externally_paid" if data.collection_mode == "external" else "no_payment_method",
+        )
         try:
             result = self.supabase.table("student_billing_enrollments").insert(row).execute()
         except PostgrestAPIError as exc:
@@ -209,12 +234,18 @@ class BillingEnrollmentManager:
         enrollment = result.data[0]
         if data.collection_mode == "external":
             self._recompute_payer_balance(studio_id, data.payer_id)
-        self._audit(studio_id, actor_id, "billing.student_enrollment_created", result.data[0]["id"], {
-            "student_id": data.student_id,
-            "billing_plan_id": data.billing_plan_id,
-            "payer_id": data.payer_id,
-            "collection_mode": data.collection_mode,
-        })
+        self._audit(
+            studio_id,
+            actor_id,
+            "billing.student_enrollment_created",
+            result.data[0]["id"],
+            {
+                "student_id": data.student_id,
+                "billing_plan_id": data.billing_plan_id,
+                "payer_id": data.payer_id,
+                "collection_mode": data.collection_mode,
+            },
+        )
         return StudentBillingEnrollmentResponse(**enrollment)
 
     async def update_enrollment(
@@ -224,7 +255,9 @@ class BillingEnrollmentManager:
         studio_id: str,
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
-        current = self._get_row_or_404("student_billing_enrollments", enrollment_id, studio_id, "Billing enrollment not found.")
+        current = self._get_row_or_404(
+            "student_billing_enrollments", enrollment_id, studio_id, "Billing enrollment not found."
+        )
         update = data.model_dump(exclude_unset=True)
         if current.get("collection_mode") != "external" or (
             "collection_mode" in update and update.get("collection_mode") != "external"
@@ -237,9 +270,13 @@ class BillingEnrollmentManager:
                 ),
             )
         if update.get("billing_plan_id"):
-            self._ensure_record_in_studio("billing_plans", update["billing_plan_id"], studio_id, "Billing plan not found.")
+            self._ensure_record_in_studio(
+                "billing_plans", update["billing_plan_id"], studio_id, "Billing plan not found."
+            )
         if update.get("payer_id"):
-            self._ensure_record_in_studio("billing_payers", update["payer_id"], studio_id, "Payer not found.")
+            self._ensure_record_in_studio(
+                "billing_payers", update["payer_id"], studio_id, "Payer not found."
+            )
         if update:
             result = (
                 self.supabase.table("student_billing_enrollments")
@@ -251,7 +288,13 @@ class BillingEnrollmentManager:
             if not result.data:
                 raise HTTPException(status_code=404, detail="Billing enrollment not found.")
             current = result.data[0]
-        self._audit(studio_id, actor_id, "billing.student_enrollment_updated", enrollment_id, {"changes": update})
+        self._audit(
+            studio_id,
+            actor_id,
+            "billing.student_enrollment_updated",
+            enrollment_id,
+            {"changes": update},
+        )
         return StudentBillingEnrollmentResponse(**current)
 
     async def set_enrollment_status(
@@ -261,7 +304,9 @@ class BillingEnrollmentManager:
         studio_id: str,
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
-        current = self._get_row_or_404("student_billing_enrollments", enrollment_id, studio_id, "Billing enrollment not found.")
+        current = self._get_row_or_404(
+            "student_billing_enrollments", enrollment_id, studio_id, "Billing enrollment not found."
+        )
         if current.get("collection_mode") != "external":
             raise HTTPException(
                 status_code=409,
@@ -279,7 +324,9 @@ class BillingEnrollmentManager:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Billing enrollment not found.")
-        self._audit(studio_id, actor_id, f"billing.student_enrollment_{status_value}", enrollment_id, {})
+        self._audit(
+            studio_id, actor_id, f"billing.student_enrollment_{status_value}", enrollment_id, {}
+        )
         return StudentBillingEnrollmentResponse(**result.data[0])
 
     async def activate_enrollment(
@@ -346,6 +393,7 @@ class BillingEnrollmentManager:
             self,
             stripe_service_cls=self.stripe_service_cls,
         ).process_due(worker_id=worker_id, limit=limit)
+
     def _stripe_lifecycle(self) -> BillingEnrollmentStripeLifecycle:
         return BillingEnrollmentStripeLifecycle(self)
 
@@ -356,10 +404,16 @@ class BillingEnrollmentManager:
         payer: dict[str, Any],
         account: dict[str, Any],
     ) -> dict[str, Any]:
-        return self._stripe_lifecycle()._find_or_create_billing_subscription(enrollment, plan, payer, account)
+        return self._stripe_lifecycle()._find_or_create_billing_subscription(
+            enrollment, plan, payer, account
+        )
 
-    def _subscription_item_id_for_group_plan(self, studio_id: str, group_id: str, plan_id: str) -> Optional[str]:
-        return self._stripe_lifecycle()._subscription_item_id_for_group_plan(studio_id, group_id, plan_id)
+    def _subscription_item_id_for_group_plan(
+        self, studio_id: str, group_id: str, plan_id: str
+    ) -> Optional[str]:
+        return self._stripe_lifecycle()._subscription_item_id_for_group_plan(
+            studio_id, group_id, plan_id
+        )
 
     def _active_enrollment_count_for_subscription_item(
         self,
@@ -376,8 +430,14 @@ class BillingEnrollmentManager:
             exclude_enrollment_id=exclude_enrollment_id,
         )
 
-    def _update_enrollment(self, enrollment_id: str, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:
+    def _update_enrollment(
+        self, enrollment_id: str, studio_id: str, update: dict[str, Any]
+    ) -> dict[str, Any]:
         return self._stripe_lifecycle()._update_enrollment(enrollment_id, studio_id, update)
 
-    def _subscription_item_id_for_enrollment(self, subscription: Any, enrollment_id: str) -> Optional[str]:
-        return self._stripe_lifecycle()._subscription_item_id_for_enrollment(subscription, enrollment_id)
+    def _subscription_item_id_for_enrollment(
+        self, subscription: Any, enrollment_id: str
+    ) -> Optional[str]:
+        return self._stripe_lifecycle()._subscription_item_id_for_enrollment(
+            subscription, enrollment_id
+        )

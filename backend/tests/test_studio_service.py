@@ -21,12 +21,18 @@ class FakeAuthAdmin:
 
     def get_user_by_id(self, user_id):
         is_active = user_id not in self.supabase.inactive_user_ids
-        return FakeUserResponse(type("User", (), {
-            "id": user_id,
-            "email_confirmed_at": "2026-05-01T00:00:00+00:00" if is_active else None,
-            "confirmed_at": "2026-05-01T00:00:00+00:00" if is_active else None,
-            "last_sign_in_at": None,
-        })())
+        return FakeUserResponse(
+            type(
+                "User",
+                (),
+                {
+                    "id": user_id,
+                    "email_confirmed_at": "2026-05-01T00:00:00+00:00" if is_active else None,
+                    "confirmed_at": "2026-05-01T00:00:00+00:00" if is_active else None,
+                    "last_sign_in_at": None,
+                },
+            )()
+        )
 
 
 class FakeAuth:
@@ -36,12 +42,14 @@ class FakeAuth:
 
 class FakeSupabase(RpcBackedSupabase):
     def __init__(self):
-        super().__init__({
-            "audit_logs": [],
-            "studio_subscriptions": [],
-            "staff_roles": [],
-            "studios": [],
-        })
+        super().__init__(
+            {
+                "audit_logs": [],
+                "studio_subscriptions": [],
+                "staff_roles": [],
+                "studios": [],
+            }
+        )
         self.inactive_user_ids = set()
         self.auth = FakeAuth(self)
         self.rpc_exception = None
@@ -82,16 +90,18 @@ class StudioSchemaTest(unittest.TestCase):
 class StudioServiceTest(unittest.TestCase):
     def test_create_studio_uses_atomic_rpc_with_idempotency_key(self):
         supabase = FakeSupabase()
-        supabase.rpc_result_data = [{
-            "id": "studio_1",
-            "name": "River City Dojo",
-            "slug": "river-city-dojo-abc123",
-            "owner_id": "user_1",
-            "logo_url": None,
-            "timezone": "UTC",
-            "created_at": "2026-05-23T00:00:00+00:00",
-            "updated_at": "2026-05-23T00:00:00+00:00",
-        }]
+        supabase.rpc_result_data = [
+            {
+                "id": "studio_1",
+                "name": "River City Dojo",
+                "slug": "river-city-dojo-abc123",
+                "owner_id": "user_1",
+                "logo_url": None,
+                "timezone": "UTC",
+                "created_at": "2026-05-23T00:00:00+00:00",
+                "updated_at": "2026-05-23T00:00:00+00:00",
+            }
+        ]
         service = StudioService(supabase)
 
         response = asyncio.run(
@@ -103,23 +113,32 @@ class StudioServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(response.id, "studio_1")
-        self.assertEqual(supabase.rpc_calls, [(
-            "create_studio_onboarding",
-            {
-                "p_user_id": "user_1",
-                "p_name": "River City Dojo",
-                "p_timezone": "UTC",
-                "p_idempotency_key": "request-key-1",
-            },
-        )])
+        self.assertEqual(
+            supabase.rpc_calls,
+            [
+                (
+                    "create_studio_onboarding",
+                    {
+                        "p_user_id": "user_1",
+                        "p_name": "River City Dojo",
+                        "p_timezone": "UTC",
+                        "p_idempotency_key": "request-key-1",
+                    },
+                )
+            ],
+        )
 
     def test_create_studio_maps_existing_account_to_conflict(self):
         supabase = FakeSupabase()
-        supabase.rpc_exception = Exception("You already have a studio. Only one studio per account in v1.")
+        supabase.rpc_exception = Exception(
+            "You already have a studio. Only one studio per account in v1."
+        )
         service = StudioService(supabase)
 
         with self.assertRaises(HTTPException) as context:
-            asyncio.run(service.create_studio(StudioCreate(name="River City", timezone="UTC"), "user_1"))
+            asyncio.run(
+                service.create_studio(StudioCreate(name="River City", timezone="UTC"), "user_1")
+            )
 
         self.assertEqual(context.exception.status_code, 409)
 
@@ -131,7 +150,9 @@ class StudioServiceTest(unittest.TestCase):
         service = StudioService(supabase)
 
         with self.assertRaises(HTTPException) as context:
-            asyncio.run(service.create_studio(StudioCreate(name="River City", timezone="UTC"), "user_1"))
+            asyncio.run(
+                service.create_studio(StudioCreate(name="River City", timezone="UTC"), "user_1")
+            )
 
         self.assertEqual(context.exception.status_code, 409)
         self.assertEqual(
@@ -145,7 +166,9 @@ class StudioServiceTest(unittest.TestCase):
         service = StudioService(supabase)
 
         with self.assertRaises(HTTPException) as context:
-            asyncio.run(service.create_studio(StudioCreate(name="River City", timezone="UTC"), "user_1"))
+            asyncio.run(
+                service.create_studio(StudioCreate(name="River City", timezone="UTC"), "user_1")
+            )
 
         self.assertEqual(context.exception.status_code, 400)
 
@@ -155,7 +178,9 @@ class StudioServiceTest(unittest.TestCase):
         service = StudioService(supabase)
 
         with self.assertRaises(HTTPException) as context:
-            asyncio.run(service.create_studio(StudioCreate(name="River City", timezone="UTC"), "user_1"))
+            asyncio.run(
+                service.create_studio(StudioCreate(name="River City", timezone="UTC"), "user_1")
+            )
 
         self.assertEqual(context.exception.status_code, 500)
 
@@ -198,29 +223,35 @@ class StudioServiceTest(unittest.TestCase):
 
     def test_non_admin_cannot_update_current_studio_endpoint(self):
         supabase = FakeSupabase()
-        supabase.tables["studios"] = [{
-            "id": "studio_1",
-            "name": "River City Dojo",
-            "slug": "river-city-dojo",
-            "owner_id": "owner_1",
-            "logo_url": None,
-            "timezone": "UTC",
-            "created_at": "2026-05-23T00:00:00+00:00",
-            "updated_at": "2026-05-23T00:00:00+00:00",
-        }]
-        supabase.tables["staff_roles"] = [{
-            "id": "role_1",
-            "studio_id": "studio_1",
-            "user_id": "front_desk_1",
-            "role": "front_desk",
-            "created_at": "2026-05-23T00:00:00+00:00",
-        }]
-        supabase.tables["studio_subscriptions"] = [{
-            "studio_id": "studio_1",
-            "status": "active",
-            "comped": False,
-            "trial_end": None,
-        }]
+        supabase.tables["studios"] = [
+            {
+                "id": "studio_1",
+                "name": "River City Dojo",
+                "slug": "river-city-dojo",
+                "owner_id": "owner_1",
+                "logo_url": None,
+                "timezone": "UTC",
+                "created_at": "2026-05-23T00:00:00+00:00",
+                "updated_at": "2026-05-23T00:00:00+00:00",
+            }
+        ]
+        supabase.tables["staff_roles"] = [
+            {
+                "id": "role_1",
+                "studio_id": "studio_1",
+                "user_id": "front_desk_1",
+                "role": "front_desk",
+                "created_at": "2026-05-23T00:00:00+00:00",
+            }
+        ]
+        supabase.tables["studio_subscriptions"] = [
+            {
+                "studio_id": "studio_1",
+                "status": "active",
+                "comped": False,
+                "trial_end": None,
+            }
+        ]
 
         with self.assertRaises(HTTPException) as context:
             asyncio.run(
@@ -238,29 +269,35 @@ class StudioServiceTest(unittest.TestCase):
 
     def test_admin_can_update_current_studio_endpoint(self):
         supabase = FakeSupabase()
-        supabase.tables["studios"] = [{
-            "id": "studio_1",
-            "name": "River City Dojo",
-            "slug": "river-city-dojo",
-            "owner_id": "owner_1",
-            "logo_url": None,
-            "timezone": "UTC",
-            "created_at": "2026-05-23T00:00:00+00:00",
-            "updated_at": "2026-05-23T00:00:00+00:00",
-        }]
-        supabase.tables["staff_roles"] = [{
-            "id": "role_1",
-            "studio_id": "studio_1",
-            "user_id": "admin_1",
-            "role": "admin",
-            "created_at": "2026-05-23T00:00:00+00:00",
-        }]
-        supabase.tables["studio_subscriptions"] = [{
-            "studio_id": "studio_1",
-            "status": "active",
-            "comped": False,
-            "trial_end": None,
-        }]
+        supabase.tables["studios"] = [
+            {
+                "id": "studio_1",
+                "name": "River City Dojo",
+                "slug": "river-city-dojo",
+                "owner_id": "owner_1",
+                "logo_url": None,
+                "timezone": "UTC",
+                "created_at": "2026-05-23T00:00:00+00:00",
+                "updated_at": "2026-05-23T00:00:00+00:00",
+            }
+        ]
+        supabase.tables["staff_roles"] = [
+            {
+                "id": "role_1",
+                "studio_id": "studio_1",
+                "user_id": "admin_1",
+                "role": "admin",
+                "created_at": "2026-05-23T00:00:00+00:00",
+            }
+        ]
+        supabase.tables["studio_subscriptions"] = [
+            {
+                "studio_id": "studio_1",
+                "status": "active",
+                "comped": False,
+                "trial_end": None,
+            }
+        ]
 
         response = asyncio.run(
             update_current_studio(

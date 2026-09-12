@@ -71,7 +71,9 @@ def _local_event(
     }
 
 
-def _endpoint(endpoint_id: str, url: str, events: set[str], *, status: str = "enabled", livemode: bool = True) -> dict:
+def _endpoint(
+    endpoint_id: str, url: str, events: set[str], *, status: str = "enabled", livemode: bool = True
+) -> dict:
     # This is the retrievable Stripe Webhook Endpoint shape. It intentionally
     # contains no fabricated `connect` creation parameter.
     return {
@@ -110,15 +112,19 @@ def _snapshot(now: datetime) -> dict:
         },
         "provider_mode": "live",
         "provider_accounts": [{"id": "acct_mapped"}, {"id": "acct_excluded"}],
-        "local_mappings": [{
-            "studio_id": STUDIO_ID,
-            "stripe_connected_account_id": "acct_mapped",
-            "metadata": {"connect_account_generation": 3},
-        }],
-        "account_dispositions": [{
-            "stripe_connected_account_id": "acct_excluded",
-            "excluded": True,
-        }],
+        "local_mappings": [
+            {
+                "studio_id": STUDIO_ID,
+                "stripe_connected_account_id": "acct_mapped",
+                "metadata": {"connect_account_generation": 3},
+            }
+        ],
+        "account_dispositions": [
+            {
+                "stripe_connected_account_id": "acct_excluded",
+                "excluded": True,
+            }
+        ],
         "provider_events": [
             _event("evt_platform", "invoice.paid", created),
             _event("evt_connect", "account.updated", created, "acct_mapped"),
@@ -136,7 +142,9 @@ def _snapshot(now: datetime) -> dict:
     }
 
 
-def _prior_checkpoint(now: datetime, *, watermark: int = 2, overlap: timedelta = timedelta(days=28)) -> dict:
+def _prior_checkpoint(
+    now: datetime, *, watermark: int = 2, overlap: timedelta = timedelta(days=28)
+) -> dict:
     previous_end = now - timedelta(hours=1)
     previous_start = previous_end - ROLLING_EVENT_WINDOW
     return {
@@ -191,12 +199,14 @@ class StripeReconciliationReportTest(unittest.TestCase):
                 event_calls.append(account_id)
                 suffix = account_id or "platform"
                 return {
-                    "data": [{
-                        "id": f"evt_{suffix}",
-                        "type": "account.updated" if account_id else "invoice.paid",
-                        "livemode": True,
-                        "created": params["created"]["gte"],
-                    }],
+                    "data": [
+                        {
+                            "id": f"evt_{suffix}",
+                            "type": "account.updated" if account_id else "invoice.paid",
+                            "livemode": True,
+                            "created": params["created"]["gte"],
+                        }
+                    ],
                     "has_more": False,
                 }
 
@@ -206,22 +216,32 @@ class StripeReconciliationReportTest(unittest.TestCase):
                 return {"data": [], "has_more": False}
 
         stripe_module = SimpleNamespace(Account=Accounts, Event=Events, WebhookEndpoint=Endpoints)
-        supabase = TableBackedSupabase({
-            "studio_payment_accounts": [],
-            "stripe_connect_account_dispositions": [],
-            "stripe_events": [],
-            "stripe_live_billing_reconciliation_checkpoints_v3": [],
-            "stripe_live_billing_reconciliation_account_evidence": [],
-            "studio_live_billing_authorizations": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "studio_payment_accounts": [],
+                "stripe_connect_account_dispositions": [],
+                "stripe_events": [],
+                "stripe_live_billing_reconciliation_checkpoints_v3": [],
+                "stripe_live_billing_reconciliation_account_evidence": [],
+                "studio_live_billing_authorizations": [],
+            }
+        )
         with (
-            patch("scripts.stripe_reconciliation_report.get_settings", return_value=SimpleNamespace(
-                STRIPE_RESTRICTED_KEY="rk_live_fixture",
-                STRIPE_SECRET_KEY="",
-            )),
-            patch("scripts.stripe_reconciliation_report.create_supabase_client", return_value=supabase),
+            patch(
+                "scripts.stripe_reconciliation_report.get_settings",
+                return_value=SimpleNamespace(
+                    STRIPE_RESTRICTED_KEY="rk_live_fixture",
+                    STRIPE_SECRET_KEY="",
+                ),
+            ),
+            patch(
+                "scripts.stripe_reconciliation_report.create_supabase_client", return_value=supabase
+            ),
             patch("scripts.stripe_reconciliation_report.httpx.get", return_value=_ReadyResponse()),
-            patch("scripts.stripe_reconciliation_report.importlib.import_module", return_value=stripe_module),
+            patch(
+                "scripts.stripe_reconciliation_report.importlib.import_module",
+                return_value=stripe_module,
+            ),
         ):
             snapshot = collect_read_only_snapshot(SHA, probe="production", now=now)
 
@@ -241,9 +261,7 @@ class StripeReconciliationReportTest(unittest.TestCase):
         self.assertTrue(report["checkpoint_eligible"])
         self.assertEqual(report["continuity"]["mode"], "bootstrap")
         self.assertTrue(report["continuity"]["bootstrap_local_history_checked"])
-        self.assertFalse(
-            report["continuity"]["bootstrap_historical_provider_completeness_claimed"]
-        )
+        self.assertFalse(report["continuity"]["bootstrap_historical_provider_completeness_claimed"])
         self.assertEqual(report["event_reconciliation"]["provider_only_event_count"], 0)
         self.assertEqual(report["event_reconciliation"]["local_only_event_count"], 0)
 
@@ -256,9 +274,7 @@ class StripeReconciliationReportTest(unittest.TestCase):
             )
 
         snapshot = _snapshot(now)
-        snapshot["event_window"]["started_at"] = (
-            now - PROVIDER_EVENT_RETENTION
-        ).isoformat()
+        snapshot["event_window"]["started_at"] = (now - PROVIDER_EVENT_RETENTION).isoformat()
         with self.assertRaisesRegex(ReconciliationReportError, "retention safety boundary"):
             build_report(snapshot, now=now)
 
@@ -268,12 +284,14 @@ class StripeReconciliationReportTest(unittest.TestCase):
         prior = _prior_checkpoint(now)
         snapshot["v3_checkpoints"] = [prior]
         snapshot["previous_checkpoint"] = prior
-        snapshot["previous_account_evidence"] = [{
-            "checkpoint_id": prior["checkpoint_id"],
-            "studio_id": STUDIO_ID,
-            "stripe_connected_account_id": "acct_mapped",
-            "connect_account_generation": 3,
-        }]
+        snapshot["previous_account_evidence"] = [
+            {
+                "checkpoint_id": prior["checkpoint_id"],
+                "studio_id": STUDIO_ID,
+                "stripe_connected_account_id": "acct_mapped",
+                "connect_account_generation": 3,
+            }
+        ]
         report = build_report(snapshot, now=now)
         self.assertTrue(report["checkpoint_eligible"])
         self.assertEqual(report["continuity"]["mode"], "rolling")
@@ -301,9 +319,7 @@ class StripeReconciliationReportTest(unittest.TestCase):
         regressed["previous_account_evidence"] = snapshot["previous_account_evidence"]
         report = build_report(regressed, now=now)
         self.assertFalse(report["checkpoint_eligible"])
-        self.assertFalse(
-            report["continuity"]["local_event_ingest_watermark_non_regressing"]
-        )
+        self.assertFalse(report["continuity"]["local_event_ingest_watermark_non_regressing"])
 
     def test_bootstrap_is_explicit_and_fails_on_existing_grant_or_dirty_history(self):
         now = datetime(2027, 2, 15, 12, 0, tzinfo=timezone.utc)
@@ -326,9 +342,7 @@ class StripeReconciliationReportTest(unittest.TestCase):
         report = build_report(snapshot, now=now)
         self.assertFalse(report["checkpoint_eligible"])
         self.assertEqual(report["continuity"]["bootstrap_historical_failed_count"], 1)
-        self.assertFalse(
-            report["continuity"]["bootstrap_historical_provider_completeness_claimed"]
-        )
+        self.assertFalse(report["continuity"]["bootstrap_historical_provider_completeness_claimed"])
 
     def test_provider_local_processing_mapping_mode_generation_and_sha_defects_fail_closed(self):
         now = datetime(2027, 2, 15, 12, 0, tzinfo=timezone.utc)
@@ -340,9 +354,7 @@ class StripeReconciliationReportTest(unittest.TestCase):
         self.assertFalse(build_report(provider_only, now=now)["checkpoint_eligible"])
 
         local_only = _snapshot(now)
-        extra = _local_event(
-            "evt_local_only", "invoice.paid", now - timedelta(minutes=2), 3
-        )
+        extra = _local_event("evt_local_only", "invoice.paid", now - timedelta(minutes=2), 3)
         local_only["local_events"].append(extra)
         local_only["local_history_events"].append(extra)
         self.assertFalse(build_report(local_only, now=now)["checkpoint_eligible"])
@@ -387,23 +399,21 @@ class StripeReconciliationReportTest(unittest.TestCase):
         wrong_mode["provider_events"][0]["livemode"] = False
         report = build_report(wrong_mode, now=now)
         self.assertFalse(report["checkpoint_eligible"])
-        self.assertEqual(
-            report["event_reconciliation"]["wrong_mode_provider_event_count"], 1
-        )
+        self.assertEqual(report["event_reconciliation"]["wrong_mode_provider_event_count"], 1)
 
         stale_generation = _snapshot(now)
         prior = _prior_checkpoint(now)
         stale_generation["v3_checkpoints"] = [prior]
         stale_generation["previous_checkpoint"] = prior
-        stale_generation["previous_account_evidence"] = [{
-            "stripe_connected_account_id": "acct_mapped",
-            "connect_account_generation": 2,
-        }]
+        stale_generation["previous_account_evidence"] = [
+            {
+                "stripe_connected_account_id": "acct_mapped",
+                "connect_account_generation": 2,
+            }
+        ]
         report = build_report(stale_generation, now=now)
         self.assertFalse(report["checkpoint_eligible"])
-        self.assertFalse(
-            report["continuity"]["account_generation_continuity_valid"]
-        )
+        self.assertFalse(report["continuity"]["account_generation_continuity_valid"])
 
         stale_sha = _snapshot(now)
         stale_sha["deployment_readiness"]["candidate_sha"] = "b" * 40
@@ -464,11 +474,17 @@ class StripeReconciliationReportTest(unittest.TestCase):
         staging = _snapshot(now)
         staging["provider_mode"] = "test"
         staging["probe"] = "staging"
-        staging["deployment_readiness"].update({
-            "environment": "staging",
-            "url": STAGING_READY_URL,
-        })
-        for event in [*staging["provider_events"], *staging["local_events"], *staging["local_history_events"]]:
+        staging["deployment_readiness"].update(
+            {
+                "environment": "staging",
+                "url": STAGING_READY_URL,
+            }
+        )
+        for event in [
+            *staging["provider_events"],
+            *staging["local_events"],
+            *staging["local_history_events"],
+        ]:
             event["livemode"] = False
         staging["webhook_endpoints"] = [
             _endpoint(

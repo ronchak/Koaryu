@@ -55,7 +55,11 @@ class BillingSubscriptionWebhookProjector:
             return local
         if local and is_stale_stripe_event(local, event_created):
             return local
-        status_value = "canceled" if event_type == "customer.subscription.deleted" else subscription.get("status", "active")
+        status_value = (
+            "canceled"
+            if event_type == "customer.subscription.deleted"
+            else subscription.get("status", "active")
+        )
         if local and is_same_second_status_regression(
             local.get("last_stripe_event_created"),
             event_created,
@@ -72,29 +76,40 @@ class BillingSubscriptionWebhookProjector:
             "stripe_customer_id": _stripe_id(subscription.get("customer")),
             "stripe_subscription_id": _stripe_id(subscription),
             "status": status_value,
-            "current_period_start": timestamp(period_start) or (local or {}).get("current_period_start"),
+            "current_period_start": timestamp(period_start)
+            or (local or {}).get("current_period_start"),
             "current_period_end": timestamp(period_end) or (local or {}).get("current_period_end"),
             "cancel_at_period_end": bool(subscription.get("cancel_at_period_end")),
             "application_fee_percent": subscription.get("application_fee_percent"),
-            "last_stripe_event_created": event_created if event_created is not None else (local or {}).get("last_stripe_event_created"),
+            "last_stripe_event_created": event_created
+            if event_created is not None
+            else (local or {}).get("last_stripe_event_created"),
         }
         if local:
-            query = self.supabase.table("billing_subscriptions").update(update).eq("id", local["id"])
+            query = (
+                self.supabase.table("billing_subscriptions").update(update).eq("id", local["id"])
+            )
             query = add_stripe_event_created_guard(query, event_created)
             result = query.execute()
             if not result.data and event_created is not None:
                 return local
             row = result.data[0] if result.data else {**local, **update}
         else:
-            update.update({
-                "collection_mode": "autopay" if subscription.get("collection_method") == "charge_automatically" else "invoice_link",
-                "billing_interval": "monthly",
-                "currency": "usd",
-            })
+            update.update(
+                {
+                    "collection_mode": "autopay"
+                    if subscription.get("collection_method") == "charge_automatically"
+                    else "invoice_link",
+                    "billing_interval": "monthly",
+                    "currency": "usd",
+                }
+            )
             result = self.supabase.table("billing_subscriptions").insert(update).execute()
             row = result.data[0] if result.data else update
         if status_value == "canceled":
-            self._detach_enrollments_for_canceled_subscription(row, subscription, account_id, event_created)
+            self._detach_enrollments_for_canceled_subscription(
+                row, subscription, account_id, event_created
+            )
             return row
         self.project_subscription_items(subscription, row)
         return row
@@ -108,18 +123,36 @@ class BillingSubscriptionWebhookProjector:
         local_id = metadata.get("billing_subscription_id")
         studio_id = metadata.get("studio_id")
         if local_id and studio_id:
-            result = self.supabase.table("billing_subscriptions").select("*").eq("id", local_id).eq("studio_id", studio_id).limit(1).execute()
+            result = (
+                self.supabase.table("billing_subscriptions")
+                .select("*")
+                .eq("id", local_id)
+                .eq("studio_id", studio_id)
+                .limit(1)
+                .execute()
+            )
             if result.data and self._row_matches_stripe_account(result.data[0], account_id):
                 return result.data[0]
         stripe_id = _stripe_id(subscription)
         if not stripe_id:
             return None
-        query = self.supabase.table("billing_subscriptions").select("*").eq("stripe_subscription_id", stripe_id).limit(1)
-        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        query = (
+            self.supabase.table("billing_subscriptions")
+            .select("*")
+            .eq("stripe_subscription_id", stripe_id)
+            .limit(1)
+        )
+        query = (
+            query.eq("stripe_account_id", account_id)
+            if account_id
+            else query.is_("stripe_account_id", "null")
+        )
         result = query.execute()
         return result.data[0] if result.data else None
 
-    def project_subscription_items(self, subscription: dict[str, Any], group: dict[str, Any]) -> None:
+    def project_subscription_items(
+        self, subscription: dict[str, Any], group: dict[str, Any]
+    ) -> None:
         items = (subscription.get("items") or {}).get("data") or []
         for item in items:
             metadata = item.get("metadata") or {}
@@ -128,11 +161,19 @@ class BillingSubscriptionWebhookProjector:
                 "billing_subscription_id": group.get("id"),
                 "stripe_subscription_id": _stripe_id(subscription),
                 "stripe_subscription_item_id": _stripe_id(item),
-                "billing_status": "current" if subscription.get("status") in {"active", "trialing"} else "past_due",
+                "billing_status": "current"
+                if subscription.get("status") in {"active", "trialing"}
+                else "past_due",
             }
             if enrollment_id:
-                self.supabase.table("student_billing_enrollments").update(update).eq("id", enrollment_id).eq("studio_id", group["studio_id"]).in_("status", ["pending", "active"]).execute()
-            self.supabase.table("student_billing_enrollments").update(update).eq("studio_id", group["studio_id"]).eq("billing_subscription_id", group.get("id")).eq("stripe_subscription_item_id", _stripe_id(item)).in_("status", ["pending", "active"]).execute()
+                self.supabase.table("student_billing_enrollments").update(update).eq(
+                    "id", enrollment_id
+                ).eq("studio_id", group["studio_id"]).in_("status", ["pending", "active"]).execute()
+            self.supabase.table("student_billing_enrollments").update(update).eq(
+                "studio_id", group["studio_id"]
+            ).eq("billing_subscription_id", group.get("id")).eq(
+                "stripe_subscription_item_id", _stripe_id(item)
+            ).in_("status", ["pending", "active"]).execute()
 
     def _detach_enrollments_for_canceled_subscription(
         self,

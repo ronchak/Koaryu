@@ -72,11 +72,11 @@ export function buildMonthGrid(month: Date) {
   const gridStart = createLocalDate(
     firstOfMonth.getFullYear(),
     firstOfMonth.getMonth(),
-    firstOfMonth.getDate() - firstOfMonth.getDay()
+    firstOfMonth.getDate() - firstOfMonth.getDay(),
   );
 
   return Array.from({ length: 42 }, (_, index) =>
-    createLocalDate(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index)
+    createLocalDate(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index),
   );
 }
 
@@ -92,7 +92,7 @@ export function groupSessionsByDate(sessions: ClassSession[]) {
   grouped.forEach((dateSessions, key) => {
     grouped.set(
       key,
-      [...dateSessions].sort((left, right) => left.start_time.localeCompare(right.start_time))
+      [...dateSessions].sort((left, right) => left.start_time.localeCompare(right.start_time)),
     );
   });
 
@@ -113,7 +113,7 @@ export function groupTemplatesByDay(templates: ClassTemplate[]) {
   grouped.forEach((dayTemplates, key) => {
     grouped.set(
       key,
-      [...dayTemplates].sort((left, right) => left.start_time.localeCompare(right.start_time))
+      [...dayTemplates].sort((left, right) => left.start_time.localeCompare(right.start_time)),
     );
   });
 
@@ -143,7 +143,9 @@ function toMinutes(time: string) {
 
 export function getConflictingSessionIds(sessions: ClassSession[]) {
   const conflictingIds = new Set<string>();
-  const sortedSessions = [...sessions].sort((left, right) => left.start_time.localeCompare(right.start_time));
+  const sortedSessions = [...sessions].sort((left, right) =>
+    left.start_time.localeCompare(right.start_time),
+  );
 
   for (let index = 0; index < sortedSessions.length; index += 1) {
     const current = sortedSessions[index];
@@ -205,7 +207,9 @@ export function buildEntriesForDate(params: {
         return;
       }
 
-      const hasGeneratedSession = daySessions.some((session) => sessionMatchesTemplate(session, template));
+      const hasGeneratedSession = daySessions.some((session) =>
+        sessionMatchesTemplate(session, template),
+      );
 
       if (!hasGeneratedSession) {
         entries.push({

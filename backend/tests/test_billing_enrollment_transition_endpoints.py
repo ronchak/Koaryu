@@ -19,33 +19,42 @@ def test_schedule_and_revoke_use_routine_staff_authority_and_forward_keys():
     service.schedule_enrollment_period_end = AsyncMock(return_value={"outcome": "claimed"})
     service.revoke_enrollment_period_end = AsyncMock(return_value={"outcome": "claimed"})
     with (
-        patch("app.api.v1.endpoints.billing._routine_studio_id", return_value="studio_1") as routine,
-        patch("app.api.v1.endpoints.billing._admin_studio_id", side_effect=AssertionError("admin resolver used")),
+        patch(
+            "app.api.v1.endpoints.billing._routine_studio_id", return_value="studio_1"
+        ) as routine,
+        patch(
+            "app.api.v1.endpoints.billing._admin_studio_id",
+            side_effect=AssertionError("admin resolver used"),
+        ),
         patch("app.api.v1.endpoints.billing.BillingService", return_value=service),
         patch(
             "app.api.v1.endpoints.billing.get_settings",
             return_value=SimpleNamespace(BILLING_TRANSITION_SCHEDULER_ENABLED=True),
         ),
     ):
-        scheduled = asyncio.run(billing_endpoints.schedule_enrollment_period_end(
-            "enrollment_1",
-            BillingEnrollmentTransitionRequest(reason_code="staff_requested"),
-            request_idempotency_key="schedule-key",
-            user_id="front_desk_1",
-            requested_studio_id="studio_1",
-            supabase=object(),
-        ))
-        revoked = asyncio.run(billing_endpoints.revoke_scheduled_enrollment_transition(
-            "intent_1",
-            BillingEnrollmentTransitionRevokeRequest(
-                expected_revision=4,
-                reason_code="staff_requested",
-            ),
-            request_idempotency_key="revoke-key",
-            user_id="front_desk_1",
-            requested_studio_id="studio_1",
-            supabase=object(),
-        ))
+        scheduled = asyncio.run(
+            billing_endpoints.schedule_enrollment_period_end(
+                "enrollment_1",
+                BillingEnrollmentTransitionRequest(reason_code="staff_requested"),
+                request_idempotency_key="schedule-key",
+                user_id="front_desk_1",
+                requested_studio_id="studio_1",
+                supabase=object(),
+            )
+        )
+        revoked = asyncio.run(
+            billing_endpoints.revoke_scheduled_enrollment_transition(
+                "intent_1",
+                BillingEnrollmentTransitionRevokeRequest(
+                    expected_revision=4,
+                    reason_code="staff_requested",
+                ),
+                request_idempotency_key="revoke-key",
+                user_id="front_desk_1",
+                requested_studio_id="studio_1",
+                supabase=object(),
+            )
+        )
 
     assert scheduled == {"outcome": "claimed"}
     assert revoked == {"outcome": "claimed"}
@@ -70,14 +79,16 @@ def test_schedule_fails_closed_before_authorization_when_worker_is_disabled():
         ),
     ):
         with pytest.raises(HTTPException) as disabled:
-            asyncio.run(billing_endpoints.schedule_enrollment_period_end(
-                "enrollment_1",
-                BillingEnrollmentTransitionRequest(reason_code="staff_requested"),
-                request_idempotency_key="schedule-key",
-                user_id="front_desk_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
+            asyncio.run(
+                billing_endpoints.schedule_enrollment_period_end(
+                    "enrollment_1",
+                    BillingEnrollmentTransitionRequest(reason_code="staff_requested"),
+                    request_idempotency_key="schedule-key",
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
 
     assert disabled.value.status_code == 503
     assert disabled.value.detail == (
@@ -95,14 +106,16 @@ def test_immediate_cancel_requires_admin_and_never_calls_service_when_denied():
         patch("app.api.v1.endpoints.billing.BillingService", return_value=service),
     ):
         with pytest.raises(HTTPException) as denied:
-            asyncio.run(billing_endpoints.cancel_enrollment_immediate(
-                "enrollment_1",
-                BillingEnrollmentTransitionRequest(reason_code="staff_requested"),
-                request_idempotency_key="immediate-key",
-                user_id="front_desk_1",
-                requested_studio_id="studio_1",
-                supabase=object(),
-            ))
+            asyncio.run(
+                billing_endpoints.cancel_enrollment_immediate(
+                    "enrollment_1",
+                    BillingEnrollmentTransitionRequest(reason_code="staff_requested"),
+                    request_idempotency_key="immediate-key",
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                )
+            )
 
     assert denied.value.status_code == 403
     service.cancel_enrollment_immediate.assert_not_called()
@@ -113,17 +126,22 @@ def test_immediate_cancel_uses_admin_authority_and_forwards_key():
     service.cancel_enrollment_immediate = AsyncMock(return_value={"outcome": "claimed"})
     with (
         patch("app.api.v1.endpoints.billing._admin_studio_id", return_value="studio_1") as admin,
-        patch("app.api.v1.endpoints.billing._routine_studio_id", side_effect=AssertionError("routine resolver used")),
+        patch(
+            "app.api.v1.endpoints.billing._routine_studio_id",
+            side_effect=AssertionError("routine resolver used"),
+        ),
         patch("app.api.v1.endpoints.billing.BillingService", return_value=service),
     ):
-        result = asyncio.run(billing_endpoints.cancel_enrollment_immediate(
-            "enrollment_1",
-            BillingEnrollmentTransitionRequest(reason_code="staff_requested"),
-            request_idempotency_key="immediate-key",
-            user_id="admin_1",
-            requested_studio_id="studio_1",
-            supabase=object(),
-        ))
+        result = asyncio.run(
+            billing_endpoints.cancel_enrollment_immediate(
+                "enrollment_1",
+                BillingEnrollmentTransitionRequest(reason_code="staff_requested"),
+                request_idempotency_key="immediate-key",
+                user_id="admin_1",
+                requested_studio_id="studio_1",
+                supabase=object(),
+            )
+        )
 
     assert result == {"outcome": "claimed"}
     admin.assert_called_once()

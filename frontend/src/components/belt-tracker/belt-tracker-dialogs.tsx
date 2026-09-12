@@ -85,7 +85,7 @@ export function BeltTrackerDialogs({
   rankById,
   subRankTerm,
 }: BeltTrackerDialogsProps) {
-  const addTipGroup = addTipForGroup === null ? null : groups[addTipForGroup] ?? null;
+  const addTipGroup = addTipForGroup === null ? null : (groups[addTipForGroup] ?? null);
 
   return (
     <>
@@ -202,9 +202,7 @@ function PromotionConfirmModal({
   const currentRank = promoteEntry.current_rank_id
     ? rankById.get(promoteEntry.current_rank_id)
     : undefined;
-  const nextRank = promoteEntry.next_rank_id
-    ? rankById.get(promoteEntry.next_rank_id)
-    : undefined;
+  const nextRank = promoteEntry.next_rank_id ? rankById.get(promoteEntry.next_rank_id) : undefined;
 
   return (
     <ModalFrame
@@ -239,7 +237,9 @@ function PromotionConfirmModal({
         </div>
       </div>
       <div className="flex flex-col gap-1.5 mb-4">
-        <label htmlFor="promotion-notes" className="text-sm text-text-secondary font-medium">Notes (optional)</label>
+        <label htmlFor="promotion-notes" className="text-sm text-text-secondary font-medium">
+          Notes (optional)
+        </label>
         <textarea
           id="promotion-notes"
           rows={2}
@@ -250,11 +250,7 @@ function PromotionConfirmModal({
         />
       </div>
       {promotionError && (
-        <DismissibleNotice
-          tone="danger"
-          onDismiss={onDismissError}
-          className="mb-4"
-        >
+        <DismissibleNotice tone="danger" onDismiss={onDismissError} className="mb-4">
           {promotionError}
         </DismissibleNotice>
       )}

@@ -1,4 +1,7 @@
-import type { ApiBillingRefundCreate, ApiBillingRefundResponse } from "@/types/generated/api-contracts";
+import type {
+  ApiBillingRefundCreate,
+  ApiBillingRefundResponse,
+} from "@/types/generated/api-contracts";
 import type { BillingPayment } from "@/types";
 
 export type RefundStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -17,10 +20,15 @@ export type RefundAttempt = {
 export type RefundPaymentRefreshResult =
   | { status: "updated"; payment: BillingPayment }
   | { status: "unavailable" | "access_lost" | "superseded" };
-export type RefreshPaymentAfterRefund = (payment: BillingPayment, identity: RefundIdentity) => Promise<RefundPaymentRefreshResult>;
+export type RefreshPaymentAfterRefund = (
+  payment: BillingPayment,
+  identity: RefundIdentity,
+) => Promise<RefundPaymentRefreshResult>;
 const REFUND_REASONS = new Set<RefundReason>(["duplicate", "fraudulent", "requested_by_customer"]);
-const RECONCILIATION_REQUIRED_DETAIL = "This billing operation requires reconciliation and will not be retried automatically.";
-const REFUND_STORAGE_UNAVAILABLE_DETAIL = "Refunds are unavailable because this browser cannot safely save the request. Enable browser storage and reload this page.";
+const RECONCILIATION_REQUIRED_DETAIL =
+  "This billing operation requires reconciliation and will not be retried automatically.";
+const REFUND_STORAGE_UNAVAILABLE_DETAIL =
+  "Refunds are unavailable because this browser cannot safely save the request. Enable browser storage and reload this page.";
 const DEFINITIVE_REFUND_REJECTION_DETAILS = new Set([
   "Only Stripe payments can be refunded through Koaryu.",
   "Payment payer identity is incomplete and requires reconciliation.",
@@ -29,11 +37,13 @@ const DEFINITIVE_REFUND_REJECTION_DETAILS = new Set([
 ]);
 
 function validRequestKey(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && value === value.trim()
-    && !/[\u0000-\u001f\u007f]/.test(value)
-    && new TextEncoder().encode(value).byteLength <= 255;
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value === value.trim() &&
+    !/[\u0000-\u001f\u007f]/.test(value) &&
+    new TextEncoder().encode(value).byteLength <= 255
+  );
 }
 
 function parseStoredAttempt(value: string | null): RefundAttempt | null {
@@ -43,22 +53,29 @@ function parseStoredAttempt(value: string | null): RefundAttempt | null {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const record = parsed as Record<string, unknown>;
     if (
-      !Number.isSafeInteger(record.amountCents)
-      || (record.amountCents as number) <= 0
-      || typeof record.reason !== "string"
-      || !REFUND_REASONS.has(record.reason as RefundReason)
-      || !validRequestKey(record.requestKey)
-      || (record.disposition !== undefined && record.disposition !== "reconciliation_required")
-      || (record.acceptedRefundId !== undefined && !validRequestKey(record.acceptedRefundId))
-    ) return null;
+      !Number.isSafeInteger(record.amountCents) ||
+      (record.amountCents as number) <= 0 ||
+      typeof record.reason !== "string" ||
+      !REFUND_REASONS.has(record.reason as RefundReason) ||
+      !validRequestKey(record.requestKey) ||
+      (record.disposition !== undefined && record.disposition !== "reconciliation_required") ||
+      (record.acceptedRefundId !== undefined && !validRequestKey(record.acceptedRefundId))
+    )
+      return null;
     return record as RefundAttempt;
   } catch {
     return null;
   }
 }
 
-export function safeBrowserRefundStorage(browser: Pick<Window, "localStorage"> | null = typeof window === "undefined" ? null : window) {
-  try { return browser?.localStorage ?? null; } catch { return null; }
+export function safeBrowserRefundStorage(
+  browser: Pick<Window, "localStorage"> | null = typeof window === "undefined" ? null : window,
+) {
+  try {
+    return browser?.localStorage ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function storageKey(identity: RefundIdentity, paymentId: string) {
@@ -72,9 +89,11 @@ export function canShowPaymentRefund(role: string | null, workflows: ReadonlySet
 }
 
 export function isPaymentRefundEligible(payment: BillingPayment) {
-  return Boolean(payment.stripe_charge_id)
-    && payment.refundable_amount_cents > 0
-    && !payment.adjustment_reconciliation_required;
+  return (
+    Boolean(payment.stripe_charge_id) &&
+    payment.refundable_amount_cents > 0 &&
+    !payment.adjustment_reconciliation_required
+  );
 }
 
 export function parseRefundAmount(value: string, maximumCents: number) {
@@ -128,7 +147,9 @@ export function resolveRefundRequestKey(
   }
   if (existing) {
     if (existing.amountCents !== amountCents || existing.reason !== reason) {
-      throw new Error("This refund has an unresolved earlier attempt. Retry the original amount and reason.");
+      throw new Error(
+        "This refund has an unresolved earlier attempt. Retry the original amount and reason.",
+      );
     }
     memoryAttempts.set(key, existing);
     return existing.requestKey;
@@ -140,24 +161,30 @@ export function resolveRefundRequestKey(
     storage.setItem(key, JSON.stringify(attempt));
     const persisted = parseStoredAttempt(storage.getItem(key));
     if (
-      !persisted
-      || persisted.amountCents !== attempt.amountCents
-      || persisted.reason !== attempt.reason
-      || persisted.requestKey !== attempt.requestKey
-      || persisted.disposition !== undefined
+      !persisted ||
+      persisted.amountCents !== attempt.amountCents ||
+      persisted.reason !== attempt.reason ||
+      persisted.requestKey !== attempt.requestKey ||
+      persisted.disposition !== undefined
     ) {
       throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
     }
   } catch {
     memoryAttempts.delete(key);
-    try { storage.removeItem(key); } catch {}
+    try {
+      storage.removeItem(key);
+    } catch {}
     throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
   }
   memoryAttempts.set(key, attempt);
   return attempt.requestKey;
 }
 
-export function readRefundAttempt(identity: RefundIdentity, paymentId: string, storage: RefundStorage | null) {
+export function readRefundAttempt(
+  identity: RefundIdentity,
+  paymentId: string,
+  storage: RefundStorage | null,
+) {
   if (!storage) throw new Error(REFUND_STORAGE_UNAVAILABLE_DETAIL);
   const key = storageKey(identity, paymentId);
   const raw = storage.getItem(key);
@@ -168,7 +195,13 @@ export function readRefundAttempt(identity: RefundIdentity, paymentId: string, s
   return attempt;
 }
 
-export function markRefundAccepted(identity: RefundIdentity, paymentId: string, requestKey: string, refundId: string, storage: RefundStorage | null) {
+export function markRefundAccepted(
+  identity: RefundIdentity,
+  paymentId: string,
+  requestKey: string,
+  refundId: string,
+  storage: RefundStorage | null,
+) {
   if (!storage) return false;
   try {
     const attempt = readRefundAttempt(identity, paymentId, storage);
@@ -177,19 +210,32 @@ export function markRefundAccepted(identity: RefundIdentity, paymentId: string, 
     const key = storageKey(identity, paymentId);
     storage.setItem(key, JSON.stringify(accepted));
     const saved = readRefundAttempt(identity, paymentId, storage);
-    if (saved?.requestKey !== requestKey || saved.acceptedRefundId !== refundId
-      || saved.amountCents !== attempt.amountCents || saved.reason !== attempt.reason
-      || saved.disposition !== attempt.disposition) return false;
+    if (
+      saved?.requestKey !== requestKey ||
+      saved.acceptedRefundId !== refundId ||
+      saved.amountCents !== attempt.amountCents ||
+      saved.reason !== attempt.reason ||
+      saved.disposition !== attempt.disposition
+    )
+      return false;
     memoryAttempts.set(key, accepted);
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
-export function clearRefundRequestKey(identity: RefundIdentity, paymentId: string, storage: RefundStorage | null, expectedRequestKey: string) {
+export function clearRefundRequestKey(
+  identity: RefundIdentity,
+  paymentId: string,
+  storage: RefundStorage | null,
+  expectedRequestKey: string,
+) {
   const key = storageKey(identity, paymentId);
   if (!storage) return false;
   try {
-    if (readRefundAttempt(identity, paymentId, storage)?.requestKey !== expectedRequestKey) return false;
+    if (readRefundAttempt(identity, paymentId, storage)?.requestKey !== expectedRequestKey)
+      return false;
     storage.removeItem(key);
     if (storage.getItem(key) !== null) return false;
     memoryAttempts.delete(key);
@@ -199,35 +245,72 @@ export function clearRefundRequestKey(identity: RefundIdentity, paymentId: strin
   }
 }
 
-export function isMatchingRefundResponse(value: unknown, identity: RefundIdentity, paymentId: string, amountCents: number): value is ApiBillingRefundResponse {
+export function isMatchingRefundResponse(
+  value: unknown,
+  identity: RefundIdentity,
+  paymentId: string,
+  amountCents: number,
+): value is ApiBillingRefundResponse {
   if (!value || typeof value !== "object") return false;
   const row = value as ApiBillingRefundResponse;
-  return validRequestKey(row.id) && row.studio_id === identity.studioId && row.payment_id === paymentId
-    && Number.isSafeInteger(row.amount_cents) && row.amount_cents === amountCents && amountCents > 0
-    && ["succeeded", "pending", "requires_action", "failed", "canceled"].includes(row.status)
-    && typeof row.reconciliation_required === "boolean";
+  return (
+    validRequestKey(row.id) &&
+    row.studio_id === identity.studioId &&
+    row.payment_id === paymentId &&
+    Number.isSafeInteger(row.amount_cents) &&
+    row.amount_cents === amountCents &&
+    amountCents > 0 &&
+    ["succeeded", "pending", "requires_action", "failed", "canceled"].includes(row.status) &&
+    typeof row.reconciliation_required === "boolean"
+  );
 }
 
-export function isMatchingRefundPayment(value: unknown, original: BillingPayment, identity: RefundIdentity): value is BillingPayment {
+export function isMatchingRefundPayment(
+  value: unknown,
+  original: BillingPayment,
+  identity: RefundIdentity,
+): value is BillingPayment {
   if (!value || typeof value !== "object") return false;
   const row = value as BillingPayment;
-  const cents = [row.amount_cents, row.gross_paid_amount_cents, row.refunded_amount_cents, row.disputed_amount_cents, row.net_collected_amount_cents, row.refundable_amount_cents];
-  return row.id === original.id && row.studio_id === identity.studioId && original.studio_id === identity.studioId
-    && typeof row.currency === "string" && row.currency === original.currency
-    && (!original.stripe_charge_id || row.stripe_charge_id === original.stripe_charge_id)
-    && (!original.stripe_account_id || row.stripe_account_id === original.stripe_account_id)
-    && ["pending", "processing", "succeeded", "failed", "refunded", "disputed", "externally_recorded"].includes(row.status)
-    && cents.every(amount => Number.isSafeInteger(amount) && amount >= 0)
-    && row.refundable_amount_cents <= row.net_collected_amount_cents
-    && row.net_collected_amount_cents <= row.gross_paid_amount_cents
-    && typeof row.adjustment_reconciliation_required === "boolean";
+  const cents = [
+    row.amount_cents,
+    row.gross_paid_amount_cents,
+    row.refunded_amount_cents,
+    row.disputed_amount_cents,
+    row.net_collected_amount_cents,
+    row.refundable_amount_cents,
+  ];
+  return (
+    row.id === original.id &&
+    row.studio_id === identity.studioId &&
+    original.studio_id === identity.studioId &&
+    typeof row.currency === "string" &&
+    row.currency === original.currency &&
+    (!original.stripe_charge_id || row.stripe_charge_id === original.stripe_charge_id) &&
+    (!original.stripe_account_id || row.stripe_account_id === original.stripe_account_id) &&
+    [
+      "pending",
+      "processing",
+      "succeeded",
+      "failed",
+      "refunded",
+      "disputed",
+      "externally_recorded",
+    ].includes(row.status) &&
+    cents.every((amount) => Number.isSafeInteger(amount) && amount >= 0) &&
+    row.refundable_amount_cents <= row.net_collected_amount_cents &&
+    row.net_collected_amount_cents <= row.gross_paid_amount_cents &&
+    typeof row.adjustment_reconciliation_required === "boolean"
+  );
 }
 
 export function isRefundReconciliationRequiredError(error: unknown) {
-  return error instanceof Error
-    && "status" in error
-    && error.status === 409
-    && error.message === RECONCILIATION_REQUIRED_DETAIL;
+  return (
+    error instanceof Error &&
+    "status" in error &&
+    error.status === 409 &&
+    error.message === RECONCILIATION_REQUIRED_DETAIL
+  );
 }
 
 export function isDefinitiveRefundRejection(error: unknown) {
@@ -237,9 +320,7 @@ export function isDefinitiveRefundRejection(error: unknown) {
   if (error.status === 409) {
     return DEFINITIVE_REFUND_REJECTION_DETAILS.has(error.message);
   }
-  return error.status >= 400
-    && error.status < 500
-    && ![408, 425, 429].includes(error.status);
+  return error.status >= 400 && error.status < 500 && ![408, 425, 429].includes(error.status);
 }
 
 export function markRefundReconciliationRequired(
@@ -262,11 +343,11 @@ export function markRefundReconciliationRequired(
     storage.setItem(key, JSON.stringify(blockedAttempt));
     const persisted = parseStoredAttempt(storage.getItem(key));
     if (
-      !persisted
-      || persisted.amountCents !== blockedAttempt.amountCents
-      || persisted.reason !== blockedAttempt.reason
-      || persisted.requestKey !== blockedAttempt.requestKey
-      || persisted.disposition !== blockedAttempt.disposition
+      !persisted ||
+      persisted.amountCents !== blockedAttempt.amountCents ||
+      persisted.reason !== blockedAttempt.reason ||
+      persisted.requestKey !== blockedAttempt.requestKey ||
+      persisted.disposition !== blockedAttempt.disposition
     ) {
       return false;
     }
@@ -317,5 +398,7 @@ export async function postPaymentRefund({
   token: string;
 }) {
   const request = refundRequest(paymentId, amountCents, reason, requestKey);
-  return post<ApiBillingRefundResponse>(request.path, request.body, token, { headers: request.headers });
+  return post<ApiBillingRefundResponse>(request.path, request.body, token, {
+    headers: request.headers,
+  });
 }

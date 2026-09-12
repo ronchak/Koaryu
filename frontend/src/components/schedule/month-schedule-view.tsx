@@ -100,15 +100,16 @@ export function MonthScheduleView({
   const selectedDateKey = useMemo(() => getSelectedDateKey(selectedDate), [selectedDate]);
   const monthKey = useMemo(
     () => `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`,
-    [month]
+    [month],
   );
 
   const sessionsByDate = useMemo(() => groupSessionsByDate(sessions), [sessions]);
   const templatesByDay = useMemo(() => groupTemplatesByDay(templates), [templates]);
 
   const monthlySessionCount = useMemo(
-    () => sessions.reduce((count, session) => count + (session.date.startsWith(monthKey) ? 1 : 0), 0),
-    [monthKey, sessions]
+    () =>
+      sessions.reduce((count, session) => count + (session.date.startsWith(monthKey) ? 1 : 0), 0),
+    [monthKey, sessions],
   );
 
   const calendarDays = useMemo<MonthScheduleDay[]>(
@@ -125,7 +126,7 @@ export function MonthScheduleView({
         const hiddenEntries = entries.slice(maxVisibleEntries);
         const sessionCount = entries.reduce(
           (count, entry) => count + (entry.kind === "session" ? 1 : 0),
-          0
+          0,
         );
         const daySessions = sessionsByDate.get(dateKey) ?? [];
         const conflictingSessionIds = getConflictingSessionIds(daySessions);
@@ -149,7 +150,7 @@ export function MonthScheduleView({
           monthLabel: date.toLocaleDateString("en-US", { month: "short" }),
         };
       }),
-    [maxVisibleEntries, month, monthDays, sessionsByDate, showTemplatePlaceholders, templatesByDay]
+    [maxVisibleEntries, month, monthDays, sessionsByDate, showTemplatePlaceholders, templatesByDay],
   );
 
   const monthlyTemplateGapCount = useMemo(() => {
@@ -159,7 +160,7 @@ export function MonthScheduleView({
 
     return calendarDays.reduce(
       (count, day) => count + (day.inCurrentMonth ? day.templateCount : 0),
-      0
+      0,
     );
   }, [calendarDays, showTemplatePlaceholders]);
 
@@ -169,7 +170,9 @@ export function MonthScheduleView({
         <div className="flex flex-col gap-3 border-b border-border px-4 py-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs font-medium text-muted">Month view</p>
-            <h2 className="mt-1 text-lg font-semibold text-text-primary">{formatMonthLabel(month)}</h2>
+            <h2 className="mt-1 text-lg font-semibold text-text-primary">
+              {formatMonthLabel(month)}
+            </h2>
             <p className="mt-1 text-xs text-text-secondary">{formatMonthRange(month)}</p>
           </div>
 
@@ -232,8 +235,8 @@ export function MonthScheduleView({
                           isToday
                             ? "bg-accent text-accent-contrast"
                             : day.inCurrentMonth
-                            ? "bg-surface-raised text-text-primary"
-                            : "bg-transparent text-muted"
+                              ? "bg-surface-raised text-text-primary"
+                              : "bg-transparent text-muted"
                         }`}
                       >
                         {day.date.getDate()}
@@ -242,10 +245,14 @@ export function MonthScheduleView({
                         <span className="text-xs text-muted xl:hidden">
                           {MONTH_DAY_NAMES[day.date.getDay()]}
                         </span>
-                        <span className={`text-xs ${day.inCurrentMonth ? "text-muted" : "text-muted"}`}>
+                        <span
+                          className={`text-xs ${day.inCurrentMonth ? "text-muted" : "text-muted"}`}
+                        >
                           {day.monthLabel}
                         </span>
-                        {isToday && <span className="text-[10px] font-medium text-accent">Today</span>}
+                        {isToday && (
+                          <span className="text-[10px] font-medium text-accent">Today</span>
+                        )}
                       </div>
                     </div>
 
@@ -298,7 +305,9 @@ export function MonthScheduleView({
                               {formatScheduleTime(entry.session.start_time)}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-[11px] font-medium text-text-primary">{entry.session.name}</p>
+                              <p className="truncate text-[11px] font-medium text-text-primary">
+                                {entry.session.name}
+                              </p>
                               <div className="mt-1 flex items-center gap-2 text-[10px] text-text-secondary">
                                 <span className="capitalize">{getSessionMeta(entry.session)}</span>
                                 {day.conflictingSessionIds.has(entry.session.id) && (
@@ -326,7 +335,9 @@ export function MonthScheduleView({
                             {formatScheduleTime(entry.template.start_time)}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[11px] text-text-secondary">{entry.template.name}</p>
+                            <p className="truncate text-[11px] text-text-secondary">
+                              {entry.template.name}
+                            </p>
                             <p className="mt-1 text-xs text-muted">Template slot</p>
                           </div>
                         </div>

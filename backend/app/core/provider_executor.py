@@ -18,9 +18,7 @@ class ProviderExecutorCleanupError(RuntimeError):
 
     def __init__(self, failures: list[BaseException]) -> None:
         self.failures = tuple(failures)
-        super().__init__(
-            f"provider resource cleanup failed on {len(failures)} worker thread(s)"
-        )
+        super().__init__(f"provider resource cleanup failed on {len(failures)} worker thread(s)")
 
 
 class ThreadAffineProviderExecutor(Generic[ResourceT]):

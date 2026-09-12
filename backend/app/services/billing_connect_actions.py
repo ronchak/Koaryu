@@ -108,7 +108,9 @@ class BillingConnectActions:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Choose whether this Stripe account is for a company or a sole proprietor.",
                 )
-            account_generation = int((account.get("metadata") or {}).get("connect_account_generation") or 1)
+            account_generation = int(
+                (account.get("metadata") or {}).get("connect_account_generation") or 1
+            )
             if bootstrap_context is None:
                 studio = self.billing_service._get_studio(studio_id)
                 recovery_context = {
@@ -142,7 +144,8 @@ class BillingConnectActions:
                         bootstrap_context=bootstrap_context,
                     )
             recovery_context = bootstrap_context.recovery_context or {
-                "business_name": self.billing_service._get_studio(studio_id).get("name") or "Koaryu studio",
+                "business_name": self.billing_service._get_studio(studio_id).get("name")
+                or "Koaryu studio",
                 "contact_email": self.billing_service._get_user_email(actor_id),
                 "business_entity_type": business_entity_type,
                 "refresh_url": safe_refresh_url,
@@ -156,7 +159,9 @@ class BillingConnectActions:
                 account_generation=account_generation,
                 bootstrap_context=bootstrap_context,
             )
-            stripe_account_id = stripe_account["id"] if isinstance(stripe_account, dict) else stripe_account.id
+            stripe_account_id = (
+                stripe_account["id"] if isinstance(stripe_account, dict) else stripe_account.id
+            )
             if authorization_store is not None:
                 account = authorization_store.bind_created_connect_account(
                     studio_id=studio_id,
@@ -168,11 +173,14 @@ class BillingConnectActions:
                 metadata = dict(account.get("metadata") or {})
                 metadata["business_entity_type"] = business_entity_type
                 metadata["connect_account_generation"] = account_generation
-                account = self.connect_accounts.update(studio_id, {
-                    "stripe_connected_account_id": stripe_account_id,
-                    "status": "onboarding_incomplete",
-                    "metadata": metadata,
-                })
+                account = self.connect_accounts.update(
+                    studio_id,
+                    {
+                        "stripe_connected_account_id": stripe_account_id,
+                        "status": "onboarding_incomplete",
+                        "metadata": metadata,
+                    },
+                )
 
         link_payload = build_connect_onboarding_link_v2_payload(
             account_id=stripe_account_id,
@@ -187,7 +195,9 @@ class BillingConnectActions:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Idempotency-Key is required for a fresh Connect onboarding link.",
                 )
-            account_generation = int((account.get("metadata") or {}).get("connect_account_generation") or 1)
+            account_generation = int(
+                (account.get("metadata") or {}).get("connect_account_generation") or 1
+            )
             ordinary_idempotency_key = build_idempotency_key(
                 "connect-onboarding-link",
                 studio_id,
@@ -264,19 +274,30 @@ class BillingConnectActions:
         previous_accounts = list(metadata.get("previous_stripe_connected_account_ids") or [])
         previous_accounts.append(stripe_account_id)
         metadata["previous_stripe_connected_account_ids"] = list(dict.fromkeys(previous_accounts))
-        metadata["connect_account_generation"] = int(metadata.get("connect_account_generation") or 1) + 1
-        account = self.connect_accounts.update(studio_id, {
-            "stripe_connected_account_id": None,
-            "status": "not_connected",
-            "charges_enabled": False,
-            "payouts_enabled": False,
-            "details_submitted": False,
-            "requirements_due": [],
-            "metadata": metadata,
-        })
-        self.billing_service._audit(studio_id, actor_id, "billing.connect_account_reset", studio_id, {
-            "previous_stripe_account_id": stripe_account_id,
-        })
+        metadata["connect_account_generation"] = (
+            int(metadata.get("connect_account_generation") or 1) + 1
+        )
+        account = self.connect_accounts.update(
+            studio_id,
+            {
+                "stripe_connected_account_id": None,
+                "status": "not_connected",
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+                "requirements_due": [],
+                "metadata": metadata,
+            },
+        )
+        self.billing_service._audit(
+            studio_id,
+            actor_id,
+            "billing.connect_account_reset",
+            studio_id,
+            {
+                "previous_stripe_account_id": stripe_account_id,
+            },
+        )
         return self.connect_accounts.response(account)
 
     async def create_dashboard_link(self, studio_id: str, actor_id: str) -> BillingLinkResponse:

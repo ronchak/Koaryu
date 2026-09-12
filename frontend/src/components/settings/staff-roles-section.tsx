@@ -17,7 +17,16 @@ import {
 } from "@/lib/staff-roles-ui-model";
 import { useConfigStore, useStudioStore } from "@/lib/store";
 import type { StaffMember, StaffRoleName } from "@/types";
-import { Archive, AlertTriangle, MailPlus, Pencil, RefreshCw, RotateCcw, Trash2, Users } from "lucide-react";
+import {
+  Archive,
+  AlertTriangle,
+  MailPlus,
+  Pencil,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+  Users,
+} from "lucide-react";
 
 type PendingLifecycleAction = {
   id: string;
@@ -96,9 +105,10 @@ function StaffIdentity({
 }) {
   const displayName = getDisplayedStaffIdentity(member);
   const email = member.email.trim();
-  const legalName = member.legal_first_name?.trim() && member.legal_last_name?.trim()
-    ? `${member.legal_first_name} ${member.legal_last_name}`
-    : "Not provided";
+  const legalName =
+    member.legal_first_name?.trim() && member.legal_last_name?.trim()
+      ? `${member.legal_first_name} ${member.legal_last_name}`
+      : "Not provided";
 
   return (
     <div className="min-w-0">
@@ -222,7 +232,9 @@ function StaffRow({
                 disabled={isCommandPending}
               />
             </div>
-            <p aria-live="polite" className="min-h-4 text-xs text-danger">{legalNameError}</p>
+            <p aria-live="polite" className="min-h-4 text-xs text-danger">
+              {legalNameError}
+            </p>
             <div className="flex flex-wrap justify-end gap-2">
               <Button
                 type="button"
@@ -270,7 +282,11 @@ function StaffRow({
       <div>
         <p className="mb-1 text-xs text-muted md:hidden">Status</p>
         <Badge variant={member.status === "active" ? "success" : "warning"}>
-          {member.status === "active" ? "Active" : member.status === "pending" ? "Pending" : "Archived"}
+          {member.status === "active"
+            ? "Active"
+            : member.status === "pending"
+              ? "Pending"
+              : "Archived"}
         </Badge>
       </div>
 
@@ -281,19 +297,22 @@ function StaffRow({
 
       {canManageStaff && (
         <div className="flex flex-wrap items-center gap-1">
-          {staffProfilesAvailable && member.status === "active" && hasUserId && !isLegalNameEditing && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => onEditLegalName(member)}
-              disabled={isCommandPending}
-              title="Edit legal name"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              Edit legal name
-            </Button>
-          )}
+          {staffProfilesAvailable &&
+            member.status === "active" &&
+            hasUserId &&
+            !isLegalNameEditing && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onEditLegalName(member)}
+                disabled={isCommandPending}
+                title="Edit legal name"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Edit legal name
+              </Button>
+            )}
           {member.status === "pending" ? (
             <Button
               type="button"
@@ -318,7 +337,9 @@ function StaffRow({
                 title="Restore studio access"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                {isLifecyclePending && pendingLifecycle?.action === "unarchive" ? "Restoring..." : "Unarchive"}
+                {isLifecyclePending && pendingLifecycle?.action === "unarchive"
+                  ? "Restoring..."
+                  : "Unarchive"}
               </Button>
               {hasUserId ? (
                 <Button
@@ -331,7 +352,9 @@ function StaffRow({
                   title="Schedule permanent deletion"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  {isLifecyclePending && pendingLifecycle?.action === "delete" ? "Scheduling..." : "Delete"}
+                  {isLifecyclePending && pendingLifecycle?.action === "delete"
+                    ? "Scheduling..."
+                    : "Delete"}
                 </Button>
               ) : (
                 <span className="text-xs text-muted" role="status">
@@ -347,10 +370,16 @@ function StaffRow({
               onClick={() => onArchive(member)}
               disabled={isCommandPending || isLastActiveAdmin}
               className="justify-start md:justify-center text-warning hover:text-warning"
-              title={isLastActiveAdmin ? "At least one active admin must remain." : "Revoke access and preserve the staff row"}
+              title={
+                isLastActiveAdmin
+                  ? "At least one active admin must remain."
+                  : "Revoke access and preserve the staff row"
+              }
             >
               <Archive className="w-3.5 h-3.5" />
-              {isLifecyclePending && pendingLifecycle?.action === "archive" ? "Archiving..." : "Archive"}
+              {isLifecyclePending && pendingLifecycle?.action === "archive"
+                ? "Archiving..."
+                : "Archive"}
             </Button>
           )}
         </div>
@@ -420,15 +449,20 @@ function StaffRolesEditor() {
   const pendingRoleId = pendingCommand?.kind === "role" ? pendingCommand.id : null;
   const pendingRemoveId = pendingCommand?.kind === "remove" ? pendingCommand.id : null;
   const pendingLegalNameUserId = pendingCommand?.kind === "legal" ? pendingCommand.id : null;
-  const pendingLifecycle: PendingLifecycleAction = pendingCommand
-    && (pendingCommand.kind === "archive" || pendingCommand.kind === "unarchive" || pendingCommand.kind === "delete")
-    ? { id: pendingCommand.id, action: pendingCommand.kind } : null;
+  const pendingLifecycle: PendingLifecycleAction =
+    pendingCommand &&
+    (pendingCommand.kind === "archive" ||
+      pendingCommand.kind === "unarchive" ||
+      pendingCommand.kind === "delete")
+      ? { id: pendingCommand.id, action: pendingCommand.kind }
+      : null;
 
   async function runCommand<Result>(
-    kind: StaffCommand["kind"], id: string,
+    kind: StaffCommand["kind"],
+    id: string,
     work: () => Promise<Result>,
     onSuccess: (result: Result) => void,
-    onError: (error: unknown) => void
+    onError: (error: unknown) => void,
   ) {
     if (!mountedRef.current || commandRef.current) return;
     const command = { kind, id };
@@ -448,7 +482,6 @@ function StaffRolesEditor() {
     }
   }
 
-
   const canManageStaff = currentRole === "admin";
   const visibleStaffMembers = filterStaffMembersForDisplay(staffMembers, showArchived);
   const activeAdminCount = countActiveAdminMembers(staffMembers);
@@ -457,33 +490,36 @@ function StaffRolesEditor() {
     lastName: legalLastName,
   });
   const legalNameCanSubmit = Boolean(
-    normalizedLegalNameDraft.firstName && normalizedLegalNameDraft.lastName
+    normalizedLegalNameDraft.firstName && normalizedLegalNameDraft.lastName,
   );
   const deletionIdentity = deleteTarget ? getDisplayedStaffIdentity(deleteTarget) : "";
   const normalizedDeletionConfirmation = normalizeStaffConfirmationInput(deletionConfirmationInput);
   const deletionCanSubmit = Boolean(
-    deleteTarget
-    && normalizedDeletionConfirmation
-    && matchesStaffDeletionConfirmation(deleteTarget, deletionConfirmationInput)
+    deleteTarget &&
+    normalizedDeletionConfirmation &&
+    matchesStaffDeletionConfirmation(deleteTarget, deletionConfirmationInput),
   );
 
-  const refreshRoster = useCallback(async (includeArchived: boolean) => {
-    if (staffRefreshInFlightRef.current) {
-      return staffRefreshInFlightRef.current;
-    }
+  const refreshRoster = useCallback(
+    async (includeArchived: boolean) => {
+      if (staffRefreshInFlightRef.current) {
+        return staffRefreshInFlightRef.current;
+      }
 
-    setIsStaffRefreshPending(true);
-    const request = refreshStaff(includeArchived)
-      .then(() => undefined)
-      .finally(() => {
-        if (mountedRef.current && staffRefreshInFlightRef.current === request) {
-          staffRefreshInFlightRef.current = null;
-          setIsStaffRefreshPending(false);
-        }
-      });
-    staffRefreshInFlightRef.current = request;
-    return request;
-  }, [refreshStaff]);
+      setIsStaffRefreshPending(true);
+      const request = refreshStaff(includeArchived)
+        .then(() => undefined)
+        .finally(() => {
+          if (mountedRef.current && staffRefreshInFlightRef.current === request) {
+            staffRefreshInFlightRef.current = null;
+            setIsStaffRefreshPending(false);
+          }
+        });
+      staffRefreshInFlightRef.current = request;
+      return request;
+    },
+    [refreshStaff],
+  );
 
   useEffect(() => {
     if (!canManageStaff || staffLoaded) return;
@@ -500,7 +536,8 @@ function StaffRolesEditor() {
     try {
       await refreshRoster(false);
     } catch (error) {
-      if (mountedRef.current) setActionError(error instanceof Error ? error.message : "Staff could not be loaded.");
+      if (mountedRef.current)
+        setActionError(error instanceof Error ? error.message : "Staff could not be loaded.");
     }
   }
 
@@ -555,36 +592,58 @@ function StaffRolesEditor() {
       return;
     }
 
-    await runCommand("invite", "", () => inviteStaff({
-      email, role: inviteRole, full_name: fullName,
-      legal_first_name: normalizedInviteLegalName.firstName,
-      legal_last_name: normalizedInviteLegalName.lastName,
-    }), () => {
-      setInviteEmail("");
-      setInviteFullName("");
-      setInviteLegalFirstName("");
-      setInviteLegalLastName("");
-      setMessage(isPreviewMode ? `Preview staff added for ${email}.` : `Invite sent to ${email}.`);
-    }, (error) => setActionError(error instanceof Error ? error.message : "Failed to send invite."));
+    await runCommand(
+      "invite",
+      "",
+      () =>
+        inviteStaff({
+          email,
+          role: inviteRole,
+          full_name: fullName,
+          legal_first_name: normalizedInviteLegalName.firstName,
+          legal_last_name: normalizedInviteLegalName.lastName,
+        }),
+      () => {
+        setInviteEmail("");
+        setInviteFullName("");
+        setInviteLegalFirstName("");
+        setInviteLegalLastName("");
+        setMessage(
+          isPreviewMode ? `Preview staff added for ${email}.` : `Invite sent to ${email}.`,
+        );
+      },
+      (error) => setActionError(error instanceof Error ? error.message : "Failed to send invite."),
+    );
   }
 
   async function handleRoleChange(member: StaffMember, role: StaffRoleName) {
     if (commandRef.current || member.role === role) return;
     setMessage("");
     setActionError("");
-    await runCommand("role", member.id, () => updateStaffRole(member.id, role),
+    await runCommand(
+      "role",
+      member.id,
+      () => updateStaffRole(member.id, role),
       () => setMessage(`${member.email} is now ${ROLE_LABELS[role]}.`),
-      (error) => setActionError(error instanceof Error ? error.message : "Failed to update role."));
+      (error) => setActionError(error instanceof Error ? error.message : "Failed to update role."),
+    );
   }
 
   async function runRemove(member: StaffMember) {
     if (commandRef.current || member.status !== "pending") return;
     setMessage("");
     setActionError("");
-    await runCommand("remove", member.id, () => removeStaff(member.id), () => {
-      setMessage(`Invite revoked for ${getDisplayedStaffIdentity(member)}.`);
-      setRemoveTarget(null);
-    }, (error) => setActionError(error instanceof Error ? error.message : "Failed to remove staff member."));
+    await runCommand(
+      "remove",
+      member.id,
+      () => removeStaff(member.id),
+      () => {
+        setMessage(`Invite revoked for ${getDisplayedStaffIdentity(member)}.`);
+        setRemoveTarget(null);
+      },
+      (error) =>
+        setActionError(error instanceof Error ? error.message : "Failed to remove staff member."),
+    );
   }
 
   function handleRemove(member: StaffMember) {
@@ -597,10 +656,19 @@ function StaffRolesEditor() {
     if (commandRef.current) return;
     setMessage("");
     setActionError("");
-    await runCommand("archive", member.id, () => archiveStaff(member.id), () => {
-      setMessage(`${getDisplayedStaffIdentity(member)} was archived. Studio access was revoked immediately; the staff row was preserved and can be restored.`);
-      setArchiveTarget(null);
-    }, (error) => setActionError(error instanceof Error ? error.message : "Failed to archive staff member."));
+    await runCommand(
+      "archive",
+      member.id,
+      () => archiveStaff(member.id),
+      () => {
+        setMessage(
+          `${getDisplayedStaffIdentity(member)} was archived. Studio access was revoked immediately; the staff row was preserved and can be restored.`,
+        );
+        setArchiveTarget(null);
+      },
+      (error) =>
+        setActionError(error instanceof Error ? error.message : "Failed to archive staff member."),
+    );
   }
 
   function handleArchive(member: StaffMember) {
@@ -614,11 +682,22 @@ function StaffRolesEditor() {
     if (commandRef.current || member.status !== "archived") return;
     setMessage("");
     setActionError("");
-    await runCommand("unarchive", member.id, () => unarchiveStaff(member.id), (unarchivedMember) => {
-      setMessage(unarchivedMember.status === "active"
-        ? `${getDisplayedStaffIdentity(member)} was unarchived and studio access is restored.`
-        : `${getDisplayedStaffIdentity(member)} was unarchived but the membership remains pending.`);
-    }, (error) => setActionError(error instanceof Error ? error.message : "Failed to unarchive staff member."));
+    await runCommand(
+      "unarchive",
+      member.id,
+      () => unarchiveStaff(member.id),
+      (unarchivedMember) => {
+        setMessage(
+          unarchivedMember.status === "active"
+            ? `${getDisplayedStaffIdentity(member)} was unarchived and studio access is restored.`
+            : `${getDisplayedStaffIdentity(member)} was unarchived but the membership remains pending.`,
+        );
+      },
+      (error) =>
+        setActionError(
+          error instanceof Error ? error.message : "Failed to unarchive staff member.",
+        ),
+    );
   }
 
   function handleScheduleDeletion(member: StaffMember) {
@@ -647,10 +726,21 @@ function StaffRolesEditor() {
     setDeletionError("");
     setMessage("");
     setActionError("");
-    await runCommand("delete", deleteTarget.id, () => scheduleStaffDeletion(deleteTarget.id, deletionConfirmationInput), (response) => {
-      setMessage(`Permanent account/profile deletion for ${deletionIdentity} is scheduled for ${formatDateTime(response.scheduled_for)} through the existing 30-day lifecycle. It is not immediate: the archived membership/profile remains until the existing worker completes the scheduled deletion; frozen audit history remains retained.`);
-      closeDeletionModal(true);
-    }, (error) => setDeletionError(error instanceof Error ? error.message : "Failed to schedule staff deletion."));
+    await runCommand(
+      "delete",
+      deleteTarget.id,
+      () => scheduleStaffDeletion(deleteTarget.id, deletionConfirmationInput),
+      (response) => {
+        setMessage(
+          `Permanent account/profile deletion for ${deletionIdentity} is scheduled for ${formatDateTime(response.scheduled_for)} through the existing 30-day lifecycle. It is not immediate: the archived membership/profile remains until the existing worker completes the scheduled deletion; frozen audit history remains retained.`,
+        );
+        closeDeletionModal(true);
+      },
+      (error) =>
+        setDeletionError(
+          error instanceof Error ? error.message : "Failed to schedule staff deletion.",
+        ),
+    );
   }
 
   function handleEditLegalName(member: StaffMember) {
@@ -681,18 +771,31 @@ function StaffRolesEditor() {
     setMessage("");
     setActionError("");
     setLegalNameError("");
-    await runCommand("legal", userId, async () => {
-      if (userId === currentUserId) {
-        await updateUserLegalName(normalizedLegalNameDraft.firstName, normalizedLegalNameDraft.lastName);
-      } else {
-        await updateStaffLegalName(userId, normalizedLegalNameDraft.firstName, normalizedLegalNameDraft.lastName);
-      }
-    }, () => {
-      setLegalNameTarget(null);
-      setMessage(`Legal name updated for ${target.email}.`);
-    }, (error) => setLegalNameError(error instanceof Error ? error.message : "Failed to update legal name."));
+    await runCommand(
+      "legal",
+      userId,
+      async () => {
+        if (userId === currentUserId) {
+          await updateUserLegalName(
+            normalizedLegalNameDraft.firstName,
+            normalizedLegalNameDraft.lastName,
+          );
+        } else {
+          await updateStaffLegalName(
+            userId,
+            normalizedLegalNameDraft.firstName,
+            normalizedLegalNameDraft.lastName,
+          );
+        }
+      },
+      () => {
+        setLegalNameTarget(null);
+        setMessage(`Legal name updated for ${target.email}.`);
+      },
+      (error) =>
+        setLegalNameError(error instanceof Error ? error.message : "Failed to update legal name."),
+    );
   }
-
 
   if (!canManageStaff) {
     return (
@@ -705,7 +808,9 @@ function StaffRolesEditor() {
           <p className="text-xs text-muted mb-2">Your role</p>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm text-text-primary truncate">{userEmail || "Signed-in staff member"}</p>
+              <p className="text-sm text-text-primary truncate">
+                {userEmail || "Signed-in staff member"}
+              </p>
               <p className="text-xs text-muted">Admins manage staff invitations and roles.</p>
             </div>
             <Badge variant={currentRole ? roleBadgeVariant(currentRole) : "default"}>
@@ -719,348 +824,394 @@ function StaffRolesEditor() {
 
   return (
     <>
-    <section className="bg-surface p-4">
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-accent" />
-            <h3 className="text-sm font-medium text-text-primary">Staff & Roles</h3>
-            <Badge variant="default">{visibleStaffMembers.length}</Badge>
+      <section className="bg-surface p-4">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-accent" />
+              <h3 className="text-sm font-medium text-text-primary">Staff & Roles</h3>
+              <Badge variant="default">{visibleStaffMembers.length}</Badge>
+            </div>
+            <p className="text-xs text-muted mt-1">
+              Invite staff and manage their roles. {activeAdminCount} active{" "}
+              {activeAdminCount === 1 ? "admin" : "admins"}.
+            </p>
           </div>
-          <p className="text-xs text-muted mt-1">
-            Invite staff and manage their roles. {activeAdminCount} active {activeAdminCount === 1 ? "admin" : "admins"}.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <label className="flex min-h-11 items-center gap-2 text-xs text-text-secondary">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(event) => void handleArchivedToggle(event)}
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <label className="flex min-h-11 items-center gap-2 text-xs text-text-secondary">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(event) => void handleArchivedToggle(event)}
+                disabled={isStaffRefreshPending || isCommandPending}
+                aria-label="Show archived staff"
+                className="accent-[var(--accent)] cursor-pointer disabled:cursor-not-allowed"
+              />
+              <span>Show archived</span>
+              {isStaffRefreshPending ? <span className="text-muted">Loading...</span> : null}
+            </label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleRefresh()}
               disabled={isStaffRefreshPending || isCommandPending}
-              aria-label="Show archived staff"
-              className="accent-[var(--accent)] cursor-pointer disabled:cursor-not-allowed"
-            />
-            <span>Show archived</span>
-            {isStaffRefreshPending ? <span className="text-muted">Loading...</span> : null}
-          </label>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => void handleRefresh()}
-            disabled={isStaffRefreshPending || isCommandPending}
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Refresh
-          </Button>
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Refresh
+            </Button>
+          </div>
         </div>
-      </div>
 
-      <form onSubmit={handleInvite} className="grid gap-3 md:grid-cols-2 md:items-end mb-4">
-        <Input
-          label="Email"
-          type="email"
-          value={inviteEmail}
-          onChange={(event) => setInviteEmail(event.target.value)}
-          placeholder="instructor@example.com"
-          disabled={isCommandPending}
-          required
-        />
-        <Input
-          label="Display name"
-          value={inviteFullName}
-          onChange={(event) => setInviteFullName(event.target.value)}
-          placeholder="Their display name"
-          disabled={isCommandPending}
-          required
-        />
-        <Input
-          label="Legal first name"
-          value={inviteLegalFirstName}
-          onChange={(event) => setInviteLegalFirstName(event.target.value)}
-          placeholder="Legal first name"
-          autoComplete="given-name"
-          disabled={isCommandPending}
-          required
-        />
-        <Input
-          label="Legal last name"
-          value={inviteLegalLastName}
-          onChange={(event) => setInviteLegalLastName(event.target.value)}
-          placeholder="Legal last name"
-          autoComplete="family-name"
-          disabled={isCommandPending}
-          required
-        />
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm text-text-secondary font-medium" htmlFor="staff-role">
-            Role
-          </label>
-          <select
-            id="staff-role"
-            value={inviteRole}
-            onChange={(event) => setInviteRole(event.target.value as StaffRoleName)}
+        <form onSubmit={handleInvite} className="grid gap-3 md:grid-cols-2 md:items-end mb-4">
+          <Input
+            label="Email"
+            type="email"
+            value={inviteEmail}
+            onChange={(event) => setInviteEmail(event.target.value)}
+            placeholder="instructor@example.com"
             disabled={isCommandPending}
-            className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary disabled:opacity-50"
+            required
+          />
+          <Input
+            label="Display name"
+            value={inviteFullName}
+            onChange={(event) => setInviteFullName(event.target.value)}
+            placeholder="Their display name"
+            disabled={isCommandPending}
+            required
+          />
+          <Input
+            label="Legal first name"
+            value={inviteLegalFirstName}
+            onChange={(event) => setInviteLegalFirstName(event.target.value)}
+            placeholder="Legal first name"
+            autoComplete="given-name"
+            disabled={isCommandPending}
+            required
+          />
+          <Input
+            label="Legal last name"
+            value={inviteLegalLastName}
+            onChange={(event) => setInviteLegalLastName(event.target.value)}
+            placeholder="Legal last name"
+            autoComplete="family-name"
+            disabled={isCommandPending}
+            required
+          />
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm text-text-secondary font-medium" htmlFor="staff-role">
+              Role
+            </label>
+            <select
+              id="staff-role"
+              value={inviteRole}
+              onChange={(event) => setInviteRole(event.target.value as StaffRoleName)}
+              disabled={isCommandPending}
+              className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary disabled:opacity-50"
+            >
+              {ROLE_OPTIONS.map((role) => (
+                <option key={role} value={role}>
+                  {ROLE_LABELS[role]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            size="md"
+            isLoading={inviteInFlight}
+            disabled={isCommandPending}
           >
-            {ROLE_OPTIONS.map((role) => (
-              <option key={role} value={role}>
-                {ROLE_LABELS[role]}
-              </option>
+            <MailPlus className="w-3.5 h-3.5" />
+            {inviteInFlight ? "Sending..." : "Send invite"}
+          </Button>
+        </form>
+
+        {(message ||
+          actionError ||
+          (staffLoadError && dismissedStaffLoadError !== staffLoadError)) && (
+          <div className="mb-4 space-y-2">
+            {message && (
+              <DismissibleNotice
+                tone="success"
+                onDismiss={() => setMessage("")}
+                className="text-xs"
+              >
+                {message}
+              </DismissibleNotice>
+            )}
+            {actionError && !removeTarget && !archiveTarget && (
+              <DismissibleNotice
+                tone="danger"
+                onDismiss={() => setActionError("")}
+                className="text-xs"
+              >
+                {actionError}
+              </DismissibleNotice>
+            )}
+            {staffLoadError && dismissedStaffLoadError !== staffLoadError && (
+              <DismissibleNotice
+                tone="danger"
+                onDismiss={() => setDismissedStaffLoadError(staffLoadError)}
+                className="text-xs"
+              >
+                {staffLoadError}
+              </DismissibleNotice>
+            )}
+          </div>
+        )}
+
+        {!staffLoaded ? (
+          <StaffSkeletonRows />
+        ) : visibleStaffMembers.length === 0 ? (
+          <div className="rounded-[10px] bg-surface-raised/30 p-4 text-sm text-text-secondary">
+            {staffMembers.length > 0 && !showArchived
+              ? "No active staff members. Turn on Show archived to view preserved archived rows."
+              : "No staff invited yet."}
+          </div>
+        ) : (
+          <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/20">
+            <div className="hidden min-h-11 gap-3 bg-surface-raised px-3 py-2 text-xs text-muted md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center">
+              <span>Staff</span>
+              <span>Role</span>
+              <span>Status</span>
+              <span>Date</span>
+              <span>Action</span>
+            </div>
+            {visibleStaffMembers.map((member) => (
+              <StaffRow
+                key={member.id}
+                member={member}
+                currentUserId={currentUserId}
+                canManageStaff={canManageStaff}
+                isCommandPending={isCommandPending}
+                staffProfilesAvailable={staffProfilesAvailable}
+                isLastActiveAdmin={isLastActiveAdmin(staffMembers, member)}
+                pendingRoleId={pendingRoleId}
+                pendingRemoveId={pendingRemoveId}
+                pendingLifecycle={pendingLifecycle}
+                pendingLegalNameUserId={pendingLegalNameUserId}
+                legalNameTargetUserId={legalNameTarget?.user_id ?? null}
+                legalFirstName={legalFirstName}
+                legalLastName={legalLastName}
+                legalNameError={legalNameError}
+                legalNameCanSubmit={legalNameCanSubmit}
+                onRoleChange={handleRoleChange}
+                onRemove={handleRemove}
+                onArchive={handleArchive}
+                onUnarchive={handleUnarchive}
+                onScheduleDeletion={handleScheduleDeletion}
+                onEditLegalName={handleEditLegalName}
+                onLegalNameFirstChange={setLegalFirstName}
+                onLegalNameLastChange={setLegalLastName}
+                onLegalNameSave={handleLegalNameSave}
+                onLegalNameCancel={handleCancelLegalNameEdit}
+              />
             ))}
-          </select>
-        </div>
-        <Button type="submit" variant="primary" size="md" isLoading={inviteInFlight} disabled={isCommandPending}>
-          <MailPlus className="w-3.5 h-3.5" />
-          {inviteInFlight ? "Sending..." : "Send invite"}
-        </Button>
-      </form>
-
-      {(message || actionError || (staffLoadError && dismissedStaffLoadError !== staffLoadError)) && (
-        <div className="mb-4 space-y-2">
-          {message && (
-            <DismissibleNotice
-              tone="success"
-              onDismiss={() => setMessage("")}
-              className="text-xs"
-            >
-              {message}
-            </DismissibleNotice>
-          )}
-          {actionError && !removeTarget && !archiveTarget && (
-            <DismissibleNotice
-              tone="danger"
-              onDismiss={() => setActionError("")}
-              className="text-xs"
-            >
-              {actionError}
-            </DismissibleNotice>
-          )}
-          {staffLoadError && dismissedStaffLoadError !== staffLoadError && (
-            <DismissibleNotice
-              tone="danger"
-              onDismiss={() => setDismissedStaffLoadError(staffLoadError)}
-              className="text-xs"
-            >
-              {staffLoadError}
-            </DismissibleNotice>
-          )}
-        </div>
-      )}
-
-      {!staffLoaded ? (
-        <StaffSkeletonRows />
-      ) : visibleStaffMembers.length === 0 ? (
-        <div className="rounded-[10px] bg-surface-raised/30 p-4 text-sm text-text-secondary">
-          {staffMembers.length > 0 && !showArchived
-            ? "No active staff members. Turn on Show archived to view preserved archived rows."
-            : "No staff invited yet."}
-        </div>
-      ) : (
-        <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/20">
-          <div className="hidden min-h-11 gap-3 bg-surface-raised px-3 py-2 text-xs text-muted md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center">
-            <span>Staff</span>
-            <span>Role</span>
-            <span>Status</span>
-            <span>Date</span>
-            <span>Action</span>
           </div>
-          {visibleStaffMembers.map((member) => (
-            <StaffRow
-              key={member.id}
-              member={member}
-              currentUserId={currentUserId}
-              canManageStaff={canManageStaff}
-              isCommandPending={isCommandPending}
-              staffProfilesAvailable={staffProfilesAvailable}
-              isLastActiveAdmin={isLastActiveAdmin(staffMembers, member)}
-              pendingRoleId={pendingRoleId}
-              pendingRemoveId={pendingRemoveId}
-              pendingLifecycle={pendingLifecycle}
-              pendingLegalNameUserId={pendingLegalNameUserId}
-              legalNameTargetUserId={legalNameTarget?.user_id ?? null}
-              legalFirstName={legalFirstName}
-              legalLastName={legalLastName}
-              legalNameError={legalNameError}
-              legalNameCanSubmit={legalNameCanSubmit}
-              onRoleChange={handleRoleChange}
-              onRemove={handleRemove}
-              onArchive={handleArchive}
-              onUnarchive={handleUnarchive}
-              onScheduleDeletion={handleScheduleDeletion}
-              onEditLegalName={handleEditLegalName}
-              onLegalNameFirstChange={setLegalFirstName}
-              onLegalNameLastChange={setLegalLastName}
-              onLegalNameSave={handleLegalNameSave}
-              onLegalNameCancel={handleCancelLegalNameEdit}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-    {removeTarget ? (
-      <ModalFrame
-        role="alertdialog"
-        ariaLabelledBy="staff-remove-title"
-        ariaDescribedBy="staff-remove-description"
-        onBackdropClick={() => { if (!commandRef.current) setRemoveTarget(null); }}
-        panelClassName="w-[min(92vw,28rem)] rounded-[18px] bg-surface p-4"
-      >
-        <div className="flex items-start gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-danger/10 text-danger">
-            <AlertTriangle className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <h2 id="staff-remove-title" className="text-sm font-semibold text-text-primary">
-              Revoke staff invite?
-            </h2>
-            <p id="staff-remove-description" className="mt-2 text-sm leading-6 text-text-secondary">
-              This revokes the pending invitation for {getDisplayedStaffIdentity(removeTarget)}. No staff account is deleted.
-            </p>
-          </div>
-        </div>
-        {actionError ? <p role="alert" className="mt-3 text-xs text-danger">{actionError}</p> : null}
-
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="ghost" size="sm" disabled={isCommandPending} onClick={() => { if (!commandRef.current) setRemoveTarget(null); }}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="danger"
-            size="sm"
-            isLoading={pendingRemoveId === removeTarget.id}
-            disabled={isCommandPending}
-            onClick={() => void runRemove(removeTarget)}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Revoke invite
-          </Button>
-        </div>
-      </ModalFrame>
-    ) : null}
-    {archiveTarget ? (
-      <ModalFrame
-        role="alertdialog"
-        ariaLabelledBy="staff-archive-title"
-        ariaDescribedBy="staff-archive-description"
-        onBackdropClick={() => {
-          if (!commandRef.current) {
-            setArchiveTarget(null);
-          }
-        }}
-        panelClassName="w-[min(92vw,30rem)] rounded-[18px] bg-surface p-4"
-      >
-        <div className="flex items-start gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-warning/10 text-warning">
-            <Archive className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <h2 id="staff-archive-title" className="text-sm font-semibold text-text-primary">
-              Archive staff access?
-            </h2>
-            <p id="staff-archive-description" className="mt-2 text-sm leading-6 text-text-secondary">
-              Archive {getDisplayedStaffIdentity(archiveTarget)} to revoke studio access immediately. The staff row and its history are preserved so an admin can restore access later.
-            </p>
-          </div>
-        </div>
-        {actionError ? <p role="alert" className="mt-3 text-xs text-danger">{actionError}</p> : null}
-
-        <div className="mt-5 flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => { if (!commandRef.current) setArchiveTarget(null); }}
-            disabled={isCommandPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="danger"
-            size="sm"
-            isLoading={pendingLifecycle?.action === "archive"}
-            disabled={isCommandPending}
-            onClick={() => void runArchive(archiveTarget)}
-          >
-            <Archive className="h-3.5 w-3.5" />
-            {pendingLifecycle?.action === "archive" ? "Archiving..." : "Archive access"}
-          </Button>
-        </div>
-      </ModalFrame>
-    ) : null}
-    {deleteTarget ? (
-      <ModalFrame
-        role="alertdialog"
-        ariaLabelledBy="staff-delete-title"
-        ariaDescribedBy="staff-delete-description"
-        onBackdropClick={closeDeletionModal}
-        panelClassName="w-[min(92vw,32rem)] rounded-[18px] bg-surface p-4"
-      >
-        <form onSubmit={runScheduleDeletion}>
+        )}
+      </section>
+      {removeTarget ? (
+        <ModalFrame
+          role="alertdialog"
+          ariaLabelledBy="staff-remove-title"
+          ariaDescribedBy="staff-remove-description"
+          onBackdropClick={() => {
+            if (!commandRef.current) setRemoveTarget(null);
+          }}
+          panelClassName="w-[min(92vw,28rem)] rounded-[18px] bg-surface p-4"
+        >
           <div className="flex items-start gap-3">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-danger/10 text-danger">
               <AlertTriangle className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <h2 id="staff-delete-title" className="text-sm font-semibold text-text-primary">
-                Schedule permanent deletion?
+              <h2 id="staff-remove-title" className="text-sm font-semibold text-text-primary">
+                Revoke staff invite?
               </h2>
-              <p id="staff-delete-description" className="mt-2 text-sm leading-6 text-text-secondary">
-                This schedules permanent account/profile deletion for the archived staff account through the existing 30-day lifecycle. It is not immediate, and audit history is retained.
+              <p
+                id="staff-remove-description"
+                className="mt-2 text-sm leading-6 text-text-secondary"
+              >
+                This revokes the pending invitation for {getDisplayedStaffIdentity(removeTarget)}.
+                No staff account is deleted.
               </p>
             </div>
           </div>
-
-          <div className="mt-4 rounded-[10px] bg-warning/5 p-3">
-            <p className="text-xs text-muted">Displayed identity</p>
-            <p className="mt-1 break-words text-sm font-medium text-text-primary">{deletionIdentity}</p>
-            <p className="mt-2 text-xs leading-5 text-text-secondary">
-              Type this identity exactly to confirm. Whitespace at the edges and repeated whitespace are normalized; capitalization remains case-sensitive.
+          {actionError ? (
+            <p role="alert" className="mt-3 text-xs text-danger">
+              {actionError}
             </p>
-          </div>
-
-          <div className="mt-4">
-            <Input
-              label={`Type ${deletionIdentity} to confirm`}
-              value={deletionConfirmationInput}
-              onChange={(event) => {
-                setDeletionConfirmationInput(event.target.value);
-                setDeletionError("");
-              }}
-              autoComplete="off"
-              spellCheck={false}
-              disabled={isCommandPending}
-              error={deletionError}
-            />
-          </div>
+          ) : null}
 
           <div className="mt-5 flex justify-end gap-2">
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => closeDeletionModal()}
+              disabled={isCommandPending}
+              onClick={() => {
+                if (!commandRef.current) setRemoveTarget(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              isLoading={pendingRemoveId === removeTarget.id}
+              disabled={isCommandPending}
+              onClick={() => void runRemove(removeTarget)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Revoke invite
+            </Button>
+          </div>
+        </ModalFrame>
+      ) : null}
+      {archiveTarget ? (
+        <ModalFrame
+          role="alertdialog"
+          ariaLabelledBy="staff-archive-title"
+          ariaDescribedBy="staff-archive-description"
+          onBackdropClick={() => {
+            if (!commandRef.current) {
+              setArchiveTarget(null);
+            }
+          }}
+          panelClassName="w-[min(92vw,30rem)] rounded-[18px] bg-surface p-4"
+        >
+          <div className="flex items-start gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-warning/10 text-warning">
+              <Archive className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 id="staff-archive-title" className="text-sm font-semibold text-text-primary">
+                Archive staff access?
+              </h2>
+              <p
+                id="staff-archive-description"
+                className="mt-2 text-sm leading-6 text-text-secondary"
+              >
+                Archive {getDisplayedStaffIdentity(archiveTarget)} to revoke studio access
+                immediately. The staff row and its history are preserved so an admin can restore
+                access later.
+              </p>
+            </div>
+          </div>
+          {actionError ? (
+            <p role="alert" className="mt-3 text-xs text-danger">
+              {actionError}
+            </p>
+          ) : null}
+
+          <div className="mt-5 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (!commandRef.current) setArchiveTarget(null);
+              }}
               disabled={isCommandPending}
             >
               Cancel
             </Button>
             <Button
-              type="submit"
+              type="button"
               variant="danger"
               size="sm"
-              isLoading={pendingLifecycle?.action === "delete"}
-              disabled={isCommandPending || !deletionCanSubmit}
+              isLoading={pendingLifecycle?.action === "archive"}
+              disabled={isCommandPending}
+              onClick={() => void runArchive(archiveTarget)}
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              {pendingLifecycle?.action === "delete" ? "Scheduling..." : "Schedule deletion"}
+              <Archive className="h-3.5 w-3.5" />
+              {pendingLifecycle?.action === "archive" ? "Archiving..." : "Archive access"}
             </Button>
           </div>
-        </form>
-      </ModalFrame>
-    ) : null}
+        </ModalFrame>
+      ) : null}
+      {deleteTarget ? (
+        <ModalFrame
+          role="alertdialog"
+          ariaLabelledBy="staff-delete-title"
+          ariaDescribedBy="staff-delete-description"
+          onBackdropClick={closeDeletionModal}
+          panelClassName="w-[min(92vw,32rem)] rounded-[18px] bg-surface p-4"
+        >
+          <form onSubmit={runScheduleDeletion}>
+            <div className="flex items-start gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-danger/10 text-danger">
+                <AlertTriangle className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <h2 id="staff-delete-title" className="text-sm font-semibold text-text-primary">
+                  Schedule permanent deletion?
+                </h2>
+                <p
+                  id="staff-delete-description"
+                  className="mt-2 text-sm leading-6 text-text-secondary"
+                >
+                  This schedules permanent account/profile deletion for the archived staff account
+                  through the existing 30-day lifecycle. It is not immediate, and audit history is
+                  retained.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-[10px] bg-warning/5 p-3">
+              <p className="text-xs text-muted">Displayed identity</p>
+              <p className="mt-1 break-words text-sm font-medium text-text-primary">
+                {deletionIdentity}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-text-secondary">
+                Type this identity exactly to confirm. Whitespace at the edges and repeated
+                whitespace are normalized; capitalization remains case-sensitive.
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <Input
+                label={`Type ${deletionIdentity} to confirm`}
+                value={deletionConfirmationInput}
+                onChange={(event) => {
+                  setDeletionConfirmationInput(event.target.value);
+                  setDeletionError("");
+                }}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={isCommandPending}
+                error={deletionError}
+              />
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => closeDeletionModal()}
+                disabled={isCommandPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="danger"
+                size="sm"
+                isLoading={pendingLifecycle?.action === "delete"}
+                disabled={isCommandPending || !deletionCanSubmit}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {pendingLifecycle?.action === "delete" ? "Scheduling..." : "Schedule deletion"}
+              </Button>
+            </div>
+          </form>
+        </ModalFrame>
+      ) : null}
     </>
   );
 }

@@ -42,7 +42,7 @@ const COMPOSITION_BY_SIZE: Readonly<Record<DashboardWidgetSize, DashboardWidgetC
 };
 
 export function getDashboardWidgetComposition(
-  size: DashboardWidgetSize
+  size: DashboardWidgetSize,
 ): DashboardWidgetComposition {
   return COMPOSITION_BY_SIZE[size];
 }

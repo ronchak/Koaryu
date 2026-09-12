@@ -1,6 +1,4 @@
-import {
-  getDashboardWidgetFootprint,
-} from "./dashboard-layout-store.ts";
+import { getDashboardWidgetFootprint } from "./dashboard-layout-store.ts";
 import type { DashboardWidgetSize } from "./dashboard-widget-catalog.ts";
 
 export type DashboardGridMetrics = {
@@ -42,7 +40,7 @@ function resolveHystereticIndex(
   rawIndex: number,
   previousIndex: number,
   maximum: number,
-  hysteresis = 0.16
+  hysteresis = 0.16,
 ): number {
   const candidate = clamp(Math.round(rawIndex), 0, maximum);
   if (previousIndex < 0 || candidate === previousIndex) {
@@ -59,7 +57,7 @@ function resolveHystereticIndex(
 
 export function dashboardSizePixels(
   size: DashboardWidgetSize,
-  metrics: Pick<DashboardGridMetrics, "columnGap" | "columnWidth" | "rowGap" | "rowHeight">
+  metrics: Pick<DashboardGridMetrics, "columnGap" | "columnWidth" | "rowGap" | "rowHeight">,
 ): { height: number; width: number } {
   const footprint = getDashboardWidgetFootprint(size);
   return {
@@ -83,12 +81,12 @@ export function resolveDashboardPointerTarget(input: PointerTargetInput): {
     column: resolveHystereticIndex(
       rawColumn,
       input.previousColumn,
-      Math.max(0, input.columns - footprint.columns)
+      Math.max(0, input.columns - footprint.columns),
     ),
     row: resolveHystereticIndex(
       rawRow,
       input.previousRow,
-      Math.max(0, input.maxRows - footprint.rows)
+      Math.max(0, input.maxRows - footprint.rows),
     ),
   };
 }
@@ -123,7 +121,7 @@ export function clampDashboardResizePreview(
   height: number,
   allowedSizes: readonly DashboardWidgetSize[],
   metrics: Pick<DashboardGridMetrics, "columnGap" | "columnWidth" | "rowGap" | "rowHeight">,
-  currentSize: DashboardWidgetSize
+  currentSize: DashboardWidgetSize,
 ): { height: number; width: number } {
   const current = dashboardSizePixels(currentSize, metrics);
   const desiredX = (width - current.width) / Math.max(1, metrics.columnWidth);

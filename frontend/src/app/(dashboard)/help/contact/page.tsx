@@ -40,7 +40,9 @@ export default function ContactSupportPage() {
   const searchParams = useSearchParams();
   const { token } = useConfigStore();
   const { studioName, userEmail, userName } = useStudioStore();
-  const [topic, setTopic] = useState<SupportTicketTopic>(() => initialTopic() as SupportTicketTopic);
+  const [topic, setTopic] = useState<SupportTicketTopic>(
+    () => initialTopic() as SupportTicketTopic,
+  );
   const [severity, setSeverity] = useState<SupportTicketSeverity>("normal");
   const [subject, setSubject] = useState("");
   const [details, setDetails] = useState("");
@@ -49,7 +51,9 @@ export default function ContactSupportPage() {
   const [actualResult, setActualResult] = useState("");
   const [createdTicket, setCreatedTicket] = useState<SupportTicket | null>(null);
   const [recentTickets, setRecentTickets] = useState<SupportTicket[]>([]);
-  const [recentTicketsStatus, setRecentTicketsStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [recentTicketsStatus, setRecentTicketsStatus] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
   const [recentTicketsError, setRecentTicketsError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
@@ -85,24 +89,29 @@ export default function ContactSupportPage() {
     };
   }, [searchParams]);
 
-  const loadRecentTickets = useCallback(async (signal?: AbortSignal) => {
-    if (!token) {
-      setRecentTicketsStatus("ready");
-      return;
-    }
+  const loadRecentTickets = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!token) {
+        setRecentTicketsStatus("ready");
+        return;
+      }
 
-    setRecentTicketsStatus("loading");
-    setRecentTicketsError("");
-    try {
-      const tickets = await api.get<SupportTicket[]>("/support/tickets", token, { signal });
-      setRecentTickets(tickets);
-      setRecentTicketsStatus("ready");
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") return;
-      setRecentTicketsError(error instanceof Error ? error.message : "Recent support requests could not be loaded.");
-      setRecentTicketsStatus("error");
-    }
-  }, [token]);
+      setRecentTicketsStatus("loading");
+      setRecentTicketsError("");
+      try {
+        const tickets = await api.get<SupportTicket[]>("/support/tickets", token, { signal });
+        setRecentTickets(tickets);
+        setRecentTicketsStatus("ready");
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setRecentTicketsError(
+          error instanceof Error ? error.message : "Recent support requests could not be loaded.",
+        );
+        setRecentTicketsStatus("error");
+      }
+    },
+    [token],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,14 +122,17 @@ export default function ContactSupportPage() {
     });
 
     if (token) {
-      void api.get<SupportTicket[]>("/support/tickets", token, { signal: controller.signal })
+      void api
+        .get<SupportTicket[]>("/support/tickets", token, { signal: controller.signal })
         .then((tickets) => {
           setRecentTickets(tickets);
           setRecentTicketsStatus("ready");
         })
         .catch((error: unknown) => {
           if (error instanceof Error && error.name === "AbortError") return;
-          setRecentTicketsError(error instanceof Error ? error.message : "Recent support requests could not be loaded.");
+          setRecentTicketsError(
+            error instanceof Error ? error.message : "Recent support requests could not be loaded.",
+          );
           setRecentTicketsStatus("error");
         });
     }
@@ -155,7 +167,19 @@ export default function ContactSupportPage() {
       `User agent: ${pageContext.userAgent}`,
     ].join("\n");
     return encodeMailto(emailSubject, body);
-  }, [actualResult, currentPage, details, expectedResult, pageContext, severity, studioName, subject, topic, userEmail, userName]);
+  }, [
+    actualResult,
+    currentPage,
+    details,
+    expectedResult,
+    pageContext,
+    severity,
+    studioName,
+    subject,
+    topic,
+    userEmail,
+    userName,
+  ]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -189,24 +213,28 @@ export default function ContactSupportPage() {
           details: normalizedDetails,
           page_url: currentPage.trim() || null,
           user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
-          browser_context: typeof window === "undefined"
-            ? {}
-            : {
-                path: window.location.pathname,
-                search: window.location.search,
-                viewport: `${window.innerWidth}x${window.innerHeight}`,
-                expected_result: expectedResult.trim(),
-                actual_result: actualResult.trim(),
-              },
+          browser_context:
+            typeof window === "undefined"
+              ? {}
+              : {
+                  path: window.location.pathname,
+                  search: window.location.search,
+                  viewport: `${window.innerWidth}x${window.innerHeight}`,
+                  expected_result: expectedResult.trim(),
+                  actual_result: actualResult.trim(),
+                },
         },
         token,
         {
-          timeoutMessage: "Support request timed out. Your details are still here, so you can retry.",
+          timeoutMessage:
+            "Support request timed out. Your details are still here, so you can retry.",
           networkErrorMessage: "Could not reach support. You can open an email draft instead.",
-        }
+        },
       );
       setCreatedTicket(ticket);
-      setRecentTickets((current) => [ticket, ...current.filter((item) => item.id !== ticket.id)].slice(0, 5));
+      setRecentTickets((current) =>
+        [ticket, ...current.filter((item) => item.id !== ticket.id)].slice(0, 5),
+      );
       setDetails("");
       setSubject("");
       setCurrentPage("");
@@ -236,7 +264,9 @@ export default function ContactSupportPage() {
                 className="px-3 py-2 text-sm"
               >
                 {topicOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -262,7 +292,9 @@ export default function ContactSupportPage() {
                   className="px-3 py-2 text-sm"
                 >
                   {severityOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -281,7 +313,9 @@ export default function ContactSupportPage() {
               <span className="text-xs text-muted">10–5,000 characters</span>
             </label>
             <fieldset className="space-y-4 border-y border-border py-4">
-              <legend className="px-1 text-xs font-semibold uppercase tracking-widest text-muted">Optional context</legend>
+              <legend className="px-1 text-xs font-semibold uppercase tracking-widest text-muted">
+                Optional context
+              </legend>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-text-primary">Current page</span>
                 <input
@@ -328,11 +362,18 @@ export default function ContactSupportPage() {
                 <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-success" />
                 <p>
                   Support request sent. Reference{" "}
-                  <span className="font-mono text-text-primary">{createdTicket.id.slice(0, 8)}</span>.
+                  <span className="font-mono text-text-primary">
+                    {createdTicket.id.slice(0, 8)}
+                  </span>
+                  .
                 </p>
               </div>
             )}
-            {formError && <p role="alert" className="text-sm text-danger">{formError}</p>}
+            {formError && (
+              <p role="alert" className="text-sm text-danger">
+                {formError}
+              </p>
+            )}
           </form>
         </AccountSection>
 
@@ -344,7 +385,10 @@ export default function ContactSupportPage() {
             </div>
             <div className="flex gap-3">
               <Mail className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
-              <p>For billing, include payer name, invoice number, and visible Stripe status if available.</p>
+              <p>
+                For billing, include payer name, invoice number, and visible Stripe status if
+                available.
+              </p>
             </div>
             <div className="flex gap-3">
               <Bug className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
@@ -355,28 +399,46 @@ export default function ContactSupportPage() {
       </div>
 
       <AccountNotice>
-        Koaryu saves support requests with your studio, login email, page context, and browser details so follow-up can
-        happen without making you re-explain the workflow.
+        Koaryu saves support requests with your studio, login email, page context, and browser
+        details so follow-up can happen without making you re-explain the workflow.
       </AccountNotice>
 
-      <AccountSection title="Recent support requests" description="Use this as a lightweight ticket inbox while support tooling is still early.">
+      <AccountSection
+        title="Recent support requests"
+        description="Use this as a lightweight ticket inbox while support tooling is still early."
+      >
         {recentTicketsStatus === "loading" ? (
-          <p role="status" className="text-sm text-text-secondary">Loading recent support requests…</p>
+          <p role="status" className="text-sm text-text-secondary">
+            Loading recent support requests…
+          </p>
         ) : recentTicketsStatus === "error" ? (
           <div className="border-l-2 border-danger pl-4">
-            <p role="alert" className="text-sm text-danger">{recentTicketsError}</p>
-            <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={() => void loadRecentTickets()}>
+            <p role="alert" className="text-sm text-danger">
+              {recentTicketsError}
+            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="mt-3"
+              onClick={() => void loadRecentTickets()}
+            >
               Retry recent requests
             </Button>
           </div>
         ) : recentTickets.length > 0 ? (
           <div className="divide-y divide-border border-t border-b border-border">
             {recentTickets.slice(0, 5).map((ticket) => (
-              <div key={ticket.id} className="grid gap-2 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
+              <div
+                key={ticket.id}
+                className="grid gap-2 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center"
+              >
                 <div className="min-w-0">
                   <p className="truncate font-medium text-text-primary">{ticket.subject}</p>
                   <p className="text-xs text-muted">
-                    {topicOptions.find((option) => option.value === ticket.topic)?.label || ticket.topic}{" | "}
+                    {topicOptions.find((option) => option.value === ticket.topic)?.label ||
+                      ticket.topic}
+                    {" | "}
                     {new Date(ticket.created_at).toLocaleDateString()}
                   </p>
                 </div>
@@ -387,7 +449,9 @@ export default function ContactSupportPage() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-text-secondary">No support requests have been created from this account yet.</p>
+          <p className="text-sm text-text-secondary">
+            No support requests have been created from this account yet.
+          </p>
         )}
       </AccountSection>
     </AccountPageShell>

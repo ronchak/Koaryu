@@ -17,10 +17,24 @@ DEFAULT_SECONDARY_COLOR = "#D6B25E"
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Backfill Koaryu branding onto existing Stripe connected accounts.")
-    parser.add_argument("--execute", action="store_true", help="Apply updates. Without this flag, only print the plan.")
-    parser.add_argument("--icon-path", type=Path, help="Optional local PNG/JPG path to upload as the connected-account icon.")
-    parser.add_argument("--logo-path", type=Path, help="Optional local PNG/JPG path to upload as the connected-account logo.")
+    parser = argparse.ArgumentParser(
+        description="Backfill Koaryu branding onto existing Stripe connected accounts."
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Apply updates. Without this flag, only print the plan.",
+    )
+    parser.add_argument(
+        "--icon-path",
+        type=Path,
+        help="Optional local PNG/JPG path to upload as the connected-account icon.",
+    )
+    parser.add_argument(
+        "--logo-path",
+        type=Path,
+        help="Optional local PNG/JPG path to upload as the connected-account logo.",
+    )
     parser.add_argument("--primary-color", default=DEFAULT_PRIMARY_COLOR)
     parser.add_argument("--secondary-color", default=DEFAULT_SECONDARY_COLOR)
     return parser.parse_args()

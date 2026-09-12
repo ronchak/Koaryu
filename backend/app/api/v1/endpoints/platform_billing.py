@@ -19,7 +19,9 @@ router = APIRouter(prefix="/platform-billing", tags=["platform-billing"])
 
 
 def _admin_studio_id(supabase: Client, user_id: str, requested_studio_id: Optional[str]) -> str:
-    return resolve_billing_admin_staff_role_for_user(supabase, user_id, requested_studio_id)["studio_id"]
+    return resolve_billing_admin_staff_role_for_user(supabase, user_id, requested_studio_id)[
+        "studio_id"
+    ]
 
 
 @router.get("/status", response_model=PlatformBillingStatusResponse)
@@ -31,6 +33,7 @@ async def get_platform_billing_status(
     async def _provider_operation(client):
         studio_id = _admin_studio_id(client, user_id, requested_studio_id)
         return await PlatformBillingService(client).get_status(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -47,6 +50,7 @@ async def get_email_usage(
     async def _provider_operation(client):
         studio_id = _admin_studio_id(client, user_id, requested_studio_id)
         return await PlatformBillingService(client).get_email_usage(studio_id)
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -71,6 +75,7 @@ async def create_checkout(
             data.cancel_url,
             request_idempotency_key,
         )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -87,7 +92,10 @@ async def create_portal(
 ):
     async def _provider_operation(client):
         studio_id = _admin_studio_id(client, user_id, requested_studio_id)
-        return await PlatformBillingService(client).create_portal_link(studio_id, user_id, data.return_url)
+        return await PlatformBillingService(client).create_portal_link(
+            studio_id, user_id, data.return_url
+        )
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

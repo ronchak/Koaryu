@@ -9,5 +9,10 @@ def test_studio_date_uses_configured_zone_and_handles_dst():
     assert name == "America/Los_Angeles"
     assert studio_today("Asia/Tokyo", now=instant)[0].isoformat() == "2026-09-06"
     for hour in (9, 10):
-        assert studio_today("America/Los_Angeles", now=datetime(2026, 3, 8, hour, tzinfo=timezone.utc))[0].isoformat() == "2026-03-08"
+        assert (
+            studio_today(
+                "America/Los_Angeles", now=datetime(2026, 3, 8, hour, tzinfo=timezone.utc)
+            )[0].isoformat()
+            == "2026-03-08"
+        )
     assert studio_today("invalid", now=instant)[1] == "UTC"

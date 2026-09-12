@@ -80,7 +80,9 @@ class FakeSupabase:
 
 class StudentRosterQueryTest(unittest.TestCase):
     def setUp(self):
-        self.settings = SimpleNamespace(SUPABASE_SERVICE_ROLE_KEY="local-roster-cursor-key-" + "x" * 32)
+        self.settings = SimpleNamespace(
+            SUPABASE_SERVICE_ROLE_KEY="local-roster-cursor-key-" + "x" * 32
+        )
         self.query = StudentRosterQuery.build(
             STUDIO_ID,
             search="  Aiko  ",
@@ -128,7 +130,9 @@ class StudentRosterQueryTest(unittest.TestCase):
         with patch("app.services.student_roster_query.get_settings", return_value=self.settings):
             result = fetch_student_roster_page(client, self.query, cursor=None)
             for mismatched_query in (
-                StudentRosterQuery.build(STUDIO_ID, search="Tanaka", sort_by="name", sort_dir="asc", page_size=1),
+                StudentRosterQuery.build(
+                    STUDIO_ID, search="Tanaka", sort_by="name", sort_dir="asc", page_size=1
+                ),
                 StudentRosterQuery.build(STUDIO_ID, sort_by="name", sort_dir="desc", page_size=1),
                 StudentRosterQuery.build(STUDIO_ID, sort_by="name", sort_dir="asc", page_size=2),
             ):
@@ -140,17 +144,19 @@ class StudentRosterQueryTest(unittest.TestCase):
         self.assertIn(raised.exception.code, {"invalid_cursor", "cursor_query_mismatch"})
 
     def test_stale_rpc_boundary_is_typed_and_never_hydrates(self):
-        client = FakeSupabase([
-            {
-                "items": [],
-                "total": 3,
-                "has_next": False,
-                "has_previous": True,
-                "next_anchor": None,
-                "previous_anchor": None,
-                "cursor_error": {"code": "stale_cursor"},
-            }
-        ])
+        client = FakeSupabase(
+            [
+                {
+                    "items": [],
+                    "total": 3,
+                    "has_next": False,
+                    "has_previous": True,
+                    "next_anchor": None,
+                    "previous_anchor": None,
+                    "cursor_error": {"code": "stale_cursor"},
+                }
+            ]
+        )
         with patch("app.services.student_roster_query.get_settings", return_value=self.settings):
             cursor = encode_roster_cursor(
                 self.query,
@@ -214,13 +220,14 @@ class StudentRosterQueryTest(unittest.TestCase):
                 "studio/students/b/profile": "signed-b",
             }
         )
-        with patch("app.services.student_service.fetch_student_roster_page", return_value=page), patch.object(
-            service._student_photo_store, "create_signed_urls", signer
+        with (
+            patch("app.services.student_service.fetch_student_roster_page", return_value=page),
+            patch.object(service._student_photo_store, "create_signed_urls", signer),
         ):
-            result = service.list_roster_page(STUDIO_ID, page_size=50, sort_by="name", sort_dir="asc")
-        signer.assert_called_once_with(
-            ["studio/students/a/profile", "studio/students/b/profile"]
-        )
+            result = service.list_roster_page(
+                STUDIO_ID, page_size=50, sort_by="name", sort_dir="asc"
+            )
+        signer.assert_called_once_with(["studio/students/a/profile", "studio/students/b/profile"])
         self.assertEqual([item.photo_url for item in result.items], ["signed-a", "signed-b"])
         self.assertEqual(client.calls, [])
 
@@ -229,10 +236,13 @@ class StudentRosterQueryTest(unittest.TestCase):
         one_page = StudentRosterPageResponse(
             items=[row_a], total=1, page_size=50, page_ordinal=1, has_next=False, has_previous=False
         )
-        with patch("app.services.student_service.fetch_student_roster_page", return_value=one_page), patch.object(
-            service._student_photo_store, "create_signed_urls", signer
+        with (
+            patch("app.services.student_service.fetch_student_roster_page", return_value=one_page),
+            patch.object(service._student_photo_store, "create_signed_urls", signer),
         ):
-            result = service.list_roster_page(STUDIO_ID, page_size=50, sort_by="name", sort_dir="asc")
+            result = service.list_roster_page(
+                STUDIO_ID, page_size=50, sort_by="name", sort_dir="asc"
+            )
         signer.assert_called_once_with(["studio/students/a/profile"])
         self.assertIsNone(result.items[0].photo_url)
 
@@ -274,7 +284,9 @@ class StudentRosterQueryTest(unittest.TestCase):
         client.storage = Storage(bucket)
         service = StudentService(client)
         with patch("app.services.student_service.fetch_student_roster_page", return_value=page):
-            result = service.list_roster_page(STUDIO_ID, page_size=50, sort_by="name", sort_dir="asc")
+            result = service.list_roster_page(
+                STUDIO_ID, page_size=50, sort_by="name", sort_dir="asc"
+            )
 
         self.assertEqual(bucket.paths, ["studio/students/a/profile"])
         self.assertIsNone(result.items[0].photo_url)
