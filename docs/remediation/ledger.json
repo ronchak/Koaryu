@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "df2ccedab3833e4306025c4eac20846496de97fe",
+  "last_reconciled_main": "c13b8bfd80a53f08f62017bc8d25a1d13cd1fc67",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2448,7 +2448,8 @@
         186,
         187,
         188,
-        189
+        189,
+        190
       ],
       "track": "Sol",
       "root_cause": "untyped-billing-boundaries",
@@ -8019,12 +8020,12 @@
       "id": "FC1-02",
       "title": "Eligibility failures can claim that the program has no active students",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "An eligibility failure with no rows still renders the successful-empty claim, and dismissing the notice leaves that claim visible.",
+      "disposition": "fixed",
+      "reason": "Eligibility failure remains explicitly unavailable after notice dismissal and uses the existing forced current-ladder retry. Loading still hides rank actions; only confirmed empty data shows the empty-program claim.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and prior merged implementation evidence. No runtime test or hosted activity during normalization.",
+      "verified_against": "3a248412c9a7ee2077c452b20ddf08e73fefa0fd",
+      "verification": "Coordinator reviewed final source/prop wiring and independently passed 57 targeted tests. Three named mounted contracts replace three weak presentation grep cases; full frontend remains 912 passing cases and the synthetic build passes. See student-display-truth-verification.md.",
       "source_paths": [
         "frontend/src/components/belt-tracker/eligibility-panel.tsx"
       ],
@@ -8051,7 +8052,7 @@
           "observation": "Unmatched eligibility produces empty visible rows; a load error ends the loading presentation."
         }
       ],
-      "next_change": "Render unavailable before successful-empty and expose Retry through the existing forced eligibility read. Dismissing a notice must not certify emptiness.",
+      "next_change": "None for this verified presentation defect; retain existing safety boundaries and separately tracked workflow/schema work.",
       "validation_plan": "Render loading, failed-empty, dismissed-error, successful-empty and retained-data refresh states.",
       "scope_constraints": "Do not change promotion eligibility, authorization or read ownership; FSH3-01 remains separate.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -8793,12 +8794,12 @@
       "id": "FC2-05",
       "title": "Attendance and student belt panels still confuse unavailable data with empty records",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "Attendance counters respect readiness, but empty-roster copy does not. Student belt metrics still display absent/zero values before their loading/error notice.",
+      "disposition": "fixed",
+      "reason": "Attendance and belt panels distinguish loading, incomplete, failed and empty reads. Known rank can remain visible, while unknown progress/history/count facts are labeled unavailable. Existing attendance counters and mutation guards remain.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and prior merged implementation evidence. No runtime test or hosted activity during normalization.",
+      "verified_against": "3a248412c9a7ee2077c452b20ddf08e73fefa0fd",
+      "verification": "Coordinator reviewed final source/prop wiring and independently passed 57 targeted tests. Three named mounted contracts replace three weak presentation grep cases; full frontend remains 912 passing cases and the synthetic build passes. See student-display-truth-verification.md.",
       "source_paths": [
         "frontend/src/components/schedule/session-detail-modal.tsx",
         "frontend/src/components/students/student-detail-sidebar.tsx"
@@ -8826,7 +8827,7 @@
           "observation": "Rank and promotion metrics render before checking beltLoadError/isLoadingBeltData."
         }
       ],
-      "next_change": "Gate dependent empty claims and metrics on existing readiness/error inputs; show unavailable/loading or explicitly retained values.",
+      "next_change": "None for this verified presentation defect; retain existing safety boundaries and separately tracked workflow/schema work.",
       "validation_plan": "Render empty loading, empty failure, successful empty and populated states for both panels.",
       "scope_constraints": "Preserve attendance write guards, counters, promotion calculations and permissions.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -8893,12 +8894,12 @@
       "id": "FC2-07",
       "title": "Student age uses elapsed milliseconds instead of calendar birthdays",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "Displayed age still divides elapsed time by 365.25 days, so birthday transitions can occur at the wrong time.",
+      "disposition": "fixed",
+      "reason": "Displayed age uses calendar year/month/day against the existing business date, with birthday and non-leap February-29 behavior verified. Minor/guardian semantics are unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "3a248412c9a7ee2077c452b20ddf08e73fefa0fd",
+      "verification": "Coordinator reviewed final source/prop wiring and independently passed 57 targeted tests. Three named mounted contracts replace three weak presentation grep cases; full frontend remains 912 passing cases and the synthetic build passes. See student-display-truth-verification.md.",
       "source_paths": [
         "frontend/src/components/students/student-detail-sidebar.tsx"
       ],
@@ -8918,7 +8919,7 @@
           "observation": "The profile Age field directly renders that calculation."
         }
       ],
-      "next_change": "Use calendar year/month/day comparison against an explicitly supplied businessDate for the Age display. Coordinate shared helper use with DM1-01 separately.",
+      "next_change": "None for this verified presentation defect; retain existing safety boundaries and separately tracked workflow/schema work.",
       "validation_plan": "Birthday eve/day, the cited 2008-09-07 DOB, leap-day boundaries and absent DOB.",
       "scope_constraints": "No guardian permissions, stored minor flags, billing logic or program-date changes in this presentation fix.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -9185,11 +9186,11 @@
       "id": "FC2-14",
       "title": "Preview CSV mapping can generate duplicate control IDs",
       "cluster": "import_recovery",
-      "disposition": "pending",
-      "reason": "Preview still accepts colliding headers and mapping IDs derive from lossy sanitization. The established collision is rejected by live parsing.",
+      "disposition": "fixed",
+      "reason": "Mapping controls use per-instance React IDs plus column indexes, preserving mapping keys and label targets. Preview FileReader parsing rejects normalized duplicate headers through the promise, matching the existing backend duplicate-header rule.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "3a248412c9a7ee2077c452b20ddf08e73fefa0fd",
       "source_paths": [
         "frontend/src/components/students/student-import-mapping-step.tsx",
         "backend/app/services/student_import_csv.py",
@@ -9216,7 +9217,7 @@
           "observation": "Live parser rejects duplicate normalized headers before mapping."
         }
       ],
-      "next_change": "Use a component-instance prefix plus column index for control IDs and reject normalized duplicate headers in preview parsing.",
+      "next_change": "None for this verified presentation defect; retain existing safety boundaries and separately tracked workflow/schema work.",
       "validation_plan": "Check unique IDs and matching labels with colliding header text and multiple component instances; verify preview rejection parity.",
       "scope_constraints": [
         "Live import rules",
@@ -9226,7 +9227,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/11-student-and-roster-presentation.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed final source/prop wiring and independently passed 57 targeted tests. Three named mounted contracts replace three weak presentation grep cases; full frontend remains 912 passing cases and the synthetic build passes. See student-display-truth-verification.md."
     },
     {
       "id": "FC2-15",
@@ -13176,15 +13178,15 @@
     }
   },
   "current_counts": {
-    "pending": 184,
-    "fixed": 79,
+    "pending": 180,
+    "fixed": 83,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 155,
+    "Sol": 151,
     "Astra": 29
   },
   "execution_policy": {
@@ -13196,12 +13198,12 @@
   },
   "current_disposition_tracks": {
     "pending": {
-      "Sol": 155,
+      "Sol": 151,
       "Astra": 29
     },
     "fixed": {
       "Astra": 22,
-      "Sol": 57
+      "Sol": 61
     },
     "rejected_after_verification": {
       "Sol": 1
