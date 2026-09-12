@@ -31,13 +31,13 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 [PR179](https://github.com/ronchak/Koaryu/pull/179), merged as `7113d13`, enforces USD at new tuition financial writes and retires the unused pricing path. Historical financial attempts, exact replay and provider references remain protected. Empty provider headers do not authorize new non-USD amounts. Mixed-currency reporting, unknown provider facts and family attribution remain pending. See [verification](docs/remediation/tuition-currency-verification.md).
 
-## Paused at a clean stopping point
+## Current bounded run
 
-PR178 merged as `f942dad3509a2e2cc9b55d546c2d22e097f77abe`. It closes five import findings after fresh review, all eleven checks on `c762a480`, the full 140-migration/52-contract proof and 15 student concurrency cases. No further implementation is authorized in this wind-down. The separate CSV Program/belt policy remains pending and refused before student writes.
+The owner resumed work on September 12 with a 50-point weekly usage cap and a 45-point stop-new-batches threshold. [The run plan](docs/remediation/budget-refactor-plan.md) records scope, order, ownership and wind-down requirements. Sol implements one batch per fresh thread; the coordinator reviews and integrates; each PR gets a separate fresh reviewer. Database implementation and proofs are excluded from this run.
 
-The already-written frontend cleanup is committed and pushed as draft [PR180](https://github.com/ronchak/Koaryu/pull/180), awaiting fresh review and final-base verification. Its six findings stay pending. No application or database feature work should start merely to use remaining capacity.
+[PR182](https://github.com/ronchak/Koaryu/pull/182) merged as `d6bab29209d2ee4650b8f01e0ece474ff519f422`. It pins Ruff/Prettier and separates mechanical formatting from future behavior changes. It closes no audit observation. [Formatter verification](docs/remediation/formatter-verification.md) records tests, mechanical equivalence and fifteen explicit source-test exceptions.
 
-Read [HANDOFF](docs/remediation/HANDOFF.md) for exact counts, completed/remaining batches, the next PR and known risks. The [production release packet](docs/remediation/PRODUCTION-RELEASE.md) is preparation for a human operator, not an executed release. Production remains V38, with seven migrations outstanding. A fresh backup and verified restore are still required.
+Draft [PR180](https://github.com/ronchak/Koaryu/pull/180) remains committed and pushed with six pending findings. The owner redirected this run to billing architecture, adding BB1-09 ahead of the original 55 delegated findings. The prior display worker stopped before implementation. Four blocked prerequisites remain explicitly excluded. The paused [HANDOFF](docs/remediation/HANDOFF.md) is historical context until this run's final refresh. The [production packet](docs/remediation/PRODUCTION-RELEASE.md) remains preparation for a human operator, not execution authority for this run.
 
 ## Completed changes
 
@@ -71,6 +71,7 @@ Read [HANDOFF](docs/remediation/HANDOFF.md) for exact counts, completed/remainin
 | [179](https://github.com/ronchak/Koaryu/pull/179) | USD for new tuition financial writes and retired legacy pricing | `7113d13` | [Currency](docs/remediation/tuition-currency-verification.md) |
 
 | [178](https://github.com/ronchak/Koaryu/pull/178) | Durable import outcomes, safe retry and removed broad ladder repair | `f942dad` | [Import ownership](docs/remediation/import-retry-ownership-verification.md) |
+| [182](https://github.com/ronchak/Koaryu/pull/182) | Pinned formatters and mechanical code baseline | `d6bab29` | [Formatters](docs/remediation/formatter-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 
