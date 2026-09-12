@@ -34,6 +34,7 @@ type EligibilityPanelProps = {
   onDismissEligibilityLoadError: () => void;
   onDismissLadderError: () => void;
   onDismissProgramsLoadError: () => void;
+  onRetryEligibility: () => void;
   onStartPromotion: (entry: EligibilityEntry) => void;
   onStartDemotion: (entry: EligibilityEntry) => void;
   onToggleGroup: (groupKey: string) => void;
@@ -58,6 +59,7 @@ export function EligibilityPanel({
   onDismissEligibilityLoadError,
   onDismissLadderError,
   onDismissProgramsLoadError,
+  onRetryEligibility,
   onStartPromotion,
   onStartDemotion,
   onToggleGroup,
@@ -67,6 +69,7 @@ export function EligibilityPanel({
   previousRankByCurrentRankId,
   selectedProgramName,
 }: EligibilityPanelProps) {
+  const hasRetainedEligibility = eligibilityGroups.length > 0;
   const decisionCounts = eligibilityGroups.reduce(
     (counts, group) => {
       group.entries.forEach((entry) => {
@@ -107,6 +110,18 @@ export function EligibilityPanel({
           </DismissibleNotice>
         </div>
       )}
+      {eligibilityLoadError && !isEligibilityLoading ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3" role="status">
+          <p className="text-sm text-text-secondary">
+            {hasRetainedEligibility
+              ? "Showing the last loaded eligibility. Current eligibility is unavailable."
+              : "Student eligibility is unavailable."}
+          </p>
+          <Button variant="secondary" size="sm" onClick={onRetryEligibility}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
 
       {isEligibilityLoading ? (
         <div className={styles.eligibilitySkeleton} role="status">
@@ -121,7 +136,8 @@ export function EligibilityPanel({
             </div>
           ))}
         </div>
-      ) : eligibilityGroups.length === 0 ? (
+      ) : eligibilityLoadError && !hasRetainedEligibility ? null : eligibilityGroups.length ===
+        0 ? (
         <div className={styles.panelState}>
           <div className={styles.panelStateInner}>
             <span className={styles.panelStateIcon} aria-hidden="true">

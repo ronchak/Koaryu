@@ -16,6 +16,7 @@ type StudentDetailPageContentProps = StudentDetailPageController["contentProps"]
 export function StudentDetailPageContent({
   actionMessage,
   beltLoadError,
+  businessDate,
   canManageRoster,
   canManageStudentLifecycle,
   deleteError,
@@ -186,6 +187,7 @@ export function StudentDetailPageContent({
               promotionCount={promotionHistory.length}
               isLoadingBeltData={isLoadingBeltData}
               beltLoadError={beltLoadError}
+              businessDate={businessDate}
             />
 
             <StudentDetailSections

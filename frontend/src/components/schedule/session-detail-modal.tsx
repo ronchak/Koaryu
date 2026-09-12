@@ -146,6 +146,13 @@ export function ScheduleSessionDetailModal({
     ? programs.find((program) => program.id === activeSession.program_id)
     : null;
   const programColor = activeProgram?.color_hex || "var(--accent)";
+  const emptyRosterMessage = isLoadingStudentRoster
+    ? "Loading the student roster."
+    : studentRosterError
+      ? "The student roster is unavailable."
+      : !isStudentRosterComplete
+        ? "The student roster is incomplete. Attendance will be available after all students load."
+        : "No active students. Add students first to take attendance.";
 
   function renderRosterRows(rows: SessionRosterRow[], options?: { markDropIns?: boolean }) {
     return rows.map(
@@ -415,9 +422,7 @@ export function ScheduleSessionDetailModal({
           {students.length === 0 ? (
             <div className="rounded-[10px] bg-surface px-4 py-10 text-center">
               <Users className="mx-auto mb-2 h-5 w-5 text-muted" />
-              <p className="text-xs text-muted">
-                No active students. Add students first to take attendance.
-              </p>
+              <p className="text-xs text-muted">{emptyRosterMessage}</p>
             </div>
           ) : (
             <div className="space-y-5">

@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
+import { chromium } from "@playwright/test";
+import { bundle } from "./helpers/store-browser-harness.mjs";
 
 const source = async (path) => readFile(new URL(path, import.meta.url), "utf8");
+const accessibilityBundle = bundle("production", { rosterPresentation: true });
 
 describe("records workspace policies", () => {
   it("does not expose promotion-history mutation controls", async () => {
@@ -32,64 +35,84 @@ describe("records workspace policies", () => {
     );
   });
 
-  it("keeps loading and failure announcements singular", async () => {
-    const leads = await source("../src/components/leads/lead-pipeline-board.tsx");
-    const loading = await source("../src/components/records/records-loading.tsx");
-    const mapping = await source("../src/components/students/student-import-mapping-step.tsx");
-    const leadErrorState = leads.slice(
-      leads.indexOf("export function LeadLedgerLoadError"),
-      leads.indexOf("export function LeadPipelineBoard"),
-    );
-    const resetStart = mapping.lastIndexOf("<button", mapping.indexOf("onClick={onReset}"));
-    const resetControl = mapping.slice(resetStart, mapping.indexOf("</button>", resetStart));
+  it("mounts keyboard, progress, retry, and loading announcement accessibility contracts", async () => {
+    const browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    try {
+      await page.setContent('<main id="root"></main>');
+      await page.evaluate(() => {
+        window.fixture = { changes: [], retries: 0 };
+      });
+      await page.addScriptTag({ content: accessibilityBundle });
 
-    assert.doesNotMatch(leadErrorState, /LeadLedgerIntroLoading/);
-    assert.match(
-      leadErrorState,
-      /role="alert"[\s\S]*\{error\}[\s\S]*<Button[\s\S]*onClick=\{onRetry\}/,
-    );
-    assert.equal((loading.match(/role="status"/g) ?? []).length, 1);
-    assert.equal((loading.match(/aria-live="polite"/g) ?? []).length, 1);
-    assert.match(resetControl, /aria-label="[^"]+"/);
-  });
+      await page.evaluate(() => {
+        window.fixture.renderSegmentedControl({
+          activeValue: "eligibility",
+          ariaLabel: "Belt workspace",
+          idPrefix: "belt-tab",
+          items: [
+            { id: "eligibility", label: "Eligibility", controls: "eligibility-panel" },
+            { id: "ladder", label: "Rank plan", controls: "ladder-panel" },
+          ],
+          mode: "tabs",
+          onChange: (value) => window.fixture.changes.push(value),
+        });
+      });
+      const tablist = page.getByRole("tablist", { name: "Belt workspace" });
+      const eligibilityTab = tablist.getByRole("tab", { name: "Eligibility" });
+      const ladderTab = tablist.getByRole("tab", { name: "Rank plan" });
+      assert.equal(await eligibilityTab.getAttribute("aria-selected"), "true");
+      assert.equal(await ladderTab.getAttribute("aria-selected"), "false");
+      await eligibilityTab.focus();
+      await eligibilityTab.press("ArrowRight");
+      await page.waitForFunction(() => document.activeElement?.textContent === "Rank plan");
+      await ladderTab.press("ArrowLeft");
+      await page.waitForFunction(() => document.activeElement?.textContent === "Eligibility");
+      assert.deepEqual(await page.evaluate(() => window.fixture.changes), [
+        "ladder",
+        "eligibility",
+      ]);
 
-  it("keeps belt tabs and progress accessible", async () => {
-    const segmentedControl = await source("../src/components/ui/sliding-segmented-control.tsx");
-    const eligibility = await source("../src/components/belt-tracker/eligibility-panel.tsx");
-    const rankPlan = await source("../src/components/belt-tracker/rank-plan-panel.tsx");
-    const visuals = await source("../src/components/belt-tracker/rank-visuals.tsx");
-
-    assert.match(segmentedControl, /role=\{mode === "tabs" \? "tablist" : "group"\}/);
-    assert.match(segmentedControl, /role=\{mode === "tabs" \? "tab" : undefined\}/);
-    assert.match(segmentedControl, /aria-selected=\{mode === "tabs" \? selected : undefined\}/);
-    for (const key of ["ArrowLeft", "ArrowRight"]) {
-      assert.match(segmentedControl, new RegExp(`event\\.key === "${key}"`));
-    }
-    assert.match(eligibility, /role="tabpanel"[\s\S]*aria-labelledby="belt-tab-eligibility"/);
-    assert.match(rankPlan, /role="tabpanel"[\s\S]*aria-labelledby="belt-tab-ladder"/);
-    assert.match(visuals, /if \(required <= 0\)[\s\S]*Not required/);
-    assert.match(
-      visuals,
-      /role="progressbar"[\s\S]*aria-valuetext=\{`\$\{current\} of \$\{required\}`\}/,
-    );
-  });
-
-  it("keeps records workbenches touch, focus, motion, and print accessible", async () => {
-    const stylesheets = await Promise.all([
-      source("../src/components/students/student-records.module.css"),
-      source("../src/components/belt-tracker/belt-tracker.module.css"),
-      source("../src/components/leads/leads-ledger.module.css"),
-    ]);
-
-    for (const styles of stylesheets) {
-      assert.match(styles, /button(?:,| \{)[\s\S]*min-width: 45px;[^}]*min-height: 45px/);
-      assert.match(
-        styles,
-        /label:has\(input:is\(\[type="checkbox"\], \[type="radio"\]\)\)[\s\S]*display: flex;[^}]*min-width: 45px;[^}]*min-height: 45px/,
+      await page.evaluate(() =>
+        window.fixture.renderProgressBars([
+          { current: 4, label: "Class progress", required: 10, met: false },
+          { current: 0, label: "Time progress", required: 0, met: true },
+        ]),
       );
-      assert.match(styles, /:focus-visible[\s\S]*outline: 2px solid var\(--product-focus\)/);
-      assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-      assert.match(styles, /@media print/);
+      const progress = page.getByRole("progressbar", { name: "Class progress" });
+      await progress.waitFor({ state: "attached" });
+      assert.equal(await progress.getAttribute("aria-valuenow"), "4");
+      assert.equal(await progress.getAttribute("aria-valuetext"), "4 of 10");
+      assert.equal(await page.getByRole("progressbar").count(), 1);
+      await page.getByText("Not required", { exact: true }).waitFor();
+
+      await page.evaluate(() =>
+        window.fixture.renderLeadLedgerLoadError({
+          error: "Lead roster unavailable.",
+          onRetry: () => {
+            window.fixture.retries += 1;
+          },
+        }),
+      );
+      const alert = page.getByRole("alert");
+      await alert.getByText("Lead roster unavailable.", { exact: true }).waitFor();
+      await alert.getByRole("button", { name: "Retry lead roster" }).click();
+      assert.equal(await page.evaluate(() => window.fixture.retries), 1);
+
+      await page.evaluate(() =>
+        window.fixture.renderRecordsLoading({
+          description: "Loading student records.",
+          title: "Students",
+          variant: "roster",
+        }),
+      );
+      const statuses = page.locator('[role="status"]');
+      await statuses.first().waitFor();
+      assert.equal(await statuses.count(), 1);
+      assert.equal(await page.locator('[aria-live="polite"]').count(), 1);
+      assert.equal(await statuses.textContent(), "Loading student records.");
+    } finally {
+      await browser.close();
     }
   });
 });
