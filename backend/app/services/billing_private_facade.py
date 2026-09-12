@@ -8,8 +8,6 @@ from fastapi import HTTPException, status
 
 from app.schemas.billing import (
     BillingInvoiceCreate,
-    BillingPlanProgramResponse,
-    BillingPlanResponse,
 )
 from app.services.billing_fees import application_fee_amount, application_fee_percent
 from app.services.billing_provider_operations import (
@@ -20,7 +18,6 @@ from app.services.billing_enrollments import BillingEnrollmentManager
 from app.services.billing_invoice_projection import _object_get
 from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_payers import BillingPayerManager
-from app.services.billing_plans import BillingPlanManager
 from app.services.billing_system_status import BillingSystemStatusReporter
 from app.services.platform_billing_helpers import build_idempotency_key
 from app.services.billing_webhook_event_state import (
@@ -454,13 +451,6 @@ class BillingPrivateFacadeMixin:
         payment_method_details = _object_get(charge, "payment_method_details") or {}
         return _object_get(payment_method_details, "type")
 
-    def _stripe_recurring_for_interval(
-        self, billing_interval: str
-    ) -> tuple[Optional[dict[str, Any]], int]:
-        return BillingPlanManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._stripe_recurring_for_interval(billing_interval)
-
     def _application_fee_percent(self, account: dict[str, Any]) -> float:
         return application_fee_percent(
             account.get("platform_fee_bps"), self.settings.BILLING_PLATFORM_FEE_BPS
@@ -624,16 +614,6 @@ class BillingPrivateFacadeMixin:
         BillingPayerManager(
             self, stripe_service_cls=self._billing_stripe_service_cls()
         )._recompute_payer_balance(studio_id, payer_id)
-
-    def _plan_response(self, row: dict[str, Any], account: dict[str, Any]) -> BillingPlanResponse:
-        return BillingPlanManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._plan_response(row, account)
-
-    def _programs_for_plan(self, studio_id: str, plan_id: str) -> list[BillingPlanProgramResponse]:
-        return BillingPlanManager(
-            self, stripe_service_cls=self._billing_stripe_service_cls()
-        )._programs_for_plan(studio_id, plan_id)
 
     def _ensure_record_in_studio(
         self, table: str, record_id: str, studio_id: str, detail: str

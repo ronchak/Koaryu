@@ -19,6 +19,7 @@ from tests.billing_lifecycle_helpers import (
 )
 from stripe import CardError as StripeCardError, IdempotencyError as StripeIdempotencyError
 from app.services.billing_payment_projection import BillingPaymentEventProjector
+from app.services.billing_plans import BillingPlanManager
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
@@ -108,20 +109,21 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_interval_mapping_for_stripe_prices(self):
         service = self.service()
+        plan_manager = BillingPlanManager(service.supabase, service._connect_accounts())
 
         self.assertEqual(
-            service._stripe_recurring_for_interval("monthly"),
+            plan_manager._stripe_recurring_for_interval("monthly"),
             ({"interval": "month", "interval_count": 1}, 1),
         )
         self.assertEqual(
-            service._stripe_recurring_for_interval("biweekly"),
+            plan_manager._stripe_recurring_for_interval("biweekly"),
             ({"interval": "week", "interval_count": 2}, 2),
         )
         self.assertEqual(
-            service._stripe_recurring_for_interval("annual"),
+            plan_manager._stripe_recurring_for_interval("annual"),
             ({"interval": "year", "interval_count": 1}, 1),
         )
-        self.assertEqual(service._stripe_recurring_for_interval("paid_in_full"), (None, 1))
+        self.assertEqual(plan_manager._stripe_recurring_for_interval("paid_in_full"), (None, 1))
 
     def test_application_fee_percent_and_amount_use_platform_bps(self):
         service = self.service()
