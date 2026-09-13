@@ -305,5 +305,7 @@ timings for `/dashboard/workspace`, `/dashboard/bootstrap`, and `/dashboard/summ
 without retaining URLs, identifiers, or query values. Workspace does not emit
 `Server-Timing`, so its HTTP and resource timings are diagnostics only. Bootstrap
 and summary still require their existing successful responses, resource entries,
-and allowlisted `Server-Timing` measurements. These synthetic browser observations
-do not measure deployed backend memory or prove route usability.
+and allowlisted `Server-Timing` measurements.
+
+The synthetic mounted-test startup trace records fixture workspace/controller
+readiness. It does not prove deployed route usability or measure deployed backend memory.

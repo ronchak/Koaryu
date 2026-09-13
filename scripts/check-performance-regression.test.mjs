@@ -73,8 +73,9 @@ describe("deterministic performance evidence validator", () => {
     assert.throws(
       () => validatePerformanceEvidence(mutateProfileEvidence((profile) => {
         profile.metrics.total_duration_ms = 19000;
-        profile.metrics.max_stage_duration_ms = 3000;
-        profile.metrics.slow_backend_stage_count = 7;
+        profile.metrics.max_stage_duration_ms = 4000;
+        // Six calls succeed; the seventh request is the deliberate denial.
+        profile.metrics.slow_backend_stage_count = 6;
       }), manifest, SHA),
       /total_duration_ms exceeds/,
     );
