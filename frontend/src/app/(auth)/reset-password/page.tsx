@@ -102,8 +102,8 @@ export default function ResetPasswordPage() {
       <div className="text-center">
         <h2 className="mb-2 text-lg font-semibold text-text-primary">Reset link required</h2>
         <p className="mb-5 text-sm text-text-secondary">
-          Open the password reset link from your email, or request a new reset from Account Settings
-          while signed in.
+          At sign in, choose &quot;Sign in with magic link instead,&quot; then select &quot;Send
+          magic link.&quot; Once signed in, request another password reset from Account Settings.
         </p>
         <Link href="/login" className="text-sm font-medium text-accent hover:text-accent-hover">
           Back to sign in
