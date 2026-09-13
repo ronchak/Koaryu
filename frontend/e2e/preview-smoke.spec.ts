@@ -48,7 +48,7 @@ for (const viewport of [
 }
 
 previewSmokeTest(
-  "dataset-specific dashboard pages settle after reload and Connect return",
+  "dashboard page shells are ready after reload and Connect return",
   async ({ page }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));

@@ -15,22 +15,6 @@ const backendManifest = JSON.parse(
 );
 
 describe("report export catalog", () => {
-  it("keeps exactly 29 effective rows in six visible ruled groups", () => {
-    const reportIds = [...panelSource.matchAll(/\{ id: "([a-z0-9_]+)", title:/g)].map(
-      (match) => match[1],
-    );
-    assert.equal(reportIds.length, 29);
-    assert.equal(new Set(reportIds).size, 29);
-    assert.equal(
-      (
-        panelSource.match(
-          /title: "(?:Owner Intelligence|Student Records|Growth|Programs and Ranks|Schedule|Administration)"/g,
-        ) || []
-      ).length,
-      6,
-    );
-  });
-
   it("does not ship the deferred raw billing CSV catalog in Reports", () => {
     assert.doesNotMatch(panelSource, /title:\s*["']Billing["']/);
     assert.doesNotMatch(panelSource, /id:\s*["'](?:billing_|student_billing_enrollments)/);

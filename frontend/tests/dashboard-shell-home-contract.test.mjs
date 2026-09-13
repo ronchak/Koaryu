@@ -10,7 +10,6 @@ const accountMenuSource = source("../src/components/account-menu.tsx");
 const accountMenuStyles = source("../src/components/account-menu.module.css");
 const homeSource = source("../src/components/dashboard/dashboard-home.tsx");
 const overviewSource = source("../src/components/dashboard/dashboard-overview-sections.tsx");
-const viewModelSource = source("../src/lib/dashboard-widget-view-models.ts");
 const contentSource = source("../src/components/dashboard/dashboard-page-content.tsx");
 const controllerSource = source("../src/lib/dashboard-page-controller.ts");
 const shellStyles = source("../src/components/dashboard-shell.module.css");
@@ -243,9 +242,7 @@ describe("dashboard shell and Home source contracts", () => {
 
   it("renders Home as one truthful spatial sequence with responsive reflow", () => {
     assert.match(homeSource, /className=\{styles\.sequence\}/);
-    assert.equal(homeSource.match(/className=\{styles\.sequence\}/g)?.length, 1);
     assert.match(homeSource, /layout\.items\.map\(renderWidget\)/);
-    assert.equal(homeSource.match(/layout\.items\.map\(renderWidget\)/g)?.length, 1);
     assert.doesNotMatch(
       homeSource,
       /positionedItems|layout\.items\.(?:filter|sort|toSorted|reduce)|primaryItems|compactItems/,
@@ -296,12 +293,6 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeStyles, /data-widget-id="classes_today"/);
     assert.match(homeStyles, /@media print/);
     assert.match(shellStyles, /@media print/);
-  });
-
-  it("preserves source labels verbatim", () => {
-    assert.match(homeSource, /<span>\{action\.label\}<\/span>/);
-    assert.doesNotMatch(homeSource, /sentenceCase/);
-    assert.match(viewModelSource, /\{ label: "Import CSV", href: "\/students\/import" \}/);
   });
 
   it("removes rejected ledger costume from the authenticated shell and Home", () => {

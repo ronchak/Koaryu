@@ -42,6 +42,39 @@ async function fixturePage(browser, options = {}) {
       role: "admin",
       staff_profiles_available: true,
     };
+    f.summaryResponse = {
+      auth: f.auth,
+      generated_at: "2026-09-12T12:00:00Z",
+      students: {
+        total_students: 250,
+        active_students: 250,
+        trialing_students: 0,
+        on_hold_students: 0,
+      },
+      leads: { active_leads: 0, enrolled_leads: 0, due_today_leads: 0 },
+      schedule: { today_sessions: 0 },
+      belts: { belt_count: 0, tip_count: 0 },
+      inactivity: { watch_14: 0, watch_30: 0, watch_90: 0 },
+      new_students: { new_14: 0, new_30: 0, new_90: 0, new_year_to_date: 0 },
+      operational: {
+        attendance_with_capacity: 0,
+        total_capacity: 0,
+        sessions_tracked: 0,
+        sessions_with_capacity: 0,
+        average_attendance: 0,
+      },
+      churn: { inactive_students: 0, canceled_students: 0, churn_marked_students: 0 },
+      test_readiness: { available: false },
+      billing: { can_view_billing: true },
+      setup: {
+        has_programs: false,
+        has_students: true,
+        has_belt_system: false,
+        has_weekly_classes: false,
+      },
+      recent_students: [],
+      actions: [],
+    };
     f.student = {
       id: "student-1",
       studio_id: "studio-a",
@@ -97,7 +130,7 @@ async function fixturePage(browser, options = {}) {
             programs: [],
             belt_ladders: [],
             primary_belt_ladder: null,
-            summary: { auth: f.auth, students: { total: 250 } },
+            summary: f.summaryResponse,
           };
         if (path.startsWith("/schedule/window"))
           return { sessions: [], attendance: [], templates: [] };
@@ -309,8 +342,18 @@ test("mounted detail ensures complete cached data, retains it after roster chang
       fixture.details[1].resolve({
         ...fixture.student,
         guardians: [
-          { id: "g1", full_name: "Guardian One", is_primary: true },
-          { id: "g2", full_name: "Guardian Two" },
+          {
+            id: "g1",
+            first_name: "Guardian",
+            last_name: "One",
+            is_primary_contact: true,
+          },
+          {
+            id: "g2",
+            first_name: "Guardian",
+            last_name: "Two",
+            is_primary_contact: false,
+          },
         ],
         photo_url: "https://synthetic.invalid/photo.png",
       }),
@@ -345,14 +388,20 @@ test("mounted summary reconciliation preserves saved records and rejects older s
     );
     await page.waitForFunction(() => fixture.summaries.length === 2);
     await page.evaluate(() =>
-      fixture.summaries[1].resolve({ auth: fixture.auth, students: { total: 251 } }),
+      fixture.summaries[1].resolve({
+        ...fixture.summaryResponse,
+        students: { ...fixture.summaryResponse.students, total_students: 251 },
+      }),
     );
-    await page.waitForFunction(() => fixture.store.dashboardSummary.students.total === 251);
-    await page.evaluate(() =>
-      fixture.summaries[0].resolve({ auth: fixture.auth, students: { total: 250 } }),
+    await page.waitForFunction(
+      () => fixture.store.dashboardSummary.students.total_students === 251,
     );
+    await page.evaluate(() => fixture.summaries[0].resolve(fixture.summaryResponse));
     await page.evaluate(() => fixture.oldSummary);
-    assert.equal(await page.evaluate(() => fixture.store.dashboardSummary.students.total), 251);
+    assert.equal(
+      await page.evaluate(() => fixture.store.dashboardSummary.students.total_students),
+      251,
+    );
     await page.evaluate(() => {
       fixture.refresh = fixture.store.refreshDashboardSummary().catch(() => {});
     });
@@ -360,7 +409,10 @@ test("mounted summary reconciliation preserves saved records and rejects older s
     await page.evaluate(() => fixture.summaries[2].reject(Error("Offline")));
     await page.evaluate(() => fixture.refresh);
     assert.equal(await page.evaluate(() => fixture.store.students[0].legal_first_name), "Saved");
-    assert.equal(await page.evaluate(() => fixture.store.dashboardSummary.students.total), 251);
+    assert.equal(
+      await page.evaluate(() => fixture.store.dashboardSummary.students.total_students),
+      251,
+    );
     assert.match(await page.evaluate(() => fixture.store.dashboardSummaryLoadError), /retained/);
     await page.evaluate(() => fixture.root.unmount());
   } finally {
@@ -474,7 +526,10 @@ test("uncached detail has the same complete guardian and photo result", async ()
     await page.evaluate(() =>
       fixture.details[0].resolve({
         ...fixture.student,
-        guardians: [{ id: "g1" }, { id: "g2" }],
+        guardians: [
+          { id: "g1", first_name: "Guardian", last_name: "One", is_primary_contact: true },
+          { id: "g2", first_name: "Guardian", last_name: "Two", is_primary_contact: false },
+        ],
         photo_url: "https://synthetic.invalid/photo.png",
       }),
     );
@@ -527,8 +582,9 @@ test("cross-studio summary and changed membership between workspace and features
     await page.waitForFunction(() => fixture.summaries.length === 1);
     await page.evaluate(() =>
       fixture.summaries[0].resolve({
+        ...fixture.summaryResponse,
         auth: { ...fixture.auth, studio_id: "other-studio" },
-        students: { total: 999 },
+        students: { ...fixture.summaryResponse.students, total_students: 999 },
       }),
     );
     await page.evaluate(() => fixture.read);
@@ -765,11 +821,11 @@ test("off-dashboard business commands do not fan out into uncached summary reads
     assert.equal(await page.evaluate(() => fixture.summaries.length), 0);
     await page.evaluate(() => {
       fixture.navigate("/dashboard");
-      fixture.summary = fixture.store.refreshDashboardSummary();
+      fixture.summaryRequest = fixture.store.refreshDashboardSummary();
     });
     await page.waitForFunction(() => fixture.summaries.length === 1);
-    await page.evaluate(() => fixture.summaries[0].resolve({ auth: fixture.auth }));
-    await page.evaluate(() => fixture.summary);
+    await page.evaluate(() => fixture.summaries[0].resolve(fixture.summaryResponse));
+    await page.evaluate(() => fixture.summaryRequest);
     await page.evaluate(() => fixture.root.unmount());
   } finally {
     await browser.close();
@@ -889,14 +945,18 @@ test("explicit refresh supersedes an older cached visit read", async () => {
       "/dashboard/summary?fresh=true",
     );
     await page.evaluate(() =>
-      fixture.summaries[1].resolve({ auth: fixture.auth, students: { total: 251 } }),
+      fixture.summaries[1].resolve({
+        ...fixture.summaryResponse,
+        students: { ...fixture.summaryResponse.students, total_students: 251 },
+      }),
     );
     await page.evaluate(() => fixture.refresh);
-    await page.evaluate(() =>
-      fixture.summaries[0].resolve({ auth: fixture.auth, students: { total: 250 } }),
-    );
+    await page.evaluate(() => fixture.summaries[0].resolve(fixture.summaryResponse));
     await page.evaluate(() => fixture.visit);
-    assert.equal(await page.evaluate(() => fixture.store.dashboardSummary.students.total), 251);
+    assert.equal(
+      await page.evaluate(() => fixture.store.dashboardSummary.students.total_students),
+      251,
+    );
   } finally {
     await browser.close();
   }

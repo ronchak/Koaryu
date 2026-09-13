@@ -1,0 +1,11 @@
+# Frontend test-truth verification
+
+Base `5f34e216829c37a576d2eb1f393e1e6e660cd5fe`; implementation `ddfff9ad34e12bdc32d20fae3b4176d09538797c`. Fixes FT1-09 and FT2-10. FT2-07 is obsolete: PR169 source `b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b` had already removed all three system-Chrome overrides. This PR takes no credit for a new browser fix.
+
+Renamed heading-only smoke coverage to shell readiness, preserved actual dataset-readiness checks, corrected successful summary and guardian response shapes, and separated response fixtures from pending promises. Optional summaries are omitted in bootstrap cases that do not use them. Stale-response tests still inspect the actual committed response, using valid count/timestamp fields instead of invented API markers.
+
+Removed four cases that locked attendance copy, header copy, dashboard labels and report presentation counts. Other harmless copy/count/JSX assertions were deleted. Mutation-frequency, role/identity ordering, financial/idempotency, forbidden-dependency, print and accessibility checks remain. No new source assertion, generic helper/framework, production export or test case was introduced. Existing packer/storage duplication remains pending under FT1-07/FT1-12; FT1-11/FT2-08 remain partial umbrellas. Retained static policies are explicitly not mounted behavior proof.
+
+Nine changed files total 5,307→5,268 lines and 221,026→217,049 bytes. Across all eleven recipe files, including unchanged harness and performance navigation, the final total is 5,725 lines and 250,101 bytes. The full Node suite goes 907→903 cases. These are collected cases, not counts of source declarations.
+
+Coordinator reviewed all deletions and fixture deltas, type-checked both summary definitions against the generated response contract and passed API type verification. Implementer passed 118 targeted cases and all 903 frontend cases. After the final bounded review corrections, all 61 affected collected cases passed again, plus narrow lint/format. Playwright discovery found 13 cases across two specs; no e2e browser execution is claimed. No app/backend/database/contracts/dependency/provider changes, live execution or deployment occurred. Fresh independent review and exact-head CI remain required before guarded merge.
