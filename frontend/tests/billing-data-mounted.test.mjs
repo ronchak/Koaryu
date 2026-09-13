@@ -1,19 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync, existsSync, statSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import ts from "typescript";
 import { chromium } from "@playwright/test";
+import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
 // Mount real billing hooks and page controls in local Chromium; replace I/O and decoration.
-// A tiny CommonJS packer avoids adding a second frontend build or test runtime.
-const require = createRequire(import.meta.url);
-const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 function bundle({ realApi = false, refunds = false, pageController = false } = {}) {
-  const modules = [];
-  const ids = new Map();
   const stubs = {
     "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router; const search=new URLSearchParams('tab=reports'); exports.useSearchParams=()=>search;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
@@ -30,38 +21,7 @@ function bundle({ realApi = false, refunds = false, pageController = false } = {
       `exports.OperationsSurface=({children})=>children;`;
   }
   if (realApi) delete stubs["@/lib/api"];
-  function add(specifier, parent = resolve(frontend, "entry.js")) {
-    let key = specifier;
-    if (!(key in stubs)) {
-      if (specifier.startsWith("@/")) key = resolve(frontend, "src", specifier.slice(2));
-      else if (specifier.startsWith(".")) key = resolve(dirname(parent), specifier);
-      else key = require.resolve(specifier, { paths: [dirname(parent), frontend] });
-      if (existsSync(key) && statSync(key).isDirectory()) key = resolve(key, "index");
-      if (!existsSync(key)) key = [".ts", ".tsx", ".js"].map((ext) => key + ext).find(existsSync);
-      if (!key) throw new Error(`Cannot resolve ${specifier} from ${parent}`);
-    }
-    if (ids.has(key)) return ids.get(key);
-    const id = modules.length;
-    ids.set(key, id);
-    modules.push("");
-    let source = stubs[key] ?? readFileSync(key, "utf8");
-    if (/\.tsx?$/.test(key))
-      source = ts.transpileModule(source, {
-        fileName: key,
-        compilerOptions: {
-          jsx: ts.JsxEmit.ReactJSX,
-          module: ts.ModuleKind.CommonJS,
-          target: ts.ScriptTarget.ES2022,
-          esModuleInterop: true,
-        },
-      }).outputText;
-    source = source.replace(
-      /require\(["']([^"']+)["']\)/g,
-      (_, dependency) => `require(${add(dependency, key)})`,
-    );
-    modules[id] = `function(module,exports,require){${source}\n}`;
-    return id;
-  }
+  const { add, modules } = createCommonJsPacker(stubs);
   const react = add("react");
   const dom = add("react-dom/client");
   const controller = add("@/lib/billing-data-controller");

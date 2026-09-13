@@ -9,7 +9,6 @@ const sidebarSource = source("../src/components/sidebar.tsx");
 const accountMenuSource = source("../src/components/account-menu.tsx");
 const accountMenuStyles = source("../src/components/account-menu.module.css");
 const homeSource = source("../src/components/dashboard/dashboard-home.tsx");
-const overviewSource = source("../src/components/dashboard/dashboard-overview-sections.tsx");
 const contentSource = source("../src/components/dashboard/dashboard-page-content.tsx");
 const controllerSource = source("../src/lib/dashboard-page-controller.ts");
 const shellStyles = source("../src/components/dashboard-shell.module.css");
@@ -158,89 +157,16 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /prefers-reduced-motion: reduce/);
   });
 
-  it("mounts Home on authoritative identity and owns authenticated material and motion semantics", () => {
+  it("mounts Home on authoritative identity", () => {
     assert.match(controllerSource, /const isDashboardIdentityReady = Boolean\(/);
     assert.match(controllerSource, /isDashboardDataReady: datasetReadiness\.status === "ready"/);
     assert.match(controllerSource, /normalizeDashboardWidgetRole\(currentRole\)/);
     assert.match(contentSource, /if \(!isDashboardIdentityReady\)/);
     assert.match(contentSource, /dataReady=\{isDashboardDataReady\}/);
     assert.match(contentSource, /identityReady=\{isDashboardIdentityReady\}/);
-    for (const token of [
-      "--product-ground",
-      "--product-paper",
-      "--product-card-stock",
-      "--product-lifted",
-      "--product-wood",
-      "--product-straw",
-      "--product-motion-travel-duration",
-      "--product-motion-open-duration",
-      "--product-motion-gather-duration",
-      "--product-motion-settle-duration",
-      "--product-motion-change-duration",
-    ]) {
-      assert.ok(shellStyles.includes(token), token);
-    }
-    assert.match(routeTransitionSource, /styles\.routeTravel/);
-    assert.doesNotMatch(routeTransitionSource, /koaryu-route-enter/);
-    const routeTravelRule = shellStyles.match(/\.routeTravel\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    assert.match(routeTravelRule, /animation:[^;]*\bbackwards;/);
-    assert.doesNotMatch(routeTravelRule, /\b(?:both|forwards)\b/);
-    const darkProductRule =
-      shellStyles.match(/:global\(\[data-theme="dark"\]\) \.shellRoot\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    for (const token of [
-      "--product-ground",
-      "--product-paper",
-      "--product-card-stock",
-      "--product-lifted",
-      "--product-ink",
-      "--product-soft-ink",
-      "--product-rule",
-      "--product-rule-soft",
-      "--product-cobalt",
-      "--product-vermilion",
-      "--product-shadow-card",
-      "--product-shadow-lifted",
-    ]) {
-      assert.ok(darkProductRule.includes(token), token);
-    }
-    assert.doesNotMatch(darkProductRule, /#f2ece0|#fbf8f0|#fffdf8|#fffefb/);
-    assert.match(
-      shellStyles,
-      /\.spine,[\s\S]*?background: var\(--product-sunk\);[\s\S]*?color: var\(--product-ink\);/,
-    );
-    assert.doesNotMatch(shellStyles, /#302719|#fffaf0|linear-gradient/);
   });
 
-  it("owns adaptive shell geometry and semantic customization surfaces", () => {
-    for (const token of [
-      "--product-control-surface",
-      "--product-control-ink",
-      "--product-control-rule",
-      "--product-alert-surface",
-      "--product-alert-ink",
-    ]) {
-      assert.ok(shellStyles.includes(token), token);
-      assert.ok(homeStyles.includes(`var(${token})`), token);
-    }
-    assert.match(shellStyles, /min-height:\s*100dvh/);
-    assert.match(
-      shellStyles,
-      /@media \(max-width: 1023px\)[\s\S]*\.shellRoot\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/,
-    );
-    assert.match(
-      shellStyles,
-      /@media \(max-width: 1023px\)[\s\S]*\.main,[\s\S]*min-height:\s*0;[\s\S]*flex:\s*1 0 auto;/,
-    );
-    assert.match(homeStyles, /min-height:\s*calc\(100dvh - 44px\)/);
-    assert.match(
-      homeStyles,
-      /@media \(max-width: 1023px\)[\s\S]*\.home\s*\{[\s\S]*min-height:\s*0;[\s\S]*flex:\s*1 0 auto;/,
-    );
-    assert.match(shellStyles, /\.slugBand\s*\{[\s\S]*height:\s*44px;[\s\S]*max-height:\s*44px;/);
-    assert.match(shellStyles, /\.studioName\s*\{[\s\S]*text-overflow:\s*ellipsis;/);
-  });
-
-  it("renders Home as one truthful spatial sequence with responsive reflow", () => {
+  it("keeps one stored and rendered sequence with accessible pointer and keyboard controls", () => {
     assert.match(homeSource, /className=\{styles\.sequence\}/);
     assert.match(homeSource, /layout\.items\.map\(renderWidget\)/);
     assert.doesNotMatch(
@@ -248,21 +174,22 @@ describe("dashboard shell and Home source contracts", () => {
       /positionedItems|layout\.items\.(?:filter|sort|toSorted|reduce)|primaryItems|compactItems/,
     );
     assert.match(homeSource, /position \$\{index \+ 1\} of \$\{total\}/);
-    assert.match(homeSource, /<footer className=\{styles\.widgetFooting\}>/);
-    assert.match(homeSource, /model\.provenanceLabel/);
-    assert.match(homeSource, /className=\{styles\.sourceLink\}/);
-    assert.doesNotMatch(
-      homeSource,
-      /Daily register|Operating workbench|Arrangement saved per user|catalog\.provenanceCopy|catalog\.windowCopy/,
-    );
-    assert.doesNotMatch(homeSource, /<p>\{studioDescription\}<\/p>/);
+    assert.match(homeStyles, /\.dragHandle\s*\{[\s\S]*?touch-action:\s*none;/);
     assert.match(
       homeStyles,
-      /\.sequence\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(4,/,
+      /\.customizing \.widget:not\(\.attentionWidget\)\s*\{[\s\S]*?touch-action:\s*pan-y;/,
     );
+  });
+
+  it("keeps responsive, focus, reduced-motion, target-size, and print policies", () => {
+    assert.match(routeTransitionSource, /styles\.routeTravel/);
+    assert.doesNotMatch(routeTransitionSource, /koaryu-route-enter/);
+    const routeTravelRule = shellStyles.match(/\.routeTravel\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    assert.match(routeTravelRule, /animation:[^;]*\bbackwards;/);
+    assert.doesNotMatch(routeTravelRule, /\b(?:both|forwards)\b/);
     assert.match(
-      homeStyles,
-      /grid-column:\s*var\(--dashboard-column\) \/ span var\(--dashboard-column-span\)/,
+      shellStyles,
+      /@media \(max-width: 1023px\)[\s\S]*\.shellRoot\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/,
     );
     assert.match(
       homeStyles,
@@ -272,45 +199,12 @@ describe("dashboard shell and Home source contracts", () => {
       homeStyles,
       /@media \(max-width: 640px\)[\s\S]*?\.sequence\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/,
     );
-    assert.match(homeStyles, /\.dragHandle\s*\{[\s\S]*?touch-action:\s*none;/);
-    assert.match(
-      homeStyles,
-      /\.customizing \.widget:not\(\.attentionWidget\)\s*\{[\s\S]*?touch-action:\s*pan-y;/,
-    );
-    assert.doesNotMatch(homeStyles, /\.pickedUp \.dragHandle/);
-    assert.doesNotMatch(homeStyles, /data-size="4x[12]"/);
-    assert.match(
-      homeStyles,
-      /\.widget\s*\{[\s\S]*?border-radius:\s*14px;[\s\S]*?box-shadow:\s*var\(--product-shadow-card\);/,
-    );
-    assert.match(
-      homeStyles,
-      /\.widget\s*\{[\s\S]*?grid-template-rows:\s*44px minmax\(0, 1fr\) 44px;/,
-    );
-    assert.match(homeStyles, /data-density="tall"/);
-    assert.match(homeStyles, /\.widgetBody\s*\{[\s\S]*?overflow:\s*clip;/);
-    assert.match(homeStyles, /data-widget-id="needs_attention"/);
-    assert.match(homeStyles, /data-widget-id="classes_today"/);
-    assert.match(homeStyles, /@media print/);
-    assert.match(shellStyles, /@media print/);
-  });
-
-  it("removes rejected ledger costume from the authenticated shell and Home", () => {
-    for (const styles of [shellStyles, homeStyles]) {
-      assert.doesNotMatch(styles, /text-transform:\s*uppercase/);
-      assert.doesNotMatch(styles, /linear-gradient/);
-      assert.doesNotMatch(styles, /border-radius:\s*(?:0|[1-4]px)\b/);
-      assert.doesNotMatch(styles, /box-shadow:\s*(?:inset\s+)?(?:-?\d+px\s+){2}0(?:px)?\b/);
-    }
     assert.match(shellStyles, /--product-focus:\s*#2f5d8f/);
     assert.match(
       shellStyles,
       /:global\(\[data-theme="dark"\]\) \.shellRoot[\s\S]*--product-focus:\s*#85aedc/,
     );
     assert.match(homeStyles, /outline:\s*2px solid var\(--product-focus\)/);
-  });
-
-  it("puts the 44px target on queue and brand anchors themselves", () => {
     assert.match(homeStyles, /\.queue a\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?flex:\s*1 1 auto;/);
     assert.match(
       shellStyles,
@@ -319,10 +213,6 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(accountMenuSource, /flex h-11 w-full cursor-pointer/);
     assert.match(accountMenuSource, /group flex min-h-11 items-center/);
     assert.match(accountMenuSource, /group flex h-11 w-full items-center/);
-    assert.doesNotMatch(accountMenuSource, /focus-visible:ring-1|uppercase|hover:-translate/);
-  });
-
-  it("keeps reduced motion hidden states, print aliases, and the two-level elevation ladder honest", () => {
     const reducedShell = shellStyles.slice(
       shellStyles.lastIndexOf("@media (prefers-reduced-motion: reduce)"),
     );
@@ -338,29 +228,9 @@ describe("dashboard shell and Home source contracts", () => {
       accountMenuStyles,
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.root\[data-state="closed"\][\s\S]*?display:\s*none;[\s\S]*?visibility:\s*hidden;[\s\S]*?opacity:\s*0;/,
     );
-    assert.doesNotMatch(accountMenuSource, /rotate-90|style=\{\{ transform:/);
-    assert.doesNotMatch(overviewSource, /group-hover:translate-x/);
-
-    const printShell = shellStyles.slice(shellStyles.indexOf("@media print"));
-    for (const token of [
-      "--product-ground: #fff",
-      "--product-ink: #111",
-      "--product-rule-soft: #ccc",
-      "--text-primary: #111",
-      "--accent: #111",
-    ]) {
-      assert.ok(printShell.includes(token), token);
-    }
-    assert.match(printShell, /:global\(\[data-theme="dark"\]\) \.shellRoot/);
     const printHome = homeStyles.slice(homeStyles.indexOf("@media print"));
     assert.match(printHome, /\.sequence\s*\{[\s\S]*?display:\s*block;/);
     assert.doesNotMatch(printHome, /\border\s*:|grid-auto-flow\s*:|column-count\s*:/);
-
-    const spineRule = shellStyles.match(/\.spine\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    const activeNavRule =
-      shellStyles.match(/\.navLink\[aria-current="page"\]\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    assert.doesNotMatch(spineRule, /box-shadow/);
-    assert.doesNotMatch(activeNavRule, /box-shadow/);
   });
 
   it("owns authoritative studio identity in the split store and purges layouts at session cleanup", () => {

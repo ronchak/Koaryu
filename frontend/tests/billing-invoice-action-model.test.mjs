@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { memoryStorage } from "./helpers/memory-storage.mjs";
 
 import {
   buildInvoiceOperationRequest,
@@ -11,15 +12,6 @@ import {
 } from "../src/lib/billing-invoice-action-model.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-function memoryStorage() {
-  const values = new Map();
-  return {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, value),
-    removeItem: (key) => values.delete(key),
-  };
-}
 
 function blockedStorage() {
   return {

@@ -1,87 +1,147 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { chromium } from "@playwright/test";
+import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
 const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const rootLayoutSource = source("../src/app/layout.tsx");
-const providerSource = source("../src/components/theme-provider.tsx");
 const dashboardLayoutSource = source("../src/app/(dashboard)/layout.tsx");
 const personalizationSource = source("../src/app/(dashboard)/account/personalization/page.tsx");
 const navigationSource = source("../src/components/sidebar.tsx");
 const shellStyles = source("../src/components/dashboard-shell.module.css");
 
-describe("Appearance preference contracts", () => {
-  it("uses light consistently when the theme preference is missing, invalid, or unavailable", () => {
+function themeBundle() {
+  const { add, modules } = createCommonJsPacker({});
+  const react = add("react");
+  const dom = add("react-dom/client");
+  const theme = add("@/components/theme-provider");
+  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {ThemeProvider,useTheme}=require(${theme});function Observer(){const value=useTheme();window.fixture.theme=value;return React.createElement('output',null,value.preference+':'+value.resolvedTheme+':'+value.navigationPlacement)}require(${dom}).createRoot(document.getElementById('root')).render(React.createElement(ThemeProvider,null,React.createElement(Observer)));})();`;
+}
+
+describe("appearance preference contracts", () => {
+  it("loads, writes, and synchronizes real theme and navigation preferences", async () => {
+    const compiledThemeBundle = themeBundle();
+    const browser = await chromium.launch({ headless: true });
+    try {
+      for (const scenario of [
+        { name: "missing", expected: "light:light:side" },
+        { name: "invalid", theme: "sepia", navigation: "bottom", expected: "light:light:side" },
+        { name: "dark", theme: "dark", navigation: "top", expected: "dark:dark:top" },
+        { name: "system", theme: "system", expected: "system:dark:side" },
+        { name: "blocked", blocked: true, expected: "light:light:side" },
+      ]) {
+        const page = await browser.newPage();
+        await page.route("http://fixture.local/", (route) =>
+          route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }),
+        );
+        await page.goto("http://fixture.local/");
+        await page.evaluate(({ blocked, navigation, theme }) => {
+          window.fixture = { storageReads: [] };
+          window.matchMedia = () => ({
+            addEventListener() {},
+            matches: false,
+            removeEventListener() {},
+          });
+          if (theme) localStorage.setItem("koaryu-theme", theme);
+          if (navigation) localStorage.setItem("koaryu-navigation-placement", navigation);
+          const getItem = Storage.prototype.getItem;
+          Storage.prototype.getItem = function (key) {
+            window.fixture.storageReads.push(key);
+            if (blocked) throw new DOMException("blocked", "SecurityError");
+            return getItem.call(this, key);
+          };
+          if (blocked) {
+            Storage.prototype.setItem = Storage.prototype.removeItem = () => {
+              throw new DOMException("blocked", "SecurityError");
+            };
+          }
+        }, scenario);
+        await page.addScriptTag({ content: compiledThemeBundle });
+        await page.waitForFunction(
+          () =>
+            window.fixture.storageReads.includes("koaryu-theme") &&
+            window.fixture.storageReads.includes("koaryu-navigation-placement"),
+        );
+        await page.waitForFunction(
+          (expected) => document.querySelector("output")?.textContent === expected,
+          scenario.expected,
+        );
+        assert.deepEqual(
+          await page.evaluate(() => [
+            document.documentElement.dataset.theme,
+            document.documentElement.style.colorScheme,
+          ]),
+          [scenario.expected.split(":")[1], scenario.expected.split(":")[1]],
+        );
+
+        if (scenario.name === "missing") {
+          await page.evaluate(() => {
+            window.fixture.theme.setTheme("dark");
+            window.fixture.theme.setNavigationPlacement("top");
+          });
+          await page.waitForFunction(
+            () => document.querySelector("output")?.textContent === "dark:dark:top",
+          );
+          assert.deepEqual(
+            await page.evaluate(() => [
+              localStorage.getItem("koaryu-theme"),
+              localStorage.getItem("koaryu-navigation-placement"),
+            ]),
+            ["dark", "top"],
+          );
+          await page.evaluate(() => {
+            window.dispatchEvent(
+              new StorageEvent("storage", {
+                key: "koaryu-navigation-placement",
+                newValue: "side",
+              }),
+            );
+          });
+          await page.waitForFunction(
+            () => document.querySelector("output")?.textContent === "dark:dark:side",
+          );
+        }
+        await page.close();
+      }
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("keeps the bootstrap script's valid preferences and invalid light fallback", () => {
     assert.match(rootLayoutSource, /data-theme="light"/);
+    for (const preference of ["dark", "light", "system"]) {
+      assert.ok(rootLayoutSource.includes(`stored === "${preference}"`), preference);
+    }
     assert.match(rootLayoutSource, /\? stored : "light"/);
     assert.match(
       rootLayoutSource,
       /catch \{[\s\S]*?dataset\.theme = "light";[\s\S]*?colorScheme = "light";/,
     );
-    assert.match(providerSource, /const DEFAULT_THEME: ThemePreference = "light"/);
-    assert.match(providerSource, /useState<ResolvedTheme>\("light"\)/);
-    assert.match(providerSource, /catch \{[\s\S]*?return DEFAULT_THEME;/);
   });
 
-  it("continues to accept stored dark and system themes without replacing them", () => {
-    for (const preference of ["dark", "light", "system"]) {
-      assert.ok(rootLayoutSource.includes(`stored === "${preference}"`), preference);
-      assert.ok(providerSource.includes(`stored === "${preference}"`), preference);
-    }
-    assert.match(providerSource, /localStorage\.setItem\(THEME_STORAGE_KEY, nextPreference\)/);
-    assert.match(providerSource, /preference === "system" \? getSystemTheme\(\) : preference/);
-  });
-
-  it("owns a typed side-or-top navigation preference with safe fallback and tab synchronization", () => {
-    assert.match(providerSource, /export type NavigationPlacement = "side" \| "top"/);
-    assert.match(providerSource, /NAVIGATION_STORAGE_KEY = "koaryu-navigation-placement"/);
-    assert.match(providerSource, /DEFAULT_NAVIGATION_PLACEMENT: NavigationPlacement = "side"/);
-    assert.match(
-      providerSource,
-      /value === "side" \|\| value === "top" \? value : DEFAULT_NAVIGATION_PLACEMENT/,
-    );
-    assert.match(providerSource, /catch \{[\s\S]*?return DEFAULT_NAVIGATION_PLACEMENT;/);
-    assert.match(providerSource, /localStorage\.setItem\(NAVIGATION_STORAGE_KEY, nextPlacement\)/);
-    assert.match(providerSource, /setNavigationPlacementState\(nextPlacement\)/);
-    assert.match(providerSource, /addEventListener\("storage", handleStorageChange\)/);
-    assert.match(
-      providerSource,
-      /event\.key === NAVIGATION_STORAGE_KEY[\s\S]*?parseNavigationPlacement\(event\.newValue\)/,
-    );
-  });
-
-  it("offers accessible, honest controls and reports the active navigation placement", () => {
-    assert.match(personalizationSource, /\(\["side", "top"\] as NavigationPlacement\[\]\)/);
+  it("offers accessible navigation placement controls", () => {
     assert.match(personalizationSource, /aria-pressed=\{selected\}/);
     assert.match(personalizationSource, /onClick=\{\(\) => setNavigationPlacement\(placement\)\}/);
     assert.match(personalizationSource, /label="Current navigation"/);
-    assert.doesNotMatch(personalizationSource, /cloud|account sync|all devices/i);
   });
 });
 
 describe("authenticated navigation placement contracts", () => {
-  it("uses the shared navigation inventory and preserves route matching", () => {
-    assert.match(navigationSource, /prefetch=\{item\.prefetch\}/);
+  it("preserves route matching and keeps collapse controls in the side branch", () => {
     assert.match(navigationSource, /pathname === href \|\| pathname\.startsWith\(`\$\{href\}\//);
-  });
-
-  it("keeps collapse controls exclusively in the side branch", () => {
     const topStart = navigationSource.indexOf('{placement === "top" ? (');
     const sideStart = navigationSource.indexOf(") : (", topStart);
     assert.ok(topStart >= 0 && sideStart > topStart);
-    const topBranch = navigationSource.slice(topStart, sideStart);
-    assert.match(topBranch, /styles\.commandBar/);
-    assert.match(topBranch, /styles\.commandList/);
-    assert.match(topBranch, /<AccountMenu/);
-    assert.doesNotMatch(topBranch, /onToggleCollapsed|ToggleIcon|spineToggle|aria-expanded/);
-    assert.match(dashboardLayoutSource, /data-navigation-placement=\{navigationPlacement\}/);
-    assert.match(
-      shellStyles,
-      /data-navigation-placement="top"\] \.main \{[\s\S]*?margin-left:\s*0;/,
+    assert.doesNotMatch(
+      navigationSource.slice(topStart, sideStart),
+      /onToggleCollapsed|ToggleIcon|spineToggle|aria-expanded/,
     );
+    assert.match(dashboardLayoutSource, /data-navigation-placement=\{navigationPlacement\}/);
   });
 
-  it("shows only the existing mobile shell below the desktop breakpoint", () => {
+  it("keeps the desktop placements hidden at the mobile breakpoint", () => {
     const mobileRules = shellStyles.slice(shellStyles.indexOf("@media (max-width: 1023px)"));
     assert.match(mobileRules, /\.spine\s*\{[\s\S]*?display:\s*none;/);
     assert.match(mobileRules, /\.commandBar\s*\{[\s\S]*?display:\s*none;/);

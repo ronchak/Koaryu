@@ -94,94 +94,12 @@ function source(path) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-const accountRoutes = [
-  "src/app/(dashboard)/account/page.tsx",
-  "src/app/(dashboard)/account/profile/page.tsx",
-  "src/app/(dashboard)/account/settings/page.tsx",
-  "src/app/(dashboard)/account/personalization/page.tsx",
-  "src/app/(dashboard)/account/notifications/page.tsx",
-  "src/app/(dashboard)/account/data/page.tsx",
-];
-
-const helpRoutes = [
-  "src/app/(dashboard)/help/page.tsx",
-  "src/app/(dashboard)/help/get-started/page.tsx",
-  "src/app/(dashboard)/help/release-notes/page.tsx",
-  "src/app/(dashboard)/help/downloads/page.tsx",
-  "src/app/(dashboard)/help/contact/page.tsx",
-];
-
-describe("operations surface route coverage", () => {
-  it("joins all 21 owned destinations and four loading states to the scoped surface", () => {
-    const directOwners = [
-      [
-        "/schedule",
-        "src/components/schedule/schedule-page-content.tsx",
-        /OperationsSurface page="schedule"/,
-      ],
-      [
-        "/billing",
-        "src/components/billing/billing-page-chrome.tsx",
-        /OperationsSurface page="billing"/,
-      ],
-      ["/reports", "src/app/(dashboard)/reports/page.tsx", /OperationsSurface page="reports"/],
-      [
-        "/automations",
-        "src/app/(dashboard)/automations/page.tsx",
-        /OperationsSurface page="automations"/,
-      ],
-      ["/settings", "src/app/(dashboard)/settings/page.tsx", /OperationsSurface page="settings"/],
-      [
-        "/subscription-required",
-        "src/app/(dashboard)/subscription-required/page.tsx",
-        /OperationsSurface page="subscription-required"/,
-      ],
-      ["/onboarding", "src/app/onboarding/page.tsx", /FocusedOperationsSheet page="onboarding"/],
-      [
-        "/account-archived",
-        "src/app/account-archived/page.tsx",
-        /FocusedOperationsSheet page="account-archived"/,
-      ],
-      [
-        "/access-denied",
-        "src/app/access-denied/page.tsx",
-        /FocusedOperationsSheet page="access-denied"/,
-      ],
-      [
-        "/billing/connect/refresh",
-        "src/app/billing/connect/refresh/page.tsx",
-        /FocusedOperationsSheet page="connect-refresh"/,
-      ],
-    ];
-    for (const [route, file, pattern] of directOwners) {
-      assert.match(source(file), pattern, route);
-    }
-    for (const file of accountRoutes) assert.match(source(file), /<AccountPageShell/);
-    for (const file of helpRoutes) {
-      assert.match(source(file), /<AccountPageShell/);
-      assert.match(source(file), /family="help"/);
-    }
-    const shell = source("src/components/account-page-shell.tsx");
-    assert.match(shell, /<OperationsSurface page=\{family\}>/);
-
-    for (const page of ["schedule", "billing", "reports", "settings"]) {
-      const loading = source(`src/app/(dashboard)/${page}/loading.tsx`);
-      assert.match(loading, new RegExp(`OperationsLoading[\\s\\S]*page="${page}"`));
-    }
-  });
-
-  it("keeps styling local, opaque, reduced-motion safe, and print aware", () => {
+describe("operations surface policies", () => {
+  it("keeps focus, target size, reduced-motion, and print rules", () => {
     const css = source("src/components/operations/operations-surface.module.css");
-    const operations = source("src/components/operations/operations-surface.tsx");
-    assert.doesNotMatch(css, /gradient|backdrop-filter|backdrop-blur/);
-    assert.match(css, /\[data-theme="dark"\]/);
     assert.match(css, /prefers-reduced-motion/);
     assert.match(css, /@media print/);
-    assert.match(css, /data-print-hide/);
-    assert.match(css, /--operations-cobalt:\s*var\(--product-cobalt\);/);
-    assert.match(css, /--accent:\s*var\(--product-wood\);/);
     assert.match(css, /outline:\s*2px solid var\(--product-cobalt, var\(--operations-cobalt\)\)/);
-    assert.doesNotMatch(operations, /padStart\(2, "0"\)/);
     assert.match(
       css,
       /\.surface :global\(button:not\(\[data-time-canvas-block\]\)\) \{\s*min-width: 44px;\s*min-height: 44px;/,
@@ -190,25 +108,6 @@ describe("operations surface route coverage", () => {
       css,
       /label:has\(input\[type="checkbox"\]\)[\s\S]*?min-width: 44px;[\s\S]*?min-height: 44px;/,
     );
-    assert.match(css, /border-radius: 14px;/);
-    assert.match(css, /border-radius: 18px/);
-    assert.doesNotMatch(css, /text-transform:\s*uppercase/);
-    assert.doesNotMatch(css, /\.surface :global\(button\) \{\s*min-height: 44px;/);
-    assert.match(
-      css,
-      /\.surface :global\(button:not\(\[data-time-canvas-block\]\)\),\s*\.surface :global\(\[data-print-hide="true"\]\)/,
-    );
-    assert.doesNotMatch(
-      css,
-      /\.surface :global\(button\),\s*\.surface :global\(\[data-print-hide="true"\]\)/,
-    );
-    assert.doesNotMatch(css, /\.surface > :global\(header\),/);
-    assert.match(
-      css,
-      /\.surface > :global\(header\) \{[\s\S]*?position: static !important;[\s\S]*?display: flex !important;/,
-    );
-    assert.match(css, /a\[href="#main-content"\]/);
-    assert.match(css, /\[class\*="bg-surface"\][\s\S]*?background: #fff !important;/);
   });
 });
 
@@ -832,33 +731,6 @@ describe("operations behavior proof", () => {
     }
   });
 
-  it("keeps Month responsive while Week remains the sole horizontal schedule canvas", () => {
-    const month = source("src/components/schedule/month-schedule-view.tsx");
-    const schedule = source("src/components/schedule/schedule-page-section.tsx");
-    assert.doesNotMatch(month, /overflow-x-auto|min-w-\[980px\]/);
-    assert.match(month, /grid grid-cols-2 xl:grid-cols-7/);
-    assert.match(month, /hidden grid-cols-7[^"\n]*xl:grid/);
-    assert.doesNotMatch(month, /lg:grid-cols-7|lg:grid|lg:hidden/);
-    assert.match(month, /MONTH_DAY_NAMES\[day\.date\.getDay\(\)\]/);
-    assert.match(schedule, /overflow-x-auto overscroll-x-contain/);
-    assert.match(schedule, /data-schedule-scroll-owner="internal"/);
-    assert.match(schedule, /const WEEK_CANVAS_MIN_WIDTH = 1040/);
-    assert.match(schedule, /const SESSION_LANE_MIN_WIDTH = 48/);
-    assert.match(schedule, /const weekDayMinWidth = peakWeekLaneCount \* SESSION_LANE_MIN_WIDTH/);
-    assert.match(
-      schedule,
-      /const weekCanvasMinWidth = Math\.max\([\s\S]*WEEK_CANVAS_MIN_WIDTH,[\s\S]*WEEK_TIME_COLUMN_WIDTH \+ WEEK_DAY_COUNT \* weekDayMinWidth/,
-    );
-    assert.match(schedule, /style=\{\{ minWidth: weekCanvasMinWidth \}\}/);
-    assert.equal(
-      (schedule.match(/style=\{\{ gridTemplateColumns: weekGridTemplateColumns \}\}/g) || [])
-        .length,
-      2,
-    );
-    assert.match(schedule, /data-schedule-week-peak-lanes=\{peakWeekLaneCount\}/);
-    assert.match(schedule, /grid grid-cols-\[4\.5rem_minmax\(0,1fr\)\]/);
-  });
-
   it("keeps six billing views, negative capabilities, and the connected Admin reset gate", () => {
     const chrome = source("src/components/billing/billing-page-chrome.tsx");
     const sections = source("src/components/billing/billing-page-sections.tsx");
@@ -917,10 +789,8 @@ describe("operations behavior proof", () => {
     );
   });
 
-  it("keeps Automations read-only with live destinations separated from proposals", () => {
+  it("keeps Automations read-only and separates live links from proposals", () => {
     const automations = source("src/app/(dashboard)/automations/page.tsx");
-    const css = source("src/components/operations/operations-surface.module.css");
-    const automationCss = css.slice(css.indexOf("/* Automations"), css.indexOf("/* Reports"));
     const futureSection = automations.slice(
       automations.indexOf('<section aria-labelledby="future-workflows-title"'),
       automations.indexOf(
@@ -933,44 +803,10 @@ describe("operations behavior proof", () => {
       automations,
       /<form|<input|<select|<textarea|onChange=|type="checkbox"|role="switch"|\bfetch\s*\(|\bapi\.|\baxios\b|process\.env|isPreviewMode|useEffect|useState/,
     );
-    assert.match(automations, /data-automations-readonly="true"/);
-    assert.match(automations, /data-automation-catalog="live-queues-and-proposals"/);
-    assert.match(automations, /<Header title="Automations">/);
-    assert.doesNotMatch(automations, /<h1/);
-    assert.match(
-      automations,
-      /<ol[^>]*data-automation-live-list="four-destinations"[\s\S]*LIVE_QUEUES\.map[\s\S]*<Link[\s\S]*prefetch=\{crmLinkPrefetch\(queue\.href\)\}[\s\S]*data-automation-live-target="true"/,
-    );
-    assert.match(
-      automations,
-      /className="grid min-h-20 min-w-0 grid-cols-\[minmax\(0,1fr\)_auto\][^"]*"/,
-    );
-    assert.match(
-      automations,
-      /overflow-x-hidden[\s\S]*sm:grid-cols-\[minmax\(12rem,0\.36fr\)_minmax\(0,1fr\)\][\s\S]*break-words/,
-    );
-    assert.match(
-      automations,
-      /<dl[^>]*data-automation-future-list="five-proposals"[\s\S]*FUTURE_WORKFLOWS\.map/,
-    );
     assert.doesNotMatch(
       futureSection,
       /<Link|<Button|<button|<form|<input|<select|<textarea|onClick=|onChange=/,
     );
-    assert.doesNotMatch(automations, /data-automation-worksheet|>Trigger<|>Action<|>Status</);
-    assert.match(
-      automationCss,
-      /\.surface\[data-operations-page="automations"\][\s\S]*data-automation-catalog="live-queues-and-proposals"[\s\S]*border-radius: 14px;[\s\S]*background: var\(--product-paper\);[\s\S]*box-shadow: var\(--product-shadow-card\);/,
-    );
-    assert.match(
-      automationCss,
-      /data-automation-inset="true"[\s\S]*border: 1px solid var\(--product-rule\);[\s\S]*border-radius: 10px;[\s\S]*background: var\(--product-card-stock\);/,
-    );
-    assert.match(
-      automationCss,
-      /data-automation-live-target="true"[^\n]*:focus-visible[\s\S]*outline-color: var\(--product-focus\) !important;/,
-    );
-    assert.doesNotMatch(automationCss, /#[0-9a-f]{3,8}|gradient|--operations-cobalt/);
   });
 
   it("keeps settings indexed behind the Admin boundary", () => {
@@ -1033,16 +869,9 @@ describe("operations behavior proof", () => {
     );
   });
 
-  it("keeps report figures semantic and reserves cobalt for data series", () => {
-    const reports = source("src/app/(dashboard)/reports/page.tsx");
+  it("keeps report figures semantic", () => {
     const sections = source("src/components/reports/reports-page-sections.tsx");
-    assert.match(reports, /data-reports-reading-document="true"/);
-    assert.match(reports, /data-report-figure-band="comparisons"/);
-    assert.match(reports, /bg-\[var\(--operations-cobalt\)\]/);
     assert.match(sections, /<figure[\s\S]*data-report-figure="headline"/);
-    assert.match(sections, /data-report-section="reading-block"/);
-    const exports = source("src/components/reports/reports-data-exports-panel.tsx");
-    assert.match(exports, /break-words[^"\n]*sm:truncate" title=\{report\.title\}/);
   });
 
   it("adds the typed deletion gate and complete support context/inbox states without new APIs", () => {

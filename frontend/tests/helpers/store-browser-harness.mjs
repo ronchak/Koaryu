@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,52 @@ import ts from "typescript";
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+export function compileCommonJsModule(source, fileName) {
+  const needsTranspile =
+    /\.tsx?$/.test(fileName) || (/\.m?js$/.test(fileName) && /^(?:import|export)\b/m.test(source));
+  if (!needsTranspile) return source;
+  return ts.transpileModule(source, {
+    fileName,
+    compilerOptions: {
+      jsx: ts.JsxEmit.ReactJSX,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+    },
+  }).outputText;
+}
+
+export function createCommonJsPacker(stubs) {
+  const modules = [];
+  const ids = new Map();
+
+  function add(specifier, parent = resolve(frontend, "entry.js")) {
+    let key = specifier;
+    if (!(key in stubs)) {
+      if (specifier.startsWith("@/")) key = resolve(frontend, "src", specifier.slice(2));
+      else if (specifier.startsWith(".")) key = resolve(dirname(parent), specifier);
+      else key = require.resolve(specifier, { paths: [dirname(parent), frontend] });
+      if (existsSync(key) && statSync(key).isDirectory()) key = resolve(key, "index");
+      if (!existsSync(key)) key = [".ts", ".tsx", ".js"].map((ext) => key + ext).find(existsSync);
+      if (!key) throw new Error(`Cannot resolve ${specifier} from ${parent}`);
+    }
+    if (ids.has(key)) return ids.get(key);
+    const id = modules.length;
+    ids.set(key, id);
+    modules.push("");
+    let source = compileCommonJsModule(stubs[key] ?? readFileSync(key, "utf8"), key);
+    source = source.replace(
+      /require\(["']([^"']+)["']\)/g,
+      (_, dependency) => `require(${add(dependency, key)})`,
+    );
+    modules[id] = `function(module,exports,require){${source}\n}`;
+    return id;
+  }
+
+  return { add, modules };
+}
+
 export function bundle(
   mode,
   {
@@ -33,8 +79,6 @@ export function bundle(
 ) {
   if (!["production", "development"].includes(mode) || typeof preview !== "boolean")
     throw new Error("Unsupported fixture environment");
-  const modules = [];
-  const ids = new Map();
   const stubs = {
     "next/navigation": `const subscribe=cb=>{window.addEventListener('fixture:navigate',cb);return ()=>window.removeEventListener('fixture:navigate',cb)};const pathname=()=>window.fixture.pathname??'/dashboard';exports.usePathname=()=>require('react').useSyncExternalStore(subscribe,pathname,pathname); exports.useParams=()=>({id:window.fixture.studentId??'student-1'}); exports.useSearchParams=()=>new URLSearchParams(window.fixture.search??window.location.search); const router={replace(path){(window.fixture.redirects??=[]).push(path)},push(path){(window.fixture.redirects??=[]).push(path)}}; exports.useRouter=()=>router;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
@@ -145,39 +189,7 @@ export function bundle(
       : {}),
   };
   if (realApi) delete stubs["@/lib/api"];
-  function add(specifier, parent = resolve(frontend, "entry.js")) {
-    let key = specifier;
-    if (!(key in stubs)) {
-      if (specifier.startsWith("@/")) key = resolve(frontend, "src", specifier.slice(2));
-      else if (specifier.startsWith(".")) key = resolve(dirname(parent), specifier);
-      else key = require.resolve(specifier, { paths: [dirname(parent), frontend] });
-      if (!existsSync(key)) key = [".ts", ".tsx", ".js"].map((ext) => key + ext).find(existsSync);
-      if (!key) throw new Error(`Cannot resolve ${specifier} from ${parent}`);
-    }
-    if (ids.has(key)) return ids.get(key);
-    const id = modules.length;
-    ids.set(key, id);
-    modules.push("");
-    let source = stubs[key] ?? readFileSync(key, "utf8");
-    const needsCommonJsTranspile =
-      /\.tsx?$/.test(key) || (/\.m?js$/.test(key) && /^(?:import|export)\b/m.test(source));
-    if (needsCommonJsTranspile)
-      source = ts.transpileModule(source, {
-        fileName: key,
-        compilerOptions: {
-          jsx: ts.JsxEmit.ReactJSX,
-          module: ts.ModuleKind.CommonJS,
-          target: ts.ScriptTarget.ES2022,
-          esModuleInterop: true,
-        },
-      }).outputText;
-    source = source.replace(
-      /require\(["']([^"']+)["']\)/g,
-      (_, dependency) => `require(${add(dependency, key)})`,
-    );
-    modules[id] = `function(module,exports,require){${source}\n}`;
-    return id;
-  }
+  const { add, modules } = createCommonJsPacker(stubs);
   if (operationsComponents) {
     const react = add("react");
     const dom = add("react-dom/client");

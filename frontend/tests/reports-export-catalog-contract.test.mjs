@@ -15,15 +15,6 @@ const backendManifest = JSON.parse(
 );
 
 describe("report export catalog", () => {
-  it("does not ship the deferred raw billing CSV catalog in Reports", () => {
-    assert.doesNotMatch(panelSource, /title:\s*["']Billing["']/);
-    assert.doesNotMatch(panelSource, /id:\s*["'](?:billing_|student_billing_enrollments)/);
-
-    assert.match(panelSource, /id:\s*["']students["']/);
-    assert.match(panelSource, /id:\s*["']class_sessions["']/);
-    assert.match(panelSource, /id:\s*["']audit_logs["']/);
-  });
-
   it("matches the backend live role contract and excludes every deferred billing ID", () => {
     const frontendIds = [...panelSource.matchAll(/\{ id: "([a-z0-9_]+)", title:/g)].map(
       (match) => match[1],

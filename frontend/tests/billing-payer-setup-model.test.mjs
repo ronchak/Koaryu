@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { memoryStorage } from "./helpers/memory-storage.mjs";
 
 import {
   buildPayerAutopaySetupRequest,
@@ -47,11 +48,7 @@ describe("hidden payer autopay setup adapter", () => {
 
   it("sends a new key on the first click for completed payer setup", () => {
     const values = new Map();
-    const storage = {
-      getItem: (key) => values.get(key) ?? null,
-      removeItem: (key) => values.delete(key),
-      setItem: (key, value) => values.set(key, value),
-    };
+    const storage = memoryStorage(values);
     const options = {
       identity: { userId: "user-1", studioId: "studio-1" },
       keysByPayer: new Map(),
@@ -179,11 +176,7 @@ describe("hidden payer autopay setup adapter", () => {
 
   it("restores payer setup and sync keys after reload within the exact scope", () => {
     const values = new Map();
-    const storage = {
-      getItem: (key) => values.get(key) ?? null,
-      removeItem: (key) => values.delete(key),
-      setItem: (key, value) => values.set(key, value),
-    };
+    const storage = memoryStorage(values);
     const identity = { userId: "user-1", studioId: "studio-1" };
     const generated = ["setup-key", "sync-key"];
     const createKey = () => generated.shift();
@@ -231,11 +224,7 @@ describe("hidden payer autopay setup adapter", () => {
 
   it("reopens a usable payer setup session with its original key after reload", () => {
     const values = new Map();
-    const storage = {
-      getItem: (key) => values.get(key) ?? null,
-      removeItem: (key) => values.delete(key),
-      setItem: (key, value) => values.set(key, value),
-    };
+    const storage = memoryStorage(values);
     const options = {
       identity: { userId: "user-1", studioId: "studio-1" },
       operation: "payer.setup",
@@ -284,11 +273,7 @@ describe("hidden payer autopay setup adapter", () => {
 
   it("clears sync persistence only through confirmed-success handling", () => {
     const values = new Map();
-    const storage = {
-      getItem: (key) => values.get(key) ?? null,
-      removeItem: (key) => values.delete(key),
-      setItem: (key, value) => values.set(key, value),
-    };
+    const storage = memoryStorage(values);
     const identity = { userId: "user-1", studioId: "studio-1" };
     const memory = new Map();
     resolvePersistedPayerOperationRequestKey({
