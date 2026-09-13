@@ -1648,8 +1648,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promoteStudent,
     setBeltRanks,
     setCurrentLadder,
-    setLadderName,
-    setSubRankTerm,
   } = useStoreBeltActions({
     applyLadderSelection,
     beginLiveAuthRequest,
@@ -1669,8 +1667,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshStudents,
     setEligibilityLoadError,
     setEligibilityPendingLadderId,
-    setLadderNameState,
-    setSubRankTermState,
     studentsRef,
     subRankTerm,
   });
@@ -1989,9 +1985,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     sessions,
     setBeltRanks: reconciledCommands.setBeltRanks,
     setCurrentLadder,
-    setLadderName,
     setStudioName,
-    setSubRankTerm,
     staffLoadError,
     staffLoaded,
     staffMembers,

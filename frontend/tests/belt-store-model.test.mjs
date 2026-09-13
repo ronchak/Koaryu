@@ -8,7 +8,6 @@ import {
   repairPreviewStudentRanksForLadder,
   selectBeltLadder,
   sortBeltLadders,
-  updatePreviewLadderSubRankTerm,
   upsertBeltLadder,
 } from "../src/lib/belt-store-model.ts";
 
@@ -167,24 +166,6 @@ describe("belt store model", () => {
         },
       ],
     });
-  });
-
-  it("updates preview sub-rank term only when a ladder is selected", () => {
-    const updated = updatePreviewLadderSubRankTerm(
-      [ladder("adults", { sub_rank_term: "Stripe" })],
-      "adults",
-      "Tip",
-    );
-
-    assert.equal(updated.selectedLadder?.id, "adults");
-    assert.deepEqual(
-      updated.ladders?.map((item) => [item.id, item.sub_rank_term]),
-      [["adults", "Tip"]],
-    );
-
-    const missing = updatePreviewLadderSubRankTerm([], null, "Tip");
-    assert.equal(missing.selectedLadder, null);
-    assert.equal(missing.ladders, null);
   });
 
   it("builds preview promotions and applies the student rank update", () => {

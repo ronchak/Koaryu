@@ -129,9 +129,7 @@ export interface StoreContextValue {
     options: { ladderId: string; subRankTerm?: string },
   ) => Promise<void>;
   ladderName: string;
-  setLadderName: (name: string) => void;
   subRankTerm: string;
-  setSubRankTerm: (term: string) => Promise<void>;
   eligibility: EligibilityEntry[];
   eligibilityLadderId: string | null;
   eligibilityPendingLadderId: string | null;
@@ -266,9 +264,7 @@ export type BeltsStoreContextValue = Pick<
   | "loadEligibilityForLadder"
   | "setBeltRanks"
   | "ladderName"
-  | "setLadderName"
   | "subRankTerm"
-  | "setSubRankTerm"
   | "eligibility"
   | "eligibilityLadderId"
   | "eligibilityPendingLadderId"

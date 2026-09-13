@@ -7,10 +7,8 @@ import { canViewDashboardBilling } from "@/lib/dashboard-billing-summary";
 import { buildDashboardPageComposition } from "@/lib/dashboard-page-composition";
 import {
   buildDashboardBeltStats,
-  buildDashboardChurnStats,
   buildDashboardInactivityStats,
   buildDashboardLeadStats,
-  buildDashboardNewStudentStats,
   buildDashboardOperationalStats,
   buildDashboardRecentStudentRows,
   buildDashboardStudentStats,
@@ -227,10 +225,7 @@ export function useDashboardPageController({
     }
   }, [isDashboardIdentityReady, isPreviewMode, refreshDashboardSummary, today]);
 
-  const lookback14 = useMemo(() => subtractDays(today, 14), [today]);
   const lookback30 = useMemo(() => subtractDays(today, 30), [today]);
-  const lookback90 = useMemo(() => subtractDays(today, 90), [today]);
-  const yearStart = useMemo(() => `${today.slice(0, 4)}-01-01`, [today]);
 
   const studentStats = useMemo(
     () => buildDashboardStudentStats(students, today),
@@ -250,16 +245,10 @@ export function useDashboardPageController({
     () => buildDashboardInactivityStats(inactivityRows),
     [inactivityRows],
   );
-  const newStudentStats = useMemo(
-    () =>
-      buildDashboardNewStudentStats(students, today, lookback14, lookback30, lookback90, yearStart),
-    [lookback14, lookback30, lookback90, students, today, yearStart],
-  );
   const operationalStats = useMemo(
     () => buildDashboardOperationalStats(attendance, sessions, lookback30, today),
     [attendance, lookback30, sessions, today],
   );
-  const churnStats = useMemo(() => buildDashboardChurnStats(students), [students]);
   const testReadinessStats = useMemo(
     () => buildDashboardTestReadinessStats(eligibility),
     [eligibility],
@@ -276,9 +265,7 @@ export function useDashboardPageController({
           todaySessions,
           beltStats,
           inactivityStats,
-          newStudentStats,
           operationalStats,
-          churnStats,
           testReadinessStats,
         },
         programs,
@@ -292,11 +279,9 @@ export function useDashboardPageController({
     [
       beltStats,
       canSeeBilling,
-      churnStats,
       inactivityStats,
       isPreviewMode,
       leadStats,
-      newStudentStats,
       operationalStats,
       programs,
       rosterSummaryPending,

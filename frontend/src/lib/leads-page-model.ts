@@ -29,7 +29,6 @@ const DAY_MS = 1000 * 60 * 60 * 24;
 
 interface LeadsPageModelInput {
   baseLeads: Lead[];
-  draggedLeadId: string | null;
   optimisticLeads: Record<string, Lead>;
   programs: Program[];
   selectedLeadId: string | null;
@@ -38,7 +37,6 @@ interface LeadsPageModelInput {
 
 interface LeadsPageModel {
   activePrograms: Program[];
-  draggedLeadRecord: Lead | null;
   dueTodayCount: number;
   enrolledCount: number;
   followUpQueue: Lead[];
@@ -193,7 +191,7 @@ export function buildLeadsDatasetModel({
   optimisticLeads,
   programs,
   today,
-}: Omit<LeadsPageModelInput, "draggedLeadId" | "selectedLeadId">) {
+}: Omit<LeadsPageModelInput, "selectedLeadId">) {
   const activePrograms = programs.filter((program) => !program.archived_at);
   const programById = new Map(programs.map((program) => [program.id, program]));
   const leads = mergeOptimisticLeads(baseLeads, optimisticLeads);
@@ -224,12 +222,10 @@ export function buildLeadsDatasetModel({
 export function selectLeadsPageModel(
   dataset: ReturnType<typeof buildLeadsDatasetModel>,
   selectedLeadId: string | null,
-  draggedLeadId: string | null,
 ): LeadsPageModel {
   return {
     ...dataset,
     selectedLead: selectedLeadId ? (dataset.leadById.get(selectedLeadId) ?? null) : null,
-    draggedLeadRecord: draggedLeadId ? (dataset.leadById.get(draggedLeadId) ?? null) : null,
   };
 }
 

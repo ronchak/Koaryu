@@ -178,7 +178,7 @@ describe("leads page model", () => {
       today: "2026-05-24",
     });
 
-    const model = selectLeadsPageModel(dataset, "lead-1", "lead-2");
+    const model = selectLeadsPageModel(dataset, "lead-1");
 
     assert.deepEqual(
       model.activePrograms.map((item) => item.id),
@@ -186,7 +186,6 @@ describe("leads page model", () => {
     );
     assert.equal(model.programById.get("archived-program")?.name, "Archived Program");
     assert.equal(model.selectedLead?.first_name, "Optimistic");
-    assert.equal(model.draggedLeadRecord?.id, "lead-2");
     assert.deepEqual(
       model.leadsByStage.offer_sent?.map((item) => item.id),
       ["lead-1"],
@@ -264,9 +263,8 @@ it("retains dataset ordering and collections while selection changes; optimistic
   ];
   const input = { baseLeads, optimisticLeads: {}, programs: [], today: "2026-05-20" };
   const dataset = buildLeadsDatasetModel(input);
-  const selected = selectLeadsPageModel(dataset, "b", "a");
+  const selected = selectLeadsPageModel(dataset, "b");
   assert.equal(selected.selectedLead, baseLeads[1]);
-  assert.equal(selected.draggedLeadRecord, baseLeads[0]);
   assert.equal(selected.obligationLedgerLeads, dataset.obligationLedgerLeads);
   assert.equal(selected.followUpQueue, dataset.followUpQueue);
   const optimistic = buildLeadsDatasetModel({

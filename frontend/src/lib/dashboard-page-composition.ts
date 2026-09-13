@@ -7,9 +7,7 @@ import {
 import { isDashboardBeltSetupComplete, isDashboardSetupStepComplete } from "./dashboard-page-model";
 import type {
   buildDashboardBeltStats,
-  buildDashboardChurnStats,
   buildDashboardLeadStats,
-  buildDashboardNewStudentStats,
   buildDashboardOperationalStats,
   buildDashboardStudentStats,
   buildDashboardTestReadinessStats,
@@ -23,9 +21,7 @@ type DashboardStudentStats = ReturnType<typeof buildDashboardStudentStats>;
 type DashboardLeadStats = ReturnType<typeof buildDashboardLeadStats>;
 type DashboardTodaySessions = ReturnType<typeof countDashboardTodaySessions>;
 type DashboardBeltStats = ReturnType<typeof buildDashboardBeltStats>;
-type DashboardNewStudentStats = ReturnType<typeof buildDashboardNewStudentStats>;
 type DashboardOperationalStats = ReturnType<typeof buildDashboardOperationalStats>;
-type DashboardChurnStats = ReturnType<typeof buildDashboardChurnStats>;
 type DashboardTestReadinessStats = ReturnType<typeof buildDashboardTestReadinessStats>;
 
 type DashboardInactivityStats = {
@@ -41,9 +37,7 @@ export type DashboardLocalStats = {
   todaySessions: DashboardTodaySessions;
   beltStats: DashboardBeltStats;
   inactivityStats: DashboardInactivityStats;
-  newStudentStats: DashboardNewStudentStats;
   operationalStats: DashboardOperationalStats;
-  churnStats: DashboardChurnStats;
   testReadinessStats: DashboardTestReadinessStats;
 };
 
@@ -66,9 +60,7 @@ export type DashboardPageComposition = {
   displayedTodaySessions: DashboardTodaySessions;
   displayedBeltStats: DashboardBeltStats;
   displayedInactivityStats: DashboardInactivityStats;
-  displayedNewStudentStats: DashboardNewStudentStats;
   displayedOperationalStats: DashboardOperationalStats;
-  displayedChurnStats: DashboardChurnStats;
   displayedTestReadinessStats: DashboardTestReadinessStats;
   displayedBillingSummary: DashboardBillingSummary;
   setupSteps: SetupStep[];
@@ -163,21 +155,6 @@ function selectDashboardDisplayStats({
           highestRiskStudents: [],
         }
       : localStats.inactivityStats;
-  const displayedNewStudentStats = summary
-    ? {
-        new14: summary.new_students.new_14,
-        new30: summary.new_students.new_30,
-        new90: summary.new_students.new_90,
-        newYearToDate: summary.new_students.new_year_to_date,
-      }
-    : rosterSummaryPending
-      ? {
-          new14: 0,
-          new30: 0,
-          new90: 0,
-          newYearToDate: 0,
-        }
-      : localStats.newStudentStats;
   const displayedOperationalStats = summary
     ? {
         attendanceWithCapacity: summary.operational.attendance_with_capacity,
@@ -188,21 +165,6 @@ function selectDashboardDisplayStats({
         averageAttendance: summary.operational.average_attendance,
       }
     : localStats.operationalStats;
-  const displayedChurnStats = summary
-    ? {
-        inactiveStudents: summary.churn.inactive_students,
-        canceledStudents: summary.churn.canceled_students,
-        churnMarkedStudents: summary.churn.churn_marked_students,
-        churnRate: summary.churn.churn_rate ?? null,
-      }
-    : rosterSummaryPending
-      ? {
-          inactiveStudents: 0,
-          canceledStudents: 0,
-          churnMarkedStudents: 0,
-          churnRate: null,
-        }
-      : localStats.churnStats;
   const displayedTestReadinessStats = summary?.test_readiness.available
     ? {
         readyToTest: summary.test_readiness.ready_to_test ?? 0,
@@ -220,9 +182,7 @@ function selectDashboardDisplayStats({
     displayedTodaySessions,
     displayedBeltStats,
     displayedInactivityStats,
-    displayedNewStudentStats,
     displayedOperationalStats,
-    displayedChurnStats,
     displayedTestReadinessStats,
     displayedBillingSummary,
   };

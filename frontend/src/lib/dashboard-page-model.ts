@@ -153,53 +153,6 @@ export function buildDashboardInactivityStats<T extends { daysInactive: number }
   return { watch14, watch30, watch90, highestRiskStudents };
 }
 
-export function buildDashboardNewStudentStats(
-  students: Student[],
-  today: string,
-  lookback14: string,
-  lookback30: string,
-  lookback90: string,
-  yearStart: string,
-) {
-  let new14 = 0;
-  let new30 = 0;
-  let new90 = 0;
-  let newYearToDate = 0;
-
-  for (const student of students) {
-    if (
-      student.status !== "active" &&
-      student.status !== "trialing" &&
-      student.status !== "paused"
-    ) {
-      continue;
-    }
-
-    const startDate = dashboardStudentStartDate(student);
-    if (startDate > today) {
-      continue;
-    }
-
-    if (startDate >= lookback14) {
-      new14 += 1;
-    }
-
-    if (startDate >= lookback30) {
-      new30 += 1;
-    }
-
-    if (startDate >= lookback90) {
-      new90 += 1;
-    }
-
-    if (startDate >= yearStart) {
-      newYearToDate += 1;
-    }
-  }
-
-  return { new14, new30, new90, newYearToDate };
-}
-
 export function buildDashboardOperationalStats(
   attendance: AttendanceRecord[],
   sessions: ClassSession[],
@@ -248,28 +201,6 @@ export function buildDashboardOperationalStats(
     sessionsWithCapacity,
     utilizationRate: totalCapacity > 0 ? attendanceWithCapacity / totalCapacity : null,
     averageAttendance: sessionsTracked > 0 ? totalCheckIns / sessionsTracked : 0,
-  };
-}
-
-export function buildDashboardChurnStats(students: Student[]) {
-  let inactiveStudents = 0;
-  let canceledStudents = 0;
-
-  for (const student of students) {
-    if (student.status === "inactive") {
-      inactiveStudents += 1;
-    } else if (student.status === "canceled") {
-      canceledStudents += 1;
-    }
-  }
-
-  const churnMarkedStudents = inactiveStudents + canceledStudents;
-
-  return {
-    inactiveStudents,
-    canceledStudents,
-    churnMarkedStudents,
-    churnRate: students.length > 0 ? churnMarkedStudents / students.length : null,
   };
 }
 

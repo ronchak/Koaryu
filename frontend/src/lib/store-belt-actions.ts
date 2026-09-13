@@ -14,8 +14,6 @@ import {
   buildPreviewBeltLadderFromRanks,
   buildPreviewPromotion,
   repairPreviewStudentRanksForLadder,
-  selectBeltLadder,
-  updatePreviewLadderSubRankTerm,
   upsertBeltLadder,
 } from "@/lib/belt-store-model";
 import {
@@ -34,7 +32,7 @@ import {
   type PendingRankTransition,
   type RankTransitionKind,
 } from "@/lib/rank-transition-operation";
-import { KEYS, localId, save } from "@/lib/store-storage";
+import { localId } from "@/lib/store-storage";
 import { MOCK_BELT_LADDER } from "@/lib/mock-data";
 import {
   canCommitLiveMutation,
@@ -76,8 +74,6 @@ interface UseStoreBeltActionsArgs {
   refreshStudents: () => Promise<unknown>;
   setEligibilityLoadError: (error: string | null) => void;
   setEligibilityPendingLadderId: (ladderId: string | null) => void;
-  setLadderNameState: (name: string) => void;
-  setSubRankTermState: (term: string) => void;
   studentsRef: StoreRef<Student[]>;
   subRankTerm: string;
 }
@@ -101,8 +97,6 @@ export function useStoreBeltActions({
   refreshStudents,
   setEligibilityLoadError,
   setEligibilityPendingLadderId,
-  setLadderNameState,
-  setSubRankTermState,
   studentsRef,
   subRankTerm,
 }: UseStoreBeltActionsArgs) {
@@ -197,53 +191,6 @@ export function useStoreBeltActions({
       refreshBeltsRef,
       setEligibilityLoadError,
       setEligibilityPendingLadderId,
-    ],
-  );
-
-  const ensureCurrentLadder = useCallback(
-    async (termOverride?: string) => {
-      if (isPreviewMode) {
-        const selectedPreviewLadder = selectBeltLadder(
-          beltLaddersRef.current,
-          currentLadderIdRef.current,
-        );
-        return {
-          id: selectedPreviewLadder?.id || "mock-ladder",
-          sub_rank_term: termOverride || selectedPreviewLadder?.sub_rank_term || subRankTerm,
-        };
-      }
-
-      const liveRequest = beginLiveAuthRequest();
-
-      if (currentLadderIdRef.current) {
-        return {
-          id: currentLadderIdRef.current,
-          sub_rank_term: termOverride || subRankTerm,
-        };
-      }
-
-      const existingLadders = await api.get<BeltLadder[]>("/belts/ladders", liveRequest.token);
-      if (!liveRequest.isCurrent()) {
-        throw new Error("Not authenticated");
-      }
-      const existingSelectedLadder = applyLadderSelection(existingLadders);
-
-      if (existingSelectedLadder) {
-        return {
-          id: existingSelectedLadder.id,
-          sub_rank_term: existingSelectedLadder.sub_rank_term || "Stripe",
-        };
-      }
-
-      throw new Error("Create a program in Settings before configuring ranks.");
-    },
-    [
-      applyLadderSelection,
-      beginLiveAuthRequest,
-      beltLaddersRef,
-      currentLadderIdRef,
-      isPreviewMode,
-      subRankTerm,
     ],
   );
 
@@ -391,61 +338,6 @@ export function useStoreBeltActions({
       refreshStudents,
       studentsRef,
       subRankTerm,
-    ],
-  );
-
-  const setLadderName = useCallback(
-    (name: string) => {
-      setLadderNameState(name);
-      if (isPreviewMode) save(KEYS.ladderName, name);
-    },
-    [isPreviewMode, setLadderNameState],
-  );
-
-  const setSubRankTerm = useCallback(
-    async (term: string) => {
-      const nextTerm = term.trim() || "Stripe";
-
-      if (isPreviewMode) {
-        const previewUpdate = updatePreviewLadderSubRankTerm(
-          beltLaddersRef.current,
-          currentLadderIdRef.current,
-          nextTerm,
-        );
-        setSubRankTermState(nextTerm);
-        if (previewUpdate.selectedLadder && previewUpdate.ladders) {
-          applyLadderSelection(previewUpdate.ladders, previewUpdate.selectedLadder.id);
-        }
-        save(KEYS.subRankTerm, nextTerm);
-        return;
-      }
-
-      const liveRequest = beginLiveAuthRequest();
-      const ladder = await ensureCurrentLadder(nextTerm);
-      if (!liveRequest.isCurrent()) {
-        return;
-      }
-      if (ladder.sub_rank_term !== nextTerm) {
-        await api.patch(
-          `/belts/ladders/${ladder.id}`,
-          { sub_rank_term: nextTerm },
-          liveRequest.token,
-        );
-      }
-      if (!liveRequest.isCurrent()) {
-        return;
-      }
-      await refreshBelts(ladder.id);
-    },
-    [
-      applyLadderSelection,
-      beginLiveAuthRequest,
-      beltLaddersRef,
-      currentLadderIdRef,
-      ensureCurrentLadder,
-      isPreviewMode,
-      refreshBelts,
-      setSubRankTermState,
     ],
   );
 
@@ -673,7 +565,5 @@ export function useStoreBeltActions({
     refreshBelts,
     setBeltRanks,
     setCurrentLadder,
-    setLadderName,
-    setSubRankTerm,
   };
 }
