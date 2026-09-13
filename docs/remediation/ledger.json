@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "37e80869a99bb8f5e214ff9512b4c6713d197d8b",
+  "last_reconciled_main": "ae96269273ceaaeb9360420c540820a0954904eb",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -609,12 +609,12 @@
       "id": "ACS1-03",
       "title": "Roster cursor errors have the wrong generated response contract",
       "cluster": "access_and_recovery",
-      "disposition": "pending",
-      "reason": "The documented 409 remains a bare cursor detail, while runtime returns the normalized envelope. The current browser decoder handles the envelope correctly.",
+      "disposition": "fixed",
+      "reason": "The documented cursor409 response now describes the actual detail/error envelope with a typed cursor detail and existing ErrorMeta. Generated frontend contracts are updated; the endpoint and runtime error handler are unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No hosted activity or new runtime tests in this normalization.",
+      "verified_against": "3083b6fcb60241ece7508c112c57af0f2d6d57be",
+      "verification": "Coordinator checked unchanged endpoint/error-handler bytes and export AST except copy, reviewed the real HTTP envelope test and passed 12 contract/type-generation cases. Implementer passed 51 cases and 111 subtests; see backend-contract-truth-verification.md.",
       "source_paths": [
         "backend/app/api/v1/endpoints/students.py",
         "backend/app/schemas/student.py",
@@ -641,7 +641,7 @@
           "observation": "Browser parsing already extracts cursor fields from parsed.detail."
         }
       ],
-      "next_change": "Document a typed cursor-detail envelope for 409 and regenerate API types. Preserve the runtime payload and existing detail decoder.",
+      "next_change": "None for this scoped finding; database-dependent batch04 items remain pending.",
       "validation_plan": "Compare a synthetic cursor-required HTTP response with its OpenAPI schema; check generated API types.",
       "scope_constraints": [
         "Roster cursor semantics, tenant checks, and runtime error envelope."
@@ -1276,12 +1276,12 @@
       "id": "OPS1-11",
       "title": "Oversized exports recommend recovery options the endpoint does not offer",
       "cluster": "bounded_reads_and_runtime",
-      "disposition": "pending",
-      "reason": "The limit message still offers filters and asynchronous exports that this endpoint cannot accept.",
+      "disposition": "fixed",
+      "reason": "Oversized-export errors now state that the synchronous processing limit was exceeded, without promising an unavailable async export. Status413 and all budgets/algorithms remain unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted activity during normalization.",
+      "verified_against": "3083b6fcb60241ece7508c112c57af0f2d6d57be",
+      "verification": "Coordinator checked unchanged endpoint/error-handler bytes and export AST except copy, reviewed the real HTTP envelope test and passed 12 contract/type-generation cases. Implementer passed 51 cases and 111 subtests; see backend-contract-truth-verification.md.",
       "source_paths": [
         "backend/app/services/report_export_budget.py",
         "backend/app/api/v1/endpoints/reports.py"
@@ -1302,7 +1302,7 @@
           "observation": "Export route accepts report ID and access dependencies, with no filter or job inputs."
         }
       ],
-      "next_change": "Replace the shared message with a truthful statement that the export exceeds synchronous limits. Remove unsupported recovery instructions.",
+      "next_change": "None for this scoped finding; database-dependent batch04 items remain pending.",
       "validation_plan": "Review all uses of the constant and the displayed error; retain existing 413 behavior.",
       "scope_constraints": [
         "Export limits",
@@ -5081,12 +5081,12 @@
       "id": "BT4-03",
       "title": "Report column schema check compares two handwritten lists",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "The migration-backed claim remains overstated: the test checks a handwritten inventory, not the migrated schema. Accurate naming is useful low-risk cleanup.",
+      "disposition": "fixed",
+      "reason": "The handwritten report column check and vocabulary now describe source-vocabulary validation, not physical migration proof. Assertions and source membership rules are preserved.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "3083b6fcb60241ece7508c112c57af0f2d6d57be",
+      "verification": "Coordinator checked unchanged endpoint/error-handler bytes and export AST except copy, reviewed the real HTTP envelope test and passed 12 contract/type-generation cases. Implementer passed 51 cases and 111 subtests; see backend-contract-truth-verification.md.",
       "source_paths": [
         "backend/tests/test_report_export_data_budget.py"
       ],
@@ -5106,7 +5106,7 @@
           "observation": "The migration-backed test only compares declared columns against that dictionary."
         }
       ],
-      "next_change": "Rename the test/inventory to describe the reviewed source vocabulary it actually checks. Do not claim physical migration proof or add a new schema-parsing/checking framework for this observation; retain useful export and source-budget contracts.",
+      "next_change": "None for this scoped finding; database-dependent batch04 items remain pending.",
       "validation_plan": "Inspect the renamed claim against its actual inputs and run existing export-data-budget cases. Any future physical-schema proof must use the existing database verification owner.",
       "scope_constraints": "Preserve source minimization and budget checks. No hosted database access, migration changes or verifier guard relaxation.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -13276,16 +13276,16 @@
     }
   },
   "current_counts": {
-    "fixed": 118,
+    "fixed": 121,
     "rejected_after_verification": 1,
-    "pending": 144,
+    "pending": 141,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 115,
+    "Sol": 112,
     "Astra": 29
   },
   "execution_policy": {
@@ -13297,14 +13297,14 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 96,
+      "Sol": 99,
       "Astra": 22
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 115,
+      "Sol": 112,
       "Astra": 29
     },
     "deferred_intentionally": {
