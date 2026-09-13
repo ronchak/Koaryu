@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "04d7efe39e10cb9e05d60779a2114deff0b6375b",
+  "last_reconciled_main": "bb7a0ae57e6d9947b5ed73fc2147d2cdc1211331",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -29,7 +29,9 @@
         "render.yaml",
         "backend/app/core/config.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        195
+      ],
       "track": "Sol",
       "root_cause": "stale_billing_product_boundary",
       "collapse_with": [
@@ -456,15 +458,17 @@
       "id": "CTA2-02",
       "title": "Unused manual types remain in the otherwise generated public contract layer",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "StaffRole and BillingActionRequest remain exported but have no source, test, or e2e consumers; BillingActionRequest also combines unrelated request contracts.",
+      "disposition": "fixed",
+      "reason": "Unused StaffRole and BillingActionRequest interfaces are deleted after repository-wide caller checks; generated aliases and ExportJob remain.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b7a3f4c601e5bc9aa0f18e7adba9d519d464fb4b",
       "source_paths": [
         "frontend/src/types/index.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        180
+      ],
       "track": "Sol",
       "root_cause": "dead_manual_contract_aliases",
       "collapse_with": [],
@@ -480,7 +484,7 @@
           "observation": "BillingActionRequest intersects onboarding, checkout, and portal request types."
         }
       ],
-      "next_change": "Delete only StaffRole and BillingActionRequest. Keep the generated aliases and use a specific generated request type if a future caller needs one.",
+      "next_change": "None for this finding; remaining display and test-cleanup findings are separate.",
       "validation_plan": "Run a repository reference search, then targeted frontend type checking or build validation for the types entry point.",
       "scope_constraints": [
         "generated api-contracts.ts",
@@ -490,7 +494,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/08-display-and-dead-interfaces.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed all changed source/tests, repository-wide callers, byte-identical external-payment handler and eight invoice props, exact counts and 56 focused cases. Full final frontend suite passes 907 cases; see dead-ui-interface-verification.md."
     },
     {
       "id": "ACS1-01",
@@ -3059,7 +3064,9 @@
         "backend/app/services/billing_workflow_catalog.py",
         "docs/billing-boundary.md"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        195
+      ],
       "track": "Sol",
       "root_cause": "stale_billing_product_boundary",
       "collapse_with": [
@@ -5704,7 +5711,9 @@
         "docs/billing-workflow-catalog.md",
         "backend/app/services/billing_workflow_catalog.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        195
+      ],
       "track": "Sol",
       "root_cause": "stale_billing_product_boundary",
       "collapse_with": [
@@ -6272,11 +6281,11 @@
       "id": "FT1-01",
       "title": "The live belt browser test no longer follows the current product flow",
       "cluster": "belt_draft_ownership",
-      "disposition": "pending",
-      "reason": "The advertised live test still expects root navigation after onboarding and obsolete Configure ladder/Save order controls. PR153's synthetic editor coverage did not repair or retire it.",
+      "disposition": "fixed",
+      "reason": "The obsolete live belt smoke test and its package command are removed. Documentation names the existing independent browser payload and database persistence checks without claiming joined end-to-end coverage.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b7a3f4c601e5bc9aa0f18e7adba9d519d464fb4b",
       "source_paths": [
         "frontend/e2e/atomic-belt-ladder.spec.ts",
         "frontend/src/app/onboarding/page.tsx",
@@ -6284,7 +6293,7 @@
         "frontend/src/components/belt-tracker/rank-plan-panel.tsx"
       ],
       "pull_requests": [
-        153
+        180
       ],
       "track": "Sol",
       "root_cause": "stale_live_belt_test",
@@ -6313,7 +6322,7 @@
           "observation": "test:e2e:live-belt still invokes the stale spec."
         }
       ],
-      "next_change": "Retire this stale opt-in spec and its package command/README instructions together. Point readers to existing synthetic editor and local SQL checks, stating their separate coverage boundaries.",
+      "next_change": "None for this finding; remaining display and test-cleanup findings are separate.",
       "validation_plan": "Future: confirm no stale command/spec references remain and retain the mounted editor suite. No live execution is needed for retirement.",
       "scope_constraints": [
         "Subscription or authentication behavior",
@@ -6324,22 +6333,23 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/08-display-and-dead-interfaces.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed all changed source/tests, repository-wide callers, byte-identical external-payment handler and eight invoice props, exact counts and 56 focused cases. Full final frontend suite passes 907 cases; see dead-ui-interface-verification.md."
     },
     {
       "id": "FT1-02",
       "title": "The belt preservation test never edits an existing persisted rank",
       "cluster": "belt_draft_ownership",
-      "disposition": "pending",
-      "reason": "The live spec still saves only once and checks that the returned ID is truthy. Mounted repeat-save and SQL in-place-update coverage now exist, but the original misleading preservation claim remains.",
+      "disposition": "fixed",
+      "reason": "The misleading live test that never edited a persisted rank is deleted. Documentation distinguishes existing mounted repeat-save payload coverage from independent database persistence proof; no joined end-to-end claim remains.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b7a3f4c601e5bc9aa0f18e7adba9d519d464fb4b",
       "source_paths": [
         "frontend/e2e/atomic-belt-ladder.spec.ts"
       ],
       "pull_requests": [
-        153
+        180
       ],
       "track": "Sol",
       "root_cause": "stale_live_belt_test",
@@ -6363,7 +6373,7 @@
           "observation": "SQL smoke checks an existing rank is updated in place with its original ID."
         }
       ],
-      "next_change": "Retire the misleading live preservation test with FT1-01. Document browser payload preservation and SQL persistence checks separately; do not claim a joined browser-to-database membership/history test.",
+      "next_change": "None for this finding; remaining display and test-cleanup findings are separate.",
       "validation_plan": "Future: retain the mounted second-save assertions and SQL in-place-update check; verify documentation accurately describes them. Not run.",
       "scope_constraints": [
         "Existing preservation assertions",
@@ -6374,7 +6384,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/08-display-and-dead-interfaces.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed all changed source/tests, repository-wide callers, byte-identical external-payment handler and eight invoice props, exact counts and 56 focused cases. Full final frontend suite passes 907 cases; see dead-ui-interface-verification.md."
     },
     {
       "id": "FT1-03",
@@ -6487,7 +6498,9 @@
         "frontend/tests/marketing-public-route-contract.test.mjs",
         "frontend/tests/billing-workflow-capabilities.test.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        195
+      ],
       "track": "Sol",
       "root_cause": "stale_billing_product_boundary",
       "collapse_with": [
@@ -7683,7 +7696,9 @@
         "frontend/src/app/about/page.tsx",
         "frontend/src/app/(dashboard)/subscription-required/page.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        195
+      ],
       "track": "Sol",
       "root_cause": "stale_billing_product_boundary",
       "collapse_with": [
@@ -8466,17 +8481,19 @@
       "id": "FC1-11",
       "title": "Small display helpers require fabricated full business records",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "Two display helpers still require fabricated business records, including fake monetary and usage fields in the account menu preview.",
+      "disposition": "fixed",
+      "reason": "Account-menu and BeltVisual display helpers now accept only the fields they consume, removing fabricated subscription and rank identity/order/date fields without changing display logic.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b7a3f4c601e5bc9aa0f18e7adba9d519d464fb4b",
       "source_paths": [
         "frontend/src/components/account-menu.tsx",
         "frontend/src/components/belt-tracker/rank-form-modal.tsx",
         "frontend/src/components/belt-tracker/rank-visuals.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        180
+      ],
       "track": "Sol",
       "root_cause": "overbroad_display_helper_contracts",
       "collapse_with": [],
@@ -8497,7 +8514,7 @@
           "observation": "Belt preview invents IDs, ordering, and timestamps for BeltVisual."
         }
       ],
-      "next_change": "Narrow billingLabel to the exact status fields it reads and BeltVisual to color and tip fields, or pass display-ready values. Preserve preview copy and real billing decisions.",
+      "next_change": "None for this finding; remaining display and test-cleanup findings are separate.",
       "validation_plan": "Type-check callers and compare account-menu billing labels plus belt preview rendering for preview and live-shaped inputs.",
       "scope_constraints": [
         "billing authorization",
@@ -8508,24 +8525,27 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/08-display-and-dead-interfaces.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed all changed source/tests, repository-wide callers, byte-identical external-payment handler and eight invoice props, exact counts and 56 focused cases. Full final frontend suite passes 907 cases; see dead-ui-interface-verification.md."
     },
     {
       "id": "FC1-12",
       "title": "Billing composition adds pass-through layers and repeated long prop lists",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "The invoice section remains a pure forwarding wrapper. The page component owns framing and history controls, so removing all composition layers would be unjustified.",
+      "disposition": "fixed",
+      "reason": "The pure invoice forwarding wrapper is deleted and its caller renders the existing invoice tab directly with all eight props preserved; no new prop abstraction or ownership change was introduced.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and retained merged implementation evidence. No new runtime tests or hosted activity during normalization.",
+      "verified_against": "b7a3f4c601e5bc9aa0f18e7adba9d519d464fb4b",
+      "verification": "Coordinator reviewed all changed source/tests, repository-wide callers, byte-identical external-payment handler and eight invoice props, exact counts and 56 focused cases. Full final frontend suite passes 907 cases; see dead-ui-interface-verification.md.",
       "source_paths": [
         "frontend/src/components/billing/billing-invoices-section.tsx",
         "frontend/src/components/billing/billing-tab-content.tsx",
         "frontend/src/components/billing/billing-page-content.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        180
+      ],
       "track": "Sol",
       "root_cause": "billing-presentation-forwarding",
       "collapse_with": [],
@@ -8546,7 +8566,7 @@
           "observation": "The page owns frame wiring and history controls, providing a meaningful boundary."
         }
       ],
-      "next_change": "Replace the pure wrapper with BillingInvoicesTab at its caller and reuse the tab's explicit prop type where helpful. Keep broader controller/view-model redesign outside this cleanup.",
+      "next_change": "None for this finding; remaining display and test-cleanup findings are separate.",
       "validation_plan": "Targeted lint/type checking and existing invoice rendering coverage.",
       "scope_constraints": "Preserve capability props, callback ownership, preview behavior, loading state and pagination.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -8558,17 +8578,19 @@
       "id": "FC1-13",
       "title": "Billing export history is retained as a feature but never loaded",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "Billing export history is initialized and displayed but no billing load path populates it; the action hook retains a no-op setter.",
+      "disposition": "fixed",
+      "reason": "The never-loaded billing export-history panel, empty state and dead action plumbing are removed while real Reports downloads and external-payment recovery remain unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "b7a3f4c601e5bc9aa0f18e7adba9d519d464fb4b",
       "source_paths": [
         "frontend/src/components/billing/billing-reports-tab.tsx",
         "frontend/src/lib/billing-data-controller.ts",
         "frontend/src/lib/billing-report-actions.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        180
+      ],
       "track": "Sol",
       "root_cause": "dead_billing_export_history_interface",
       "collapse_with": [],
@@ -8594,7 +8616,7 @@
           "observation": "The retained export action discards both export type and setter."
         }
       ],
-      "next_change": "Remove the billing export-history panel, exportJobs state, setter plumbing, and disabled creation handler unless an explicitly authorized history endpoint is chosen. Do not invent data from the separate Reports export catalog.",
+      "next_change": "None for this finding; remaining display and test-cleanup findings are separate.",
       "validation_plan": "Source search confirms no billing exportJobs plumbing remains, followed by the focused billing reports component test.",
       "scope_constraints": [
         "report-export authorization",
@@ -8605,7 +8627,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/08-display-and-dead-interfaces.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed all changed source/tests, repository-wide callers, byte-identical external-payment handler and eight invoice props, exact counts and 56 focused cases. Full final frontend suite passes 907 cases; see dead-ui-interface-verification.md."
     },
     {
       "id": "FC2-01",
@@ -13209,15 +13232,15 @@
     }
   },
   "current_counts": {
-    "fixed": 97,
-    "pending": 166,
+    "fixed": 103,
+    "pending": 160,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 137,
+    "Sol": 131,
     "Astra": 29
   },
   "execution_policy": {
@@ -13229,11 +13252,11 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 75,
+      "Sol": 81,
       "Astra": 22
     },
     "pending": {
-      "Sol": 137,
+      "Sol": 131,
       "Astra": 29
     },
     "rejected_after_verification": {
