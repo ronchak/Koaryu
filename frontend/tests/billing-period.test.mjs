@@ -11,10 +11,12 @@ describe("formatBillingDate", () => {
     try {
       process.env.TZ = "America/Los_Angeles";
       assert.equal(formatBillingCalendarDate("2026-09-01"), "Sep 1, 2026");
+      assert.equal(formatBillingCalendarDate("2026-09-01T12:00:00Z"), "Sep 1, 2026");
       assert.equal(formatDate("2026-09-01T00:00:00Z"), "Aug 31, 2026");
 
       process.env.TZ = "UTC";
       assert.equal(formatBillingCalendarDate("2026-09-01"), "Sep 1, 2026");
+      assert.equal(formatBillingCalendarDate("2026-09-01T00:00:00+00:00"), "Sep 1, 2026");
       assert.equal(formatBillingCalendarDate(null), "Not set");
       assert.equal(formatBillingCalendarDate(""), "Not set");
       assert.equal(formatBillingDate("2026-05-01"), "May 1, 2026");
