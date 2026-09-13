@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from gotrue.errors import AuthApiError
+from gotrue.types import User, UserResponse
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.api.v1.endpoints.reports import export_report_csv
@@ -67,11 +69,14 @@ def staff_role_row(
     }
 
 
-def auth_user(user_id: str, *, email: str, display_name: str) -> SimpleNamespace:
-    return SimpleNamespace(
+def auth_user(user_id: str, *, email: str, display_name: str) -> User:
+    return User(
         id=user_id,
         email=email,
+        app_metadata={},
         user_metadata={"full_name": display_name},
+        aud="authenticated",
+        created_at="2026-01-01T00:00:00Z",
         confirmed_at="2026-01-02T00:00:00Z",
         email_confirmed_at="2026-01-02T00:00:00Z",
         last_sign_in_at="2026-01-03T00:00:00Z",
@@ -95,13 +100,10 @@ class StaffExportAuthAdmin:
 
     def get_user_by_id(self, user_id: str):
         self.supabase.auth_get_calls.append(user_id)
-        return SimpleNamespace(user=self.supabase.auth_users.get(user_id))
-
-    def list_users(self, *, page: int, per_page: int):
-        self.supabase.auth_list_calls.append((page, per_page))
-        users = list(self.supabase.auth_users.values())
-        start = (page - 1) * per_page
-        return users[start : start + per_page]
+        user = self.supabase.auth_users.get(user_id)
+        if user is None:
+            raise AuthApiError("User not found", 404, "user_not_found")
+        return UserResponse(user=user)
 
 
 class StaffExportSupabase(TableBackedSupabase):
@@ -109,12 +111,11 @@ class StaffExportSupabase(TableBackedSupabase):
         self,
         tables: dict[str, list[dict]] | None = None,
         *,
-        auth_users: dict[str, SimpleNamespace] | None = None,
+        auth_users: dict[str, User] | None = None,
     ):
         super().__init__(tables)
         self.auth_users = auth_users or {}
         self.auth_get_calls: list[str] = []
-        self.auth_list_calls: list[tuple[int, int]] = []
         self.auth = SimpleNamespace(admin=StaffExportAuthAdmin(self))
 
 
@@ -242,8 +243,7 @@ class ReportExportServiceTest(unittest.TestCase):
             profile_queries[0]["filters"],
             (("in", "user_id", {"user-1", "user-2"}),),
         )
-        self.assertEqual(supabase.auth_get_calls, [])
-        self.assertEqual(supabase.auth_list_calls, [(1, 1000)])
+        self.assertEqual(supabase.auth_get_calls, ["user-1", "user-2"])
 
     def test_staff_roles_export_leaves_missing_profiles_blank(self):
         supabase = StaffExportSupabase(

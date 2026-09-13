@@ -7,22 +7,24 @@ from unittest.mock import patch
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from gotrue.errors import AuthApiError
+from gotrue.types import User, UserResponse
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.api.v1.endpoints import staff as staff_endpoint
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
+from app.schemas.staff import StaffDeletionRequestCreate
 from app.services.auth_service import AuthService
 from app.services.dashboard_bootstrap_service import DashboardBootstrapService
 from app.services.report_export_service import ReportExportService
 from app.services.staff_service import (
     STAFF_ACTIVE_ADMIN_SURVIVOR_DETAIL,
     STAFF_DELETE_CONFIRMATION_MISMATCH_DETAIL,
-    STAFF_DELETE_REQUIRES_LINKED_DETAIL,
     STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL,
+    STAFF_DELETE_REQUIRES_LINKED_DETAIL,
     STAFF_OWNER_ARCHIVE_CONFLICT_DETAIL,
     StaffService,
 )
-from app.schemas.staff import StaffDeletionRequestCreate
 from app.services.studio_scope import (
     STAFF_ARCHIVED_DETAIL,
     ensure_staff_user_in_studio,
@@ -31,7 +33,6 @@ from app.services.studio_scope import (
 )
 from app.services.studio_service import StudioService
 from tests.fakes.supabase import TableBackedSupabase
-
 
 ARCHIVED_AT = "2026-08-15T20:00:00+00:00"
 
@@ -57,12 +58,15 @@ def staff_role(
     }
 
 
-def auth_user(user_id: str, *, active: bool = True) -> SimpleNamespace:
+def auth_user(user_id: str, *, active: bool = True) -> User:
     timestamp = "2026-08-15T00:00:00+00:00" if active else None
-    return SimpleNamespace(
+    return User(
         id=user_id,
         email=f"{user_id}@example.com",
+        app_metadata={},
         user_metadata={"full_name": f"Display {user_id}"},
+        aud="authenticated",
+        created_at="2026-08-01T00:00:00+00:00",
         confirmed_at=timestamp,
         email_confirmed_at=timestamp,
         last_sign_in_at=timestamp if active else None,
@@ -74,7 +78,11 @@ class ArchiveAuthAdmin:
         self.supabase = supabase
 
     def get_user_by_id(self, user_id: str):
-        return SimpleNamespace(user=self.supabase.auth_users.get(user_id))
+        self.supabase.auth_get_calls.append(user_id)
+        user = self.supabase.auth_users.get(user_id)
+        if user is None:
+            raise AuthApiError("User not found", 404, "user_not_found")
+        return UserResponse(user=user)
 
     def delete_user(self, user_id: str):
         self.supabase.delete_calls.append(user_id)
@@ -90,6 +98,7 @@ class ArchiveSupabase(TableBackedSupabase):
     def __init__(self, tables: dict[str, list[dict]] | None = None, *, auth_users=None):
         super().__init__(tables or {})
         self.auth_users = auth_users or {}
+        self.auth_get_calls = []
         self.delete_calls = []
         self.auth = SimpleNamespace(admin=ArchiveAuthAdmin(self))
 
@@ -388,6 +397,9 @@ class StaffArchiveMutationTest(unittest.TestCase):
 
 class StaffDeletionSchedulingTest(unittest.TestCase):
     def _base_supabase(self, row, *, auth_users=None, studios=None):
+        default_auth_users = {"admin-1": auth_user("admin-1")}
+        if row.get("user_id"):
+            default_auth_users[row["user_id"]] = auth_user(row["user_id"])
         return ArchiveSupabase(
             {
                 "staff_roles": [row],
@@ -396,11 +408,7 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
                 "staff_profiles": [],
                 "studios": studios or [{"id": "studio-1", "owner_id": "owner-1"}],
             },
-            auth_users=auth_users
-            or {
-                "admin-1": auth_user("admin-1"),
-                row.get("user_id"): auth_user(row["user_id"]),
-            },
+            auth_users=auth_users or default_auth_users,
         )
 
     def test_endpoint_schedules_archived_staff_with_actor_fields_and_no_deletion_side_effect(self):
@@ -496,13 +504,12 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
 
     def test_confirmation_uses_email_when_display_and_legal_names_are_missing(self):
         row = staff_role("archived-role", "target-1", archived_at=ARCHIVED_AT)
-        target = SimpleNamespace(
-            id="target-1",
-            email="target@example.com",
-            user_metadata={},
-            confirmed_at="2026-08-15T00:00:00+00:00",
-            email_confirmed_at="2026-08-15T00:00:00+00:00",
-            last_sign_in_at=None,
+        target = auth_user("target-1").model_copy(
+            update={
+                "email": "target@example.com",
+                "user_metadata": {},
+                "last_sign_in_at": None,
+            }
         )
         supabase = self._base_supabase(
             row,
@@ -524,13 +531,12 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
     def test_confirmation_uses_normalized_invitation_email_when_auth_email_is_blank(self):
         row = staff_role("archived-role", "target-1", archived_at=ARCHIVED_AT)
         row["invited_email"] = " \n invite-target@example.com \t "
-        target = SimpleNamespace(
-            id="target-1",
-            email=" \t ",
-            user_metadata={},
-            confirmed_at="2026-08-15T00:00:00+00:00",
-            email_confirmed_at="2026-08-15T00:00:00+00:00",
-            last_sign_in_at=None,
+        target = auth_user("target-1").model_copy(
+            update={
+                "email": " \t ",
+                "user_metadata": {},
+                "last_sign_in_at": None,
+            }
         )
         supabase = self._base_supabase(
             row,
@@ -555,13 +561,12 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
 
     def test_confirmation_uses_normalized_legacy_display_name(self):
         row = staff_role("archived-role", "target-1", archived_at=ARCHIVED_AT)
-        target = SimpleNamespace(
-            id="target-1",
-            email="target@example.com",
-            user_metadata={"full_name": " \t ", "name": "  Legacy\t  Staff  "},
-            confirmed_at="2026-08-15T00:00:00+00:00",
-            email_confirmed_at="2026-08-15T00:00:00+00:00",
-            last_sign_in_at=None,
+        target = auth_user("target-1").model_copy(
+            update={
+                "email": "target@example.com",
+                "user_metadata": {"full_name": " \t ", "name": "  Legacy\t  Staff  "},
+                "last_sign_in_at": None,
+            }
         )
         supabase = self._base_supabase(
             row,
@@ -587,13 +592,12 @@ class StaffDeletionSchedulingTest(unittest.TestCase):
     def test_confirmation_uses_role_id_when_display_and_email_are_missing(self):
         row = staff_role("role-fallback", "target-1", archived_at=ARCHIVED_AT)
         row["invited_email"] = None
-        target = SimpleNamespace(
-            id="target-1",
-            email=None,
-            user_metadata={},
-            confirmed_at="2026-08-15T00:00:00+00:00",
-            email_confirmed_at="2026-08-15T00:00:00+00:00",
-            last_sign_in_at=None,
+        target = auth_user("target-1").model_copy(
+            update={
+                "email": None,
+                "user_metadata": {},
+                "last_sign_in_at": None,
+            }
         )
         supabase = self._base_supabase(
             row,
@@ -804,12 +808,34 @@ class StaffArchiveAuthAndExportTest(unittest.TestCase):
                 "staff_roles": [
                     staff_role("active-role", "active-user"),
                     staff_role("archived-role", "archived-user", archived_at=ARCHIVED_AT),
+                    staff_role(
+                        "other-studio-role",
+                        "other-studio-user",
+                        studio_id="studio-2",
+                    ),
                 ],
-                "staff_profiles": [],
+                "staff_profiles": [
+                    {
+                        "user_id": "active-user",
+                        "legal_first_name": "Legal",
+                        "legal_last_name": "Staff",
+                    },
+                    {
+                        "user_id": "archived-user",
+                        "legal_first_name": "Archived",
+                        "legal_last_name": "Staff",
+                    },
+                    {
+                        "user_id": "other-studio-user",
+                        "legal_first_name": "Other",
+                        "legal_last_name": "Studio",
+                    },
+                ],
             },
             auth_users={
                 "active-user": auth_user("active-user"),
                 "archived-user": auth_user("archived-user"),
+                "other-studio-user": auth_user("other-studio-user"),
             },
         )
 
@@ -819,7 +845,15 @@ class StaffArchiveAuthAndExportTest(unittest.TestCase):
         rows = list(csv.DictReader(StringIO(csv_text)))
 
         self.assertEqual([row["id"] for row in rows], ["active-role"])
+        self.assertEqual(rows[0]["email"], "active-user@example.com")
+        self.assertEqual(rows[0]["legal_first_name"], "Legal")
+        self.assertEqual(rows[0]["legal_last_name"], "Staff")
+        self.assertEqual(rows[0]["status"], "active")
+        self.assertEqual(rows[0]["last_sign_in_at"], "2026-08-15T00:00:00+00:00")
+        self.assertNotIn("Display active-user", csv_text)
+        self.assertEqual(supabase.auth_get_calls, ["active-user"])
         role_query = next(query for query in supabase.query_log if query["table"] == "staff_roles")
+        self.assertIn(("eq", "studio_id", "studio-1"), role_query["filters"])
         self.assertIn(("is", "archived_at", None), role_query["filters"])
 
 

@@ -1,12 +1,12 @@
 import asyncio
-import csv
 import json
 import unittest
-from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi import HTTPException
+from gotrue.errors import AuthApiError
+from gotrue.types import User, UserResponse
 
 from app.services.report_export_budget import (
     EXPORT_MAX_PROVIDER_CALLS,
@@ -18,7 +18,6 @@ from app.services.report_export_catalog_types import REPORT_SOURCE_SPECS
 from app.services.report_export_data import INTELLIGENCE_INPUT_COLUMNS, ReportExportDataFetcher
 from app.services.report_export_service import ReportExportService
 from tests.fakes.supabase import TableBackedSupabase
-
 
 FIXTURE_PATH = (
     Path(__file__).parent / "fixtures" / "report_exports" / "intelligence_source_columns.json"
@@ -301,19 +300,17 @@ class ReportExportDataBudgetTest(unittest.TestCase):
         self.assertEqual(snapshot.provider_calls, 3)
         self.assertEqual(snapshot.fetched_rows, 3)
 
-    def test_staff_roles_batches_auth_users_and_treats_page_error_as_missing(self):
+    def test_staff_roles_hydrates_selected_auth_users_with_shared_budget(self):
         class AuthAdmin:
             def __init__(self, owner):
                 self.owner = owner
 
-            def get_user_by_id(self, _user_id):
-                raise AssertionError("report export must not issue per-user auth lookups")
-
-            def list_users(self, *, page, per_page):
-                self.owner.auth_pages.append((page, per_page))
-                if page == 2:
-                    raise RuntimeError("synthetic auth page failure")
-                return self.owner.auth_users[:per_page]
+            def get_user_by_id(self, user_id):
+                self.owner.auth_get_calls.append(user_id)
+                user = self.owner.auth_users.get(user_id)
+                if user is None:
+                    raise AuthApiError("User not found", 404, "user_not_found")
+                return UserResponse(user=user)
 
         class Supabase(TableBackedSupabase):
             def __init__(self):
@@ -357,85 +354,84 @@ class ReportExportDataBudgetTest(unittest.TestCase):
                         ],
                     }
                 )
-                self.auth_pages = []
-                self.auth_users = [
-                    SimpleNamespace(
+                self.auth_get_calls = []
+                self.auth_users = {
+                    "user-1": User(
                         id="user-1",
                         email="one@example.com",
+                        app_metadata={},
                         user_metadata={},
+                        aud="authenticated",
+                        created_at="2026-01-01T00:00:00Z",
                         confirmed_at="2026-01-01",
                         email_confirmed_at="2026-01-01",
                         last_sign_in_at="2026-02-01",
-                    )
-                ] + [SimpleNamespace(id=f"unrelated-{i}") for i in range(999)]
+                    ),
+                    "unrelated-user": User(
+                        id="unrelated-user",
+                        app_metadata={},
+                        user_metadata={},
+                        aud="authenticated",
+                        created_at="2026-01-01T00:00:00Z",
+                    ),
+                }
                 self.auth = SimpleNamespace(admin=AuthAdmin(self))
 
         supabase = Supabase()
-        csv_text, _ = asyncio.run(
-            ReportExportService(supabase).build_csv("staff_roles", "studio-1")
-        )
+        service = ReportExportService(supabase)
+        csv_text, _ = asyncio.run(service.build_csv("staff_roles", "studio-1"))
         self.assertIn("one@example.com", csv_text)
         self.assertIn("invite-2@example.com", csv_text)
         self.assertIn("Legal,One", csv_text.replace(" ", ""))
         self.assertIn("Legal,Two", csv_text.replace(" ", ""))
-        self.assertEqual(supabase.auth_pages, [(1, 1000), (2, 1000)])
+        self.assertEqual(supabase.auth_get_calls, ["user-1", "user-2"])
+        snapshot = service.budget_snapshot
+        self.assertEqual(snapshot.provider_calls, 4)
+        self.assertEqual(snapshot.fetched_rows, 5)
 
-    def test_staff_roles_excludes_archived_rows_and_filters_archived_at(self):
-        class AuthAdmin:
-            def get_user_by_id(self, _user_id):
-                raise AssertionError("report export must not issue per-user auth lookups")
+    def test_staff_roles_propagates_auth_provider_failures(self):
+        failures = (
+            AuthApiError("Auth service unavailable", 503, "unexpected_failure"),
+            RuntimeError("network unavailable"),
+        )
 
-            def list_users(self, *, page, per_page):
-                self.pages.append((page, per_page))
-                return []
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__):
 
-        class Supabase(TableBackedSupabase):
-            def __init__(self):
-                super().__init__(
+                class AuthAdmin:
+                    def __init__(self, provider_failure):
+                        self.provider_failure = provider_failure
+
+                    def get_user_by_id(self, _user_id):
+                        raise self.provider_failure
+
+                supabase = TableBackedSupabase(
                     {
                         "staff_roles": [
                             {
-                                "id": "active-role",
+                                "id": "role-1",
                                 "studio_id": "studio-1",
-                                "user_id": "active-user",
+                                "user_id": "user-1",
                                 "role": "instructor",
                                 "archived_at": None,
                                 "invited_by": "admin-1",
-                                "invited_email": "active@example.com",
+                                "invited_email": "invite@example.com",
                                 "created_at": "2026-01-01",
                                 "updated_at": "2026-01-01",
-                            },
-                            {
-                                "id": "archived-role",
-                                "studio_id": "studio-1",
-                                "user_id": "archived-user",
-                                "role": "front_desk",
-                                "archived_at": "2026-01-02T00:00:00+00:00",
-                                "invited_by": "admin-1",
-                                "invited_email": "archived@example.com",
-                                "created_at": "2026-01-02",
-                                "updated_at": "2026-01-02",
-                            },
+                            }
                         ],
                         "staff_profiles": [],
                     }
                 )
-                self.auth_admin = AuthAdmin()
-                self.auth_admin.pages = []
-                self.auth = SimpleNamespace(admin=self.auth_admin)
+                supabase.auth = SimpleNamespace(admin=AuthAdmin(failure))
+                service = ReportExportService(supabase)
 
-        supabase = Supabase()
-        csv_text, _ = asyncio.run(
-            ReportExportService(supabase).build_csv("staff_roles", "studio-1")
-        )
+                with self.assertRaises(type(failure)) as raised:
+                    asyncio.run(service.build_csv("staff_roles", "studio-1"))
 
-        rows = list(csv.DictReader(StringIO(csv_text)))
-        self.assertEqual([row["id"] for row in rows], ["active-role"])
-        role_queries = [query for query in supabase.query_log if query["table"] == "staff_roles"]
-        self.assertTrue(role_queries)
-        self.assertTrue(
-            all(("is", "archived_at", None) in query["filters"] for query in role_queries)
-        )
+                self.assertIs(raised.exception, failure)
+                self.assertEqual(service.budget_snapshot.provider_calls, 3)
+                self.assertEqual(service.budget_snapshot.emitted_rows, 0)
 
 
 if __name__ == "__main__":
