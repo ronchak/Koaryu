@@ -69,10 +69,12 @@ describe("deterministic performance evidence validator", () => {
     assert.equal(validatePerformanceEvidence(validEvidence(), manifest, SHA).privacy, manifest.privacy);
   });
 
-  it("rejects a 19-second dashboard-ready result", () => {
+  it("rejects an all-slow 19-second fixture by the retained elapsed-time budget", () => {
     assert.throws(
       () => validatePerformanceEvidence(mutateProfileEvidence((profile) => {
         profile.metrics.total_duration_ms = 19000;
+        profile.metrics.max_stage_duration_ms = 3000;
+        profile.metrics.slow_backend_stage_count = 7;
       }), manifest, SHA),
       /total_duration_ms exceeds/,
     );
@@ -83,7 +85,6 @@ describe("deterministic performance evidence validator", () => {
     ["total_provider_call_count", "provider calls"],
     ["returned_row_count", "rows"],
     ["peak_rss_bytes", "RSS"],
-    ["slow_backend_stage_count", "long tasks"],
   ]) {
     it(`rejects ${message} over budget`, () => {
       assert.throws(

@@ -424,6 +424,10 @@ describe("privacy-safe performance evidence", () => {
       classifyResource("https://koaryu.app/api/proxy/dashboard/bootstrap?studio=private"),
       "dashboard-bootstrap",
     );
+    assert.equal(
+      classifyResource("https://koaryu.app/api/proxy/dashboard/workspace?studio=private"),
+      "dashboard-workspace",
+    );
     assert.equal(classifyResource("https://koaryu.app/api/support/tickets/private"), null);
     assert.deepEqual(
       sanitizeServerTiming(
@@ -450,6 +454,12 @@ describe("privacy-safe performance evidence", () => {
       },
       resources: [
         {
+          resource: "dashboard-workspace",
+          duration_ms: 1,
+          response_start_ms: 0.5,
+          transfer_bytes: 0,
+        },
+        {
           resource: "dashboard-bootstrap",
           duration_ms: 2,
           response_start_ms: 1,
@@ -458,6 +468,11 @@ describe("privacy-safe performance evidence", () => {
         { resource: "dashboard-summary", duration_ms: 3, response_start_ms: 2, transfer_bytes: 0 },
       ],
       server_timing: [
+        {
+          resource: "dashboard-workspace",
+          status: 200,
+          server_timing: [],
+        },
         {
           resource: "dashboard-bootstrap",
           status: 200,

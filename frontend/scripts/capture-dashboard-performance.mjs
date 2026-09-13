@@ -20,10 +20,12 @@ const SUPABASE_ORIGINS = Object.freeze({
   staging: "https://nxgsektqsgrtyfhawxbc.supabase.co",
 });
 const SAFE_RESOURCE_PATHS = Object.freeze({
+  "/dashboard/workspace": "dashboard-workspace",
   "/dashboard/bootstrap": "dashboard-bootstrap",
   "/dashboard/summary": "dashboard-summary",
 });
-const REQUIRED_RESOURCES = new Set(Object.values(SAFE_RESOURCE_PATHS));
+const SAFE_RESOURCES = new Set(Object.values(SAFE_RESOURCE_PATHS));
+const REQUIRED_RESOURCES = new Set(["dashboard-bootstrap", "dashboard-summary"]);
 const RENDER_RESOURCE_TYPES = new Set(["document", "script", "stylesheet", "image", "font"]);
 export const WEB_VITALS_STABILIZATION = Object.freeze({ timeout_ms: 10_000, quiet_window_ms: 500 });
 const SAFE_SERVER_TIMING_NAMES = new Set([
@@ -109,8 +111,8 @@ export function validateCapturedEvidence(evidence) {
   const responseResources = new Set();
   const serverTimingResources = new Set();
   for (const entry of evidence.server_timing) {
-    if (!REQUIRED_RESOURCES.has(entry.resource) || entry.status !== 200) {
-      throw new Error("dashboard bootstrap and summary must return HTTP 200 responses.");
+    if (!SAFE_RESOURCES.has(entry.resource) || entry.status !== 200) {
+      throw new Error("captured dashboard resources must return HTTP 200 responses.");
     }
     responseResources.add(entry.resource);
     if (
@@ -124,7 +126,7 @@ export function validateCapturedEvidence(evidence) {
   }
   const timingResources = new Set();
   for (const entry of evidence.resources) {
-    if (!REQUIRED_RESOURCES.has(entry.resource)) {
+    if (!SAFE_RESOURCES.has(entry.resource)) {
       throw new Error("performance evidence contains an unexpected resource label.");
     }
     for (const [name, value] of Object.entries(entry)) {
@@ -539,7 +541,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       ).length,
       revision: renderRequestRevision,
     }));
-    const browserEvidence = await page.evaluate(() => {
+    const browserEvidence = await page.evaluate((safeResourcePaths) => {
       const navigation = performance.getEntriesByType("navigation")[0];
       const paints = Object.fromEntries(
         performance.getEntriesByType("paint").map((entry) => [entry.name, entry.startTime]),
@@ -551,11 +553,8 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
         } catch {
           return [];
         }
-        const resource = path.endsWith("/dashboard/bootstrap")
-          ? "dashboard-bootstrap"
-          : path.endsWith("/dashboard/summary")
-            ? "dashboard-summary"
-            : null;
+        const resource =
+          Object.entries(safeResourcePaths).find(([suffix]) => path.endsWith(suffix))?.[1] ?? null;
         return resource
           ? [
               {
@@ -581,7 +580,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
         interactions: globalThis.__koaryuEvidence?.interactions ?? [],
         long_tasks: globalThis.__koaryuEvidence?.longTasks ?? [],
       };
-    });
+    }, SAFE_RESOURCE_PATHS);
 
     // Close the observation window before awaiting sizes. Otherwise a completion
     // can leave requestStarts after Promise.all has copied its input, disappearing

@@ -447,13 +447,13 @@ for (const path of ["/students", "/billing"]) {
       if (path === "/billing") assert.ok(!requests.some((path) => path.includes("bootstrap")));
       assert.ok(await page.evaluate(() => fixture.marks.includes("workspace.identity_ready")));
       console.log(
-        "synthetic startup trace",
+        "fixture workspace/controller readiness trace",
         JSON.stringify(
           await page.evaluate(() => ({
             route: fixture.pathname,
             requests: fixture.requests.map(({ path, atMs }) => ({ path, atMs })),
             marks: fixture.timingMarks,
-            observedUsableAtMs: performance.now(),
+            observedFixtureWorkspaceControllerReadyAtMs: performance.now(),
           })),
         ),
       );

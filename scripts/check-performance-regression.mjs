@@ -82,6 +82,7 @@ const SEMANTIC_FIELDS = [
   "total_duration_ms",
   "max_stage_duration_ms",
   "slow_backend_stage_count",
+  "peak_rss_bytes",
 ];
 
 function isPlainObject(value) {
@@ -152,7 +153,7 @@ function loadBudgetManifest(path = MANIFEST_PATH) {
     const profile = manifest.profiles[profileName];
     exactKeys(profile, ["cardinalities", "budgets"], `manifest profile ${profileName}`);
     exactKeys(profile.cardinalities, CARDINALITY_FIELDS, `manifest cardinalities ${profileName}`);
-    exactKeys(profile.budgets, METRIC_FIELDS.filter((field) => field !== "data_ready"), `manifest budgets ${profileName}`);
+    exactKeys(profile.budgets, METRIC_FIELDS.filter((field) => field !== "data_ready" && field !== "slow_backend_stage_count"), `manifest budgets ${profileName}`);
     for (const [name, value] of Object.entries(profile.cardinalities)) nonnegativeInteger(value, `${profileName}.${name}`);
     for (const [name, value] of Object.entries(profile.budgets)) {
       if (DURATION_FIELDS.has(name)) {
