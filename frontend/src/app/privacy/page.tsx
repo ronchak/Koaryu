@@ -66,7 +66,7 @@ const privacySections = [
 ] as const;
 
 const privacyNotice =
-  "Koaryu may update this privacy policy as the product, business details, data retention decisions, support process, and payment configuration evolve. Material changes should be reflected here before relying on the updated behavior in production.";
+  "Koaryu may update this privacy policy as the product, business details, data retention decisions, support process, and payment configuration evolve.";
 
 export default function PrivacyPage() {
   return (

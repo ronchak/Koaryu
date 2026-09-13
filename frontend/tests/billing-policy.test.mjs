@@ -111,6 +111,7 @@ describe("billing policy", () => {
       connectPayments: true,
     });
 
+    assert.match(allowed.coreSubscription, /Live Stripe/i);
     assert.match(allowed.coreSubscription, /is available for this studio/i);
     assert.match(denied.coreSubscription, /not available for this studio/i);
     assert.notEqual(allowed.coreSubscription, denied.coreSubscription);
@@ -128,6 +129,7 @@ describe("billing policy", () => {
       connectOnboarding: true,
       connectPayments: false,
     });
+    assert.match(testCopy.connectOnboarding, /Stripe test-mode/i);
     assert.match(testCopy.connectOnboarding, /is available for this studio/i);
     assert.match(testCopy.connectPayments, /not available for this studio/i);
 
