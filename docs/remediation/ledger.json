@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "bb7a0ae57e6d9947b5ed73fc2147d2cdc1211331",
+  "last_reconciled_main": "5f34e216829c37a576d2eb1f393e1e6e660cd5fe",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -6591,7 +6591,7 @@
       "title": "Browser fixture infrastructure is duplicated and difficult to review",
       "cluster": "test_and_adapter_maintenance",
       "disposition": "pending",
-      "reason": "The shared browser packer now handles ESM helpers, but duplicated packers and a large boolean-driven harness remain. Stub fidelity still varies by mode, and core observer wiring is embedded in long generated strings.",
+      "reason": "The shared browser packer now handles ESM helpers, but duplicated packers and a large boolean-driven harness remain. Stub fidelity still varies by mode, and core observer wiring is embedded in long generated strings. Current bounded run leaves shared packer/storage extraction pending: the no-new-generic-helper constraint rules out simply moving these copies into another fixture abstraction. Revisit only with a concrete simpler design using existing ownership.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6680,12 +6680,12 @@
       "id": "FT1-09",
       "title": "Dataset settlement smoke checks can pass before data is usable",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The dataset-settlement smoke still checks headings and absence of old loading/error phrases, which can all hold in a loading shell.",
+      "disposition": "fixed",
+      "reason": "The heading-only preview scenario now explicitly claims shell readiness; actual performance-navigation readiness checks are retained and discovery is not reported as execution.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "ddfff9ad34e12bdc32d20fae3b4176d09538797c",
+      "verification": "Coordinator reviewed all deleted assertions and fixture changes, type-checked both summary definitions against generated API contracts and passed check:api-types. Full suite 903 cases; final corrected suites 61 cases. See frontend-test-truth-verification.md.",
       "source_paths": [
         "frontend/e2e/preview-smoke.spec.ts",
         "frontend/e2e/performance-navigation.spec.ts"
@@ -6703,7 +6703,7 @@
           "observation": "Reload/Connect-return cases never require a current loaded/empty-data state."
         }
       ],
-      "next_change": "Keep heading checks as shell smoke or replace the claimed settlement assertion with actual route readiness using existing indicators.",
+      "next_change": "None for this scoped finding.",
       "validation_plan": "A deliberately held data response must not satisfy a test labeled settled; valid empty results should.",
       "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6749,10 +6749,10 @@
       "title": "Source-shape checks create broad refactoring constraints beyond their behavior",
       "cluster": "test_and_adapter_maintenance",
       "disposition": "pending",
-      "reason": "Selected suites have been reduced in PR165, PR172, PR173, PR176 and PR177. The records workspace file now retains only five narrow policies, while other cited suites still contain incidental source-name, order, JSX and expression checks. This umbrella remains pending.",
+      "reason": "This umbrella remains pending. The frontend test-truth change removes four incidental source/copy cases and other presentation assertions in six named suites, while retaining safety policies and behavioral checks. Nine changed files shrink by 39 lines; remaining source assertions and other owning subsystems still need review.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "ddfff9ad34e12bdc32d20fae3b4176d09538797c",
       "verification": "Current source and relevant callers inspected; see current_evidence. No new tests or hosted operations during normalization.",
       "source_paths": [
         "frontend/tests/dashboard-shell-home-contract.test.mjs",
@@ -6812,7 +6812,7 @@
       "title": "Repeated fixture and storage scaffolding obscures the behavioral cases",
       "cluster": "financial_command_completion",
       "disposition": "pending",
-      "reason": "Identical map-backed storage scaffolding remains repeated. Small fixture reuse is useful cleanup, independent of production recovery refactoring.",
+      "reason": "Identical map-backed storage scaffolding remains repeated. Small fixture reuse is useful cleanup, independent of production recovery refactoring. Current bounded run leaves shared packer/storage extraction pending: the no-new-generic-helper constraint rules out simply moving these copies into another fixture abstraction. Revisit only with a concrete simpler design using existing ownership.",
       "audit_importance": "low",
       "evidence_role": "observation",
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -7141,18 +7141,20 @@
       "id": "FT2-07",
       "title": "Three browser tests require Chrome while setup installs Chromium",
       "cluster": "test_and_adapter_maintenance",
-      "disposition": "pending",
-      "reason": "Three operations tests still request the system Chrome channel, while both repository setup guidance and release-candidate CI install only Playwright Chromium.",
+      "disposition": "obsolete",
+      "reason": "PR169 already removed all three system-Chrome channel overrides. The finding was stale at this batch selection; no new browser change is needed.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new tests or hosted operations during normalization.",
+      "verified_against": "5f34e216829c37a576d2eb1f393e1e6e660cd5fe",
+      "verification": "Coordinator inspected b0f9c10fb3c8d9dcec20d3ced62a7e80c699a32b, which removes exactly three Chrome channel overrides. Current frontend tests/e2e contain none.",
       "source_paths": [
         "frontend/tests/operations-redesign-contract.test.mjs",
         "frontend/README.md",
         ".github/workflows/release-candidate.yml"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        169
+      ],
       "track": "Sol",
       "root_cause": "undeclared_chrome_test_dependency",
       "collapse_with": [],
@@ -7173,7 +7175,7 @@
           "observation": "CI installs Playwright Chromium only before npm test."
         }
       ],
-      "next_change": "Remove channel: chrome from the three launches unless a Chrome-specific difference is documented. If Chrome-specific coverage is intentional, declare and install it in both local instructions and CI.",
+      "next_change": "None; retain Playwright Chromium setup.",
       "validation_plan": "Run the operations-redesign contract test on a machine with only Playwright Chromium installed.",
       "scope_constraints": [
         "print geometry assertions",
@@ -7191,10 +7193,10 @@
       "title": "Source assertions preserve internal product copy and incidental implementation details",
       "cluster": "product_truth_and_documentation",
       "disposition": "pending",
-      "reason": "The finding is partly valid: several tests pin exact copy, destructuring, counts, and helper names rather than behavior. Authorization ordering and fail-closed assertions remain valuable and must stay.",
+      "reason": "This umbrella remains pending. The frontend test-truth change removes four incidental source/copy cases and other presentation assertions in six named suites, while retaining safety policies and behavioral checks. Nine changed files shrink by 39 lines; remaining source assertions and other owning subsystems still need review.",
       "audit_importance": "low",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "ddfff9ad34e12bdc32d20fae3b4176d09538797c",
       "source_paths": [
         "frontend/tests/operations-redesign-contract.test.mjs",
         "frontend/tests/settings-access.test.mjs",
@@ -7277,12 +7279,12 @@
       "id": "FT2-10",
       "title": "Mounted lifecycle fixtures drift from current response contracts",
       "cluster": "test_and_adapter_maintenance",
-      "disposition": "pending",
-      "reason": "Mounted workflow fixtures still use response fields that differ from generated API contracts. The tests remain useful for ownership and stale-response behavior, but they can normalize around invalid shapes and miss consumer drift.",
+      "disposition": "fixed",
+      "reason": "Mounted summary/guardian successes now use actual generated response fields. Optional summaries are omitted from unrelated bootstrap fixtures, and response data is separate from pending promises. Stale-response assertions still inspect the actual committed response.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new tests or hosted operations during normalization.",
+      "verified_against": "ddfff9ad34e12bdc32d20fae3b4176d09538797c",
+      "verification": "Coordinator reviewed all deleted assertions and fixture changes, type-checked both summary definitions against generated API contracts and passed check:api-types. Full suite 903 cases; final corrected suites 61 cases. See frontend-test-truth-verification.md.",
       "source_paths": [
         "frontend/tests/workflow-stabilization-mounted.test.mjs",
         "frontend/tests/store-initialization-mounted.test.mjs",
@@ -7311,7 +7313,7 @@
           "observation": "The generated dashboard student-count contract requires total_students."
         }
       ],
-      "next_change": "Use small contract-correct summary/guardian fixtures where real consumers are mounted; reuse existing helpers and move ownership-only markers outside API payloads. Preserve all concurrency assertions, and do not add a universal fixture framework.",
+      "next_change": "None for this scoped finding.",
       "validation_plan": "Type-check fixture builders against generated API types and run the affected mounted workflow and initialization suites in Chromium.",
       "scope_constraints": [
         "ownership and stale-response assertions",
@@ -13232,15 +13234,16 @@
     }
   },
   "current_counts": {
-    "fixed": 103,
-    "pending": 160,
+    "fixed": 105,
+    "pending": 157,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
-    "deferred_pending_owner_action": 1
+    "deferred_pending_owner_action": 1,
+    "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 131,
+    "Sol": 128,
     "Astra": 29
   },
   "execution_policy": {
@@ -13252,11 +13255,11 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 81,
+      "Sol": 83,
       "Astra": 22
     },
     "pending": {
-      "Sol": 131,
+      "Sol": 128,
       "Astra": 29
     },
     "rejected_after_verification": {
@@ -13271,6 +13274,9 @@
       "Astra": 1
     },
     "deferred_pending_owner_action": {
+      "Sol": 1
+    },
+    "obsolete": {
       "Sol": 1
     }
   }
