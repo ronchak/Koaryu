@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "c40215d906e2639b79762d73e6e8e5fa79b929e5",
+  "last_reconciled_main": "04d7efe39e10cb9e05d60779a2114deff0b6375b",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -18,11 +18,11 @@
       "id": "CTA1-01",
       "title": "The first-read billing instructions describe a superseded product and configuration",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "Still pending with DOC1-01: The README still contradicts the capability-based billing contract, and this is another consumer of DOC1-01's stale product-boundary root cause. Grouping does not complete the unchanged underlying correction.",
+      "disposition": "fixed",
+      "reason": "README now describes the existing workflow authority and separate Core versus tuition controls; it no longer says Core checkout is unsupported or production rejects the global billing switch.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "859a5a8772bc5271071c15cb1b4d33b3056f5f28",
       "source_paths": [
         "README.md",
         "backend/.env.render.example",
@@ -59,7 +59,7 @@
           "observation": "Declares live billing and Core self-checkout enabled for production."
         }
       ],
-      "next_change": "No separate fix. Update README in the DOC1-01 product-boundary change, distinguishing global configuration, workflow support, role access, and studio grants.",
+      "next_change": "None for this finding; broader frontend test cleanup and separate financial/database risks remain tracked.",
       "validation_plan": "Static comparison of README claims with config validation, manifest values, and generated workflow capabilities.",
       "scope_constraints": [
         "provider configuration",
@@ -70,7 +70,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/01-billing-product-truth.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator verified copy-only frontend syntax trees, byte-identical retained safety contracts, exact counts and 29 focused cases. Full frontend suite passes 909 cases; see billing-product-truth-verification.md."
     },
     {
       "id": "CTA1-02",
@@ -3049,11 +3050,11 @@
       "id": "BB2-10",
       "title": "Billing support rules and implementations lack one clear vocabulary",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "Still pending with DOC1-01: The catalog already defines supported as workflow ownership and separately applies roles and live grants. The apparent vocabulary conflict comes from the obsolete billing-boundary document covered by DOC1-01. Grouping does not complete the unchanged underlying correction.",
+      "disposition": "fixed",
+      "reason": "The apparent vocabulary conflict is resolved in product-boundary consumers without changing the catalog schema or capability semantics.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "859a5a8772bc5271071c15cb1b4d33b3056f5f28",
       "source_paths": [
         "backend/app/services/billing_workflow_catalog.py",
         "docs/billing-boundary.md"
@@ -3086,7 +3087,7 @@
           "observation": "Uses unsupported as a universal product-availability claim for catalogued workflows."
         }
       ],
-      "next_change": "No catalog-schema refactor is justified. Correct the stale boundary and explain the existing classification, role, and grant layers in the DOC1-01 change.",
+      "next_change": "None for this finding; broader frontend test cleanup and separate financial/database risks remain tracked.",
       "validation_plan": "Review each documented term against workflow_capabilities_for_role and its API/frontend consumers.",
       "scope_constraints": [
         "atomic live permits",
@@ -3097,7 +3098,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/01-billing-product-truth.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator verified copy-only frontend syntax trees, byte-identical retained safety contracts, exact counts and 29 focused cases. Full frontend suite passes 909 cases; see billing-product-truth-verification.md."
     },
     {
       "id": "OS1-01",
@@ -5692,11 +5694,11 @@
       "id": "DOC1-01",
       "title": "Billing's stated product boundary contradicts the current capability contract",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "The current billing boundary still labels catalogued, capability-driven workflows universally hidden or unsupported and includes stale provider-effect descriptions.",
+      "disposition": "fixed",
+      "reason": "The stale billing boundary inventories are removed. One catalog owns workflow classification and roles; documentation distinguishes environment, exact-studio permission and commercial availability without claiming a live grant.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "859a5a8772bc5271071c15cb1b4d33b3056f5f28",
       "source_paths": [
         "docs/billing-boundary.md",
         "docs/billing-workflow-catalog.md",
@@ -5733,7 +5735,7 @@
           "observation": "Classifies named plan, payer, enrollment, invoice, refund, and setup workflows as supported, subject to later gates."
         }
       ],
-      "next_change": "Replace the obsolete active Contract Only matrix with a compact explanation of implementation, role, environment, studio grant and commercial availability. Link the existing authoritative workflow catalog instead of adding another copied matrix. Update README/Help/About consumers together without claiming any current studio has a live grant.",
+      "next_change": "None for this finding; broader frontend test cleanup and separate financial/database risks remain tracked.",
       "validation_plan": "Compare every documented mutating workflow with the catalog, capability response, frontend gate, and provider-operation owner.",
       "scope_constraints": [
         "live provider grants",
@@ -5745,7 +5747,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/01-billing-product-truth.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator verified copy-only frontend syntax trees, byte-identical retained safety contracts, exact counts and 29 focused cases. Full frontend suite passes 909 cases; see billing-product-truth-verification.md."
     },
     {
       "id": "DOC1-02",
@@ -5762,7 +5765,9 @@
         "docs/production-postgres-image-patch.md",
         "docs/cutover-gates.md"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        194
+      ],
       "track": "Sol",
       "root_cause": "operator_guidance_owner",
       "collapse_with": [
@@ -5803,7 +5808,9 @@
         "backend/app/services/release_schema_readiness.py",
         "scripts/studio-comp-migration-rollout.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        194
+      ],
       "track": "Sol",
       "root_cause": "release_attestation_authority",
       "collapse_with": [
@@ -5838,7 +5845,9 @@
       "source_paths": [
         "docs/production-postgres-image-patch.md"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        194
+      ],
       "track": "Sol",
       "root_cause": "operator_guidance_owner",
       "collapse_with": [
@@ -5930,7 +5939,9 @@
         "docs/render-backend-deployment.md",
         "docs/services.md"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        194
+      ],
       "track": "Sol",
       "root_cause": "operator_guidance_owner",
       "collapse_with": [
@@ -5966,7 +5977,9 @@
         "backend/scripts/live_billing_authorizations.py",
         "scripts/verify-stripe-provider-rehearsal.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        194
+      ],
       "track": "Sol",
       "root_cause": "operator_guidance_owner",
       "collapse_with": [
@@ -6152,7 +6165,9 @@
         "docs/operator-tooling.md",
         "docs/stripe-test-provider-rehearsal-capture.md"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        194
+      ],
       "track": "Sol",
       "root_cause": "operator_guidance_owner",
       "collapse_with": [
@@ -6187,7 +6202,9 @@
         "docs/koaryu-payments-staging-and-rollback.md",
         "docs/services.md"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        194
+      ],
       "track": "Sol",
       "root_cause": "operator_guidance_owner",
       "collapse_with": [
@@ -6459,11 +6476,11 @@
       "id": "FT1-05",
       "title": "Marketing tests actively preserve obsolete billing limitations",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "Still pending with DOC1-01: The tests do freeze stale billing copy, but they are consequences of DOC1-01 rather than an independent product defect. Grouping does not complete the unchanged underlying correction.",
+      "disposition": "fixed",
+      "reason": "Two stale source/copy cases and redundant billing phrase locks are removed. Existing role/capability checks remain, with one imported-content availability check instead of source wording.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "859a5a8772bc5271071c15cb1b4d33b3056f5f28",
       "source_paths": [
         "frontend/tests/marketing-content-contract.test.mjs",
         "frontend/tests/marketing-editorial-routes.test.mjs",
@@ -6499,7 +6516,7 @@
           "observation": "Separately verifies capability-enabled workflows."
         }
       ],
-      "next_change": "No standalone test cleanup. Update copy assertions with the DOC1-01 contract change while retaining checks against unsupported unconditional promises.",
+      "next_change": "None for this finding; broader frontend test cleanup and separate financial/database risks remain tracked.",
       "validation_plan": "Run relevant existing checks and inspect rendered/user-visible state distinctions. Remove stale exact-wording/source-shape assertions; do not replace them with a new phrase-locking suite. Preserve behavioral permission, mutation and unavailable-data tests.",
       "scope_constraints": [
         "capability authorization tests",
@@ -6509,7 +6526,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/01-billing-product-truth.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator verified copy-only frontend syntax trees, byte-identical retained safety contracts, exact counts and 29 focused cases. Full frontend suite passes 909 cases; see billing-product-truth-verification.md."
     },
     {
       "id": "FT1-06",
@@ -7655,11 +7673,11 @@
       "id": "FR1-09",
       "title": "Current help and marketing pages contradict capability-driven billing controls",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "Still pending with DOC1-01: Help and About repeat the stale universal billing limitation from DOC1-01; capability-gated Core checkout and portal controls already contradict it. Grouping does not complete the unchanged underlying correction.",
+      "disposition": "fixed",
+      "reason": "Help, About and subscription-required copy describe actual studio-specific availability while preserving existing controls and role denial.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "859a5a8772bc5271071c15cb1b4d33b3056f5f28",
       "source_paths": [
         "frontend/src/app/(dashboard)/help/get-started/page.tsx",
         "frontend/src/app/about/page.tsx",
@@ -7695,7 +7713,7 @@
           "observation": "Shows capability-gated customer portal recovery."
         }
       ],
-      "next_change": "No separate fix. Update help and marketing consumers in the DOC1-01 product-boundary change without claiming any studio currently has a grant.",
+      "next_change": "None for this finding; broader frontend test cleanup and separate financial/database risks remain tracked.",
       "validation_plan": "Static copy inventory plus focused marketing and billing-capability tests.",
       "scope_constraints": [
         "live grants",
@@ -7705,7 +7723,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/01-billing-product-truth.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator verified copy-only frontend syntax trees, byte-identical retained safety contracts, exact counts and 29 focused cases. Full frontend suite passes 909 cases; see billing-product-truth-verification.md."
     },
     {
       "id": "FR1-10",
@@ -13190,15 +13209,15 @@
     }
   },
   "current_counts": {
-    "pending": 171,
-    "fixed": 92,
+    "fixed": 97,
+    "pending": 166,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 142,
+    "Sol": 137,
     "Astra": 29
   },
   "execution_policy": {
@@ -13209,13 +13228,13 @@
     "note": "normalization_track preserves the earlier risk-based classification. Current track is execution responsibility, not severity or historical authorship."
   },
   "current_disposition_tracks": {
-    "pending": {
-      "Sol": 142,
-      "Astra": 29
-    },
     "fixed": {
-      "Astra": 22,
-      "Sol": 70
+      "Sol": 75,
+      "Astra": 22
+    },
+    "pending": {
+      "Sol": 137,
+      "Astra": 29
     },
     "rejected_after_verification": {
       "Sol": 1
