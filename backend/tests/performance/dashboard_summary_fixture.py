@@ -321,6 +321,8 @@ def build_tables(cardinalities: dict[str, int]) -> dict[str, list[dict[str, Any]
 
 
 def _rss_bytes() -> int:
+    # ru_maxrss is the whole fixture process high-water mark. It includes table
+    # construction and the legacy semantic reference executed before endpoint calls.
     value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return int(value if sys.platform == "darwin" else value * 1024)
 

@@ -35,6 +35,7 @@ class DashboardSummaryPerformanceFixtureTest(unittest.TestCase):
                 self.assertEqual(metrics["returned_row_count"], row_count)
                 # Context table rows plus three fact objects; no raw fixture rows emitted.
                 self.assertTrue(metrics["data_ready"])
+                self.assertGreater(metrics["peak_rss_bytes"], 0)
                 self.assertGreater(metrics["serialized_response_payload_bytes"], 0)
                 self.assertNotIn("Fixture", json.dumps(evidence))
                 self.assertNotIn("fixture-student", json.dumps(evidence))

@@ -299,3 +299,13 @@ use 120, 125, and 130 seconds respectively for reads. Requests with a body add
 a bounded 60-second proxy upload phase to the browser allowance; CSV import
 and photo uploads use a 190-second browser limit. Staging and preview traffic
 is excluded from production metric collection.
+
+The authenticated dashboard capture records allowlisted HTTP and browser resource
+timings for `/dashboard/workspace`, `/dashboard/bootstrap`, and `/dashboard/summary`
+without retaining URLs, identifiers, or query values. Workspace does not emit
+`Server-Timing`, so its HTTP and resource timings are diagnostics only. Bootstrap
+and summary still require their existing successful responses, resource entries,
+and allowlisted `Server-Timing` measurements.
+
+The synthetic mounted-test startup trace records fixture workspace/controller
+readiness. It does not prove deployed route usability or measure deployed backend memory.

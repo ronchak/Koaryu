@@ -32,10 +32,12 @@ The normalized map includes examples of recommendations deliberately excluded fr
 
 ## Current run
 
-The owner resumed a bounded run on September 12, then redirected priority to removing billing ownership/forwarding indirection. The six prioritized presentation and recovery defects are now fixed in PR191–193. See [run plan](../budget-refactor-plan.md) for the 50-point cap and scope. The prior wind-down below is historical. See [HANDOFF](../HANDOFF.md) for the exact completed/remaining inventory. PR180 closes the six-interface subset of batch08; its recipe is `docs/remediation/delegated/14-dead-ui-interface-closeout.md`. It is not a new independent audit batch. FSH1-08 and FSH2-10 are fixed by the unused-state closeout; FSH1-04 was fixed by PR192. Batch08 is complete. The broader 112 pending Sol observations include newly transferred application work that has not yet been turned into additional recipes. Do not interpret the original twelve batches as the full current Sol backlog.
+The owner resumed a bounded run on September 12, then redirected priority to removing billing ownership/forwarding indirection. The six prioritized presentation and recovery defects are now fixed in PR191–193. See [run plan](../budget-refactor-plan.md) for the 50-point cap and scope. The prior wind-down below is historical. See [HANDOFF](../HANDOFF.md) for the exact completed/remaining inventory. PR180 closes the six-interface subset of batch08; its recipe is `docs/remediation/delegated/14-dead-ui-interface-closeout.md`. It is not a new independent audit batch. FSH1-08 and FSH2-10 are fixed by the unused-state closeout; FSH1-04 was fixed by PR192. Batch08 is complete. The broader 108 pending Sol observations include newly transferred application work that has not yet been turned into additional recipes. Do not interpret the original twelve batches as the full current Sol backlog.
 
 Batch07 current status: FT1-09 and FT2-10 are fixed by the test-truth change. FT2-07 is obsolete because PR169 already removed all Chrome-channel overrides. FT1-11/FT2-08 remain partial umbrella work. FT1-07/FT1-12 remain pending; no new shared packer or storage-fixture abstraction was introduced under this run's no-new-helper constraint.
 
 Batch03 is complete: FR1-05 was fixed in PR193; the customer-product-truth change closes its remaining eleven copy/setup findings without adding missing features.
 
 Batch04 eligible work is complete: ACS1-03, OPS1-11 and BT4-03. BT4-06 still waits for ACS1-04 and BT5-05 still waits for OPS1-09; no prerequisite or blocked test was changed.
+
+Batch06 eligible work is complete: CTA1-09, CTA2-01, BT1-07 and FT2-09. BT4-01 was already fixed by PR174 and is unchanged; BT3-07 remains blocked on OPS1-06.

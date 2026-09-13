@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "ae96269273ceaaeb9360420c540820a0954904eb",
+  "last_reconciled_main": "6ab6ad33349641856ae0fb8b0c3735fa2ee6d9d0",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -392,12 +392,12 @@
       "id": "CTA1-09",
       "title": "Capture diagnostics have not added the authoritative workspace request",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "Workspace identity/timezone is now authoritative but the capture classifier still labels that request as other and discards its Server-Timing detail.",
+      "disposition": "fixed",
+      "reason": "The capture recognizes the authoritative workspace request through one shared path-label mapping for HTTP and browser extraction. Workspace remains optional diagnostic evidence because it emits no Server-Timing; existing bootstrap/summary timing gates and privacy controls stay intact.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "419119bf1dc4ea05a38749e294401a78369c6014",
+      "verification": "Coordinator reviewed all deltas and retained limits, passed 12 validator and 16 capture cases, and ran the clean source 17b27fd exact-SHA gate across all three profiles. See performance-evidence-truth-verification.md.",
       "source_paths": [
         "frontend/scripts/capture-dashboard-performance.mjs",
         "frontend/README.md"
@@ -415,7 +415,7 @@
           "observation": "Fixed resource mapping lists bootstrap and summary; browser extraction repeats that list near382 without workspace."
         }
       ],
-      "next_change": "Add a privacy-safe workspace resource label using one shared mapping in outer and browser extraction.",
+      "next_change": "None for this scoped finding; BT3-07 remains blocked and the prior BT4-01 fix is unchanged.",
       "validation_plan": "Exercise classification and sanitized timing extraction with a synthetic workspace response; preserve raw-URL/identifier exclusion.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -427,12 +427,12 @@
       "id": "CTA2-01",
       "title": "The slow-stage performance budget is unreachable",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "Every profile permits20 slow stages although the fixture records at most6 successful requests; this metric cannot reject a regression.",
+      "disposition": "fixed",
+      "reason": "Removed the unreachable slow-count budgets while keeping the count as validated descriptive evidence. Retained elapsed-time and all other quantitative/data-binding gates; the all-slow negative example matches six successes plus one deliberate denial.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "419119bf1dc4ea05a38749e294401a78369c6014",
+      "verification": "Coordinator reviewed all deltas and retained limits, passed 12 validator and 16 capture cases, and ran the clean source 17b27fd exact-SHA gate across all three profiles. See performance-evidence-truth-verification.md.",
       "source_paths": [
         "performance/dashboard-summary-budget.json",
         "backend/tests/performance/dashboard_summary_fixture.py",
@@ -452,7 +452,7 @@
           "observation": "slow_backend_stage_count=20 is repeated for all3 profiles; fixture loop supplies only a small fixed request set."
         }
       ],
-      "next_change": "Remove the unattainable slow-stage count from pass/fail authority and retain it as descriptive evidence, or set a justified reachable allowance; keep all independent response/query/byte/time controls.",
+      "next_change": "None for this scoped finding; BT3-07 remains blocked and the prior BT4-01 fix is unchanged.",
       "validation_plan": "Use an all-slow synthetic measured result to show the chosen rule is meaningful; avoid CI machine-speed tuning.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -620,7 +620,9 @@
         "backend/app/schemas/student.py",
         "backend/app/core/error_handlers.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        199
+      ],
       "track": "Sol",
       "root_cause": "cursor_error_schema_mismatch",
       "collapse_with": [],
@@ -1286,7 +1288,9 @@
         "backend/app/services/report_export_budget.py",
         "backend/app/api/v1/endpoints/reports.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        199
+      ],
       "track": "Sol",
       "root_cause": "unsupported_export_recovery_copy",
       "collapse_with": [],
@@ -4119,12 +4123,12 @@
       "id": "BT1-07",
       "title": "Endpoint memory gate includes the legacy reference and all fixture allocations",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "RSS is still process-lifetime peak after fixture tables and legacy reference construction. Endpoint timing excludes that work, so the metrics currently describe different scopes.",
+      "disposition": "fixed",
+      "reason": "The existing peak RSS value is explicitly defined as whole fixture-process memory, including fixture construction and the legacy semantic reference. The measurement and memory cap remain; no endpoint-only or deployed-memory assurance is claimed.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "419119bf1dc4ea05a38749e294401a78369c6014",
+      "verification": "Coordinator reviewed all deltas and retained limits, passed 12 validator and 16 capture cases, and ran the clean source 17b27fd exact-SHA gate across all three profiles. See performance-evidence-truth-verification.md.",
       "source_paths": [
         "backend/tests/performance/dashboard_summary_fixture.py",
         "backend/tests/performance/test_dashboard_summary_fixture.py"
@@ -4144,7 +4148,7 @@
           "observation": "Tables and old summary reference are built before measurement, while final peak_rss_bytes calls process high-water RSS."
         }
       ],
-      "next_change": "Label and budget fixture-process memory honestly rather than introducing a new profiler; consolidate with removal of misleading performance gate metrics and eventual legacy reference retirement.",
+      "next_change": "None for this scoped finding; BT3-07 remains blocked and the prior BT4-01 fix is unchanged.",
       "validation_plan": "Check metric naming/scope with existing fixture execution; retain independent query/row/byte and response behavior gates.",
       "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5090,7 +5094,9 @@
       "source_paths": [
         "backend/tests/test_report_export_data_budget.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        199
+      ],
       "track": "Sol",
       "root_cause": "report_schema_check_authority",
       "collapse_with": [],
@@ -7260,12 +7266,12 @@
       "id": "FT2-09",
       "title": "Synthetic startup trace labels shell readiness as route usability",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The startup trace still calls shell/controller fixture readiness usable even though the Billing page is not mounted and the roster button is synthetic. Its existing synthetic label limits, but does not eliminate, the misleading field name.",
+      "disposition": "fixed",
+      "reason": "Synthetic startup output now identifies fixture workspace/controller readiness rather than route usability. The documentation separates it from authenticated capture; request, token, identity and readiness assertions remain unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "419119bf1dc4ea05a38749e294401a78369c6014",
+      "verification": "Coordinator reviewed all deltas and retained limits, passed 12 validator and 16 capture cases, and ran the clean source 17b27fd exact-SHA gate across all three profiles. See performance-evidence-truth-verification.md.",
       "source_paths": [
         "frontend/tests/workflow-stabilization-mounted.test.mjs",
         "frontend/tests/helpers/store-browser-harness.mjs"
@@ -7281,7 +7287,7 @@
           "observation": "Cold Billing mounts layout/store only, then logs observedUsableAtMs after workspace readiness."
         }
       ],
-      "next_change": "Rename the diagnostic to fixture workspace/controller readiness and keep real route-usability evidence in the existing browser workflow. No new performance infrastructure is needed.",
+      "next_change": "None for this scoped finding; BT3-07 remains blocked and the prior BT4-01 fix is unchanged.",
       "validation_plan": "Check the diagnostic label against what the fixture actually mounts; keep its request-selection and identity assertions unchanged.",
       "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -13276,16 +13282,16 @@
     }
   },
   "current_counts": {
-    "fixed": 121,
+    "fixed": 125,
     "rejected_after_verification": 1,
-    "pending": 141,
+    "pending": 137,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 112,
+    "Sol": 108,
     "Astra": 29
   },
   "execution_policy": {
@@ -13297,14 +13303,14 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 99,
+      "Sol": 103,
       "Astra": 22
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 112,
+      "Sol": 108,
       "Astra": 29
     },
     "deferred_intentionally": {
