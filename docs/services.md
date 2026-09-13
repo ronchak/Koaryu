@@ -147,10 +147,12 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The paused remediation candidate is `f942dad3509a2e2cc9b55d546c2d22e097f77abe`,
-with 140 migrations through V45. Backend readiness uses full V26 and requires
-head `20260910185031`, manifest `release-db-attestation-v45` and 56 pending-history
-versions. Its latest accepted predecessor is V44 at 139/head `20260910135133`.
+The paused remediation candidate and its V45 declarations are recorded in the pinned
+[production release packet](remediation/PRODUCTION-RELEASE.md) as dated, unfulfilled
+release evidence. For any current candidate, generate packet mode from its exact SHA
+and use the emitted post-history, migration list, source manifest, and integration
+result. Use fresh target inspection for the state-bound remainder and approval body.
+Do not promote the fixed values in this inventory into a new approval.
 The compatibility chain retains V19–V25 consumers after the complete V45 state
 is verified. Legacy import writes are deliberately refused; readiness compatibility
 does not make old import callers safe to resume.
@@ -237,7 +239,7 @@ vault.
 | Render API key | Owner-managed file on the OpenClaw Mac: `/Users/openclaw/.config/koaryu/secrets/render-api-key` |
 | Supabase service role / JWT secret | Render dashboard env vars, `sync: false` |
 | Stripe keys and webhook secrets | Render dashboard env vars, `sync: false` |
-| Shared test studio password | macOS Keychain, `Koaryu Shared Core Test - NO BILLING` |
+| Studio-user sign-in material | Private owner authentication guidance outside the repository |
 | Non-secret account references | Obsidian vault, `Codex Memory/` |
 
 The Render key is account-wide, not per-service. The guarded merge script needs

@@ -139,6 +139,11 @@ With the existing attended staging login and synthetic records, record import re
 
 ## 3. Establish the production write window and fresh backup
 
+This gate uses the single current backup owner documented in
+[staging-recovery-runbook.md](../staging-recovery-runbook.md#current-backup-owner-and-retained-storage-procedure).
+The older public dump recipes and completed image-patch shell program are historical and
+must not be used as alternatives.
+
 Arrange an attended maintenance window. Stop new imports and allow all old import requests to finish before V45. Confirm no legacy import writer is still executing; incomplete historical runs without receipts must remain blocked after the upgrade. Stop operator billing mutations and keep production scheduling/activation disabled as already configured. Record the old serving SHA, worker inventory, drain evidence and the time staff stopped writes. If a controlled pause/drain cannot be established, stop here; no new maintenance infrastructure is included in this packet.
 
 Re-read production auto-deploy off and the serving pair. Reinspect production with the pinned candidate; require exact V38. The private backup helper currently supports this **source** state, count133/preflight19, and image `17.6.1.155` with digest `sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b`. Confirm the provider still matches before use. It does not yet support a new V45 backup's readiness mapping; do not describe it as a post-V45 backup tool.

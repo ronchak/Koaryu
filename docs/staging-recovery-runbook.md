@@ -1,6 +1,9 @@
 # Staging and Recovery Runbook
 
-Use this runbook to rebuild Koaryu staging, prove that it is isolated from production, create an encrypted logical backup, and rehearse a restore. Production changes are out of scope unless they have the explicit approvals listed in [the release ledger](release-ledger.md).
+Use this runbook to rebuild Koaryu staging, prove that it is isolated from production,
+and understand retained recovery evidence. Current production database backup and restore
+execution is owned by the guarded private operator flow linked below. Production changes
+are out of scope unless they have the required human approvals.
 
 ## Environment Boundaries
 
@@ -177,132 +180,66 @@ This is acceptance evidence for Gate #21. Recheck the exact final PR head in the
 4. Load only reviewed, sanitized fixtures. The seed studio should cover authentication, students, guardians, attendance, schedules, ranks, leads, staff roles, and billing-readiness tests without production PII.
 5. Before deploying staging applications, rerun the target guard and verify that both application environments reference the staging Supabase URL, test Stripe mode, and staging webhook endpoints.
 
-## Encrypted Logical Backup
+## Current backup owner and retained Storage procedure
 
-The validated Wave 0 backup is stored at:
+The database commands formerly printed in this section are retired. They used filtered
+role, schema, and data dumps and compete with the current complete-snapshot procedure.
+Do not reconstruct or run them. Current production database backup and disposable
+restore execution belongs only to the guarded Home Server operator defined by
+`/Users/openclaw/.config/koaryu/operator/RELEASE-RUNBOOK.md` and
+`/Users/openclaw/.config/koaryu/operator/AUTHENTICATION.md`, using
+`/Users/openclaw/.config/koaryu/operator/backup-restore.py`. The operator must verify
+its candidate and provider image mappings before use. The helper currently knows the
+documented V37 and V38 readiness mappings and does not attest a future post-V45 backup.
+No existing snapshot counts as fresh candidate approval. The pre-apply gate and current
+limits are recorded in
+[the production release packet](remediation/PRODUCTION-RELEASE.md#3-establish-the-production-write-window-and-fresh-backup).
 
-`$HOME/Koaryu Backups/production-20260710T070020Z`
+The validated Wave 0 backup at
+`$HOME/Koaryu Backups/production-20260710T070020Z` is dated historical evidence. It
+contains encrypted role, schema, data, classification, and Storage artifacts. It does
+not prove that a current backup or restore exists.
 
-It contains encrypted role, schema, data, classification, and Storage artifacts. For a new backup, first confirm that the Supabase CLI is linked to production and that the operation is dump-only. This target check is intentionally the inverse of the staging guard:
+A database dump contains Storage metadata, not object bytes. A separately authorized
+Storage capture must still inventory every bucket, copy every object, record SHA-256
+hashes, and encrypt the inventory and bytes outside the checkout. Empty buckets remain
+valid evidence. Use an owner-only destination and private encryption material from the
+Home Server guidance. Never describe the database helper as a Storage backup.
 
-```bash
-set -euo pipefail
-set +x
-export EXPECTED_PRODUCTION_REF=mimguepumzsgmcaycdsh
-test "$(tr -d '\n' < supabase/.temp/project-ref)" = "$EXPECTED_PRODUCTION_REF"
+The retained Storage sequence is:
 
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-BACKUP_ROOT="${BACKUP_ROOT:-$HOME/Koaryu Backups}"
-BACKUP_DIR="$BACKUP_ROOT/production-${STAMP}"
-DUMP_DIR=""
-BACKUP_PASSWORD=""
-BACKUP_COMPLETE=false
-cleanup_backup() {
-  unset BACKUP_PASSWORD
-  if [ -n "${DUMP_DIR:-}" ] && [ -d "$DUMP_DIR" ]; then
-    rm -rf -- "$DUMP_DIR"
-  fi
-  if [ "${BACKUP_COMPLETE:-false}" != true ] && [ -n "${BACKUP_DIR:-}" ] && [ -d "$BACKUP_DIR" ]; then
-    rm -rf -- "$BACKUP_DIR"
-  fi
-}
-trap cleanup_backup EXIT HUP INT TERM
+1. Read the actual Supabase project selected by the Storage CLI and verify that its
+   linked project ref exactly matches the separately approved source project before any
+   inventory or export. Setting `EXPECTED_PRODUCTION_REF` is not proof. Stop on an
+   absent or mismatched readback. Record the verified source ref in the Storage
+   manifest. Set `BACKUP_DIR` and `DUMP_DIR` from the authorized operator session;
+   require both directories to be absolute, outside every checkout, and mode `0700`.
+2. List all linked Storage buckets into `storage/bucket-list.txt`. Reject malformed or
+   unsafe bucket IDs.
+3. Recursively inventory each bucket. Copy its bytes through the Storage API and compare
+   the downloaded file count with the inventory count.
+4. Hash every downloaded object, archive the complete `storage` directory, and encrypt
+   the archive into `storage-objects.tar.gpg` with the approved private backup key.
+5. Set the encrypted artifact to mode `0600`, verify its hash from a separate locked
+   directory, and remove all plaintext working files.
 
-DUMP_DIR="$(mktemp -d)"
-test ! -e "$BACKUP_DIR"
-mkdir -m 700 "$BACKUP_DIR"
+The retired executable database recipe began as follows and is intentionally omitted:
 
-supabase db dump --linked --role-only --file "$DUMP_DIR/roles.sql"
-supabase db dump --linked --file "$DUMP_DIR/schema.sql"
-supabase db dump --linked --data-only --use-copy \
-  --schema auth,private,public,storage \
-  --exclude storage.buckets_vectors \
-  --exclude storage.vector_indexes \
-  --exclude storage.objects \
-  --exclude storage.s3_multipart_uploads \
-  --exclude storage.s3_multipart_uploads_parts \
-  --file "$DUMP_DIR/data.sql"
+`supabase db dump --linked --schema ...`
 
-# Database dumps preserve Storage metadata, not object bytes. Discover every
-# bucket, inventory it, and copy its bytes. Empty buckets are valid evidence.
-mkdir -p "$DUMP_DIR/storage/inventory" "$DUMP_DIR/storage/objects"
-supabase --experimental storage ls ss:/// --linked \
-  > "$DUMP_DIR/storage/bucket-list.txt"
-jq -n --arg source_ref "$EXPECTED_PRODUCTION_REF" \
-  --arg captured_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  '{source_project_ref:$source_ref,captured_at:$captured_at,
-    buckets:[]}' \
-  > "$DUMP_DIR/storage/manifest.json"
+Do not run that pattern. It can omit required schemas and migration history. Do not put
+an encryption key in argv, a repository file, a shell trace, or public evidence.
 
-BUCKET_COUNT=0
-while IFS= read -r bucket_entry; do
-  [ -n "$bucket_entry" ] || continue
-  case "$bucket_entry" in
-    */) bucket="${bucket_entry%/}" ;;
-    *) echo "Refusing malformed Storage bucket entry" >&2; exit 1 ;;
-  esac
-  case "$bucket" in
-    ""|.|..|*/*) echo "Refusing unsafe Storage bucket id" >&2; exit 1 ;;
-  esac
+The July 10 `record-classification-manifest.json.gpg` is a historical inventory
+artifact, not an output of `supabase db dump` and not a current recipe. Its recorded
+policy retained identifiers and hashed emails while excluding raw names and addresses.
+Do not invent or rerun a classifier from this description. A classification never
+authorizes deletion, even when it labels a record test or demo.
 
-  BUCKET_COUNT=$((BUCKET_COUNT + 1))
-  mkdir -p "$DUMP_DIR/storage/objects/$bucket"
-  supabase --experimental storage ls -r "ss:///$bucket" --linked \
-    > "$DUMP_DIR/storage/inventory/$bucket.txt"
-  OBJECT_COUNT="$(awk -v prefix="/$bucket/" \
-    'index($0, prefix) == 1 && substr($0, length($0), 1) != "/" {count++}
-     END {print count + 0}' "$DUMP_DIR/storage/inventory/$bucket.txt")"
-  if [ "$OBJECT_COUNT" -gt 0 ]; then
-    supabase --experimental storage cp -r "ss:///$bucket" \
-      "$DUMP_DIR/storage/objects/" --linked
-  fi
-  DOWNLOADED_COUNT="$(find "$DUMP_DIR/storage/objects/$bucket" \
-    -type f | wc -l | tr -d ' ')"
-  test "$DOWNLOADED_COUNT" = "$OBJECT_COUNT"
-
-  jq --arg bucket "$bucket" --argjson object_count "$OBJECT_COUNT" \
-    '.buckets += [{id:$bucket,object_count:$object_count}]' \
-    "$DUMP_DIR/storage/manifest.json" \
-    > "$DUMP_DIR/storage/manifest.next.json"
-  mv "$DUMP_DIR/storage/manifest.next.json" \
-    "$DUMP_DIR/storage/manifest.json"
-done < "$DUMP_DIR/storage/bucket-list.txt"
-
-test "$(jq '.buckets | length' "$DUMP_DIR/storage/manifest.json")" \
-  = "$BUCKET_COUNT"
-(
-  cd "$DUMP_DIR/storage/objects"
-  while IFS= read -r -d '' object_path; do
-    shasum -a 256 "$object_path"
-  done < <(find . -type f -print0)
-) > "$DUMP_DIR/storage/object-sha256.txt"
-tar -C "$DUMP_DIR" -cf "$DUMP_DIR/storage-objects.tar" storage
-
-BACKUP_PASSWORD="$(security find-generic-password \
-  -s com.koaryu.backup.encryption -w)"
-
-for name in roles schema data; do
-  gpg --batch --yes --symmetric --force-aead --aead-algo OCB \
-    --cipher-algo AES256 --pinentry-mode loopback --passphrase-fd 3 \
-    --output "$BACKUP_DIR/${name}.sql.gpg" "$DUMP_DIR/${name}.sql" \
-    3<<<"$BACKUP_PASSWORD"
-done
-gpg --batch --yes --symmetric --force-aead --aead-algo OCB \
-  --cipher-algo AES256 --pinentry-mode loopback --passphrase-fd 3 \
-  --output "$BACKUP_DIR/storage-objects.tar.gpg" \
-  "$DUMP_DIR/storage-objects.tar" 3<<<"$BACKUP_PASSWORD"
-
-(cd "$BACKUP_DIR" && shasum -a 256 *.gpg)
-BACKUP_COMPLETE=true
-cleanup_backup
-trap - EXIT HUP INT TERM
-```
-
-Do not place the password in a command argument, repository file, shell trace, or release record. The key is held in macOS Keychain under service `com.koaryu.backup.encryption`. GnuPG 2.5+ uses AES-256 with OCB authenticated encryption here, so tampering is rejected during decryption. Record the hashes and backup path in the release ledger, then move the encrypted artifacts to the approved off-site location. No plaintext dump may remain after verification.
-
-The record-classification manifest is a separate inventory artifact, not an output of `supabase db dump`. Generate it with the reviewed conservative classifier, containing identifiers and hashed emails but no raw names or addresses, then encrypt it with the same GPG AEAD command as `record-classification-manifest.json.gpg`. Record its count, policy, and hash in the ledger. Do not treat a record as approved for deletion merely because the classifier labels it test or demo.
-
-The July 10 backup used PostgreSQL 17 on the host because the local container runtime could not resolve Supabase's direct IPv6-only database hostname. If the normal CLI command fails for the same reason, use `supabase db dump --dry-run` only inside a private, non-traced shell, capture its generated script without printing it, replace the generated `pg_dump` or `pg_dumpall` executable with the trusted PostgreSQL 17 host binary, and pipe its output directly into the encryption command. The generated script contains a short-lived database password and must never be logged, saved, or pasted into a release record.
+The July 10 backup used PostgreSQL 17 on the host because the local container runtime
+could not resolve Supabase's direct IPv6-only database hostname. That is historical
+evidence, not an authorized fallback. Do not recreate its generated-script or host
+`pg_dump` method.
 
 Verify the validated artifacts before a restore:
 
@@ -323,9 +260,12 @@ contained zero objects at capture time, so `storage-objects.tar.gpg` contains
 the encrypted complete bucket inventory and empty object directory. Future
 backups enumerate every linked bucket from the Storage API and must copy and
 encrypt any object bytes present; a SQL dump alone is not a Storage backup.
-Future data dumps exclude `storage.objects` and transient multipart rows because
-the Storage API recreates them when the archived bytes are uploaded. The restore
-fails closed if object rows are already present before that upload.
+In the July split-format backup only, the data dump excluded `storage.objects` and
+transient multipart rows because its historical restore recreated them while uploading
+the separately archived bytes. Do not carry that exclusion pattern into a current
+database snapshot. Current snapshots must be complete and unfiltered: they must not
+omit Storage metadata, migration history, private schemas, or other schema content.
+Storage object bytes still require the separate current capture described above.
 
 ## Off-site copy gate
 
@@ -337,16 +277,24 @@ After the provider destination is approved, upload only the five `.gpg` artifact
 
 The 2026-07-11 local prerequisite audit reconfirmed all five recorded SHA-256 hashes, mode `0600`, a present Keychain recovery item, successful decryption to `/dev/null` with that item, and rejection of a deliberately wrong key. The 2026-07-12 second-machine verification adds copy redundancy but no approved provider object or geographic evidence. No provider upload occurred and no plaintext was written. These checks are prerequisites only; they do not close the off-site gate.
 
-The recovery key remains in macOS Keychain. Copying the key to a physically controlled recovery flash drive is an outstanding human-only step. Never copy the key into the repository, cloud notes, a release comment, or the same location as the encrypted artifacts.
+Current backup encryption material is owner-only private operator state outside the
+repository. The 2026-07 evidence above used a Keychain item, but that historical location
+is not a current instruction. Never copy recovery material into the repository, cloud
+notes, a release comment, or the same location as the encrypted artifacts.
 
-## Current recovery readiness
+## Recovery readiness observed in July 2026
 
-- Provisional planning targets are RPO of no more than 24 hours and RTO of no more than 4 hours. They are not verified promises.
-- The Supabase organization was read back on the Free plan during Friendly Pilot Phase 0. Native daily backups and PITR are not proven entitlements at that plan, and the latest encrypted capture was approximately 72 hours old at the audit. The 24-hour RPO is therefore not currently met by evidence.
+- The provisional planning targets were RPO of no more than 24 hours and RTO of no more than 4 hours. They were not verified promises.
+- The Supabase organization was read back on the Free plan during Friendly Pilot Phase 0. Native daily backups and PITR were not proven entitlements at that plan, and the latest encrypted capture was approximately 72 hours old at that audit. This does not state current plan, backup age, or RPO status.
 - The restore drill recovered database/Auth structure and validated aggregate counts, but it did not complete an authenticated tenant-safe application read. The 4-hour RTO and full application recovery remain unproven.
 - The five-artifact second-machine copy improves recoverability but does not replace an approved off-site destination, a current capture cadence, or a full application restore drill.
 
-## Restore Drill
+## Historical restore drill, non-executable
+
+The commands below preserve the July 2026 hosted restore-drill record. Do not run or
+adapt them. Current database restores belong only to the guarded Home Server operator
+linked in the current backup section, and only into its disposable local container.
+No hosted restore is authorized by this document.
 
 A restore target is disposable and isolated. Never use current staging, production, or any project containing records that must be retained.
 

@@ -85,8 +85,10 @@ venv/bin/python scripts/stripe_reconciliation_report.py \
 Staging collection is read-only and diagnostic only:
 
 ```bash
-cd backend
-venv/bin/python scripts/stripe_reconciliation_report.py \
+cd /Users/openclaw/Projects/Koaryu-Repo
+/usr/bin/python3 /Users/openclaw/.config/koaryu/operator/with-hosted-env.py \
+  --environment staging -- \
+  backend/venv/bin/python backend/scripts/stripe_reconciliation_report.py \
   --collect-read-only \
   --probe staging \
   --candidate-sha <40-character-staging-sha>
@@ -95,19 +97,26 @@ venv/bin/python scripts/stripe_reconciliation_report.py \
 Production collection is also read-only, but it contacts production Stripe, production Supabase, and the pinned production readiness URL. It requires separate operator approval:
 
 ```bash
-cd backend
-venv/bin/python scripts/stripe_reconciliation_report.py \
+cd /Users/openclaw/Projects/Koaryu-Repo
+umask 077
+install -d -m 700 /Users/openclaw/.config/koaryu/evidence
+/usr/bin/python3 /Users/openclaw/.config/koaryu/operator/with-hosted-env.py \
+  --environment production -- \
+  backend/venv/bin/python backend/scripts/stripe_reconciliation_report.py \
   --collect-read-only \
   --probe production \
   --candidate-sha <40-character-production-sha> \
-  > reconciliation-v3.json
+  > /Users/openclaw/.config/koaryu/evidence/stripe-live-billing-reconciliation-v3.json
+chmod 600 /Users/openclaw/.config/koaryu/evidence/stripe-live-billing-reconciliation-v3.json
 ```
 
 An explicit start may be requested only when the full window remains within provider retention:
 
 ```bash
-cd backend
-venv/bin/python scripts/stripe_reconciliation_report.py \
+cd /Users/openclaw/Projects/Koaryu-Repo
+/usr/bin/python3 /Users/openclaw/.config/koaryu/operator/with-hosted-env.py \
+  --environment production -- \
+  backend/venv/bin/python backend/scripts/stripe_reconciliation_report.py \
   --collect-read-only \
   --probe production \
   --candidate-sha <40-character-production-sha> \
@@ -123,9 +132,11 @@ Do not execute this sequence as part of repository implementation or CI.
 First complete the exact-candidate staging rehearsal in Stripe test mode. Then obtain approval for a production read-only reconciliation. Preserve the exact report bytes and review every failure field. Only an eligible schema-v3 report may proceed to a checkpoint dry run:
 
 ```bash
-cd backend
-venv/bin/python scripts/live_billing_authorizations.py record-checkpoint \
-  --report reconciliation-v3.json \
+cd /Users/openclaw/Projects/Koaryu-Repo
+/usr/bin/python3 /Users/openclaw/.config/koaryu/operator/with-hosted-env.py \
+  --environment production -- \
+  backend/venv/bin/python backend/scripts/live_billing_authorizations.py record-checkpoint \
+  --report /Users/openclaw/.config/koaryu/evidence/stripe-live-billing-reconciliation-v3.json \
   --expires-at <ISO-8601-within-24-hours> \
   --reason "<bounded reconciliation reason>" \
   --actor <auth-user-id-or-email>

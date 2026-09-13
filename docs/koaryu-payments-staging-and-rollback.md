@@ -62,22 +62,21 @@ node scripts/studio-comp-migration-rollout.mjs \
   --candidate-sha <PR_HEAD_SHA>
 ```
 
-Treat this fresh inspect output as the only authority for the starting state,
+Generate packet mode for the exact candidate before target inspection. Treat the packet
+and this fresh inspect output as the only authority for the candidate declaration, starting state,
 `remaining_migrations`, `remaining_manifest_sha256`, and `inspection_token`. Do not copy
 a count or set from this runbook into the approval record. The rollout selection logic
-maps `schedule-v25` to seven remaining files and `v25` to six. Later accepted partial
-states select smaller suffixes. The last coordinator readback on 2026-08-28 found exact
-`v25`, migration 120/head `20260826030234`, with six files remaining, but the next fresh
-inspect supersedes that observation. Then use the
-guarded staging apply with the generated token and a PR #134 issue comment whose exact
-body matches the inspect-emitted approval record, including candidate SHA, staging ref,
+selects the accepted predecessor's exact remaining suffix. The 2026-08-28 V25 readback
+is historical evidence only; the next fresh inspect supersedes it. Then use the
+guarded staging apply with the generated token and an exact PR #138 issue-comment URL,
+as required by the current parser. Its body must match the inspect-emitted approval
+record, including candidate SHA, staging ref,
 inspected state, remaining count and set, and remaining manifest. A stale six-file or
-seven-file claim is not approval for a different observed state. Do not use direct SQL,
-`db reset`, or a production link. After apply, require
-the exact candidate readiness version, migration count, migration head, and zero security
-failures recorded by the guarded packet. Do not reuse the older V30/125 expectation after
-the additive V31 correction. The required post-state is V31, 126 migrations, head
-`20260826185651`, and zero security failures.
+seven-file claim or old PR #134 comment is not approval for a different observed state.
+Do not use direct SQL,
+`db reset`, or a production link. After apply, require every exact readiness and
+security fact recorded by the candidate's generated packet and declaration. Do not
+reuse a version, count, head, manifest, or approval from this dated runbook.
 
 ## Exact-SHA application deploy
 
@@ -251,17 +250,13 @@ Rollback closes new writes and preserves evidence:
 The production packet is prepared but must not be executed in this task:
 
 1. Merge only after a separate approval and all exact-head gates.
-2. Take and verify a private production PostgreSQL backup through the documented guarded
-   path.
-3. Inspect production migration and provider state read-only.
-4. Apply the exact migrations through the guarded production rollout tool after its
-   separate interactive confirmation.
-5. Create the separately approved production transition cron with its own production
-   service-secret reference after confirming the production web service owns the same
-   secret, deploy the exact merged SHA, and prove one manual zero-work run. Only then set
-   the production scheduler flag true.
-6. Deploy the exact merged backend SHA, verify readiness, then deploy a production-target
-   Vercel build from the same SHA.
+2. Complete the guarded database backup gate, inspect production, obtain the state-bound
+   approval, and have the human operator apply and verify the exact generated packet.
+3. Deploy the exact merged backend SHA and require exact readiness against that database.
+4. Keep the production worker and recurring schedule suspended. With separate approval,
+   deploy the worker from the same SHA and prove one manual zero-work run.
+5. Enable the production schedule only after that manual proof and its human approval.
+6. Deploy a production-target Vercel build from the same SHA last.
 7. Run production reconciliation read-only and record a fresh exact-SHA schema-v3
    checkpoint only after separate approval.
 8. Grant one named studio only the exact canary operations, payer, amount, and generation

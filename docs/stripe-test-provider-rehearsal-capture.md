@@ -2,8 +2,14 @@
 
 Use this worksheet for one approved staging rehearsal of one exact candidate. It is an offline evidence contract, not a provider client. Never paste secrets, hosted URLs, payment details, KYC data, request or response payloads, or live financial data into the evidence file.
 
-Apply the V36 candidate, which retains the V35 collector boundary, before
-capture. Each local phase read must use exactly one
+Keep this schema-v4 provider-rehearsal evidence in its own mode-`0600` private file
+under `/Users/openclaw/.config/koaryu/evidence/`. It must not overwrite the schema-v3
+reconciliation report at
+`/Users/openclaw/.config/koaryu/evidence/stripe-live-billing-reconciliation-v3.json`.
+
+Generate the exact candidate packet and verify the deployed readiness SHA before
+capture. The V36 candidate and its retained V35 collector boundary are historical
+context, not an active candidate instruction. Each local phase read must use exactly one
 `read_stripe_rehearsal_local_evidence_v1` call; direct
 `service_role` reads of protected operation, step, resource, setup, consent,
 and transition tables remain denied. The RPC binds the complete manifest,
@@ -12,7 +18,7 @@ returns only the sanitized projection. A missing or refused RPC is a hard stop;
 there is no direct-table fallback.
 
 If payer Setup Checkout returns an ambiguous response, stop for the reviewed
-no-object recovery decision. V36 permits at most one proof-backed second attempt
+no-object recovery decision. The V36 historical boundary introduced at most one proof-backed second attempt
 with the same durable operation and Stripe idempotency identity. An expired
 request closes without a provider call. Never start a replacement operation or
 invent a new key to work around recovery state.
