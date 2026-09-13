@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "76ea4187df4d536122d3ce6c1bbb122e6bb2fc7a",
+  "last_reconciled_main": "c40215d906e2639b79762d73e6e8e5fa79b929e5",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -5751,12 +5751,12 @@
       "id": "DOC1-02",
       "title": "The recovery runbook still recommends an incomplete, inconsistent backup method",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The active new-backup recipe still makes separate filtered CLI dumps; it contradicts the complete snapshot and migration-history requirements. Historical July artifacts are not being invalidated.",
+      "disposition": "fixed",
+      "reason": "Active recovery guidance now uses the complete guarded database backup owner, retains separate Storage object protection, and cross-links the production pre-apply backup gate. Historical split dumps are explicitly retired.",
       "audit_importance": "high",
       "evidence_role": "observation",
-      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "3c945c9992d706b8bd83d0f04aeb6d77bcd93dd2",
+      "verification": "Coordinator inspected the doc diff, command parsers, links and preserved evidence. Repository-local workflow verification passed 128 cases; no operator example was executed. See operator-docs-verification.md.",
       "source_paths": [
         "docs/staging-recovery-runbook.md",
         "docs/production-postgres-image-patch.md",
@@ -5776,7 +5776,7 @@
           "observation": "For a new backup introduces linked role/schema/data dumps; data schema filter excludes supabase_migrations."
         }
       ],
-      "next_change": "Retire the competing executable recipe from active instructions; point to one current guarded backup owner and retain Storage backup and clearly dated historical evidence.",
+      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
       "validation_plan": "Review all active backup links/commands against operator-tooling and private runbook; do not execute backups.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5788,12 +5788,12 @@
       "id": "DOC1-03",
       "title": "Release guides disagree on the schema and approval needed to deploy",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "Several present-tense guides still require V24/V31 while current backend requires V41. Recent service/cutover updates fixed only two copies.",
+      "disposition": "fixed",
+      "reason": "Current release guidance derives readiness and approvals from the exact candidate packet instead of copied version counts; dated evidence remains historical.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "3c945c9992d706b8bd83d0f04aeb6d77bcd93dd2",
+      "verification": "Coordinator inspected the doc diff, command parsers, links and preserved evidence. Repository-local workflow verification passed 128 cases; no operator example was executed. See operator-docs-verification.md.",
       "source_paths": [
         "docs/release-candidate-controls.md",
         "docs/render-backend-deployment.md",
@@ -5817,7 +5817,7 @@
           "observation": "Active readiness paragraph requires126/V31; release-candidate-controls lines45-53 require117/V24."
         }
       ],
-      "next_change": "After the generator establishes candidate authority, replace active copied version/approval claims with packet-driven instructions; retain dated release ledgers as history.",
+      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
       "validation_plan": "Cross-check generated candidate packet and all active readiness references; preserve exact policy facts without adding prose-grep tests.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5829,12 +5829,12 @@
       "id": "DOC1-04",
       "title": "The embedded image-patch shell program is not executable as printed",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The long image-patch document still prints a role probe that returns true strings but expects t, plus shell quoting that removes SQL pipe quotes. It is not a reusable executable owner.",
+      "disposition": "fixed",
+      "reason": "The completed image-patch program is explicitly historical and non-executable; current operations point to the supported operator runbook.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "3c945c9992d706b8bd83d0f04aeb6d77bcd93dd2",
+      "verification": "Coordinator inspected the doc diff, command parsers, links and preserved evidence. Repository-local workflow verification passed 128 cases; no operator example was executed. See operator-docs-verification.md.",
       "source_paths": [
         "docs/production-postgres-image-patch.md"
       ],
@@ -5851,7 +5851,7 @@
           "observation": "rolcanlogin::text and related expressions are compared with t|t|t; line1194 nests SQL single quotes inside shell single quotes."
         }
       ],
-      "next_change": "Label the completed image-patch packet historical/non-executable and redirect current backup/restore instructions to the supported operator owner rather than repairing another script copy.",
+      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
       "validation_plan": "Verify active links no longer present this historical shell block as the current recipe; retain recorded operation evidence.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5920,12 +5920,12 @@
       "id": "DOC1-06",
       "title": "The Render guide uses the management-token variable for studio API authentication",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The current Render examples use the management-token variable as a studio user bearer token. This is a real documentation mismatch under the supported operator loader.",
+      "disposition": "fixed",
+      "reason": "Studio API examples now use a signed-in studio-user token and supported authentication guidance, with management credentials and unavailable Keychain assumptions removed.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "3c945c9992d706b8bd83d0f04aeb6d77bcd93dd2",
+      "verification": "Coordinator inspected the doc diff, command parsers, links and preserved evidence. Repository-local workflow verification passed 128 cases; no operator example was executed. See operator-docs-verification.md.",
       "source_paths": [
         "docs/render-backend-deployment.md",
         "docs/services.md"
@@ -5943,7 +5943,7 @@
           "observation": "Billing API curl examples use SUPABASE_ACCESS_TOKEN; the operator guide assigns that name to the Supabase Management API token."
         }
       ],
-      "next_change": "Use a separately named signed-in studio-user access-token placeholder, explain obtaining it through private authentication guidance, and remove unavailable Keychain-location assumptions.",
+      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
       "validation_plan": "Compare variable roles with AUTHENTICATION guidance and endpoint dependencies; no real token reads or API calls.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5955,12 +5955,12 @@
       "id": "DOC1-07",
       "title": "The current rollout example omits a required operation grant and describes the wrong evidence schema",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The active grant example still omits required operation selection and uses an expired date; the same guide advertises schema2 instead of validator schema4.",
+      "disposition": "fixed",
+      "reason": "Authorization examples match repeated singular operation flags, bounded future expiry and provider evidence schema 4; checkpoint schema 3 and the generated template remain unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "3c945c9992d706b8bd83d0f04aeb6d77bcd93dd2",
+      "verification": "Coordinator inspected the doc diff, command parsers, links and preserved evidence. Repository-local workflow verification passed 128 cases; no operator example was executed. See operator-docs-verification.md.",
       "source_paths": [
         "docs/stripe-live-billing-rollout.md",
         "backend/scripts/live_billing_authorizations.py",
@@ -5980,7 +5980,7 @@
           "observation": "Grant example has --expires-at2026-08-01 and no --operation; line278 says schema version2."
         }
       ],
-      "next_change": "Correct examples from current parser and schema: explicit operation placeholders, future expiry placeholder, schema4 link; keep historical dates only in marked records.",
+      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
       "validation_plan": "Inspect parser-required arguments and validator SCHEMA_VERSION; no authorization writes or generated boilerplate tests.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6141,12 +6141,12 @@
       "id": "DOC1-11",
       "title": "A reconciliation example writes private operator evidence into the repository",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The reconciliation recipe still redirects private operator evidence into backend/reconciliation-v3.json.",
+      "disposition": "fixed",
+      "reason": "Capture and checkpoint examples share one absolute private reconciliation report path with restricted permissions and an explicit hosted environment loader.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "3c945c9992d706b8bd83d0f04aeb6d77bcd93dd2",
+      "verification": "Coordinator inspected the doc diff, command parsers, links and preserved evidence. Repository-local workflow verification passed 128 cases; no operator example was executed. See operator-docs-verification.md.",
       "source_paths": [
         "docs/stripe-live-billing-reconciliation-v3.md",
         "docs/operator-tooling.md",
@@ -6165,7 +6165,7 @@
           "observation": "Relative report output follows a backend-directory command and is reused relatively at128."
         }
       ],
-      "next_change": "Use one absolute private mode-restricted report path for capture and checkpoint arguments; leave actual report contents outside repository.",
+      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
       "validation_plan": "Check example path continuity and privacy guidance without generating live evidence.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6177,12 +6177,12 @@
       "id": "DOC1-12",
       "title": "The production packet schedules worker proof before deploying its backend",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The active production packet orders transition-worker proof before the exact backend deployment. The safer order is already stated in the services inventory.",
+      "disposition": "fixed",
+      "reason": "Future rollout instructions require database readiness before backend, suspended worker proof before schedule enablement, and frontend last.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "3c945c9992d706b8bd83d0f04aeb6d77bcd93dd2",
+      "verification": "Coordinator inspected the doc diff, command parsers, links and preserved evidence. Repository-local workflow verification passed 128 cases; no operator example was executed. See operator-docs-verification.md.",
       "source_paths": [
         "docs/koaryu-payments-staging-and-rollback.md",
         "docs/services.md"
@@ -6200,7 +6200,7 @@
           "observation": "Production sequence deploys/runs cron before the next backend deployment step."
         }
       ],
-      "next_change": "Order the described future rollout as DB, exact backend readiness, suspended worker/manual proof, enable schedule, then frontend; retain every human approval and pending status.",
+      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
       "validation_plan": "Compare the entire packet sequence with services/cutover and current readiness dependencies; do not run it.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -7485,7 +7485,9 @@
         "frontend/src/app/(auth)/login/page.tsx",
         "frontend/src/app/(dashboard)/account/settings/page.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        193
+      ],
       "track": "Sol",
       "root_cause": "circular_password_recovery_guidance",
       "collapse_with": [],
@@ -13188,15 +13190,15 @@
     }
   },
   "current_counts": {
-    "pending": 178,
-    "fixed": 85,
+    "pending": 171,
+    "fixed": 92,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 149,
+    "Sol": 142,
     "Astra": 29
   },
   "execution_policy": {
@@ -13208,12 +13210,12 @@
   },
   "current_disposition_tracks": {
     "pending": {
-      "Sol": 149,
+      "Sol": 142,
       "Astra": 29
     },
     "fixed": {
       "Astra": 22,
-      "Sol": 63
+      "Sol": 70
     },
     "rejected_after_verification": {
       "Sol": 1
