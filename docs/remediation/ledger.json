@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "5f34e216829c37a576d2eb1f393e1e6e660cd5fe",
+  "last_reconciled_main": "234e46ba7bfc2787c9013de4bbb188a8100851e6",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -6690,7 +6690,9 @@
         "frontend/e2e/preview-smoke.spec.ts",
         "frontend/e2e/performance-navigation.spec.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        196
+      ],
       "track": "Sol",
       "root_cause": "rendered_workflow_assurance",
       "collapse_with": [
@@ -7290,7 +7292,9 @@
         "frontend/tests/store-initialization-mounted.test.mjs",
         "frontend/tests/helpers/store-browser-harness.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        196
+      ],
       "track": "Sol",
       "root_cause": "fragmented_browser_fixture_infrastructure",
       "collapse_with": [
@@ -10212,12 +10216,12 @@
       "id": "FSH1-08",
       "title": "Dashboard retains analytics that no current widget consumes",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "New-student and churn statistics still flow through dashboard computation and composition without a current widget consumer. This is bounded maintenance cleanup.",
+      "disposition": "fixed",
+      "reason": "Removed unconsumed new-student/churn local calculations, projections, types and exclusive dependencies. Current widgets and backend response contracts remain unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "5d0347e7ff71ea5a60af724d0e24c020d70522e8",
+      "verification": "Coordinator reviewed all source/test deltas and callers, checked 40 surviving definition bodies and passed 38 model cases. Implementer passed 79 focused cases, all 902 frontend cases and the synthetic build on final contents. See unused-state-verification.md.",
       "source_paths": [
         "frontend/src/lib/dashboard-page-controller.ts",
         "frontend/src/lib/dashboard-page-composition.ts",
@@ -10244,7 +10248,7 @@
           "observation": "The active composition consumer reads neither output; source search found no other consumer."
         }
       ],
-      "next_change": "Remove these unused controller calculations, composition outputs/types and exclusive dependencies. Leave other fallback optimization for separately demonstrated needs.",
+      "next_change": "None for this finding; other dashboard loading and lead/belt workflow risks remain separately pending.",
       "validation_plan": "Focused composition/widget checks for preview, complete live data and partial-loading states.",
       "scope_constraints": "Preserve consumed analytics, preview behavior, billing visibility and backend response contracts.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -10889,11 +10893,11 @@
       "id": "FSH2-10",
       "title": "Obsolete lead drag logic and belt setters remain wired into the store",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "Drag handlers and belt setters have no application callers and remain cleanup candidates. The broader useStore aggregator has real mounted-test consumers, so blanket removal is not justified.",
+      "disposition": "fixed",
+      "reason": "Removed unused lead drag state/handlers and setLadderName/setSubRankTerm public commands through provider/context wiring, plus their exclusive helpers. Active ladder selection, setBeltRanks, useStore, internal setters and keyboard lead movement remain.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "5d0347e7ff71ea5a60af724d0e24c020d70522e8",
       "source_paths": [
         "frontend/src/lib/leads-page-controller.ts",
         "frontend/src/lib/store-belt-actions.ts",
@@ -10920,7 +10924,7 @@
           "observation": "Mounted fixtures actively consume useStore."
         }
       ],
-      "next_change": "Remove unused lead drag state/handlers and public belt setters through their context/provider wiring. Retain useStore and active internal state setters.",
+      "next_change": "None for this finding; other dashboard loading and lead/belt workflow risks remain separately pending.",
       "validation_plan": "Repeat application and test caller searches, then check context wiring and existing lead keyboard/belt editor behavior.",
       "scope_constraints": [
         "Mounted-test useStore consumers",
@@ -10931,7 +10935,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/08-display-and-dead-interfaces.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed all source/test deltas and callers, checked 40 surviving definition bodies and passed 38 model cases. Implementer passed 79 focused cases, all 902 frontend cases and the synthetic build on final contents. See unused-state-verification.md."
     },
     {
       "id": "FSH2-11",
@@ -13234,8 +13239,8 @@
     }
   },
   "current_counts": {
-    "fixed": 105,
-    "pending": 157,
+    "fixed": 107,
+    "pending": 155,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
@@ -13243,7 +13248,7 @@
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 128,
+    "Sol": 126,
     "Astra": 29
   },
   "execution_policy": {
@@ -13255,11 +13260,11 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 83,
+      "Sol": 85,
       "Astra": 22
     },
     "pending": {
-      "Sol": 128,
+      "Sol": 126,
       "Astra": 29
     },
     "rejected_after_verification": {
