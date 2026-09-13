@@ -89,25 +89,6 @@ export function buildBeltLadderSyncPayload(
   };
 }
 
-export function updatePreviewLadderSubRankTerm(
-  currentLadders: BeltLadder[],
-  preferredLadderId: string | null | undefined,
-  nextTerm: string,
-): { selectedLadder: BeltLadder | null; ladders: BeltLadder[] | null } {
-  const selectedLadder = selectBeltLadder(currentLadders, preferredLadderId);
-  if (!selectedLadder) {
-    return { selectedLadder: null, ladders: null };
-  }
-
-  return {
-    selectedLadder,
-    ladders: upsertBeltLadder(currentLadders, {
-      ...selectedLadder,
-      sub_rank_term: nextTerm,
-    }),
-  };
-}
-
 export function buildPreviewPromotion(
   students: Student[],
   ranks: BeltRank[],

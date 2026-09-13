@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, CommandOutcomeUnknown } from "@/lib/api";
 import { hasStaffPermission } from "@/lib/staff-permissions";
@@ -52,8 +52,6 @@ export function useLeadsPageController({
   const [showAddLead, setShowAddLead] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [showLost, setShowLost] = useState(false);
-  const [draggedLead, setDraggedLead] = useState<string | null>(null);
-  const [dropTargetStage, setDropTargetStage] = useState<LeadStage | null>(null);
   const [addLeadOutcomeUnknown, setAddLeadOutcomeUnknown] = useState(false);
   const [isAddingLead, setIsAddingLead] = useState(false);
   const [addLeadError, setAddLeadError] = useState<string | null>(null);
@@ -74,8 +72,8 @@ export function useLeadsPageController({
     [baseLeads, optimisticLeads, programs, today],
   );
   const model = useMemo(
-    () => selectLeadsPageModel(dataset, selectedLeadId, draggedLead),
-    [dataset, selectedLeadId, draggedLead],
+    () => selectLeadsPageModel(dataset, selectedLeadId),
+    [dataset, selectedLeadId],
   );
 
   useEffect(() => {
@@ -116,11 +114,6 @@ export function useLeadsPageController({
       setSelectedLeadActivityError(null);
       setSelectedLeadActivityStatus("idle");
     }
-  }
-
-  function clearDragState() {
-    setDraggedLead(null);
-    setDropTargetStage(null);
   }
 
   function openAddLeadModal() {
@@ -176,38 +169,6 @@ export function useLeadsPageController({
     };
   }
 
-  function handleCardDragStart(event: DragEvent<HTMLDivElement>, leadId: string) {
-    if (!canManageLeads) return;
-    setDraggedLead(leadId);
-    setDropTargetStage(null);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", leadId);
-  }
-
-  function handleStageDragOver(event: DragEvent<HTMLDivElement>, stage: LeadStage) {
-    if (!canManageLeads || !model.draggedLeadRecord || (stage === "enrolled" && !canConvertLeads)) {
-      return;
-    }
-
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-
-    if (dropTargetStage !== stage) {
-      setDropTargetStage(stage);
-    }
-  }
-
-  function handleStageDragLeave(event: DragEvent<HTMLDivElement>, stage: LeadStage) {
-    const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
-      return;
-    }
-
-    if (dropTargetStage === stage) {
-      setDropTargetStage(null);
-    }
-  }
-
   async function handleConvertLead(lead: Lead) {
     if (!canManageLeads || !canConvertLeads) return;
 
@@ -233,7 +194,6 @@ export function useLeadsPageController({
     } finally {
       rollbackOptimisticLead();
       setPendingLeadId(null);
-      clearDragState();
     }
   }
 
@@ -282,7 +242,6 @@ export function useLeadsPageController({
     } finally {
       rollbackOptimisticLead();
       setPendingLeadId(null);
-      clearDragState();
     }
   }
 
@@ -299,39 +258,6 @@ export function useLeadsPageController({
       stage: nextStage,
       lost_reason: nextStage === "closed_lost" ? (lead.lost_reason ?? "other") : lead.lost_reason,
     });
-  }
-
-  async function handleDrop(event: DragEvent<HTMLDivElement>, stage: LeadStage) {
-    event.preventDefault();
-
-    if (!canManageLeads) {
-      clearDragState();
-      return;
-    }
-
-    if (stage === "enrolled" && !canConvertLeads) {
-      clearDragState();
-      return;
-    }
-
-    const droppedLeadId = event.dataTransfer.getData("text/plain") || draggedLead;
-    if (!droppedLeadId) {
-      clearDragState();
-      return;
-    }
-
-    const lead = model.leads.find((candidate) => candidate.id === droppedLeadId);
-    if (!lead || lead.stage === stage) {
-      clearDragState();
-      return;
-    }
-
-    if (stage === "enrolled") {
-      await handleConvertLead(lead);
-      return;
-    }
-
-    await handleLeadUpdate(lead, { stage });
   }
 
   async function handleKeyboardMoveLead(lead: Lead, direction: -1 | 1) {
@@ -453,26 +379,19 @@ export function useLeadsPageController({
     addLeadError,
     canConvertLeads,
     canManageLeads,
-    clearDragState,
     clearSelectedLead,
     closeAddLeadModal,
     dismissActionMessage: () => setActionMessage(null),
     dismissAddLeadError: () => setAddLeadError(null),
     dismissLeadActionError: () => setLeadActionError(null),
-    dropTargetStage,
-    draggedLead,
     getFollowUpInputValue,
     handleAddLead,
     handleAssignedStaff,
-    handleCardDragStart,
     handleConvertLead,
-    handleDrop,
     handleMarkContacted,
     handleMarkLost,
     handleKeyboardMoveLead,
     handleRescheduleLead,
-    handleStageDragLeave,
-    handleStageDragOver,
     handleStageSelection,
     isAddingLead,
     addLeadOutcomeUnknown,

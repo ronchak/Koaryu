@@ -3,10 +3,8 @@ import { describe, it } from "node:test";
 
 import {
   buildDashboardBeltStats,
-  buildDashboardChurnStats,
   buildDashboardInactivityStats,
   buildDashboardLeadStats,
-  buildDashboardNewStudentStats,
   buildDashboardOperationalStats,
   buildDashboardRecentStudentRows,
   buildDashboardStudentStats,
@@ -73,7 +71,7 @@ describe("dashboard page model", () => {
     assert.equal(isDashboardBeltSetupComplete(false, 0, 0), false);
   });
 
-  it("counts roster, lead, belt, inactivity, churn, and readiness stats outside the route", () => {
+  it("counts roster, lead, belt, inactivity, and readiness stats outside the route", () => {
     const students = [
       student("active", { membership_start_date: "2026-05-20" }),
       student("trial-hold", {
@@ -93,28 +91,6 @@ describe("dashboard page model", () => {
       activeStudents: 3,
       trialingStudents: 1,
       onHoldStudents: 2,
-    });
-    assert.deepEqual(
-      buildDashboardNewStudentStats(
-        students,
-        "2026-05-24",
-        "2026-05-10",
-        "2026-04-24",
-        "2026-02-23",
-        "2026-01-01",
-      ),
-      {
-        new14: 1,
-        new30: 2,
-        new90: 3,
-        newYearToDate: 3,
-      },
-    );
-    assert.deepEqual(buildDashboardChurnStats(students), {
-      inactiveStudents: 1,
-      canceledStudents: 1,
-      churnMarkedStudents: 2,
-      churnRate: 2 / 6,
     });
     assert.deepEqual(
       buildDashboardLeadStats(
