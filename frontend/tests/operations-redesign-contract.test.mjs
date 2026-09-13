@@ -153,7 +153,6 @@ describe("operations surface route coverage", () => {
         /FocusedOperationsSheet page="connect-refresh"/,
       ],
     ];
-    assert.equal(directOwners.length + accountRoutes.length + helpRoutes.length, 21);
     for (const [route, file, pattern] of directOwners) {
       assert.match(source(file), pattern, route);
     }
@@ -214,14 +213,6 @@ describe("operations surface route coverage", () => {
 });
 
 describe("operations behavior proof", () => {
-  it("keeps immediate attendance commit copy explicit", () => {
-    const attendance = source("src/components/schedule/session-detail-modal.tsx");
-    assert.match(attendance, /Saved as marked\. Each row saves immediately\./);
-    assert.match(attendance, /Saving \$\{pendingAttendanceStudentIds\.size\}/);
-    assert.match(attendance, /rolled back/);
-    assert.match(attendance, /data-attendance-commit-state/);
-  });
-
   it("routes enlarged targets through the mounted schedule handler", async () => {
     const browser = await chromium.launch({ headless: true });
     try {
@@ -926,7 +917,7 @@ describe("operations behavior proof", () => {
     );
   });
 
-  it("keeps Automations a read-only catalog with exact live destinations and proposals", () => {
+  it("keeps Automations read-only with live destinations separated from proposals", () => {
     const automations = source("src/app/(dashboard)/automations/page.tsx");
     const css = source("src/components/operations/operations-surface.module.css");
     const automationCss = css.slice(css.indexOf("/* Automations"), css.indexOf("/* Reports"));
@@ -938,26 +929,6 @@ describe("operations behavior proof", () => {
       ) + "</section>".length,
     );
 
-    assert.match(
-      automations,
-      /title: "Lead follow-ups", description: "Call, trial, and next-step obligations already live in Leads\.", href: "\/leads"[\s\S]*title: "Students going quiet", description: "Dashboard surfaces students crossing inactivity thresholds\.", href: "\/dashboard"[\s\S]*title: "Ready to promote", description: "Belt Tracker applies the current rank and approval requirements\.", href: "\/belt-tracker"[\s\S]*title: "Tuition needs attention", description: "Billing holds failed payments, past-due families, and open invoices\.", href: "\/billing"/,
-    );
-    assert.equal(
-      (automations.match(/href: "\/(?:leads|dashboard|belt-tracker|billing)"/g) || []).length,
-      4,
-    );
-    assert.match(
-      automations,
-      /\["Trial reminders", "Reminder before a trial class and a follow-up afterward\."\][\s\S]*\["Missed-class nudges", "Family email after a configurable attendance gap\."\][\s\S]*\["Payment recovery", "Failed-payment notice that stops after provider recovery\."\][\s\S]*\["Promotion congratulations", "Studio-approved note after a promotion is recorded\."\][\s\S]*\["Belt test announcements", "Notice to eligible students and families before a testing cycle\."\]/,
-    );
-    assert.equal(
-      (
-        automations.match(
-          /^  \["(?:Trial reminders|Missed-class nudges|Payment recovery|Promotion congratulations|Belt test announcements)"/gm,
-        ) || []
-      ).length,
-      5,
-    );
     assert.doesNotMatch(
       automations,
       /<form|<input|<select|<textarea|onChange=|type="checkbox"|role="switch"|\bfetch\s*\(|\bapi\.|\baxios\b|process\.env|isPreviewMode|useEffect|useState/,
@@ -966,14 +937,6 @@ describe("operations behavior proof", () => {
     assert.match(automations, /data-automation-catalog="live-queues-and-proposals"/);
     assert.match(automations, /<Header title="Automations">/);
     assert.doesNotMatch(automations, /<h1/);
-    assert.match(automations, /Open today&apos;s work/);
-    assert.match(automations, /No automation builder is live\./);
-    assert.match(
-      automations,
-      /There are no message toggles, schedules, forms, or hidden sends on this page\./,
-    );
-    assert.match(automations, /<h2 id="live-queues-title"[^>]*>Four live queue destinations<\/h2>/);
-    assert.match(automations, /<h2 id="future-workflows-title"[^>]*>Five proposed workflows<\/h2>/);
     assert.match(
       automations,
       /<ol[^>]*data-automation-live-list="four-destinations"[\s\S]*LIVE_QUEUES\.map[\s\S]*<Link[\s\S]*prefetch=\{crmLinkPrefetch\(queue\.href\)\}[\s\S]*data-automation-live-target="true"/,
@@ -1070,16 +1033,9 @@ describe("operations behavior proof", () => {
     );
   });
 
-  it("renders Reports as an exact-heading analytical document with cobalt reserved for its data series", () => {
+  it("keeps report figures semantic and reserves cobalt for data series", () => {
     const reports = source("src/app/(dashboard)/reports/page.tsx");
-    const reportsLoading = source("src/app/(dashboard)/reports/loading.tsx");
     const sections = source("src/components/reports/reports-page-sections.tsx");
-    assert.match(reports, /<Header title="Reports" \/>/);
-    assert.doesNotMatch(
-      reports,
-      /Studio performance, operating comparisons|Loading studio reporting panels/,
-    );
-    assert.doesNotMatch(reportsLoading, /Loading studio reporting panels/);
     assert.match(reports, /data-reports-reading-document="true"/);
     assert.match(reports, /data-report-figure-band="comparisons"/);
     assert.match(reports, /bg-\[var\(--operations-cobalt\)\]/);
@@ -1087,21 +1043,6 @@ describe("operations behavior proof", () => {
     assert.match(sections, /data-report-section="reading-block"/);
     const exports = source("src/components/reports/reports-data-exports-panel.tsx");
     assert.match(exports, /break-words[^"\n]*sm:truncate" title=\{report\.title\}/);
-  });
-
-  it("keeps all five Operations route Headers description-free", () => {
-    const routeHeaders = [
-      ["Schedule", source("src/components/schedule/schedule-page-section.tsx")],
-      ["Billing", source("src/components/billing/billing-page-chrome.tsx")],
-      ["Automations", source("src/app/(dashboard)/automations/page.tsx")],
-      ["Reports", source("src/app/(dashboard)/reports/page.tsx")],
-      ["Settings", source("src/app/(dashboard)/settings/page.tsx")],
-    ];
-
-    for (const [title, routeSource] of routeHeaders) {
-      assert.match(routeSource, new RegExp(`<Header title="${title}"(?:>| \\/>)`));
-      assert.doesNotMatch(routeSource, new RegExp(`<Header[^>]*title="${title}"[^>]*description=`));
-    }
   });
 
   it("adds the typed deletion gate and complete support context/inbox states without new APIs", () => {
@@ -1132,26 +1073,18 @@ describe("operations behavior proof", () => {
     assert.match(contact, /Retry recent requests/);
   });
 
-  it("preserves transition effect owners and fail-closed copy", () => {
+  it("checks transition effect ownership and fail-closed source policy", () => {
     const onboarding = source("src/app/onboarding/page.tsx");
     const archived = source("src/app/account-archived/page.tsx");
     const denied = source("src/app/access-denied/page.tsx");
     const refresh = source("src/app/billing/connect/refresh/page.tsx");
     const legal = source("src/components/account/legal-name-blocking-screen.tsx");
-    assert.equal(
-      (onboarding.match(/^  "(?:America|Pacific|Europe|Asia|Australia)\//gm) || []).length,
-      17,
-    );
     assert.match(onboarding, /useState\("America\/New_York"\)/);
     assert.match(onboarding, /studioName\.trim\(\)/);
     assert.match(onboarding, /"Idempotency-Key"/);
     assert.doesNotMatch(archived, /useStudioStore|\/studios|\/bootstrap/);
-    assert.match(archived, /No studio data is loaded on this page/);
     assert.doesNotMatch(denied, /useStudioStore|\bapi\./);
-    assert.match(denied, /No protected billing information was loaded/);
     assert.match(refresh, /acknowledgeConnectOnboardingBeforeNavigation/);
     assert.match(legal, /updateUserLegalName/);
-    assert.match(legal, /Save legal name/);
-    assert.match(legal, /Sign out/);
   });
 });

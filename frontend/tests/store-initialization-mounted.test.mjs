@@ -82,7 +82,6 @@ for (const mode of ["production", "development"]) {
                 leads: [],
                 belt_ladders: [],
                 primary_belt_ladder: null,
-                summary: { studio_id: studioId },
               };
             }
             if (path.startsWith("/schedule/window")) {
@@ -719,7 +718,6 @@ test("authoritative old-schema identity opens Dashboard without requiring legal-
                 leads: [],
                 belt_ladders: [],
                 primary_belt_ladder: null,
-                summary: { studio_id: "legacy-fixture-studio" },
               };
             }
             if (path.startsWith("/schedule/window"))
@@ -903,16 +901,55 @@ for (const outcome of ["success", "failure"]) {
                 await new Promise((resolve) => fixture.waiters.push(resolve));
                 if (outcome === "failure") throw new Error("Expired token");
                 return path === "/dashboard/summary?fresh=true"
-                  ? { auth: { studio_id: "route-studio" }, marker: "obsolete" }
+                  ? fixture.summary("2026-09-12T11:00:00Z")
                   : [{ id: "obsolete-row", name: "Obsolete" }];
               }
               return path === "/dashboard/summary?fresh=true"
-                ? { auth: { studio_id: "route-studio" }, marker: "current" }
+                ? fixture.summary("2026-09-12T12:00:00Z")
                 : [];
             }
             throw new Error(`Unexpected request ${path}`);
           },
         };
+        fixture.summary = (generatedAt) => ({
+          auth: {
+            membership_status: "active",
+            studio_id: "route-studio",
+            role: "admin",
+            staff_profiles_available: true,
+            user,
+          },
+          generated_at: generatedAt,
+          students: {
+            total_students: 0,
+            active_students: 0,
+            trialing_students: 0,
+            on_hold_students: 0,
+          },
+          leads: { active_leads: 0, enrolled_leads: 0, due_today_leads: 0 },
+          schedule: { today_sessions: 0 },
+          belts: { belt_count: 0, tip_count: 0 },
+          inactivity: { watch_14: 0, watch_30: 0, watch_90: 0 },
+          new_students: { new_14: 0, new_30: 0, new_90: 0, new_year_to_date: 0 },
+          operational: {
+            attendance_with_capacity: 0,
+            total_capacity: 0,
+            sessions_tracked: 0,
+            sessions_with_capacity: 0,
+            average_attendance: 0,
+          },
+          churn: { inactive_students: 0, canceled_students: 0, churn_marked_students: 0 },
+          test_readiness: { available: false },
+          billing: { can_view_billing: true },
+          setup: {
+            has_programs: false,
+            has_students: false,
+            has_belt_system: false,
+            has_weekly_classes: false,
+          },
+          recent_students: [],
+          actions: [],
+        });
       }, outcome);
       await page.addScriptTag({
         content: bundle("production", { leadsPage: true, programsSection: true }),
@@ -971,7 +1008,10 @@ for (const outcome of ["success", "failure"]) {
         ),
         ["route-old-token", "route-new-token"],
       );
-      assert.equal(await page.evaluate(() => fixture.store.dashboardSummary?.marker), "current");
+      assert.equal(
+        await page.evaluate(() => fixture.store.dashboardSummary?.generated_at),
+        "2026-09-12T12:00:00Z",
+      );
       assert.equal(
         await page.evaluate(
           () => fixture.marks.filter((name) => name === "dashboard.summary_started").length,
@@ -1054,7 +1094,6 @@ for (const event of ["INITIAL_SESSION", "SIGNED_OUT"]) {
                 leads: [],
                 belt_ladders: [],
                 primary_belt_ladder: null,
-                summary: { studio_id: "old-studio" },
               };
             }
             throw new Error(`Unexpected request ${path}`);
@@ -1131,7 +1170,6 @@ for (const legalNamePresent of [true, false]) {
                 leads: [],
                 belt_ladders: [],
                 primary_belt_ladder: null,
-                summary: { auth: profile },
               };
             if (path.startsWith("/schedule/window"))
               return { sessions: [], templates: [], attendance: [] };
@@ -1370,7 +1408,6 @@ for (const sessionFailure of ["returned", "thrown"]) {
                 leads: [],
                 belt_ladders: [],
                 primary_belt_ladder: null,
-                summary: { auth: profile },
               };
             if (path.startsWith("/schedule/window"))
               return { sessions: [], templates: [], attendance: [] };
@@ -1762,7 +1799,6 @@ for (const operation of ["add", "update", "delete", "convert"]) {
                     programs: [],
                     belt_ladders: [],
                     primary_belt_ladder: null,
-                    summary: { auth: profile },
                   };
                 }
                 if (path.startsWith("/schedule/window"))
@@ -1975,7 +2011,6 @@ test("real bootstrap transport survives its server budget and bounds a stalled b
         programs: [],
         belt_ladders: [],
         primary_belt_ladder: null,
-        summary: { auth: profile },
       };
       document.cookie = "koaryu-active-studio=budget-studio; path=/";
       localStorage.setItem("fixture-sdk-session", "retained");

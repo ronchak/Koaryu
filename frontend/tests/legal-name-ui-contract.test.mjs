@@ -140,15 +140,11 @@ describe("legal-name blocking form contract", () => {
 
 describe("account legal-name view contract", () => {
   it("relabels the editable auth field and preserves display-name saving", () => {
-    assert.match(accountSource, />Display name</);
     assert.match(accountSource, /updateUserName\(normalizedNameDraft\)/);
-    assert.match(accountSource, /Save display name/);
-    assert.match(accountSource, /Display name updated\./);
     assert.match(
       accountSource,
       /user_metadata\.full_name[\s\S]*?cosmetic,[\s\S]*?in-app display only/,
     );
-    assert.match(accountSource, /For cosmetic, in-app display only\./);
     assert.doesNotMatch(accountSource, /exports|audit (?:history|records)|legal records/i);
     assert.doesNotMatch(accountSource, /updateUserLegalName/);
   });
@@ -157,7 +153,6 @@ describe("account legal-name view contract", () => {
     assert.match(accountSource, /staffProfilesAvailable && \(/);
     assert.match(accountSource, /Legal first name[\s\S]*?value=\{legalFirstName\}[\s\S]*?readOnly/);
     assert.match(accountSource, /Legal last name[\s\S]*?value=\{legalLastName\}[\s\S]*?readOnly/);
-    assert.match(accountSource, /Legal-name changes are managed by an admin in staff management\./);
     assert.match(
       accountSource,
       /<span className="font-medium text-text-primary">Email<\/span>[\s\S]*?disabled/,

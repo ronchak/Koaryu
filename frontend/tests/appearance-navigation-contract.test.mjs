@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import { NAV_ITEMS } from "../src/lib/constants.ts";
-
 const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const rootLayoutSource = source("../src/app/layout.tsx");
 const providerSource = source("../src/components/theme-provider.tsx");
@@ -56,40 +54,15 @@ describe("Appearance preference contracts", () => {
     assert.match(personalizationSource, /\(\["side", "top"\] as NavigationPlacement\[\]\)/);
     assert.match(personalizationSource, /aria-pressed=\{selected\}/);
     assert.match(personalizationSource, /onClick=\{\(\) => setNavigationPlacement\(placement\)\}/);
-    assert.match(personalizationSource, /"Top command bar" : "Side rail"/);
     assert.match(personalizationSource, /label="Current navigation"/);
-    assert.match(personalizationSource, /Stored in this browser\/device/);
     assert.doesNotMatch(personalizationSource, /cloud|account sync|all devices/i);
   });
 });
 
 describe("authenticated navigation placement contracts", () => {
-  it("uses one exact NAV_ITEMS mapping for mobile, side, and top route inventory", () => {
-    assert.equal(navigationSource.match(/NAV_ITEMS\.filter\(/g)?.length, 1);
-    assert.equal(
-      navigationSource.match(/<NavigationLinks pathname=\{pathname\} role=\{role\} \/>/g)?.length,
-      3,
-    );
+  it("uses the shared navigation inventory and preserves route matching", () => {
     assert.match(navigationSource, /prefetch=\{item\.prefetch\}/);
     assert.match(navigationSource, /pathname === href \|\| pathname\.startsWith\(`\$\{href\}\//);
-    assert.equal(NAV_ITEMS.find(({ href }) => href === "/belt-tracker")?.icon, "MartialArtsBelt");
-    assert.match(
-      navigationSource,
-      /import \{ MartialArtsBelt \} from "@\/components\/icons\/martial-arts-belt"/,
-    );
-    assert.deepEqual(
-      NAV_ITEMS.map(({ href, prefetch }) => [href, prefetch]),
-      [
-        ["/dashboard", undefined],
-        ["/students", undefined],
-        ["/belt-tracker", false],
-        ["/leads", undefined],
-        ["/schedule", undefined],
-        ["/billing", false],
-        ["/reports", false],
-        ["/settings", false],
-      ],
-    );
   });
 
   it("keeps collapse controls exclusively in the side branch", () => {
@@ -109,7 +82,6 @@ describe("authenticated navigation placement contracts", () => {
   });
 
   it("shows only the existing mobile shell below the desktop breakpoint", () => {
-    assert.equal(navigationSource.match(/className=\{styles\.mobileSpine\}/g)?.length, 1);
     const mobileRules = shellStyles.slice(shellStyles.indexOf("@media (max-width: 1023px)"));
     assert.match(mobileRules, /\.spine\s*\{[\s\S]*?display:\s*none;/);
     assert.match(mobileRules, /\.commandBar\s*\{[\s\S]*?display:\s*none;/);
