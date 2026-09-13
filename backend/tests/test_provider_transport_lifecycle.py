@@ -83,33 +83,64 @@ def config(*, workers=1, queue=0, caller=2, transport=0.12):
 def test_postgrest_stalls_end_and_capacity_recovers_only_when_work_finishes(provider_server, table):
     async def scenario():
         runtime = SupabaseProviderRuntime(config(caller=0.035), config())
+        release_operation = threading.Event()
+        transport_finished = threading.Event()
         try:
-            # Warm client construction so the caller deadline isolates HTTP I/O.
-            await runtime.run_interactive(lambda client: client.options.postgrest_client_timeout)
-            started = time.monotonic()
-            with pytest.raises(ProviderLaneOperationTimeoutError):
+            loop = asyncio.get_running_loop()
+            loop_clock = [loop.time()]
+
+            def held_stall(client):
+                try:
+                    return client.table(table).select("*").execute()
+                finally:
+                    transport_finished.set()
+                    release_operation.wait()
+
+            with patch.object(loop, "time", new=lambda: loop_clock[0]):
+                # Warm client construction so the caller deadline isolates HTTP I/O.
                 await runtime.run_interactive(
-                    lambda client: client.table(table).select("*").execute()
+                    lambda client: client.options.postgrest_client_timeout
                 )
-            assert provider_server.is_set()
-            pending = runtime.interactive_snapshot()
-            assert pending.active == pending.admitted == 1
-            assert pending.timed_out == 1
-            assert pending.transport_timed_out == 0
-            with pytest.raises(ProviderLaneSaturatedError):
-                await runtime.run_interactive(lambda _client: None)
-            while runtime.interactive_snapshot().admitted:
-                assert time.monotonic() - started < 1.5
-                await asyncio.sleep(0.005)
-            ended = runtime.interactive_snapshot()
-            assert ended.active == 0
-            assert ended.transport_timed_out == ended.failed == 1
-            assert ended.completed == 2
-            assert ended.operation_seconds >= 0.1
-            assert await runtime.run_interactive(
-                lambda client: client.table("healthy").select("*").execute().data
-            ) == [{"ok": True}]
+                stalled = asyncio.create_task(runtime.run_interactive(held_stall))
+                assert await asyncio.to_thread(provider_server.wait, 1)
+                loop_clock[0] += 0.035
+                with pytest.raises(ProviderLaneOperationTimeoutError):
+                    await stalled
+
+                pending = runtime.interactive_snapshot()
+                assert pending.active == pending.admitted == 1
+                assert pending.timed_out == 1
+                assert pending.transport_timed_out == 0
+
+                saturated = asyncio.create_task(runtime.run_interactive(lambda _client: None))
+                await asyncio.sleep(0)
+                assert runtime.interactive_snapshot().waiting == 1
+                loop_clock[0] += 0.02
+                with pytest.raises(ProviderLaneSaturatedError):
+                    await saturated
+
+                assert await asyncio.to_thread(transport_finished.wait, 1)
+                held = runtime.interactive_snapshot()
+                assert held.active == held.admitted == 1
+                assert held.transport_timed_out == 0
+
+                healthy = asyncio.create_task(
+                    runtime.run_interactive(
+                        lambda client: client.table("healthy").select("*").execute().data
+                    )
+                )
+                await asyncio.sleep(0)
+                assert runtime.interactive_snapshot().waiting == 1
+                release_operation.set()
+                assert await healthy == [{"ok": True}]
+
+                ended = runtime.interactive_snapshot()
+                assert ended.active == ended.admitted == 0
+                assert ended.transport_timed_out == ended.failed == 1
+                assert ended.completed == 3
+                assert ended.operation_seconds >= 0.1
         finally:
+            release_operation.set()
             runtime.shutdown()
 
     asyncio.run(scenario())
