@@ -4,7 +4,11 @@ IDs: `FT1-07`, `FT1-09`, `FT1-11`, `FT1-12`, `FT2-07`, `FT2-08`, `FT2-10`
 
 Prerequisites: fresh Astra review is required before changing mixed billing, auth, workflow, mutation, or identity tests. Sol may edit only the low-risk fixture and presentation portions named here. The source-test inventory is advisory. Do not create production exports, fixtures, profilers, fingerprints, or mounted tests merely to replace greps.
 
-## Change
+## Current status
+
+PR204 completes FT1-07 and FT1-12: packing/compiler and map-backed storage now have one owner. Do not repeat those extractions. FT1-11/FT2-08 remain partial; protected workflow/source-shape claims need their own bounded behavioral follow-up. Settings access stayed unchanged. See [verification](../bounded-refactor-verification.md).
+
+## Original change recipe
 
 - Consolidate duplicated existing module-packing code used by `frontend/tests/billing-data-mounted.test.mjs` and `frontend/tests/billing-enrollment-transition-model.test.mjs` into `frontend/tests/helpers/store-browser-harness.mjs`. Keep each suite's stubs and assertions local. Remove unused switches.
 - In `frontend/e2e/preview-smoke.spec.ts` and `frontend/e2e/performance-navigation.spec.ts`, keep headings as shell smoke. Rename heading-only settlement claims to shell readiness. Preserve existing meaningful dataset-readiness checks; no new hosted execution is needed for that correction.

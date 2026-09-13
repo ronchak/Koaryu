@@ -1,89 +1,77 @@
 # Koaryu remediation handoff
 
-This budgeted run stopped implementation on September 12 Pacific time, September 13 UTC. The remediation program remains incomplete. No production release was executed.
+The September 13 bounded run has stopped implementation. The remediation program remains incomplete. No production release was executed.
 
 ## Main, budget and clean stopping point
 
-- Main at handoff preparation, after PR200: `74cd8f4862ffeb669c36bb03603d820fd95a512f`. Its own exact-head Release candidate run `34738008373` passed. The closing documentation PR has a later merge SHA; fetch origin/main for that SHA, and use the closing task report for its final CI result. A committed handoff cannot contain its own final merge hash.
-- Usage at preparation: 43 percentage points from a 0 baseline. Stop-new-work threshold 45, hard cap 50; seven authorized points remain at this snapshot. The remaining headroom is reserved for review, CI and cleanup. Final usage is recorded in the closing report. This is the account-wide weekly meter, not accumulated/cache token totals. Window resets 2026-09-19 10:16:57 UTC.
-- Implementation stopped before another broad batch because the eight selected remainders are prerequisite-blocked or require a larger test-ownership review than the remaining new-work allowance. No new migration or half-finished application change was started.
-- The pre-handoff sweep found all 29 implementation worktrees clean and every reachable task commit published. PR180 is now merged; it is no longer parked. Repeat the sweep after the documentation merge. There must be no uncommitted/unpushed work or open non-draft remediation PR mid-verification. Older unrelated PRs 63-74 are outside this run.
+- Main at handoff preparation, after PR205: `4244384fb701d7a2bb9b8fcca581a403e695836b`. Its own exact-head Release candidate run `34790631140` passed. API contracts run `34790631200` passed. The closing documentation PR has a later merge SHA. The closing task report records that SHA, its own CI and the final meter read; a committed handoff cannot contain its own merge hash.
+- Usage read at 2026-09-13 23:50 UTC: 50% weekly used, against this run's 45% baseline, so 5 points spent and 5 remain under the 10-point cap. Stop new work at 53%, hard ceiling 55%. Implementation has already stopped. Remaining allowance is for review, CI and cleanup. Do not reuse the previous run's zero baseline or 50% ceiling. The weekly window resets September 19 at 10:16:57 UTC; no reset credit was taken.
+- Four implementation PRs are merged and their commits pushed. Final worktree/ref/PR sweeps follow the handoff merge. Nothing may remain uncommitted, unpublished or as a non-draft remediation PR mid-verification. Older unrelated PRs 63–74 are outside this run.
 
 ## What landed
 
-PR182 through PR200 and PR180 merged through the guarded script. Each implementation batch used a fresh Sol thread, coordinator review and a separate fresh PR reviewer. Corrections reused a thread only within the same batch/PR. Every final implementation head passed its required CI.
+Every item used a fresh Sol implementer, coordinator review and a fresh independent PR reviewer. All four PRs passed exact-head CI and the guarded merge. See [verification](bounded-refactor-verification.md) for exact heads, tests and limits.
 
-- Billing's implicit owner graph is gone. Sixteen components taking whole-service/manager owners become zero, including all four opaque workflow families. All 71 private-facade methods and the facade file are removed. Concrete collaborators replace callbacks through BillingService; the reverse import cycle is gone. Backend AGENTS.md records this boundary. Billing modules 29→27, lines 20,760→20,085, bytes 834,268→806,569. See [ownership verification](enrollment-ownership-verification.md).
-- Pinned Ruff/Prettier and isolated the mechanical baseline; fixed the six prioritized display/recovery defects; corrected backup/operator guidance, product promises, fake error diagnostics and the cursor-error contract; retired unused UI/state and ineffective test/evidence claims.
-- Relative to the formatter baseline `d6bab29209d2ee4650b8f01e0ece474ff519f422`, non-generated backend/frontend application Python/TypeScript source is 1,179 lines smaller. Frontend collected cases 912→902; backend remains 1,904. Test source did not shrink overall. Source/JSON fixtures under frontend/tests+e2e grew 31,816→31,936 lines, backend/tests 69,465→69,499, and root scripts/*.test.mjs fell 5,385→5,384: net +153 lines. Stronger real contract/mounted fixtures offset deletions. Broader test cleanup remains open.
+| PR | Result |
+| --- | --- |
+| 202 | Normalize billing calendar ISO date/timestamp inputs before UTC formatting; preserve local timestamp rendering. |
+| 203 | Inject export test clocks and control provider timeout/completion ordering; keep real production limits. Loaded proof passed all four cases while the frontend suite ran. |
+| 204 | Share the existing packing/compiler and Map storage fixtures; replace preference source checks with actual behavior; remove incidental assertions. |
+| 205 | Fetch Auth facts only for selected active studio staff; propagate provider failures and strengthen the fixture that previously missed hydration. |
 
-[REMEDIATION.md](../../REMEDIATION.md) lists every merged PR and its verification document. This run fixed 47 original audit observations and reconciled one as obsolete. It did not close the financial/database program.
+Four original findings are newly fixed: FT1-07, FT1-12, OPS1-09 and BT5-05. Item 3 is partial: FT1-11 and FT2-08 still contain protected workflow/source-shape claims. No item was skipped entirely, but those umbrella remainders were not expanded into another implementation PR.
+
+This run removes 240 test-source lines overall: frontend/e2e −316, backend +76. Frontend cases fall 902→894; backend stays 1,904. PR204's changed scope removes 123 assertion calls; raw readFileSync occurrences fall 103/33 files→101/32. These metrics differ because reads include loaders and policies. Since the formatter baseline `d6bab29209d2ee4650b8f01e0ece474ff519f422`, application Python/TypeScript is 1,192 lines smaller and the recorded test/JSON-fixture scopes are 87 lines smaller. Billing's earlier opaque-owner/facade removal remains intact; see [ownership verification](enrollment-ownership-verification.md).
 
 ## Exact ledger counts
 
-Original 278 observations; current execution tracks, not historical authorship:
+Original 278 observations, by current execution track:
 
 | Disposition | Astra | Sol | Total |
 | --- | ---: | ---: | ---: |
-| Fixed | 22 | 103 | 125 |
+| Fixed | 22 | 107 | 129 |
 | Resolved indirectly | 1 | 1 | 2 |
-| Pending | 29 | 108 | 137 |
+| Pending | 29 | 104 | 133 |
 | Deferred intentionally | 4 | 7 | 11 |
 | Deferred pending owner action | 0 | 1 | 1 |
 | Rejected after verification | 0 | 1 | 1 |
 | Obsolete | 0 | 1 | 1 |
 | Total | 56 | 222 | 278 |
 
-Seven program findings are separate: three fixed and four pending. Fixed tracks: Astra 1/Sol 2. Pending tracks: Astra 4/Sol 0. Fixed are PROGRAM-SECURITY-01, PROGRAM-ATTESTATION-01 and PROGRAM-DEPENDENCIES-02. Pending are PROGRAM-CURRENCY-01, PROGRAM-IMPORT-01, PROGRAM-ACTIVATION-01 and PROGRAM-REFUND-01. Mixed future work still needs Sol for application files and Astra for database work.
+Seven program findings remain separate: fixed Astra 1/Sol 2; pending Astra 4/Sol 0. Fixed are PROGRAM-SECURITY-01, PROGRAM-ATTESTATION-01 and PROGRAM-DEPENDENCIES-02. Pending are PROGRAM-CURRENCY-01, PROGRAM-IMPORT-01, PROGRAM-ACTIVATION-01 and PROGRAM-REFUND-01. No new high-consequence risk was accepted.
 
-## Delegated batches and unfinished work
+## Delegated batches and remaining work
 
-| Batch | Status | Remaining |
-| --- | --- | --- |
-| 01 billing product truth | Done, PR195 | 0 |
-| 02 operator/release docs | Done, PR194 | 0 |
-| 03 customer copy/setup | Done, PR193/198 | 0 |
-| 04 backend contract/copy | Eligible work done, PR199 | BT4-06→ACS1-04; BT5-05→OPS1-09 |
-| 05 backend dead code/fixtures | Done, PR171 | 0 |
-| 06 performance evidence | Eligible work done, PR174/200 | BT3-07→OPS1-06 |
-| 07 frontend fixtures/claims | Partial, PR177/196; FT2-07 obsolete after PR169 | FT1-07, FT1-11, FT1-12, FT2-08 |
-| 08 display/dead interfaces | Done, PR180/192/197 | 0 |
-| 09 shared route/UI | Done, PR169 | 0 |
-| 10 schedule rendering | Done, PR173 | 0 |
-| 11 student/roster presentation | Eligible work done, PR176/191 | FC3-08→FC3-01 |
-| 12 marketing scene | Done, PR165 | 0 |
-| 13 dependency advisories | Done, PR166; program finding | 0 |
+Batches 01, 02, 03, 05, 08, 09, 10, 12 and 13 are complete. Batches 04, 06 and 11 have only the excluded prerequisites below. Batch07 remains partial. Recipe14 completed its batch08 subset in PR180; recipe15 completed OPS1-09/BT5-05 in PR205. The [batch index](delegated/README.md) links all recipes and PRs.
 
-Of the 55 selected findings, 46 are fixed, one obsolete and eight pending. Recipe14 is the completed six-finding subset of batch08, not an additional batch. The four prerequisite-dependent items were explicitly excluded by the owner. The four test items were not started or expanded during wind-down: shared packer/storage reuse needs a bounded design that reduces indirection, and the umbrella source-test work crosses multiple safety-sensitive suites. Do not close them by adding a generic fixture layer or replacing each grep with a new test. The broader ledger includes application findings outside these original recipes.
+Of the original 55 selected findings, 49 are fixed, one obsolete and five pending:
+
+- BT4-06 waits for ACS1-04; BT3-07 waits for OPS1-06; FC3-08 waits for FC3-01. All three prerequisites were explicitly excluded. Do not infer permission to implement them from the leftover fixture work.
+- FT1-11/FT2-08 retain Dashboard identity/pointer state, legal-name gate, transition helper-name and source-parsed report-catalog claims. Replace one owning workflow's claims with a small behavioral contract, then reassess. Do not repeat completed fixture extraction or delete protected assertions in bulk. A further behavioral pass is roughly 4–6 implementation/review points plus wind-down reserve, a planning estimate to recheck after scoping. It was not started inside this run's remaining allowance.
 
 ## Recommended next PR
 
-After a new budget/scope is established, prioritize [PROGRAM-REFUND-01](refund-completion-risk.md). A succeeded refund can project its own changed refunded amount, then fail receipt completion; its same-key retry is rejected 409 by the stored resource-version check. The reproduction used the actual billing service/projector with existing synthetic provider/database fixtures: one provider refund, receipt still projected, persisted refunded amount 500, and same-key retry 409 after the lease window. SQL source supports the mechanism, but no new database proof or fix was implemented in this run. Do not bypass claims/leases, forge resource hashes or move completion ahead of projection. Astra must own the database proof and any forward correction; Sol owns application changes.
+Give [PROGRAM-REFUND-01](refund-completion-risk.md) its own database-capable budget. It remains a production-release gate. A succeeded refund can project its changed refunded amount, fail receipt completion, then receive 409 on same-key retry because its stored resource version changed. The prior reproduction used actual service/projector code with synthetic provider/database fixtures; SQL source supports the mechanism. No forward correction or new database proof was attempted here. Do not bypass claims/leases, forge resource hashes or complete before projection. Astra owns SQL, migration, attestation, restore and concurrency proof; Sol owns application changes. The owner estimated comparable migrations at 8–15 points, so this was explicitly excluded from the current cap.
 
-Next after that, revisit PROGRAM-ACTIVATION-01 with BB1-06/BT1-02. A transient pre-provider failure can freeze derived quantity: three active enrollments with provider quantity 2 after retry. A catch-only patch is insufficient; preserve already-attempted provider operations and their idempotency.
-
-Unknown/mixed currency reporting, family attribution, overdue/date semantics, worker/lock behavior and token-renewal settlement also remain pending. No new high-consequence risk was accepted here. PROGRAM-IMPORT-01 still needs a product decision about an omitted Program with a program-specific belt; retain its safe refusal. Settled product decisions in REMEDIATION.md remain authoritative. DOC1-05 remains support-address owner action, with no mail/DNS work.
+Then revisit PROGRAM-ACTIVATION-01 with BB1-06/BT1-02: a pre-provider failure can freeze derived quantity. Preserve already-attempted provider operations and idempotency. Unknown/mixed currency reporting, family attribution, overdue definitions and other worker/lock findings remain pending. PROGRAM-IMPORT-01 still needs the omitted-Program/program-specific-belt decision; retain its safe refusal. Settled decisions in REMEDIATION.md remain authoritative. DOC1-05 is support-address owner action, with no mail/DNS work.
 
 ## Production release stays blocked
 
-[PRODUCTION-RELEASE.md](PRODUCTION-RELEASE.md) is still pinned to `f942dad3509a2e2cc9b55d546c2d22e097f77abe`, not current main. Choosing current main requires a fresh candidate packet, approvals, rehearsal, backup/restore evidence and deployment requests. Do not silently replace its SHA or use the old green checks.
+[PRODUCTION-RELEASE.md](PRODUCTION-RELEASE.md) is still pinned to `f942dad3509a2e2cc9b55d546c2d22e097f77abe`, not current main. A new candidate needs a fresh packet, approvals, rehearsal, backup/restore evidence and deployment requests. No packet step was executed.
 
-The repository has 140 migrations through V45. Supabase files are byte-unchanged during this run; the packet's seven V39-V45 migration hashes match current files. The last actual hosted database inspection was September 11 UTC: V38/133 migrations. The last observed production application pair was `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. These are historical observations, not a fresh readback in this run.
+There are 140 migrations through V45, unchanged in this run. The packet's seven V39–V45 hashes match. The last hosted database inspection was September 11 UTC, V38/133 migrations; the last observed production application pair was `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. These are dated observations, not fresh database/app readbacks.
 
-The chain is forward-only with no approved down-migration. Fresh pre-apply backup/restore proof and hosted V45 staging rehearsal still do not exist. The private backup helper knows V37/V38 mappings and needs reviewed support for a future post-V45 backup. Its disposable restores are not hosted recovery. Database first, backend second, frontend last: current backend RPCs are absent from the last-observed production V38. Do not promote either application before migration and verification. No packet step was executed here.
+The chain is forward-only with no approved down-migration. Fresh pre-apply backup/restore proof and hosted V45 staging rehearsal still do not exist. The private backup helper needs reviewed post-V45 mappings. Database first, backend second, frontend last: current backend RPCs are absent from the last-observed production database. Neither application may be promoted before migration and verification.
 
-Every merge re-read Render production auto-deploy off; Vercel's main deployment setting remains false in source. Production migration apply remains human-only in a real interactive terminal, never an agent PTY or piped confirmation. Keep tenant/auth/payment/idempotency gates, no historical financial backfill, and no live billing activation. No local migration or database state was created in this run; CI used disposable verification. Start any future database work from a clean full ephemeral verifier, not assumed local state.
+Each guarded merge read Render production auto-deploy off; Vercel main auto-deployment remains false in source. No production migration, deployment, live billing or historical financial backfill occurred. Production apply remains human-only in a real interactive terminal. No local migration state was created; CI used disposable verification.
 
 ## Traps and log-only follow-ups
 
-- CI belongs to one full SHA. PR198's first green head was superseded after real review findings; only its corrected final head was merged. PR197's first two merge requests returned GitHub errors; readback proved no commit before a successful guarded retry. Never infer persistence from a transport error alone.
-- The formatter recommendation is completed by PR182. Keep behavior changes free of unrelated formatting. Root scripts are outside the frontend formatter baseline. An older copied backend venv lacked Ruff; the existing pinned 0.16.7 binary was reused from the formatter worktree without changing dependencies.
-- `frontend/src/lib/billing-report-actions-model.ts` still relies on `crypto.randomUUID`, so plain-HTTP external-payment recording remains a logged issue. No fix was started.
-- The reported 35ms deadline test and two real 15s export-budget tests remain wall-clock-sensitive concerns. Do not weaken production deadlines or CI to hide them; no stabilization work was started.
-- The old import-verification 870-line claim was already absent when rechecked. Do not manufacture a replacement 884 count. Keep line accounting tied to an exact revision.
-- Seven restore-contract scripts reportedly retain 56-65% duplication. This run did not rewrite them or historical migrations.
-- CTA1-04 remains rejected after verification: CHANGELOG.md is a 21-byte Git symlink; its frontend/CHANGELOG.md target matches the audited 3,535 bytes/68 lines and `83ad742c…` hash. There is no missing changelog evidence to recreate.
-- Use physical dependency copies in worktrees; a node_modules symlink previously failed Turbopack's outside-root check. Builds in this run used only public synthetic .env.example values.
-- Private orchestration/review/local-test records are under `/Users/openclaw/Projects/Koaryu-Repo/.git/orchestrator/20260912-budget-refactor/`. Credentials, dumps and hosted operator evidence remain in their existing private operator/backup locations. Do not publish their contents.
-
-Read current AGENTS.md, backend/frontend guidance, the ledger and private operator runbooks before resuming. Check usage before selecting work. Keep one coherent branch per PR, fresh Sol and reviewer threads, exact-head CI and `scripts/merge-release-pr.sh`. Finish the next bounded change safely before starting another.
+- CI belongs to one exact SHA. Fetch current refs and use `scripts/merge-release-pr.sh`; never reuse a superseded green result. Read back GitHub state after a transport error before retrying a merge.
+- PR203 fixes the three reported wall-clock tests without changing the 35ms caller or 15s export limits. Use the existing injected clock for resource-boundary tests. Keep the independent 15.0/16.0-second behavioral boundary proof.
+- PR205 uses one Auth call per selected user under the unchanged 320-call ceiling. Large staff exports can hit that ceiling; no batching infrastructure was added.
+- Ruff/Prettier are pinned. Keep behavior diffs free of reflow. Use physical dependency copies in worktrees; a node_modules symlink previously broke Turbopack. Older backend venv copies may lack the pinned Ruff.
+- Plain-HTTP external payments still depend on unavailable crypto.randomUUID. No fix was started. Seven restore-contract scripts reportedly retain 56–65% duplication; no rewrite was started.
+- The old import-verification 870-line claim was already absent. Do not invent a replacement 884 count. CTA1-04 remains rejected: root CHANGELOG.md is a 21-byte symlink whose target matches the audited content.
+- One usage read returned an inconsistent reset window; two fresh reads confirmed the original window. The cap never changed. New work needs a fresh authorized baseline, not assumptions from a previous run.
+- Private records are under `/Users/openclaw/Projects/Koaryu-Repo/.git/orchestrator/20260913-bounded-refactor/`. Credentials, dumps and operator evidence remain outside the repository. Read current AGENTS.md and private operator guidance before credential/release work.

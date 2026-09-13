@@ -13,16 +13,16 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 125 |
+| Fixed | 129 |
 | Resolved indirectly | 2 |
-| Pending | 137 |
+| Pending | 133 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Obsolete | 1 |
 | Total | 278 |
 
-Pending work is split between 29 Astra and 108 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
+Pending work is split between 29 Astra and 104 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -36,15 +36,17 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 ## Current bounded run
 
-Implementation stopped on September 12, Pacific time, at 43 weekly points spent from a zero-use baseline. The hard cap is 50 and the stop-new-batches threshold is 45. The remaining allowance is reserved for reviewed handoff and clean-state verification. See [HANDOFF](docs/remediation/HANDOFF.md) for the final preparation SHA, counts, unfinished work and release traps. This run is paused; the remediation program remains incomplete.
+The September 13 run is winding down after PR202–205. Its budget began at 45% weekly usage, with a 10-point hard cap and an 8-point stop-new-work threshold. No further implementation is planned. [HANDOFF](docs/remediation/HANDOFF.md) records the preparation SHA, measured usage, remaining work and release traps; the closing report records the final merge SHA and meter read.
 
-The billing owner graph is removed. Sixteen components no longer receive opaque service/manager owners, the four opaque workflow families are gone, and all 71 private-facade methods are retired. Billing modules change 29→27 and source lines 20,760→20,085. The [ownership verification](docs/remediation/enrollment-ownership-verification.md) and current backend guide describe the resulting boundary. Financial safeguards and unresolved financial findings remain separate.
+PR202 normalizes billing calendar inputs before UTC formatting. PR203 makes the three reported timing-sensitive tests deterministic without changing production limits. PR204 shares the existing packing/compiler and storage fixtures, replaces preference source checks with real behavior and removes incidental constraints. PR205 limits staff-export Auth reads to selected users and propagates provider failures.
 
-This run merged PR182–200 and the previously parked PR180. It fixed 47 audit observations and closed one stale observation as obsolete. Of the original 55 selected delegated findings, 46 are fixed, one is obsolete and eight remain pending: four excluded prerequisites and four broader test-cleanup items. [The batch index](docs/remediation/delegated/README.md) records each remainder. No additional implementation was started during wind-down.
+Four original findings are newly fixed: FT1-07, FT1-12, OPS1-09 and BT5-05. FT1-11 and FT2-08 are partially addressed and remain pending because protected workflow/source-shape claims still exist. Of the original 55 selected delegated findings, 49 are fixed, one obsolete and five pending: those two umbrellas plus three excluded prerequisites. [The batch index](docs/remediation/delegated/README.md) records the remainders.
 
-The formatter baseline is pinned. Relative to that baseline, non-generated backend/frontend application Python/TypeScript source is 1,179 lines smaller. Frontend cases fell 912→902; backend cases remain 1,904. Test source and JSON fixtures did not shrink overall: frontend/e2e +120 lines, backend +34, root test scripts −1, net +153. Stronger contract and mounted fixtures offset deletions. Broader fixture/source-test cleanup remains pending; it is not claimed complete.
+This run reduces test source by 240 lines: frontend/e2e −316, backend +76. Frontend cases fall 902→894; backend remains 1,904. PR204's changed scope has 123 fewer assertion calls. Raw readFileSync occurrences fall 103/33 files→101/32, including retained loaders and policy checks. These are different metrics. [Verification](docs/remediation/bounded-refactor-verification.md) records exact revisions and limits.
 
-Every implementation batch used a fresh Sol thread, coordinator review, and a separate fresh reviewer for its PR. Corrections reused a thread only within the same batch or PR. All merges used the guarded script with exact-head CI and production auto-deploy readback off. No Supabase file, production migration, deployment, live billing activation, historical financial backfill, mail or DNS was changed. The [production packet](docs/remediation/PRODUCTION-RELEASE.md) remains pinned to an earlier candidate and is not approval to promote current main.
+The earlier billing ownership collapse remains intact: no opaque service/manager owners, no private forwarding facade, and no reverse import cycle. Billing modules remain 27. Relative to the formatter baseline, non-generated application Python/TypeScript is 1,192 lines smaller and test source/JSON fixtures across the recorded scopes are 87 lines smaller. The earlier run's test growth has been offset; the broader cleanup is still incomplete.
+
+Each item used a fresh Sol implementer, coordinator review and a fresh independent reviewer. Every implementation PR passed exact-head CI and the guarded merge with production auto-deploy read back off. No Supabase source, migration, deployment, live billing, historical financial backfill, mail or DNS was changed. The [production packet](docs/remediation/PRODUCTION-RELEASE.md) remains pinned to an earlier candidate; PROGRAM-REFUND-01 remains a release gate.
 
 ## Completed changes
 
@@ -97,6 +99,10 @@ Every implementation batch used a fresh Sol thread, coordinator review, and a se
 | [198](https://github.com/ronchak/Koaryu/pull/198) | Corrected product promises and removed fabricated error diagnostics | `ae96269` | [Customer product truth](docs/remediation/customer-product-truth-verification.md) |
 | [199](https://github.com/ronchak/Koaryu/pull/199) | Accurate cursor error contract and export-limit guidance | `6ab6ad3` | [Backend contract truth](docs/remediation/backend-contract-truth-verification.md) |
 | [200](https://github.com/ronchak/Koaryu/pull/200) | Accurate request diagnostics and meaningful performance gates | `74cd8f4` | [Performance evidence](docs/remediation/performance-evidence-truth-verification.md) |
+| [202](https://github.com/ronchak/Koaryu/pull/202) | Normalize billing calendar inputs | `11367a9` | [Bounded run](docs/remediation/bounded-refactor-verification.md) |
+| [203](https://github.com/ronchak/Koaryu/pull/203) | Deterministic export and provider deadline tests | `308c569` | [Bounded run](docs/remediation/bounded-refactor-verification.md) |
+| [204](https://github.com/ronchak/Koaryu/pull/204) | Shared fixtures and fewer incidental source checks | `a6cf758` | [Bounded run](docs/remediation/bounded-refactor-verification.md) |
+| [205](https://github.com/ronchak/Koaryu/pull/205) | Selected-user staff Auth hydration | `4244384` | [Bounded run](docs/remediation/bounded-refactor-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 
