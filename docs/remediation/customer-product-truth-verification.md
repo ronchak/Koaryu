@@ -1,6 +1,6 @@
 # Customer product-truth verification
 
-Base `37e80869a99bb8f5e214ff9512b4c6713d197d8b`; implementation `c634973dd6e1bd0556c73357dc75ac6124788422`. Completes batch03 except FR1-05, already fixed by PR193. The eleven dispositions are individually recorded in the ledger.
+Base `37e80869a99bb8f5e214ff9512b4c6713d197d8b`; implementation `9f2df4951d81157be93c516bf29bea9b95e15ddd`. Completes batch03 except FR1-05, already fixed by PR193. The eleven dispositions are individually recorded in the ledger.
 
 Removed the unused frontend Stripe-key setup requirement and its validator branches; backend Stripe/project/secret checks and hosted configuration remain intact. README links the shipped CSV sample, current timeout/history guidance matches code, and product copy stops promising unavailable timezone/guardian editing or automations. Privacy data handling, rights and disclosures are preserved.
 
@@ -8,6 +8,8 @@ The shared error page no longer fabricates diagnostics about sessions, API check
 
 Coordinator inspected all changed source and callers. Sixteen frontend files retain their executable structure, permitting only copy and removed diagnostic props. The shared error component is the intentional presentation simplification. Desktop 1280×900 and mobile 390×844 checks of built HTML/CSS showed readable content, visible recovery actions and no horizontal overflow. Scripts were removed and network requests blocked for that synthetic layout inspection; this is not live auth or end-to-end evidence.
 
-Thirty implementation files total 8,841→8,722 lines and 363,119→357,163 bytes. Five changed test files total 2,083→2,082 lines and 82,248→82,077 bytes. Frontend cases remain 902; staging-isolation cases go 19→18 by removing only the obsolete frontend-key case. No new test case, source assertion, feature, framework or dependency was added. Existing output tests retain meaningful allowed/denied/unloaded/preview checks without cross-label inequality as a substitute.
+Thirty implementation files total 8,841→8,724 lines and 363,119→357,194 bytes. Five changed test files total 2,083→2,084 lines and 82,248→82,204 bytes. Frontend cases remain 902; staging-isolation cases go 19→18 by removing only the obsolete frontend-key case. No new test case, source assertion, feature, framework or dependency was added. Existing output tests retain meaningful allowed/denied/unloaded/preview checks without cross-label inequality as a substitute.
 
 Coordinator passed 31 focused cases and independently compared staging-isolation counts. Implementer passed 902 frontend, 18 isolation and 41 affected cases, environment-example checks, lint/format and the synthetic build after diagnostic removal. Final wording/check corrections passed 26 affected cases and narrow checks; the last onboarding-footer correction passed lint/format. Fresh exact-head CI and independent review remain required before guarded merge. No provider, credential, auth, mail/DNS, production or database operation ran.
+
+Independent review identified a remaining public privacy instruction and missing provider-mode assertions. The instruction is removed, and the existing cases again verify live versus test-mode wording. The correction passed 20 focused cases; a private mutation forcing all test-mode labels to Live Stripe now fails the intended case. The two restored assertions account for the one-line net increase in touched tests, while one collected isolation case is removed. No new test case or fixture was added. The previous green PR head is superseded and fresh exact-head CI is required.

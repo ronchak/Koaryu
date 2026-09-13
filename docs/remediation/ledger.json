@@ -119,14 +119,16 @@
       "reason": "Removed the unused frontend publishable-key requirement from setup examples, guidance and local validators after confirming no frontend runtime/SDK consumer. Backend Stripe and isolation checks remain unchanged; provider configuration was not touched.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/.env.example",
         "frontend/AGENTS.md",
         "frontend/README.md",
         "scripts/verify-staging-isolation.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "obsolete_frontend_stripe_configuration",
       "collapse_with": [],
@@ -298,13 +300,15 @@
       "reason": "README links the shipped preview-import CSV and separately states that no packaged or hosted demo tenant is included.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "README.md",
         "frontend/README.md",
         "frontend/public/demo-students.csv"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "stale_demo_fixture_documentation",
       "collapse_with": [],
@@ -6020,13 +6024,15 @@
       "reason": "Current timeout guidance matches ordinary/bulk browser and proxy budgets from request-budget.ts; historical evidence is retained.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "docs/performance-rollout.md",
         "docs/verification/navigation-reliability-followup.md",
         "frontend/src/lib/request-budget.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "stale_request_deadline_documentation",
       "collapse_with": [],
@@ -6073,12 +6079,14 @@
       "reason": "Design guidance now distinguishes explicit link push history from gesture, keyboard and progress replacement, matching the current Journey controller.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "docs/design-language.md",
         "frontend/src/components/marketing/journey/journey-controller.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "stale_journey_history_documentation",
       "collapse_with": [],
@@ -7562,12 +7570,14 @@
       "reason": "The onboarding footer promises later editing of the studio name only. The unsupported timezone-editing promise is removed, and submission behavior is unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/app/onboarding/page.tsx",
         "frontend/src/app/(dashboard)/settings/page.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "missing_timezone_management_workflow",
       "collapse_with": [],
@@ -7913,14 +7923,16 @@
       "reason": "Scoped public/account/automation/feature/privacy text now explains user actions and existing behavior without developer implementation instructions. Existing data-handling policy and recovery routes are preserved.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/app/(dashboard)/account/settings/page.tsx",
         "frontend/src/app/(dashboard)/automations/page.tsx",
         "frontend/src/app/features/page.tsx",
         "frontend/src/app/privacy/page.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "developer_notes_in_customer_copy",
       "collapse_with": [
@@ -8349,12 +8361,14 @@
       "reason": "Removed the fabricated diagnostic sidebar, its unused types/prop and all six static caller arrays. Error descriptions no longer guarantee session or data safety without evidence; actual status and recovery actions remain.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/components/error-status-page.tsx",
         "frontend/src/app/error.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "unsupported_error_health_claims",
       "collapse_with": [],
@@ -8804,13 +8818,15 @@
       "reason": "Student creation no longer promises adding more guardians after save. Guardian payloads, edit state and read-only detail display remain unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/components/students/student-form.tsx",
         "frontend/src/components/students/student-form-state.ts",
         "frontend/src/components/students/student-detail-sections.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "missing_guardian_management_workflow",
       "collapse_with": [],
@@ -9623,13 +9639,15 @@
       "reason": "The persistent full-roster notice describes requested scope without claiming an active refresh or completed load.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/components/students/student-roster-controls.tsx",
         "frontend/src/lib/students-page-model.ts",
         "frontend/src/components/students/student-roster-page-content.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "roster_scope_flag_misrepresented_as_loading",
       "collapse_with": [
@@ -10322,12 +10340,14 @@
       "reason": "Pricing and FAQ copy identify automations as planned while preserving current manual follow-up queues and prices.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/lib/landing-page-content.ts",
         "frontend/src/app/(dashboard)/automations/page.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "marketing_planned_feature_as_included",
       "collapse_with": [],
@@ -10427,12 +10447,14 @@
       "reason": "Billing/dashboard copy uses plain language while preserving allowed/denied, unloaded, preview, partial, error and unavailable distinctions.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "c634973dd6e1bd0556c73357dc75ac6124788422",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/lib/dashboard-widget-view-models.ts",
         "frontend/src/lib/billing-policy.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "internal_terminology_in_customer_copy",
       "collapse_with": [
