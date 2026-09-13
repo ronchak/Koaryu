@@ -6,9 +6,10 @@ rollout script, `docs/render-backend-deployment.md` for Render. This file covers
 the things those docs do not, all of which were found the hard way during the
 2026-08-15 cutover.
 
-The production PostgreSQL image patch has a separate backup, exact-image restore,
-provider request, and readback packet in
-[`production-postgres-image-patch.md`](production-postgres-image-patch.md).
+The completed production PostgreSQL image-patch packet is historical and
+non-executable. Current database backup and disposable restore work belongs only to
+the guarded Home Server operator described in
+[the current backup section](staging-recovery-runbook.md#current-backup-owner-and-retained-storage-procedure).
 
 Read this before merging a release candidate, migrating a hosted database, or
 promoting a frontend.
@@ -40,16 +41,15 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-The paused remediation candidate is V45 at 140/head `20260910185031`, full
-preflight V26 and `release-db-attestation-v45`, with 56 pending-history versions.
-V44 is its latest accepted predecessor at 139/head `20260910135133`. Current
-production and staging were both read back as V38 during wind-down. The exact
-seven-file remainder and all attended commands are in
-[PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md). That packet supersedes
-the older V44-specific counts and active-candidate instructions below; their
-business/compatibility explanations remain useful history. No production apply
-or deployment was executed. V45's old-import refusal requires a real drain plan,
-even while older readiness consumers retain their compatibility response.
+The paused V38-to-V45 remediation release is pinned in
+[PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md). Its values and unfulfilled
+gates are dated evidence, not a current release declaration. For new work, generate
+packet mode from the exact candidate SHA and use its post-history, ordered migration
+list, source manifest, and integration result. Fresh target inspection supplies the
+accepted predecessor, state-bound remainder, token, fingerprint, and exact approval
+body. Do not copy a version, count, head, fingerprint, or approval from this document.
+The compatibility explanations below remain historical context. No production apply
+or deployment was executed for the pinned packet.
 
 V38 remains an accepted predecessor. Its remainder includes the V39 membership
 correction before V40. V39 preserves paused statuses and per-program joining dates
@@ -262,20 +262,10 @@ nothing more. It never checks that a backup exists. It will accept a fabricated 
 an irreversible migration against live customer data. **Never pass a value you have not
 personally produced and verified.**
 
-The working recipe, with the parts that bite:
-
-1. The direct host `db.<ref>.supabase.co` is **IPv6-only**, so `supabase db dump` fails
-   DNS resolution inside its Docker container. Use `pg_dump` from the host instead.
-2. Create a temporary login role with `pg_read_all_data` **and** `BYPASSRLS`. Without
-   `BYPASSRLS` the `auth` schema fails to dump partway through.
-3. Pass **no** `--schema` filters. Filtering to `public`/`auth`/`storage` silently omits
-   the `private` schema and the `supabase_migrations` history — the dump looks fine and is
-   not restorable.
-4. Verify by restoring into a throwaway `supabase/postgres:17` container and comparing row
-   counts against live. Run that restore with the **container's** `psql`: a host `psql`
-   under `~/.local/bin` may be broken (`Symbol not found: _PQbackendPID`) and exit
-   silently, which makes a no-op restore look like a clean success.
-5. Drop the temporary role afterward.
-
-Store dumps outside the repository with `chmod 600`. They contain customer PII, and this
-repository is public.
+Do not use a copied `pg_dump` recipe from public documentation. The single guarded
+Home Server operator owns the complete snapshot, temporary role, encryption,
+disposable exact-image restore, comparisons, and cleanup. Its candidate and provider
+image mappings must match before use. Existing V38 mappings and snapshots do not attest
+a later candidate. Store every private artifact outside the repository with mode
+`0600`; it contains customer PII. A database snapshot does not include Storage object
+bytes, so retain the separate Storage procedure linked above.

@@ -40,6 +40,17 @@ npm run check:release-workflow
 
 Merging `main` does not authorize an automatic production deployment. `frontend/vercel.json` disables Git deployments for `main` while retaining the persistent `staging` branch and ordinary preview deployments. The production Render service likewise declares `autoDeployTrigger: 'off'` and routes provider health to `/health/ready`.
 
+For current work, generate the exact candidate declaration with
+`node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha
+<full-sha>`. Treat its candidate SHA, post-history, pending migration list, source
+manifest, and integration status as authority. Inspection adds the target's state,
+inspection token, remaining migration list and manifest, and exact approval-record
+body. Do not copy a version, count, head, manifest, fingerprint, or approval claim from
+this document into a new release.
+
+The fixed V24 declarations below describe the completed 2026-08 release. They remain
+historical context only and are not active candidate requirements.
+
 Database promotion precedes application promotion. Hosted readiness calls the
 service-role-only V4 Supabase preflight and requires the exact final migration count
 117, head `20260824190500`, the exact 33-version pending sequence, manifest version

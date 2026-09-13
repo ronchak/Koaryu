@@ -226,7 +226,9 @@ venv/bin/python scripts/live_billing_authorizations.py grant \
   --slug <studio-slug> \
   --scope connect_payments \
   --stripe-account-id acct_... \
-  --expires-at 2026-08-01T12:00:00Z \
+  --operation <BYTE-SORTED-APPROVED-OPERATION-1> \
+  --operation <BYTE-SORTED-APPROVED-OPERATION-2> \
+  --expires-at <FUTURE-ISO-8601-WITHIN-30-DAYS> \
   --reason "Bounded one-studio canary" \
   --actor <auth-user-id-or-email>
 
@@ -275,7 +277,7 @@ python3 scripts/verify-stripe-provider-rehearsal.py \
   --expected-backend-origin <exact-pinned-staging-origin>
 ```
 
-Evidence schema version 2 is fail-closed. It pins the exact backend origin and `/health/ready` SHA, one studio, one connected account and generation, and separate `platform` and `connect` webhook delivery records. Each delivery record must name the exact platform or Connect endpoint URL, correct Connect flag, an event type from that endpoint's documented contract, Stripe's delivered/2xx result, and a local `processed` readback of the same event ID. The two surfaces must use different event IDs. Platform proof explicitly has no connected-account context; Connect proof must match the rehearsal account and generation. A nonempty global event-ID list, provider-only delivery, local-only readback, or one surface standing in for the other is invalid. Every recorded mutation—including the initial hosted Account Link—must carry its deterministic idempotency key.
+Provider rehearsal evidence uses schema version 4. It pins the exact backend origin and `/health/ready` SHA, one studio, one connected account and generation, and separate `platform` and `connect` webhook delivery records. Each delivery record must name the exact platform or Connect endpoint URL, correct Connect context, an event type from that endpoint's documented contract, Stripe's delivered/2xx result, and a local `processed` readback of the same event ID. The two surfaces must use different event IDs. Platform proof explicitly has no connected-account context; Connect proof must match the rehearsal account and generation. A nonempty global event-ID list, provider-only delivery, local-only readback, or one surface standing in for the other is invalid. Every recorded mutation, including the initial hosted Account Link, must carry its deterministic idempotency key. The schema-v4 template in the capture worksheet remains the source; do not copy it here. Reconciliation checkpoint reports remain schema v3 and use a different private file.
 
 This rehearsal is test mode only. Live money movement remains excluded unless the director separately approves a named payer, amount, consent record, and financial ceiling.
 

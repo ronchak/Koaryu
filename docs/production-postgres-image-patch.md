@@ -1,5 +1,12 @@
 # Production PostgreSQL image patch
 
+> **Historical, completed, and non-executable.** This packet and its embedded shell
+> program preserve the dated 2026-08 image-patch evidence. Do not run, repair, copy,
+> or adapt any command below. Current database backup and restore work belongs only to
+> the guarded Home Server operator named in
+> [the current backup section](staging-recovery-runbook.md#current-backup-owner-and-retained-storage-procedure).
+> Its release and provider-image mappings must be reverified for the exact candidate.
+
 This is the operator packet for one managed Supabase PostgreSQL image patch. It
 covers the production logical backup, a disposable exact-image restore, the
 CTO-only provider request, and the post-upgrade readback.
@@ -1727,7 +1734,7 @@ mode-600 archive to the approved private backup location according to the
 organization's retention policy. Keep the private release record and hashes
 with the archive. The logical dump includes Storage metadata only. It does not
 include Storage object bytes or provider settings. Handle those separate
-artifacts using [the staging and recovery runbook](staging-recovery-runbook.md#encrypted-logical-backup).
+artifacts using [the staging and recovery runbook](staging-recovery-runbook.md#current-backup-owner-and-retained-storage-procedure).
 
 ## 11. Read-only eligibility and the staged CTO request
 

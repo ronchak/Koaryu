@@ -223,7 +223,7 @@ whole route map. To inspect the deployed route inventory, build the schema from 
 release commit instead with `python3 scripts/generate-api-types.py`, which loads the
 app in process and never touches the network.
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration on every probe. A successful service-role-only V12 database preflight is reused for 30 seconds, and concurrent probes share one in-flight check. Failures are never cached. Readiness requires exactly 126 migrations, head `20260826185651`, the exact forty-two-version pending sequence, manifest version `release-db-attestation-v31`, and no required-object/security failure. Earlier, later, hybrid, malformed, or failing states return 503; no pre-V31 application compatibility remains. The V12 contract admits only the canonical or proved restored PostgreSQL 17 operational manifest. Missing RPCs, timeouts, and provider errors fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration on every probe. A successful database preflight is reused for 30 seconds, and concurrent probes share one in-flight check. Failures are never cached. Before each release, generate the exact candidate rollout packet and use its declaration plus the candidate's `release_schema_readiness.py` as the authority for the required version, count, head, manifest, compatibility states, and security facts. Missing RPCs, timeouts, mismatched states, and provider errors fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
 
 Each readiness probe also invokes the private RSS observer. It reads current RSS from `/proc/self/statm` at most once every five minutes and emits a `process_rss_observation` JSON log with the instance ID, commit, byte count, and threshold state. It adds no fields to the public health response. Search Render logs for `jemalloc preload verified` after startup and then for `process_rss_observation` while comparing memory across one instance ID.
 
@@ -446,7 +446,7 @@ The broad authenticated system-status and reconciliation endpoints below are Adm
 Authenticated studio admins can check the broader billing surface with:
 
 ```bash
-curl -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+curl -H "Authorization: Bearer $KOARYU_STUDIO_USER_ACCESS_TOKEN" \
   -H "X-Studio-Id: $STUDIO_ID" \
   https://koaryu.onrender.com/api/v1/billing/system/status
 ```
@@ -457,12 +457,16 @@ If Stripe has the correct state but Koaryu missed or delayed projection, admins 
 
 ```bash
 curl -X POST \
-  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "Authorization: Bearer $KOARYU_STUDIO_USER_ACCESS_TOKEN" \
   -H "X-Studio-Id: $STUDIO_ID" \
   -H "Content-Type: application/json" \
   -d '{"object_type":"invoice","stripe_object_id":"in_..."}' \
   https://koaryu.onrender.com/api/v1/billing/reconcile
 ```
+
+`KOARYU_STUDIO_USER_ACCESS_TOKEN` is a signed-in studio user's short-lived access
+token. Acquire it through the supported private authentication guidance. It is not the
+Supabase management token and must not come from an assumed Keychain item.
 
 Supported `object_type` values are `connect_account`, `payer`, `invoice`, `subscription`, and `payment_intent`. Use `payer_id` instead of `stripe_object_id` for payer reconciliation.
 

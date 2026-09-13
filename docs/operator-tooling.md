@@ -2,7 +2,7 @@
 
 ## Studio live billing authorization and reconciliation
 
-`backend/scripts/live_billing_authorizations.py` is the service-role-only status, drift, operation-bounded grant, revoke, account-disposition, and reconciliation-checkpoint tool. Writes are dry-run by default and require exact project plus interactive confirmation. Grants call the V30 operation-array RPC and never use the legacy scope-only writer. `backend/scripts/stripe_reconciliation_report.py` is a sanitized read-only provider/local reporter. Offline output and the separately labeled staging probe are permanently checkpoint-ineligible; production collection and checkpoint recording each independently pin the exact production `/health/ready` URL and candidate SHA. `scripts/verify-stripe-provider-rehearsal.py` validates exact-candidate test-mode evidence without contacting a provider. See `docs/operator-tooling-payments-v3.md` for the schema-v3 commands, `docs/billing-workflow-catalog.md` for application ownership, and `docs/stripe-live-billing-rollout.md` for the broader authority split and canary gates.
+`backend/scripts/live_billing_authorizations.py` is the service-role-only status, drift, operation-bounded grant, revoke, account-disposition, and reconciliation-checkpoint tool. Writes are dry-run by default and require exact project plus interactive confirmation. Grants require one repeated singular `--operation` flag per approved operation, in byte-sorted order. `backend/scripts/stripe_reconciliation_report.py` is a sanitized read-only provider/local reporter. Offline output and the separately labeled staging probe are permanently checkpoint-ineligible; production collection and checkpoint recording each independently pin the exact production `/health/ready` URL and candidate SHA. Use `/Users/openclaw/.config/koaryu/evidence/stripe-live-billing-reconciliation-v3.json` for the private report, with directory mode `0700` and file mode `0600`. `scripts/verify-stripe-provider-rehearsal.py` validates separate schema-v4 exact-candidate test-mode evidence without contacting a provider; never overwrite the reconciliation report with it. See `docs/operator-tooling-payments-v3.md` for the schema-v3 commands, `docs/billing-workflow-catalog.md` for application ownership, and `docs/stripe-live-billing-rollout.md` for the broader authority split and canary gates.
 
 This inventory records owner-run tools that can inspect or change Koaryu outside the product UI. Add each future tool as a separate entry with its working directory, interpreter, write boundary, and audit destination.
 
@@ -174,9 +174,11 @@ writes.
 ## Studio-comp migration rollout
 
 Use [the specialized rollout packet](studio-comp-migration-rollout.md) to
-generate and inspect the exact production-baseline-to-candidate migration set.
-The runner defaults to read-only inspection, derives an `84 -> N` packet from an
-immutable candidate, and refuses partial history/object states or ambient proxy
+generate and inspect the exact production-baseline-to-candidate migration set. First
+run packet mode for the immutable candidate. Use its generated candidate SHA,
+post-history, pending migrations, source manifest, and integration result instead of a
+copied version or count. Target inspection then supplies the state-bound remainder,
+token, and approval-record body. The runner refuses unaccepted history/object states or ambient proxy
 or TLS trust override variables before credentialed work. It names refused
 variables without printing values and does not treat Supabase version/name
 history as proof of source-file identity.
