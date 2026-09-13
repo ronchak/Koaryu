@@ -13,16 +13,16 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 121 |
+| Fixed | 125 |
 | Resolved indirectly | 2 |
-| Pending | 141 |
+| Pending | 137 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Obsolete | 1 |
 | Total | 278 |
 
-Pending work is split between 29 Astra and 112 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
+Pending work is split between 29 Astra and 108 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -113,6 +113,8 @@ PR184 merged as `0559911b4c6fd7c57095ffcfbff73a7c2bbb49ba`, deleting 35 facade m
 | [197](https://github.com/ronchak/Koaryu/pull/197) | Removed unused dashboard analytics and lead/belt interfaces | `37e8086` | [Unused state](docs/remediation/unused-state-verification.md) |
 
 | [198](https://github.com/ronchak/Koaryu/pull/198) | Corrected product promises and removed fabricated error diagnostics | `ae96269` | [Customer product truth](docs/remediation/customer-product-truth-verification.md) |
+
+| [199](https://github.com/ronchak/Koaryu/pull/199) | Accurate cursor error contract and export-limit guidance | `6ab6ad3` | [Backend contract truth](docs/remediation/backend-contract-truth-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 
