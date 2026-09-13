@@ -12,7 +12,7 @@ EXPORT_MAX_PROVIDER_CALLS = 320
 EXPORT_MAX_OUTPUT_ROWS = 50_000
 EXPORT_MAX_OUTPUT_BYTES = 20 * 1024 * 1024
 EXPORT_MAX_ELAPSED_SECONDS = 15.0
-EXPORT_TOO_LARGE_DETAIL = "Export is too large. Apply filters or request an async export."
+EXPORT_TOO_LARGE_DETAIL = "This export exceeded the current synchronous processing limit."
 
 
 @dataclass(frozen=True)

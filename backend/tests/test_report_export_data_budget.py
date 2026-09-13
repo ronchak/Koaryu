@@ -25,9 +25,9 @@ FIXTURE_PATH = (
 )
 EXPECTED_COLUMNS = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
-# Explicitly bounded to relations reachable from the Worker 2 report source
-# vocabulary. This is a review contract, not a general SQL schema parser.
-MIGRATION_BACKED_SOURCE_COLUMNS = {
+# Explicitly bounded to relations reachable from the report source vocabulary.
+# This is a review contract, not a general schema parser.
+SOURCE_VOCABULARY_COLUMNS = {
     "attendance": {"id", "studio_id", "session_id", "student_id", "status", "checked_in_at"},
     "belt_ladders": {"id", "studio_id", "program_id"},
     "belt_ranks": {
@@ -201,7 +201,7 @@ class ReportExportDataBudgetTest(unittest.TestCase):
                         tuple(EXPECTED_COLUMNS[report_id][source_key]),
                     )
 
-    def test_manifest_columns_are_migration_backed_for_report_source_vocabulary(self):
+    def test_manifest_columns_match_report_source_vocabulary(self):
         catalog = build_report_catalog(ReportExportService)
         for report_id, source_columns in INTELLIGENCE_INPUT_COLUMNS.items():
             with self.subTest(report_id=report_id):
@@ -209,11 +209,11 @@ class ReportExportDataBudgetTest(unittest.TestCase):
                 for source_key, columns in source_columns.items():
                     with self.subTest(source_key=source_key):
                         relation = REPORT_SOURCE_SPECS[source_key].relation
-                        self.assertIn(relation, MIGRATION_BACKED_SOURCE_COLUMNS)
+                        self.assertIn(relation, SOURCE_VOCABULARY_COLUMNS)
                         self.assertEqual(
-                            set(columns) - MIGRATION_BACKED_SOURCE_COLUMNS[relation],
+                            set(columns) - SOURCE_VOCABULARY_COLUMNS[relation],
                             set(),
-                            f"{report.id}/{source_key} declares non-migration column(s)",
+                            f"{report.id}/{source_key} declares unknown source column(s)",
                         )
 
     def test_shared_row_budget_spans_tables_and_student_guardian_batches(self):
@@ -256,7 +256,7 @@ class ReportExportDataBudgetTest(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 413)
         self.assertEqual(
             context.exception.detail,
-            "Export is too large. Apply filters or request an async export.",
+            "This export exceeded the current synchronous processing limit.",
         )
         self.assertEqual(failure_service.budget_snapshot.fetched_rows, EXPORT_MAX_ROWS + 1)
 

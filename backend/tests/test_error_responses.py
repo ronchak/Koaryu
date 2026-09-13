@@ -15,6 +15,7 @@ from app.core.error_handlers import (
     unhandled_exception_handler,
 )
 from app.main import app
+from app.schemas.student import StudentRosterCursorErrorResponse
 
 
 class ErrorResponseTest(unittest.TestCase):
@@ -47,16 +48,28 @@ class ErrorResponseTest(unittest.TestCase):
     def test_http_exception_preserves_structured_detail_payloads(self):
         test_app = FastAPI()
         register_error_handlers(test_app)
+        expected_detail = {
+            "code": "stale_cursor",
+            "message": "The roster changed while this page was open.",
+            "recover_to": "nearest_prior",
+        }
 
-        @test_app.get("/structured")
+        @test_app.get(
+            "/structured",
+            responses={409: {"model": StudentRosterCursorErrorResponse}},
+        )
         async def structured():
-            raise HTTPException(status_code=409, detail={"failed": 1})
+            raise HTTPException(status_code=409, detail=expected_detail)
 
         response = TestClient(test_app).get("/structured")
 
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()["detail"], {"failed": 1})
-        self.assertEqual(response.json()["error"], {"code": "conflict", "status_code": 409})
+        payload = response.json()
+        self.assertEqual(payload["detail"], expected_detail)
+        self.assertEqual(payload["error"], {"code": "conflict", "status_code": 409})
+        self.assertEqual(
+            StudentRosterCursorErrorResponse.model_validate(payload).model_dump(), payload
+        )
 
     def test_http_exception_keeps_bodyless_statuses_empty(self):
         for status_code in (204, 304):
