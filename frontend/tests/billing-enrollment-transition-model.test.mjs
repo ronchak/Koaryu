@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import ts from "typescript";
+import { compileCommonJsModule } from "./helpers/store-browser-harness.mjs";
 
 import {
   clearEnrollmentTransitionRequestKey,
@@ -22,14 +22,10 @@ function loadBillingEnrollmentsTab() {
     path.join(root, "src/components/billing/billing-enrollments-tab.tsx"),
     "utf8",
   );
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: {
-      esModuleInterop: true,
-      jsx: ts.JsxEmit.ReactJSX,
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-    },
-  }).outputText;
+  const compiled = compileCommonJsModule(
+    source,
+    path.join(root, "src/components/billing/billing-enrollments-tab.tsx"),
+  );
   const componentModule = { exports: {} };
   const testRequire = (specifier) => {
     if (specifier === "react/jsx-runtime") return require(specifier);

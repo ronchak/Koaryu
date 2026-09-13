@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { memoryStorage } from "./helpers/memory-storage.mjs";
 
 import { clearBillingIdempotencyKeyAfterTerminalError } from "../src/lib/billing-idempotency-lifecycle.ts";
 import {
@@ -28,15 +29,6 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const identity = { userId: "user-1", studioId: "studio-1" };
-
-function memoryStorage() {
-  const values = new Map();
-  return {
-    getItem: (key) => values.get(key) ?? null,
-    removeItem: (key) => values.delete(key),
-    setItem: (key, value) => values.set(key, value),
-  };
-}
 
 function apiError(message, status) {
   return Object.assign(new Error(message), { status });

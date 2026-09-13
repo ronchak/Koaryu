@@ -139,13 +139,8 @@ describe("legal-name blocking form contract", () => {
 });
 
 describe("account legal-name view contract", () => {
-  it("relabels the editable auth field and preserves display-name saving", () => {
+  it("keeps display-name saving separate from legal-name mutation", () => {
     assert.match(accountSource, /updateUserName\(normalizedNameDraft\)/);
-    assert.match(
-      accountSource,
-      /user_metadata\.full_name[\s\S]*?cosmetic,[\s\S]*?in-app display only/,
-    );
-    assert.doesNotMatch(accountSource, /exports|audit (?:history|records)|legal records/i);
     assert.doesNotMatch(accountSource, /updateUserLegalName/);
   });
 

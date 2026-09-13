@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { memoryStorage } from "./helpers/memory-storage.mjs";
 
 import {
   buildPlanSyncRequest,
@@ -15,11 +16,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 describe("hidden plan sync adapter", () => {
   it("persists by exact user, studio, and plan across reload", () => {
     const values = new Map();
-    const storage = {
-      getItem: (key) => values.get(key) ?? null,
-      removeItem: (key) => values.delete(key),
-      setItem: (key, value) => values.set(key, value),
-    };
+    const storage = memoryStorage(values);
     const identity = { userId: "user-1", studioId: "studio-1" };
     const first = resolvePlanSyncRequestKey({
       createKey: () => "plan-key-1",
@@ -93,11 +90,7 @@ describe("hidden plan sync adapter", () => {
 
   it("clears only in the confirmed-result branch and stores no token", () => {
     const values = new Map();
-    const storage = {
-      getItem: (key) => values.get(key) ?? null,
-      removeItem: (key) => values.delete(key),
-      setItem: (key, value) => values.set(key, value),
-    };
+    const storage = memoryStorage(values);
     const memory = new Map();
     const identity = { userId: "user-1", studioId: "studio-1" };
     resolvePlanSyncRequestKey({
