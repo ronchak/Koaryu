@@ -102,19 +102,17 @@ describe("Explore and About editorial routes", () => {
     assert.doesNotMatch(exploreSource, /\.slice\(0,\s*4\)/);
   });
 
-  it("preserves About principles, positioning, caveats, and both route actions", () => {
+  it("preserves About principles, positioning, and both route actions", () => {
     const normalizedAbout = normalizeWhitespace(aboutSource);
 
     for (const copy of [
       "Built for independent schools",
       "Koaryu is focused on owner-operated and small-team martial arts studios, not enterprise gym chains.",
       "Studio data should stay understandable",
-      "Student, guardian, attendance, rank, lead, and supported billing records stay visible and scoped to the school; new billing exports are currently unavailable.",
       "Daily action beats dashboard theater",
       "The product should answer what needs attention today: follow-ups, classes, promotions, retention, and tuition issues.",
       "Koaryu is intentionally narrower than generic gym software.",
       "The product is built around the rhythm of a martial arts school: the student who misses class, the trial family waiting for a call, the instructor reviewing promotions, and the owner who needs to know whether the school is healthy before the evening rush.",
-      "Koaryu supports one studio per user with explicit Admin, Front Desk, and Instructor boundaries. It centers the roster, ranks, schedule, attendance, leads, and honest visibility into existing billing records. Provider-backed billing changes and live Stripe activation are currently unavailable.",
     ]) {
       assert.ok(normalizedAbout.includes(copy), `missing About copy: ${copy}`);
     }

@@ -181,14 +181,4 @@ describe("marketing content contract", () => {
     assert.equal(existsSync(join(frontendRoot, "src/lib/landing-page-legacy-content.ts")), false);
     assert.equal(existsSync(join(frontendRoot, "src/app/page.module.css")), false);
   });
-
-  it("preserves the provider-write availability boundary", () => {
-    const source = readFileSync(join(frontendRoot, "src/lib/marketing-pages.ts"), "utf8");
-    assert.match(source, /live outbound provider changes remain disabled/);
-    assert.match(
-      source,
-      /Plan, payer, autopay, invoice-lifecycle, refund, and Connect changes are currently unavailable/,
-    );
-    assert.match(source, /without presenting unsupported provider changes as complete/);
-  });
 });

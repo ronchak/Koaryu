@@ -83,7 +83,7 @@ describe("public marketing route contract", () => {
     assert.match(rendererSource, /\{section\.description\}/);
   });
 
-  it("derives public price data and preserves the provider-write caveat", () => {
+  it("derives public price data and keeps tuition availability conditional", () => {
     const featuresSource = readSource("app/features/page.tsx");
     assert.match(featuresSource, /price:\s*publicPlatformPriceAmount\(\)/);
     assert.match(featuresSource, /priceCurrency:\s*PUBLIC_PLATFORM_PRICE\.currency/);
@@ -93,16 +93,8 @@ describe("public marketing route contract", () => {
 
     const billingPage = featurePages.find((page) => page.slug === "billing");
     assert.ok(billingPage);
-    assert.ok(
-      billingPage.sections
-        .flatMap((section) => section.bullets)
-        .includes(
-          "Plan, payer, autopay, invoice-lifecycle, refund, and Connect changes are currently unavailable",
-        ),
-    );
-    assert.deepEqual(
-      billingPage.proof.find((item) => item.label === "Provider writes"),
-      { label: "Provider writes", value: "Disabled", detail: "Currently unavailable" },
-    );
+    const billingCopy = JSON.stringify(billingPage);
+    assert.match(billingCopy, /separate activation/i);
+    assert.match(billingCopy, /not generally available/i);
   });
 });

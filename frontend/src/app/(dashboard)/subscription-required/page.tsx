@@ -277,12 +277,12 @@ export default function SubscriptionRequiredPage() {
                   <p className="text-sm font-medium text-text-primary">
                     {coreBillingEnabled
                       ? "Stripe capability verified"
-                      : "Live Stripe remains disabled"}
+                      : "Self-service is unavailable"}
                   </p>
                   <p className="text-sm leading-6 text-text-secondary">
                     {coreBillingEnabled
                       ? "The backend authorized Koaryu Core billing for this studio."
-                      : "Provider writes are currently unavailable."}
+                      : "Koaryu Core billing is not available for this studio right now."}
                   </p>
                 </div>
                 <div className="space-y-2">

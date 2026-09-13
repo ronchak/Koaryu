@@ -109,8 +109,8 @@ export default function AboutPage() {
             <p>
               Koaryu supports one studio per user with explicit Admin, Front Desk, and Instructor
               boundaries. It centers the roster, ranks, schedule, attendance, leads, and honest
-              visibility into existing billing records. Provider-backed billing changes and live
-              Stripe activation are currently unavailable.
+              visibility into existing billing records. Tuition collection requires separate
+              activation for the exact studio and is not generally available.
             </p>
           </div>
         </div>

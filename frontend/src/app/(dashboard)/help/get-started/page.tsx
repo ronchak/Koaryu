@@ -127,10 +127,9 @@ export default function GetStartedPage() {
           </li>
         </ul>
         <p className="mt-4 text-sm leading-6 text-text-secondary">
-          Koaryu keeps provider reads and invoice reconciliation available, but does not currently
-          create plans or payers, enable autopay, change provider-backed enrollments, create or
-          retry invoices, issue refunds, or activate Stripe. Live outbound Stripe writes are
-          currently disabled.
+          Koaryu shows billing workflows only when the signed-in role and studio capabilities allow
+          them. Tuition collection needs separate activation for the exact studio and is not
+          generally available. Preview actions do not change provider state.
         </p>
       </AccountSection>
 
