@@ -17,7 +17,6 @@ import type {
   BillingPlan,
   BillingSystemStatus,
   BillingSubscription,
-  ExportJob,
   PlatformBillingStatus,
   StudentBillingEnrollment,
   StudioPaymentAccount,
@@ -76,7 +75,6 @@ export function useBillingDataController({
   const [payments, setPayments] = useState<BillingPayment[]>([]);
   const [paymentCohortSummary, setPaymentCohortSummary] =
     useState<BillingPaymentCohortSummary | null>(null);
-  const [exportJobs, setExportJobs] = useState<ExportJob[]>([]);
   const [settledTabs, setSettledTabs] = useState<ReadonlySet<string>>(() => new Set());
   const [settledAttemptKey, setSettledAttemptKey] = useState<string | null>(null);
   const markTabSettled = useCallback((key: string, settled: boolean, retain = false) => {
@@ -122,7 +120,6 @@ export function useBillingDataController({
     setInvoiceCursor(null);
     setPaymentCursor(null);
     setPaymentCohortSummary(null);
-    setExportJobs([]);
     setIsLoadingMore(false);
     loadMoreInFlightRef.current = null;
     retainedRef.current.clear();
@@ -535,7 +532,6 @@ export function useBillingDataController({
   return {
     billingSystemStatus: hasVisibleBillingData ? billingSystemStatus : null,
     enrollments: hasVisibleBillingData ? enrollments : [],
-    exportJobs: hasVisibleBillingData ? exportJobs : [],
     hasBillingLoadSettled:
       isPreviewMode || (activeAccessKey ? activeTabHasSettled : shouldSettleWithoutAccess),
     invoices: hasVisibleBillingData ? invoices : [],
@@ -558,7 +554,6 @@ export function useBillingDataController({
     refreshBilling,
     refreshPaymentAfterRefund,
     refreshConnectStatus,
-    setExportJobs,
     subscriptions: hasVisibleBillingData ? subscriptions : [],
   };
 }

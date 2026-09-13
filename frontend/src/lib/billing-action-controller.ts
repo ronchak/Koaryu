@@ -1,6 +1,5 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
 import { useBillingActionRuntime } from "@/lib/billing-action-runtime";
 import { useBillingConnectActions } from "@/lib/billing-connect-actions";
 import { useBillingEnrollmentActions } from "@/lib/billing-enrollment-actions";
@@ -8,7 +7,7 @@ import { useBillingPayerActions } from "@/lib/billing-payer-actions";
 import { useBillingPlanActions } from "@/lib/billing-plan-actions";
 import { useBillingReportActions } from "@/lib/billing-report-actions";
 import type { PayerOperationIdentity } from "@/lib/billing-payer-setup-model";
-import type { ExportJob, StudioPaymentAccount } from "@/types";
+import type { StudioPaymentAccount } from "@/types";
 
 type UseBillingActionControllerOptions = {
   billingConnect: StudioPaymentAccount | null;
@@ -18,7 +17,6 @@ type UseBillingActionControllerOptions = {
   identityKey: string | null;
   refreshBilling: () => Promise<void>;
   setError: (message: string) => void;
-  setExportJobs: Dispatch<SetStateAction<ExportJob[]>>;
   setMessage: (message: string) => void;
   token: string | null;
   enabledWorkflowIds: ReadonlySet<string>;
@@ -32,7 +30,6 @@ export function useBillingActionController({
   identityKey,
   refreshBilling,
   setError,
-  setExportJobs,
   setMessage,
   token,
   enabledWorkflowIds,
@@ -62,7 +59,6 @@ export function useBillingActionController({
     identity: payerOperationIdentity,
     identityKey,
     runtime,
-    setExportJobs,
   });
 
   return {

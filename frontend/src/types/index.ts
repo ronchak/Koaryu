@@ -8,17 +8,6 @@ export type MembershipStatus = AuthResponse["membership_status"];
 export type StaffRoleName = ApiContracts.ApiStaffMemberResponse["role"];
 export type StaffStatus = ApiContracts.ApiStaffMemberResponse["status"];
 
-export interface StaffRole {
-  id: string;
-  studio_id: string;
-  user_id: string;
-  role: StaffRoleName;
-  created_at: string;
-  updated_at?: string;
-  invited_by?: string | null;
-  invited_email?: string | null;
-}
-
 export type StaffMember = ApiContracts.ApiStaffMemberResponse;
 export type StaffInviteCreate = ApiContracts.ApiStaffInviteCreate;
 export type StaffRoleUpdate = ApiContracts.ApiStaffRoleUpdate;
@@ -66,9 +55,6 @@ export type BillingLinkResponse = ApiContracts.ApiBillingLinkResponse;
 export type ConnectOnboardingLinkResponse = ApiContracts.ApiConnectOnboardingLinkResponse;
 export type ConnectOnboardingDeliveryAckResponse =
   ApiContracts.ApiConnectOnboardingDeliveryAckResponse;
-export type BillingActionRequest = ApiContracts.ApiConnectOnboardingLinkRequest &
-  ApiContracts.ApiPlatformCheckoutRequest &
-  ApiContracts.ApiPlatformPortalRequest;
 export type EmailUsage = ApiContracts.ApiEmailUsageResponse;
 export type PlatformBillingStatus = ApiContracts.ApiPlatformBillingStatusResponse;
 export type BillingSystemStatus = ApiContracts.ApiBillingSystemStatusResponse;

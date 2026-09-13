@@ -243,12 +243,8 @@ export function RankFormModal({
         <div className="flex items-center gap-3 p-3 bg-surface-raised rounded-[14px] border border-border">
           <BeltVisual
             rank={{
-              ...form,
-              id: "preview",
-              ladder_id: "",
-              studio_id: "",
-              display_order: 0,
-              created_at: "",
+              color_hex: form.color_hex,
+              is_tip: form.is_tip,
               tip_color_hex: form.is_tip ? form.tip_color_hex : undefined,
             }}
           />

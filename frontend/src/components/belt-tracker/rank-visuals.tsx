@@ -90,7 +90,13 @@ export function RankBadge({
   );
 }
 
-export function BeltVisual({ rank, size = "md" }: { rank: BeltRank; size?: "sm" | "md" }) {
+export function BeltVisual({
+  rank,
+  size = "md",
+}: {
+  rank: Pick<BeltRank, "color_hex" | "is_tip" | "tip_color_hex">;
+  size?: "sm" | "md";
+}) {
   const isLight = prefersDarkRankText(rank.color_hex);
   const dims = size === "sm" ? "w-7 h-3" : "w-10 h-4";
   return (

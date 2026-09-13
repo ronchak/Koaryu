@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  useLayoutEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type Dispatch,
-  type FormEvent,
-  type SetStateAction,
-} from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { api } from "@/lib/api";
 import type { BillingActionRuntime } from "@/lib/billing-action-runtime";
 import { buildExternalBillingPaymentPayload } from "@/lib/billing-page-form-model";
@@ -24,14 +16,12 @@ import {
   type ExternalPaymentAttempt,
   type ExternalPaymentIdentity,
 } from "@/lib/billing-report-actions-model";
-import type { ExportJob } from "@/types";
 
 type BillingReportActionsOptions = {
   canManageRoutineBilling: boolean;
   identity: ExternalPaymentIdentity | null;
   identityKey: string | null;
   runtime: BillingActionRuntime;
-  setExportJobs: Dispatch<SetStateAction<ExportJob[]>>;
 };
 type Draft = {
   externalPayerId: string;
@@ -73,7 +63,6 @@ export function useBillingReportActions({
   identity,
   identityKey,
   runtime,
-  setExportJobs,
 }: BillingReportActionsOptions) {
   const scope = runtime.isPreviewMode
     ? `preview:${identityKey ?? "anonymous"}`
@@ -155,12 +144,6 @@ export function useBillingReportActions({
   function successMessage(message: string) {
     noticeScopeRef.current = scope;
     runtime.setMessage(message);
-  }
-
-  async function handleCreateExport(exportType: string) {
-    void exportType;
-    void setExportJobs;
-    runtime.setError("New billing exports are currently unavailable.");
   }
 
   async function handleRecordExternalPayment(event: FormEvent<HTMLFormElement>) {
@@ -274,7 +257,6 @@ export function useBillingReportActions({
         ? "This payment request is saved. Retry the original request before entering another payment."
         : ""),
     externalPaymentIsRetry: active.attempt !== null,
-    onCreateExport: handleCreateExport,
     onExternalAmountChange: (value: string) => change("externalAmount", value),
     onExternalMethodChange: (value: string) => change("externalMethod", value),
     onExternalNoteChange: (value: string) => change("externalNote", value),

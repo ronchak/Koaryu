@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Banknote, Download, Plus } from "lucide-react";
+import { Banknote, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatMoney } from "@/lib/billing-page-utils";
@@ -12,7 +12,7 @@ import {
   type RefundReason,
 } from "@/lib/billing-refund-model";
 import type { BillingRefundController } from "@/lib/billing-refund-controller";
-import type { BillingPayer, BillingPayment, ExportJob } from "@/types";
+import type { BillingPayer, BillingPayment } from "@/types";
 import { Metric, SectionHeader, StatusPill } from "./billing-page-sections";
 
 export function BillingReportsTab({
@@ -29,7 +29,6 @@ export function BillingReportsTab({
   externalPaymentRecoveryMessage,
   externalPaymentIsRetry,
   externalPaymentTotal,
-  exportJobs,
   isActionLoading,
   isLoadingAction,
   onExternalAmountChange,
@@ -53,7 +52,6 @@ export function BillingReportsTab({
   externalPaymentRecoveryMessage: string;
   externalPaymentIsRetry: boolean;
   externalPaymentTotal: number;
-  exportJobs: ExportJob[];
   isActionLoading: boolean;
   isLoadingAction: (action: string) => boolean;
   onExternalAmountChange: (value: string) => void;
@@ -88,34 +86,6 @@ export function BillingReportsTab({
         balance-reversing disputes. Adjustment event dates are outside this cohort, so this is not
         cash movement or recognized revenue.
       </p>
-
-      <section className="rounded-[14px] border border-border bg-surface p-4">
-        <SectionHeader
-          icon={Download}
-          title="Billing exports are read-only"
-          description="New CSV exports are currently unavailable. Existing job history remains visible for operational context."
-        />
-        {exportJobs.length ? (
-          <div className="mt-4 divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/30">
-            {exportJobs.map((job) => (
-              <div
-                key={job.id}
-                className="flex items-center justify-between gap-4 px-4 py-3 text-sm"
-              >
-                <div>
-                  <p className="font-medium text-text-primary">
-                    {job.export_type.replace(/_/g, " ")}
-                  </p>
-                  <p className="text-xs text-muted">Queued {formatDate(job.created_at)}</p>
-                </div>
-                <StatusPill status={job.status} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-3 text-xs text-muted">No historical export jobs.</p>
-        )}
-      </section>
 
       <section className="rounded-[14px] border border-border bg-surface p-4">
         <SectionHeader
