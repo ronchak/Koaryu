@@ -1,43 +1,29 @@
 # Sol execution batches
 
-These recipes are for a fresh GPT-5.6 Sol task with repository access and no prior remediation memory. Use low effort for documentation, searches and fixture legwork. Read current AGENTS.md and relevant package guidance. Start from updated main and recheck every named caller before removal.
+These recipes are starting points for a fresh Sol thread with current AGENTS.md, package guidance and the selected recipe only. Verify current callers and the ledger before editing; completed recipes contain historical instructions. Do not pass remediation history or a cumulative reviewer thread to a new batch.
 
-At normalization, the twelve audit batches assigned all 83 then-pending Sol observations exactly once. Consult the current ledger before selecting a batch; completed findings remain in these historical recipes. Batch13 is a separate program dependency finding. Batch numbering is an index, not a fixed execution order or one-PR requirement. Combine or separate chunks only at a coherent ownership/rollback boundary, and update the ledger after each merged result.
+Root owns architecture, personal review, integration, CI, guarded merges and tracking. Each PR gets a separate fresh reviewer with its diff and recipe. A correction may reuse a thread within that same batch/PR only. Sol implements application/docs work; Astra owns Supabase, migrations, SQL contracts and concurrency proofs. Database work and the four prerequisites below were excluded from this run. No production execution, backfill, mail/DNS or extra infrastructure is authorized.
 
-The latest wind-down instruction assigns all backend/frontend implementation to Sol, including application money, authorization and workflow logic. Astra personally owns Supabase, migrations, SQL contracts and database concurrency proofs. Earlier recipes retain their historical risk-based wording; this ownership rule supersedes it. Sol must not implement database prerequisites. A mixed test file permits only the stated fixture or presentation edits. Coordinate shared paths sequentially; never run competing implementations in the same worktree. No new generic framework, production deployment/migration, historical financial backfill, mail or DNS work.
-
-Each recipe gives the concrete scope and existing verification commands. Run commands from the repository root; parenthesized package commands do not change the next command's directory. Use targeted checks for completed chunks, then mandatory candidate CI. Do not execute documentation examples against providers. Require a fresh independent reviewer for each PR and the guarded merge with exact head/base SHAs. Root coordinates integration.
-
-[Source-test cleanup ownership](../source-test-cleanup.md) is the complete current inventory. FT1-11 and FT2-08 are umbrella obligations: batch07 coordinates them, while each subsystem batch removes its own incidental assertions. This does not grant Sol permission to rewrite Astra-owned safety assertions. Do not add a new test per deleted grep. Record material case/line reductions and explain retained static checks.
-
-| Batch | Findings | Dependency |
+| Batch | Current status | Pending IDs |
 | --- | --- | --- |
-| [Batch 01: billing product truth](01-billing-product-truth.md) | `CTA1-01`, `BB2-10`, `DOC1-01`, `FT1-05`, `FR1-09` | Completed by the billing product-truth change; workflow safety owners are unchanged. |
-| [Batch 02: operator and release documents](02-operator-and-release-docs.md) | `DOC1-02`, `DOC1-03`, `DOC1-04`, `DOC1-06`, `DOC1-07`, `DOC1-11`, `DOC1-12` | Completed by the operator documentation change; fresh release evidence remains operator work. |
-| [Batch 03: customer copy and first-read docs](03-customer-copy-and-first-read-docs.md) | `CTA1-03`, `CTA1-07`, `DOC1-08`, `DOC1-09`, `FR1-05`, `FR1-06`, `FR1-13`, `FC1-08`, `FC2-04`, `FC3-04`, `FSH1-10`, `FSH1-12` | No Astra implementation prerequisite; coordinate shared files. |
-| [Batch 04: backend contract and copy maintenance](04-backend-contract-and-copy-maintenance.md) | `ACS1-03`, `OPS1-11`, `BT4-03`, `BT4-06`, `BT5-05` | BT4-06 waits ACS1-04; BT5-05 waits OPS1-09. |
-| [Batch 05: backend dead code and fixtures](05-backend-dead-code-and-fixtures.md) | `OPS2-10`, `BT5-03`, `BT1-05`, `BT1-09`, `BT2-08`, `BT4-02`, `BT5-04`, `BT5-08` | No Astra implementation prerequisite; coordinate shared files. |
-| [Batch 06: performance evidence maintenance](06-performance-evidence-maintenance.md) | `CTA1-09`, `CTA2-01`, `BT1-07`, `BT3-07`, `BT4-01`, `FT2-09` | BT3-07 waits OPS1-06. |
-| [Batch 07: frontend test fixtures and claims](07-frontend-test-fixtures-and-claims.md) | `FT1-07`, `FT1-09`, `FT1-11`, `FT1-12`, `FT2-07`, `FT2-08`, `FT2-10` | Mixed safety assertions stay with their Astra owner; fixture-only work can proceed. |
-| [Batch 08: display and dead interfaces](08-display-and-dead-interfaces.md) | `FT1-01`, `FT1-02`, `CTA2-02`, `FC1-11`, `FC1-12`, `FC1-13`, `FSH1-04`, `FSH1-08`, `FSH2-10` | No Astra implementation prerequisite; coordinate shared files. |
-| [Batch 09: shared route and UI contracts](09-shared-route-and-ui-contracts.md) | `FR1-12`, `FR1-14`, `FC2-15`, `FC2-16`, `FC3-06`, `FC3-07` | No Astra implementation prerequisite; coordinate shared files. |
-| [Batch 10: schedule rendering and operations tests](10-schedule-rendering-and-operations-tests.md) | `FC2-01`, `FC2-06`, `FC2-17`, `FT2-02`, `FT2-03` | No Astra implementation prerequisite; coordinate shared files. |
-| [Batch 11: student and roster presentation](11-student-and-roster-presentation.md) | `FC1-02`, `FC2-05`, `FC2-07`, `FC2-14`, `FC3-02`, `FC3-03`, `FC3-05`, `FC3-08` | FC3-08 waits FC3-01; other listed display work can proceed. |
-| [Batch 12: marketing scene contracts](12-marketing-scene-contracts.md) | `FC2-09`, `FC2-10`, `FC2-11`, `FC2-12`, `FT1-06` | No Astra implementation prerequisite; coordinate shared files. |
-| [Batch 13: remaining dependency advisories](13-dependency-maintenance.md) | `PROGRAM-DEPENDENCIES-02`. This is a program finding outside the original 278. | No Astra implementation prerequisite; coordinate shared files. |
+| [01 billing product truth](01-billing-product-truth.md) | Complete, PR195 | None |
+| [02 operator/release docs](02-operator-and-release-docs.md) | Complete, PR194; generator prerequisite was PR167 | None |
+| [03 customer copy/setup](03-customer-copy-and-first-read-docs.md) | Complete, PR193 and PR198 | None |
+| [04 backend contract/copy](04-backend-contract-and-copy-maintenance.md) | Eligible work complete, PR199 | BT4-06 → ACS1-04; BT5-05 → OPS1-09 |
+| [05 backend dead code/fixtures](05-backend-dead-code-and-fixtures.md) | Complete, PR171 | None |
+| [06 performance evidence](06-performance-evidence-maintenance.md) | Eligible work complete, PR174 and PR200 | BT3-07 → OPS1-06 |
+| [07 frontend fixtures/claims](07-frontend-test-fixtures-and-claims.md) | Partial, PR177 and PR196; FT2-07 obsolete after PR169 | FT1-07, FT1-11, FT1-12, FT2-08 |
+| [08 display/dead interfaces](08-display-and-dead-interfaces.md) | Complete, PR180, PR192 and PR197 | None |
+| [09 shared route/UI contracts](09-shared-route-and-ui-contracts.md) | Complete, PR169 | None |
+| [10 schedule rendering](10-schedule-rendering-and-operations-tests.md) | Complete, PR173 | None |
+| [11 student/roster presentation](11-student-and-roster-presentation.md) | Eligible work complete, PR176 and PR191 | FC3-08 → FC3-01 |
+| [12 marketing scene](12-marketing-scene-contracts.md) | Complete, PR165 | None |
+| [13 dependency advisories](13-dependency-maintenance.md) | Complete, PR166; program finding outside the audit 278 | None |
 
-DOC1-05 is deliberately absent from execution batches. Its approved documentation note is already included in normalization; a dedicated support address remains owner action.
+[Recipe14](14-dead-ui-interface-closeout.md) is the completed six-finding subset of batch08, merged in PR180. It is not another independent audit batch. Of the 55 findings selected for this run, 46 are fixed, one is obsolete and eight remain pending. The ledger also contains broader application findings outside this original batch index.
 
-The normalized map includes examples of recommendations deliberately excluded from scope. If current main makes an instruction stale, report the evidence and adjust its disposition instead of implementing an obsolete recipe. Surface only a genuinely new product decision to the owner.
+The four prerequisite-dependent items remain pending by explicit owner direction. Shared packer/storage work was not started in the remaining allowance; it needs a bounded design that reduces indirection without adding a generic fixture layer. FT1-11/FT2-08 remain broad obligations, not a claim that every source assertion must become a new test. Their remaining work crosses multiple safety-sensitive suites and needs a larger review boundary than the wind-down budget permits.
 
-## Current run
+Use [source-test cleanup ownership](../source-test-cleanup.md) to distinguish incidental wording/shape checks from meaningful policies. Preserve authorization, identity, destructive mutation, financial, idempotency and lifecycle assertions. Delete duplicates and obsolete checks without adding a test per removed grep. Record collected cases, lines and retained static-check limits honestly.
 
-The owner resumed a bounded run on September 12, then redirected priority to removing billing ownership/forwarding indirection. The six prioritized presentation and recovery defects are now fixed in PR191–193. See [run plan](../budget-refactor-plan.md) for the 50-point cap and scope. The prior wind-down below is historical. See [HANDOFF](../HANDOFF.md) for the exact completed/remaining inventory. PR180 closes the six-interface subset of batch08; its recipe is `docs/remediation/delegated/14-dead-ui-interface-closeout.md`. It is not a new independent audit batch. FSH1-08 and FSH2-10 are fixed by the unused-state closeout; FSH1-04 was fixed by PR192. Batch08 is complete. The broader 108 pending Sol observations include newly transferred application work that has not yet been turned into additional recipes. Do not interpret the original twelve batches as the full current Sol backlog.
-
-Batch07 current status: FT1-09 and FT2-10 are fixed by the test-truth change. FT2-07 is obsolete because PR169 already removed all Chrome-channel overrides. FT1-11/FT2-08 remain partial umbrella work. FT1-07/FT1-12 remain pending; no new shared packer or storage-fixture abstraction was introduced under this run's no-new-helper constraint.
-
-Batch03 is complete: FR1-05 was fixed in PR193; the customer-product-truth change closes its remaining eleven copy/setup findings without adding missing features.
-
-Batch04 eligible work is complete: ACS1-03, OPS1-11 and BT4-03. BT4-06 still waits for ACS1-04 and BT5-05 still waits for OPS1-09; no prerequisite or blocked test was changed.
-
-Batch06 eligible work is complete: CTA1-09, CTA2-01, BT1-07 and FT2-09. BT4-01 was already fixed by PR174 and is unchanged; BT3-07 remains blocked on OPS1-06.
+DOC1-05 remains owner action. Its future support-address note is in the operations docs; no mailbox, mail or DNS work was performed. [HANDOFF](../HANDOFF.md) records the budget, exact final preparation state and next recommended PR. The program is paused after this bounded run, not complete.
