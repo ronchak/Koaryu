@@ -126,7 +126,6 @@ describe("dashboard widget view models", () => {
 
     const preview = buildDashboardWidgetViewModels(baseInput({ isPreviewMode: true }));
     assert.equal(preview.student_pulse.provenance, "preview");
-    assert.equal(preview.student_pulse.provenanceLabel, "Preview fixture");
   });
 
   it("keeps static actions ready while each unsettled source stays truthful", () => {

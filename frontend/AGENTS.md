@@ -41,7 +41,7 @@ The local frontend runs on `http://localhost:4000`.
 ## Environment
 
 - Copy local env file from the example when needed: `cd frontend && cp .env.example .env.local`
-- Required build-time values include `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+- Required build-time values include `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, and `NEXT_PUBLIC_SITE_URL`.
 - Server-only cron secrets such as `CRON_SECRET` and `ACCOUNT_DELETION_WORKER_SECRET` must never be exposed via `NEXT_PUBLIC_` variables.
 
 If `npm run build` fails with missing Supabase URL or anon key errors, check the current shell environment or `.env.local` first.

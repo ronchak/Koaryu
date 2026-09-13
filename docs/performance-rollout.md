@@ -267,11 +267,14 @@ changing document admission to `getClaims()` remains conditional on the hosted
 revocation and refresh checks in the implementation plan. SSR refresh cookies
 and cache-prevention headers are copied together on ordinary and redirect responses.
 
-Browser API deadlines now cover headers and the complete JSON, error or download
-body. The default remains 12 seconds; call-specific overrides and null deadlines
-remain supported. Caller cancellation stays distinguishable from timeout. Proxy
-responses keep streaming, with a 150-second upstream deadline and cancellation
-when the caller or response consumer stops.
+Browser API deadlines cover headers and the complete JSON, error, or download
+body. Ordinary reads have a 35-second budget and ordinary writes have a
+95-second budget. Bulk reads are the exception at 130 seconds, while bulk writes
+have 190 seconds.
+Call-specific overrides and null deadlines remain supported. Caller cancellation
+stays distinguishable from timeout. Proxy responses keep streaming. Their
+upstream deadline is 34 seconds for ordinary requests and 125 seconds for bulk
+requests, with cancellation when the caller or response consumer stops.
 
 The interactive PostgREST transport uses a 10-second per-I/O timeout and the bulk
 transport uses 30 seconds. Bootstrap’s five short-lived clients inherit their

@@ -9,14 +9,9 @@ export function NotFoundView() {
       statusCode="404"
       eyebrow="Route not found"
       title="That page is not on the mat."
-      description="The route may have moved, been renamed, or never existed. Your studio session is still intact."
+      description="The route may have moved, been renamed, or never existed."
       icon={Search}
       tone="missing"
-      diagnostics={[
-        { label: "Requested route", value: "missing", state: "warn" },
-        { label: "App shell", value: "online", state: "ok" },
-        { label: "Session", value: "preserved", state: "ok" },
-      ]}
       actions={
         <>
           <StatusAction href="/dashboard" icon={Home}>

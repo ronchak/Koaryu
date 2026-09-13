@@ -18,11 +18,6 @@ export default async function Custom503Page({
       description="Koaryu is reachable, but a required service is not ready to serve this request yet."
       icon={Wrench}
       tone="offline"
-      diagnostics={[
-        { label: "Frontend", value: "online", state: "ok" },
-        { label: "Service", value: "unavailable", state: "bad" },
-        { label: "Retry", value: "recommended", state: "warn" },
-      ]}
       actions={
         <>
           <StatusAction href="/dashboard" icon={Home}>

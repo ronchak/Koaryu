@@ -294,7 +294,7 @@ export function StudentForm(props: StudentFormProps) {
                 <p className="text-xs text-text-secondary">
                   {isEdit
                     ? "Guardian details are shown for reference during this edit. Student profile fields save from here."
-                    : "Add a parent or guardian if this student is a minor. You can add more after saving."}
+                    : "Add one parent or guardian if this student is a minor."}
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-3">

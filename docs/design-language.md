@@ -752,7 +752,7 @@ The SVG frame grows vertically on tall screens rather than cropping away critica
 - Programmatic FAQ and panel scrolling uses `behavior: "auto"` under reduced motion instead of `"smooth"`.
 - Delayed invisible elements must be made immediately visible under reduced motion. Reducing duration alone is insufficient when a delay remains.
 - The production page must server-render the complete marketing narrative or provide an equivalent semantic document. Do not ship only the active client-side slide to search engines or no-JavaScript users.
-- Hash navigation remains meaningful. Chapter and FAQ navigation use `history.replaceState`, not `pushState`, so browser Back leaves the journey instead of replaying every chapter.
+- Hash navigation remains meaningful. Explicit chapter and FAQ links use `history.pushState`, so browser Back returns to the previous selection. Gesture, keyboard, and progress-driven changes use `history.replaceState` so they do not add an entry for every step.
 
 ## 16. Writing voice
 
@@ -917,7 +917,7 @@ Preserve FAQ topic hashes:
 | `faq-data` | `4` |
 | `faq-roadmap` | `5` |
 
-Chapter and FAQ navigation continue to use `replaceState`. Do not turn every chapter into a Back-button entry.
+Explicit chapter and FAQ links use `pushState`. Gesture, keyboard, and progress-driven changes use `replaceState` and do not add a Back-button entry for every step.
 
 ## 19. Prohibited shortcuts
 

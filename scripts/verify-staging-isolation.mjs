@@ -203,11 +203,6 @@ export function verifyStagingIsolation(env) {
     throw new Error("CORE_SELF_CHECKOUT_ENABLED must be false for staging release-gate verification.");
   }
 
-  requireCredentialShape(
-    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
-    required(env, "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"),
-    "pk_test_",
-  );
   requireCredentialShape("STRIPE_SECRET_KEY", required(env, "STRIPE_SECRET_KEY"), "sk_test_");
   const restrictedKey = (env.STRIPE_RESTRICTED_KEY ?? "").trim();
   if (restrictedKey) {

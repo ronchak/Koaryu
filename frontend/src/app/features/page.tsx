@@ -51,13 +51,13 @@ export default function FeaturesPage() {
       />
       <MarketingIndexPage
         eyebrow="Koaryu features"
-        title="The operating pieces behind a calmer martial arts studio."
-        description="Explore the Koaryu workflows owners actually compare: student CRM, belt progression, attendance, and billing visibility."
+        title="Tools for running a martial arts studio."
+        description="Compare Koaryu's student records, belt progression, attendance, and billing tools."
         pages={featurePages}
         sectionTitle="Feature map"
         basePath="/features"
         listHeading="Product areas owners can compare"
-        listDescription="Each feature is specific, internally linked, and grounded in a real studio workflow rather than generic software claims."
+        listDescription="Open any product area to see what staff can do there."
       />
     </>
   );
