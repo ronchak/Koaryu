@@ -70,7 +70,7 @@ Backend environment variables:
 
 The backend validates the Supabase target before readiness and before every shared service-role client is constructed. Production and staging are pinned to their exact Koaryu projects. Test permits only the canonical local URL or shipped placeholders. Development additionally permits an explicitly pinned hosted project that is neither Koaryu production nor staging. The pinned Supabase client cannot disable environment trust across all of its component transports, so service-role clients fail closed when any HTTP proxy or CA-bundle override is active. `NO_PROXY` does not override that refusal.
 
-When `ENVIRONMENT=production`, the backend requires `STRIPE_MODE=live` with matching `sk_live_` and optional `rk_live_` keys, and fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder-shaped, malformed, mode-mismatched, or pointed at a local origin. This prevents test Stripe identifiers from being written into production tenant records. `LIVE_BILLING_ENABLED=true` is rejected until Koaryu has durable scoped authorization for live mutations. A live-mode deployment with the switch off still verifies and reconciles matching live webhooks; outbound Stripe writes remain closed.
+When `ENVIRONMENT=production`, the backend requires `STRIPE_MODE=live` with matching `sk_live_` and optional `rk_live_` keys, and fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder-shaped, malformed, mode-mismatched, or pointed at a local origin. This prevents test Stripe identifiers from being written into production tenant records. For Stripe Connect and tuition mutations, `LIVE_BILLING_ENABLED=true` satisfies only the global environment interlock; each operation still requires the exact studio grant and operation permission. Turning that switch off closes those outbound writes while matching live webhooks and provider reads can still reconcile existing state. Koaryu Core uses its separate `CORE_SELF_CHECKOUT_ENABLED` interlock and exact-operation safeguards.
 
 Local defaults in this repo assume:
 
@@ -212,15 +212,13 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 - See `docs/support-triage.md` for the support queue, privacy rules, status workflow, and daily automation prompt expectations.
 - See `docs/email-domain-authentication.md` for the SPF/DMARC/DKIM records that keep `@koaryu.app` from being spoofed, and for the steps required before the domain may ever send mail.
 
-## Billing Readiness
+## Billing readiness
 
-Koaryu billing is **Contract Only**. Admin and Front Desk may view existing plans, families, student billing records, invoices, and payments. The only supported routine writes are an external-only local student billing attachment, a payer-level external payment record, and read-based reconciliation of an existing Stripe-linked invoice. Instructor access is denied before billing data is fetched.
+Koaryu Core subscription billing and Koaryu Payments tuition workflows have separate controls. The application implements named billing workflows for specific staff roles, but implementation and role permission do not make a workflow commercially available. The environment interlock and an enabled, unexpired exact-studio grant for every required operation must also allow a live provider mutation. Do not assume that any studio has such a grant. See [Billing workflow catalog](docs/billing-workflow-catalog.md) for the maintained workflow classifications and role assignments.
 
-Plan and payer changes, autopay, provider-backed enrollment lifecycle, invoice creation/finalization/retry/void, refunds, exports, Stripe Connect setup, and Koaryu Core checkout/portal are currently unsupported. Non-preview provider-mutation controls are hidden or disabled. Preview actions are demonstrations only and do not change provider state.
+Admin and Front Desk may view existing plans, families, student billing records, invoices, and payments. Instructor access is denied before billing data is fetched. Preview actions are demonstrations only and do not change provider state. Koaryu Payments tuition collection is not generally available unless Koaryu confirms activation for the exact studio.
 
-Keep `LIVE_BILLING_ENABLED=false`. Live outbound Stripe mutation requires transition-specific approval and durable authorization that are not currently available; setting the flag alone is insufficient and hosted configuration rejects it. Inbound signed live webhooks and provider reads may continue to reconcile existing state.
-
-Before presenting the supported surface, verify Render and Vercel are green for the same exact commit, health/readiness checks pass, Instructor denial discloses no billing data, and the three named routine transitions behave as described in [Billing Boundary](docs/billing-boundary.md).
+Before presenting billing behavior, verify Render and Vercel are green for the same exact commit, health/readiness checks pass, Instructor denial discloses no billing data, and each advertised workflow is enabled for the exact studio as described in [Billing Boundary](docs/billing-boundary.md).
 
 ## Recent Live-Mode Improvements
 

@@ -253,7 +253,7 @@ const featurePageDrafts: MarketingPageDraft[] = [
     eyebrow: "Billing",
     metaTitle: "Martial Arts Studio Billing and Tuition Software | Koaryu",
     description:
-      "Review existing tuition plans, family payer context, invoices, and payment issues without presenting unsupported provider changes as complete.",
+      "Review existing tuition plans, family payer context, invoices, and payment issues without implying that tuition collection is generally available.",
     summary:
       "Koaryu keeps existing billing state visible to Admin and Front Desk, supports external-only local records and read-based invoice reconciliation, and denies Instructor access before billing data is fetched.",
     icon: "credit-card",
@@ -270,13 +270,13 @@ const featurePageDrafts: MarketingPageDraft[] = [
         ],
       },
       {
-        title: "Provider state without provider mutation",
+        title: "Provider workflows require studio activation",
         description:
-          "Koaryu can read and reconcile an existing Stripe-linked invoice while live outbound provider changes remain disabled.",
+          "Koaryu implements named provider workflows, but tuition collection is not generally available without separate activation for the exact studio.",
         bullets: [
           "Reconcile an existing provider invoice through a read and update the local projection",
           "Record payer-level cash, check, Zelle, Venmo, or other external outcomes locally",
-          "Plan, payer, autopay, invoice-lifecycle, refund, and Connect changes are currently unavailable",
+          "Show provider actions only when the signed-in role and studio capability allow them",
         ],
       },
       {
@@ -296,7 +296,7 @@ const featurePageDrafts: MarketingPageDraft[] = [
         value: formatPublicPlatformPrice(),
         detail: "Flat Koaryu platform subscription",
       },
-      { label: "Provider writes", value: "Disabled", detail: "Currently unavailable" },
+      { label: "Activation", value: "Per studio", detail: "Not generally available" },
       {
         label: "Tuition",
         value: "Visible",
