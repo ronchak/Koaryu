@@ -4,6 +4,7 @@ from types import MappingProxyType
 from typing import Any, Callable, Mapping, Union
 
 from fastapi import HTTPException
+from gotrue.errors import AuthApiError
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.report_export_budget import (
@@ -11,14 +12,13 @@ from app.services.report_export_budget import (
     EXPORT_TOO_LARGE_DETAIL,
     ReportExportBudget,
 )
-from app.services.report_export_catalog_types import CsvReport, REPORT_SOURCE_SPECS
+from app.services.report_export_catalog_types import REPORT_SOURCE_SPECS, CsvReport
 from app.services.staff_service import (
     BASE_STAFF_ROLE_COLUMNS,
     EXTENDED_STAFF_ROLE_COLUMNS,
     OPTIONAL_STAFF_PROFILE_SCHEMA_ERROR_CODES,
     STAFF_PROFILE_COLUMNS,
 )
-
 
 EXPORT_PAGE_SIZE = 1000
 FILTER_VALUE_BATCH_SIZE = 200
@@ -591,31 +591,17 @@ class ReportExportDataFetcher:
             return fetch(BASE_STAFF_ROLE_COLUMNS)
 
     def _fetch_auth_users(self, user_ids: list[str]) -> dict[str, Any]:
-        requested = set(user_ids)
         found: dict[str, Any] = {}
-        page = 1
-        while requested - found.keys():
+        for user_id in user_ids:
             self.budget.admit_provider_call()
             try:
-                response = self.supabase.auth.admin.list_users(
-                    page=page,
-                    per_page=EXPORT_PAGE_SIZE,
-                )
-            except HTTPException:
+                response = self.supabase.auth.admin.get_user_by_id(user_id)
+            except AuthApiError as exc:
+                if exc.code == "user_not_found":
+                    continue
                 raise
-            except Exception:
-                break
-            users = response or []
-            if not isinstance(users, list):
-                users = getattr(users, "users", []) or []
-            self.budget.consume_rows(len(users))
-            for user in users:
-                user_id = user.get("id") if isinstance(user, dict) else getattr(user, "id", None)
-                if user_id in requested:
-                    found[user_id] = user
-            if len(users) < EXPORT_PAGE_SIZE:
-                break
-            page += 1
+            self.budget.consume_rows(1)
+            found[user_id] = response.user
         return found
 
     def fetch_table_rows(self, report: CsvReport, studio_id: str) -> list[dict[str, Any]]:
