@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "d14a1bac0709a83a90f27a532bedbcc4d6557f05",
+  "last_reconciled_main": "76ea4187df4d536122d3ce6c1bbb122e6bb2fc7a",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -7474,12 +7474,12 @@
       "id": "FR1-05",
       "title": "Password reset recovery points signed-out users to signed-in settings",
       "cluster": "access_and_recovery",
-      "disposition": "pending",
-      "reason": "Expired-link guidance still sends signed-out users toward authenticated settings. Existing magic-link login provides a sufficient recovery route if explained.",
+      "disposition": "fixed",
+      "reason": "The invalid-session page gives signed-out users the existing magic-link sign-in path before requesting a new password reset from Account Settings. The destination and labels are verified; authentication behavior is unchanged.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No hosted activity or new runtime tests in this normalization.",
+      "verified_against": "5639566907ea547c7e82371bc794a91c80bb914b",
+      "verification": "Coordinator and implementer passed nine existing auth-route cases. The two-line copy replacement preserves the 151-line page, existing link and all auth logic; synthetic build/lint/format pass. See password-recovery-guidance-verification.md.",
       "source_paths": [
         "frontend/src/app/(auth)/reset-password/page.tsx",
         "frontend/src/app/(auth)/login/page.tsx",
@@ -7501,7 +7501,7 @@
           "observation": "Existing toggle offers Sign in with magic link instead."
         }
       ],
-      "next_change": "Change invalid-link copy to explain signing in through the existing magic-link option, then requesting a password reset in Account Settings.",
+      "next_change": "None for the recovery guidance. Do not add a new authentication or email flow for this finding.",
       "validation_plan": "Review the signed-out recovery instructions against the actual Login labels and settings action.",
       "scope_constraints": [
         "Auth handlers, email delivery, recovery-session validation, and password policy."
@@ -9984,7 +9984,9 @@
         "frontend/src/components/billing/billing-enrollments-tab.tsx",
         "frontend/src/components/billing/billing-invoices-tab.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        192
+      ],
       "track": "Sol",
       "root_cause": "billing_date_only_display",
       "collapse_with": [],
@@ -13186,15 +13188,15 @@
     }
   },
   "current_counts": {
-    "pending": 179,
-    "fixed": 84,
+    "pending": 178,
+    "fixed": 85,
     "rejected_after_verification": 1,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1
   },
   "current_pending_tracks": {
-    "Sol": 150,
+    "Sol": 149,
     "Astra": 29
   },
   "execution_policy": {
@@ -13206,12 +13208,12 @@
   },
   "current_disposition_tracks": {
     "pending": {
-      "Sol": 150,
+      "Sol": 149,
       "Astra": 29
     },
     "fixed": {
       "Astra": 22,
-      "Sol": 62
+      "Sol": 63
     },
     "rejected_after_verification": {
       "Sol": 1
