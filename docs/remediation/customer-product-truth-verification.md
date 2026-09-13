@@ -1,0 +1,13 @@
+# Customer product-truth verification
+
+Base `37e80869a99bb8f5e214ff9512b4c6713d197d8b`; implementation `c634973dd6e1bd0556c73357dc75ac6124788422`. Completes batch03 except FR1-05, already fixed by PR193. The eleven dispositions are individually recorded in the ledger.
+
+Removed the unused frontend Stripe-key setup requirement and its validator branches; backend Stripe/project/secret checks and hosted configuration remain intact. README links the shipped CSV sample, current timeout/history guidance matches code, and product copy stops promising unavailable timezone/guardian editing or automations. Privacy data handling, rights and disclosures are preserved.
+
+The shared error page no longer fabricates diagnostics about sessions, API checks or data protection. Its diagnostic interface and all six static caller arrays are deleted. Status, icon/tone and recovery actions remain, including the 503 return-path guard. Billing and dashboard copy retains permission, preview, loading, partial and error distinctions. The roster notice describes request scope instead of progress or completion.
+
+Coordinator inspected all changed source and callers. Sixteen frontend files retain their executable structure, permitting only copy and removed diagnostic props. The shared error component is the intentional presentation simplification. Desktop 1280×900 and mobile 390×844 checks of built HTML/CSS showed readable content, visible recovery actions and no horizontal overflow. Scripts were removed and network requests blocked for that synthetic layout inspection; this is not live auth or end-to-end evidence.
+
+Thirty implementation files total 8,841→8,722 lines and 363,119→357,163 bytes. Five changed test files total 2,083→2,082 lines and 82,248→82,077 bytes. Frontend cases remain 902; staging-isolation cases go 19→18 by removing only the obsolete frontend-key case. No new test case, source assertion, feature, framework or dependency was added. Existing output tests retain meaningful allowed/denied/unloaded/preview checks without cross-label inequality as a substitute.
+
+Coordinator passed 31 focused cases and independently compared staging-isolation counts. Implementer passed 902 frontend, 18 isolation and 41 affected cases, environment-example checks, lint/format and the synthetic build after diagnostic removal. Final wording/check corrections passed 26 affected cases and narrow checks; the last onboarding-footer correction passed lint/format. Fresh exact-head CI and independent review remain required before guarded merge. No provider, credential, auth, mail/DNS, production or database operation ran.
