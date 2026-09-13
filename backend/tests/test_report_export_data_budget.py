@@ -229,7 +229,8 @@ class ReportExportDataBudgetTest(unittest.TestCase):
                     "students": students,
                     "student_guardians": relationships,
                 }
-            )
+            ),
+            budget=ReportExportBudget(clock=lambda: 0.0),
         )
         asyncio.run(success_service.build_csv("family_account_health", "studio-1"))
         success_snapshot = success_service.budget_snapshot
@@ -249,7 +250,8 @@ class ReportExportDataBudgetTest(unittest.TestCase):
                     "students": students,
                     "student_guardians": relationships,
                 }
-            )
+            ),
+            budget=ReportExportBudget(clock=lambda: 0.0),
         )
         with self.assertRaises(HTTPException) as context:
             asyncio.run(failure_service.build_csv("family_account_health", "studio-1"))

@@ -72,7 +72,10 @@ def test_exact_fetched_and_output_boundary_preserves_quoted_newline_bytes():
         for index in range(50_000)
     ]
     report = _report(table="export_rows", columns=("id", "studio_id", "note"))
-    service = ReportExportService(TableBackedSupabase({"export_rows": rows}))
+    service = ReportExportService(
+        TableBackedSupabase({"export_rows": rows}),
+        budget=ReportExportBudget(clock=lambda: 0.0),
+    )
 
     artifact = _build(service, report)
 
@@ -86,7 +89,10 @@ def test_exact_fetched_and_output_boundary_preserves_quoted_newline_bytes():
     assert artifact.spool_closed
 
     too_many = rows + [{"id": "row-over", "studio_id": "studio-1", "note": "over"}]
-    failure_service = ReportExportService(TableBackedSupabase({"export_rows": too_many}))
+    failure_service = ReportExportService(
+        TableBackedSupabase({"export_rows": too_many}),
+        budget=ReportExportBudget(clock=lambda: 0.0),
+    )
     with pytest.raises(HTTPException) as raised:
         _build(failure_service, report)
     assert raised.value.status_code == 413
@@ -104,6 +110,13 @@ def test_exact_fetched_and_output_boundary_preserves_quoted_newline_bytes():
         patch(
             "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
             return_value={"studio_id": "studio-1", "role": "admin"},
+        ),
+        patch(
+            "app.api.v1.endpoints.reports.ReportExportService",
+            side_effect=lambda client: ReportExportService(
+                client,
+                budget=ReportExportBudget(clock=lambda: 0.0),
+            ),
         ),
         pytest.raises(HTTPException) as endpoint_raised,
     ):
