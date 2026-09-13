@@ -3,6 +3,8 @@ from typing import Literal, Optional, get_args
 from datetime import date
 from uuid import UUID
 
+from app.core.error_handlers import ErrorMeta
+
 StudentStatus = Literal["active", "trialing", "inactive", "paused", "canceled"]
 STUDENT_STATUSES = set(get_args(StudentStatus))
 StudentListSortKey = Literal["name", "status", "membership_start_date", "created_at"]
@@ -185,10 +187,15 @@ class StudentRosterPageResponse(BaseModel):
     previous_cursor: Optional[str] = None
 
 
-class StudentRosterCursorErrorResponse(BaseModel):
+class StudentRosterCursorErrorDetail(BaseModel):
     code: str
     message: str
     recover_to: Literal["first", "nearest_prior"]
+
+
+class StudentRosterCursorErrorResponse(BaseModel):
+    detail: StudentRosterCursorErrorDetail
+    error: ErrorMeta
 
 
 class StudentListQueryContract(BaseModel):

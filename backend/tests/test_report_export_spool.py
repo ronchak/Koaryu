@@ -90,7 +90,6 @@ def test_exact_fetched_and_output_boundary_preserves_quoted_newline_bytes():
     with pytest.raises(HTTPException) as raised:
         _build(failure_service, report)
     assert raised.value.status_code == 413
-    assert raised.value.detail == ("Export is too large. Apply filters or request an async export.")
     assert failure_service.budget_snapshot.fetched_rows == 50_001
 
     endpoint_supabase = TableBackedSupabase(

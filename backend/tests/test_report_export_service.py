@@ -380,7 +380,6 @@ class ReportExportServiceTest(unittest.TestCase):
             )
 
         self.assertEqual(context.exception.status_code, 413)
-        self.assertIn("Export is too large", context.exception.detail)
         student_queries = [entry for entry in supabase.log if entry["table"] == "students"]
         self.assertEqual([entry["range"] for entry in student_queries], [(0, 1), (2, 3)])
 

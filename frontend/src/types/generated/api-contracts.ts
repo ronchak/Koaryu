@@ -1501,10 +1501,15 @@ export interface ApiStudentResponse {
   updated_at: string;
 }
 
-export interface ApiStudentRosterCursorErrorResponse {
+export interface ApiStudentRosterCursorErrorDetail {
   code: string;
   message: string;
   recover_to: "first" | "nearest_prior";
+}
+
+export interface ApiStudentRosterCursorErrorResponse {
+  detail: ApiStudentRosterCursorErrorDetail;
+  error: ApiErrorMeta;
 }
 
 export interface ApiStudentRosterPageResponse {
