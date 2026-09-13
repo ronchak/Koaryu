@@ -76,19 +76,19 @@ function provenance(
   state: DashboardWidgetState,
 ): Pick<DashboardWidgetViewModel, "provenance" | "provenanceLabel"> {
   if (state === "unavailable") {
-    return { provenance: "unavailable", provenanceLabel: "Source unavailable" };
+    return { provenance: "unavailable", provenanceLabel: "Data unavailable" };
   }
   if (state === "error") {
-    return { provenance: "error", provenanceLabel: "Source error" };
+    return { provenance: "error", provenanceLabel: "Could not load" };
   }
   if (state === "partial") {
     return { provenance: "partial", provenanceLabel: "Partial live data" };
   }
   if (input.isPreviewMode) {
-    return { provenance: "preview", provenanceLabel: "Preview fixture" };
+    return { provenance: "preview", provenanceLabel: "Preview data" };
   }
   if (state === "loading") {
-    return { provenance: "live", provenanceLabel: "Live source pending" };
+    return { provenance: "live", provenanceLabel: "Loading studio data" };
   }
   return { provenance: "live", provenanceLabel: "Live studio data" };
 }
@@ -353,11 +353,11 @@ export function buildDashboardWidgetViewModels(
           : undefined,
       detail:
         attentionState === "partial"
-          ? "Known obligations are listed while other sources finish or recover."
+          ? "Some items are ready, but other information is unavailable or still loading."
           : attentionState === "loading"
-            ? "Checking each source for current obligations."
+            ? "Checking for items that need attention."
             : attentionState === "error"
-              ? "Obligations could not be verified from the available sources."
+              ? "Some items could not be checked."
               : attentionState === "empty"
                 ? "No known obligations need action right now."
                 : "Open obligations across the current studio summary.",

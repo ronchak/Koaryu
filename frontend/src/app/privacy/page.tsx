@@ -4,11 +4,11 @@ import { LegalDocument } from "@/components/marketing/legal-document";
 
 export const metadata: Metadata = {
   title: "Privacy Policy | Koaryu",
-  description: "How Koaryu handles account, studio, student, and payment-adjacent data.",
+  description: "How Koaryu handles account, studio, student, and billing information.",
   alternates: { canonical: "https://koaryu.app/privacy" },
   openGraph: {
     title: "Privacy Policy | Koaryu",
-    description: "How Koaryu handles account, studio, student, and payment-adjacent data.",
+    description: "How Koaryu handles account, studio, student, and billing information.",
     url: "https://koaryu.app/privacy",
   },
 };
@@ -18,21 +18,21 @@ const privacySections = [
     id: "information-koaryu-handles",
     title: "Information Koaryu handles",
     paragraphs: [
-      "Koaryu handles account information, studio settings, staff roles, students, guardians, leads, schedules, attendance, rank progress, reports, audit records, billing plans, payer records, invoices, payments, refunds, disputes, and related metadata needed to operate the product.",
+      "Koaryu handles account details and the studio records entered or created while using the product. These records include staff roles, students, guardians, leads, schedules, attendance, rank progress, reports, audit records, billing plans, payers, invoices, payments, refunds, and disputes.",
     ],
   },
   {
     id: "authentication-and-access",
     title: "Authentication and access",
     paragraphs: [
-      "Koaryu uses Supabase Auth for authentication and uses studio membership, role checks, backend authorization, and database policies to scope records to the correct studio. Users should protect their login credentials and studio admins should promptly remove staff who no longer need access.",
+      "Koaryu checks each user's studio membership and role before allowing access to studio records. Users should protect their login details. Studio admins should remove access when a staff member no longer needs it.",
     ],
   },
   {
     id: "payments",
     title: "Payments",
     paragraphs: [
-      "Stripe processes card and bank/payment method details. Koaryu stores Stripe IDs, invoice status, payment status, fee amounts, reconciliation state, and other payment metadata so studios can understand and repair billing activity without storing raw card numbers.",
+      "Stripe processes card, bank, and other payment method details. Koaryu does not store raw card numbers. It stores Stripe IDs, invoice and payment status, fee amounts, and related billing records so studios can review payment activity.",
     ],
   },
   {
@@ -53,7 +53,7 @@ const privacySections = [
     id: "third-party-services",
     title: "Third-party services",
     paragraphs: [
-      "Koaryu depends on service providers such as Supabase, Stripe, Render, and Vercel to authenticate users, store data, process payments, host the backend, and serve the frontend. Those providers may process information as needed to deliver their services.",
+      "Koaryu uses Supabase for sign-in and data storage, Stripe for payment processing, Render for backend hosting, and Vercel for the website and application. These companies may process information when providing those services.",
     ],
   },
   {
@@ -66,13 +66,13 @@ const privacySections = [
 ] as const;
 
 const privacyNotice =
-  "Koaryu may update this privacy policy as the product, business details, data retention decisions, support process, and payment configuration evolve. Material changes should be reflected here before relying on the updated behavior in production.";
+  "Koaryu may update this privacy policy as the product, business details, data retention decisions, support process, and payment configuration evolve.";
 
 export default function PrivacyPage() {
   return (
     <LegalDocument
       title="Privacy Policy"
-      description="How Koaryu handles account, studio, student, and payment-adjacent data."
+      description="How Koaryu handles account, studio, student, and billing information."
       sections={privacySections}
       navigationLabel="Privacy policy sections"
       documentLabel="Privacy policy"

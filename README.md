@@ -37,7 +37,6 @@ Frontend environment variables:
 - `NEXT_PUBLIC_API_URL`: backend API base URL, typically `http://localhost:8001/api/v1`
 - `BACKEND_API_URL`: server-only backend API base URL for Next.js API proxy and cron routes; defaults to the public API URL only when this is not set
 - `NEXT_PUBLIC_SITE_URL`: public frontend origin used for auth callback links, typically `https://koaryu.app` in production
-- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key used by frontend billing flows
 - `CRON_SECRET`: server-only Vercel Cron secret used to authenticate scheduled internal maintenance routes
 - `ACCOUNT_DELETION_WORKER_SECRET`: server-only Vercel value that must match the backend worker secret so the scheduled account-deletion route can call the protected backend processor
 - `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls must route through the Next.js proxy instead of calling `NEXT_PUBLIC_API_URL` directly
@@ -108,8 +107,7 @@ If you prefer to run each service manually, use the commands below.
 cd frontend
 cp .env.example .env.local
 # Fill in NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
-# NEXT_PUBLIC_API_URL, BACKEND_API_URL, NEXT_PUBLIC_SITE_URL,
-# and NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+# NEXT_PUBLIC_API_URL, BACKEND_API_URL, and NEXT_PUBLIC_SITE_URL
 npm install
 npm run dev
 ```
@@ -171,7 +169,7 @@ Koaryu supports exactly one studio membership per user. Creating or accepting a 
 - Backend deployment is currently prepared for Render via `render.yaml`. Create a Render Blueprint from this repo, and use `docs/render-backend-deployment.md` plus `backend/.env.render.example` as the setup checklist.
 - Render builds `backend/Dockerfile`, preloads jemalloc, verifies the allocator at startup, and starts one Uvicorn process. Keep `render.yaml`, the Docker startup files, and `docs/render-backend-deployment.md` aligned.
 - Production backend startup validates required Supabase, Stripe, and frontend origin configuration before serving traffic. If Render deploys but the service exits immediately, check the runtime logs for `Production configuration is incomplete`.
-- The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, plus the server-only `BACKEND_API_URL` for proxy and cron routes, for Production. Add them in Vercel Project Settings or with:
+- The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, and `NEXT_PUBLIC_SITE_URL`, plus the server-only `BACKEND_API_URL` for proxy and cron routes, for Production. Add them in Vercel Project Settings or with:
 
 ```bash
 cd frontend
@@ -181,7 +179,6 @@ vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
 vercel env add NEXT_PUBLIC_API_URL production
 vercel env add BACKEND_API_URL production
 vercel env add NEXT_PUBLIC_SITE_URL production
-vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
 vercel env add CRON_SECRET production
 vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 ```
@@ -194,7 +191,7 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 - The informational landing page is intentionally not part of the Supabase auth middleware gate. It paints as static marketing UI, then warms the backend in the background through `/api/proxy/health` so a follow-up visit to login or dashboard has a better chance of finding Render awake.
 - Login, signup, onboarding, subscription-required, and dashboard routes still block on the normal auth/session behavior. Do not add `/` back to the frontend proxy matcher unless the landing page should become auth-aware again.
 - Preview mode is for demos only. Live mode now starts empty for new studios and should be used for deployment verification.
-- The repo does not currently ship seeded example CSV imports or a packaged demo tenant. For demos, prepare a small example CSV and/or a dedicated demo studio ahead of time.
+- The repository ships [a sample student CSV](frontend/public/demo-students.csv) for preview-import checks. It does not include a packaged or hosted demo tenant.
 - Repeated public signups against a shared dev Supabase project can hit Supabase email rate limits. For heavy QA loops, use a dedicated project, stagger signups, or create test users through an admin flow instead of repeated public signup attempts.
 - The demo reset and clear-studio-data tools are intentionally dangerous admin utilities. They preserve Koaryu Core subscription/platform access rows, but they can replace or delete working studio data and now require the target studio ID to be listed in `DEMO_RESET_STUDIO_IDS`.
 - A dojo-floor demo should run on the configured Render starter service only after it is warm, or on a larger always-on backend. Cold starts on small Render instances can make a correct billing flow look broken during the first click.

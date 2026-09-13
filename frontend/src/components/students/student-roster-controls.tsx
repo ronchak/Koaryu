@@ -80,11 +80,10 @@ export function StudentRosterNotices({
           <DismissibleNotice tone="warning" onDismiss={onDismissRosterQueryNotice}>
             <div className="text-text-primary">
               <p className="text-sm font-medium text-text-primary">
-                Loading the full roster for dashboard details
+                Full roster requested for dashboard details
               </p>
               <p className="mt-0.5 text-xs text-muted">
-                Koaryu is refreshing complete student data so retention and churn details are not
-                based on the bootstrap sample.
+                This request includes all student records needed for retention and churn details.
               </p>
             </div>
           </DismissibleNotice>

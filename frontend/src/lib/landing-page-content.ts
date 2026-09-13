@@ -361,7 +361,7 @@ const faqGroups: readonly FaqGroup[] = [
     items: [
       {
         question: `What does the ${formatPublicPlatformPrice()} include?`,
-        answer: `Students, ranks, leads, attendance, billing, reports, and automations. One studio is ${formatPublicPlatformPrice()} a month.`,
+        answer: `Students, ranks, leads, attendance, billing, and reports. Automations are planned. One studio is ${formatPublicPlatformPrice()} a month.`,
       },
       {
         question: "Do I pay more when the school grows?",
@@ -419,7 +419,7 @@ const faqGroups: readonly FaqGroup[] = [
       {
         question: "Will it support SMS?",
         answer:
-          "Maybe. SMS brings cost, compliance, and delivery headaches with it. Email automations come first.",
+          "Maybe. SMS has added cost and compliance requirements. Automated email is also planned, not available today.",
       },
       {
         question: "Is this AI-powered?",
@@ -570,7 +570,7 @@ export const landingPageContent = {
         {
           label: "Included",
           description:
-            "Students, ranks, leads, scheduling, attendance, billing workflows, reports, and automations.",
+            "Students, ranks, leads, scheduling, attendance, billing workflows, and reports. Automations are planned.",
         },
         {
           label: "Stripe fees",

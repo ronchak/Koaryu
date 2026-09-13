@@ -121,7 +121,6 @@ describe("marketing content contract", () => {
       /Are configurable belt ladders planned|The plan covers ordered ranks/,
     );
     assert.match(serialized, /web-first/);
-    assert.match(serialized, /Maybe\. SMS brings cost/);
     assert.match(serialized, /before activating payments/);
     assert.match(serialized, /fees separately/);
     assert.match(serialized, /Very convenient! Right up until class starts/);

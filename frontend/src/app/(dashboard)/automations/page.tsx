@@ -45,7 +45,8 @@ export default function AutomationsPage() {
                 <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">No automation builder is live.</h2>
               </div>
               <p className="text-sm leading-6 text-text-secondary">
-                There are no message toggles, schedules, forms, or hidden sends on this page. Koaryu will use deterministic templates and explicit studio approval when this work ships. Today, the four live queues below are the honest operating path.
+                This page does not send messages or schedule work. Use the available queues below
+                to review follow-ups that need staff attention.
               </p>
             </div>
           </section>

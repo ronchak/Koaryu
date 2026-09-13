@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "234e46ba7bfc2787c9013de4bbb188a8100851e6",
+  "last_reconciled_main": "37e80869a99bb8f5e214ff9512b4c6713d197d8b",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -115,18 +115,20 @@
       "id": "CTA1-03",
       "title": "An unused browser Stripe key remains a required setup and staging gate input",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "The public Stripe key remains mandatory in documentation and staging verification, but application source has no consumer or browser Stripe SDK.",
+      "disposition": "fixed",
+      "reason": "Removed the unused frontend publishable-key requirement from setup examples, guidance and local validators after confirming no frontend runtime/SDK consumer. Backend Stripe and isolation checks remain unchanged; provider configuration was not touched.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/.env.example",
         "frontend/AGENTS.md",
         "frontend/README.md",
         "scripts/verify-staging-isolation.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "obsolete_frontend_stripe_configuration",
       "collapse_with": [],
@@ -152,7 +154,7 @@
           "observation": "Checkout and portal controls consume backend-provided links rather than a browser Stripe client."
         }
       ],
-      "next_change": "Remove only the unused frontend variable from examples, setup docs, and the staging verifier after one final source/dependency search. Preserve all backend Stripe credentials and mode checks.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Search frontend source and dependencies for the variable or Stripe.js, then run the environment-example and staging-isolation checks.",
       "scope_constraints": [
         "STRIPE_SECRET_KEY",
@@ -164,7 +166,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "CTA1-04",
@@ -293,17 +296,19 @@
       "id": "CTA1-07",
       "title": "README hides an example CSV that the repository already ships and tests",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "The root demo instructions still tell operators to prepare a CSV even though the repository ships and links a deterministic sample.",
+      "disposition": "fixed",
+      "reason": "README links the shipped preview-import CSV and separately states that no packaged or hosted demo tenant is included.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "README.md",
         "frontend/README.md",
         "frontend/public/demo-students.csv"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "stale_demo_fixture_documentation",
       "collapse_with": [],
@@ -324,7 +329,7 @@
           "observation": "Contains the shipped sample fixture."
         }
       ],
-      "next_change": "Link frontend/public/demo-students.csv from the root README and separately state that no packaged or hosted demo tenant exists.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Static link/path check and confirmation that the sample remains the documented preview-import fixture.",
       "scope_constraints": [
         "demo reset controls",
@@ -334,7 +339,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "CTA1-08",
@@ -6014,17 +6020,19 @@
       "id": "DOC1-08",
       "title": "Performance debugging instructions still describe retired deadlines",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "The general performance runbook still states retired 12-second browser and 150-second proxy deadlines.",
+      "disposition": "fixed",
+      "reason": "Current timeout guidance matches ordinary/bulk browser and proxy budgets from request-budget.ts; historical evidence is retained.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "docs/performance-rollout.md",
         "docs/verification/navigation-reliability-followup.md",
         "frontend/src/lib/request-budget.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "stale_request_deadline_documentation",
       "collapse_with": [],
@@ -6050,7 +6058,7 @@
           "observation": "Implements 34/125-second proxy deadlines."
         }
       ],
-      "next_change": "Update only the current runbook section to the implemented deadline model and label older measurements as dated evidence.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Static comparison with request-budget.ts and the proxy timeout caller.",
       "scope_constraints": [
         "historical measurement results",
@@ -6060,22 +6068,25 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "DOC1-09",
       "title": "The authoritative design guide would undo deliberate browser-history behavior",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "The authoritative design guide universally requires replaceState, while explicit journey links intentionally create pushState history entries.",
+      "disposition": "fixed",
+      "reason": "Design guidance now distinguishes explicit link push history from gesture, keyboard and progress replacement, matching the current Journey controller.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "docs/design-language.md",
         "frontend/src/components/marketing/journey/journey-controller.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "stale_journey_history_documentation",
       "collapse_with": [],
@@ -6101,7 +6112,7 @@
           "observation": "Uses push mode for intercepted explicit links."
         }
       ],
-      "next_change": "Document that explicit link activation pushes history while gesture, keyboard, and progress-driven chapter changes replace it. Link the existing Back/Forward regression coverage.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Review each navigateTo/applyResolvedHash caller and the focused journey history test.",
       "scope_constraints": [
         "current browser-history behavior",
@@ -6111,7 +6122,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "DOC1-10",
@@ -7554,16 +7566,18 @@
       "id": "FR1-06",
       "title": "Onboarding promises a timezone setting that cannot be changed in the UI",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "Onboarding promises later editing, but Settings exposes only the studio name even though the backend update contract accepts timezone changes.",
+      "disposition": "fixed",
+      "reason": "The onboarding footer promises later editing of the studio name only. The unsupported timezone-editing promise is removed, and submission behavior is unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/app/onboarding/page.tsx",
         "frontend/src/app/(dashboard)/settings/page.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "missing_timezone_management_workflow",
       "collapse_with": [],
@@ -7589,7 +7603,7 @@
           "observation": "The existing studio update service is the backend owner for update fields, including validated timezone data."
         }
       ],
-      "next_change": "Narrow the onboarding promise to controls actually available after setup. Do not build a timezone settings feature to repair this copy defect; preserve timezone selection and backend behavior.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Review onboarding text against current Settings controls; use existing route/form checks, no new timezone mutation tests.",
       "scope_constraints": [
         "program dates",
@@ -7600,7 +7614,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FR1-07",
@@ -7904,18 +7919,20 @@
       "id": "FR1-13",
       "title": "Several public-facing explanations contain implementation instructions",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "Several customer pages still expose implementation and review instructions that do not help users complete the workflow.",
+      "disposition": "fixed",
+      "reason": "Scoped public/account/automation/feature/privacy text now explains user actions and existing behavior without developer implementation instructions. Existing data-handling policy and recovery routes are preserved.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/app/(dashboard)/account/settings/page.tsx",
         "frontend/src/app/(dashboard)/automations/page.tsx",
         "frontend/src/app/features/page.tsx",
         "frontend/src/app/privacy/page.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "developer_notes_in_customer_copy",
       "collapse_with": [
@@ -7944,7 +7961,7 @@
           "observation": "Includes a production change-control instruction in the public policy."
         }
       ],
-      "next_change": "Replace each developer-facing sentence with a direct user outcome. Preserve the typed deletion confirmation and move implementation requirements to docs or tests.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Run relevant existing checks and inspect rendered/user-visible state distinctions. Remove stale exact-wording/source-shape assertions; do not replace them with a new phrase-locking suite. Preserve behavioral permission, mutation and unavailable-data tests.",
       "scope_constraints": [
         "account deletion confirmation behavior",
@@ -7954,7 +7971,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FR1-14",
@@ -8339,16 +8357,18 @@
       "id": "FC1-08",
       "title": "Error screens present invented technical health assurances",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "Error components assert session, API, UI, recovery, and data-safety facts without receiving evidence for those claims.",
+      "disposition": "fixed",
+      "reason": "Removed the fabricated diagnostic sidebar, its unused types/prop and all six static caller arrays. Error descriptions no longer guarantee session or data safety without evidence; actual status and recovery actions remain.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/components/error-status-page.tsx",
         "frontend/src/app/error.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "unsupported_error_health_claims",
       "collapse_with": [],
@@ -8374,7 +8394,7 @@
           "observation": "Passes another unverified session-preserved diagnostic."
         }
       ],
-      "next_change": "Remove decorative health assertions and describe only the observed render failure and available recovery actions. Show health or session status only when supplied by a real check.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Run relevant existing checks and inspect rendered/user-visible state distinctions. Remove stale exact-wording/source-shape assertions; do not replace them with a new phrase-locking suite. Preserve behavioral permission, mutation and unavailable-data tests.",
       "scope_constraints": [
         "error reset behavior",
@@ -8384,7 +8404,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FC1-09",
@@ -8793,17 +8814,19 @@
       "id": "FC2-04",
       "title": "The student form promises guardian follow-up editing that has no interface",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "Creation promises additional guardians after save, but edit payloads omit guardians and student details provide no guardian management action.",
+      "disposition": "fixed",
+      "reason": "Student creation no longer promises adding more guardians after save. Guardian payloads, edit state and read-only detail display remain unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/components/students/student-form.tsx",
         "frontend/src/components/students/student-form-state.ts",
         "frontend/src/components/students/student-detail-sections.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "missing_guardian_management_workflow",
       "collapse_with": [],
@@ -8829,7 +8852,7 @@
           "observation": "Renders only a read-only primary guardian section."
         }
       ],
-      "next_change": "Remove the unsupported promise of adding further guardians after save. Preserve existing create/edit guardian payloads and read-only detail display; no new guardian-management feature.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Run relevant existing checks and inspect rendered/user-visible state distinctions. Remove stale exact-wording/source-shape assertions; do not replace them with a new phrase-locking suite. Preserve behavioral permission, mutation and unavailable-data tests.",
       "scope_constraints": [
         "student joining dates",
@@ -8840,7 +8863,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FC2-05",
@@ -9611,17 +9635,19 @@
       "id": "FC3-04",
       "title": "A permanent query flag is presented as an ongoing roster refresh",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "A persistent URL scope flag controls loading prose without reference to actual request readiness, so the notice remains after loading completes.",
+      "disposition": "fixed",
+      "reason": "The persistent full-roster notice describes requested scope without claiming an active refresh or completed load.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/components/students/student-roster-controls.tsx",
         "frontend/src/lib/students-page-model.ts",
         "frontend/src/components/students/student-roster-page-content.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "roster_scope_flag_misrepresented_as_loading",
       "collapse_with": [
@@ -9649,7 +9675,7 @@
           "observation": "Derives fullRosterRequested from a query flag, not request state."
         }
       ],
-      "next_change": "Describe the persistent full-list selection without claiming an active refresh. Keep actual loading/error ownership and query behavior unchanged; do not add another state flag solely for this copy.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Review the selected-scope notice with loading and settled existing fixtures; do not pin its exact wording.",
       "scope_constraints": [
         "roster pagination",
@@ -9659,7 +9685,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FC3-05",
@@ -10227,7 +10254,9 @@
         "frontend/src/lib/dashboard-page-composition.ts",
         "frontend/src/lib/dashboard-widget-view-models.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        197
+      ],
       "track": "Sol",
       "root_cause": "unused_dashboard_analytics",
       "collapse_with": [],
@@ -10307,16 +10336,18 @@
       "id": "FSH1-10",
       "title": "Public pricing copy still sells automations that the app marks as planned",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "Public pricing includes automations as a subscription feature while the product page says no automation builder is live and labels workflows as future proposals.",
+      "disposition": "fixed",
+      "reason": "Pricing and FAQ copy identify automations as planned while preserving current manual follow-up queues and prices.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/lib/landing-page-content.ts",
         "frontend/src/app/(dashboard)/automations/page.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "marketing_planned_feature_as_included",
       "collapse_with": [],
@@ -10342,7 +10373,7 @@
           "observation": "Presents automation workflows as future proposals."
         }
       ],
-      "next_change": "Remove automations from the current included-feature list or label them planned. Keep existing live follow-up queues distinct from automation claims.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Run relevant existing checks and inspect rendered/user-visible state distinctions. Remove stale exact-wording/source-shape assertions; do not replace them with a new phrase-locking suite. Preserve behavioral permission, mutation and unavailable-data tests.",
       "scope_constraints": [
         "pricing amount",
@@ -10352,7 +10383,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FSH1-11",
@@ -10411,16 +10443,18 @@
       "id": "FSH1-12",
       "title": "Customer copy exposes internal data plumbing and repeated technical status prose",
       "cluster": "product_truth_and_documentation",
-      "disposition": "pending",
-      "reason": "The cited strings expose internal data and authorization terminology; this is useful low-risk cleanup, but truthful loading, partial-data, and permission distinctions must remain.",
+      "disposition": "fixed",
+      "reason": "Billing/dashboard copy uses plain language while preserving allowed/denied, unloaded, preview, partial, error and unavailable distinctions.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "9f2df4951d81157be93c516bf29bea9b95e15ddd",
       "source_paths": [
         "frontend/src/lib/dashboard-widget-view-models.ts",
         "frontend/src/lib/billing-policy.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        198
+      ],
       "track": "Sol",
       "root_cause": "internal_terminology_in_customer_copy",
       "collapse_with": [
@@ -10449,7 +10483,7 @@
           "observation": "Builds customer copy around mutations and repeats three authorization sentences."
         }
       ],
-      "next_change": "Rewrite the cited messages in plain operational language while retaining distinct loading, unavailable, partial, and unauthorized states and actionable next steps.",
+      "next_change": "None for this scoped finding; no missing product feature was built.",
       "validation_plan": "Run relevant existing checks and inspect rendered/user-visible state distinctions. Remove stale exact-wording/source-shape assertions; do not replace them with a new phrase-locking suite. Preserve behavioral permission, mutation and unavailable-data tests.",
       "scope_constraints": [
         "permission decisions",
@@ -10460,7 +10494,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FSH2-01",
@@ -10903,7 +10938,9 @@
         "frontend/src/lib/store-belt-actions.ts",
         "frontend/src/lib/store-contexts.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        197
+      ],
       "track": "Sol",
       "root_cause": "unused-feature-interfaces",
       "collapse_with": [],
@@ -13239,16 +13276,16 @@
     }
   },
   "current_counts": {
-    "fixed": 107,
-    "pending": 155,
+    "fixed": 118,
     "rejected_after_verification": 1,
+    "pending": 144,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 126,
+    "Sol": 115,
     "Astra": 29
   },
   "execution_policy": {
@@ -13260,15 +13297,15 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 85,
+      "Sol": 96,
       "Astra": 22
-    },
-    "pending": {
-      "Sol": 126,
-      "Astra": 29
     },
     "rejected_after_verification": {
       "Sol": 1
+    },
+    "pending": {
+      "Sol": 115,
+      "Astra": 29
     },
     "deferred_intentionally": {
       "Sol": 7,

@@ -1050,7 +1050,6 @@ describe("operations behavior proof", () => {
     const contact = source("src/app/(dashboard)/help/contact/page.tsx");
     assert.match(account, /Type DELETE to continue/);
     assert.match(account, /deletionConfirmation !== "DELETE"/);
-    assert.match(account, /interface confirmation[\s\S]*API does not require this phrase/);
     assert.match(account, /Checking account deletion status/);
     assert.match(
       account,

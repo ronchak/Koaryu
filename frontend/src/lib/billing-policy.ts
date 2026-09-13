@@ -48,12 +48,12 @@ export function canStartCoreCheckout(
 
 function scopedCopy(mode: BillingProviderMode, label: string, permitted: boolean): string {
   if (!mode) {
-    return `${label} is unavailable until provider mode and studio authorization load.`;
+    return `${label} is unavailable while billing access is checked.`;
   }
   const modeLabel = mode === "live" ? "Live Stripe" : "Stripe test-mode";
   return permitted
-    ? `${modeLabel} ${label.toLowerCase()} is authorized for this studio.`
-    : `${modeLabel} ${label.toLowerCase()} is not authorized for this studio.`;
+    ? `${modeLabel} ${label.toLowerCase()} is available for this studio.`
+    : `${modeLabel} ${label.toLowerCase()} is not available for this studio.`;
 }
 
 export function resolveBillingProviderCopy({
@@ -71,7 +71,7 @@ export function resolveBillingProviderCopy({
 }): BillingProviderCopy {
   if (isPreviewMode) {
     const preview =
-      "Preview mode uses demo-only billing actions and does not change provider state.";
+      "Preview billing actions are demonstrations and do not create or change payments.";
     return {
       boundary: preview,
       coreSubscription: preview,
@@ -79,9 +79,9 @@ export function resolveBillingProviderCopy({
       connectPayments: preview,
     };
   }
-  const coreCopy = scopedCopy(providerMode, "Koaryu Core mutations", coreSubscription);
+  const coreCopy = scopedCopy(providerMode, "Koaryu Core changes", coreSubscription);
   const onboardingCopy = scopedCopy(providerMode, "Connect onboarding", connectOnboarding);
-  const paymentsCopy = scopedCopy(providerMode, "Connect payment mutations", connectPayments);
+  const paymentsCopy = scopedCopy(providerMode, "Connect payment changes", connectPayments);
   return {
     boundary: `${coreCopy} ${onboardingCopy} ${paymentsCopy}`,
     coreSubscription: coreCopy,

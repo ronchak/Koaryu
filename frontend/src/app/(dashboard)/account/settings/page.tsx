@@ -189,7 +189,7 @@ export default function AccountSettingsPage() {
   return (
     <AccountPageShell
       title="Account settings"
-      description="Review account-level security and move to the right studio administration tools."
+      description="Manage your sign-in, account access, ownership, and deletion settings."
     >
       <AccountNameSection />
 
@@ -208,7 +208,7 @@ export default function AccountSettingsPage() {
           href="/account/profile"
           icon={UserCircle}
           title="Profile and identity"
-          description="See your full profile, workspace context, and how your identity is used."
+          description="Review your name, email, studio, and role."
         />
         <AccountLinkTile
           href="/settings"
@@ -221,20 +221,20 @@ export default function AccountSettingsPage() {
           href="/billing"
           icon={CreditCard}
           title="Billing workspace"
-          description="Manage Koaryu Core, Connect readiness, plans, payers, and invoices."
+          description="Review Koaryu Core, payment setup, plans, payers, and invoices."
         />
         <AccountLinkTile
           href="/privacy"
           icon={ShieldCheck}
           title="Privacy and data"
-          description="Review Koaryu's privacy posture for studio and student records."
+          description="Read how Koaryu handles studio and student records."
         />
       </div>
 
       <AccountSection title="Security notes">
         <AccountNotice>
-          Koaryu uses Supabase Auth for authentication. Password reset emails and global sign-out are available here,
-          while studio membership and role-based permissions are managed by Koaryu.
+          Send yourself a password reset email or sign out on every device. Studio admins manage
+          staff roles in Studio Settings.
         </AccountNotice>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button
@@ -390,7 +390,7 @@ export default function AccountSettingsPage() {
                 className="min-h-11 px-3 py-2 font-mono text-sm"
               />
               <span id="account-deletion-confirm-help" className="text-xs leading-5 text-muted">
-                This is an extra Koaryu interface confirmation. The account-deletion API does not require this phrase.
+                Enter the word exactly as shown to confirm this request.
               </span>
             </label>
           ) : null}

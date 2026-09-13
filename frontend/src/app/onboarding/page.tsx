@@ -196,7 +196,7 @@ export default function OnboardingPage() {
         <div className="border-y border-border bg-surface py-6">
           <h2 className="text-lg font-semibold text-text-primary mb-1">Set up your studio</h2>
           <p className="text-sm text-text-secondary mb-6">
-            Tell us about your dojo and you&apos;ll be ready to go.
+            Name your studio and choose its timezone. You can then continue to subscription setup.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -250,7 +250,7 @@ export default function OnboardingPage() {
         </div>
 
         <p className="text-xs text-muted text-center mt-4">
-          You can update these settings anytime.
+          You can update your studio name later in Settings.
         </p>
       </div>
     </FocusedOperationsSheet>
