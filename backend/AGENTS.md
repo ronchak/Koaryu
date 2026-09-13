@@ -44,6 +44,9 @@ The local backend runs on `http://127.0.0.1:8001`.
 - Do not commit real values from `backend/.env` or other local secret files.
 - Prefer keeping HTTP concerns in endpoints and domain logic in services.
 - When changing a service contract, update the dependent schema, endpoint, and targeted tests together.
+- Keep `BillingService` as the public billing entry and composition point.
+- Give billing managers, projectors, and workflows their concrete collaborators. Do not pass an opaque `BillingService` or owner object, add a private forwarding facade, or import `billing_service` back into billing components.
+- Keep shared billing rules in the component that owns them, including authorization, tenant isolation, payment and idempotency checks, and database safeguards. This boundary does not prohibit focused private helpers or legitimate owner IDs.
 
 ## Production And Deployment Constraints
 

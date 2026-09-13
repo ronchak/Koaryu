@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "6ab6ad33349641856ae0fb8b0c3735fa2ee6d9d0",
+  "last_reconciled_main": "74cd8f4862ffeb669c36bb03603d820fd95a512f",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -402,7 +402,9 @@
         "frontend/scripts/capture-dashboard-performance.mjs",
         "frontend/README.md"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        200
+      ],
       "track": "Sol",
       "root_cause": "performance_capture_contract",
       "collapse_with": [
@@ -438,7 +440,9 @@
         "backend/tests/performance/dashboard_summary_fixture.py",
         "scripts/check-performance-regression.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        200
+      ],
       "track": "Sol",
       "root_cause": "performance_measurement_contract",
       "collapse_with": [
@@ -4133,7 +4137,9 @@
         "backend/tests/performance/dashboard_summary_fixture.py",
         "backend/tests/performance/test_dashboard_summary_fixture.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        200
+      ],
       "track": "Sol",
       "root_cause": "performance_measurement_contract",
       "collapse_with": [
@@ -4897,7 +4903,7 @@
       "title": "Legacy dashboard implementation keeps a full suite of implementation-specific query contracts",
       "cluster": "business_dates_and_metrics",
       "disposition": "pending",
-      "reason": "Legacy tests still impose exact query counts on the semantic reference. Retain their business and isolation scenarios while removing obsolete implementation coupling. The owner explicitly excludes prerequisite OPS1-06 from the September 12 budget-capped run; retain this finding pending and do not implement that prerequisite or alter its safety assertions in this run.",
+      "reason": "Legacy tests still impose exact query counts on the semantic reference. Retain their business and isolation scenarios while removing obsolete implementation coupling. The owner explicitly excludes prerequisite OPS1-06 from the September 12 budget-capped run; retain this finding pending and do not implement that prerequisite or alter its safety assertions in this run. The owner explicitly excluded prerequisite OPS1-06 from this budgeted run; this finding remains pending.",
       "audit_importance": "low",
       "evidence_role": "supporting",
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5217,7 +5223,7 @@
       "title": "Body middleware tests require identical message objects beyond byte preservation",
       "cluster": "bounded_reads_and_runtime",
       "disposition": "pending",
-      "reason": "Tests still require inbound message object identity beyond preserving bytes and valid framing. This supports ACS1-04 but remains unresolved. The owner explicitly excludes prerequisite ACS1-04 from the September 12 budget-capped run; retain this finding pending and do not implement that prerequisite or alter its safety assertions in this run.",
+      "reason": "Tests still require inbound message object identity beyond preserving bytes and valid framing. This supports ACS1-04 but remains unresolved. The owner explicitly excludes prerequisite ACS1-04 from the September 12 budget-capped run; retain this finding pending and do not implement that prerequisite or alter its safety assertions in this run. The owner explicitly excluded prerequisite ACS1-04 from this budgeted run; this finding remains pending.",
       "audit_importance": "low",
       "evidence_role": "supporting",
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5539,7 +5545,7 @@
       "title": "Staff export fixture silently skips its seeded Auth users",
       "cluster": "bounded_reads_and_runtime",
       "disposition": "pending",
-      "reason": "The archive fixture supplies get_user_by_id while the exporter calls list_users; the swallowed mismatch leaves seeded Auth fields untested. The owner explicitly excludes prerequisite OPS1-09 from the September 12 budget-capped run; retain this finding pending and do not implement that prerequisite or alter its safety assertions in this run.",
+      "reason": "The archive fixture supplies get_user_by_id while the exporter calls list_users; the swallowed mismatch leaves seeded Auth fields untested. The owner explicitly excludes prerequisite OPS1-09 from the September 12 budget-capped run; retain this finding pending and do not implement that prerequisite or alter its safety assertions in this run. The owner explicitly excluded prerequisite OPS1-09 from this budgeted run; this finding remains pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6609,7 +6615,7 @@
       "title": "Browser fixture infrastructure is duplicated and difficult to review",
       "cluster": "test_and_adapter_maintenance",
       "disposition": "pending",
-      "reason": "The shared browser packer now handles ESM helpers, but duplicated packers and a large boolean-driven harness remain. Stub fidelity still varies by mode, and core observer wiring is embedded in long generated strings. Current bounded run leaves shared packer/storage extraction pending: the no-new-generic-helper constraint rules out simply moving these copies into another fixture abstraction. Revisit only with a concrete simpler design using existing ownership.",
+      "reason": "The shared browser packer now handles ESM helpers, but duplicated packers and a large boolean-driven harness remain. Stub fidelity still varies by mode, and core observer wiring is embedded in long generated strings. Current bounded run leaves shared packer/storage extraction pending: the no-new-generic-helper constraint rules out simply moving these copies into another fixture abstraction. Revisit only with a concrete simpler design using existing ownership. Not started in the remaining new-work budget; a future bounded design must reduce indirection and preserve each scenario rather than add a generic fixture layer.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6769,7 +6775,7 @@
       "title": "Source-shape checks create broad refactoring constraints beyond their behavior",
       "cluster": "test_and_adapter_maintenance",
       "disposition": "pending",
-      "reason": "This umbrella remains pending. The frontend test-truth change removes four incidental source/copy cases and other presentation assertions in six named suites, while retaining safety policies and behavioral checks. Nine changed files shrink by 39 lines; remaining source assertions and other owning subsystems still need review.",
+      "reason": "This umbrella remains pending. The frontend test-truth change removes four incidental source/copy cases and other presentation assertions in six named suites, while retaining safety policies and behavioral checks. Nine changed files shrink by 39 lines; remaining source assertions and other owning subsystems still need review. Further cross-suite work was not started during wind-down because its review boundary exceeds the remaining new-work allowance; safety assertions remain intact.",
       "audit_importance": "low",
       "evidence_role": "observation",
       "verified_against": "ddfff9ad34e12bdc32d20fae3b4176d09538797c",
@@ -6832,7 +6838,7 @@
       "title": "Repeated fixture and storage scaffolding obscures the behavioral cases",
       "cluster": "financial_command_completion",
       "disposition": "pending",
-      "reason": "Identical map-backed storage scaffolding remains repeated. Small fixture reuse is useful cleanup, independent of production recovery refactoring. Current bounded run leaves shared packer/storage extraction pending: the no-new-generic-helper constraint rules out simply moving these copies into another fixture abstraction. Revisit only with a concrete simpler design using existing ownership.",
+      "reason": "Identical map-backed storage scaffolding remains repeated. Small fixture reuse is useful cleanup, independent of production recovery refactoring. Current bounded run leaves shared packer/storage extraction pending: the no-new-generic-helper constraint rules out simply moving these copies into another fixture abstraction. Revisit only with a concrete simpler design using existing ownership. Not started in the remaining new-work budget; a future bounded design must reduce indirection and preserve each scenario rather than add a generic fixture layer.",
       "audit_importance": "low",
       "evidence_role": "observation",
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -7213,7 +7219,7 @@
       "title": "Source assertions preserve internal product copy and incidental implementation details",
       "cluster": "product_truth_and_documentation",
       "disposition": "pending",
-      "reason": "This umbrella remains pending. The frontend test-truth change removes four incidental source/copy cases and other presentation assertions in six named suites, while retaining safety policies and behavioral checks. Nine changed files shrink by 39 lines; remaining source assertions and other owning subsystems still need review.",
+      "reason": "This umbrella remains pending. The frontend test-truth change removes four incidental source/copy cases and other presentation assertions in six named suites, while retaining safety policies and behavioral checks. Nine changed files shrink by 39 lines; remaining source assertions and other owning subsystems still need review. Further cross-suite work was not started during wind-down because its review boundary exceeds the remaining new-work allowance; safety assertions remain intact.",
       "audit_importance": "low",
       "evidence_role": "supporting",
       "verified_against": "ddfff9ad34e12bdc32d20fae3b4176d09538797c",
@@ -7276,7 +7282,9 @@
         "frontend/tests/workflow-stabilization-mounted.test.mjs",
         "frontend/tests/helpers/store-browser-harness.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        200
+      ],
       "track": "Sol",
       "root_cause": "performance_measurement_contract",
       "collapse_with": [],
@@ -9852,7 +9860,7 @@
       "title": "Roster component interfaces carry a large duplicated bundle of state and callbacks",
       "cluster": "read_and_mutation_ownership",
       "disposition": "pending",
-      "reason": "The duplicated prop bundle remains a plausible maintenance cleanup, not an independent runtime defect or proof that typed component boundaries are wrong. The owner explicitly excludes prerequisite FC3-01 from the September 12 budget-capped run; retain this finding pending and do not implement that prerequisite or alter its safety assertions in this run.",
+      "reason": "The duplicated prop bundle remains a plausible maintenance cleanup, not an independent runtime defect or proof that typed component boundaries are wrong. The owner explicitly excludes prerequisite FC3-01 from the September 12 budget-capped run; retain this finding pending and do not implement that prerequisite or alter its safety assertions in this run. The owner explicitly excluded prerequisite FC3-01 from this budgeted run; this finding remains pending.",
       "audit_importance": "low",
       "evidence_role": "observation",
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",

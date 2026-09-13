@@ -3,7 +3,7 @@
 Owner: the coordinating remediation task. Started September 7, 2026.
 Original normalization base: `66e8240a5d4ed3a21af74e60ee6aa8574cd9c703`, after PR162.
 
-Koaryu's working architecture and safeguards stay. This program corrects verified product defects and removes accidental complexity through bounded, independently reviewed PRs. It does not promise to implement every audit recommendation.
+Preserve working behavior and safeguards while removing verified accidental complexity through bounded, independently reviewed changes. This program does not promise to implement every audit recommendation.
 
 ## Current position
 
@@ -36,17 +36,15 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 ## Current bounded run
 
-[The final enrollment ownership change](docs/remediation/enrollment-ownership-verification.md) removes the private facade and closes BB1-09. Billing components have concrete owners and no dependency cycle back into BillingService. Financial and database findings remain separately tracked.
+Implementation stopped on September 12, Pacific time, at 43 weekly points spent from a zero-use baseline. The hard cap is 50 and the stop-new-batches threshold is 45. The remaining allowance is reserved for reviewed handoff and clean-state verification. See [HANDOFF](docs/remediation/HANDOFF.md) for the final preparation SHA, counts, unfinished work and release traps. This run is paused; the remediation program remains incomplete.
 
-The owner resumed work on September 12 with a 50-point weekly usage cap and a 45-point stop-new-batches threshold. [The run plan](docs/remediation/budget-refactor-plan.md) records scope, order, ownership and wind-down requirements. Sol implements one batch per fresh thread; the coordinator reviews and integrates; each PR gets a separate fresh reviewer. Database implementation and proofs are excluded from this run.
+The billing owner graph is removed. Sixteen components no longer receive opaque service/manager owners, the four opaque workflow families are gone, and all 71 private-facade methods are retired. Billing modules change 29→27 and source lines 20,760→20,085. The [ownership verification](docs/remediation/enrollment-ownership-verification.md) and current backend guide describe the resulting boundary. Financial safeguards and unresolved financial findings remain separate.
 
-[PR182](https://github.com/ronchak/Koaryu/pull/182) merged as `d6bab29209d2ee4650b8f01e0ece474ff519f422`. It pins Ruff/Prettier and separates mechanical formatting from future behavior changes. It closes no audit observation. [Formatter verification](docs/remediation/formatter-verification.md) records tests, mechanical equivalence and fifteen explicit source-test exceptions.
+This run merged PR182–200 and the previously parked PR180. It fixed 47 audit observations and closed one stale observation as obsolete. Of the original 55 selected delegated findings, 46 are fixed, one is obsolete and eight remain pending: four excluded prerequisites and four broader test-cleanup items. [The batch index](docs/remediation/delegated/README.md) records each remainder. No additional implementation was started during wind-down.
 
-[PR180](https://github.com/ronchak/Koaryu/pull/180) was rebased and revalidated for the six-interface closeout; see [verification](docs/remediation/dead-ui-interface-verification.md). The owner redirected this run to billing architecture, adding BB1-09 ahead of the original 55 delegated findings. The prior display worker stopped before implementation. Four blocked prerequisites remain explicitly excluded. The paused [HANDOFF](docs/remediation/HANDOFF.md) is historical context until this run's final refresh. The [production packet](docs/remediation/PRODUCTION-RELEASE.md) remains preparation for a human operator, not execution authority for this run.
+The formatter baseline is pinned. Relative to that baseline, non-generated backend/frontend application Python/TypeScript source is 1,179 lines smaller. Frontend cases fell 912→902; backend cases remain 1,904. Test source and JSON fixtures did not shrink overall: frontend/e2e +120 lines, backend +34, root test scripts −1, net +153. Stronger contract and mounted fixtures offset deletions. Broader fixture/source-test cleanup remains pending; it is not claimed complete.
 
-PR183 merged as `91184e762f99be7e3ebb26d959701d365797e57b`. Plans now have one concrete owner; the separate sync workflow and three facade aliases are deleted. Production shrinks by 35 lines and ten definitions, and tests by 48 lines with unchanged cases. This began the BB1-09 ownership remediation. See [plan ownership verification](docs/remediation/billing-plan-ownership-verification.md).
-
-PR184 merged as `0559911b4c6fd7c57095ffcfbff73a7c2bbb49ba`, deleting 35 facade methods and four unused enrollment forwarders. All remaining methods and test assertions are unchanged. The facade has 33 methods left; BB1-09 remains pending. Across PR183/184, affected billing test files are 14 lines smaller with unchanged cases.
+Every implementation batch used a fresh Sol thread, coordinator review, and a separate fresh reviewer for its PR. Corrections reused a thread only within the same batch or PR. All merges used the guarded script with exact-head CI and production auto-deploy readback off. No Supabase file, production migration, deployment, live billing activation, historical financial backfill, mail or DNS was changed. The [production packet](docs/remediation/PRODUCTION-RELEASE.md) remains pinned to an earlier candidate and is not approval to promote current main.
 
 ## Completed changes
 
@@ -78,43 +76,27 @@ PR184 merged as `0559911b4c6fd7c57095ffcfbff73a7c2bbb49ba`, deleting 35 facade m
 | [176](https://github.com/ronchak/Koaryu/pull/176) | Mobile roster sorting, shared badge contrast and hidden-rail hover suppression | `ddacde1` | [Roster](docs/remediation/roster-presentation-verification.md) |
 | [177](https://github.com/ronchak/Koaryu/pull/177) | Removed redundant records UI source tests | `18b64e9` | [Test reduction](docs/remediation/records-test-reduction-plan.md) |
 | [179](https://github.com/ronchak/Koaryu/pull/179) | USD for new tuition financial writes and retired legacy pricing | `7113d13` | [Currency](docs/remediation/tuition-currency-verification.md) |
-
 | [178](https://github.com/ronchak/Koaryu/pull/178) | Durable import outcomes, safe retry and removed broad ladder repair | `f942dad` | [Import ownership](docs/remediation/import-retry-ownership-verification.md) |
 | [182](https://github.com/ronchak/Koaryu/pull/182) | Pinned formatters and mechanical code baseline | `d6bab29` | [Formatters](docs/remediation/formatter-verification.md) |
 | [183](https://github.com/ronchak/Koaryu/pull/183) | Concrete billing plan ownership and deleted facade aliases | `91184e7` | [Plan ownership](docs/remediation/billing-plan-ownership-verification.md) |
 | [184](https://github.com/ronchak/Koaryu/pull/184) | Deleted 39 dead billing forwarding/helper definitions | `0559911` | [Facade pruning](docs/remediation/billing-facade-pruning-verification.md) |
-
 | [185](https://github.com/ronchak/Koaryu/pull/185) | Concrete payer ownership and removed reverse service import | `b219fd0` | [Payer ownership](docs/remediation/payer-ownership-verification.md) |
-
 | [186](https://github.com/ronchak/Koaryu/pull/186) | Concrete provider projection ownership and deleted forwarding routes | `27eddf0` | [Projection ownership](docs/remediation/projection-ownership-verification.md) |
-
 | [187](https://github.com/ronchak/Koaryu/pull/187) | Concrete Connect/autopay ownership and shared ordinary audit/redirect rules | `32b1ff3` | [Connect/autopay ownership](docs/remediation/connect-autopay-ownership-verification.md) |
-
 | [188](https://github.com/ronchak/Koaryu/pull/188) | One concrete invoice owner and real projection/consent fixtures | `9d99ad5` | [Invoice ownership](docs/remediation/invoice-ownership-verification.md) |
-
 | [189](https://github.com/ronchak/Koaryu/pull/189) | Concrete payment/reconciliation ownership and real refund/RPC fixtures | `df2cced` | [Payment/reconciliation ownership](docs/remediation/payment-reconciliation-ownership-verification.md) |
-
 | [190](https://github.com/ronchak/Koaryu/pull/190) | Concrete enrollment records/workflows; private billing facade removed | `c13b8bf` | [Enrollment ownership](docs/remediation/enrollment-ownership-verification.md) |
-
 | [191](https://github.com/ronchak/Koaryu/pull/191) | Calendar age, truthful student read states and unique CSV controls | `d14a1ba` | [Student display](docs/remediation/student-display-truth-verification.md) |
-
 | [192](https://github.com/ronchak/Koaryu/pull/192) | UTC-stable billing calendar dates with local timestamp display preserved | `76ea418` | [Billing dates](docs/remediation/billing-calendar-display-verification.md) |
-
 | [193](https://github.com/ronchak/Koaryu/pull/193) | Usable signed-out password recovery guidance | `c40215d` | [Recovery guidance](docs/remediation/password-recovery-guidance-verification.md) |
-
 | [194](https://github.com/ronchak/Koaryu/pull/194) | One guarded backup owner and corrected release guidance | `04d7efe` | [Operator documentation](docs/remediation/operator-docs-verification.md) |
-
 | [195](https://github.com/ronchak/Koaryu/pull/195) | One billing product authority and reduced stale copy tests | `bb7a0ae` | [Billing product truth](docs/remediation/billing-product-truth-verification.md) |
-
 | [180](https://github.com/ronchak/Koaryu/pull/180) | Retired dead UI interfaces and misleading live belt smoke | `5f34e21` | [Dead interfaces](docs/remediation/dead-ui-interface-verification.md) |
-
 | [196](https://github.com/ronchak/Koaryu/pull/196) | Correct API fixtures and remove incidental UI test claims | `234e46b` | [Test truth](docs/remediation/frontend-test-truth-verification.md) |
-
 | [197](https://github.com/ronchak/Koaryu/pull/197) | Removed unused dashboard analytics and lead/belt interfaces | `37e8086` | [Unused state](docs/remediation/unused-state-verification.md) |
-
 | [198](https://github.com/ronchak/Koaryu/pull/198) | Corrected product promises and removed fabricated error diagnostics | `ae96269` | [Customer product truth](docs/remediation/customer-product-truth-verification.md) |
-
 | [199](https://github.com/ronchak/Koaryu/pull/199) | Accurate cursor error contract and export-limit guidance | `6ab6ad3` | [Backend contract truth](docs/remediation/backend-contract-truth-verification.md) |
+| [200](https://github.com/ronchak/Koaryu/pull/200) | Accurate request diagnostics and meaningful performance gates | `74cd8f4` | [Performance evidence](docs/remediation/performance-evidence-truth-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 
