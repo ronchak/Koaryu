@@ -247,11 +247,11 @@ Rollback closes new writes and preserves evidence:
 
 ## Production packet awaiting approval
 
-The production packet is prepared but must not be executed in this task:
+This section records an earlier prepared release. Current execution requires the [production packet](remediation/PRODUCTION-RELEASE.md) and its owner-authorization protocol; worker and live-billing activation remain separate approvals:
 
 1. Merge only after a separate approval and all exact-head gates.
 2. Complete the guarded database backup gate, inspect production, obtain the state-bound
-   approval, and have the human operator apply and verify the exact generated packet.
+   approval, and have the named owner-authorized coordinator or operator apply and verify the exact generated packet.
 3. Deploy the exact merged backend SHA and require exact readiness against that database.
 4. Keep the production worker and recurring schedule suspended. With separate approval,
    deploy the worker from the same SHA and prove one manual zero-work run.

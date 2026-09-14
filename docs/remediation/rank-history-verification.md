@@ -48,7 +48,7 @@ separate predecessor. V40 checks its own catalog, release definitions and direct
 rank metadata. It observes all promotion FKs so a new FK cannot quietly turn
 immutable receipt evidence into mutable references. The staging fingerprint must
 match the complete current tuple before production apply, not only its syntax.
-Human-only production apply and existing approval/restore gates remain intact.
+Production apply follows the current owner-authorization protocol; existing approval and restore gates remain intact.
 
 Evidence completed locally:
 

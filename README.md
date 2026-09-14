@@ -143,7 +143,7 @@ migrations with `supabase migration up --local`, then use
 disposable local stack.
 
 Hosted migrations follow [Cutover Gates](docs/cutover-gates.md), including the
-human-only production apply. Never run contract SQL against production, even
+owner-authorized production apply and announce-and-pause protocol. Never run contract SQL against production, even
 inside a transaction that rolls back. Linked contracts are only for an explicitly
 intended staging verification after staging has the candidate migrations. The SQL
 runner accepts only the pinned Koaryu staging connection and rejects routing

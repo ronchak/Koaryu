@@ -1,6 +1,6 @@
 # Studio-Comp Migration Rollout
 
-Status: **Historical V24–V38 rollout documentation. Current V38-to-V45 execution instructions are in [the remediation production packet](remediation/PRODUCTION-RELEASE.md). Do not use the historical candidate counts below for the current release.**
+Status: **Historical V24–V38 rollout documentation. Current release execution instructions are in [the remediation production packet](remediation/PRODUCTION-RELEASE.md). Do not use the historical candidate counts below for the current release.**
 
 ## Combined schedule-window, Payments, and performance extension
 
@@ -48,10 +48,7 @@ V22 to the immutable 117-migration V24 release.
 It is specialized to this rollout, not a generic migration or history-repair
 framework.
 
-Agents may inspect staging or production read-only when authorized. Agents must
-never run migration or contract SQL against production. Only the named human
-operator may execute the production `apply` mode after the exact staging and
-restore gates below are approved.
+Authorized agents may inspect staging or production read-only. Production migration apply is restricted to the guarded tool under explicit owner authorization for the named coordinating agent or operator. Follow the [current execution protocol](cutover-gates.md#owner-authorized-release-execution), including staging, backup/restore and announce-and-pause requirements. The existing prohibition on running contract or migration SQL against production remains; only the guarded tool's authorized apply is an exception for migrations.
 
 ## Identity and evidence boundary
 
@@ -290,7 +287,7 @@ The August release files have the following operational profile:
 | 107 | Replaces Core checkout acceptance/reservation functions, records durable one-time trial and accepted-subscription proof, prelocks every target-program membership holder before ladder sync, and adds the V14 critical-surface manifest. | Requires the new backend and remains database-first. Existing completed subscriptions are preserved; old acceptance RPC execution is revoked. | One migration transaction. Exact V13 state is guarded and may resume with immutable 107 after fresh inspection and dry-run. |
 | 108 | Replaces Core checkout reservation/acceptance so completed bindings remain terminal until exact terminal projection, archives accepted bindings for later webhook replay, and adds the V15 critical-surface manifest with exact promotion-column state. | Requires the new backend and remains database-first. Returning canceled subscriptions may start a new epoch without receiving a second trial. | One migration transaction. Exact V14 state is guarded and may resume with immutable 108 after fresh inspection and dry-run. |
 | 109 | Adds the V2 checkout-reservation RPC, computes trial eligibility under the subscription row lock, serializes checkout acceptance against operator comp grants in both lock orders, preserves archived acceptance without projecting historical provider state, binds explicit live-subscription comp overrides to the exact accepted Core subscription, makes belt-ladder mutation plus audit an idempotent atomic operation, returns student write response data from the write transaction, and advances the critical-surface/readiness manifests to V16. | Requires the new backend and remains database-first. The predecessor reservation (V1), student-writer, and V2 readiness signatures remain service-role callable only for mixed-version cutover and rollback; the candidate uses the versioned writers and readiness V3. Core self-checkout stays disabled until the new backend is deployed after database promotion. | One migration transaction. Exact V15 state is guarded and may resume with migrations 109 through 111 after fresh inspection and dry-run. |
-| 110 | Adds the staff legal-name source-of-truth and audit actor-name snapshot schema, preserves its reviewed table/RLS/backfill/grant/trigger semantics, and updates only the V2 compatibility guard and V3 release-readiness definitions to require the exact V17 count, head, sequence, and manifest contract. | The identity schema is additive; the V2 response remains V7-shaped and reports ready only when V3 proves exact 110/V17. No approved application may serve at this head: `709239` requires V16, the candidate requires V18, and older V2 consumers that can report ready are not approved recovery artifacts. | One migration transaction. Exact V16 state 109 may resume with immutable 110 and 111. If 110 commits and 111 does not, stop and obtain a fresh exact candidate-bound inspection of `staff-identity`, dry-run exactly 111, then continue forward under the normal human production gate. |
+| 110 | Adds the staff legal-name source-of-truth and audit actor-name snapshot schema, preserves its reviewed table/RLS/backfill/grant/trigger semantics, and updates only the V2 compatibility guard and V3 release-readiness definitions to require the exact V17 count, head, sequence, and manifest contract. | The identity schema is additive; the V2 response remains V7-shaped and reports ready only when V3 proves exact 110/V17. No approved application may serve at this head: `709239` requires V16, the candidate requires V18, and older V2 consumers that can report ready are not approved recovery artifacts. | One migration transaction. Exact V16 state 109 may resume with immutable 110 and 111. If 110 commits and 111 does not, stop and obtain a fresh exact candidate-bound inspection of `staff-identity`, dry-run exactly 111, then continue forward under the current owner-authorization and technical production gates. |
 | 111 | Adds nullable `staff_roles.archived_at`; replaces central membership, role, and staff-profile authorization with active-membership checks; keeps any-row single-studio reservation and pending invites; blocks owner and last-active-admin archive, identity-replacement, identity-clearing, and demotion transitions; updates account-deletion survivor checks; reasserts the all-public-RLS restrictive guard; and advances the V3 release contract to V18 with the V17 archive-critical semantic manifest. | Additive archive state with service-role-only staff-role writes. Active same-studio access and zero-membership onboarding remain valid, while archived identities lose all tenant access immediately. Nullable pending rows may still link to an invited identity. | One migration transaction. Exact V16 state 109 or exact V17 `staff-identity` state 110 may resume with immutable 110/111 or 111 respectively after fresh inspection and dry-run. |
 | 112-114 | Add the dashboard facts RPC, roster read RPC, and atomic bulk student archive RPC. | Additive, service-role-only RPCs used by the release backend. | One transaction per migration. Re-inspect after any partial apply. |
 | 115 | Revokes anon and authenticated privileges on all public relations and sequences, removes their schema-local defaults, and adds the V22 readiness head. | Database-first and compatible because browser data access already goes through the backend. | One migration transaction with a fail-closed relation guard. |
@@ -454,46 +451,19 @@ Before this release, read-only inspection confirmed staging and production both
 at the exact healthy 100-migration V7 baseline. Guarded staging rehearsals then
 advanced staging through exact migration 104 while production remained at 100. Record the current release's
 staging dry-run, apply, post-state fingerprint, and contract results in the
-durable approval record before the human production step.
+durable approval record before the owner-authorized production step.
 
-## Human-only production gate
+## Owner-authorized production gate
 
-Production inspection and dry-run repeat the exact-target and exact-state checks.
-Production apply additionally requires all of these fields:
+Production inspection and dry-run repeat the exact-target and exact-state checks. Production apply additionally requires the PR138 OWNER approval for the exact candidate/remainder, project confirmation, approved staging fingerprint, fresh backup with verified restore, and named restore decision authority.
 
-- durable approval record;
-- exact production project confirmation;
-- staging provider fingerprint;
-- confirmed PITR/restore window or durable restore-readiness record;
-- named human restore decision authority;
-- interactive human-only confirmation phrase bound to the exact candidate SHA,
-  dynamic pending-migration count, source-manifest hash, and production ref.
+The coordinating agent or operator supplies `--release-authorization ronchak:<candidate-sha>`, `--release-operator <named-executor>` and the deliberate `--confirmation-phrase`. The phrase still binds the exact candidate, pending migration count, source manifest and production ref. A TTY is no longer an authorization test. The tool records authorization, versions, timestamps and the verified or uncertain outcome.
 
-Template only—agents must never execute it:
+Executor names in the authorization audit are caller-reported. The tool verifies the GitHub OWNER approval and release scope, not process identity. Production apply rejects multiple remaining migrations until per-migration execution is separately implemented. Preserve the provider-response audit records privately, including stderr and uncertain outcomes.
 
-```bash
-node scripts/studio-comp-migration-rollout.mjs \
-  --target production \
-  --candidate-sha <final-candidate-sha> \
-  --mode apply \
-  --inspection-token <token-from-production-inspect> \
-  --confirm-project mimguepumzsgmcaycdsh \
-  --approval-record <exact-PR-138-issue-comment-url> \
-  --human-production-operator \
-  --expected-provider-fingerprint <staging-provider-fingerprint> \
-  --confirmed-restore-window <confirmed-window-or-record> \
-  --restore-decision-authority <named-human>
-```
+Use the current [production packet](remediation/PRODUCTION-RELEASE.md), not a historical command from this record. Before each irreversible or outward-facing release action, announce its exact command, effect/reversibility and immediate verification, then wait 60 seconds. Execute one action per announcement and command. Stop if the owner interrupts. The complete [execution protocol](cutover-gates.md#owner-authorized-release-execution) applies.
 
-This is enforced, not advisory: `confirmProductionApply()` throws unless both
-`process.stdin.isTTY` and `process.stdout.isTTY`, then prompts for the exact phrase
-built by `buildProductionConfirmationPhrase()`. An agent cannot run this step and must
-not allocate a PTY to defeat the check — it must hand the filled-in command and the
-phrase to a human operator. See `docs/cutover-gates.md`.
-
-The human runs from a private, non-traced shell. No production contract,
-synthetic row, comp action, Auth mutation, Storage action, or Realtime action is
-authorized.
+Keep credentials and evidence in a private, non-traced shell and private files. Production contract SQL, synthetic rows, comp changes, Auth mutations, Storage writes, Realtime changes and live billing activation are not authorized by a database release approval.
 
 ## Abort and forward-only recovery
 

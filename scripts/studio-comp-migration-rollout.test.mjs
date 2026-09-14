@@ -240,6 +240,7 @@ import {
   buildInspectionToken,
   buildInspectionTokenForAcceptedState,
   buildProductionConfirmationPhrase,
+  confirmProductionApply,
   classifyStateSnapshot,
   extractPendingMigrations,
   formatDiagnosisReport,
@@ -1342,7 +1343,9 @@ describe("studio-comp migration rollout guard", () => {
       confirmedRestoreWindow: null,
       restoreDecisionAuthority: null,
       approveStagingApply: false,
-      humanProductionOperator: false,
+      releaseAuthorization: null,
+      releaseOperator: null,
+      confirmationPhrase: null,
     });
     assert.throws(() => parseArguments([]), /--target must be staging or production/);
     assert.throws(
@@ -1417,7 +1420,9 @@ describe("studio-comp migration rollout guard", () => {
       ["--confirmed-restore-window", "2026-08-08T18:00:00Z/PITR-confirmed"],
       ["--restore-decision-authority", "Ronak Chakraborty"],
       ["--approve-staging-apply"],
-      ["--human-production-operator"],
+      ["--release-authorization", `ronchak:${candidateSha}`],
+      ["--release-operator", "Release coordinator"],
+      ["--confirmation-phrase", "deliberate phrase"],
     ];
     for (const option of applyOnlyOptions) {
       assert.throws(
@@ -1467,7 +1472,30 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("reports a bounded command timeout as UNKNOWN(timeout) before returning output", { timeout: 3_000 }, () => {
+  it("observes child-process success, failure, spawn error, and timeout before preserving command behavior", { timeout: 3_000 }, () => {
+    const observed = [];
+    assert.equal(runCommand(
+      process.execPath,
+      ["-e", "process.stdout.write('success-out'); process.stderr.write('success-err')"],
+      { cwd: repositoryRoot, env: {}, resultObserver: (result) => observed.push(result) },
+    ), "success-out");
+    assert.throws(
+      () => runCommand(
+        process.execPath,
+        ["-e", "process.stdout.write('failure-out'); process.stderr.write('failure-err'); process.exit(7)"],
+        { cwd: repositoryRoot, env: {}, resultObserver: (result) => observed.push(result) },
+      ),
+      /failed \(exit 7\)/,
+    );
+    assert.throws(
+      () => runCommand(
+        "/definitely/missing/koaryu-command",
+        [],
+        { cwd: repositoryRoot, env: {}, resultObserver: (result) => observed.push(result) },
+      ),
+      /failed \(exit unavailable\)/,
+    );
+
     const timeoutMs = 100;
     const startedAt = process.hrtime.bigint();
     let returnedOutput = false;
@@ -1482,6 +1510,7 @@ describe("studio-comp migration rollout guard", () => {
             env: {},
             label: "slow timeout test command",
             timeout: timeoutMs,
+            resultObserver: (result) => observed.push(result),
           },
         );
         returnedOutput = true;
@@ -1499,6 +1528,36 @@ describe("studio-comp migration rollout guard", () => {
     const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
     assert.equal(returnedOutput, false);
     assert.ok(elapsedMs < 2_000, `timeout returned control after ${elapsedMs.toFixed(0)} ms`);
+    assert.deepEqual(observed, [
+      {
+        stdout: "success-out",
+        stderr: "success-err",
+        exit_status: 0,
+        signal: null,
+        system_error_code: null,
+      },
+      {
+        stdout: "failure-out",
+        stderr: "failure-err",
+        exit_status: 7,
+        signal: null,
+        system_error_code: null,
+      },
+      {
+        stdout: null,
+        stderr: null,
+        exit_status: null,
+        signal: null,
+        system_error_code: "ENOENT",
+      },
+      {
+        stdout: "",
+        stderr: "",
+        exit_status: null,
+        signal: "SIGTERM",
+        system_error_code: "ETIMEDOUT",
+      },
+    ]);
   });
 
   it("accepts the reviewed minimal shape and every optional-column subset", () => {
@@ -3214,14 +3273,18 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("reserves production apply for a human with staging and restore evidence", () => {
+  it("requires exact owner authorization, named operator, and deliberate phrase for production", () => {
     const packet = candidatePacket();
+    const confirmationPhrase = buildProductionConfirmationPhrase(packet);
     const config = parseArguments([
       "--target", "production", "--candidate-sha", candidateSha, "--mode", "apply",
       "--inspection-token", buildInspectionToken(packet, "production", "pre"),
       "--confirm-project", ROLLOUT.productionRef,
       "--approval-record", "https://github.com/ronchak/Koaryu/pull/138#issuecomment-987654321",
-      "--human-production-operator", "--expected-provider-fingerprint", validFingerprint,
+      "--release-authorization", `ronchak:${candidateSha}`,
+      "--release-operator", "Release coordinator",
+      "--confirmation-phrase", confirmationPhrase,
+      "--expected-provider-fingerprint", validFingerprint,
       "--confirmed-restore-window", "2026-07-31T18:00:00Z/PITR-confirmed",
       "--restore-decision-authority", "Ronak Chakraborty",
     ]);
@@ -3233,10 +3296,26 @@ describe("studio-comp migration rollout guard", () => {
     ]) assert.throws(() => validateApplyAuthorization({
       ...config, expectedProviderFingerprint: fingerprint,
     }), /exact canonical staging evidence/);
+    for (const releaseAuthorization of [
+      null,
+      `someone-else:${candidateSha}`,
+      `ronchak:${"0".repeat(40)}`,
+    ]) {
+      assert.throws(
+        () => validateApplyAuthorization({ ...config, releaseAuthorization }),
+        /release-authorization ronchak:<exact-candidate-sha>/,
+      );
+    }
     assert.throws(
-      () => validateApplyAuthorization({ ...config, humanProductionOperator: false }),
-      /human-production-operator/,
+      () => validateApplyAuthorization({ ...config, releaseOperator: null }),
+      /release-operator is required/,
     );
+    assert.throws(
+      () => validateApplyAuthorization({ ...config, confirmationPhrase: null }),
+      /confirmation-phrase is required/,
+    );
+    assert.doesNotThrow(() => confirmProductionApply(packet, confirmationPhrase));
+    assert.throws(() => confirmProductionApply(packet, `${confirmationPhrase} `), /did not match exactly/);
     assert.throws(
       () => validateApplyAuthorization({ ...config, confirmedRestoreWindow: null }),
       /confirmed-restore-window is required/,
@@ -3245,6 +3324,161 @@ describe("studio-comp migration rollout guard", () => {
       () => validateApplyAuthorization({ ...config, restoreDecisionAuthority: null }),
       /restore-decision-authority is required/,
     );
+  });
+
+  it("enforces production entry and records linked terminal audit evidence", async () => {
+    const packet = candidatePacket();
+    const approvalUrl = "https://github.com/ronchak/Koaryu/pull/138#issuecomment-987654321";
+    const startedAt = "2026-09-14T01:02:03.000Z";
+    const observedAt = "2026-09-14T01:02:04.000Z";
+    const finishedAt = "2026-09-14T01:02:05.000Z";
+    const cases = [
+      { name: "V46 single-migration success", beforeState: "v46", afterState: "post" },
+      { name: "apply failure", beforeState: "v46", applyError: new Error("bounded apply failure") },
+      { name: "post-state mismatch", beforeState: "v46", afterState: "v46" },
+      { name: "bad confirmation", beforeState: "v46", badConfirmation: true },
+      { name: "V38 bulk remainder", beforeState: "v38", bulkBlocked: true },
+    ];
+
+    for (const testCase of cases) {
+      const remainingPacket = packetForAcceptedState(packet, testCase.beforeState);
+      if (testCase.bulkBlocked) assert.equal(remainingPacket.pendingMigrations.length, 9);
+      else assert.equal(remainingPacket.pendingMigrations.length, 1);
+      const plannedVersions = remainingPacket.pendingMigrations.map((filename) => filename.slice(0, 14));
+      const sharedEvidence = {
+        authorizing_owner: "ronchak",
+        named_executor: "Release coordinator",
+        intended_candidate: candidateSha,
+        approval_url: approvalUrl,
+        target: "production",
+        project_ref: ROLLOUT.productionRef,
+        inspected_prestate: { state: testCase.beforeState, provider_fingerprint: null },
+        planned_versions: plannedVersions,
+        started_at: startedAt,
+      };
+      const output = [];
+      const commands = [];
+      const timestamps = [startedAt, observedAt, finishedAt];
+      let stateReadCount = 0;
+      let applyCalls = 0;
+      const promise = main([
+        "--target", "production", "--candidate-sha", candidateSha, "--mode", "apply",
+        "--inspection-token", buildInspectionToken(packet, "production", testCase.beforeState),
+        "--confirm-project", ROLLOUT.productionRef,
+        "--approval-record", approvalUrl,
+        "--release-authorization", `ronchak:${candidateSha}`,
+        "--release-operator", "Release coordinator",
+        "--confirmation-phrase", testCase.badConfirmation
+          ? buildProductionConfirmationPhrase(remainingPacket).replace("APPLY", "APPLYX")
+          : buildProductionConfirmationPhrase(remainingPacket),
+        "--expected-provider-fingerprint", validFingerprint,
+        "--confirmed-restore-window", "2026-09-14T01:00:00Z/PITR-confirmed",
+        "--restore-decision-authority", "Ronak Chakraborty",
+      ], {}, {
+        commandRunner(command, args) {
+          commands.push([command, ...args]);
+          if (commands.length === 1) {
+            assert.deepEqual(commands[0], ["supabase", "--version"]);
+            return `${ROLLOUT.cliVersion}\n`;
+          }
+          if (commands.length === 2) {
+            assert.equal(command, "git");
+            assert.deepEqual(args.slice(0, 3), ["worktree", "add", "--detach"]);
+            assert.equal(args.at(-1), candidateSha);
+            return "";
+          }
+          if (commands.length === 3) {
+            assert.deepEqual(commands[2], [
+              "supabase", "link", "--project-ref", ROLLOUT.productionRef, "--yes", "--agent=no",
+            ]);
+            return "";
+          }
+          assert.deepEqual(commands[3], [
+            "gh", "api", "repos/ronchak/Koaryu/issues/comments/987654321",
+          ]);
+          return JSON.stringify({
+            body: buildApplyApprovalRecordBody(remainingPacket, "production", testCase.beforeState),
+            issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/138",
+            user: { login: "ronchak" },
+            author_association: "OWNER",
+          });
+        },
+        sourceVerifier() { return packet; },
+        linkedRefAsserter() {},
+        stateReader() {
+          stateReadCount += 1;
+          if (stateReadCount === 1) return { state: testCase.beforeState, providerFingerprint: null };
+          return {
+            state: testCase.afterState,
+            providerFingerprint: testCase.afterState === "post" ? validFingerprint : null,
+          };
+        },
+        dryRunRunner(_root, remainingPacket) { return remainingPacket.pendingMigrations; },
+        applyRunner(_root, _env, resultObserver) {
+          applyCalls += 1;
+          resultObserver({
+            stdout: `${testCase.name} stdout`,
+            stderr: `${testCase.name} stderr`,
+            exit_status: testCase.applyError ? 7 : 0,
+            signal: null,
+            system_error_code: null,
+          });
+          if (testCase.applyError) throw testCase.applyError;
+        },
+        now() { return timestamps.shift(); },
+        output(line) { output.push(line); },
+      });
+
+      if (testCase.name === "V46 single-migration success") {
+        await promise;
+      } else if (testCase.bulkBlocked) {
+        await assert.rejects(promise, /refuses more than one remaining migration/);
+      } else if (testCase.name === "bad confirmation") {
+        await assert.rejects(promise, /Production confirmation did not match exactly/);
+      } else {
+        await assert.rejects(
+          promise,
+          /Migration apply failed and may have changed remote state.*(?:bounded apply failure|did not reach the exact expected post-state)/,
+        );
+      }
+      assert.equal(commands.length, testCase.bulkBlocked ? 3 : 4, testCase.name);
+      assert.equal(applyCalls, testCase.badConfirmation || testCase.bulkBlocked ? 0 : 1, testCase.name);
+      const evidence = output
+        .filter((line) => line.startsWith("audit_evidence="))
+        .map((line) => JSON.parse(line.slice("audit_evidence=".length)));
+      if (testCase.badConfirmation || testCase.bulkBlocked) {
+        assert.deepEqual(evidence, []);
+        continue;
+      }
+      assert.deepEqual(evidence[0], { ...sharedEvidence, status: "started" });
+      assert.deepEqual(evidence[1], {
+        ...sharedEvidence,
+        status: "provider_response",
+        stdout: `${testCase.name} stdout`,
+        stderr: `${testCase.name} stderr`,
+        exit_status: testCase.applyError ? 7 : 0,
+        signal: null,
+        system_error_code: null,
+        observed_at: observedAt,
+      });
+      if (testCase.name === "V46 single-migration success") {
+        assert.deepEqual(evidence[2], {
+          ...sharedEvidence,
+          status: "verified_success",
+          applied_versions: plannedVersions,
+          verified_poststate: { state: "post", provider_fingerprint: validFingerprint },
+          finished_at: finishedAt,
+        });
+      } else {
+        assert.deepEqual(evidence[2], {
+          ...sharedEvidence,
+          status: "failed_or_unknown",
+          finished_at: finishedAt,
+        });
+        assert.ok(evidence.every((record) => record.status !== "verified_success"));
+        assert.ok(evidence.every((record) => !("applied_versions" in record)));
+      }
+    }
   });
 
   it("binds production confirmation to a dynamic candidate migration manifest", () => {

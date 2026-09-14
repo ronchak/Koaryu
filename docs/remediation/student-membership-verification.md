@@ -91,5 +91,5 @@ fresh 134-migration probe. Final full-suite and CI results are recorded in
 
 This verification does not approve a production migration, certify a production
 backup, repair historical membership data or deploy an application. A hosted release
-needs fresh candidate-bound operator evidence and a human-run migration before the
+needs fresh candidate-bound evidence and an owner-authorized guarded migration before the
 new backend is deployed.

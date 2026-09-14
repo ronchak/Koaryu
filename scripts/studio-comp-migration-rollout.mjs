@@ -5,7 +5,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { CURRENT_RELEASE, RELEASE_STATES, readinessTuple, releaseState } from "./release-attestation/states.mjs";
@@ -3361,7 +3360,9 @@ export function parseArguments(argv) {
     confirmedRestoreWindow: null,
     restoreDecisionAuthority: null,
     approveStagingApply: false,
-    humanProductionOperator: false,
+    releaseAuthorization: null,
+    releaseOperator: null,
+    confirmationPhrase: null,
   };
   const valueOptions = new Map([
     ["--mode", "mode"],
@@ -3373,10 +3374,12 @@ export function parseArguments(argv) {
     ["--expected-provider-fingerprint", "expectedProviderFingerprint"],
     ["--confirmed-restore-window", "confirmedRestoreWindow"],
     ["--restore-decision-authority", "restoreDecisionAuthority"],
+    ["--release-authorization", "releaseAuthorization"],
+    ["--release-operator", "releaseOperator"],
+    ["--confirmation-phrase", "confirmationPhrase"],
   ]);
   const booleanOptions = new Map([
     ["--approve-staging-apply", "approveStagingApply"],
-    ["--human-production-operator", "humanProductionOperator"],
   ]);
   const seen = new Set();
 
@@ -3441,7 +3444,9 @@ export function parseArguments(argv) {
       result.confirmedRestoreWindow,
       result.restoreDecisionAuthority,
       result.approveStagingApply,
-      result.humanProductionOperator,
+      result.releaseAuthorization,
+      result.releaseOperator,
+      result.confirmationPhrase,
     ];
     if (applyOnly.some(Boolean)) {
       throw new RolloutError("Apply authorization options are valid only with --mode apply.");
@@ -3473,7 +3478,9 @@ export function validateApplyAuthorization(config) {
   if (config.target === "staging") {
     if (
       !config.approveStagingApply ||
-      config.humanProductionOperator ||
+      config.releaseAuthorization ||
+      config.releaseOperator ||
+      config.confirmationPhrase ||
       config.expectedProviderFingerprint ||
       config.confirmedRestoreWindow ||
       config.restoreDecisionAuthority
@@ -3484,9 +3491,15 @@ export function validateApplyAuthorization(config) {
     }
     return;
   }
-  if (!config.humanProductionOperator) {
-    throw new RolloutError("Production apply requires --human-production-operator.");
+  if (
+    config.releaseAuthorization !== `${APPLY_APPROVAL_AUTHOR_LOGIN}:${config.candidateSha}`
+  ) {
+    throw new RolloutError(
+      "Production apply requires --release-authorization ronchak:<exact-candidate-sha>.",
+    );
   }
+  assertPlainText("--release-operator", config.releaseOperator);
+  assertPlainText("--confirmation-phrase", config.confirmationPhrase);
   if (!config.expectedProviderFingerprint) {
     throw new RolloutError(
       "Production apply requires the approved staging --expected-provider-fingerprint.",
@@ -4608,6 +4621,7 @@ export function runCommand(
     label = command,
     timeout = DEFAULT_COMMAND_TIMEOUT_MS,
     capture = "stdout",
+    resultObserver = null,
   } = {},
 ) {
   if (!Number.isSafeInteger(timeout) || timeout <= 0) {
@@ -4623,6 +4637,15 @@ export function runCommand(
     stdio: ["ignore", "pipe", "pipe"],
     timeout,
   });
+  if (resultObserver !== null) {
+    resultObserver({
+      stdout: result.stdout ?? null,
+      stderr: result.stderr ?? null,
+      exit_status: result.status ?? null,
+      signal: result.signal ?? null,
+      system_error_code: result.error?.code ?? null,
+    });
+  }
   if (result.error?.code === "ETIMEDOUT") {
     throw new RolloutError(`${label} failed: UNKNOWN(timeout) after ${timeout} ms.`);
   }
@@ -5314,17 +5337,15 @@ export function buildProductionConfirmationPhrase(packet) {
   ].join(" ");
 }
 
-async function confirmProductionApply(packet) {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new RolloutError("Production apply requires an interactive human terminal.");
-  }
+export function confirmProductionApply(packet, providedPhrase) {
   const expected = buildProductionConfirmationPhrase(packet);
-  const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await prompt.question(`Type exactly '${expected}' to continue: `);
-  prompt.close();
-  if (answer !== expected) {
+  if (providedPhrase !== expected) {
     throw new RolloutError("Production confirmation did not match exactly.");
   }
+}
+
+function writeAuditEvidence(output, evidence) {
+  output(`audit_evidence=${JSON.stringify(evidence)}`);
 }
 
 function usage() {
@@ -5336,11 +5357,14 @@ diagnose performs linked, read-only SELECT diagnosis and needs no inspection tok
 Dry-run and apply require the inspection_token from a preceding inspect. Apply additionally requires:
   --confirm-project <exact-ref> --approval-record <exact-PR-138-issue-comment-url>
   staging:    --approve-staging-apply
-  production: --human-production-operator --expected-provider-fingerprint <staging-fingerprint>
+  production: --release-authorization ronchak:<exact-candidate-sha>
+              --release-operator <named-coordinator>
+              --confirmation-phrase <exact-production-confirmation-phrase>
+              --expected-provider-fingerprint <staging-fingerprint>
               --confirmed-restore-window <window-or-record>
               --restore-decision-authority <named-person>
 
-inspect is the default mode. Agents must never use production apply.`;
+inspect is the default mode.`;
 }
 
 export async function main(
@@ -5351,6 +5375,19 @@ export async function main(
     sourceVerifier = verifySourceTree,
     linkedRefAsserter = assertLinkedProjectRef,
     diagnosisReader = readRemoteDiagnosis,
+    stateReader = readRemoteState,
+    dryRunRunner = runDryRun,
+    applyRunner = (sourceRoot, applyEnv, resultObserver) => runCommand(
+      "supabase",
+      ["db", "push", "--linked", "--agent=no"],
+      {
+        cwd: sourceRoot,
+        env: applyEnv,
+        label: "Supabase migration apply",
+        resultObserver,
+      },
+    ),
+    now = () => new Date().toISOString(),
     output = console.log,
   } = {},
 ) {
@@ -5423,7 +5460,7 @@ export async function main(
       return;
     }
 
-    const before = readRemoteState(
+    const before = stateReader(
       sourceRoot,
       packet,
       env,
@@ -5470,42 +5507,90 @@ export async function main(
     assertInspectionToken(packet, config.target, before, config.inspectionToken);
 
     const remainingPacket = packetForAcceptedState(packet, before.state);
+    if (
+      config.mode === "apply"
+      && config.target === "production"
+      && remainingPacket.pendingMigrations.length > 1
+    ) {
+      throw new RolloutError(
+        "Production apply refuses more than one remaining migration until a separately scoped one-at-a-time mode exists.",
+      );
+    }
     validateApplyApprovalRecord(config, remainingPacket, before.state, commandRunner, env);
-    const pending = runDryRun(sourceRoot, remainingPacket, env);
+    const pending = dryRunRunner(sourceRoot, remainingPacket, env);
     console.log(`dry_run_migrations=${pending.join(",")}`);
     if (config.mode === "dry-run") return;
 
     assertApplyableState(config.mode, before.state);
 
     if (config.target === "production") {
-      await confirmProductionApply(remainingPacket);
+      confirmProductionApply(remainingPacket, config.confirmationPhrase);
     }
+    const auditContext = {
+      authorizing_owner: APPLY_APPROVAL_AUTHOR_LOGIN,
+      named_executor: config.target === "production" ? config.releaseOperator : null,
+      intended_candidate: packet.candidateSha,
+      approval_url: config.approvalRecord,
+      target: config.target,
+      project_ref: projectRef,
+      inspected_prestate: {
+        state: before.state,
+        provider_fingerprint: before.providerFingerprint ?? null,
+      },
+      planned_versions: remainingPacket.pendingMigrations.map(
+        (filename) => filename.slice(0, 14),
+      ),
+      started_at: now(),
+    };
+    writeAuditEvidence(output, {
+      ...auditContext,
+      status: "started",
+    });
     try {
-      runCommand("supabase", ["db", "push", "--linked", "--agent=no"], {
-        cwd: sourceRoot,
-        env,
-        label: "Supabase migration apply",
+      applyRunner(sourceRoot, env, (response) => {
+        writeAuditEvidence(output, {
+          ...auditContext,
+          status: "provider_response",
+          ...response,
+          observed_at: now(),
+        });
       });
+      const after = stateReader(sourceRoot, packet, env, config.expectedProviderFingerprint);
+      const nonSuccessAfterStateLine = formatNonSuccessProbeState(after);
+      if (nonSuccessAfterStateLine !== null) {
+        output(nonSuccessAfterStateLine);
+      }
+      if (after.state !== "post") {
+        throw new RolloutError("Migration apply did not reach the exact expected post-state.");
+      }
+      writeAuditEvidence(output, {
+        ...auditContext,
+        status: "verified_success",
+        applied_versions: auditContext.planned_versions,
+        verified_poststate: {
+          state: after.state,
+          provider_fingerprint: after.providerFingerprint ?? null,
+        },
+        finished_at: now(),
+      });
+      console.log(`target=${config.target}`);
+      console.log(`project_ref=${projectRef}`);
+      console.log(`candidate_sha=${packet.candidateSha}`);
+      console.log(`post_history=${packet.postHistory}`);
+      console.log(`source_manifest_sha256=${packet.sourceManifestSha256}`);
+      console.log("state=post");
+      console.log(`provider_fingerprint=${after.providerFingerprint}`);
     } catch (error) {
+      writeAuditEvidence(output, {
+        ...auditContext,
+        status: "failed_or_unknown",
+        finished_at: now(),
+      });
       throw new RolloutError(
         `Migration apply failed and may have changed remote state. Stop and inspect; do not revert history or objects. ${error.message}`,
+        { cause: error },
       );
     }
-    const after = readRemoteState(sourceRoot, packet, env, config.expectedProviderFingerprint);
-    const nonSuccessAfterStateLine = formatNonSuccessProbeState(after);
-    if (nonSuccessAfterStateLine !== null) {
-      console.log(nonSuccessAfterStateLine);
-    }
-    if (after.state !== "post") {
-      throw new RolloutError("Migration apply did not reach the exact expected post-state.");
-    }
-    console.log(`target=${config.target}`);
-    console.log(`project_ref=${projectRef}`);
-    console.log(`candidate_sha=${packet.candidateSha}`);
-    console.log(`post_history=${packet.postHistory}`);
-    console.log(`source_manifest_sha256=${packet.sourceManifestSha256}`);
-    console.log("state=post");
-    console.log(`provider_fingerprint=${after.providerFingerprint}`);
   } finally {
     if (worktreeAdded) {
       spawnSync("git", ["worktree", "remove", "--force", sourceRoot], {

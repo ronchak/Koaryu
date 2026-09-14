@@ -24,7 +24,7 @@ Last verified against live systems: 2026-08-24.
 | Period-end billing worker | disabled; production cron awaits approval | Render Cron every 5 minutes |
 | `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
-Neither production surface auto-deploys. Both are promoted by hand, on purpose —
+Neither production surface auto-deploys. Both require an explicit owner-authorized release —
 see [Deployment triggers](#deployment-triggers).
 
 ## GitHub
@@ -163,9 +163,9 @@ Read-only inspection on September11 UTC confirmed both databases still at V38,
 was deployed during wind-down. Render production auto-deploy was read back off;
 Vercel main auto-deployment remains disabled in the deployed and candidate config.
 
-The [V38-to-V45 production packet](remediation/PRODUCTION-RELEASE.md) owns the
+The [V38-to-V47 production packet](remediation/PRODUCTION-RELEASE.md) owns the
 current ordered migration hashes, backup/restore prerequisites, rollout commands,
-compatibility limits and rollback rules. It is prepared for a human, not executed.
+compatibility limits and rollback rules. It is prepared for owner-authorized execution and remains blocked until its listed prerequisites are complete.
 V41 payer-balance, V43 external-payment and V44 local-plan guarantees require old
 split callers to drain. V45 requires stopping old import callers before migration.
 No historical financial backfill or live billing activation is included.
@@ -183,8 +183,7 @@ Both refs are pinned in `backend/app/core/config.py`. The backend refuses to boo
 if `ENVIRONMENT` and `SUPABASE_URL` disagree, so a staging process cannot be
 pointed at production data by editing one variable.
 
-Production is **read-only for agents**. Migrations against production are run by
-a human through `scripts/studio-comp-migration-rollout.mjs`.
+Production inspection is read-only. Only the named coordinating agent or operator may apply migrations through `scripts/studio-comp-migration-rollout.mjs` under explicit owner authorization and the [announce-and-pause protocol](cutover-gates.md#owner-authorized-release-execution). All backup, restore, source, target and approval gates remain mandatory. Subagents have no production authority; contract SQL is never allowed against production.
 
 ## Stripe — payments
 
@@ -226,7 +225,7 @@ neither can be relaxed by accident.
 track its branch automatically.
 
 **A push to `main` therefore deploys nothing.** Production frontend and backend
-are each promoted by hand after the database is migrated. If production looks
+are each released explicitly after the database is migrated. If production looks
 stale after a merge, that is the expected behaviour, not a fault.
 
 ## Credentials and where they live

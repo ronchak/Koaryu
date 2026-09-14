@@ -85,12 +85,14 @@ Database verification targets are:
 
 Contract files can create functions and triggers on real tables inside a transaction. A later `ROLLBACK` does not make production an acceptable target: never point contract or migration execution at production.
 
-Exactly two operations may write to production, both human-authorized and both outside the contract/migration-SQL prohibition above:
+Exactly two operations may write to production, both owner-authorized and both outside the contract/migration-SQL prohibition above:
 
-1. **The guarded rollout tool's production apply** (`scripts/studio-comp-migration-rollout.mjs --target production --mode apply`), which a human runs from an interactive terminal.
+1. **The guarded rollout tool's production apply** (`scripts/studio-comp-migration-rollout.mjs --target production --mode apply`), which a named coordinating agent or operator may execute under explicit owner authorization.
 2. **The pre-migration backup role** — a temporary `CREATE ROLE` / `ALTER ROLE` / `DROP ROLE` used to take a verified `pg_dump` before an irreversible migration, because the project has no managed restore path.
 
-Nothing else. Both are described in `docs/cutover-gates.md`.
+Nothing else. Both are described in `docs/cutover-gates.md`. A named coordinating agent may also deploy the backend and promote a production-target frontend build when the owner explicitly authorizes that release. Subagents do not receive production authority.
+
+Before each irreversible or outward-facing release action, announce the exact command, its effect and reversibility, and the immediate verification, then pause for 60 seconds. Use a separate announcement and standalone command for each action. A user interruption stops execution. Record the owner, executor, exact release, actions, timestamps and evidence. Follow the full [announce-and-pause protocol](docs/cutover-gates.md#owner-authorized-release-execution); authorization never waives technical release gates.
 
 ## Safety Boundaries
 
