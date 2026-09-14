@@ -41,7 +41,7 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-The paused V38-to-V45 remediation release is pinned in
+The prepared V38-to-V47 remediation release is pinned in
 [PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md). Its values and unfulfilled
 gates are dated evidence, not a current release declaration. For new work, generate
 packet mode from the exact candidate SHA and use its post-history, ordered migration
@@ -108,34 +108,32 @@ only after old Python plan split-write requests drain. V40 rank, V41 payer balan
 V42 catalog and semantics, and V43 external-payment facts remain unchanged. The old
 V41 and V43 split callers must still drain for those guarantees.
 
-The local verifier executes the V38-to-V39, V39-to-V40, V40-to-V41, V41-to-V42,
-V42-to-V43, and V43-to-V44 logical restore tests.
+The local verifier executes each logical restore continuation from V38 through V47.
 Each uses a real synthetic dump and a new local restore database, accepts only the
 reviewed PostgreSQL 17 CHECK/default-ACL representation differences, and verifies
 business-data preservation and old/new caller continuation. These are local
 contract proofs, not production backup evidence. Candidate verification requires the
-V43-to-V44 canonical and logical restore continuation, all 139 migrations and 52 SQL
-contracts, and all 15 cases in `scripts/verify-billing-command-concurrency.py`.
+V46-to-V47 canonical and logical restore continuation, all 142 migrations and 53 SQL
+contracts, and all 23 cases in `scripts/verify-billing-command-concurrency.py`.
 The renamed runner uses the existing concurrency helpers and adds no new framework.
 Earlier restore proofs remain in force. The operator's backup helper and
 release/image mappings must be updated and verified for the actual candidate
 before an authorized hosted rollout. Old V38 approvals and mappings are not reusable.
 
 Exact V31 through V37 remain state-bound forward-recovery points. They may
-resume only their immutable suffix through V44; hybrid histories, catalogs or
+resume only their immutable suffix through V47; hybrid histories, catalogs or
 readiness results are refused. A predecessor before V38 also needs the historical
 billing-index migration. Its ordinary index builds hold write locks that can delay
 billing and webhook writes until that transaction finishes. Plan that write pause
 for a separately authorized rollout; its hosted duration has not been measured.
 
-Migration 119 keeps `koaryu_release_schema_preflight_v4` returning the historical
-V24 shape. The Payments chain preserves the schedule-shaped V5 response and owns
-V6 through V25. V44 adds the full V25 contract and makes V24 return its V43
-compatibility tuple only after V25 proves the complete new state. V23 through V18
-continue through the existing chain, preserving the V42, V41, V40, V39, V38, and V37
-consumers. The candidate backend reads V25 and serves only at exact 139/V44. Older
-deployed backends retain their corresponding response during the database-first
-cutover.
+Migration 119 keeps the historical V24 response. The Payments chain retains its
+version-bound compatibility consumers. V47 adds full preflight V28 and makes V27
+return the V46 tuple only after the complete new state verifies. The existing chain
+retains V45 through V37 responses, including production's V38/V19 consumer. The
+candidate backend requires exact V47, 142 migrations. Compatibility preserves old
+readiness; it does not restore retired import behavior or give old split writers
+the new transactional guarantees.
 The temporary V22 and
 V23 application bridges were removed after production hosted readback. The
 rollout tool retains exact historical `restored-v22`, `canonical-v23`, and
@@ -148,22 +146,22 @@ look for it is wrong. `"status": "ready"` *is* the proof the attestation matched
 If migration 113 commits and migration 114 does not, stop. No approved
 application is eligible to serve at that partially migrated history. During the historical V24 release,
 the prior `709239` application required V16 and that release candidate required V24.
-The current candidate requires V44. Older V2 consumers from
+The current candidate requires V47. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
 Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
 post-110 rollback set. A database still at exact 110 must classify `state=staff-identity` and use its
-state-bound inspection token. The tool must select migrations 111 through 139 in
+state-bound inspection token. The tool must select migrations 111 through 142 in
 their immutable order. A separately approved disaster recovery to the proved
 restored V22 snapshot must classify exact `state=restored-v22` and select only
-migrations 116 through 139. Use the generated remaining-file list and its source
+migrations 116 through 142. Use the generated remaining-file list and its source
 manifest; do not maintain a second manual list. These are hypothetical recovery
 cases, not the current live state. Only the authorized operator runs production
-apply. Candidate promotion remains blocked until migration 139 produces exact
-V44 readiness and the final raw catalog/provider fingerprint. That raw evidence
-must independently attest the new plan RPC's SECURITY INVOKER and VOLATILE facts,
-the synchronized demo-clear definition, and the V44 release facts. V40 rank-command,
+apply. Candidate promotion remains blocked until migration 142 produces exact
+V47 readiness and the final raw catalog/provider fingerprint. That raw evidence
+must independently attest the retained plan RPC and demo-clear facts, import receipts, refund ownership,
+and the V47 release facts. V40 rank-command,
 V41 payer-balance, V42 catalog and semantic, and V43 external-payment pins remain
 unchanged.
 
@@ -191,7 +189,7 @@ before starting, and record *why* on each thread if the finding is being deferre
 
 **Run the rollout tool from the exact candidate implementation.** For an unmerged
 release, invoke the tool from that candidate's worktree and pass its exact 40-character head.
-The tool creates a detached worktree at that SHA and verifies the 138-file sequence and
+The tool creates a detached worktree at that SHA and verifies the candidate's ordered migration sequence and
 source hashes there. Do not run an older `main` copy of the tool and do not merge the PR
 to obtain the rollout script.
 

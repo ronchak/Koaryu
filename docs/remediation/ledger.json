@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "1c10a193e66861fd3e2a8174251910798199eeca",
+  "last_reconciled_main": "63668a72d2b68542cfc1445884d7bb03a4b8b5dc",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -13241,11 +13241,12 @@
         "BT1-02",
         "BB1-09"
       ],
-      "verification": "Real V45 PostgreSQL reproduction: successful completion rolled back, projected500 persisted, original-key reclaim conflicted. V46 SQL contract verifies recovery and identity/lease/unrelated-refund rejection; generated canonical/logical restore continues the pre-migration receipt without changing payment/refund rows. The application test verifies one provider refund and audit after lease expiry. Full disposable verification and exact-head CI are required for merge; see refund-recovery-plan.md and the PR evidence. A real different-key completion overlap reproduced SQLSTATE55000 on V46. The existing concurrency proof now includes same-actor and next-admin requests and completed original-key replay, for 23 total cases. V47 adds canonical/logical restore continuation; see refund-completion-locking-plan.md.",
-      "next_change": "After this forward correction is reviewed and merged, rebase the held governance PR208 and verify it against V47 before hosted execution. The per-migration execution-mode scope question and all staging/backup/restore gates remain pending.",
+      "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md.",
+      "next_change": "Complete reviewed owner-authorization governance, then resolve the per-migration execution-mode scope decision before hosted rehearsal. Fresh backup, verified restore and per-migration recovery evidence remain prerequisites for production.",
       "execution_ownership": "Astra owns database design, migration and SQL/concurrency verification. Sol may implement a separately bounded application/test portion after that prerequisite is settled.",
       "pull_requests": [
-        207
+        207,
+        209
       ]
     }
   ],

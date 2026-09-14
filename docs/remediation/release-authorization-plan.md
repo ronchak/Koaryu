@@ -16,7 +16,7 @@ Private runbooks are unchanged. The proposed policy diff is checked with a dry-r
 
 ## Verification
 
-The existing production-gate test now checks missing/wrong owner, release, executor, phrase and restore evidence. One table-driven entry-point test covers non-TTY success, apply failure, wrong post-state and bad confirmation. It uses strict command fixtures, verifies that a bad phrase never applies, and checks that failure cannot emit successful/applied evidence. Tool cases change 66→67; workflow cases 127→128. The tool changes 5,476→5,530 lines and its tests 3,434→3,590. No source-text assertion or fixture framework is added.
+The existing production-gate test now checks missing/wrong owner, release, executor, phrase and restore evidence. One table-driven entry-point test covers non-TTY success, apply failure, wrong post-state and bad confirmation. It uses strict command fixtures, verifies that a bad phrase never applies, and checks that failure cannot emit successful/applied evidence. Tool cases change 66→67; workflow cases 127→128. The tool changes 5,527→5,581 lines and its tests 3,468→3,624. No source-text assertion or fixture framework is added.
 
 Require coordinator review, a fresh independent reviewer, exact-head CI, the guarded merge and main's own CI. No product behavior, migration, SQL contract or provider setting changes belong in this PR. No hosted apply or deployment occurs during verification.
 
