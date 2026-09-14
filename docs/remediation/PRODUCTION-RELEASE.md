@@ -4,11 +4,11 @@
 
 **Database first, backend second, frontend last. Neither application may be promoted before all nine migrations are applied and independently verified.** The new backend requires RPCs absent from production V38 and fails readiness before V47.
 
-The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). This packet is preparation, not evidence that an apply or deployment happened. The tool refuses production apply when more than one migration remains. A per-migration mode is awaiting the owner's scope answer; it has not been implemented. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
+The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). This packet is preparation, not evidence that an apply or deployment happened. The owner approved `--one-migration`. It selects the next reviewed file, binds its own inspection/approval/confirmation, and verifies the exact declared successor. Default production bulk apply remains refused. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
 
 ## Pinned candidate and observed state
 
-Release candidate: **not pinned until the governance PR merges and its main SHA passes exact-head CI**. Replace the quoted candidate placeholder below with that reviewed SHA during phase-three preparation, then regenerate every packet, approval, staging proof and deployment request. Do not reuse PR207's inspection token or an older packet merely because the migration files match.
+Release candidate: **not pinned until the one-migration PR merges and its main SHA passes exact-head CI**. Replace the quoted candidate placeholder below with that reviewed SHA during phase-three preparation, then regenerate every packet, approval, staging proof and deployment request. Do not reuse PR207's inspection token or an older packet merely because the migration files match.
 
 Read-only production inspection during this run confirmed exact V38 with eight remaining migrations against PR207 merge `1c10a193e66861fd3e2a8174251910798199eeca`. No migration was applied. V47 subsequently adds one more immutable file, so the new source packet has nine remaining migrations. The earlier inspection token cannot authorize that candidate.
 
@@ -47,7 +47,7 @@ set -euo pipefail
 set +x
 source /Users/openclaw/.config/koaryu/operator/release-env.sh
 cd /Users/openclaw/Projects/Koaryu-Repo
-export KOARYU_CANDIDATE='<reviewed-governance-merge-sha>'
+export KOARYU_CANDIDATE='<reviewed-one-migration-merge-sha>'
 export KOARYU_RELEASE_DIR="/Users/openclaw/Koaryu Releases/V47-$(date -u +%Y%m%dT%H%M%SZ)"
 umask 077
 mkdir -p "$KOARYU_RELEASE_DIR"
@@ -70,38 +70,47 @@ Local full verification already passed 142 migrations and 53 contracts, all rest
 
 ## 2. Rehearse on staging, then verify its database
 
-These staging actions have not run. Inspect first; announce and pause separately before each migration apply and deployment:
+These staging actions have not run. Start with `KOARYU_STEP=v38`. For each next file, repeat this block with the freshly observed predecessor, never in an unattended loop. Announce and pause separately before each approval post and migration apply.
 
 ```bash
-node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect \
-  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/staging-inspect.txt"
-export KOARYU_STAGING_TOKEN="$(sed -n 's/^inspection_token=//p' "$KOARYU_RELEASE_DIR/staging-inspect.txt")"
-node scripts/studio-comp-migration-rollout.mjs --target staging --mode dry-run \
+KOARYU_STEP=v38
+node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect --one-migration \
+  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-inspect.txt"
+KOARYU_STAGING_TOKEN="$(sed -n 's/^inspection_token=//p' "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-inspect.txt")"
+KOARYU_EXPECTED_AFTER="$(sed -n 's/^expected_after_state=//p' "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-inspect.txt")"
+node scripts/studio-comp-migration-rollout.mjs --target staging --mode dry-run --one-migration \
   --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_STAGING_TOKEN" \
-  > "$KOARYU_RELEASE_DIR/staging-dry-run.txt"
+  > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-dry-run.txt"
 sed -n '/^approval_record_body_begin$/,/^approval_record_body_end$/p' \
-  "$KOARYU_RELEASE_DIR/staging-inspect.txt" | sed '1d;$d' \
-  > "$KOARYU_RELEASE_DIR/staging-approval.txt"
+  "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-inspect.txt" | sed '1d;$d' \
+  > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-approval.txt"
 ```
 
-Require `state=v38` and exactly the nine filenames above in both the inspection remainder and dry-run. Any different state requires a newly reviewed state-specific packet. If already `post`, do not dry-run/apply; verify its fingerprint and proceed with the remaining evidence gates.
+At the first checkpoint require `state=v38` and the full nine-file remainder. At every checkpoint require the full remainder to equal the corresponding suffix of the table, `selected_migrations` to name only its first file, and `expected_after_state` to name its declared successor. The two dry-runs must respectively show that full suffix and that single file. A different state is a stop. An already-complete `post` inspection has no next apply.
 
-As GitHub owner `ronchak`, review the exact generated approval body and post it to **PR138**, not PR178. The existing tool pins that approval location and OWNER identity. Preserve its returned URL:
+The GitHub account must be `ronchak`. Review and post the exact generated single-file approval to PR138, retaining its URL:
 
 ```bash
 gh api user --jq .login
 gh pr comment 138 --repo ronchak/Koaryu \
-  --body-file "$KOARYU_RELEASE_DIR/staging-approval.txt"
-KOARYU_STAGING_APPROVAL='<URL-returned-by-the-owner-approval-comment>'
-node scripts/studio-comp-migration-rollout.mjs --target staging --mode apply \
+  --body-file "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-approval.txt"
+KOARYU_STAGING_APPROVAL='<URL-returned-by-this-step-approval>'
+node scripts/studio-comp-migration-rollout.mjs --target staging --mode apply --one-migration \
   --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_STAGING_TOKEN" \
   --confirm-project nxgsektqsgrtyfhawxbc --approval-record "$KOARYU_STAGING_APPROVAL" \
-  --approve-staging-apply > "$KOARYU_RELEASE_DIR/staging-apply.txt" 2>&1
-node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect \
-  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/staging-post.txt"
+  --approve-staging-apply > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-apply.txt" 2>&1
+node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect --one-migration \
+  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-post.txt"
+test "$(sed -n 's/^state=//p' "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-post.txt")" = "$KOARYU_EXPECTED_AFTER"
 ```
 
-Require `state=post` and save its complete `provider_fingerprint`. Record per-migration duration, longest observed lock waits and relevant table cardinalities privately. Use current staging credentials to run all 53 contracts and their service/anon/authenticated privilege checks; the runner refuses production:
+Verify retained business rows and the exact successor after each file. Then start fresh inspection/approval for that successor. Only after the V46-to-V47 invocation reports `post`, retain the final staging fingerprint:
+
+```bash
+cp "$KOARYU_RELEASE_DIR/staging-v46-post.txt" "$KOARYU_RELEASE_DIR/staging-post.txt"
+```
+
+Record per-migration duration, longest observed lock waits and relevant table cardinalities privately. Use current staging credentials to run all 53 contracts and their service/anon/authenticated privilege checks; the runner refuses production:
 
 ```bash
 python3 - <<'PY'
@@ -170,28 +179,31 @@ The helper takes a complete snapshot without schema filters, encrypts it, drops 
 
 The synthetic V38→V47 restore chain has passed, preserving business rows and legacy readiness. That is separate from this new production snapshot restore. Any changed image, source mapping or unknown dump representation requires reviewed helper support and fresh proof before apply. Never normalize production objects or repair migration history to force a pass.
 
-## 4. Inspect, approve and dry-run production again
+## 4. Inspect, approve and dry-run each production step
+
+Start with `KOARYU_STEP=v38`. Repeat inspection and approval only after the preceding file and retained-row checks pass.
 
 ```bash
-node scripts/studio-comp-migration-rollout.mjs --target production --mode inspect \
-  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/production-inspect.txt"
-export KOARYU_PRODUCTION_TOKEN="$(sed -n 's/^inspection_token=//p' "$KOARYU_RELEASE_DIR/production-inspect.txt")"
-node scripts/studio-comp-migration-rollout.mjs --target production --mode dry-run \
+KOARYU_STEP=v38
+node scripts/studio-comp-migration-rollout.mjs --target production --mode inspect --one-migration \
+  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-inspect.txt"
+export KOARYU_PRODUCTION_TOKEN="$(sed -n 's/^inspection_token=//p' "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-inspect.txt")"
+node scripts/studio-comp-migration-rollout.mjs --target production --mode dry-run --one-migration \
   --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_PRODUCTION_TOKEN" \
-  > "$KOARYU_RELEASE_DIR/production-dry-run.txt"
+  > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-dry-run.txt"
 sed -n '/^approval_record_body_begin$/,/^approval_record_body_end$/p' \
-  "$KOARYU_RELEASE_DIR/production-inspect.txt" | sed '1d;$d' \
-  > "$KOARYU_RELEASE_DIR/production-approval.txt"
+  "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-inspect.txt" | sed '1d;$d' \
+  > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-approval.txt"
 export KOARYU_STAGING_FINGERPRINT="$(sed -n 's/^provider_fingerprint=//p' "$KOARYU_RELEASE_DIR/staging-post.txt")"
 ```
 
-Compare the new state, ordered nine-file remainder and manifest with this packet. An inspection token from this document's preparation is not supplied or reusable. The tool checks the staging fingerprint against the complete canonical V47 tuple before production apply; it accepts only that tuple or the explicitly proven restored-production variant.
+Compare the new state and remaining suffix with this packet. The selected file must be exactly next, and its singleton manifest must bind this step's approval and confirmation. Record `expected_after_state` from the inspection. A token from another step or default bulk mode is invalid. An inspection token from this document's preparation is not supplied or reusable. The tool checks the staging fingerprint against the complete canonical V47 tuple before production apply; it accepts only that tuple or the explicitly proven restored-production variant.
 
 As `ronchak`, post the exact new production approval body to PR138 only after staging rehearsal, backup/restore and the maintenance window are accepted:
 
 ```bash
 gh pr comment 138 --repo ronchak/Koaryu \
-  --body-file "$KOARYU_RELEASE_DIR/production-approval.txt"
+  --body-file "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-approval.txt"
 KOARYU_PRODUCTION_APPROVAL='<URL-returned-by-the-owner-approval-comment>'
 KOARYU_RESTORE_RECORD='<verified-proof-path-snapshot-time-and-accepted-recovery-window>'
 KOARYU_RESTORE_OWNER='<named-authorized-recovery-decision-maker>'
@@ -199,10 +211,10 @@ KOARYU_RESTORE_OWNER='<named-authorized-recovery-decision-maker>'
 
 ## 5. Owner-authorized production apply and database verification
 
-This step remains blocked until the per-migration execution mode and all phase-three evidence are complete. The final command must operate on one reviewed migration at a time. Supply the deliberate exact phrase in `--confirmation-phrase`; terminal detection has been removed. The phrase format remains `APPLY <count> MIGRATIONS FROM <candidate> MANIFEST <source-manifest> TO mimguepumzsgmcaycdsh`. Validate it against the exact inspected packet. Capture the tool's structured authorization, provider response and outcome records privately. The executor name is caller-reported; it is not proof of process identity.
+Production remains blocked until all phase-three evidence is complete. Every invocation below applies exactly one reviewed migration and returns control. Supply the deliberate exact phrase in `--confirmation-phrase`; terminal detection has been removed. The phrase format remains `APPLY <count> MIGRATIONS FROM <candidate> MANIFEST <source-manifest> TO mimguepumzsgmcaycdsh`. Validate it against the exact inspected packet. Capture the tool's structured authorization, provider response and outcome records privately. The executor name is caller-reported; it is not proof of process identity.
 
 ```bash
-node scripts/studio-comp-migration-rollout.mjs --target production --mode apply \
+node scripts/studio-comp-migration-rollout.mjs --target production --mode apply --one-migration \
   --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_PRODUCTION_TOKEN" \
   --confirm-project mimguepumzsgmcaycdsh --approval-record "$KOARYU_PRODUCTION_APPROVAL" \
   --release-authorization "ronchak:$KOARYU_CANDIDATE" --release-operator "Coordinating Astra" \
@@ -210,16 +222,16 @@ node scripts/studio-comp-migration-rollout.mjs --target production --mode apply 
   --expected-provider-fingerprint "$KOARYU_STAGING_FINGERPRINT" \
   --confirmed-restore-window "$KOARYU_RESTORE_RECORD" \
   --restore-decision-authority "$KOARYU_RESTORE_OWNER" \
-  > "$KOARYU_RELEASE_DIR/production-apply.txt" 2>&1
-node scripts/studio-comp-migration-rollout.mjs --target production --mode inspect \
+  > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-apply.txt" 2>&1
+node scripts/studio-comp-migration-rollout.mjs --target production --mode inspect --one-migration \
   --candidate-sha "$KOARYU_CANDIDATE" \
   --expected-provider-fingerprint "$KOARYU_STAGING_FINGERPRINT" \
-  > "$KOARYU_RELEASE_DIR/production-post.txt"
+  > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-post.txt"
 ```
 
-The tool applies the ordered suffix, each migration and its history entry transactionally. Each successor checks its predecessor. After each committed file, the expected count/head advances through the table above; record provider timing/lock evidence. On any error, stop and re-inspect before another command that could mutate state. A timeout may have committed. Do not manually apply individual SQL files, run production contracts, use history repair or blindly retry the old packet.
+The tool verifies the full suffix, limits the CLI to its first file and verifies the declared successor after that one apply. The pinned CLI commits a migration and its history entry transactionally. Each successor checks its predecessor. After each committed file, the expected count/head advances through the table above; record provider timing/lock evidence. On any error, stop and re-inspect before another command that could mutate state. A timeout may have committed. Do not manually apply individual SQL files, run production contracts, use history repair or blindly retry the old packet.
 
-Require final `state=post`, exact142/headV47, matching approved fingerprint and zero failures. The tool independently checks raw function definitions/ACLs and the manifest, including the narrow private Auth-lock helper and receipt ownership. Only then may application promotion begin.
+For each invocation require the exact `expected_after_state` and unchanged retained rows. Get a new inspection and approval before the next invocation. After V47 require final `state=post`, exact142/headV47, matching approved fingerprint and zero failures. The tool independently checks raw function definitions/ACLs and the manifest, including the narrow private Auth-lock helper and receipt ownership. Only then may application promotion begin.
 
 ## 6. Deploy the backend, verify it, then build the production frontend
 
@@ -256,6 +268,30 @@ npm run verify:deployed-release -- --environment production \
 
 Do not pass `--expected-stripe-mode` for production. Check tenant authorization, ordinary reads and retained record values without creating historical financial changes. Re-read auto-deploy controls off and save final provider/deployment identities privately. Reopen affected staff workflows only after the new pair and drain evidence pass. Keep unresolved financial risks and live-billing gates explicit.
 
+## Per-migration recovery checkpoints
+
+The pinned CLI executes each file and its history insert in one transaction. These nine files contain no standalone transaction commits or concurrent index builds that would split that boundary. A SQL failure normally leaves the predecessor intact; a lost connection or timeout can leave either predecessor or successor. Never infer which from the exit status. Read-only inspection must settle it before any further action.
+
+| File | Before → verified after | Atomic change and rollback limit |
+| --- | --- | --- |
+| V39 / `20260908080420` | V38 / 133 → V39 / 134 | Membership-preservation functions and attestation. No business-row backfill. |
+| V40 / `20260908133504` | V39 / 134 → V40 / 135 | Rank command ownership and prospective evidence. Old code cannot undo newly recorded command evidence. |
+| V41 / `20260908183744` | V40 / 135 → V41 / 136 | Serialized payer-balance RPC and attestation. No automatic balance recomputation. |
+| V42 / `20260910084231` | V41 / 136 → V42 / 137 | Independent joining-date semantics and catalog checks. Existing membership dates stay unchanged. |
+| V43 / `20260910093958` | V42 / 137 → V43 / 138 | Atomic external-payment/audit RPC. Existing financial rows are not rewritten. |
+| V44 / `20260910135133` | V43 / 138 → V44 / 139 | Atomic plan/link/audit writer and clear coordination. Existing plan rows are not rewritten. |
+| V45 / `20260910185031` | V44 / 139 → V45 / 140 | Import receipts, actor locking and refusal of legacy writes. Keep old import callers stopped after commit. |
+| V46 / `20260914033337` | V45 / 140 → V46 / 141 | Refund projection recovery. Existing stored claim fingerprints are not rewritten. |
+| V47 / `20260914055301` | V46 / 141 → `post` / 142 | Completion-lock comparison and fresh lease time. No financial backfill. |
+
+For **every** row, the recovery decision is the same:
+
+- If exact predecessor state and retained rows are unchanged, stop the run and report the failure. A reviewed resumption may retry that same immutable file only after the cause is understood, the recovery window remains valid, and fresh inspection/approval/dry-run evidence exists.
+- If exact successor state committed and retained rows are unchanged, report the committed checkpoint. Do not retry the old command. A reviewed resumption starts from a new inspection and approval for the next file.
+- If state is partial/unknown or an original business row changed, stop. Restore from the verified pre-apply backup may be necessary; that can lose every later write. There is no approved hosted restore command here. The disposable restore helper cannot restore production. Present that recovery option and a separately reviewed forward correction to the named decision-maker; execute neither automatically.
+
+The complete application release remains blocked until exact V47. These checkpoints make a stopped prefix diagnosable; they do not authorize promotion at an intermediate state or bypass the stop conditions.
+
 ## Compatibility and recovery
 
 | Backend | Database-first compatibility | Limit |
@@ -278,4 +314,4 @@ The private backup helper still needs reviewed V47 support before taking/attesti
 
 ## Execution record
 
-As of governance preparation, no hosted migration, backup/restore, backend deployment or frontend promotion has executed in this run. Phase-three evidence and exact commands must be completed against the final reviewed governance SHA before this packet becomes executable. The [operator-policy proposal](operator-governance-proposal.patch) has passed a dry-run; the private operator files remain unchanged.
+As of governance preparation, no hosted migration, backup/restore, backend deployment or frontend promotion has executed in this run. Phase-three evidence and exact commands must be completed against the final reviewed one-migration SHA before this packet becomes executable. The [operator-policy proposal](operator-governance-proposal.patch) has passed a dry-run; the private operator files remain unchanged.

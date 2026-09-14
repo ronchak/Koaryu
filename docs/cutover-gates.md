@@ -215,7 +215,7 @@ Production apply requires `--release-authorization ronchak:<candidate-sha>`, `--
 
 The executor name is caller-reported attribution, not an authenticated process identity. GitHub verifies the approval account and exact release scope. A public owner/release label or a second name comparison cannot isolate a malicious process that shares provider credentials. The named-coordinator restriction remains an operating-policy requirement; subagents are not authorized.
 
-Production apply refuses a remainder containing more than one migration until a separately reviewed per-migration mode exists. Every attempted provider apply records its actual stdout, stderr and process outcome before the final success or uncertain-failure record. Keep that audit output private.
+Default production bulk apply is refused. For the V38-to-V47 chain, use `--one-migration` on inspection, dry-run and apply. Each invocation binds the next file to its own token, approval and confirmation and must verify its exact declared successor. Reinspect before the next invocation; never automate the sequence past a checkpoint. Every attempted provider apply records its actual stdout, stderr and process outcome before the final success or uncertain-failure record. Keep that audit output private.
 
 The exact phrase still binds the candidate, pending migration count, source manifest and production project. Supply it deliberately. Do not generate an automatic answer or fabricate a backup/restore claim to satisfy a field.
 
