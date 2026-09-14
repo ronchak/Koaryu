@@ -14,6 +14,8 @@ Read-only production inspection during this run confirmed exact V38 with eight r
 
 Read-only inspection on September 11, 2026 UTC confirmed both staging and production at exact `v38`, 133 migrations, head `20260905022339`. Production image: `17.6.1.155`, status `ACTIVE_HEALTHY`. Frontend and backend both served `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`, environment production, backend Stripe live. Render returned `autoDeploy=no` and `autoDeployTrigger=off`; deployed and candidate `frontend/vercel.json` both disable main auto-deployment. Recheck all of this at execution time.
 
+The September14 closeout read freshly verified the production frontend/backend pair still at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Private evidence is `production-pair-closeout.txt` under the current release directory. No deployment occurred. The provider image observation above remains older evidence.
+
 Expected final state: `post`, 142 migrations, head `20260914055301`, history `142:d3bab5f085e1c46ce72ab43046b1ca8b`, full preflight V28, manifest `release-db-attestation-v47`, 58 pending-history versions, zero security failures. HTTP readiness reports `status=ready`; it does not echo the manifest string.
 
 ## Exact ordered production remainder

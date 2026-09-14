@@ -13242,7 +13242,7 @@
         "BB1-09"
       ],
       "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md.",
-      "next_change": "Complete reviewed owner-authorization governance, then resolve the per-migration execution-mode scope decision before hosted rehearsal. Fresh backup, verified restore and per-migration recovery evidence remain prerequisites for production.",
+      "next_change": "Resolve the per-migration execution-mode scope decision before hosted rehearsal. Fresh backup, verified restore and per-migration recovery evidence remain prerequisites for production. Owner-authorized governance is provided by PR208.",
       "execution_ownership": "Astra owns database design, migration and SQL/concurrency verification. Sol may implement a separately bounded application/test portion after that prerequisite is settled.",
       "pull_requests": [
         207,
