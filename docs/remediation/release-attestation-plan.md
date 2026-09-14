@@ -41,7 +41,7 @@ Generate all ten historical script outputs and compare complete bytes, modes and
 
 Preserve complete object inventories so extra overloads/grants/columns/FKs cannot disappear. V41's payer writer is VOLATILE and uses separate raw evidence; the existing billing-read manifest assumes STABLE. Preserve exact normalization pairs and fail before repairing unknown drift. Do not broaden canonical/restored accepted facts into an arbitrary mix.
 
-Keep provider mappings, inspection tokens, exact candidate identity, approvals and human production apply in the existing rollout tool. No auto-accepting hashes, provider calls, production SQL, deployment or historical data backfill.
+Keep provider mappings, inspection tokens, exact candidate identity, approvals and owner-authorized production apply in the existing rollout tool. No auto-accepting hashes, provider calls, production SQL, deployment or historical data backfill.
 
 Consolidate repeated readiness/expectation test plumbing into independently expected state cases. Retain malformed/extra-field/wrong-order/hybrid/ACL negatives and real business/concurrency tests. Remove the source-text continuation dependency and repeated V31 execution. Do not add a test for every emitter line.
 

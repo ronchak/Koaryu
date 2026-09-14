@@ -31,7 +31,7 @@ No test was added merely to require a private implementation name or a version s
 
 The coordinator reviewed the Python renderer from a separate Astra task, required a reusable forward profile, corrected moving-alias handling, and added explicit canonical/restored evidence requirements. A separate fresh PR reviewer and final exact-head CI are still required before merge.
 
-No provider state, production database, production deployment, historical financial data or approval was changed. Generated output does not grant release authority. Future schema changes still need reviewed pins, meaningful business fixtures, the full database proof and the existing human-only production gates.
+No provider state, production database, production deployment, historical financial data or approval was changed. Generated output does not grant release authority. Future schema changes still need reviewed pins, meaningful business fixtures, the full database proof and the current owner-authorization and technical production gates.
 
 ## Supported Node versions
 

@@ -111,7 +111,7 @@ worker repair. Post-migration application rollback can restore the old race even
 though its readiness interface remains compatible.
 
 This evidence is local and synthetic. No hosted payment, production migration,
-backfill or deployment was performed. Production apply remains human-only with
+backfill or deployment was performed. Production apply follows current owner-authorized release policy with
 fresh candidate-bound inspection, backup and approval evidence. One fresh reviewer
 receives the final diff and this PR's plan without the previous reviewers' history.
 

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "4244384fb701d7a2bb9b8fcca581a403e695836b",
+  "last_reconciled_main": "1c10a193e66861fd3e2a8174251910798199eeca",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -106,7 +106,7 @@
       ],
       "next_change": "None; keep the corrected target guidance.",
       "validation_plan": "Current guidance and guarded runner inspected; retained PR156 target/refusal evidence and subsequent full SQL CI remain applicable.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -246,7 +246,7 @@
       ],
       "next_change": "Suppress or separately classify and abort exactly the collector-owned telemetry endpoint; retain rejection of every business/provider write and unknown origin.",
       "validation_plan": "Synthetic delayed sampled telemetry must not invalidate a read-only capture, while a business POST still does.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3149,7 +3149,7 @@
       ],
       "next_change": "Separate raw input projection from strict exported-artifact validation; discard unapproved raw fields before validating the sanitized result.",
       "validation_plan": "Use a realistic full SDK-shaped object with sensitive fields and prove the output omits them while preserving exact identity/mode/account checks.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3184,7 +3184,7 @@
       ],
       "next_change": "Require sanitized observed replay/classification evidence where the contract claims observation; label static inference separately and refuse incomplete rehearsal certification.",
       "validation_plan": "A packet with only static inference must not satisfy observed replay/decision requirements; preserve exact zero-extra-operation inventories and no-forbidden-mutation policy.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3220,7 +3220,7 @@
       ],
       "next_change": "Use confirmed provider event time for comparable windows while preserving separate ingestion watermarks and continuity checks. Do not invent missing historical facts.",
       "validation_plan": "Delayed-delivery cases across both window edges must reconcile consistently without weakening completeness or overlap requirements.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3255,7 +3255,7 @@
       ],
       "next_change": "Fetch one latest checkpoint, index window events once by account, and bound continuity work without truncating or claiming unchecked history is complete.",
       "validation_plan": "Use independent continuity/bootstrap/window fixtures and query-count/complete-result checks; measure improvement without imposing arbitrary row caps.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3324,7 +3324,7 @@
       ],
       "next_change": "None; retain the guard and its refusal coverage.",
       "validation_plan": "Current runner and retained target tests inspected; expanded local helpers also refuse remote/unowned targets.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -3356,7 +3356,7 @@
       ],
       "next_change": "Validate required controls in the parsed workflow and their actual enabled command steps. Keep exact-head, complete-needs and audit requirements; avoid a generic workflow framework.",
       "validation_plan": "The disabled-step and commented-command counterexamples must fail while the current real workflow and harmless supported formatting pass.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3391,7 +3391,7 @@
       ],
       "next_change": "Separate existing fact owners and reduce arbitrary prose checks, preserving actual environment/provider/cadence/privacy facts and any explicitly required confirmation literal. Do not merely move the same incidental greps into more files.",
       "validation_plan": "Run existing environment/privacy suites and targeted safe-prose/real-control drift cases; no weakening of raw-data or production gates.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3422,7 +3422,7 @@
       ],
       "next_change": "Defer until a real branding operation is authorized; then bound selection/pagination and verify asset ownership before reuse. Do not build bulk-provider tooling now.",
       "validation_plan": "Before future use, prove complete scoped selection and per-studio policy preservation using synthetic provider responses.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3457,7 +3457,7 @@
       ],
       "next_change": "When consolidating operator snapshot/evidence work, give reusable helpers a small explicit owner and close owned clients in finally while preserving injected clients and exact confirmation semantics.",
       "validation_plan": "Existing CLI selector/confirmation tests plus one owned-client cleanup failure case; no generic operator framework.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3493,7 +3493,7 @@
       ],
       "next_change": "None for the verified root cause; preserve the recorded reproduction and release boundaries.",
       "validation_plan": "Compare every historical header/cardinality/head against independent migration history and actual predecessor readback; keep all exact-state rejection tests.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "implementation_verification": "docs/remediation/release-attestation-verification.md. Offline statement/script byte checks; full136-migration/51-contract local proof; targeted backend, workflow and API-contract checks passed. Final exact-head review/CI remain required before merge.",
       "normalization_track": "Astra",
@@ -3531,7 +3531,7 @@
       ],
       "next_change": "None for the verified root cause; preserve the recorded reproduction and release boundaries.",
       "validation_plan": "Regenerate existing releases byte-identically, then prove historical/current state selection and real drift rejection on disposable PostgreSQL.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "implementation_verification": "docs/remediation/release-attestation-verification.md. Offline statement/script byte checks; full136-migration/51-contract local proof; targeted backend, workflow and API-contract checks passed. Final exact-head review/CI remain required before merge.",
       "normalization_track": "Astra",
@@ -3566,7 +3566,7 @@
       ],
       "next_change": "After state declarations stabilize, group the applicable read-only evidence into a bounded consistent snapshot; retain discovery before queries for unavailable predecessor objects.",
       "validation_plan": "Count transports and compare every returned field and wrong-state rejection against existing independent fixtures; no hosted inspection required.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -3600,7 +3600,7 @@
       ],
       "next_change": "Keep failed certification but preserve distinct safe transport, timeout, SQL and malformed-result categories at the query owner.",
       "validation_plan": "Feed malformed CSV and a distinct transport failure through the composed collector; require different safe categories without raw output leakage.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -3632,7 +3632,7 @@
       ],
       "next_change": "Reject unknown and duplicate options and malformed pairs before any network call, retaining existing supported flags.",
       "validation_plan": "Parser-level typo/duplicate cases must fail before injected fetch; valid optional mode still reaches verification.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3668,7 +3668,7 @@
       ],
       "next_change": "Use observed synchronization and narrow SQLSTATE/application-error assertions in the existing helpers; retain persisted outcome checks.",
       "validation_plan": "An injected connection/syntax failure must not pass the negative probe; actual intended contention/rejection must pass on local PostgreSQL.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -3703,7 +3703,7 @@
       ],
       "next_change": "None for the verified root cause; preserve the recorded reproduction and release boundaries.",
       "validation_plan": "Regenerate old checks equivalently; compare retained data, independent C/R hashes, negative controls and cleanup through the same real restore chain.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "implementation_verification": "docs/remediation/release-attestation-verification.md. Offline statement/script byte checks; full136-migration/51-contract local proof; targeted backend, workflow and API-contract checks passed. Final exact-head review/CI remain required before merge.",
       "normalization_track": "Astra",
@@ -3741,7 +3741,7 @@
       ],
       "next_change": "Validate each workflow against one immutable top-level account/generation and known reused object identities before pair equality.",
       "validation_plan": "Mutate both provider and local rows to the same wrong context and require rejection; retain all current financial/zero-operation matrices.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3774,7 +3774,7 @@
       ],
       "next_change": "Pass validated object shapes into dependent semantic checks or stop those checks when structure is invalid; preserve one valid/errors output contract.",
       "validation_plan": "Wrong top-level and nested list/scalar inputs return structured invalid reports without traceback or approval.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -3810,7 +3810,7 @@
       ],
       "next_change": "Replace timing assumptions with database-observed lock barriers and precise rejection assertions in the existing V33 cases.",
       "validation_plan": "Force both intended interleavings on disposable PostgreSQL; timeouts must fail, not count as contention proof.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -4153,7 +4153,7 @@
       ],
       "next_change": "None for this scoped finding; BT3-07 remains blocked and the prior BT4-01 fix is unchanged.",
       "validation_plan": "Check metric naming/scope with existing fixture execution; retain independent query/row/byte and response behavior gates.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/06-performance-evidence-maintenance.md",
       "normalization_track": "Sol",
@@ -5010,7 +5010,7 @@
       ],
       "next_change": "No remaining export RSS claim. Dashboard fixture-process memory scope remains separately pending under BT1-07.",
       "validation_plan": "Verify Linux/macOS units for any retained RSS metric and that the claimed gate can actually fail; avoid measuring inherited peaks as endpoint memory.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/06-performance-evidence-maintenance.md",
       "normalization_evidence": [
@@ -5334,7 +5334,7 @@
       ],
       "next_change": "None for the audited repetition; retain this compact shape as generated release facts evolve.",
       "validation_plan": "Compared audited c5742fe tests with current source and the membership/rank/invoice commit history; full backend CI passed.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -5531,7 +5531,7 @@
       ],
       "next_change": "None for this bounded maintenance finding; preserve the active behavior and independent negative contracts.",
       "validation_plan": "Reference search plus the existing collector suite; no replacement fake or new tests.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/05-backend-dead-code-and-fixtures.md",
       "normalization_track": "Sol",
@@ -5703,7 +5703,7 @@
       ],
       "next_change": "None for this bounded maintenance finding; preserve the active behavior and independent negative contracts.",
       "validation_plan": "Existing collector/validator suites must remain behaviorally equivalent; compare data objects or AST for pure formatting changes.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/05-backend-dead-code-and-fixtures.md",
       "normalization_track": "Sol",
@@ -5802,7 +5802,7 @@
           "observation": "For a new backup introduces linked role/schema/data dumps; data schema filter excludes supabase_migrations."
         }
       ],
-      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
+      "next_change": "None for this documentation finding; fresh release evidence and owner-authorized execution remain required.",
       "validation_plan": "Review all active backup links/commands against operator-tooling and private runbook; do not execute backups.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5845,7 +5845,7 @@
           "observation": "Active readiness paragraph requires126/V31; release-candidate-controls lines45-53 require117/V24."
         }
       ],
-      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
+      "next_change": "None for this documentation finding; fresh release evidence and owner-authorized execution remain required.",
       "validation_plan": "Cross-check generated candidate packet and all active readiness references; preserve exact policy facts without adding prose-grep tests.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5881,7 +5881,7 @@
           "observation": "rolcanlogin::text and related expressions are compared with t|t|t; line1194 nests SQL single quotes inside shell single quotes."
         }
       ],
-      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
+      "next_change": "None for this documentation finding; fresh release evidence and owner-authorized execution remain required.",
       "validation_plan": "Verify active links no longer present this historical shell block as the current recipe; retain recorded operation evidence.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -5975,7 +5975,7 @@
           "observation": "Billing API curl examples use SUPABASE_ACCESS_TOKEN; the operator guide assigns that name to the Supabase Management API token."
         }
       ],
-      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
+      "next_change": "None for this documentation finding; fresh release evidence and owner-authorized execution remain required.",
       "validation_plan": "Compare variable roles with AUTHENTICATION guidance and endpoint dependencies; no real token reads or API calls.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6014,7 +6014,7 @@
           "observation": "Grant example has --expires-at2026-08-01 and no --operation; line278 says schema version2."
         }
       ],
-      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
+      "next_change": "None for this documentation finding; fresh release evidence and owner-authorized execution remain required.",
       "validation_plan": "Inspect parser-required arguments and validator SCHEMA_VERSION; no authorization writes or generated boilerplate tests.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6207,7 +6207,7 @@
           "observation": "Relative report output follows a backend-directory command and is reused relatively at128."
         }
       ],
-      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
+      "next_change": "None for this documentation finding; fresh release evidence and owner-authorized execution remain required.",
       "validation_plan": "Check example path continuity and privacy guidance without generating live evidence.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6244,7 +6244,7 @@
           "observation": "Production sequence deploys/runs cron before the next backend deployment step."
         }
       ],
-      "next_change": "None for this documentation finding; fresh release evidence and human-only execution remain required.",
+      "next_change": "None for this documentation finding; fresh release evidence and owner-authorized execution remain required.",
       "validation_plan": "Compare the entire packet sequence with services/cutover and current readiness dependencies; do not run it.",
       "scope_constraints": "No provider/credential changes, production operations, altered approval gates or historical evidence rewriting. Use current code and private operator entrypoint as authority.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -6685,7 +6685,7 @@
       ],
       "next_change": "As the actual widget/roster bugs are fixed, add the smallest safe rendered regression sequences to required coverage; do not enable every opt-in or live-stateful suite.",
       "validation_plan": "Prove those sequences run against verified disposable preview and fail the relevant old behavior, while retaining existing mounted/SQL assurance.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -6721,7 +6721,7 @@
       ],
       "next_change": "None for this scoped finding.",
       "validation_plan": "A deliberately held data response must not satisfy a test labeled settled; valid empty results should.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/07-frontend-test-fixtures-and-claims.md",
       "normalization_track": "Sol",
@@ -6755,7 +6755,7 @@
       ],
       "next_change": "Reuse the existing loopback and disposable-preview checks in each stateful preview entrypoint, retaining separate authorization for live-stateful tests.",
       "validation_plan": "Wrong host and absent marker must fail before navigation/mutation; valid synthetic local attendance still runs.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
@@ -7278,7 +7278,7 @@
       ],
       "next_change": "None for this scoped finding; BT3-07 remains blocked and the prior BT4-01 fix is unchanged.",
       "validation_plan": "Check the diagnostic label against what the fixture actually mounts; keep its request-selection and identity assertions unchanged.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/06-performance-evidence-maintenance.md",
       "normalization_track": "Sol",
@@ -11525,7 +11525,7 @@
       ],
       "next_change": "Make retained financial/provider history a clear preflight refusal while preserving currently successful disposable clears; do not expand deletion eligibility without an explicit ownership decision.",
       "validation_plan": "Actual local fixture with provider history refuses before mutation and retains all rows; an eligible history-free fixture still clears.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -12091,7 +12091,7 @@
       ],
       "next_change": "In the later forward reconciliation correction, remove only the discarded filtered count while preserving the watermark scan and all bounded count/continuity checks.",
       "validation_plan": "Compare checkpoint acceptance/refusal and watermark outcomes with the existing contract on local PostgreSQL; do not rewrite the old migration.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -12498,7 +12498,7 @@
       ],
       "next_change": "None for the verified root cause; preserve the recorded reproduction and release boundaries.",
       "validation_plan": "Regenerate committed attested bodies exactly, check source hashes, and run real canonical/restored readiness/drift proofs.",
-      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and human-only production operations. No new infrastructure beyond the authorized attestation generator.",
+      "scope_constraints": "Preserve tenant/account/actor scope, financial and approval gates, immutable migration history, independent fingerprints and owner-authorized production operations. No new infrastructure beyond the authorized attestation generator.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "implementation_verification": "docs/remediation/release-attestation-verification.md. Offline statement/script byte checks; full136-migration/51-contract local proof; targeted backend, workflow and API-contract checks passed. Final exact-head review/CI remain required before merge.",
       "normalization_track": "Astra",
@@ -12683,7 +12683,7 @@
       ],
       "next_change": "None at this location; retain the targeted mutant proof and postcondition.",
       "validation_plan": "Current flag/error-check pattern inspected; PR156 proved the old false green and corrected failure on a disabled guard.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -12720,7 +12720,7 @@
       ],
       "next_change": "Make required-result assertions NULL-safe and require expected rows/keys where needed, without replacing ordinary business predicates mechanically.",
       "validation_plan": "Use a small actual NULL/missing-result mutation set to prove rejection; retain existing independent expected values instead of duplicating every test.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -12754,7 +12754,7 @@
       ],
       "next_change": "Remove or honestly relabel copied-plan assurance while retaining scaled actual-RPC semantics and existing timing evidence. Select a direct production-query check only if it can use existing tooling without new infrastructure.",
       "validation_plan": "A changed production RPC must not be claimed protected by an unchanged copied query; retain all meaningful actual function assertions.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -12852,7 +12852,7 @@
       ],
       "next_change": "None at this location; preserve exact rejection and rollback proof.",
       "validation_plan": "Current source and retained PR156 negative control inspected; full current SQL contracts pass.",
-      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and human-only production controls. No production operation or historical financial repair.",
+      "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
@@ -13244,7 +13244,9 @@
       "verification": "Real V45 PostgreSQL reproduction: successful completion rolled back, projected500 persisted, original-key reclaim conflicted. V46 SQL contract verifies recovery and identity/lease/unrelated-refund rejection; generated canonical/logical restore continues the pre-migration receipt without changing payment/refund rows. The application test verifies one provider refund and audit after lease expiry. Full disposable verification and exact-head CI are required for merge; see refund-recovery-plan.md and the PR evidence. A real different-key completion overlap reproduced SQLSTATE55000 on V46. The existing concurrency proof now includes same-actor and next-admin requests and completed original-key replay, for 23 total cases. V47 adds canonical/logical restore continuation; see refund-completion-locking-plan.md.",
       "next_change": "After this forward correction is reviewed and merged, rebase the held governance PR208 and verify it against V47 before hosted execution. The per-migration execution-mode scope question and all staging/backup/restore gates remain pending.",
       "execution_ownership": "Astra owns database design, migration and SQL/concurrency verification. Sol may implement a separately bounded application/test portion after that prerequisite is settled.",
-      "pull_requests": []
+      "pull_requests": [
+        207
+      ]
     }
   ],
   "normalization": {
@@ -13285,11 +13287,12 @@
     "Astra": 29
   },
   "execution_policy": {
-    "updated": "2026-09-10",
-    "authority": "Owner wind-down instruction",
+    "updated": "2026-09-14",
+    "authority": "Owner-authorized four-phase release run, capped at 35 weekly percentage points",
     "Sol": "All backend/frontend implementation, including financial and authorization application code; docs and maintenance. Existing safety requirements remain.",
     "Astra": "All supabase, migrations, SQL contracts and database concurrency proofs personally. Mixed findings retain one database coordinating track with Sol owning app paths.",
-    "note": "normalization_track preserves the earlier risk-based classification. Current track is execution responsibility, not severity or historical authorship."
+    "note": "normalization_track preserves the earlier risk-based classification. Current track is execution responsibility, not severity or historical authorship.",
+    "release": "Only the named coordinating Astra task may execute this authorized production release, with the announce-and-pause protocol and all technical gates. Subagents may not execute production actions. Live billing activation and historical financial backfill remain outside scope."
   },
   "current_disposition_tracks": {
     "fixed": {

@@ -34,7 +34,13 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 [PR179](https://github.com/ronchak/Koaryu/pull/179), merged as `7113d13`, enforces USD at new tuition financial writes and retires the unused pricing path. Historical financial attempts, exact replay and provider references remain protected. Empty provider headers do not authorize new non-USD amounts. Mixed-currency reporting, unknown provider facts and family attribution remain pending. See [verification](docs/remediation/tuition-currency-verification.md).
 
-## Current bounded run
+## Current release run
+
+The September 14 run is authorized for four ordered phases: refund recovery, release governance, hosted rehearsal and verified backup/restore, then the production database/backend/frontend release. The budget starts at 51% weekly used, stops new work and release execution at 81%, and has an 86% ceiling. The remaining audit backlog is outside this run.
+
+[PR207](https://github.com/ronchak/Koaryu/pull/207) landed V46 refund recovery at `1c10a193e66861fd3e2a8174251910798199eeca`. Both its reviewed head and merged main passed exact-head CI. The full local 141-migration/53-contract suite and 21 billing concurrency cases passed. No hosted migration or deployment has run. Governance is the next phase; [HANDOFF](docs/remediation/HANDOFF.md) records the active checkpoint and release dependencies.
+
+## Previous bounded run, September 13
 
 The September 13 run stopped implementation after PR202–205. Its budget began at 45% weekly usage, with a 10-point hard cap and an 8-point stop-new-work threshold. No further implementation is planned. [HANDOFF](docs/remediation/HANDOFF.md) records the preparation SHA, measured usage, remaining work and release traps; the closing report records the final merge SHA and meter read.
 
@@ -46,7 +52,7 @@ This run reduces test source by 240 lines: frontend/e2e −316, backend +76. Fro
 
 The earlier billing ownership collapse remains intact: no opaque service/manager owners, no private forwarding facade, and no reverse import cycle. Billing modules remain 27. Relative to the formatter baseline, non-generated application Python/TypeScript is 1,192 lines smaller and test source/JSON fixtures across the recorded scopes are 87 lines smaller. The earlier run's test growth has been offset; the broader cleanup is still incomplete.
 
-Each item used a fresh Sol implementer, coordinator review and a fresh independent reviewer. Every implementation PR passed exact-head CI and the guarded merge with production auto-deploy read back off. No Supabase source, migration, deployment, live billing, historical financial backfill, mail or DNS was changed. The [production packet](docs/remediation/PRODUCTION-RELEASE.md) remains pinned to an earlier candidate; PROGRAM-REFUND-01 remains a release gate.
+Each item used a fresh Sol implementer, coordinator review and a fresh independent reviewer. Every implementation PR passed exact-head CI and the guarded merge with production auto-deploy read back off. No Supabase source, migration, deployment, live billing, historical financial backfill, mail or DNS was changed. That run left PROGRAM-REFUND-01 as a release gate; PR207 subsequently corrected it.
 
 ## Completed changes
 
@@ -124,4 +130,4 @@ Use short-lived `codex/` branches from current main, one coherent rollback bound
 
 When a subsystem changes, remove or consolidate its brittle source assertions, copied algorithms, duplicate fixtures and obsolete tests. Preserve strong financial, destructive-write, authorization, tenant and migration assurance. Report material test additions/deletions and why the resulting coverage is stronger. The [test cleanup inventory](docs/remediation/source-test-cleanup.md) assigns every identified source-assertion file an owner; it is not a demand for one new mounted test per old grep.
 
-Production auto-deploy must remain off and be verified before merging. No production deployment, production migration, historical financial backfill or live billing activation is authorized. Follow current repository and private operator guidance. Production apply remains human-only in a real interactive terminal. Old approvals, inspection tokens, provider/image mappings and restore evidence are historical, not reusable release authority. Credentials, dumps and private evidence stay outside the repository.
+Production auto-deploy must remain off and be verified before merging. The owner has explicitly authorized coordinating Astra to execute this release through the [announce-and-pause protocol](docs/cutover-gates.md#owner-authorized-release-execution). All technical gates remain mandatory. Live billing activation and historical financial backfill remain outside scope. Old approvals, inspection tokens, provider/image mappings and restore evidence are historical, not reusable release authority. Credentials, dumps and private evidence stay outside the repository.

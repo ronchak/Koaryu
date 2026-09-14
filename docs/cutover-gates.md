@@ -209,16 +209,28 @@ from serving as the approval. The API record must also identify `ronchak` with G
 `author_association=OWNER`; comments from collaborators or outside users are refused.
 A stale approval record is rejected after any code, state, or remainder change.
 
-**Production apply requires a real terminal.** `confirmProductionApply()` throws unless
-both `process.stdin.isTTY` and `process.stdout.isTTY`, then prompts for an exact phrase
-built by `buildProductionConfirmationPhrase()`.
+## Owner-authorized release execution
 
-An agent cannot perform this step, and must not allocate a PTY to get around it.
-Faking the terminal and typing the phrase impersonates the human confirmation the control
-exists to capture, on an irreversible migration. The correct handoff is to prepare
-everything else, then give the operator the fully filled-in command and the exact phrase
-to type. Stage long values (the provider fingerprint is ~1000 characters) into a file so
-the command stays pasteable.
+The owner may explicitly authorize a named coordinating agent to apply production migrations, deploy the backend and promote the frontend. This replaces the former human-only terminal rule as of September 14, 2026. Subagents have no production authority. Live billing activation still needs separate authorization.
+
+Production apply requires `--release-authorization ronchak:<candidate-sha>`, `--release-operator <named-executor>` and `--confirmation-phrase <exact-phrase>`. The authorization names the owner and intended release. The tool retains the exact PR138 OWNER approval, source and target checks, inspection token, dry-run, staging fingerprint and restore evidence requirements. It records the owner, executor, release, intended/applied versions, status and timestamps in its output. A terminal is not proof of authorization.
+
+The exact phrase still binds the candidate, pending migration count, source manifest and production project. Supply it deliberately. Do not generate an automatic answer or fabricate a backup/restore claim to satisfy a field.
+
+Before **each** irreversible or outward-facing release action:
+
+1. Post the exact command, what it changes, whether it is reversible, and the check that follows it.
+2. Wait at least 60 seconds before execution. If the owner interrupts, stop and report the current state.
+3. Execute that command alone. Never combine two irreversible steps in one announcement or put a mutation inside a compound command.
+4. Verify the result before the next action. Retain the command, authorization, timestamps, candidate, provider response and verification evidence outside the repository when it contains operator data.
+
+This applies to each migration apply, the production backup, each backend deployment and each frontend promotion. Database comes first, backend second, frontend last. The owner has allowed the exact recorded old-frontend/new-backend pair only during that planned transition; every unexpected SHA mismatch is a stop. Verify the matching final pair before declaring the release complete.
+
+A fresh pre-apply backup and verified disposable restore are mandatory. Stop on a failed or ambiguous migration, unexpected checkpoint state or change to pre-existing business rows, an unverifiable backup/restore, an unexpected deployed SHA, or the run's budget stop. Do not improvise recovery. Keep the safest reachable state, retain evidence and report the options.
+
+Exact-head CI, independent review, the guarded merge, production auto-deploy off readback, tenant isolation, authorization, payment safety and idempotency remain unchanged. The existing prohibition on running contract or migration SQL against production remains. Only the guarded rollout tool's authorized apply is an exception for migrations; contract SQL is never allowed. No historical financial backfill.
+
+Private operator guidance must agree with this policy. The [proposed operator-policy diff](remediation/operator-governance-proposal.patch) is reviewable; the private runbooks remain unchanged. The owner's explicit authorization governs this run while those notes await alignment.
 
 ## Traps that will not refuse you
 

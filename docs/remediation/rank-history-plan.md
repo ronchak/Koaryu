@@ -82,7 +82,7 @@ and restored catalogs. Update current version selectors without weakening old
 pins. The new backend requires the new readiness contract. A database-first
 rollout leaves the old backend usable, though its permissive API shortcut is only
 removed when the new backend is deployed. Merging does not deploy or authorize
-production migration; the existing human-only apply and release gates remain.
+production migration; owner authorization and the current technical apply/release gates remain required.
 
 ## Required evidence and test reduction
 

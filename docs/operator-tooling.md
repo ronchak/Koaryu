@@ -183,10 +183,7 @@ or TLS trust override variables before credentialed work. It names refused
 variables without printing values and does not treat Supabase version/name
 history as proof of source-file identity.
 
-Agents may not run its production apply mode. Staging inspection must precede a
-dry-run or application, and production application requires a named human,
-durable approval, confirmed restore window, restore decision authority, and the
-approved staging provider fingerprint.
+A named coordinating agent may run production apply under explicit owner authorization and the [announce-and-pause protocol](cutover-gates.md#owner-authorized-release-execution). Staging inspection still precedes dry-run or apply. Production requires the exact owner/release authorization, named executor, deliberate confirmation phrase, durable approval, verified backup/restore, restore decision authority and approved staging fingerprint. Subagents may not execute production releases.
 
 ## Studio platform comp access
 

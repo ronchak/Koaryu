@@ -24,7 +24,7 @@ Last verified against live systems: 2026-08-24.
 | Period-end billing worker | disabled; production cron awaits approval | Render Cron every 5 minutes |
 | `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
-Neither production surface auto-deploys. Both are promoted by hand, on purpose —
+Neither production surface auto-deploys. Both require an explicit owner-authorized release —
 see [Deployment triggers](#deployment-triggers).
 
 ## GitHub
@@ -226,7 +226,7 @@ neither can be relaxed by accident.
 track its branch automatically.
 
 **A push to `main` therefore deploys nothing.** Production frontend and backend
-are each promoted by hand after the database is migrated. If production looks
+are each released explicitly after the database is migrated. If production looks
 stale after a merge, that is the expected behaviour, not a fault.
 
 ## Credentials and where they live

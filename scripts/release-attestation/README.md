@@ -38,4 +38,4 @@ Current SQL generation covers the full-preflight, compatibility and rank-manifes
 
 All ten historical restore scripts must reproduce their committed bytes and modes. The additional V31-through-V37 script runs the V31 business proof once and then explicit forward checks. The local verifier calls that script directly; it no longer rewrites a program at a PASS message.
 
-Canonical and restored evidence, function bodies versus installed definitions, complete ACLs, exact normalization pairs, retained rows and replay behavior are separate contracts. Keep them separate. A generated file or matching hash is not approval to migrate production. Existing human-only production gates and current operator guidance still apply.
+Canonical and restored evidence, function bodies versus installed definitions, complete ACLs, exact normalization pairs, retained rows and replay behavior are separate contracts. Keep them separate. A generated file or matching hash is not approval to migrate production. Owner-authorized release execution follows `docs/cutover-gates.md`, including its announce-and-pause protocol and every technical gate.
