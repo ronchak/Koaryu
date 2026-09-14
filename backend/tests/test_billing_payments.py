@@ -1673,6 +1673,73 @@ class BillingPaymentManagerTests(unittest.TestCase):
         self.assertEqual(invoice["amount_remaining_cents"], 700)
         self.assertEqual(invoice["status"], "open")
 
+    def test_projected_refund_retry_completes_after_own_projection_changes_payment_total(self):
+        for refund_status, expected_refunded_amount in (("pending", 0), ("succeeded", 500)):
+            with self.subTest(refund_status=refund_status):
+                _FakeStripeService.reset()
+                _FakeStripeService.refund_status = refund_status
+                facade = _BillingPaymentFixture(
+                    {
+                        "billing_payments": [
+                            {
+                                "id": "payment_1",
+                                "studio_id": "studio_1",
+                                "stripe_charge_id": "ch_1",
+                                "stripe_account_id": "acct_1",
+                                "amount_cents": 1200,
+                                "refunded_amount_cents": 0,
+                            }
+                        ],
+                        "audit_logs": [],
+                    }
+                )
+                manager = facade.manager
+                original_complete = facade.supabase._rpc_complete_billing_provider_operation_v1
+
+                def fail_completion_once(_params):
+                    facade.supabase._rpc_complete_billing_provider_operation_v1 = original_complete
+                    raise RuntimeError("completion unavailable")
+
+                facade.supabase._rpc_complete_billing_provider_operation_v1 = fail_completion_once
+                with self.assertRaisesRegex(RuntimeError, "completion unavailable"):
+                    asyncio.run(
+                        manager.refund_payment(
+                            "payment_1",
+                            BillingRefundCreate(amount_cents=500),
+                            "studio_1",
+                            "actor_1",
+                            "refund-key",
+                        )
+                    )
+
+                operation = next(iter(facade.supabase.billing_provider_operations.values()))
+                resource = next(iter(facade.supabase.billing_provider_operation_resources.values()))
+                original_resource_version = resource["resource_version_sha256"]
+                projected_refund = facade.supabase.tables["billing_refunds"][0]
+                self.assertEqual(operation["state"], "projected")
+                self.assertEqual(
+                    facade.supabase.tables["billing_payments"][0]["refunded_amount_cents"],
+                    expected_refunded_amount,
+                )
+                self.assertEqual(facade.supabase.tables["audit_logs"], [])
+
+                facade.supabase.advance_billing_provider_clock(seconds=31)
+                replay = asyncio.run(
+                    manager.refund_payment(
+                        "payment_1",
+                        BillingRefundCreate(amount_cents=500),
+                        "studio_1",
+                        "actor_1",
+                        "refund-key",
+                    )
+                )
+
+                self.assertEqual(replay.id, projected_refund["id"])
+                self.assertEqual(operation["state"], "completed")
+                self.assertEqual(len(_FakeStripeService.refunds), 1)
+                self.assertEqual(len(facade.supabase.tables["audit_logs"]), 1)
+                self.assertEqual(resource["resource_version_sha256"], original_resource_version)
+
     def test_refund_saved_result_mismatch_is_sanitized_for_completed_and_reconciled_for_projected(
         self,
     ):

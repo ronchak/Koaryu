@@ -7,7 +7,7 @@ Preserve working behavior and safeguards while removing verified accidental comp
 
 ## Current position
 
-Pending integrity risk: [PROGRAM-REFUND-01](docs/remediation/refund-completion-risk.md) records a refund whose own projection can block same-key receipt completion recovery. It was reproduced on unchanged main and confirmed against the SQL source. Its database correction is outside this run; the risk is not accepted or fixed.
+V46 corrects [PROGRAM-REFUND-01](docs/remediation/refund-completion-risk.md) at the database resource-version boundary. Its own verified refund projection no longer prevents receipt completion recovery. The application refund workflow and stored claim fingerprints stay unchanged. Production release remains a separate ordered program with hosted rehearsal, fresh backup/restore and explicit owner-authorized execution. The other 133 pending audit observations are outside this run.
 
 All 278 retained audit observations now have an individual disposition, reason, source evidence and execution track in the [ledger](docs/remediation/ledger.json). There are no repeated placeholder reasons. The [normalized map](docs/remediation/normalized-map.md) explains shared causes, dependencies, deliberate exclusions and verification limits. [Sol batches](docs/remediation/delegated/README.md) contain the delegated recipes.
 

@@ -831,13 +831,55 @@ class BillingProviderOperationRpcMixin:
                 if candidate.get("id") == params["p_resource_id"]
                 and candidate.get("studio_id") == params["p_studio_id"]
             )
+            refunded_amount_cents = row.get("refunded_amount_cents")
+            resource = self.billing_provider_operation_resources.get(
+                (
+                    params["p_studio_id"],
+                    params["p_resource_type"],
+                    params["p_resource_id"],
+                )
+            )
+            operation = (
+                self._operation_by_id(resource["operation_id"]) if resource is not None else None
+            )
+            if operation is not None and operation.get("state") in {
+                "provider_succeeded",
+                "projected",
+            }:
+                projection = next(
+                    (
+                        refund
+                        for refund in self.tables.get("billing_refunds", [])
+                        if refund.get("studio_id") == row.get("studio_id")
+                        and refund.get("payment_id") == row.get("id")
+                        and refund.get("stripe_refund_id") == operation.get("provider_object_id")
+                        and resource.get("payer_id") == row.get("payer_id")
+                        and operation.get("stripe_connected_account_id")
+                        == params["p_stripe_connected_account_id"]
+                        and operation.get("connect_account_generation")
+                        == params["p_connect_account_generation"]
+                        and operation.get("result_summary")
+                        == f"amount_cents:{refund.get('amount_cents')}"
+                        and refund.get("stripe_account_id")
+                        == params["p_stripe_connected_account_id"]
+                        and refund.get("connect_account_generation")
+                        == params["p_connect_account_generation"]
+                        and refund.get("stripe_charge_id") == row.get("stripe_charge_id")
+                        and refund.get("status") == "succeeded"
+                        and refund.get("reconciliation_required") is not True
+                        and row.get("adjustment_reconciliation_required") is not True
+                    ),
+                    None,
+                )
+                if projection is not None:
+                    refunded_amount_cents = refunded_amount_cents - projection["amount_cents"]
             payload = {
                 "operation_type": params["p_operation_type"],
                 "studio_id": row.get("studio_id"),
                 "payment_id": row.get("id"),
                 "stripe_connected_account_id": params["p_stripe_connected_account_id"],
                 "connect_account_generation": params["p_connect_account_generation"],
-                "refunded_amount_cents": row.get("refunded_amount_cents"),
+                "refunded_amount_cents": refunded_amount_cents,
                 "version": 1,
             }
         else:
