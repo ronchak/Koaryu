@@ -38,7 +38,7 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 ## Current release run
 
-The September 14 four-phase release stopped in phase 3 at the hosted dashboard contract gate. PR207/PR209 fixed refund recovery with V46/V47; PR208 added owner-authorized execution and audit records; PR210 added the reviewed one-migration mode. Frozen candidate `c1e933f5ddac862ce24387d45609052b8d0baad1` and its own exact-head CI are green.
+The September 14 four-phase release is paused in phase 3 at the staging alias mismatch, after all 53 hosted contracts passed. PR207/PR209 fixed refund recovery with V46/V47; PR208 added owner-authorized execution and audit records; PR210 added the reviewed one-migration mode. PR212/PR213 corrected the hosted test failures. Frozen candidate `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3` passed its own exact-head CI.
 
 All nine staging migrations V39–V47 applied separately and preserved tracked rows. The first hosted attempt stopped after 19 files. PR212 corrected its misleading copied-plan gate while retaining actual RPC/security checks, fixing DC1-03. The next attempt exposed two populated-staging fixture defects; PR213 corrected them. All 53 files then passed with unchanged retained rows and V47 fingerprint. Staging backend deployed, but the completed frontend build did not take over its branch alias. Application write rehearsal stopped at the mismatched pair. Production remains untouched. See [the execution record](docs/remediation/staging-rehearsal-verification.md) and [HANDOFF](docs/remediation/HANDOFF.md). DM3-04 and OPS1-06 remain pending runtime findings.
 
