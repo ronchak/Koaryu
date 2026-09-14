@@ -235,6 +235,7 @@ BEGIN
         ORDER BY created_at,id
         LIMIT 1
         FOR UPDATE;
+        v_now := clock_timestamp();
     END IF;
     IF v_operation.actor_id IS DISTINCT FROM p_actor_id
        AND NOT (
@@ -452,18 +453,18 @@ BEGIN
        OR (SELECT expected_sha256 FROM private.koaryu_release_v31_expectations WHERE expectation_key='operational_contract_v31')
           IS DISTINCT FROM 'b20e8b04bb440f43cfd1bdc8ae8b011a217b0ee102f5729bc1caf837b133e1b8'
        OR private.koaryu_release_resource_ownership_manifest_v31()
-          IS DISTINCT FROM '0:2e38963bb47994ef71310021f9c162cfa0b0904415247db23e735146844cd05c'
+          IS DISTINCT FROM '0:a0dbde4e4447bd0bd279dd097be2ecc67eec9f6e75c83d11ca3a0fef2149e306'
        OR private.koaryu_release_operational_contract_v31()
-          IS DISTINCT FROM '0:569083c328f7e825c4de7e782424ae04620ac8770c441dcb8b8211156899ace5' THEN
+          IS DISTINCT FROM '0:ffa4cfd247016d2162440de6c2d5f67f29ef90566075a88f7b6e484bed041e18' THEN
         RAISE EXCEPTION 'V47 requires the reviewed refund contract and original V31 expectation.';
     END IF;
     UPDATE private.koaryu_release_v31_expectations
-    SET expected_sha256='569083c328f7e825c4de7e782424ae04620ac8770c441dcb8b8211156899ace5'
+    SET expected_sha256='ffa4cfd247016d2162440de6c2d5f67f29ef90566075a88f7b6e484bed041e18'
     WHERE expectation_key='operational_contract_v31'
       AND expected_sha256='b20e8b04bb440f43cfd1bdc8ae8b011a217b0ee102f5729bc1caf837b133e1b8';
     GET DIAGNOSTICS changed = ROW_COUNT;
     IF changed IS DISTINCT FROM 1 OR private.koaryu_release_operational_manifest_v12()
-       IS DISTINCT FROM 'd04815506be785d675ef625e5773761778c3e11ef0bbd848205f58d657c8139b' THEN
+       IS DISTINCT FROM '2403d556a024b07689002f8efa68dd6448bade1fdf6bf823d6a80952556105c2' THEN
         RAISE EXCEPTION 'V47 guarded expectation correction did not verify.';
     END IF;
 END;
@@ -508,7 +509,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       IS DISTINCT FROM '0:2e38963bb47994ef71310021f9c162cfa0b0904415247db23e735146844cd05c' THEN
+       IS DISTINCT FROM '0:a0dbde4e4447bd0bd279dd097be2ecc67eec9f6e75c83d11ca3a0fef2149e306' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     IF private.koaryu_release_schedule_window_manifest_v1()
@@ -816,7 +817,7 @@ BEGIN
         );
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       IS DISTINCT FROM 'd04815506be785d675ef625e5773761778c3e11ef0bbd848205f58d657c8139b' THEN
+       IS DISTINCT FROM '2403d556a024b07689002f8efa68dd6448bade1fdf6bf823d6a80952556105c2' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(

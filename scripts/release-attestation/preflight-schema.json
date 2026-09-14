@@ -1128,10 +1128,10 @@
       "extends": "v46",
       "overrides": {
         "resource_ownership_manifest_v31": {
-          "expected": "0:2e38963bb47994ef71310021f9c162cfa0b0904415247db23e735146844cd05c"
+          "expected": "0:a0dbde4e4447bd0bd279dd097be2ecc67eec9f6e75c83d11ca3a0fef2149e306"
         },
         "operational_manifest_v12": {
-          "expected": "d04815506be785d675ef625e5773761778c3e11ef0bbd848205f58d657c8139b"
+          "expected": "2403d556a024b07689002f8efa68dd6448bade1fdf6bf823d6a80952556105c2"
         }
       }
     }

@@ -16,6 +16,8 @@ The maintained billing concurrency runner now covers a new key from the same act
 
 The observer also requires a `Lock` wait event and the matching blocking PID in its returned sample. Development exposed a partial statistics sample with a blocker PID but no wait event. Polling now waits for both facts at the observer boundary; no deadline or sleep was increased.
 
+Automated review also identified a lease timestamp captured before that wait. A strengthened assertion reproduced this without sleeps: the new lease must begin after a database-clock sample taken while the blocker still holds the lock, with its full requested duration. V47 refreshes the timestamp after the existing refund lock. The same two cases cover it, keeping the total at 23.
+
 The generated V46-to-V47 restore continuation preserves pre-migration receipts and business rows, completes the old receipt, verifies a later refund owner and retains the old-key replay. The full disposable suite applies 142 migrations and 53 contracts. Existing obsolete-readiness classification adds the exact V47 count/head, preserving every refusal assertion. Backend readiness tests and rollout fixtures advance their exact versions without adding cases.
 
 Require coordinator verification, a fresh independent reviewer for this PR, completion and evaluation of substantive automated feedback, exact-head CI, guarded merge and main's own CI. Then rebase PR208, update its packet to V47 and verify its new head again. No hosted migration, backup or deployment is part of this correction. The per-migration execution-mode scope decision remains pending.

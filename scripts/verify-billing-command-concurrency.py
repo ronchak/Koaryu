@@ -401,6 +401,7 @@ SELECT 'RESULT_READY'; COMMIT;
                 fixture["rival"], key="next-refund" if next_refund else "refund-concurrent", actor=next_actor,
             ), hold=False)
             lock = wait_blocked(holder, waiter)
+            released_after = sql("SELECT clock_timestamp();") if next_refund else None
             release(holder, commit=not mode.endswith("rollback"))
             if mode == "unrelated_commit":
                 code = waiter["process"].wait(timeout=15)
@@ -420,6 +421,9 @@ SELECT 'RESULT_READY'; COMMIT;
                     assert recovered["id"] != operation["id"] and recovered["state"] == "started", recovered
                     assert recovered["actor_id"] == next_actor and recovered["lease_owner"] == fixture["rival"], recovered
                     assert recovered["provider_request_attempt_count"] == 0, recovered
+                    assert sql(f"""SELECT lease_acquired_at >= '{released_after}'::timestamptz
+                        AND lease_expires_at = lease_acquired_at + interval '30 seconds'
+                        FROM public.billing_provider_operations WHERE id='{recovered['id']}';""") == 't', recovered
                     original = json.loads(sql(refund_claim(fixture["lease"])))['operation']
                     assert original['id'] == operation['id'] and original['state'] == 'completed', original
                     assert original['provider_request_attempt_count'] == 1, original
