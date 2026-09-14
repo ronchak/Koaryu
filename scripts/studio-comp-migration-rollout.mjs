@@ -3363,6 +3363,7 @@ export function parseArguments(argv) {
     releaseAuthorization: null,
     releaseOperator: null,
     confirmationPhrase: null,
+    oneMigration: false,
   };
   const valueOptions = new Map([
     ["--mode", "mode"],
@@ -3380,6 +3381,7 @@ export function parseArguments(argv) {
   ]);
   const booleanOptions = new Map([
     ["--approve-staging-apply", "approveStagingApply"],
+    ["--one-migration", "oneMigration"],
   ]);
   const seen = new Set();
 
@@ -3407,6 +3409,9 @@ export function parseArguments(argv) {
 
   if (!new Set(["packet", "inspect", "diagnose", "dry-run", "apply"]).has(result.mode)) {
     throw new RolloutError("--mode must be packet, inspect, diagnose, dry-run, or apply.");
+  }
+  if (result.oneMigration && !new Set(["inspect", "dry-run", "apply"]).has(result.mode)) {
+    throw new RolloutError("--one-migration is valid only with --mode inspect, dry-run, or apply.");
   }
   if (result.mode !== "packet" && !new Set(["staging", "production"]).has(result.target)) {
     throw new RolloutError("--target must be staging or production.");
@@ -3892,6 +3897,75 @@ export function packetForAcceptedState(packet, state) {
       pendingManifest.map(({ filename, sha256 }) => `${filename}:${sha256}`).join("|"),
     ),
   };
+}
+
+const ONE_MIGRATION_PREDECESSORS = Object.freeze([
+  "v38", "v39", "v40", "v41", "v42", "v43", "v44", "v45", "v46",
+]);
+
+export function oneMigrationPacket(packet, state) {
+  if (!ONE_MIGRATION_PREDECESSORS.includes(state)) {
+    throw new RolloutError("--one-migration supports only the declared V38 through V47 chain.");
+  }
+  const successorReleaseState = Object.values(RELEASE_STATES).find(
+    candidate => candidate.predecessor === state,
+  );
+  if (!successorReleaseState) {
+    throw new RolloutError(`Declared release states do not contain a successor for ${state}.`);
+  }
+  const expectedAfterState = successorReleaseState.id === CURRENT_RELEASE
+    ? "post"
+    : successorReleaseState.id;
+  const predecessorCount = PREDECESSOR_MIGRATION_COUNTS[state];
+  if (STATES[successorReleaseState.id].count !== predecessorCount + 1) {
+    throw new RolloutError(`Declared successor ${expectedAfterState} is not one migration after ${state}.`);
+  }
+  const remainder = packetForAcceptedState(packet, state);
+  const selectedManifest = remainder.pendingManifest.slice(0, 1);
+  const selectedMigrations = remainder.pendingMigrations.slice(0, 1);
+  if (
+    selectedManifest.length !== 1 ||
+    selectedMigrations.length !== 1 ||
+    selectedManifest[0].filename !== selectedMigrations[0] ||
+    selectedMigrations[0].slice(0, 14) !== successorReleaseState.head
+  ) {
+    throw new RolloutError(`Candidate does not contain the declared next migration for ${state}.`);
+  }
+  return {
+    ...packet,
+    pendingMigrations: selectedMigrations,
+    pendingManifest: selectedManifest,
+    sourceManifestSha256: digest(
+      "sha256",
+      selectedManifest.map(({ filename, sha256 }) => `${filename}:${sha256}`).join("|"),
+    ),
+    expectedAfterState,
+  };
+}
+
+export async function withOneMigrationFilesystemScope(sourceRoot, remainderPacket, executionPacket, operation) {
+  const migrationsDirectory = path.join(sourceRoot, "supabase", "migrations");
+  const selected = executionPacket.pendingManifest[0];
+  if (hashFile(path.join(migrationsDirectory, selected.filename)) !== selected.sha256) {
+    throw new RolloutError("Selected migration bytes do not match the reviewed source manifest.");
+  }
+  const laterMigrations = remainderPacket.pendingMigrations.slice(1);
+  const parkedDirectory = fs.mkdtempSync(
+    path.join(path.dirname(migrationsDirectory), ".koaryu-later-migrations-"),
+  );
+  const movedMigrations = [];
+  try {
+    for (const filename of laterMigrations) {
+      fs.renameSync(path.join(migrationsDirectory, filename), path.join(parkedDirectory, filename));
+      movedMigrations.push(filename);
+    }
+    return await operation();
+  } finally {
+    for (const filename of movedMigrations) {
+      fs.renameSync(path.join(parkedDirectory, filename), path.join(migrationsDirectory, filename));
+    }
+    fs.rmSync(parkedDirectory, { recursive: true, force: true });
+  }
 }
 
 export function assertApplyableState(mode, state) {
@@ -5351,7 +5425,7 @@ function writeAuditEvidence(output, evidence) {
 function usage() {
   return `Usage:
   node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>
-  node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --candidate-sha <full-sha> [--mode <inspect|diagnose|dry-run|apply>]
+  node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --candidate-sha <full-sha> [--mode <inspect|diagnose|dry-run|apply>] [--one-migration]
 
 diagnose performs linked, read-only SELECT diagnosis and needs no inspection token.
 Dry-run and apply require the inspection_token from a preceding inspect. Apply additionally requires:
@@ -5479,15 +5553,33 @@ export async function main(
         console.log(nonSuccessStateLine);
         throw new RolloutError(`Inspection refused: ${nonSuccessStateLine}.`);
       }
-      const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
+      const remainingPacket = before.state === "post"
+        ? null
+        : packetForAcceptedState(packet, before.state);
+      const executionPacket = config.oneMigration && before.state !== "post"
+        ? oneMigrationPacket(packet, before.state)
+        : packet;
+      const inspectionToken = buildInspectionTokenForAcceptedState(
+        executionPacket,
+        config.target,
+        before,
+      );
       console.log(`state=${before.state}`);
       console.log(`inspection_token=${inspectionToken}`);
       if (before.state !== "post") {
-        const remainingPacket = packetForAcceptedState(packet, before.state);
         console.log(`remaining_migrations=${remainingPacket.pendingMigrations.join(",")}`);
         console.log(`remaining_manifest_sha256=${remainingPacket.sourceManifestSha256}`);
+        if (config.oneMigration) {
+          console.log(`selected_migrations=${executionPacket.pendingMigrations.join(",")}`);
+          console.log(`selected_manifest_sha256=${executionPacket.sourceManifestSha256}`);
+          console.log(`expected_after_state=${executionPacket.expectedAfterState}`);
+        }
         console.log("approval_record_body_begin");
-        console.log(buildApplyApprovalRecordBody(remainingPacket, config.target, before.state));
+        console.log(buildApplyApprovalRecordBody(
+          config.oneMigration ? executionPacket : remainingPacket,
+          config.target,
+          before.state,
+        ));
         console.log("approval_record_body_end");
       }
       if (before.providerFingerprint) {
@@ -5504,92 +5596,124 @@ export async function main(
     if (!isAcceptedPredecessor(before.state)) {
       throw new RolloutError(`${config.mode} requires an exact accepted predecessor state.`);
     }
-    assertInspectionToken(packet, config.target, before, config.inspectionToken);
-
     const remainingPacket = packetForAcceptedState(packet, before.state);
+    const executionPacket = config.oneMigration
+      ? oneMigrationPacket(packet, before.state)
+      : remainingPacket;
+    assertInspectionToken(
+      config.oneMigration ? executionPacket : packet,
+      config.target,
+      before,
+      config.inspectionToken,
+    );
     if (
       config.mode === "apply"
       && config.target === "production"
-      && remainingPacket.pendingMigrations.length > 1
+      && executionPacket.pendingMigrations.length > 1
     ) {
       throw new RolloutError(
-        "Production apply refuses more than one remaining migration until a separately scoped one-at-a-time mode exists.",
+        "Production apply refuses more than one remaining migration. Use --one-migration with a fresh inspection token and approval record.",
       );
     }
-    validateApplyApprovalRecord(config, remainingPacket, before.state, commandRunner, env);
-    const pending = dryRunRunner(sourceRoot, remainingPacket, env);
-    console.log(`dry_run_migrations=${pending.join(",")}`);
-    if (config.mode === "dry-run") return;
-
-    assertApplyableState(config.mode, before.state);
-
-    if (config.target === "production") {
-      confirmProductionApply(remainingPacket, config.confirmationPhrase);
+    validateApplyApprovalRecord(config, executionPacket, before.state, commandRunner, env);
+    const fullPending = dryRunRunner(sourceRoot, remainingPacket, env);
+    console.log(`dry_run_migrations=${fullPending.join(",")}`);
+    if (config.oneMigration) {
+      return await withOneMigrationFilesystemScope(
+        sourceRoot,
+        remainingPacket,
+        executionPacket,
+        async () => {
+          const selectedPending = dryRunRunner(sourceRoot, executionPacket, env);
+          console.log(`selected_dry_run_migrations=${selectedPending.join(",")}`);
+          if (config.mode === "dry-run") return;
+          await applySelectedMigration();
+        },
+      );
     }
-    const auditContext = {
-      authorizing_owner: APPLY_APPROVAL_AUTHOR_LOGIN,
-      named_executor: config.target === "production" ? config.releaseOperator : null,
-      intended_candidate: packet.candidateSha,
-      approval_url: config.approvalRecord,
-      target: config.target,
-      project_ref: projectRef,
-      inspected_prestate: {
-        state: before.state,
-        provider_fingerprint: before.providerFingerprint ?? null,
-      },
-      planned_versions: remainingPacket.pendingMigrations.map(
-        (filename) => filename.slice(0, 14),
-      ),
-      started_at: now(),
-    };
-    writeAuditEvidence(output, {
-      ...auditContext,
-      status: "started",
-    });
-    try {
-      applyRunner(sourceRoot, env, (response) => {
+    if (config.mode === "dry-run") return;
+    await applySelectedMigration();
+
+    async function applySelectedMigration() {
+      assertApplyableState(config.mode, before.state);
+
+      if (config.target === "production") {
+        confirmProductionApply(executionPacket, config.confirmationPhrase);
+      }
+      const auditContext = {
+        authorizing_owner: APPLY_APPROVAL_AUTHOR_LOGIN,
+        named_executor: config.target === "production" ? config.releaseOperator : null,
+        intended_candidate: packet.candidateSha,
+        approval_url: config.approvalRecord,
+        target: config.target,
+        project_ref: projectRef,
+        inspected_prestate: {
+          state: before.state,
+          provider_fingerprint: before.providerFingerprint ?? null,
+        },
+        planned_versions: executionPacket.pendingMigrations.map(
+          (filename) => filename.slice(0, 14),
+        ),
+        ...(config.oneMigration
+          ? { selected_source_manifest_sha256: executionPacket.sourceManifestSha256 }
+          : {}),
+        started_at: now(),
+      };
+      writeAuditEvidence(output, {
+        ...auditContext,
+        status: "started",
+      });
+      try {
+        applyRunner(sourceRoot, env, (response) => {
+          writeAuditEvidence(output, {
+            ...auditContext,
+            status: "provider_response",
+            ...response,
+            observed_at: now(),
+          });
+        });
+        const after = stateReader(sourceRoot, packet, env, config.expectedProviderFingerprint);
+        const nonSuccessAfterStateLine = formatNonSuccessProbeState(after);
+        if (nonSuccessAfterStateLine !== null) {
+          output(nonSuccessAfterStateLine);
+        }
+        const expectedAfterState = executionPacket.expectedAfterState ?? "post";
+        if (after.state !== expectedAfterState) {
+          const label = expectedAfterState === "post" ? "post-state" : `${expectedAfterState} state`;
+          throw new RolloutError(`Migration apply did not reach the exact expected ${label}.`);
+        }
         writeAuditEvidence(output, {
           ...auditContext,
-          status: "provider_response",
-          ...response,
-          observed_at: now(),
+          status: "verified_success",
+          applied_versions: auditContext.planned_versions,
+          verified_poststate: {
+            state: after.state,
+            provider_fingerprint: after.providerFingerprint ?? null,
+          },
+          finished_at: now(),
         });
-      });
-      const after = stateReader(sourceRoot, packet, env, config.expectedProviderFingerprint);
-      const nonSuccessAfterStateLine = formatNonSuccessProbeState(after);
-      if (nonSuccessAfterStateLine !== null) {
-        output(nonSuccessAfterStateLine);
+        console.log(`target=${config.target}`);
+        console.log(`project_ref=${projectRef}`);
+        console.log(`candidate_sha=${packet.candidateSha}`);
+        console.log(`post_history=${packet.postHistory}`);
+        console.log(`source_manifest_sha256=${packet.sourceManifestSha256}`);
+        console.log(`state=${after.state}`);
+        if (config.oneMigration) {
+          console.log(`applied_version=${auditContext.planned_versions[0]}`);
+          console.log(`applied_source_manifest_sha256=${executionPacket.sourceManifestSha256}`);
+        }
+        console.log(`provider_fingerprint=${after.providerFingerprint}`);
+      } catch (error) {
+        writeAuditEvidence(output, {
+          ...auditContext,
+          status: "failed_or_unknown",
+          finished_at: now(),
+        });
+        throw new RolloutError(
+          `Migration apply failed and may have changed remote state. Stop and inspect; do not revert history or objects. ${error.message}`,
+          { cause: error },
+        );
       }
-      if (after.state !== "post") {
-        throw new RolloutError("Migration apply did not reach the exact expected post-state.");
-      }
-      writeAuditEvidence(output, {
-        ...auditContext,
-        status: "verified_success",
-        applied_versions: auditContext.planned_versions,
-        verified_poststate: {
-          state: after.state,
-          provider_fingerprint: after.providerFingerprint ?? null,
-        },
-        finished_at: now(),
-      });
-      console.log(`target=${config.target}`);
-      console.log(`project_ref=${projectRef}`);
-      console.log(`candidate_sha=${packet.candidateSha}`);
-      console.log(`post_history=${packet.postHistory}`);
-      console.log(`source_manifest_sha256=${packet.sourceManifestSha256}`);
-      console.log("state=post");
-      console.log(`provider_fingerprint=${after.providerFingerprint}`);
-    } catch (error) {
-      writeAuditEvidence(output, {
-        ...auditContext,
-        status: "failed_or_unknown",
-        finished_at: now(),
-      });
-      throw new RolloutError(
-        `Migration apply failed and may have changed remote state. Stop and inspect; do not revert history or objects. ${error.message}`,
-        { cause: error },
-      );
     }
   } finally {
     if (worktreeAdded) {

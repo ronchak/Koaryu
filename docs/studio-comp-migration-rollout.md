@@ -459,7 +459,7 @@ Production inspection and dry-run repeat the exact-target and exact-state checks
 
 The coordinating agent or operator supplies `--release-authorization ronchak:<candidate-sha>`, `--release-operator <named-executor>` and the deliberate `--confirmation-phrase`. The phrase still binds the exact candidate, pending migration count, source manifest and production ref. A TTY is no longer an authorization test. The tool records authorization, versions, timestamps and the verified or uncertain outcome.
 
-Executor names in the authorization audit are caller-reported. The tool verifies the GitHub OWNER approval and release scope, not process identity. Production apply rejects multiple remaining migrations until per-migration execution is separately implemented. Preserve the provider-response audit records privately, including stderr and uncertain outcomes.
+Executor names in the authorization audit are caller-reported. The tool verifies the GitHub OWNER approval and release scope, not process identity. Default production bulk apply is refused. The current V38-to-V47 packet uses `--one-migration` for each newly inspected and approved step. Preserve the provider-response audit records privately, including stderr and uncertain outcomes.
 
 Use the current [production packet](remediation/PRODUCTION-RELEASE.md), not a historical command from this record. Before each irreversible or outward-facing release action, announce its exact command, effect/reversibility and immediate verification, then wait 60 seconds. Execute one action per announcement and command. Stop if the owner interrupts. The complete [execution protocol](cutover-gates.md#owner-authorized-release-execution) applies.
 
