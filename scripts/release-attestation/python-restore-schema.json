@@ -225,6 +225,44 @@
       "state": "v46",
       "query": "V31_OPERATIONAL_MANIFEST_SQL",
       "expected": "EXPECTED_V46_OPERATIONAL_MANIFEST_V12"
+    },
+    "readiness-v47": {
+      "kind": "readiness",
+      "state": "v47",
+      "finalAlias": true
+    },
+    "catalog-v47": {
+      "kind": "catalog",
+      "state": "v47",
+      "queryState": "v47"
+    },
+    "release-v47": {
+      "kind": "release",
+      "state": "v47"
+    },
+    "expectation-v47": {
+      "kind": "export",
+      "state": "v47",
+      "query": "V31_EXPECTATION_STATE_SQL",
+      "expected": "EXPECTED_V47_EXPECTATION_STATE"
+    },
+    "resource-v47": {
+      "kind": "export",
+      "state": "v47",
+      "query": "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL",
+      "expected": "EXPECTED_V47_RESOURCE_OWNERSHIP_MANIFEST"
+    },
+    "contract-v47": {
+      "kind": "export",
+      "state": "v47",
+      "query": "V31_OPERATIONAL_CONTRACT_SQL",
+      "expected": "EXPECTED_V47_OPERATIONAL_CONTRACT"
+    },
+    "operational-v47": {
+      "kind": "export",
+      "state": "v47",
+      "query": "V31_OPERATIONAL_MANIFEST_SQL",
+      "expected": "EXPECTED_V47_OPERATIONAL_MANIFEST_V12"
     }
   },
   "cases": {
@@ -1090,6 +1128,171 @@
       "passLines": [
         "[restored V46] PASS canonical/restored V45 receipts and rows preserved, ",
         "same-key refund completion and retained backend readiness"
+      ]
+    },
+    "v47": {
+      "format": "forward",
+      "docstring": "Prove V46 refund receipts survive restore and permit completed replay and a later refund owner.",
+      "exports": [
+        [
+          "readiness-v46.query",
+          "readiness-v46.expected"
+        ],
+        [
+          "catalog-v46.query",
+          "catalog-v46.expected",
+          "catalog-v46.restored"
+        ],
+        [
+          "release-v46.query",
+          "release-v46.expected"
+        ],
+        [
+          "expectation-v46.query",
+          "expectation-v46.expected"
+        ],
+        [
+          "resource-v46.query",
+          "resource-v46.expected"
+        ],
+        [
+          "contract-v46.query",
+          "contract-v46.expected"
+        ],
+        [
+          "operational-v46.query",
+          "operational-v46.expected"
+        ],
+        [
+          "readiness-v47.query",
+          "readiness-v47.expected"
+        ],
+        [
+          "readiness-v45.query",
+          "readiness-v45.expected"
+        ],
+        [
+          "readiness-v44.query",
+          "readiness-v44.expected"
+        ],
+        [
+          "readiness-v43.query",
+          "readiness-v43.expected"
+        ],
+        [
+          "readiness-v42.query",
+          "readiness-v42.expected"
+        ],
+        [
+          "readiness-v41.query",
+          "readiness-v41.expected"
+        ],
+        [
+          "readiness-v40.query",
+          "readiness-v40.expected"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v39.expected"
+        ],
+        [
+          "readiness-v38.query",
+          "readiness-v38.expected"
+        ],
+        [
+          "readiness-v37.query",
+          "readiness-v37.expected"
+        ],
+        [
+          "catalog-v47.query",
+          "catalog-v47.expected",
+          "catalog-v47.restored"
+        ],
+        [
+          "release-v47.query",
+          "release-v47.expected"
+        ],
+        [
+          "expectation-v47.query",
+          "expectation-v47.expected"
+        ],
+        [
+          "resource-v47.query",
+          "resource-v47.expected"
+        ],
+        [
+          "contract-v47.query",
+          "contract-v47.expected"
+        ],
+        [
+          "operational-v47.query",
+          "operational-v47.expected"
+        ],
+        [
+          "rank-v40.query",
+          "rank-v40.expected"
+        ],
+        [
+          "payer-v41.query",
+          "payer-v41.expected"
+        ],
+        [
+          "external-payment-v43.query",
+          "external-payment-v43.expected"
+        ],
+        [
+          "local-plan-v44.query",
+          "local-plan-v44.expected"
+        ],
+        [
+          "plan-clear-v44.query",
+          "plan-clear-v44.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v46",
+        "catalog-v46",
+        "release-v46",
+        "expectation-v46",
+        "resource-v46",
+        "contract-v46",
+        "operational-v46"
+      ],
+      "checks": [
+        "readiness-v47",
+        "readiness-v46",
+        "readiness-v45",
+        "readiness-v44",
+        "readiness-v43",
+        "readiness-v42",
+        "readiness-v41",
+        "readiness-v40",
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "catalog-v47",
+        "release-v47",
+        "expectation-v47",
+        "resource-v47",
+        "contract-v47",
+        "operational-v47",
+        "rank-v40",
+        "payer-v41",
+        "external-payment-v43",
+        "local-plan-v44",
+        "plan-clear-v44"
+      ],
+      "absentFunctions": [],
+      "semanticManifests": [
+        "private.koaryu_release_critical_surface_manifest_v16()",
+        "private.koaryu_release_critical_surface_manifest_v17()",
+        "private.koaryu_release_critical_surface_manifest_v18()",
+        "private.koaryu_release_operational_manifest_v10()",
+        "private.koaryu_release_operational_manifest_v11()"
+      ],
+      "passLines": [
+        "[restored V47] PASS canonical/restored V46 receipt and business rows preserved, ",
+        "completed replay, next-refund ownership and retained backend readiness"
       ]
     }
   }
