@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "c1e933f5ddac862ce24387d45609052b8d0baad1",
+  "last_reconciled_main": "c98834ee2fefb998950c40d4cf34e5cf7622510d",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -12729,16 +12729,18 @@
       "id": "DC1-03",
       "title": "Dashboard query-plan gates explain copied SQL instead of the current RPC implementation",
       "cluster": "release_and_evidence",
-      "disposition": "pending",
-      "reason": "The plan gates still EXPLAIN hand-copied query text, while actual RPC timing is only printed. They do not prove that the live function retains that plan.",
+      "disposition": "fixed",
+      "reason": "PR212 removes the copied EXPLAIN fragments and join-spelling gate after disposable statistics comparisons showed their work limits reject valid, sometimes much faster plans. Actual RPC semantics, authorization/tenant checks and diagnostic timing remain unchanged; no RPC performance bound is claimed.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Coordinator personally reviewed current source and relevant callers. Offline probes reproduced historical pending-list drift, ignored optional CLI flags, disabled/commented audit acceptance, paired evidence scope acceptance and malformed-object exceptions. Fixed assertions/readiness cases were reconciled against merged code history. No hosted activity.",
+      "verified_against": "a26a33ec10f88f8b9c77f07a9603571f951881c7",
+      "verification": "The coordinator compared all three copied fragments for three unchanged fixtures before and after ordinary ANALYZE on disposable PostgreSQL17. Six of nine analyzed plans exceeded the old limits. Fixture inserts and the complete actual-RPC behavioral section are byte-identical to the base. Independent review approved the exact SQL diff and head; exact-head CI34892868940 passed. The full hosted gate remains a separate release prerequisite. See dashboard-plan-contract-plan.md.",
       "source_paths": [
         "supabase/verification/dashboard_summary_facts_contract.sql"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        212
+      ],
       "track": "Astra",
       "root_cause": "performance_measurement_contract",
       "collapse_with": [
@@ -12748,11 +12750,11 @@
       "current_evidence": [
         {
           "path": "supabase/verification/dashboard_summary_facts_contract.sql",
-          "line": 547,
-          "observation": "v_plan_sql holds copied selected_sessions SQL; actual RPC timings are separate near416."
+          "line": 392,
+          "observation": "Only actual RPC timing diagnostics remain; copied EXPLAIN fragments and join-spelling assertions are removed. Real RPC business and permission checks are retained."
         }
       ],
-      "next_change": "Remove or honestly relabel copied-plan assurance while retaining scaled actual-RPC semantics and existing timing evidence. Select a direct production-query check only if it can use existing tooling without new infrastructure.",
+      "next_change": "No further work for DC1-03. Complete the full hosted release gate; DM3-04 and OPS1-06 remain separate pending runtime/ownership work.",
       "validation_plan": "A changed production RPC must not be claimed protected by an unchanged copied query; retain all meaningful actual function assertions.",
       "scope_constraints": "Preserve meaningful authorization, tenant, payment, privacy, migration, independent-evidence and owner-authorized production controls. No production operation or historical financial repair.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -13242,7 +13244,7 @@
         "BB1-09"
       ],
       "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md. Hosted staging applied V39–V47 separately on candidate c1e933f5ddac862ce24387d45609052b8d0baad1, reached exact V47 and preserved tracked rows. The later full hosted contract gate failed on dashboard_summary_facts_contract.sql after 19 completed files; release stopped. This is not a complete hosted rehearsal or production deployment. See staging-rehearsal-verification.md.",
-      "next_change": "Investigate the failed hosted dashboard schedule-plan bound on disposable PostgreSQL without weakening the gate. Complete all hosted contracts and authenticated staging rehearsal, then fresh production backup/verified restore and write-window preparation. No production chain has started.",
+      "next_change": "PR212 corrects the planner-sensitive dashboard verification and fixes DC1-03. Repin its reviewed merge and rerun all 53 hosted contracts. The staging-owner credential pairing is recovered and authenticated. Then complete application rehearsal, fresh production backup/verified restore and write-window preparation; production has not started.",
       "execution_ownership": "Astra owns database design, migration and SQL/concurrency verification. Sol may implement a separately bounded application/test portion after that prerequisite is settled.",
       "pull_requests": [
         207,
@@ -13275,9 +13277,9 @@
     }
   },
   "current_counts": {
-    "fixed": 129,
+    "fixed": 130,
     "rejected_after_verification": 1,
-    "pending": 133,
+    "pending": 132,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
@@ -13285,7 +13287,7 @@
   },
   "current_pending_tracks": {
     "Sol": 104,
-    "Astra": 29
+    "Astra": 28
   },
   "execution_policy": {
     "updated": "2026-09-14",
@@ -13298,14 +13300,14 @@
   "current_disposition_tracks": {
     "fixed": {
       "Sol": 107,
-      "Astra": 22
+      "Astra": 23
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
       "Sol": 104,
-      "Astra": 29
+      "Astra": 28
     },
     "deferred_intentionally": {
       "Sol": 7,

@@ -7,22 +7,22 @@ Preserve working behavior and safeguards while removing verified accidental comp
 
 ## Current position
 
-V46 and the V47 completion-locking follow-up correct [PROGRAM-REFUND-01](docs/remediation/refund-completion-risk.md) at the database resource-version boundary. Its own verified refund projection no longer prevents receipt completion recovery. The application refund workflow and stored claim fingerprints stay unchanged. Production release remains a separate ordered program with hosted rehearsal, fresh backup/restore and explicit owner-authorized execution. The other 133 pending audit observations are outside this run.
+V46 and the V47 completion-locking follow-up correct [PROGRAM-REFUND-01](docs/remediation/refund-completion-risk.md) at the database resource-version boundary. Its own verified refund projection no longer prevents receipt completion recovery. The application refund workflow and stored claim fingerprints stay unchanged. Production release remains a separate ordered program with hosted rehearsal, fresh backup/restore and explicit owner-authorized execution. The remaining 132 pending audit observations are outside this run.
 
 All 278 retained audit observations now have an individual disposition, reason, source evidence and execution track in the [ledger](docs/remediation/ledger.json). There are no repeated placeholder reasons. The [normalized map](docs/remediation/normalized-map.md) explains shared causes, dependencies, deliberate exclusions and verification limits. [Sol batches](docs/remediation/delegated/README.md) contain the delegated recipes.
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 129 |
+| Fixed | 130 |
 | Resolved indirectly | 2 |
-| Pending | 133 |
+| Pending | 132 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Obsolete | 1 |
 | Total | 278 |
 
-Pending work is split between 29 Astra and 104 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
+Pending work is split between 28 Astra and 104 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -38,7 +38,7 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 The September 14 four-phase release stopped in phase 3 at the hosted dashboard contract gate. PR207/PR209 fixed refund recovery with V46/V47; PR208 added owner-authorized execution and audit records; PR210 added the reviewed one-migration mode. Frozen candidate `c1e933f5ddac862ce24387d45609052b8d0baad1` and its own exact-head CI are green.
 
-All nine staging migrations V39–V47 applied separately and verified. Retained business rows were unchanged after each file and after the failed contract. The suite completed 19 of 53 files, failed on the small-profile schedule-plan bound in file20, and left 33 unstarted. Staging web and cron remain suspended. No production migration, backup/restore or application deployment occurred. [The execution record](docs/remediation/staging-rehearsal-verification.md) and [HANDOFF](docs/remediation/HANDOFF.md) describe the failure and next investigation. No audit dispositions changed.
+All nine staging migrations V39–V47 applied separately and verified. Retained business rows were unchanged after each file and after the failed contract. The suite completed 19 of 53 files, failed on the small-profile schedule-plan bound in file20, and left 33 unstarted. Staging web and cron remain suspended. No production migration, backup/restore or application deployment occurred. [The execution record](docs/remediation/staging-rehearsal-verification.md) and [HANDOFF](docs/remediation/HANDOFF.md) describe the failure and next investigation. No audit dispositions changed at that stop. The subsequently authorized [dashboard contract correction](docs/remediation/dashboard-plan-contract-plan.md) in PR212 fixes DC1-03 by removing misleading copied-plan gates while retaining actual RPC behavior and security checks. It does not close the separate runtime findings DM3-04 or OPS1-06.
 
 The original usage baseline is 51%. The amended 30-point threshold controls starting a chain, never stopping mid-chain solely for budget. Before production, projected completion must fit 35 points total; absolute ceiling 40. Technical stop conditions remain. The remaining audit backlog is outside this run.
 
