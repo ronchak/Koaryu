@@ -5,7 +5,7 @@ The September 13 bounded run has stopped implementation. The remediation program
 ## Main, budget and clean stopping point
 
 - Main at handoff preparation, after PR205: `4244384fb701d7a2bb9b8fcca581a403e695836b`. Its own exact-head Release candidate run `34790631140` passed. API contracts run `34790631200` passed. The closing documentation PR has a later merge SHA. The closing task report records that SHA, its own CI and the final meter read; a committed handoff cannot contain its own merge hash.
-- Usage read at 2026-09-13 23:50 UTC: 50% weekly used, against this run's 45% baseline, so 5 points spent and 5 remain under the 10-point cap. Stop new work at 53%, hard ceiling 55%. Implementation has already stopped. Remaining allowance is for review, CI and cleanup. Do not reuse the previous run's zero baseline or 50% ceiling. The weekly window resets September 19 at 10:16:57 UTC; no reset credit was taken.
+- Usage read at 2026-09-14 00:00 UTC: 50% weekly used, against this run's 45% baseline, so 5 points spent and 5 remain under the 10-point cap. Stop new work at 53%, hard ceiling 55%. Implementation has already stopped. Remaining allowance is for review, CI and cleanup. Do not reuse the previous run's zero baseline or 50% ceiling. The weekly window resets September 19 at 10:16:57 UTC; no reset credit was taken.
 - Four implementation PRs are merged and their commits pushed. Final worktree/ref/PR sweeps follow the handoff merge. Nothing may remain uncommitted, unpublished or as a non-draft remediation PR mid-verification. Older unrelated PRs 63–74 are outside this run.
 
 ## What landed
@@ -44,7 +44,7 @@ Seven program findings remain separate: fixed Astra 1/Sol 2; pending Astra 4/Sol
 
 Batches 01, 02, 03, 05, 08, 09, 10, 12 and 13 are complete. Batches 04, 06 and 11 have only the excluded prerequisites below. Batch07 remains partial. Recipe14 completed its batch08 subset in PR180; recipe15 completed OPS1-09/BT5-05 in PR205. The [batch index](delegated/README.md) links all recipes and PRs.
 
-Of the original 55 selected findings, 49 are fixed, one obsolete and five pending:
+The 55-finding cohort is the pending Sol entries with a delegated_batch in ledger revision `30891b4d0796172ad93f20cd29ff47c90375899e`. Of those, 49 are fixed, one obsolete and five pending:
 
 - BT4-06 waits for ACS1-04; BT3-07 waits for OPS1-06; FC3-08 waits for FC3-01. All three prerequisites were explicitly excluded. Do not infer permission to implement them from the leftover fixture work.
 - FT1-11/FT2-08 retain Dashboard identity/pointer state, legal-name gate, transition helper-name and source-parsed report-catalog claims. Replace one owning workflow's claims with a small behavioral contract, then reassess. Do not repeat completed fixture extraction or delete protected assertions in bulk. A further behavioral pass is roughly 4–6 implementation/review points plus wind-down reserve, a planning estimate to recheck after scoping. It was not started inside this run's remaining allowance.

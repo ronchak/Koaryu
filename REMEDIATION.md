@@ -36,7 +36,7 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 ## Current bounded run
 
-The September 13 run is winding down after PR202–205. Its budget began at 45% weekly usage, with a 10-point hard cap and an 8-point stop-new-work threshold. No further implementation is planned. [HANDOFF](docs/remediation/HANDOFF.md) records the preparation SHA, measured usage, remaining work and release traps; the closing report records the final merge SHA and meter read.
+The September 13 run stopped implementation after PR202–205. Its budget began at 45% weekly usage, with a 10-point hard cap and an 8-point stop-new-work threshold. No further implementation is planned. [HANDOFF](docs/remediation/HANDOFF.md) records the preparation SHA, measured usage, remaining work and release traps; the closing report records the final merge SHA and meter read.
 
 PR202 normalizes billing calendar inputs before UTC formatting. PR203 makes the three reported timing-sensitive tests deterministic without changing production limits. PR204 shares the existing packing/compiler and storage fixtures, replaces preference source checks with real behavior and removes incidental constraints. PR205 limits staff-export Auth reads to selected users and propagates provider failures.
 
