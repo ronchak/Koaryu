@@ -907,7 +907,7 @@ BEGIN
         (v_audit_actor, 'Audit', 'Actor');
 
     -- Replay the migration's exact normalization and first-whitespace split
-    -- against users seeded after migration application.
+    -- against this fixture's users, without replaying it over existing profiles.
     WITH normalized_names AS (
         SELECT
             users.id AS user_id,
@@ -920,6 +920,10 @@ BEGIN
                 )
             ) AS full_name
         FROM auth.users AS users
+        WHERE users.id IN (
+            v_backfill_good, v_backfill_single_token,
+            v_backfill_blank, v_backfill_trailing_token
+        )
     ), split_names AS (
         SELECT
             normalized_names.user_id,

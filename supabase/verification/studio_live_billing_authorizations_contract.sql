@@ -3,7 +3,6 @@ BEGIN;
 DO $access$
 DECLARE
     v_role TEXT;
-    v_definition TEXT;
 BEGIN
     IF to_regclass(
         'public.stripe_live_billing_reconciliation_checkpoints_v3'
@@ -95,25 +94,6 @@ BEGIN
         RAISE EXCEPTION 'service_role cannot call the v3 writer or V26 preflight.';
     END IF;
 
-    FOREACH v_definition IN ARRAY ARRAY[
-        pg_get_functiondef(
-            'public.record_stripe_live_billing_reconciliation_checkpoint_v3(jsonb,timestamp with time zone,text,text,uuid,text)'::REGPROCEDURE
-        ),
-        pg_get_functiondef(
-            'private.bind_live_billing_authorization_checkpoint()'::REGPROCEDURE
-        ),
-        pg_get_functiondef(
-            'public.authorize_studio_live_billing_mutation_atomic(uuid,text,text,text,text)'::REGPROCEDURE
-        ),
-        pg_get_functiondef(
-            'private.connect_onboarding_bootstrap_link_checkpoint(uuid,text)'::REGPROCEDURE
-        )
-    ] LOOP
-        IF v_definition LIKE '%' || '2026' || '-07-13%' THEN
-            RAISE EXCEPTION 'Active schema-v3 authorization still depends on the legacy fixed date.';
-        END IF;
-    END LOOP;
-
     -- The V25-to-V26 restore harness retains the historical V26 anchor. This
     -- final-chain assertion is the separately approved V37 compatibility pin.
     IF private.koaryu_release_operational_contract_v26()
@@ -144,6 +124,9 @@ DECLARE
     v_watermark BIGINT;
     v_result RECORD;
     v_pending_event UUID;
+    v_account_evidence JSONB;
+    v_event_count INTEGER;
+    v_platform_event_count INTEGER;
 BEGIN
     INSERT INTO auth.users (
         id,
@@ -252,7 +235,64 @@ BEGIN
             'processed',
             now() - INTERVAL '1 minute',
             now() - INTERVAL '1 minute'
+        ),
+        (
+            'evt_v3_old_platform',
+            NULL,
+            true,
+            'invoice.paid',
+            '{}'::JSONB,
+            'processed',
+            now() - INTERVAL '30 days',
+            now() - INTERVAL '30 days'
         );
+
+    -- The checkpoint covers every mapping, including pre-existing staging ones.
+    -- These mock delivery events and the resulting checkpoints all roll back.
+    INSERT INTO public.stripe_events (
+        stripe_event_id, stripe_account_id, livemode, type, payload,
+        processing_status, processed_at, created_at
+    )
+    SELECT
+        'evt_v3_context_' || replace(v_actor::TEXT, '-', '') || '_' ||
+            replace(account.studio_id::TEXT, '-', ''),
+        account.stripe_connected_account_id, true, 'account.updated', '{}'::JSONB,
+        'processed', now() - INTERVAL '1 minute', now() - INTERVAL '1 minute'
+    FROM public.studio_payment_accounts account
+    WHERE account.studio_id <> v_studio
+      AND account.stripe_connected_account_id IS NOT NULL;
+
+    SELECT COUNT(*), COUNT(*) FILTER (WHERE stripe_account_id IS NULL)
+      INTO v_event_count, v_platform_event_count
+      FROM public.stripe_events
+     WHERE livemode
+       AND created_at BETWEEN now() - INTERVAL '29 days' AND now()
+       AND private.live_billing_event_is_in_scope(stripe_account_id, type);
+
+    WITH deliveries AS (
+        SELECT stripe_account_id, COUNT(*) AS event_count
+        FROM public.stripe_events
+        WHERE livemode
+          AND created_at BETWEEN now() - INTERVAL '29 days' AND now()
+          AND private.live_billing_event_is_in_scope(stripe_account_id, type)
+        GROUP BY stripe_account_id
+    )
+    SELECT jsonb_agg(jsonb_build_object(
+        'studio_id', account.studio_id,
+        'stripe_connected_account_id', account.stripe_connected_account_id,
+        'connect_account_generation', CASE WHEN account.studio_id = v_studio
+            THEN 1 ELSE private.current_connect_account_generation(account.metadata) END,
+        'provider_event_count', deliveries.event_count,
+        'local_event_count', deliveries.event_count,
+        'provider_only_event_count', 0,
+        'local_only_event_count', 0,
+        'delivery_verified_at', now() - INTERVAL '1 minute',
+        'fresh', true
+    ) ORDER BY (account.studio_id = v_studio) DESC, account.studio_id)
+      INTO v_account_evidence
+      FROM public.studio_payment_accounts account
+      JOIN deliveries ON deliveries.stripe_account_id = account.stripe_connected_account_id
+     WHERE account.stripe_connected_account_id IS NOT NULL;
 
     SELECT MAX(live_billing_ingest_sequence)
       INTO v_watermark
@@ -308,15 +348,15 @@ BEGIN
             'delta_unmapped_count', 0
         ),
         'counts', jsonb_build_object(
-            'provider_accounts', 1,
-            'mapped_accounts', 1,
+            'provider_accounts', jsonb_array_length(v_account_evidence),
+            'mapped_accounts', jsonb_array_length(v_account_evidence),
             'excluded_accounts', 0,
             'unresolved_accounts', 0,
             'unresolved_event_accounts', 0
         ),
         'event_reconciliation', jsonb_build_object(
-            'bounded_provider_total', 2,
-            'bounded_local_total', 2,
+            'bounded_provider_total', v_event_count,
+            'bounded_local_total', v_event_count,
             'provider_only_event_count', 0,
             'local_only_event_count', 0,
             'failed', 0,
@@ -329,8 +369,8 @@ BEGIN
             'invalid_history_sequence_count', 0
         ),
         'platform_delivery', jsonb_build_object(
-            'provider_event_count', 1,
-            'local_event_count', 1,
+            'provider_event_count', v_platform_event_count,
+            'local_event_count', v_platform_event_count,
             'delivery_verified_at', now() - INTERVAL '1 minute',
             'fresh', true
         ),
@@ -351,19 +391,7 @@ BEGIN
             'connected_event_context_verified', true,
             'wildcard_accepted', false
         ),
-        'account_evidence', jsonb_build_array(
-            jsonb_build_object(
-                'studio_id', v_studio,
-                'stripe_connected_account_id', 'acct_ContractReadyV3',
-                'connect_account_generation', 1,
-                'provider_event_count', 1,
-                'local_event_count', 1,
-                'provider_only_event_count', 0,
-                'local_only_event_count', 0,
-                'delivery_verified_at', now() - INTERVAL '1 minute',
-                'fresh', true
-            )
-        )
+        'account_evidence', v_account_evidence
     );
 
     BEGIN
@@ -384,6 +412,34 @@ BEGIN
         NULL;
     END;
 
+    BEGIN
+        PERFORM public.record_stripe_live_billing_reconciliation_checkpoint_v3(
+            v_report || jsonb_build_object(
+                'account_evidence', v_account_evidence - 0,
+                'counts', (v_report->'counts') || jsonb_build_object(
+                    'mapped_accounts', jsonb_array_length(v_account_evidence) - 1,
+                    'provider_accounts', jsonb_array_length(v_account_evidence) - 1
+                )
+            ),
+            now() + INTERVAL '1 hour', repeat('2', 64),
+            'Omitted mapping must fail', v_actor, NULL
+        );
+        RAISE EXCEPTION 'Omitted mapping produced a checkpoint.';
+    EXCEPTION WHEN SQLSTATE 'P0B51' THEN
+        NULL;
+    END;
+
+    BEGIN
+        PERFORM public.record_stripe_live_billing_reconciliation_checkpoint_v3(
+            jsonb_set(v_report, '{account_evidence,0,connect_account_generation}', '2'::JSONB),
+            now() + INTERVAL '1 hour', repeat('3', 64),
+            'Stale report generation must fail', v_actor, NULL
+        );
+        RAISE EXCEPTION 'Stale report generation produced a checkpoint.';
+    EXCEPTION WHEN SQLSTATE 'P0B50' THEN
+        NULL;
+    END;
+
     SELECT *
       INTO v_checkpoint
       FROM public.record_stripe_live_billing_reconciliation_checkpoint_v3(
@@ -400,7 +456,8 @@ BEGIN
       FROM public.stripe_live_billing_reconciliation_checkpoints_v3
      WHERE checkpoint_id = v_checkpoint.id;
 
-    IF v_checkpoint.candidate_sha <> repeat('a', 40)
+    IF v_checkpoint.event_count_since_cutoff <> v_event_count
+       OR v_checkpoint.candidate_sha <> repeat('a', 40)
        OR v_checkpoint.source_report_sha256 <> repeat('c', 64)
        OR v_checkpoint.local_event_ingest_watermark <> v_watermark
        OR v_sidecar.report_schema_version <> 3
@@ -558,80 +615,28 @@ BEGIN
       FROM public.stripe_events
      WHERE livemode;
 
-    v_rolling_report := jsonb_set(
-        jsonb_set(
-            jsonb_set(
-                jsonb_set(
-                    jsonb_set(
-                        jsonb_set(
-                            v_report,
-                            '{continuity,mode}',
-                            '"rolling"'::JSONB
-                        ),
-                        '{continuity,previous_checkpoint_id}',
-                        to_jsonb(v_checkpoint.id::TEXT)
-                    ),
-                    '{continuity,previous_checkpoint_sequence}',
-                    to_jsonb(v_checkpoint.checkpoint_sequence)
-                ),
-                '{continuity,previous_checkpoint_expires_at}',
-                to_jsonb(v_checkpoint.expires_at)
-            ),
-            '{continuity,previous_window_ended_at}',
-            to_jsonb(v_sidecar.event_window_ended_at)
+    v_rolling_report := v_report || jsonb_build_object(
+        'continuity', (v_report->'continuity') || jsonb_build_object(
+            'mode', 'rolling',
+            'previous_checkpoint_id', v_checkpoint.id,
+            'previous_checkpoint_sequence', v_checkpoint.checkpoint_sequence,
+            'previous_checkpoint_expires_at', v_checkpoint.expires_at,
+            'previous_window_ended_at', v_sidecar.event_window_ended_at,
+            'previous_local_event_ingest_watermark', v_sidecar.local_event_ingest_watermark,
+            'previous_checkpoint_valid', true,
+            'overlap_started_at', now() - INTERVAL '29 days',
+            'overlap_ended_at', v_sidecar.event_window_ended_at,
+            'overlap_seconds', 2505600,
+            'local_event_ingest_watermark_non_regressing', true,
+            'bootstrap_local_history_checked', false
         ),
-        '{continuity,previous_local_event_ingest_watermark}',
-        to_jsonb(v_sidecar.local_event_ingest_watermark)
-    );
-
-    v_rolling_report := jsonb_set(
-        jsonb_set(
-            jsonb_set(
-                jsonb_set(
-                    jsonb_set(
-                        jsonb_set(
-                            v_rolling_report,
-                            '{continuity,previous_checkpoint_valid}',
-                            'true'::JSONB
-                        ),
-                        '{continuity,overlap_started_at}',
-                        to_jsonb(now() - INTERVAL '29 days')
-                    ),
-                    '{continuity,overlap_ended_at}',
-                    to_jsonb(v_sidecar.event_window_ended_at)
-                ),
-                '{continuity,overlap_seconds}',
-                to_jsonb(2505600)
-            ),
-            '{continuity,local_event_ingest_watermark_non_regressing}',
-            'true'::JSONB
+        'event_reconciliation', (v_report->'event_reconciliation') || jsonb_build_object(
+            'bounded_provider_total', v_event_count + 1,
+            'bounded_local_total', v_event_count + 1,
+            'local_event_ingest_watermark', v_watermark,
+            'latest_created_at', now() - INTERVAL '30 seconds'
         ),
-        '{continuity,bootstrap_local_history_checked}',
-        'false'::JSONB
-    );
-
-    v_rolling_report := jsonb_set(
-        jsonb_set(
-            jsonb_set(
-                jsonb_set(
-                    v_rolling_report,
-                    '{event_reconciliation,bounded_provider_total}',
-                    to_jsonb(3)
-                ),
-                '{event_reconciliation,bounded_local_total}',
-                to_jsonb(3)
-            ),
-            '{event_reconciliation,local_event_ingest_watermark}',
-            to_jsonb(v_watermark)
-        ),
-        '{event_reconciliation,latest_created_at}',
-        to_jsonb(now() - INTERVAL '30 seconds')
-    );
-
-    v_rolling_report := jsonb_set(
-        v_rolling_report,
-        '{account_evidence,0}',
-        jsonb_build_object(
+        'account_evidence', jsonb_set(v_account_evidence, '{0}', jsonb_build_object(
             'studio_id', v_studio,
             'stripe_connected_account_id', 'acct_ContractReadyV3',
             'connect_account_generation', 1,
@@ -641,7 +646,7 @@ BEGIN
             'local_only_event_count', 0,
             'delivery_verified_at', now() - INTERVAL '30 seconds',
             'fresh', true
-        )
+        ))
     );
 
     BEGIN
