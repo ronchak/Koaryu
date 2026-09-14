@@ -213,6 +213,10 @@ The owner may explicitly authorize a named coordinating agent to apply productio
 
 Production apply requires `--release-authorization ronchak:<candidate-sha>`, `--release-operator <named-executor>` and `--confirmation-phrase <exact-phrase>`. The authorization names the owner and intended release. The tool retains the exact PR138 OWNER approval, source and target checks, inspection token, dry-run, staging fingerprint and restore evidence requirements. It records the owner, executor, release, intended/applied versions, status and timestamps in its output. A terminal is not proof of authorization.
 
+The executor name is caller-reported attribution, not an authenticated process identity. GitHub verifies the approval account and exact release scope. A public owner/release label or a second name comparison cannot isolate a malicious process that shares provider credentials. The named-coordinator restriction remains an operating-policy requirement; subagents are not authorized.
+
+Production apply refuses a remainder containing more than one migration until a separately reviewed per-migration mode exists. Every attempted provider apply records its actual stdout, stderr and process outcome before the final success or uncertain-failure record. Keep that audit output private.
+
 The exact phrase still binds the candidate, pending migration count, source manifest and production project. Supply it deliberately. Do not generate an automatic answer or fabricate a backup/restore claim to satisfy a field.
 
 Before **each** irreversible or outward-facing release action:

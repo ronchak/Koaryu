@@ -4621,6 +4621,7 @@ export function runCommand(
     label = command,
     timeout = DEFAULT_COMMAND_TIMEOUT_MS,
     capture = "stdout",
+    resultObserver = null,
   } = {},
 ) {
   if (!Number.isSafeInteger(timeout) || timeout <= 0) {
@@ -4636,6 +4637,15 @@ export function runCommand(
     stdio: ["ignore", "pipe", "pipe"],
     timeout,
   });
+  if (resultObserver !== null) {
+    resultObserver({
+      stdout: result.stdout ?? null,
+      stderr: result.stderr ?? null,
+      exit_status: result.status ?? null,
+      signal: result.signal ?? null,
+      system_error_code: result.error?.code ?? null,
+    });
+  }
   if (result.error?.code === "ETIMEDOUT") {
     throw new RolloutError(`${label} failed: UNKNOWN(timeout) after ${timeout} ms.`);
   }
@@ -5367,10 +5377,15 @@ export async function main(
     diagnosisReader = readRemoteDiagnosis,
     stateReader = readRemoteState,
     dryRunRunner = runDryRun,
-    applyRunner = (sourceRoot, applyEnv) => runCommand(
+    applyRunner = (sourceRoot, applyEnv, resultObserver) => runCommand(
       "supabase",
       ["db", "push", "--linked", "--agent=no"],
-      { cwd: sourceRoot, env: applyEnv, label: "Supabase migration apply" },
+      {
+        cwd: sourceRoot,
+        env: applyEnv,
+        label: "Supabase migration apply",
+        resultObserver,
+      },
     ),
     now = () => new Date().toISOString(),
     output = console.log,
@@ -5492,6 +5507,15 @@ export async function main(
     assertInspectionToken(packet, config.target, before, config.inspectionToken);
 
     const remainingPacket = packetForAcceptedState(packet, before.state);
+    if (
+      config.mode === "apply"
+      && config.target === "production"
+      && remainingPacket.pendingMigrations.length > 1
+    ) {
+      throw new RolloutError(
+        "Production apply refuses more than one remaining migration until a separately scoped one-at-a-time mode exists.",
+      );
+    }
     validateApplyApprovalRecord(config, remainingPacket, before.state, commandRunner, env);
     const pending = dryRunRunner(sourceRoot, remainingPacket, env);
     console.log(`dry_run_migrations=${pending.join(",")}`);
@@ -5523,7 +5547,14 @@ export async function main(
       status: "started",
     });
     try {
-      applyRunner(sourceRoot, env);
+      applyRunner(sourceRoot, env, (response) => {
+        writeAuditEvidence(output, {
+          ...auditContext,
+          status: "provider_response",
+          ...response,
+          observed_at: now(),
+        });
+      });
       const after = stateReader(sourceRoot, packet, env, config.expectedProviderFingerprint);
       const nonSuccessAfterStateLine = formatNonSuccessProbeState(after);
       if (nonSuccessAfterStateLine !== null) {

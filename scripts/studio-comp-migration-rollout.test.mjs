@@ -1472,7 +1472,30 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("reports a bounded command timeout as UNKNOWN(timeout) before returning output", { timeout: 3_000 }, () => {
+  it("observes child-process success, failure, spawn error, and timeout before preserving command behavior", { timeout: 3_000 }, () => {
+    const observed = [];
+    assert.equal(runCommand(
+      process.execPath,
+      ["-e", "process.stdout.write('success-out'); process.stderr.write('success-err')"],
+      { cwd: repositoryRoot, env: {}, resultObserver: (result) => observed.push(result) },
+    ), "success-out");
+    assert.throws(
+      () => runCommand(
+        process.execPath,
+        ["-e", "process.stdout.write('failure-out'); process.stderr.write('failure-err'); process.exit(7)"],
+        { cwd: repositoryRoot, env: {}, resultObserver: (result) => observed.push(result) },
+      ),
+      /failed \(exit 7\)/,
+    );
+    assert.throws(
+      () => runCommand(
+        "/definitely/missing/koaryu-command",
+        [],
+        { cwd: repositoryRoot, env: {}, resultObserver: (result) => observed.push(result) },
+      ),
+      /failed \(exit unavailable\)/,
+    );
+
     const timeoutMs = 100;
     const startedAt = process.hrtime.bigint();
     let returnedOutput = false;
@@ -1487,6 +1510,7 @@ describe("studio-comp migration rollout guard", () => {
             env: {},
             label: "slow timeout test command",
             timeout: timeoutMs,
+            resultObserver: (result) => observed.push(result),
           },
         );
         returnedOutput = true;
@@ -1504,6 +1528,36 @@ describe("studio-comp migration rollout guard", () => {
     const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
     assert.equal(returnedOutput, false);
     assert.ok(elapsedMs < 2_000, `timeout returned control after ${elapsedMs.toFixed(0)} ms`);
+    assert.deepEqual(observed, [
+      {
+        stdout: "success-out",
+        stderr: "success-err",
+        exit_status: 0,
+        signal: null,
+        system_error_code: null,
+      },
+      {
+        stdout: "failure-out",
+        stderr: "failure-err",
+        exit_status: 7,
+        signal: null,
+        system_error_code: null,
+      },
+      {
+        stdout: null,
+        stderr: null,
+        exit_status: null,
+        signal: null,
+        system_error_code: "ENOENT",
+      },
+      {
+        stdout: "",
+        stderr: "",
+        exit_status: null,
+        signal: "SIGTERM",
+        system_error_code: "ETIMEDOUT",
+      },
+    ]);
   });
 
   it("accepts the reviewed minimal shape and every optional-column subset", () => {
@@ -3276,42 +3330,47 @@ describe("studio-comp migration rollout guard", () => {
     const packet = candidatePacket();
     const approvalUrl = "https://github.com/ronchak/Koaryu/pull/138#issuecomment-987654321";
     const startedAt = "2026-09-14T01:02:03.000Z";
-    const finishedAt = "2026-09-14T01:02:04.000Z";
-    const plannedVersions = packet.pendingMigrations.map((filename) => filename.slice(0, 14));
-    const sharedEvidence = {
-      authorizing_owner: "ronchak",
-      named_executor: "Release coordinator",
-      intended_candidate: candidateSha,
-      approval_url: approvalUrl,
-      target: "production",
-      project_ref: ROLLOUT.productionRef,
-      inspected_prestate: { state: "pre", provider_fingerprint: null },
-      planned_versions: plannedVersions,
-      started_at: startedAt,
-    };
+    const observedAt = "2026-09-14T01:02:04.000Z";
+    const finishedAt = "2026-09-14T01:02:05.000Z";
     const cases = [
-      { name: "success", afterState: "post" },
-      { name: "apply failure", applyError: new Error("bounded apply failure") },
-      { name: "post-state mismatch", afterState: "pre" },
-      { name: "bad confirmation", badConfirmation: true },
+      { name: "V46 single-migration success", beforeState: "v46", afterState: "post" },
+      { name: "apply failure", beforeState: "v46", applyError: new Error("bounded apply failure") },
+      { name: "post-state mismatch", beforeState: "v46", afterState: "v46" },
+      { name: "bad confirmation", beforeState: "v46", badConfirmation: true },
+      { name: "V38 bulk remainder", beforeState: "v38", bulkBlocked: true },
     ];
 
     for (const testCase of cases) {
+      const remainingPacket = packetForAcceptedState(packet, testCase.beforeState);
+      if (testCase.bulkBlocked) assert.equal(remainingPacket.pendingMigrations.length, 9);
+      else assert.equal(remainingPacket.pendingMigrations.length, 1);
+      const plannedVersions = remainingPacket.pendingMigrations.map((filename) => filename.slice(0, 14));
+      const sharedEvidence = {
+        authorizing_owner: "ronchak",
+        named_executor: "Release coordinator",
+        intended_candidate: candidateSha,
+        approval_url: approvalUrl,
+        target: "production",
+        project_ref: ROLLOUT.productionRef,
+        inspected_prestate: { state: testCase.beforeState, provider_fingerprint: null },
+        planned_versions: plannedVersions,
+        started_at: startedAt,
+      };
       const output = [];
       const commands = [];
-      const timestamps = [startedAt, finishedAt];
+      const timestamps = [startedAt, observedAt, finishedAt];
       let stateReadCount = 0;
       let applyCalls = 0;
       const promise = main([
         "--target", "production", "--candidate-sha", candidateSha, "--mode", "apply",
-        "--inspection-token", buildInspectionToken(packet, "production", "pre"),
+        "--inspection-token", buildInspectionToken(packet, "production", testCase.beforeState),
         "--confirm-project", ROLLOUT.productionRef,
         "--approval-record", approvalUrl,
         "--release-authorization", `ronchak:${candidateSha}`,
         "--release-operator", "Release coordinator",
         "--confirmation-phrase", testCase.badConfirmation
-          ? buildProductionConfirmationPhrase(packet).replace("APPLY", "APPLYX")
-          : buildProductionConfirmationPhrase(packet),
+          ? buildProductionConfirmationPhrase(remainingPacket).replace("APPLY", "APPLYX")
+          : buildProductionConfirmationPhrase(remainingPacket),
         "--expected-provider-fingerprint", validFingerprint,
         "--confirmed-restore-window", "2026-09-14T01:00:00Z/PITR-confirmed",
         "--restore-decision-authority", "Ronak Chakraborty",
@@ -3338,7 +3397,7 @@ describe("studio-comp migration rollout guard", () => {
             "gh", "api", "repos/ronchak/Koaryu/issues/comments/987654321",
           ]);
           return JSON.stringify({
-            body: buildApplyApprovalRecordBody(packet, "production", "pre"),
+            body: buildApplyApprovalRecordBody(remainingPacket, "production", testCase.beforeState),
             issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/138",
             user: { login: "ronchak" },
             author_association: "OWNER",
@@ -3348,23 +3407,32 @@ describe("studio-comp migration rollout guard", () => {
         linkedRefAsserter() {},
         stateReader() {
           stateReadCount += 1;
-          if (stateReadCount === 1) return { state: "pre", providerFingerprint: null };
+          if (stateReadCount === 1) return { state: testCase.beforeState, providerFingerprint: null };
           return {
             state: testCase.afterState,
             providerFingerprint: testCase.afterState === "post" ? validFingerprint : null,
           };
         },
         dryRunRunner(_root, remainingPacket) { return remainingPacket.pendingMigrations; },
-        applyRunner() {
+        applyRunner(_root, _env, resultObserver) {
           applyCalls += 1;
+          resultObserver({
+            stdout: `${testCase.name} stdout`,
+            stderr: `${testCase.name} stderr`,
+            exit_status: testCase.applyError ? 7 : 0,
+            signal: null,
+            system_error_code: null,
+          });
           if (testCase.applyError) throw testCase.applyError;
         },
         now() { return timestamps.shift(); },
         output(line) { output.push(line); },
       });
 
-      if (testCase.name === "success") {
+      if (testCase.name === "V46 single-migration success") {
         await promise;
+      } else if (testCase.bulkBlocked) {
+        await assert.rejects(promise, /refuses more than one remaining migration/);
       } else if (testCase.name === "bad confirmation") {
         await assert.rejects(promise, /Production confirmation did not match exactly/);
       } else {
@@ -3373,18 +3441,28 @@ describe("studio-comp migration rollout guard", () => {
           /Migration apply failed and may have changed remote state.*(?:bounded apply failure|did not reach the exact expected post-state)/,
         );
       }
-      assert.equal(commands.length, 4, testCase.name);
-      assert.equal(applyCalls, testCase.badConfirmation ? 0 : 1, testCase.name);
+      assert.equal(commands.length, testCase.bulkBlocked ? 3 : 4, testCase.name);
+      assert.equal(applyCalls, testCase.badConfirmation || testCase.bulkBlocked ? 0 : 1, testCase.name);
       const evidence = output
         .filter((line) => line.startsWith("audit_evidence="))
         .map((line) => JSON.parse(line.slice("audit_evidence=".length)));
-      if (testCase.badConfirmation) {
+      if (testCase.badConfirmation || testCase.bulkBlocked) {
         assert.deepEqual(evidence, []);
         continue;
       }
       assert.deepEqual(evidence[0], { ...sharedEvidence, status: "started" });
-      if (testCase.name === "success") {
-        assert.deepEqual(evidence[1], {
+      assert.deepEqual(evidence[1], {
+        ...sharedEvidence,
+        status: "provider_response",
+        stdout: `${testCase.name} stdout`,
+        stderr: `${testCase.name} stderr`,
+        exit_status: testCase.applyError ? 7 : 0,
+        signal: null,
+        system_error_code: null,
+        observed_at: observedAt,
+      });
+      if (testCase.name === "V46 single-migration success") {
+        assert.deepEqual(evidence[2], {
           ...sharedEvidence,
           status: "verified_success",
           applied_versions: plannedVersions,
@@ -3392,7 +3470,7 @@ describe("studio-comp migration rollout guard", () => {
           finished_at: finishedAt,
         });
       } else {
-        assert.deepEqual(evidence[1], {
+        assert.deepEqual(evidence[2], {
           ...sharedEvidence,
           status: "failed_or_unknown",
           finished_at: finishedAt,

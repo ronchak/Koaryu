@@ -4,7 +4,7 @@
 
 **Database first, backend second, frontend last. Neither application may be promoted before all nine migrations are applied and independently verified.** The new backend requires RPCs absent from production V38 and fails readiness before V47.
 
-The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). This packet is preparation, not evidence that an apply or deployment happened. The tool currently applies a whole pending chain; a per-migration mode is awaiting the owner's scope answer. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
+The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). This packet is preparation, not evidence that an apply or deployment happened. The tool refuses production apply when more than one migration remains. A per-migration mode is awaiting the owner's scope answer; it has not been implemented. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
 
 ## Pinned candidate and observed state
 
@@ -96,7 +96,7 @@ KOARYU_STAGING_APPROVAL='<URL-returned-by-the-owner-approval-comment>'
 node scripts/studio-comp-migration-rollout.mjs --target staging --mode apply \
   --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_STAGING_TOKEN" \
   --confirm-project nxgsektqsgrtyfhawxbc --approval-record "$KOARYU_STAGING_APPROVAL" \
-  --approve-staging-apply
+  --approve-staging-apply > "$KOARYU_RELEASE_DIR/staging-apply.txt" 2>&1
 node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect \
   --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/staging-post.txt"
 ```
@@ -199,7 +199,7 @@ KOARYU_RESTORE_OWNER='<named-authorized-recovery-decision-maker>'
 
 ## 5. Owner-authorized production apply and database verification
 
-This step remains blocked until the per-migration execution mode and all phase-three evidence are complete. The final command must operate on one reviewed migration at a time. Supply the deliberate exact phrase in `--confirmation-phrase`; terminal detection has been removed. The phrase format remains `APPLY <count> MIGRATIONS FROM <candidate> MANIFEST <source-manifest> TO mimguepumzsgmcaycdsh`. Validate it against the exact inspected packet. Capture the tool's structured authorization and outcome records privately.
+This step remains blocked until the per-migration execution mode and all phase-three evidence are complete. The final command must operate on one reviewed migration at a time. Supply the deliberate exact phrase in `--confirmation-phrase`; terminal detection has been removed. The phrase format remains `APPLY <count> MIGRATIONS FROM <candidate> MANIFEST <source-manifest> TO mimguepumzsgmcaycdsh`. Validate it against the exact inspected packet. Capture the tool's structured authorization, provider response and outcome records privately. The executor name is caller-reported; it is not proof of process identity.
 
 ```bash
 node scripts/studio-comp-migration-rollout.mjs --target production --mode apply \
@@ -209,7 +209,8 @@ node scripts/studio-comp-migration-rollout.mjs --target production --mode apply 
   --confirmation-phrase "${KOARYU_CONFIRMATION:?Set the deliberately reviewed exact phrase}" \
   --expected-provider-fingerprint "$KOARYU_STAGING_FINGERPRINT" \
   --confirmed-restore-window "$KOARYU_RESTORE_RECORD" \
-  --restore-decision-authority "$KOARYU_RESTORE_OWNER"
+  --restore-decision-authority "$KOARYU_RESTORE_OWNER" \
+  > "$KOARYU_RELEASE_DIR/production-apply.txt" 2>&1
 node scripts/studio-comp-migration-rollout.mjs --target production --mode inspect \
   --candidate-sha "$KOARYU_CANDIDATE" \
   --expected-provider-fingerprint "$KOARYU_STAGING_FINGERPRINT" \
