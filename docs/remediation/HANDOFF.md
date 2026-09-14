@@ -65,6 +65,8 @@ The owner authorizes coordinating Astra, not subagents, to execute the eventual 
 - The support-address task DOC1-05 remains owner action. The plain-HTTP `crypto.randomUUID` external-payment issue and restore-script duplication remain unstarted. The formatter and three timing-sensitive tests were already fixed in earlier PRs.
 - Do not reopen the old import line-count claim: the stale 870 text was already removed. Preserve pending import-policy and activation/currency decisions in their existing plans; none belongs in this release patch.
 
+- Closeout CI on `0b5c871...` failed the existing refund refresh test at `frontend/tests/billing-data-mounted.test.mjs:935`: it saw only `newer-payment`, without `payment-1`. The focused local case passed. The test calls `loadMoreHistory()` immediately after refresh, while its callback depends on a React-rendered cursor; a render-settling race is a hypothesis, not a verified fix. Application/test bytes are unchanged. Retain this investigation even if subsequent CI passes; do not weaken billing assertions to close documentation.
+
 ## Resume checks
 
 Read the closing report and Git for the final documentation merge SHA; require its own exact-head CI. Confirm local/remote main agree and task worktrees are clean and pushed. PR210's source candidate is frozen at `c1e933f...`; earlier PR208/PR209 green heads do not approve later code.
