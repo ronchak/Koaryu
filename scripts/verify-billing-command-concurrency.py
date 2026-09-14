@@ -42,7 +42,7 @@ def run_cases(local,database):
         return item
     def blocker(first,second):
         return json.loads(sql("SELECT COALESCE(jsonb_agg(jsonb_build_object('holder',a.pid,'waiter',b.pid,'type',b.wait_event_type,'event',b.wait_event)),'[]'::jsonb) FROM pg_stat_activity a JOIN pg_stat_activity b ON b.datname=a.datname "
-            f"WHERE a.datname=current_database() AND a.application_name='{first['name']}' AND b.application_name='{second['name']}' AND b.state='active' AND a.pid=ANY(pg_blocking_pids(b.pid));"))
+            f"WHERE a.datname=current_database() AND a.application_name='{first['name']}' AND b.application_name='{second['name']}' AND b.state='active' AND b.wait_event_type='Lock' AND a.pid=ANY(pg_blocking_pids(b.pid));"))
     def ready(item,forbidden_holder=None):
         deadline=time.monotonic()+15
         while time.monotonic()<deadline:
@@ -303,11 +303,13 @@ SELECT 'RESULT_READY'; COMMIT;
             "unrelated_commit",
             "unrelated_rollback",
             "completion",
+            "completion_next_key",
+            "completion_next_actor",
             "lease",
         ]:
             fixture = {
                 key: str(uuid4())
-                for key in ["actor", "studio", "payer", "payment", "lease", "rival"]
+                for key in ["actor", "studio", "payer", "payment", "lease", "rival", "next_actor"]
             }
             account = "acct_" + uuid4().hex
             seed = f"""BEGIN;
@@ -324,11 +326,17 @@ SELECT 'RESULT_READY'; COMMIT;
         VALUES('{fixture["payment"]}','{fixture["studio"]}','{fixture["payer"]}','cus_proof','pi_proof','ch_proof','{account}',1,'succeeded',1000,'usd',1000,1000,now());
         COMMIT;"""
             sql(seed)
+            if mode == "completion_next_actor":
+                sql(f"""INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+                    VALUES('{fixture['next_actor']}','authenticated','authenticated',
+                    '{fixture['next_actor']}@example.invalid','{{}}','{{}}',now(),now());
+                    INSERT INTO public.staff_roles(studio_id,user_id,role)
+                    VALUES('{fixture['studio']}','{fixture['next_actor']}','admin');""")
 
-            def refund_claim(lease):
+            def refund_claim(lease, key="refund-concurrent", actor=fixture["actor"]):
                 return f"""SELECT public.claim_billing_provider_operation_resource_v1(
-                    '{fixture['studio']}','{fixture['actor']}','payment.refund','payment',
-                    '{fixture['payment']}','{fixture['payer']}','refund-concurrent',repeat('a',64),
+                    '{fixture['studio']}','{actor}','payment.refund','payment',
+                    '{fixture['payment']}','{fixture['payer']}','{key}',repeat('a',64),
                     '{account}',1,'{lease}',30);"""
 
             claim = json.loads(sql(refund_claim(fixture["lease"])))
@@ -360,7 +368,7 @@ SELECT 'RESULT_READY'; COMMIT;
                     VALUES('{fixture['studio']}','{fixture['payment']}','{refund_id}',
                     'ch_proof','pi_proof','{account}',1,{amount},'succeeded');"""
 
-            if mode.startswith("unrelated") or mode in ["completion", "lease"]:
+            if mode.startswith(("unrelated", "completion")) or mode == "lease":
                 sql(project("re_proof", 500))
                 operation = json.loads(sql(transition("projected")))["operation"]
 
@@ -370,7 +378,7 @@ SELECT 'RESULT_READY'; COMMIT;
                     'refund-concurrent',repeat('a',64),'{account}',1,'{lease}',{revision},
                     'payment_refund_completed');"""
 
-            if mode == "completion":
+            if mode.startswith("completion"):
                 holder = start(
                     "refund_complete", complete(fixture["lease"], operation["revision"])
                 )
@@ -387,8 +395,13 @@ SELECT 'RESULT_READY'; COMMIT;
                     else project("re_proof", 500),
                 )
             ready(holder)
-            waiter = start("refund_retry", refund_claim(fixture["rival"]), hold=False)
+            next_refund = mode.startswith("completion_next")
+            next_actor = fixture["next_actor"] if mode == "completion_next_actor" else fixture["actor"]
+            waiter = start("refund_retry", refund_claim(
+                fixture["rival"], key="next-refund" if next_refund else "refund-concurrent", actor=next_actor,
+            ), hold=False)
             lock = wait_blocked(holder, waiter)
+            released_after = sql("SELECT clock_timestamp();") if next_refund else None
             release(holder, commit=not mode.endswith("rollback"))
             if mode == "unrelated_commit":
                 code = waiter["process"].wait(timeout=15)
@@ -404,13 +417,21 @@ SELECT 'RESULT_READY'; COMMIT;
                 recovered = json.loads(
                     next(line for line in waiter["lines"] if line.startswith("{"))
                 )["operation"]
-                assert (
-                    recovered["id"] == operation["id"]
-                    and recovered["provider_request_attempt_count"] == 1
-                ), recovered
-                if mode == "completion":
-                    assert recovered["state"] == "completed", recovered
+                if next_refund:
+                    assert recovered["id"] != operation["id"] and recovered["state"] == "started", recovered
+                    assert recovered["actor_id"] == next_actor and recovered["lease_owner"] == fixture["rival"], recovered
+                    assert recovered["provider_request_attempt_count"] == 0, recovered
+                    assert sql(f"""SELECT lease_acquired_at >= '{released_after}'::timestamptz
+                        AND lease_expires_at = lease_acquired_at + interval '30 seconds'
+                        FROM public.billing_provider_operations WHERE id='{recovered['id']}';""") == 't', recovered
+                    original = json.loads(sql(refund_claim(fixture["lease"])))['operation']
+                    assert original['id'] == operation['id'] and original['state'] == 'completed', original
+                    assert original['provider_request_attempt_count'] == 1, original
+                elif mode == "completion":
+                    assert recovered["id"] == operation["id"] and recovered["state"] == "completed", recovered
+                    assert recovered["provider_request_attempt_count"] == 1, recovered
                 else:
+                    assert recovered["id"] == operation["id"] and recovered["provider_request_attempt_count"] == 1, recovered
                     assert recovered["lease_owner"] == fixture["lease"], recovered
                     denied = start(
                         "refund_wrong_lease",
@@ -431,12 +452,13 @@ SELECT 'RESULT_READY'; COMMIT;
                         line.split() == ["ERROR:", error_state, error]
                         for line in denied["errors"]
                     ), denied["errors"]
-            assert (
-                sql(
-                    f"SELECT resource_version_sha256 FROM public.billing_provider_operation_resources WHERE id='{claim['resource']['id']}';"
-                )
-                == resource_version
+            observed_version = sql(
+                f"SELECT resource_version_sha256 FROM public.billing_provider_operation_resources WHERE id='{claim['resource']['id']}';"
             )
+            if next_refund:
+                assert observed_version != resource_version
+            else:
+                assert observed_version == resource_version
             total = int(
                 sql(
                     f"SELECT refunded_amount_cents FROM public.billing_payments WHERE id='{fixture['payment']}';"

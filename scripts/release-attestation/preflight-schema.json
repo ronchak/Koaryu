@@ -1123,6 +1123,17 @@
           "expected": "ada17d08e26869bdf66723570e72c439facf96d671e7bab8826229949c4a9e87"
         }
       }
+    },
+    "v47": {
+      "extends": "v46",
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:a0dbde4e4447bd0bd279dd097be2ecc67eec9f6e75c83d11ca3a0fef2149e306"
+        },
+        "operational_manifest_v12": {
+          "expected": "2403d556a024b07689002f8efa68dd6448bade1fdf6bf823d6a80952556105c2"
+        }
+      }
     }
   }
 }

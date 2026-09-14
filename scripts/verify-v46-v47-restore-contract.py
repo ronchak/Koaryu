@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove V45 refund receipts survive restore and complete after their own verified projection."""
+"""Prove V46 refund receipts survive restore and permit completed replay and a later refund owner."""
 import hashlib
 import json
 import os
@@ -9,7 +9,7 @@ import sys
 
 from local_postgres_verification import ACL_SQL, CONSTRAINT_SQL, PAIR_PATH, LocalPostgres, normalization_plan, require
 
-MIGRATION = "20260914033337_refund_projection_recovery_v46.sql"
+MIGRATION = "20260914055301_refund_completion_locking_v47.sql"
 TABLES = ("auth.users", "public.staff_profiles", "public.studios", "public.staff_roles",
           "public.studio_payment_accounts", "public.billing_payers", "public.billing_payments",
           "public.billing_refunds", "public.billing_provider_operations",
@@ -77,14 +77,15 @@ def main(arguments):
     shared = Path(__file__).with_name("local_postgres_verification.py")
     shared_hash = hashlib.sha256(shared.read_bytes()).hexdigest()
     names = [
-        "V45_OPERATIONAL_READINESS_SQL", "EXPECTED_V45_OPERATIONAL_READINESS",
-        "V45_CATALOG_STATE_SQL", "EXPECTED_V45_CATALOG_STATE", "EXPECTED_V45_RESTORED_CATALOG_STATE",
-        "V45_RELEASE_MANIFEST_SQL", "EXPECTED_V45_RELEASE_MANIFEST",
-        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V45_EXPECTATION_STATE",
-        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V45_RESOURCE_OWNERSHIP_MANIFEST",
-        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V45_OPERATIONAL_CONTRACT",
-        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V45_OPERATIONAL_MANIFEST_V12",
         "V46_OPERATIONAL_READINESS_SQL", "EXPECTED_V46_OPERATIONAL_READINESS",
+        "V46_CATALOG_STATE_SQL", "EXPECTED_V46_CATALOG_STATE", "EXPECTED_V46_RESTORED_CATALOG_STATE",
+        "V46_RELEASE_MANIFEST_SQL", "EXPECTED_V46_RELEASE_MANIFEST",
+        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V46_EXPECTATION_STATE",
+        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V46_RESOURCE_OWNERSHIP_MANIFEST",
+        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V46_OPERATIONAL_CONTRACT",
+        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V46_OPERATIONAL_MANIFEST_V12",
+        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
+        "V45_OPERATIONAL_READINESS_SQL", "EXPECTED_V45_OPERATIONAL_READINESS",
         "V44_OPERATIONAL_READINESS_SQL", "EXPECTED_V44_OPERATIONAL_READINESS",
         "V43_OPERATIONAL_READINESS_SQL", "EXPECTED_V43_OPERATIONAL_READINESS",
         "V42_OPERATIONAL_READINESS_SQL", "EXPECTED_V42_OPERATIONAL_READINESS",
@@ -93,12 +94,12 @@ def main(arguments):
         "V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS",
         "V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS",
         "V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS",
-        "V46_CATALOG_STATE_SQL", "EXPECTED_V46_CATALOG_STATE", "EXPECTED_V46_RESTORED_CATALOG_STATE",
-        "V46_RELEASE_MANIFEST_SQL", "EXPECTED_V46_RELEASE_MANIFEST",
-        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V46_EXPECTATION_STATE",
-        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V46_RESOURCE_OWNERSHIP_MANIFEST",
-        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V46_OPERATIONAL_CONTRACT",
-        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V46_OPERATIONAL_MANIFEST_V12",
+        "V47_CATALOG_STATE_SQL", "EXPECTED_V47_CATALOG_STATE", "EXPECTED_V47_RESTORED_CATALOG_STATE",
+        "V47_RELEASE_MANIFEST_SQL", "EXPECTED_V47_RELEASE_MANIFEST",
+        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V47_EXPECTATION_STATE",
+        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V47_RESOURCE_OWNERSHIP_MANIFEST",
+        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V47_OPERATIONAL_CONTRACT",
+        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V47_OPERATIONAL_MANIFEST_V12",
         "V40_RANK_COMMAND_STATE_SQL", "EXPECTED_V40_RANK_COMMAND_STATE",
         "V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V41_PAYER_BALANCE_STATE",
         "V43_EXTERNAL_PAYMENT_STATE_SQL", "EXPECTED_V43_EXTERNAL_PAYMENT_STATE",
@@ -133,31 +134,30 @@ def main(arguments):
         return {signature: local.sql(database, f"SELECT {signature};") for signature in ["private.koaryu_release_critical_surface_manifest_v16()","private.koaryu_release_critical_surface_manifest_v17()","private.koaryu_release_critical_surface_manifest_v18()","private.koaryu_release_operational_manifest_v10()","private.koaryu_release_operational_manifest_v11()"]}
 
     def predecessor(database, restored=False):
-        check(database, "V45_OPERATIONAL_READINESS_SQL", "EXPECTED_V45_OPERATIONAL_READINESS")
-        check(database, "V45_CATALOG_STATE_SQL", "EXPECTED_V45_RESTORED_CATALOG_STATE" if restored else "EXPECTED_V45_CATALOG_STATE")
-        check(database, "V45_RELEASE_MANIFEST_SQL", "EXPECTED_V45_RELEASE_MANIFEST")
-        check(database, "V31_EXPECTATION_STATE_SQL", "EXPECTED_V45_EXPECTATION_STATE")
-        check(database, "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V45_RESOURCE_OWNERSHIP_MANIFEST")
-        check(database, "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V45_OPERATIONAL_CONTRACT")
-        check(database, "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V45_OPERATIONAL_MANIFEST_V12")
-        require(local.sql(database, "SELECT count(*)=140 AND max(version)='20260910185031' FROM supabase_migrations.schema_migrations;") == "t",
-                "Restore requires the actual V45 history")
-        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v27()') IS NULL;") == "t",
-                "Restore predecessor already contains V46 functions")
+        check(database, "V46_OPERATIONAL_READINESS_SQL", "EXPECTED_V46_OPERATIONAL_READINESS")
+        check(database, "V46_CATALOG_STATE_SQL", "EXPECTED_V46_RESTORED_CATALOG_STATE" if restored else "EXPECTED_V46_CATALOG_STATE")
+        check(database, "V46_RELEASE_MANIFEST_SQL", "EXPECTED_V46_RELEASE_MANIFEST")
+        check(database, "V31_EXPECTATION_STATE_SQL", "EXPECTED_V46_EXPECTATION_STATE")
+        check(database, "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V46_RESOURCE_OWNERSHIP_MANIFEST")
+        check(database, "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V46_OPERATIONAL_CONTRACT")
+        check(database, "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V46_OPERATIONAL_MANIFEST_V12")
+        require(local.sql(database, "SELECT count(*)=141 AND max(version)='20260914033337' FROM supabase_migrations.schema_migrations;") == "t",
+                "Restore requires the actual V46 history")
+        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v28()') IS NULL;") == "t",
+                "Restore predecessor already contains V47 functions")
 
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 142 and list(hashes)[-3:] == [
-        "20260910185031_student_import_retry_ownership_v45.sql", MIGRATION,
-        "20260914055301_refund_completion_locking_v47.sql"], "Unexpected migration inventory")
+    require(len(hashes) == 142 and list(hashes)[-2:] == [
+        "20260914033337_refund_projection_recovery_v46.sql", MIGRATION], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
-    source = f"koaryu_v46_source_{os.getpid()}"
-    restored = f"koaryu_v46_restore_{os.getpid()}"
-    canonical = f"koaryu_v46_canonical_{os.getpid()}"
-    dump = temporary / f"v45-before-v46-{os.getpid()}.dump"
+    source = f"koaryu_v47_source_{os.getpid()}"
+    restored = f"koaryu_v47_restore_{os.getpid()}"
+    canonical = f"koaryu_v47_canonical_{os.getpid()}"
+    dump = temporary / f"v46-before-v47-{os.getpid()}.dump"
     owned, outcomes = [], {}
     try:
         for database, template in [(source, "postgres"), (restored, "template0")]:
@@ -198,6 +198,7 @@ def main(arguments):
                        f"--command=INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('{version}','{name}');"])
             require(snapshot(database) == before, "Migration changed retained rows before continuation")
             checks = [
+                ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
                 ("V46_OPERATIONAL_READINESS_SQL", "EXPECTED_V46_OPERATIONAL_READINESS"),
                 ("V45_OPERATIONAL_READINESS_SQL", "EXPECTED_V45_OPERATIONAL_READINESS"),
                 ("V44_OPERATIONAL_READINESS_SQL", "EXPECTED_V44_OPERATIONAL_READINESS"),
@@ -208,12 +209,12 @@ def main(arguments):
                 ("V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS"),
                 ("V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS"),
                 ("V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS"),
-                ("V46_CATALOG_STATE_SQL", "EXPECTED_V46_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V46_CATALOG_STATE"),
-                ("V46_RELEASE_MANIFEST_SQL", "EXPECTED_V46_RELEASE_MANIFEST"),
-                ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V46_EXPECTATION_STATE"),
-                ("V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V46_RESOURCE_OWNERSHIP_MANIFEST"),
-                ("V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V46_OPERATIONAL_CONTRACT"),
-                ("V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V46_OPERATIONAL_MANIFEST_V12"),
+                ("V47_CATALOG_STATE_SQL", "EXPECTED_V47_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V47_CATALOG_STATE"),
+                ("V47_RELEASE_MANIFEST_SQL", "EXPECTED_V47_RELEASE_MANIFEST"),
+                ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V47_EXPECTATION_STATE"),
+                ("V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V47_RESOURCE_OWNERSHIP_MANIFEST"),
+                ("V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V47_OPERATIONAL_CONTRACT"),
+                ("V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V47_OPERATIONAL_MANIFEST_V12"),
                 ("V40_RANK_COMMAND_STATE_SQL", "EXPECTED_V40_RANK_COMMAND_STATE"),
                 ("V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V41_PAYER_BALANCE_STATE"),
                 ("V43_EXTERNAL_PAYMENT_STATE_SQL", "EXPECTED_V43_EXTERNAL_PAYMENT_STATE"),
@@ -235,6 +236,19 @@ def main(arguments):
             require(all(after[table] == before[table] for table in TABLES
                         if table != "public.billing_provider_operations"),
                     "Refund completion changed payment, refund, claim or unrelated rows")
+            next_claim = json.loads(local.sql(database, f"SET ROLE service_role; SELECT public.claim_billing_provider_operation_resource_v1('{operation['studio_id']}','{operation['actor_id']}','payment.refund','payment','{payment['id']}','{payment['payer_id']}','next-refund','{operation['request_sha256']}','acct_refundproof',1,'{operation['lease_owner']}',30);"))
+            require(next_claim['outcome'] == 'replaced' and next_claim['operation']['id'] != operation['id']
+                    and next_claim['operation']['state'] == 'started'
+                    and next_claim['operation']['provider_request_attempt_count'] == 0,
+                    "A later refund did not receive its own unattempted operation")
+            original = json.loads(local.sql(database, f"SET ROLE service_role; SELECT public.claim_billing_provider_operation_resource_v1('{operation['studio_id']}','{operation['actor_id']}','payment.refund','payment','{payment['id']}','{payment['payer_id']}','refund-proof','{operation['request_sha256']}','acct_refundproof',1,'{operation['lease_owner']}',30);"))
+            require(original['operation']['id'] == operation['id'] and original['operation']['state'] == 'completed',
+                    "A new refund owner changed the original completed replay")
+            after = snapshot(database)
+            mutable = {'public.billing_provider_operations', 'public.billing_provider_operation_resources',
+                       'public.billing_provider_operation_resource_aliases'}
+            require(all(after[table] == before[table] for table in TABLES if table not in mutable),
+                    "Next-refund ownership changed retained financial or unrelated rows")
             for name, content in contract_sources.items():
                 local.sql(database, content.decode("utf8"))
                 require((root / "supabase" / "verification" / name).read_bytes() == content,
@@ -260,9 +274,9 @@ def main(arguments):
             "business_before_sha256": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
             "constraint_pairs": len(pairs), "billing_replays": 6, "acl_representations": len(statements) - 6,
         }
-        (temporary / "v45-v46-restore-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
-        print("[restored V46] PASS canonical/restored V45 receipts and rows preserved, "
-              "same-key refund completion and retained backend readiness", flush=True)
+        (temporary / "v46-v47-restore-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        print("[restored V47] PASS canonical/restored V46 receipt and business rows preserved, "
+              "completed replay, next-refund ownership and retained backend readiness", flush=True)
     finally:
         errors = []
         for database in reversed(owned):

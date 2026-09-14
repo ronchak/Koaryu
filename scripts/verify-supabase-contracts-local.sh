@@ -211,8 +211,8 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 141 ]]; then
-  echo "ERROR: Expected the canonical 141-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 142 ]]; then
+  echo "ERROR: Expected the canonical 142-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
 if [[ ${#verification_files[@]} -ne 53 ]]; then
@@ -716,6 +716,11 @@ SQL
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
+  if [[ "$migration_filename" == "20260914055301_refund_completion_locking_v47.sql" ]]; then
+    run_interruptible python3 "$ROOT_DIR/scripts/verify-v46-v47-restore-contract.py" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+  fi
+
   echo "[migration $migration_index/$migration_total] RUN $migration_filename"
   if run_interruptible "$PSQL" "${psql_args[@]}" \
     --single-transaction \
@@ -1043,7 +1048,7 @@ if [[ "$schedule_window_manifest" != "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed7
 fi
 echo "[schedule-window manifest] PASS read RPC definition and ACL signal"
 
-echo "[V46 readiness] RUN exact final migration and manifest signal"
+echo "[V47 readiness] RUN exact final migration and manifest signal"
 operational_readiness="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
@@ -1055,26 +1060,26 @@ if (
     "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" \
     "$operational_readiness"
 ); then
-  echo "[V46 readiness] PASS exact final migration and manifest signal"
+  echo "[V47 readiness] PASS exact final migration and manifest signal"
 else
   status=$?
-  echo "[V46 readiness] actual=$operational_readiness" >&2
-  echo "[V46 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
+  echo "[V47 readiness] actual=$operational_readiness" >&2
+  echo "[V47 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
   exit "$status"
 fi
 
-echo "[V46 release] RUN exact read definitions and privileges"
-v46_release_manifest="$({
+echo "[V47 release] RUN exact read definitions and privileges"
+v47_release_manifest="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { V46_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V46_RELEASE_MANIFEST_SQL);"
+    "import { V47_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V47_RELEASE_MANIFEST_SQL);"
 } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-expected_v46_release_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V46_RELEASE_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V46_RELEASE_MANIFEST);")"
-if [[ "$v46_release_manifest" != "$expected_v46_release_manifest" ]]; then
-  echo "[V46 release] FAIL exact read definitions and privileges: $v46_release_manifest" >&2
+expected_v47_release_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V47_RELEASE_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V47_RELEASE_MANIFEST);")"
+if [[ "$v47_release_manifest" != "$expected_v47_release_manifest" ]]; then
+  echo "[V47 release] FAIL exact read definitions and privileges: $v47_release_manifest" >&2
   exit 1
 fi
-echo "[V46 release] PASS exact read definitions and privileges"
+echo "[V47 release] PASS exact read definitions and privileges"
 
 assert_history_index_rejects() {
   local label="$1"
@@ -1088,13 +1093,13 @@ assert_history_index_rejects() {
     (
       cd "$ROOT_DIR"
       node --input-type=module --eval \
-        "import { V46_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V46_RELEASE_MANIFEST_SQL);"
+        "import { V47_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V47_RELEASE_MANIFEST_SQL);"
     )
-    printf ';\nSELECT (SELECT ready FROM public.koaryu_release_schema_preflight_v27()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v26()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v25()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v24()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v23()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v22()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v21()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v20()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v19()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v18());\nROLLBACK;\n'
+    printf ';\nSELECT (SELECT ready FROM public.koaryu_release_schema_preflight_v28()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v27()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v26()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v25()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v24()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v23()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v22()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v21()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v20()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v19()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v18());\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   raw_manifest="$(printf '%s\n' "$result" | sed -n '1p')"
   any_ready="$(printf '%s\n' "$result" | sed -n '2p')"
-  if [[ "$raw_manifest" == "$expected_v46_release_manifest" || "$any_ready" != "f" ]]; then
+  if [[ "$raw_manifest" == "$expected_v47_release_manifest" || "$any_ready" != "f" ]]; then
     echo "[Billing history negative] FAIL $label: $result" >&2
     exit 1
   fi
@@ -1133,7 +1138,7 @@ else
   exit "$status"
 fi
 
-echo "[V46 semantics] RUN final semantic chain and retained backend contracts"
+echo "[V47 semantics] RUN final semantic chain and retained backend contracts"
 while IFS='|' read -r query_export expected_export; do
   actual="$({
     cd "$ROOT_DIR"
@@ -1143,10 +1148,11 @@ while IFS='|' read -r query_export expected_export; do
   expected="$(cd "$ROOT_DIR" && node --input-type=module --eval \
     "import * as m from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(m[process.argv[1]]);" "$expected_export")"
   if [[ "$actual" != "$expected" ]]; then
-    echo "[V46 semantics] FAIL $query_export" >&2
+    echo "[V47 semantics] FAIL $query_export" >&2
     exit 1
   fi
-done <<'V46_CHECKS'
+done <<'V47_CHECKS'
+V46_OPERATIONAL_READINESS_SQL|EXPECTED_V46_OPERATIONAL_READINESS
 V45_OPERATIONAL_READINESS_SQL|EXPECTED_V45_OPERATIONAL_READINESS
 V44_OPERATIONAL_READINESS_SQL|EXPECTED_V44_OPERATIONAL_READINESS
 V43_OPERATIONAL_READINESS_SQL|EXPECTED_V43_OPERATIONAL_READINESS
@@ -1158,15 +1164,16 @@ V39_OPERATIONAL_READINESS_SQL|EXPECTED_V39_OPERATIONAL_READINESS
 V40_RANK_COMMAND_STATE_SQL|EXPECTED_V40_RANK_COMMAND_STATE
 V38_OPERATIONAL_READINESS_SQL|EXPECTED_V38_OPERATIONAL_READINESS
 V37_OPERATIONAL_READINESS_SQL|EXPECTED_V37_OPERATIONAL_READINESS
-V31_EXPECTATION_STATE_SQL|EXPECTED_V46_EXPECTATION_STATE
-V31_RESOURCE_OWNERSHIP_MANIFEST_SQL|EXPECTED_V46_RESOURCE_OWNERSHIP_MANIFEST
-V31_OPERATIONAL_CONTRACT_SQL|EXPECTED_V46_OPERATIONAL_CONTRACT
-V31_OPERATIONAL_MANIFEST_SQL|EXPECTED_V46_OPERATIONAL_MANIFEST_V12
-V46_CHECKS
-echo "[V46 semantics] PASS final semantic chain and retained backend contracts"
+V31_EXPECTATION_STATE_SQL|EXPECTED_V47_EXPECTATION_STATE
+V31_RESOURCE_OWNERSHIP_MANIFEST_SQL|EXPECTED_V47_RESOURCE_OWNERSHIP_MANIFEST
+V31_OPERATIONAL_CONTRACT_SQL|EXPECTED_V47_OPERATIONAL_CONTRACT
+V31_OPERATIONAL_MANIFEST_SQL|EXPECTED_V47_OPERATIONAL_MANIFEST_V12
+V47_CHECKS
+echo "[V47 semantics] PASS final semantic chain and retained backend contracts"
 
 # Each payment writer has independent raw facts and an inherited preflight check.
 readiness_snapshot_sql="SELECT jsonb_build_array(
+  (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v28() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v27() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v26() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v25() r),
@@ -1249,7 +1256,7 @@ while IFS='|' read -r label failure_key mutation_sql; do
   echo "[import ownership negative] RUN $label"
   result="$({
     printf 'BEGIN;\n%s\n' "$mutation_sql"
-    printf "SELECT NOT ready AND '%s'=ANY(security_failures) FROM public.koaryu_release_schema_preflight_v27();\nROLLBACK;\n" "$failure_key"
+    printf "SELECT NOT ready AND '%s'=ANY(security_failures) FROM public.koaryu_release_schema_preflight_v28();\nROLLBACK;\n" "$failure_key"
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   if [[ "$result" != "t" ]]; then
     echo "[import ownership negative] FAIL $label: $result" >&2
@@ -1261,7 +1268,7 @@ mutable receipts|import_receipts_v45|GRANT UPDATE, DELETE ON private.student_imp
 nullable legacy marker|import_receipts_v45|ALTER TABLE public.student_import_runs ALTER COLUMN receipts_enabled DROP NOT NULL;
 browser Auth-lock access|import_private_lock_student_import_actor_v45|GRANT EXECUTE ON FUNCTION private.lock_student_import_actor(UUID) TO authenticated;
 IMPORT_MUTATIONS
-if [[ "$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command='SELECT ready FROM public.koaryu_release_schema_preflight_v27();')" != "t" ]]; then
+if [[ "$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command='SELECT ready FROM public.koaryu_release_schema_preflight_v28();')" != "t" ]]; then
   echo "[import ownership negative] FAIL rollback did not restore readiness" >&2
   exit 1
 fi
