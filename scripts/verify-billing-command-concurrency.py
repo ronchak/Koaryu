@@ -297,6 +297,163 @@ SELECT 'RESULT_READY'; COMMIT;
         observed=plan_state(f)
         assert observed=={'plan':[1000,'After parent release',None,'pending',False,None],'links':[f['program']],'audits':1},observed
         results.append({'case':'plan_waits_parent_before_locking_plan','lock':lock,'facts':observed})
+        for mode in [
+            "own_commit",
+            "own_rollback",
+            "unrelated_commit",
+            "unrelated_rollback",
+            "completion",
+            "lease",
+        ]:
+            fixture = {
+                key: str(uuid4())
+                for key in ["actor", "studio", "payer", "payment", "lease", "rival"]
+            }
+            account = "acct_" + uuid4().hex
+            seed = f"""BEGIN;
+        INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+        VALUES('{fixture["actor"]}','authenticated','authenticated','{fixture["actor"]}@example.invalid','{{}}','{{}}',now(),now());
+        INSERT INTO public.studios(id,name,slug,owner_id) VALUES('{fixture["studio"]}','Refund concurrency','{fixture["studio"]}','{fixture["actor"]}');
+        INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES('{fixture["studio"]}','{fixture["actor"]}','admin');
+        INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,charges_enabled,payouts_enabled,metadata)
+        VALUES('{fixture["studio"]}','{account}',true,true,'{{"connect_account_generation":1}}');
+        INSERT INTO public.billing_payers(id,studio_id,display_name,stripe_account_id,stripe_customer_id,connect_account_generation)
+        VALUES('{fixture["payer"]}','{fixture["studio"]}','Refund payer','{account}','cus_proof',1);
+        INSERT INTO public.billing_payments(id,studio_id,payer_id,stripe_customer_id,stripe_payment_intent_id,stripe_charge_id,
+         stripe_account_id,connect_account_generation,status,amount_cents,currency,net_collected_amount_cents,refundable_amount_cents,processed_at)
+        VALUES('{fixture["payment"]}','{fixture["studio"]}','{fixture["payer"]}','cus_proof','pi_proof','ch_proof','{account}',1,'succeeded',1000,'usd',1000,1000,now());
+        COMMIT;"""
+            sql(seed)
+
+            def refund_claim(lease):
+                return f"""SELECT public.claim_billing_provider_operation_resource_v1(
+                    '{fixture['studio']}','{fixture['actor']}','payment.refund','payment',
+                    '{fixture['payment']}','{fixture['payer']}','refund-concurrent',repeat('a',64),
+                    '{account}',1,'{lease}',30);"""
+
+            claim = json.loads(sql(refund_claim(fixture["lease"])))
+            operation = claim["operation"]
+            resource_version = sql(
+                f"SELECT resource_version_sha256 FROM public.billing_provider_operation_resources WHERE id='{claim['resource']['id']}';"
+            )
+
+            def transition(state):
+                provider_id = "NULL" if state == "provider_request_in_flight" else "'re_proof'"
+                result_code = {
+                    "provider_request_in_flight": "payment_refund_started",
+                    "provider_succeeded": "payment_refund_status_succeeded",
+                    "projected": "payment_refund_projected",
+                }[state]
+                return f"""SELECT public.transition_billing_provider_operation_v1(
+                    '{operation['id']}','{fixture['studio']}','{fixture['actor']}','payment.refund',
+                    'refund-concurrent',repeat('a',64),'{account}',1,'{fixture['lease']}',
+                    {operation['revision']},'{state}',p_provider_object_id=>{provider_id},
+                    p_result_code=>'{result_code}',p_result_summary=>'amount_cents:500');"""
+
+            for state in ["provider_request_in_flight", "provider_succeeded"]:
+                operation = json.loads(sql(transition(state)))["operation"]
+
+            def project(refund_id, amount):
+                return f"""INSERT INTO public.billing_refunds(studio_id,payment_id,stripe_refund_id,
+                    stripe_charge_id,stripe_payment_intent_id,stripe_account_id,
+                    connect_account_generation,amount_cents,status)
+                    VALUES('{fixture['studio']}','{fixture['payment']}','{refund_id}',
+                    'ch_proof','pi_proof','{account}',1,{amount},'succeeded');"""
+
+            if mode.startswith("unrelated") or mode in ["completion", "lease"]:
+                sql(project("re_proof", 500))
+                operation = json.loads(sql(transition("projected")))["operation"]
+
+            def complete(lease, revision):
+                return f"""SELECT public.complete_billing_provider_operation_v1(
+                    '{operation['id']}','{fixture['studio']}','{fixture['actor']}','payment.refund',
+                    'refund-concurrent',repeat('a',64),'{account}',1,'{lease}',{revision},
+                    'payment_refund_completed');"""
+
+            if mode == "completion":
+                holder = start(
+                    "refund_complete", complete(fixture["lease"], operation["revision"])
+                )
+            elif mode == "lease":
+                sql(
+                    f"UPDATE public.billing_provider_operations SET lease_acquired_at=clock_timestamp()-interval '60 seconds',lease_expires_at=clock_timestamp()-interval '30 seconds',revision=revision+1,updated_at=clock_timestamp() WHERE id='{operation['id']}';"
+                )
+                holder = start("refund_reclaim", refund_claim(fixture["lease"]))
+            else:
+                holder = start(
+                    "refund_projection",
+                    project("re_other", 100)
+                    if mode.startswith("unrelated")
+                    else project("re_proof", 500),
+                )
+            ready(holder)
+            waiter = start("refund_retry", refund_claim(fixture["rival"]), hold=False)
+            lock = wait_blocked(holder, waiter)
+            release(holder, commit=not mode.endswith("rollback"))
+            if mode == "unrelated_commit":
+                code = waiter["process"].wait(timeout=15)
+                for thread in waiter["threads"]:
+                    thread.join(timeout=2)
+                assert code != 0 and any(
+                    line.split() == ["ERROR:", "23505:", "billing_provider_operation_resource_version_conflict"]
+                    for line in waiter["errors"]
+                ), waiter["errors"]
+            else:
+                ready(waiter)
+                finish(waiter)
+                recovered = json.loads(
+                    next(line for line in waiter["lines"] if line.startswith("{"))
+                )["operation"]
+                assert (
+                    recovered["id"] == operation["id"]
+                    and recovered["provider_request_attempt_count"] == 1
+                ), recovered
+                if mode == "completion":
+                    assert recovered["state"] == "completed", recovered
+                else:
+                    assert recovered["lease_owner"] == fixture["lease"], recovered
+                    denied = start(
+                        "refund_wrong_lease",
+                        complete(fixture["rival"], recovered["revision"]),
+                        hold=False,
+                    )
+                    code = denied["process"].wait(timeout=15)
+                    for thread in denied["threads"]:
+                        thread.join(timeout=2)
+                    # Provider-succeeded receipts cannot complete before projection; projected receipts retain their lease.
+                    error = (
+                        "billing_provider_operation_invalid_transition"
+                        if mode.startswith("own")
+                        else "billing_provider_operation_lease_owner_mismatch"
+                    )
+                    error_state = "23514:" if mode.startswith("own") else "42501:"
+                    assert code != 0 and any(
+                        line.split() == ["ERROR:", error_state, error]
+                        for line in denied["errors"]
+                    ), denied["errors"]
+            assert (
+                sql(
+                    f"SELECT resource_version_sha256 FROM public.billing_provider_operation_resources WHERE id='{claim['resource']['id']}';"
+                )
+                == resource_version
+            )
+            total = int(
+                sql(
+                    f"SELECT refunded_amount_cents FROM public.billing_payments WHERE id='{fixture['payment']}';"
+                )
+            )
+            assert total == ({"own_rollback": 0, "unrelated_commit": 600}.get(mode, 500)), (
+                mode,
+                total,
+            )
+            results.append(
+                {
+                    "case": "refund_" + mode,
+                    "lock": lock,
+                    "refunded_amount_cents": total,
+                    "original_resource_version": resource_version,
+                }
+            )
         return results
     finally:
         for child in children:

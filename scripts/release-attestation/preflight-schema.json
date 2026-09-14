@@ -1112,6 +1112,17 @@
         "import_rank_manifest_v45",
         "import_rank_manifest_definition_v45"
       ]
+    },
+    "v46": {
+      "extends": "v45",
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:5e96551e3a25a9ca17803c04afdd640771c6074b927d01941a45358d7e3ba733"
+        },
+        "operational_manifest_v12": {
+          "expected": "ada17d08e26869bdf66723570e72c439facf96d671e7bab8826229949c4a9e87"
+        }
+      }
     }
   }
 }

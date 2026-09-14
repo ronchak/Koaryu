@@ -13221,23 +13221,27 @@
       "id": "PROGRAM-REFUND-01",
       "title": "A refund projection can invalidate its own recovery fingerprint before receipt completion",
       "track": "Astra",
-      "disposition": "pending",
+      "disposition": "fixed",
       "audit_importance": "high",
       "root_cause": "mutable_refund_projection_in_resource_identity",
-      "reason": "Verified on unchanged main: a succeeded refund projects 500 cents, receipt completion fails, and a same-key retry after lease expiry returns 409 while the receipt remains projected. The resource fingerprint includes refunded_amount_cents and non-completed replay requires the original fingerprint. This pre-existing database-dependent recovery gap is outside this application-only run; it is not an accepted risk or a completed remediation.",
-      "verified_against": "9d99ad53cddcbd03989671ff408e1ac30e47e9e0",
+      "reason": "V46 excludes only the active resource operation's exact verified succeeded refund from its comparison total. The original resource fingerprint remains immutable; unrelated confirmed adjustments and actor, tenant, payer, account, generation, request and lease conflicts remain guarded. Completion still follows projection. No historical financial backfill or production application workaround.",
+      "verified_against": "e66a91e1d4188133254608848605a0d988af5963",
       "source_paths": [
         "backend/app/services/billing_payments.py",
         "backend/app/services/billing_payment_projection.py",
         "supabase/migrations/20260826185651_payment_refund_payer_sync_resource_ownership.sql",
-        "supabase/migrations/20260830082610_invoice_retry_release_compatibility_v33.sql"
+        "supabase/migrations/20260830082610_invoice_retry_release_compatibility_v33.sql",
+        "supabase/migrations/20260914033337_refund_projection_recovery_v46.sql",
+        "supabase/verification/refund_projection_recovery_contract.sql",
+        "scripts/verify-billing-command-concurrency.py",
+        "scripts/verify-v45-v46-restore-contract.py"
       ],
       "related_findings": [
         "BT1-02",
         "BB1-09"
       ],
-      "verification": "Coordinator invoked unchanged-main BillingService with its actual projector and existing in-memory database/provider fakes. Failure before the completion RPC commit left operation state projected, refunded_amount_cents=500 and one provider refund. After restoring completion and advancing the fake clock 31 seconds, same-key retry returned 409 without another provider call. Read-only SQL inspection confirmed the fingerprint field and the non-completed version conflict guard. No SQL execution, database proof or provider operation was performed. See refund-completion-risk.md.",
-      "next_change": "In the next authorized database run, reproduce against the actual database contract and make a small forward correction that distinguishes the operation's own verified projection from unrelated resource changes. Preserve actor/studio/account scope, immutable request identity, lease ownership, idempotency and historical completed replay. No historical financial backfill.",
+      "verification": "Real V45 PostgreSQL reproduction: successful completion rolled back, projected500 persisted, original-key reclaim conflicted. V46 SQL contract verifies recovery and identity/lease/unrelated-refund rejection; generated canonical/logical restore continues the pre-migration receipt without changing payment/refund rows. The application test verifies one provider refund and audit after lease expiry. Full disposable verification and exact-head CI are required for merge; see refund-recovery-plan.md and the PR evidence.",
+      "next_change": "Deploy only through the ordered release phases: amended governance, hosted rehearsal, fresh backup/verified restore and recovery plan, then guarded database/backend/frontend rollout. Other financial findings remain separate.",
       "execution_ownership": "Astra owns database design, migration and SQL/concurrency verification. Sol may implement a separately bounded application/test portion after that prerequisite is settled.",
       "pull_requests": []
     }
