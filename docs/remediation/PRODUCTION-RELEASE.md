@@ -1,22 +1,24 @@
 # Production release packet: V38 to V47
 
-**Forward-only release. There is no approved down-migration. No fresh pre-apply backup/restore proof exists for this release, and no hosted V47 staging rehearsal has been completed. Do not apply or promote yet.** V40 adds durable command evidence; V45 retires legacy import writes. An application rollback cannot undo those changes or re-enable old imports. A database recovery can lose writes after its snapshot. Production has no verified managed point-in-time restore path.
+**Release stopped at the hosted contract gate on September 14. All nine staging migrations reached verified V47, but contract 20 failed and application rehearsal did not run. No fresh production backup/restore proof exists. Do not apply to production or promote applications.** The chain is forward-only, with no approved down-migration. V40 adds durable command evidence; V45 retires legacy import writes. An application rollback cannot undo those changes or re-enable old imports. A database recovery can lose writes after its snapshot. Production has no verified managed point-in-time restore path.
 
 **Database first, backend second, frontend last. Neither application may be promoted before all nine migrations are applied and independently verified.** The new backend requires RPCs absent from production V38 and fails readiness before V47.
 
-The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). This packet is preparation, not evidence that an apply or deployment happened. The owner approved `--one-migration`. It selects the next reviewed file, binds its own inspection/approval/confirmation, and verifies the exact declared successor. Default production bulk apply remains refused. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
+The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). [The staging execution record](staging-rehearsal-verification.md) records what ran and the failed gate. No production apply or application deployment happened. The owner approved `--one-migration`. It selects the next reviewed file, binds its own inspection/approval/confirmation, and verifies the exact declared successor. Default production bulk apply remains refused. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
 
 ## Pinned candidate and observed state
 
-Release candidate: **not pinned until the one-migration PR merges and its main SHA passes exact-head CI**. Replace the quoted candidate placeholder below with that reviewed SHA during phase-three preparation, then regenerate every packet, approval, staging proof and deployment request. Do not reuse PR207's inspection token or an older packet merely because the migration files match.
+Frozen release candidate: **`c1e933f5ddac862ce24387d45609052b8d0baad1`**, PR210 merge, own exact-head Release candidate CI `34839365373` passed. The closing documentation merge does not change this candidate. Fresh inspection and approvals are still required for any future apply. Do not reuse a token from another candidate or checkpoint.
 
 Read-only production inspection during this run confirmed exact V38 with eight remaining migrations against PR207 merge `1c10a193e66861fd3e2a8174251910798199eeca`. No migration was applied. V47 subsequently adds one more immutable file, so the new source packet has nine remaining migrations. The earlier inspection token cannot authorize that candidate.
 
 Read-only inspection on September 11, 2026 UTC confirmed both staging and production at exact `v38`, 133 migrations, head `20260905022339`. Production image: `17.6.1.155`, status `ACTIVE_HEALTHY`. Frontend and backend both served `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`, environment production, backend Stripe live. Render returned `autoDeploy=no` and `autoDeployTrigger=off`; deployed and candidate `frontend/vercel.json` both disable main auto-deployment. Recheck all of this at execution time.
 
-The September14 closeout read freshly verified the production frontend/backend pair still at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Private evidence is `production-pair-closeout.txt` under the current release directory. No deployment occurred. The provider image observation above remains older evidence.
+The September 14 closeout read freshly verified the production frontend/backend pair still at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Private evidence is `production-pair-closeout.txt` under the current release directory. No deployment occurred. The provider image observation above remains older evidence.
 
-Expected final state: `post`, 142 migrations, head `20260914055301`, history `142:d3bab5f085e1c46ce72ab43046b1ca8b`, full preflight V28, manifest `release-db-attestation-v47`, 58 pending-history versions, zero security failures. HTTP readiness reports `status=ready`; it does not echo the manifest string.
+September 14 closing readback against the frozen candidate confirmed production still at V38 with all nine files pending and both applications still at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Staging is V47 but its hosted contract gate failed. See [the execution record](staging-rehearsal-verification.md).
+
+Expected final state: `post`, 142 migrations, head `20260914055301`, history `142:d3bab5f085e1c46ce72ab43046b1ca8b`, full preflight V28, manifest `release-db-attestation-v47`, 42 files in the tool's historical pending list, zero security failures. HTTP readiness reports `status=ready`; it does not echo the manifest string.
 
 ## Exact ordered production remainder
 
@@ -47,7 +49,7 @@ set -euo pipefail
 set +x
 source /Users/openclaw/.config/koaryu/operator/release-env.sh
 cd /Users/openclaw/Projects/Koaryu-Repo
-export KOARYU_CANDIDATE='<reviewed-one-migration-merge-sha>'
+export KOARYU_CANDIDATE='c1e933f5ddac862ce24387d45609052b8d0baad1'
 export KOARYU_RELEASE_DIR="/Users/openclaw/Koaryu Releases/V47-$(date -u +%Y%m%dT%H%M%SZ)"
 umask 077
 mkdir -p "$KOARYU_RELEASE_DIR"
@@ -70,7 +72,7 @@ Local full verification already passed 142 migrations and 53 contracts, all rest
 
 ## 2. Rehearse on staging, then verify its database
 
-These staging actions have not run. Start with `KOARYU_STEP=v38`. For each next file, repeat this block with the freshly observed predecessor, never in an unattended loop. Announce and pause separately before each approval post and migration apply.
+All nine staging actions below ran successfully on September 14; staging is now exact V47. Do not rerun them. These are the execution recipe for an accepted predecessor and the audit reference for this rehearsal. The full hosted contract gate then failed; see [the stop record](staging-rehearsal-verification.md). Future migration steps require fresh inspection of actual state, never an unattended loop. Announce and pause separately before each approval post and migration apply.
 
 ```bash
 KOARYU_STEP=v38
@@ -81,19 +83,25 @@ KOARYU_EXPECTED_AFTER="$(sed -n 's/^expected_after_state=//p' "$KOARYU_RELEASE_D
 node scripts/studio-comp-migration-rollout.mjs --target staging --mode dry-run --one-migration \
   --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_STAGING_TOKEN" \
   > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-dry-run.txt"
-sed -n '/^approval_record_body_begin$/,/^approval_record_body_end$/p' \
-  "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-inspect.txt" | sed '1d;$d' \
-  > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-approval.txt"
+python3 - "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-inspect.txt" \
+  "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-approval.json" <<'PY'
+import json, pathlib, sys
+source = pathlib.Path(sys.argv[1]).read_text()
+body = source.split('approval_record_body_begin\n', 1)[1].split('\napproval_record_body_end', 1)[0]
+with open(sys.argv[2], 'x') as output:
+    json.dump({'body': body}, output)
+PY
 ```
 
 At the first checkpoint require `state=v38` and the full nine-file remainder. At every checkpoint require the full remainder to equal the corresponding suffix of the table, `selected_migrations` to name only its first file, and `expected_after_state` to name its declared successor. The two dry-runs must respectively show that full suffix and that single file. A different state is a stop. An already-complete `post` inspection has no next apply.
 
-The GitHub account must be `ronchak`. Review and post the exact generated single-file approval to PR138, retaining its URL:
+The GitHub account must be `ronchak`. JSON preserves the exact approval body without adding a trailing newline. Review and post the generated single-file approval to PR138. Verify the returned body is byte-identical to the input, `user.login=ronchak`, `author_association=OWNER` and the exact PR138 `issue_url`; retain its `html_url`:
 
 ```bash
 gh api user --jq .login
-gh pr comment 138 --repo ronchak/Koaryu \
-  --body-file "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-approval.txt"
+gh api repos/ronchak/Koaryu/issues/138/comments --method POST \
+  --input "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-approval.json" \
+  > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-approval-response.json"
 KOARYU_STAGING_APPROVAL='<URL-returned-by-this-step-approval>'
 node scripts/studio-comp-migration-rollout.mjs --target staging --mode apply --one-migration \
   --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_STAGING_TOKEN" \
@@ -191,19 +199,25 @@ export KOARYU_PRODUCTION_TOKEN="$(sed -n 's/^inspection_token=//p' "$KOARYU_RELE
 node scripts/studio-comp-migration-rollout.mjs --target production --mode dry-run --one-migration \
   --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_PRODUCTION_TOKEN" \
   > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-dry-run.txt"
-sed -n '/^approval_record_body_begin$/,/^approval_record_body_end$/p' \
-  "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-inspect.txt" | sed '1d;$d' \
-  > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-approval.txt"
+python3 - "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-inspect.txt" \
+  "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-approval.json" <<'PY'
+import json, pathlib, sys
+source = pathlib.Path(sys.argv[1]).read_text()
+body = source.split('approval_record_body_begin\n', 1)[1].split('\napproval_record_body_end', 1)[0]
+with open(sys.argv[2], 'x') as output:
+    json.dump({'body': body}, output)
+PY
 export KOARYU_STAGING_FINGERPRINT="$(sed -n 's/^provider_fingerprint=//p' "$KOARYU_RELEASE_DIR/staging-post.txt")"
 ```
 
 Compare the new state and remaining suffix with this packet. The selected file must be exactly next, and its singleton manifest must bind this step's approval and confirmation. Record `expected_after_state` from the inspection. A token from another step or default bulk mode is invalid. An inspection token from this document's preparation is not supplied or reusable. The tool checks the staging fingerprint against the complete canonical V47 tuple before production apply; it accepts only that tuple or the explicitly proven restored-production variant.
 
-As `ronchak`, post the exact new production approval body to PR138 only after staging rehearsal, backup/restore and the maintenance window are accepted:
+As `ronchak`, post the exact new production approval body to PR138 only after staging rehearsal, backup/restore and the maintenance window are accepted. Verify the same exact body, owner, association and issue URL checks as staging, then retain `html_url`:
 
 ```bash
-gh pr comment 138 --repo ronchak/Koaryu \
-  --body-file "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-approval.txt"
+gh api repos/ronchak/Koaryu/issues/138/comments --method POST \
+  --input "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-approval.json" \
+  > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-approval-response.json"
 KOARYU_PRODUCTION_APPROVAL='<URL-returned-by-the-owner-approval-comment>'
 KOARYU_RESTORE_RECORD='<verified-proof-path-snapshot-time-and-accepted-recovery-window>'
 KOARYU_RESTORE_OWNER='<named-authorized-recovery-decision-maker>'
@@ -314,4 +328,6 @@ The private backup helper still needs reviewed V47 support before taking/attesti
 
 ## Execution record
 
-As of governance preparation, no hosted migration, backup/restore, backend deployment or frontend promotion has executed in this run. Phase-three evidence and exact commands must be completed against the final reviewed one-migration SHA before this packet becomes executable. The [operator-policy proposal](operator-governance-proposal.patch) has passed a dry-run; the private operator files remain unchanged.
+On September 14, all nine staging migrations V39–V47 applied separately and reached verified `post` at 13:47:26 UTC. Retained rows were unchanged after every migration and after the contract failure. The hosted suite completed 19 files, failed on `dashboard_summary_facts_contract.sql`, and left 33 unstarted. Staging web and cron remain suspended. No production migration, backup/restore, backend deployment or frontend promotion occurred. [The execution record](staging-rehearsal-verification.md) contains timing, approvals, failure evidence and the next investigation. The [operator-policy proposal](operator-governance-proposal.patch) remains unapplied to private files.
+
+Budget amendment: original baseline 51% used; 30 points stops starting a chain, not continuing one. Before production starts, estimate the entire remaining release/verification and refuse to start if projected total exceeds 35. Hard ceiling 40. These budget rules never waive a technical stop condition. This run stopped on the hosted contract gate before production began.

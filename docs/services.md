@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Last verified against live systems: 2026-08-24.
+Inventory baseline: 2026-08-24. September 14 release readback: staging database is V47; production remains V38. Staging web and billing cron are suspended after the failed hosted contract gate. Applications were not deployed. See [the execution record](remediation/staging-rehearsal-verification.md).
 
 ## Quick map
 
@@ -21,7 +21,7 @@ Last verified against live systems: 2026-08-24.
 | Payments | Stripe live mode | Stripe test mode |
 | `LIVE_BILLING_ENABLED` | `true` (global interlock only) | `false` |
 | `CORE_SELF_CHECKOUT_ENABLED` | `true` (Koaryu Core only) | `false` |
-| Period-end billing worker | disabled; production cron awaits approval | Render Cron every 5 minutes |
+| Period-end billing worker | disabled; production cron awaits approval | Render Cron every 5 minutes, suspended September 14 |
 | `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
 Neither production surface auto-deploys. Both require an explicit owner-authorized release —
