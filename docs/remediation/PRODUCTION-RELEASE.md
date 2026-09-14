@@ -1,22 +1,22 @@
 # Production release packet: V38 to V47
 
-**Release stopped at the hosted contract gate on September 14. All nine staging migrations reached verified V47, but contract 20 failed and application rehearsal did not run. No fresh production backup/restore proof exists. Do not apply to production or promote applications.** The chain is forward-only, with no approved down-migration. V40 adds durable command evidence; V45 retires legacy import writes. An application rollback cannot undo those changes or re-enable old imports. A database recovery can lose writes after its snapshot. Production has no verified managed point-in-time restore path.
+**Release stopped at the staging frontend alias on September 14. All nine staging migrations reached V47 and all 53 hosted contracts now pass. The staging backend and unique frontend build serve `138f8ca`, but the normal staging URL still serves `f35395a`. Authenticated write rehearsal and fresh production backup/restore remain incomplete. Do not apply to production or promote production applications.** The chain is forward-only, with no approved down-migration. V40 adds durable command evidence; V45 retires legacy import writes. An application rollback cannot undo those changes or re-enable old imports. A database recovery can lose writes after its snapshot. Production has no verified managed point-in-time restore path.
 
 **Database first, backend second, frontend last. Neither application may be promoted before all nine migrations are applied and independently verified.** The new backend requires RPCs absent from production V38 and fails readiness before V47.
 
-The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). [The staging execution record](staging-rehearsal-verification.md) records what ran and the failed gate. No production apply or application deployment happened. The owner approved `--one-migration`. It selects the next reviewed file, binds its own inspection/approval/confirmation, and verifies the exact declared successor. Default production bulk apply remains refused. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
+The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). [The staging execution record](staging-rehearsal-verification.md) records what ran and the failed gate. No production apply or production application deployment happened. The owner approved `--one-migration`. It selects the next reviewed file, binds its own inspection/approval/confirmation, and verifies the exact declared successor. Default production bulk apply remains refused. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
 
 ## Pinned candidate and observed state
 
-Frozen release candidate: **`c1e933f5ddac862ce24387d45609052b8d0baad1`**, PR210 merge, own exact-head Release candidate CI `34839365373` passed. The closing documentation merge does not change this candidate. Fresh inspection and approvals are still required for any future apply. Do not reuse a token from another candidate or checkpoint.
+Frozen release candidate: **`138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`**, PR213 merge, own exact-head Release candidate CI `34903006341` passed. The closing documentation merge does not change this candidate. Fresh inspection and approvals are still required for any future apply. Do not reuse a token from another candidate or checkpoint.
 
-Read-only production inspection during this run confirmed exact V38 with eight remaining migrations against PR207 merge `1c10a193e66861fd3e2a8174251910798199eeca`. No migration was applied. V47 subsequently adds one more immutable file, so the new source packet has nine remaining migrations. The earlier inspection token cannot authorize that candidate.
+Closing read-only production inspection against the pinned candidate confirmed exact V38 with nine remaining migrations. No production migration was applied. Earlier candidate/checkpoint inspection tokens cannot authorize a future apply; reinspect after all prerequisites pass.
 
 Read-only inspection on September 11, 2026 UTC confirmed both staging and production at exact `v38`, 133 migrations, head `20260905022339`. Production image: `17.6.1.155`, status `ACTIVE_HEALTHY`. Frontend and backend both served `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`, environment production, backend Stripe live. Render returned `autoDeploy=no` and `autoDeployTrigger=off`; deployed and candidate `frontend/vercel.json` both disable main auto-deployment. Recheck all of this at execution time.
 
-The September 14 closeout read freshly verified the production frontend/backend pair still at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Private evidence is `production-pair-closeout.txt` under the current release directory. No deployment occurred. The provider image observation above remains older evidence.
+The September 14 closeout read freshly verified the production frontend/backend pair still at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Private evidence is `production-138f-stop-pair.txt` under the current release directory. No production deployment occurred. The provider image observation above remains older evidence.
 
-September 14 closing readback against the frozen candidate confirmed production still at V38 with all nine files pending and both applications still at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Staging is V47 but its hosted contract gate failed. See [the execution record](staging-rehearsal-verification.md).
+September 14 closing readback against the frozen candidate confirmed production still at V38 with all nine files pending and both applications still at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Staging is V47 and all 53 hosted contracts passed; the frontend alias mismatch now blocks application rehearsal. See [the execution record](staging-rehearsal-verification.md).
 
 Expected final state: `post`, 142 migrations, head `20260914055301`, history `142:d3bab5f085e1c46ce72ab43046b1ca8b`, full preflight V28, manifest `release-db-attestation-v47`, 42 files in the tool's historical pending list, zero security failures. HTTP readiness reports `status=ready`; it does not echo the manifest string.
 
@@ -49,7 +49,7 @@ set -euo pipefail
 set +x
 source /Users/openclaw/.config/koaryu/operator/release-env.sh
 cd /Users/openclaw/Projects/Koaryu-Repo
-export KOARYU_CANDIDATE='c1e933f5ddac862ce24387d45609052b8d0baad1'
+export KOARYU_CANDIDATE='138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3'
 export KOARYU_RELEASE_DIR="/Users/openclaw/Koaryu Releases/V47-$(date -u +%Y%m%dT%H%M%SZ)"
 umask 077
 mkdir -p "$KOARYU_RELEASE_DIR"
@@ -120,7 +120,7 @@ node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect -
 test "$(sed -n 's/^state=//p' "$KOARYU_RELEASE_DIR/staging-post.txt")" = post
 ```
 
-If the reviewed correction changes the release candidate or migration chain, repin the candidate and regenerate its packet first. This V47 record does not authorize a different chain. Fresh inspection does not replace the failed contract gate or authenticated application rehearsal.
+If the reviewed correction changes the release candidate or migration chain, repin the candidate and regenerate its packet first. This V47 record does not authorize a different chain. Fresh inspection does not replace the complete hosted contract gate or authenticated application rehearsal. The current candidate passed the former; the staging alias mismatch still blocks the latter.
 
 Record per-migration duration, longest observed lock waits and relevant table cardinalities privately. Use current staging credentials to run all 53 contracts and their service/anon/authenticated privilege checks; the runner refuses production:
 
@@ -332,6 +332,6 @@ The private backup helper still needs reviewed V47 support before taking/attesti
 
 ## Execution record
 
-On September 14, all nine staging migrations V39–V47 applied separately and reached verified `post` at 13:47:26 UTC. Retained rows were unchanged after every migration and after the contract failure. The hosted suite completed 19 files, failed on `dashboard_summary_facts_contract.sql`, and left 33 unstarted. Staging web and cron remain suspended. No production migration, backup/restore, backend deployment or frontend promotion occurred. [The execution record](staging-rehearsal-verification.md) contains timing, approvals, failure evidence and the next investigation. The [operator-policy proposal](operator-governance-proposal.patch) remains unapplied to private files.
+On September 14, all nine staging migrations V39–V47 applied separately and reached verified V47. After PR212/213 corrected test-only failures, candidate `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3` passed all 53 hosted contracts, unchanged retained-row hashes and the exact pre/post database fingerprint. Its staging backend deployed and its staging frontend build completed, but the branch alias still serves `f35395a5700876f6490336ae400c09849a368204`. The exact-pair gate failed before synthetic application writes. Staging web is active; its billing cron stays suspended. No production migration, backup/restore, backend deployment, frontend promotion or live billing activation occurred. See [the execution record](staging-rehearsal-verification.md) and [the next-step handoff](HANDOFF.md). The [operator-policy proposal](operator-governance-proposal.patch) remains unapplied to private files.
 
-Budget amendment: original baseline 51% used; 30 points stops starting a chain, not continuing one. Before production starts, estimate the entire remaining release/verification and refuse to start if projected total exceeds 35. Hard ceiling 40. These budget rules never waive a technical stop condition. This run stopped on the hosted contract gate before production began.
+Budget amendment: original baseline 51% used; 30 points stops starting a chain, not continuing one. Before production starts, estimate the entire remaining release/verification and refuse to start if projected total exceeds 35. Hard ceiling 40. These budget rules never waive a technical stop condition. This run stopped on the staging alias mismatch before production began.

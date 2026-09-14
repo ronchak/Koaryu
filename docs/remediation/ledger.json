@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "c98834ee2fefb998950c40d4cf34e5cf7622510d",
+  "last_reconciled_main": "138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -13243,8 +13243,8 @@
         "BT1-02",
         "BB1-09"
       ],
-      "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md. Hosted staging applied V39–V47 separately on candidate c1e933f5ddac862ce24387d45609052b8d0baad1, reached exact V47 and preserved tracked rows. The later full hosted contract gate failed on dashboard_summary_facts_contract.sql after 19 completed files; release stopped. This is not a complete hosted rehearsal or production deployment. See staging-rehearsal-verification.md.",
-      "next_change": "PR212 corrects the planner-sensitive dashboard verification and fixes DC1-03. Repin its reviewed merge and rerun all 53 hosted contracts. The staging-owner credential pairing is recovered and authenticated. Then complete application rehearsal, fresh production backup/verified restore and write-window preparation; production has not started.",
+      "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md. Hosted staging applied V39–V47 separately and preserved tracked rows. After PR212/213 corrected test-only failures, candidate 138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3 passed all 53 hosted contracts, identical pre/post V47 fingerprint and unchanged tracked business rows. Application rehearsal stopped before writes because the normal staging frontend alias still serves f35395a while the backend and unique frontend build serve 138f8ca. Production remains unmodified. See staging-rehearsal-verification.md.",
+      "next_change": "Resolve the stopped staging alias assignment and verify the pinned pair before authenticated write rehearsal. Then establish the production write window and fresh backup/verified restore, and re-estimate the complete production release against the amended budget. No production chain has started.",
       "execution_ownership": "Astra owns database design, migration and SQL/concurrency verification. Sol may implement a separately bounded application/test portion after that prerequisite is settled.",
       "pull_requests": [
         207,

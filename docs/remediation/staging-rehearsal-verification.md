@@ -1,8 +1,8 @@
 # Hosted staging rehearsal, September 14
 
-Release candidate: `c1e933f5ddac862ce24387d45609052b8d0baad1`, PR210 merge. Its own Release candidate CI `34839365373` passed. This record describes hosted execution against that immutable candidate, not the later documentation merge.
+Initial migration candidate: `c1e933f5ddac862ce24387d45609052b8d0baad1`, PR210 merge. Its own Release candidate CI `34839365373` passed. This record describes hosted execution against that immutable candidate, not the later documentation merge.
 
-**Release stopped at the hosted contract gate. No production apply, backup, restore or application deployment occurred.** Staging reached exact V47, but the contract suite failed before application rehearsal. Do not infer production approval from successful migrations or local CI.
+**Current stop: the staging alias serves the old frontend after the new build completed. All 53 hosted contracts now pass, but the application pair does not match. No synthetic application writes, production backup/restore or production deployment occurred.** The sections below retain the initial migration and failed-contract evidence; the resumed execution is recorded last.
 
 ## Database execution
 
@@ -45,3 +45,22 @@ The written per-migration recovery plan remains in [PRODUCTION-RELEASE.md](PRODU
 ## Closeout validation
 
 This closeout changes only documentation and release tracking. Product, migration and test files are unchanged, so source/test line and case counts stay flat. Local release-workflow checks passed all 131 cases; attestation checks passed all eight cases and reproduced 25 SQL statement bodies, ten historical restore scripts and seven generated continuations identically. All 278 audit entries and all seven program dispositions were compared with the candidate; none changed. Fresh independent review and the closing PR/main exact-head CI are recorded in GitHub and the closing report. They validate the documentation candidate, not the failed hosted gate.
+
+
+## Resumed execution and alias stop, September 14
+
+PR212 corrected the planner-sensitive dashboard contract. On its merge `7209e2a...`, all 53 hosted files were attempted: 51 passed; reconciliation inventory and profile-backfill fixtures failed against existing staging data. PR213 fixes those test inputs without runtime or migration changes. Its final head `c0d7559542cd4887aea9a48b10b528fe5726f0bd` passed fresh independent review and exact-head CI `34902266976`; guarded merge produced `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`. That main commit passed its own CI `34903006341`.
+
+The final fixture probe reproduced both original failures on disposable PostgreSQL 17, passed the corrected files on empty/populated targets, and passed all 53 files with retained background rows unchanged. On the merged candidate, the complete hosted suite then passed all 53 files in order. Pre/post inspection reports exact V47 and an identical provider fingerprint. All original hashes in the ten tracked tables remained unchanged, with no additions. The initial failed attempts remain failures, not substituted evidence for this complete pass. SQL fixture transactions can advance sequence counters despite rollback; the row comparison does not claim sequence values stayed fixed.
+
+The owner-authorized Sol recovery on the MacBook Air found the original staging-owner credential pairing. A read-only Auth lookup verified that account; the correctly paired login and later refresh succeeded. The earlier failed login used another account and was not retried. Twelve release credential entries were copied into the Home Server login Keychain and read back byte-for-byte. The historical production application-test password was not recovered; provider/backup credentials are available. No password, account or access grant was changed.
+
+After the contract and catalog checks passed, the coordinator resumed only staging web at 22:23 UTC. Readback at 22:24:01 confirmed web active, cron suspended and both auto-deploy settings off. Backend deployment `dep-dak78k5g1s2s738gbivg` completed at 22:26:20 UTC. Both backend readiness URLs report `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`, staging and Stripe test. The owner session's read-only program/ladder API requests returned 200.
+
+The explicit-lease staging-branch push moved `f35395a5700876f6490336ae400c09849a368204` to `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`. Vercel built staging deployment `dpl_Cm7wLHQTo3SdqLH8RvrM9iszGE5j`, whose unique URL reports the new candidate. The build is READY and lists the expected automatic alias, but its assigned alias list is empty. At 22:31:18 UTC the normal staging `/api/version` still reported `f35395a5700876f6490336ae400c09849a368204`, while the backend and unique frontend URL reported `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`. Both frontend responses were cache MISS. The exact-pair verifier failed, so application write rehearsal stopped before its first mutation. No alias reassignment or replacement deployment was attempted.
+
+The proposed next step is a bounded staging-alias repair, followed by the exact-pair verifier. See [HANDOFF.md](HANDOFF.md). Production remains V38 with the previously verified `c5742fe...` pair. Fresh backup/verified restore, the controlled production write window and authenticated workflow rehearsal remain outstanding. No production chain was started, and no completion-cost estimate or production approval was asserted.
+
+Private evidence: `hosted-fixture-final-probe.log`, `hosted-fixture-review-result.md`, `merge-213.log`, `staging-138f-contracts.log`, `staging-138f-pre.txt`, `staging-138f-post.txt`, `staging-138f-before-contracts.json`, `staging-138f-after-contracts.json`, `staging-138f-backend-deploy.json`, `staging-138f-backend-readiness.json`, `staging-138f-branch-push.txt`, `staging-138f-vercel-state.json`, `staging-138f-pair.txt` and `staging-138f-pair-failure-readback.json`. Credentials and session files stay private. The browser connection was prepared, but no application page interaction or browser login was performed.
+
+Closing read-only checks confirmed production at exact V38 with all nine files pending and its unchanged `c5742fe...` application pair. Evidence: `production-138f-stop-inspect.txt` and `production-138f-stop-pair.txt`. A separate alias readback at 22:37:28 UTC still returned `f35395a`; the mismatch persisted after the build completed.
