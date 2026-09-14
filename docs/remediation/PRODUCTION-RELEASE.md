@@ -112,11 +112,15 @@ node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect -
 test "$(sed -n 's/^state=//p' "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-post.txt")" = "$KOARYU_EXPECTED_AFTER"
 ```
 
-Verify retained business rows and the exact successor after each file. Then start fresh inspection/approval for that successor. Only after the V46-to-V47 invocation reports `post`, retain the final staging fingerprint:
+Verify retained business rows and the exact successor after each file. Then start fresh inspection/approval for that successor. Once all files are applied, obtain a fresh read-only final inspection in the current release directory. On resumption with V47 already applied, skip the migration blocks above and run this inspection; do not copy an old candidate's fingerprint or assume the new directory contains prior evidence:
 
 ```bash
-cp "$KOARYU_RELEASE_DIR/staging-v46-post.txt" "$KOARYU_RELEASE_DIR/staging-post.txt"
+node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect --one-migration \
+  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/staging-post.txt"
+test "$(sed -n 's/^state=//p' "$KOARYU_RELEASE_DIR/staging-post.txt")" = post
 ```
+
+If the reviewed correction changes the release candidate or migration chain, repin the candidate and regenerate its packet first. This V47 record does not authorize a different chain. Fresh inspection does not replace the failed contract gate or authenticated application rehearsal.
 
 Record per-migration duration, longest observed lock waits and relevant table cardinalities privately. Use current staging credentials to run all 53 contracts and their service/anon/authenticated privilege checks; the runner refuses production:
 

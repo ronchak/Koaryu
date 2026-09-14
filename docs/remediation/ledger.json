@@ -13289,7 +13289,7 @@
   },
   "execution_policy": {
     "updated": "2026-09-14",
-    "authority": "Owner-authorized four-phase release run, capped at 35 weekly percentage points",
+    "authority": "Owner-authorized four-phase release run. Original weekly baseline is 51% used. Stop starting a chain at 30 points spent. Before production starts, refuse if projected completion of the release and verification exceeds 35 total points. Once started, continue the chain and verification past 30 unless a technical safety stop occurs. Absolute ceiling is 40 points, or 91% used; never start a chain that cannot finish within it.",
     "Sol": "All backend/frontend implementation, including financial and authorization application code; docs and maintenance. Existing safety requirements remain.",
     "Astra": "All supabase, migrations, SQL contracts and database concurrency proofs personally. Mixed findings retain one database coordinating track with Sol owning app paths.",
     "note": "normalization_track preserves the earlier risk-based classification. Current track is execution responsibility, not severity or historical authorship.",
