@@ -163,7 +163,7 @@ Read-only inspection on September11 UTC confirmed both databases still at V38,
 was deployed during wind-down. Render production auto-deploy was read back off;
 Vercel main auto-deployment remains disabled in the deployed and candidate config.
 
-The [V38-to-V46 production packet](remediation/PRODUCTION-RELEASE.md) owns the
+The [V38-to-V47 production packet](remediation/PRODUCTION-RELEASE.md) owns the
 current ordered migration hashes, backup/restore prerequisites, rollout commands,
 compatibility limits and rollback rules. It is prepared for owner-authorized execution and remains blocked until its listed prerequisites are complete.
 V41 payer-balance, V43 external-payment and V44 local-plan guarantees require old
