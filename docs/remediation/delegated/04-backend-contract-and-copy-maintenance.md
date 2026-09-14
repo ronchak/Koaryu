@@ -2,7 +2,7 @@
 
 IDs: `ACS1-03`, `OPS1-11`, `BT4-03`, `BT4-06`, `BT5-05`
 
-Prerequisites: `ACS1-03` is documentation/schema-description only; current runtime payload and cursor semantics stay unchanged. `BT4-06` waits for Astra's `ACS1-04` upload implementation. `BT5-05` waits for Astra's `OPS1-09` selected-ID auth hydration. Hold those chunks until their prerequisites land; do not implement the Astra changes. `OPS1-11` and `BT4-03` may proceed independently.
+Prerequisites: `ACS1-03` is documentation/schema-description only; current runtime payload and cursor semantics stay unchanged. `BT4-06` waits for Astra's `ACS1-04` upload implementation. `BT5-05` and `OPS1-09` are completed by PR205 under [recipe15](15-staff-export-auth-hydration.md). Hold only `BT4-06` until its prerequisite lands; do not implement that prerequisite here. `OPS1-11` and `BT4-03` may proceed independently.
 
 ## Change
 
@@ -10,7 +10,7 @@ Prerequisites: `ACS1-03` is documentation/schema-description only; current runti
 - Replace the shared oversized-export message in `backend/app/services/report_export_budget.py` with the truth that the synchronous limit was exceeded. Check all callers in `backend/app/api/v1/endpoints/reports.py`; retain status 413 and current limits.
 - In `backend/tests/test_report_export_data_budget.py`, rename the handwritten source vocabulary inventory and test so they claim only what they inspect. Do not claim physical migration proof or add a schema parser.
 - After `ACS1-04`, change only the identity assertions in `backend/tests/test_request_body_limits.py` to assert bytes, termination, disconnect, and downstream response. Valid reconstructed messages must pass; byte loss, malformed termination, and over-limit bodies must fail.
-- After `OPS1-09`, update `backend/tests/test_staff_archive_contract.py` to seed the selected Auth users and assert email, name, and sign-in hydration. Add one separately named provider-failure case. Do not alter `backend/app/services/report_export_data.py` unless Astra's landed adapter requires a test fixture adjustment.
+- Completed in PR205: selected-ID Auth hydration, legal-profile names, sign-in/email assertions and separately named provider failures. Do not repeat the old fixture repair.
 - Do not alter roster cursor semantics, tenant checks, production authorization, export limits, endpoint inputs, migration verification, or real user data.
 
 ## Verify and deliver

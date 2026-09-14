@@ -1,6 +1,14 @@
 # Source-test cleanup ownership
 
-Inventory base: `66e8240a5d4ed3a21af74e60ee6aa8574cd9c703`. Broad audit observation FT1-11 covers this work. Per-file inclusion means source assertions are present, not that the entire file is weak.
+## September 13 checkpoint
+
+PR204 fixes the named packing/compiler and storage duplication. Its changed test/helper scope falls 5,717→5,399 lines and 750→627 assertion calls; full frontend cases fall 902→894. Raw readFileSync occurrences fall 103/33 files→101/32. Source reads include loading machinery and deliberately retained policies, so they are not an assertion count.
+
+The real ThemeProvider lifecycle now proves storage fallback, persistence, navigation events and DOM theme application. Root's private mutation probe failed when the DOM theme was forced to light while context reported dark. Existing mounted schedule behavior covers removed geometry-source checks. Identity, money, mutation, ordering, legal-name, accessibility and forbidden-dependency assertions remain.
+
+FT1-11 and FT2-08 stay pending. Residual examples include Dashboard identity/pointer state, legal-name gate source shape, transition helper-name evidence and source-parsed report metadata. A safe follow-up should replace one owning workflow's claims with a small behavioral contract, with protected assertions reviewed explicitly. Do not repeat fixture extraction or replace every grep with a new mounted case. The older inventory below is advisory evidence, not an instruction to remove every source reader.
+
+Historical inventory base: `66e8240a5d4ed3a21af74e60ee6aa8574cd9c703`. Broad audit observation FT1-11 covers this work. Per-file inclusion means source assertions are present, not that the entire file is weak.
 
 Tracked frontend tests grew from 22,911 to 23,979 logical lines. There are 33 identified source-assertion files among 37 files using source reads. The four excluded files are billing-data-mounted.test.mjs, dashboard-identity-gate.test.mjs, helpers/store-browser-harness.mjs and middleware-refresh-response.test.mjs, which use source for loading or behavioral setup. Both synchronous and asynchronous readers were inspected.
 
@@ -45,6 +53,8 @@ Sol can consolidate low-risk fixtures and presentation portions. Astra owns chan
 | [subscription-required-contract.test.mjs](../../frontend/tests/subscription-required-contract.test.mjs) | Astra | Mount the route with role, membership, capability, and API-response matrices. Record requests, headers, redirects, and rendered sensitive fields. Keep no source-order checks once behavior proves authorization happens before billing reads. |
 
 The per-file recipes are bounded starting points, not mechanical test-addition instructions. Existing authorization/mutation fixtures may already prove the required outcome; reuse them. After each PR, remove completed inventory obligations or record why a small static policy remains. No source-reader count alone measures assurance.
+
+The following notes are historical verification records.
 
 Marketing batch12 removed the shadow scene/stop model and ineffective-prop tests. Its four touched files fell from886 to560 lines and31 to24 cases. The scene now uses actual server rendering; its small CSS inertness check remains static. Foundation/composition/public-page files retain other source assertions for later owning changes. FT1-11 remains pending.
 

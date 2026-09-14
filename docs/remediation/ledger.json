@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "74cd8f4862ffeb669c36bb03603d820fd95a512f",
+  "last_reconciled_main": "4244384fb701d7a2bb9b8fcca581a403e695836b",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -77,7 +77,7 @@
     },
     {
       "id": "CTA1-02",
-      "title": "Database quick-start bypasses the repository\u2019s current target guidance",
+      "title": "Database quick-start bypasses the repository’s current target guidance",
       "cluster": "release_and_evidence",
       "disposition": "fixed",
       "reason": "PR156 corrected the database quick-start and explicitly made ordinary verification local/disposable; the cited unsafe guidance is no longer current.",
@@ -167,7 +167,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "CTA1-04",
@@ -340,7 +340,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "CTA1-08",
@@ -1189,16 +1189,18 @@
       "id": "OPS1-09",
       "title": "A small staff export scans every studio's Auth users",
       "cluster": "bounded_reads_and_runtime",
-      "disposition": "pending",
-      "reason": "Selected studio staff IDs still trigger global Auth pagination; unrelated users consume export budgets. Provider failures silently leave hydration incomplete.",
+      "disposition": "fixed",
+      "reason": "Auth hydration now calls get_user_by_id only for IDs selected from the studio-scoped, nonarchived staff roles. Global pagination and response-shape fallbacks are deleted. Only confirmed user_not_found is omitted; provider failures propagate before CSV emission. Existing shared call, elapsed and row budgets remain; large staff sets can still reach the 320-call ceiling.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted activity during normalization.",
+      "verified_against": "7b40ca97fa6be6a2c717f7223970bcca05d4d04a",
+      "verification": "Coordinator reviewed every changed line and independently verified counts and behavior; a fresh independent PR reviewer approved the exact diff. See bounded-refactor-verification.md for CI, focused/full tests and mutation probes.",
       "source_paths": [
         "backend/app/services/report_export_data.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        205
+      ],
       "track": "Sol",
       "root_cause": "staff_export_auth_lookup",
       "collapse_with": [
@@ -1207,21 +1209,16 @@
       "current_evidence": [
         {
           "path": "backend/app/services/report_export_data.py",
-          "line": 182,
-          "observation": "Derives requested user IDs from studio-scoped active staff roles."
+          "line": 593,
+          "observation": "Adapter iterates only selected IDs, budgets each call and propagates non-missing failures."
         },
         {
-          "path": "backend/app/services/report_export_data.py",
-          "line": 239,
-          "observation": "Lists global Auth pages, charges every returned user and breaks on generic errors."
-        },
-        {
-          "path": "backend/app/services/staff_service.py",
-          "line": 860,
-          "observation": "Existing staff hydration supports get_user_by_id."
+          "path": "backend/tests/test_report_export_data_budget.py",
+          "line": 303,
+          "observation": "Real SDK fixture proves selected reads and shared budget accounting."
         }
       ],
-      "next_change": "Fetch each distinct selected user ID under existing call/time budgets. Handle confirmed missing users explicitly and surface provider failures without silently claiming complete hydration.",
+      "next_change": "Complete within the verified scope; preserve the stated boundary.",
       "validation_plan": "Small selected staff set amid unrelated users; assert selected-ID calls, hydrated fields, missing-user handling and provider-error behavior.",
       "scope_constraints": [
         "Studio and archive filtering",
@@ -5544,17 +5541,19 @@
       "id": "BT5-05",
       "title": "Staff export fixture silently skips its seeded Auth users",
       "cluster": "bounded_reads_and_runtime",
-      "disposition": "pending",
-      "reason": "The archive fixture supplies get_user_by_id while the exporter calls list_users; the swallowed mismatch leaves seeded Auth fields untested. The owner explicitly excludes prerequisite OPS1-09 from the September 12 budget-capped run; retain this finding pending and do not implement that prerequisite or alter its safety assertions in this run. The owner explicitly excluded prerequisite OPS1-09 from this budgeted run; this finding remains pending.",
+      "disposition": "fixed",
+      "reason": "The archive export fixture now exercises the selected-ID Auth adapter and asserts Auth email/sign-in, legal profile names and exclusion of archived/other-studio users. It rejects the original adapter on the missing Auth email. SDK UserResponse fixtures and separately named provider-failure subtests replace the silently skipped hydration; original safety assertions remain.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted activity during normalization.",
+      "verified_against": "7b40ca97fa6be6a2c717f7223970bcca05d4d04a",
+      "verification": "Coordinator reviewed every changed line and independently verified counts and behavior; a fresh independent PR reviewer approved the exact diff. See bounded-refactor-verification.md for CI, focused/full tests and mutation probes.",
       "source_paths": [
         "backend/tests/test_staff_archive_contract.py",
         "backend/app/services/report_export_data.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        205
+      ],
       "track": "Sol",
       "root_cause": "staff_export_auth_lookup",
       "collapse_with": [
@@ -5563,21 +5562,16 @@
       "current_evidence": [
         {
           "path": "backend/tests/test_staff_archive_contract.py",
-          "line": 72,
-          "observation": "ArchiveAuthAdmin implements get_user_by_id but no list_users."
+          "line": 848,
+          "observation": "Archive fixture observes Auth hydration rather than invitation fallback."
         },
         {
-          "path": "backend/tests/test_staff_archive_contract.py",
-          "line": 784,
-          "observation": "Export test asserts role IDs and archive filtering, without Auth-derived fields."
-        },
-        {
-          "path": "backend/app/services/report_export_data.py",
-          "line": 245,
-          "observation": "Generic Auth lookup errors are swallowed."
+          "path": "backend/tests/test_report_export_data_budget.py",
+          "line": 392,
+          "observation": "Named provider failures propagate unchanged with zero emitted rows."
         }
       ],
-      "next_change": "Align the fixture with the selected-ID adapter from OPS1-09 and assert email/name/sign-in hydration. Add a separately named provider-failure case.",
+      "next_change": "Complete within the verified scope; preserve the stated boundary.",
       "validation_plan": "Focused archive-export case must fail when Auth hydration is absent while still excluding archived staff.",
       "scope_constraints": [
         "Archive-filter assertions",
@@ -6081,7 +6075,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "DOC1-09",
@@ -6135,7 +6129,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "DOC1-10",
@@ -6614,19 +6608,20 @@
       "id": "FT1-07",
       "title": "Browser fixture infrastructure is duplicated and difficult to review",
       "cluster": "test_and_adapter_maintenance",
-      "disposition": "pending",
-      "reason": "The shared browser packer now handles ESM helpers, but duplicated packers and a large boolean-driven harness remain. Stub fidelity still varies by mode, and core observer wiring is embedded in long generated strings. Current bounded run leaves shared packer/storage extraction pending: the no-new-generic-helper constraint rules out simply moving these copies into another fixture abstraction. Revisit only with a concrete simpler design using existing ownership. Not started in the remaining new-work budget; a future bounded design must reduce indirection and preserve each scenario rather than add a generic fixture layer.",
+      "disposition": "fixed",
+      "reason": "Shared CommonJS resolution, TypeScript/ESM compilation and browser packing now have one owner in the existing store-browser harness. Billing keeps its own stubs and observer; transition rendering keeps Node React and its explicit stubs. No fixture framework or new scene switches were added.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new tests or hosted operations during normalization.",
+      "verified_against": "dd7d745efaf37dc09d4f9dcba0a4bbeb04ed448d",
+      "verification": "Coordinator reviewed every changed line and independently verified counts and behavior; a fresh independent PR reviewer approved the exact diff. See bounded-refactor-verification.md for CI, focused/full tests and mutation probes.",
       "source_paths": [
         "frontend/tests/billing-data-mounted.test.mjs",
         "frontend/tests/helpers/store-browser-harness.mjs",
         "frontend/tests/billing-enrollment-transition-model.test.mjs"
       ],
       "pull_requests": [
-        163
+        163,
+        204
       ],
       "track": "Sol",
       "root_cause": "fragmented_browser_fixture_infrastructure",
@@ -6635,22 +6630,17 @@
       ],
       "current_evidence": [
         {
-          "path": "frontend/tests/billing-data-mounted.test.mjs",
-          "line": 14,
-          "observation": "This suite maintains its own CommonJS packer instead of using the shared harness."
+          "path": "frontend/tests/helpers/store-browser-harness.mjs",
+          "line": 26,
+          "observation": "Single shared resolver/packer owner."
         },
         {
-          "path": "frontend/tests/helpers/store-browser-harness.mjs",
-          "line": 10,
-          "observation": "One bundle function accepts many unrelated workflow and component switches."
-        },
-        {
-          "path": "frontend/tests/helpers/store-browser-harness.mjs",
-          "line": 32,
-          "observation": "One Button stub drops disabled and loading behavior, while another variant at line 48 preserves disabled."
+          "path": "frontend/tests/billing-enrollment-transition-model.test.mjs",
+          "line": 9,
+          "observation": "SSR fixture uses the same compiler while retaining local stubs."
         }
       ],
-      "next_change": "Consolidate duplicated existing module-packing code so fixes such as ESM handling have one owner; preserve each test\u2019s explicit stubs and scope. Remove unused switches rather than creating a new fixture configuration framework or splitting files without ownership gains.",
+      "next_change": "Complete within the verified scope; preserve the stated boundary.",
       "validation_plan": "Run only each migrated mounted suite in Chromium and compare its request, observer, disabled-state, and cleanup assertions before removing the old path.",
       "scope_constraints": [
         "real mounted hook coverage",
@@ -6775,11 +6765,11 @@
       "title": "Source-shape checks create broad refactoring constraints beyond their behavior",
       "cluster": "test_and_adapter_maintenance",
       "disposition": "pending",
-      "reason": "This umbrella remains pending. The frontend test-truth change removes four incidental source/copy cases and other presentation assertions in six named suites, while retaining safety policies and behavioral checks. Nine changed files shrink by 39 lines; remaining source assertions and other owning subsystems still need review. Further cross-suite work was not started during wind-down because its review boundary exceeds the remaining new-work allowance; safety assertions remain intact.",
+      "reason": "Partially addressed: shared packing and a mounted preference lifecycle replace duplicated mechanics and provider-source checks; decorative Dashboard constraints were removed. Dashboard identity, pointer/keyboard ownership and legal-name workflow claims still depend on source shape. Those protected assertions were retained; this umbrella is not closed by the 318-line reduction.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "ddfff9ad34e12bdc32d20fae3b4176d09538797c",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new tests or hosted operations during normalization.",
+      "verified_against": "dd7d745efaf37dc09d4f9dcba0a4bbeb04ed448d",
+      "verification": "Coordinator reviewed every changed line and independently verified counts and behavior; a fresh independent PR reviewer approved the exact diff. See bounded-refactor-verification.md for CI, focused/full tests and mutation probes.",
       "source_paths": [
         "frontend/tests/dashboard-shell-home-contract.test.mjs",
         "frontend/tests/appearance-navigation-contract.test.mjs",
@@ -6790,29 +6780,30 @@
         172,
         173,
         176,
-        177
+        177,
+        204
       ],
       "track": "Sol",
       "root_cause": "behavior_claims_encoded_as_source_shape",
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "frontend/tests/dashboard-shell-home-contract.test.mjs",
-          "line": 69,
-          "observation": "The test slices source between exact local function names and checks internal call placement."
+          "path": "frontend/tests/appearance-navigation-contract.test.mjs",
+          "line": 23,
+          "observation": "Mounted real preference behavior replaces provider-source checks."
         },
         {
-          "path": "frontend/tests/appearance-navigation-contract.test.mjs",
-          "line": 58,
-          "observation": "Navigation reuse is asserted through exact source occurrence counts."
+          "path": "frontend/tests/dashboard-shell-home-contract.test.mjs",
+          "line": 34,
+          "observation": "Protected workflow claims still use source assertions."
         },
         {
           "path": "frontend/tests/legal-name-ui-contract.test.mjs",
-          "line": 79,
-          "observation": "The legal-name gate is checked through regexes over exact prop and branch syntax."
+          "line": 82,
+          "observation": "Legal-name gate still has source-shaped workflow coverage."
         }
       ],
-      "next_change": "For each touched subsystem, remove incidental source names/counts/JSX-shape assertions and consolidate against existing behavior coverage. Preserve the underlying authorization or lifecycle contract, not necessarily its current weak source-string mechanism. Exact immutable artifact checks remain legitimate.",
+      "next_change": "Scope one real Dashboard or legal-name interaction contract at a time, replacing its protected source claims only after independent behavioral proof; do not repeat fixture extraction or delete assertions in bulk.",
       "validation_plan": "Run retained relevant behavior and contract cases. Add a minimal real regression only where a consequential boundary otherwise lacks coverage; no unrelated refactor experiment or one new mounted test per deleted grep.",
       "scope_constraints": [
         "tenant-read ordering guards",
@@ -6837,40 +6828,37 @@
       "id": "FT1-12",
       "title": "Repeated fixture and storage scaffolding obscures the behavioral cases",
       "cluster": "financial_command_completion",
-      "disposition": "pending",
-      "reason": "Identical map-backed storage scaffolding remains repeated. Small fixture reuse is useful cleanup, independent of production recovery refactoring. Current bounded run leaves shared packer/storage extraction pending: the no-new-generic-helper constraint rules out simply moving these copies into another fixture abstraction. Revisit only with a concrete simpler design using existing ownership. Not started in the remaining new-work budget; a future bounded design must reduce indirection and preserve each scenario rather than add a generic fixture layer.",
+      "disposition": "fixed",
+      "reason": "The four named billing suites reuse the same seven-line map-backed storage fixture. Caller-owned Maps and explicit storage failures remain local; all key, scope and lifecycle assertions are preserved. Other unowned storage fixtures were not swept into this change.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and retained merged implementation evidence. No new runtime tests or hosted activity during normalization.",
+      "verified_against": "dd7d745efaf37dc09d4f9dcba0a4bbeb04ed448d",
+      "verification": "Coordinator reviewed every changed line and independently verified counts and behavior; a fresh independent PR reviewer approved the exact diff. See bounded-refactor-verification.md for CI, focused/full tests and mutation probes.",
       "source_paths": [
         "frontend/tests/billing-idempotency-lifecycle.test.mjs",
         "frontend/tests/billing-invoice-action-model.test.mjs",
         "frontend/tests/billing-payer-setup-model.test.mjs",
         "frontend/tests/billing-plan-sync-model.test.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        204
+      ],
       "track": "Sol",
       "root_cause": "duplicated-storage-test-fixtures",
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "frontend/tests/billing-idempotency-lifecycle.test.mjs",
-          "line": 32,
-          "observation": "Defines a local map-backed storage fixture."
-        },
-        {
-          "path": "frontend/tests/billing-invoice-action-model.test.mjs",
-          "line": 15,
-          "observation": "Repeats memory storage and adds blocked-storage behavior."
+          "path": "frontend/tests/helpers/memory-storage.mjs",
+          "line": 1,
+          "observation": "Moved existing Map fixture, seven lines."
         },
         {
           "path": "frontend/tests/billing-payer-setup-model.test.mjs",
-          "line": 178,
-          "observation": "Reload coverage embeds another equivalent storage implementation."
+          "line": 6,
+          "observation": "Payer suite reuses the shared fixture; its failure scenarios remain local."
         }
       ],
-      "next_change": "Reuse one small existing-style map-backed storage fixture with explicit failures; remove repeated equivalent fixture code while leaving each workflow scenario and assertion local. No fixture framework.",
+      "next_change": "Complete within the verified scope; preserve the stated boundary.",
       "validation_plan": "Run only the existing test families switched to the shared fixture; preserve their failure matrix.",
       "scope_constraints": "No production storage changes or consolidation of payer replacement and refund recovery semantics.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -7219,16 +7207,18 @@
       "title": "Source assertions preserve internal product copy and incidental implementation details",
       "cluster": "product_truth_and_documentation",
       "disposition": "pending",
-      "reason": "This umbrella remains pending. The frontend test-truth change removes four incidental source/copy cases and other presentation assertions in six named suites, while retaining safety policies and behavioral checks. Nine changed files shrink by 39 lines; remaining source assertions and other owning subsystems still need review. Further cross-suite work was not started during wind-down because its review boundary exceeds the remaining new-work allowance; safety assertions remain intact.",
+      "reason": "Partially addressed: route-wrapper inventories, redundant report-ID presence, decorative operations checks and explanatory legal-name prose assertions were removed. Transition helper-name evidence and source-parsed report metadata/permission ordering remain. Converting these needs a bounded behavioral review of their owning workflows; it is not claimed complete.",
       "audit_importance": "low",
       "evidence_role": "supporting",
-      "verified_against": "ddfff9ad34e12bdc32d20fae3b4176d09538797c",
+      "verified_against": "dd7d745efaf37dc09d4f9dcba0a4bbeb04ed448d",
       "source_paths": [
         "frontend/tests/operations-redesign-contract.test.mjs",
         "frontend/tests/settings-access.test.mjs",
         "frontend/tests/reports-export-catalog-contract.test.mjs"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        204
+      ],
       "track": "Sol",
       "root_cause": "incidental_source_shape_assertions",
       "collapse_with": [
@@ -7237,26 +7227,16 @@
       "current_evidence": [
         {
           "path": "frontend/tests/operations-redesign-contract.test.mjs",
-          "line": 944,
-          "observation": "Requires internal API commentary in customer copy."
-        },
-        {
-          "path": "frontend/tests/operations-redesign-contract.test.mjs",
-          "line": 968,
-          "observation": "Requires exactly 17 timezone literals and named helper ownership."
-        },
-        {
-          "path": "frontend/tests/settings-access.test.mjs",
-          "line": 27,
-          "observation": "Pins the exact store-hook destructuring shape."
+          "line": 915,
+          "observation": "Transition ownership still checks a helper name."
         },
         {
           "path": "frontend/tests/reports-export-catalog-contract.test.mjs",
-          "line": 95,
-          "observation": "Contains a meaningful authorization-before-preview/download ordering assertion that should remain."
+          "line": 19,
+          "observation": "Catalog parity still parses component source; permission and ordering checks remain."
         }
       ],
-      "next_change": "Remove exact internal-copy and harmless source-shape assertions when their owning code changes. Replace only consequential cases with behavior-level checks; retain role, ordering, and forbidden-dependency contracts.",
+      "next_change": "Replace remaining transition callback and report-catalog source-shape claims at their owning behavioral boundary while preserving permission/ordering contracts.",
       "validation_plan": "Run relevant existing checks and inspect rendered/user-visible state distinctions. Remove stale exact-wording/source-shape assertions; do not replace them with a new phrase-locking suite. Preserve behavioral permission, mutation and unavailable-data tests.",
       "scope_constraints": [
         "authorization ordering checks",
@@ -7266,7 +7246,8 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "delegated_batch": "docs/remediation/delegated/07-frontend-test-fixtures-and-claims.md",
       "normalization_track": "Sol",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Coordinator reviewed every changed line and independently verified counts and behavior; a fresh independent PR reviewer approved the exact diff. See bounded-refactor-verification.md for CI, focused/full tests and mutation probes."
     },
     {
       "id": "FT2-09",
@@ -7629,7 +7610,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FR1-07",
@@ -7661,7 +7642,7 @@
           "observation": "Adjacent collector counts streamed bytes and cancels on limit or deadline."
         }
       ],
-      "next_change": "Reuse the adjacent collector\u2019s bounded byte-stream/deadline mechanics for CSP input, cancel on overflow and decode only accepted bytes. Preserve content-type, early declared-length and privacy behavior; no collector framework.",
+      "next_change": "Reuse the adjacent collector’s bounded byte-stream/deadline mechanics for CSP input, cancel on overflow and decode only accepted bytes. Preserve content-type, early declared-length and privacy behavior; no collector framework.",
       "validation_plan": "Missing/understated length, multibyte UTF-8 overflow, stalled stream, malformed JSON and valid report cases.",
       "scope_constraints": [
         "Unauthenticated browser reporting",
@@ -7986,7 +7967,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FR1-14",
@@ -8419,7 +8400,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FC1-09",
@@ -8878,7 +8859,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FC2-05",
@@ -9483,7 +9464,7 @@
     },
     {
       "id": "FC3-01",
-      "title": "Roster bulk actions can overlap and close one another\u2019s panels",
+      "title": "Roster bulk actions can overlap and close one another’s panels",
       "cluster": "read_and_mutation_ownership",
       "disposition": "pending",
       "reason": "Bulk actions still have separate pending flags while selection and panel switching remain unrestricted. Earlier completion can close a newer panel or clear newer selection.",
@@ -9700,7 +9681,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FC3-05",
@@ -9761,7 +9742,7 @@
     },
     {
       "id": "FC3-06",
-      "title": "Button\u2019s asChild mode advertises props it silently drops",
+      "title": "Button’s asChild mode advertises props it silently drops",
       "cluster": "presentation_and_dead_interfaces",
       "disposition": "fixed",
       "reason": "asChild forwards native attributes and composed refs, including React 19 cleanup, while preserving child-then-wrapper clicks and disabled navigation blocking.",
@@ -10067,8 +10048,8 @@
       "reason": "All four date-only billing displays use a dedicated UTC calendar-date formatter, preserving abbreviated labels and null fallback. Timestamp report callers retain local-time formatting; financial/overdue policy is unchanged.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "168a08620864bb9b971a18948de10318946253cc",
-      "verification": "Coordinator verified every affected date/timestamp caller and passed 13 date/transition tests. Full frontend passed 911 cases, one fewer through date-test consolidation. See billing-calendar-display-verification.md.",
+      "verified_against": "931af96c1f408c43243ca05ab165caa066c10940",
+      "verification": "PR192 established UTC calendar display. PR202 normalized ISO date/timestamp input at the shared calendar formatter, preserving local timestamp display. Root and fresh reviewer passed the existing six-case date suite; full frontend 902 passed. See bounded-refactor-verification.md.",
       "source_paths": [
         "frontend/src/lib/billing-page-utils.ts",
         "frontend/src/lib/billing-period.ts",
@@ -10076,7 +10057,8 @@
         "frontend/src/components/billing/billing-invoices-tab.tsx"
       ],
       "pull_requests": [
-        192
+        192,
+        202
       ],
       "track": "Sol",
       "root_cause": "billing_date_only_display",
@@ -10084,18 +10066,13 @@
       "current_evidence": [
         {
           "path": "frontend/src/lib/billing-page-utils.ts",
-          "line": 59,
-          "observation": "formatDate formats new Date(value) without an explicit timezone."
+          "line": 76,
+          "observation": "Date/timestamp inputs normalize before UTC calendar formatting."
         },
         {
-          "path": "frontend/src/components/billing/billing-enrollments-tab.tsx",
-          "line": 157,
-          "observation": "Start, end and next-bill dates use this formatter."
-        },
-        {
-          "path": "frontend/src/components/billing/billing-invoices-tab.tsx",
-          "line": 93,
-          "observation": "Invoice due dates use the same formatter."
+          "path": "frontend/tests/billing-period.test.mjs",
+          "line": 14,
+          "observation": "Existing date test includes the formerly crashing timestamp form."
         }
       ],
       "next_change": "None for calendar display. Keep date-only presentation separate from timestamp interpretation and the pending overdue-policy database correction.",
@@ -10398,7 +10375,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FSH1-11",
@@ -10509,7 +10486,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FSH2-01",
@@ -11328,7 +11305,7 @@
           "observation": "Explicit preview src takes precedence over the saved photo URL."
         }
       ],
-      "next_change": "Handle photo preview, file retention and completion truth with the existing photo/profile owner in FSH3-02. A rejected or unknown upload must not be presented as saved; do not infer server rollback from timeout or clear another command\u2019s draft.",
+      "next_change": "Handle photo preview, file retention and completion truth with the existing photo/profile owner in FSH3-02. A rejected or unknown upload must not be presented as saved; do not infer server rollback from timeout or clear another command’s draft.",
       "validation_plan": "Reject an upload and confirm preview cleanup, saved-avatar restoration and visible failure/unknown-outcome wording.",
       "scope_constraints": "Do not delete server photos, add automatic upload retries or change permissions.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -13290,16 +13267,16 @@
     }
   },
   "current_counts": {
-    "fixed": 125,
+    "fixed": 129,
     "rejected_after_verification": 1,
-    "pending": 137,
+    "pending": 133,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 108,
+    "Sol": 104,
     "Astra": 29
   },
   "execution_policy": {
@@ -13311,14 +13288,14 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 103,
+      "Sol": 107,
       "Astra": 22
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 108,
+      "Sol": 104,
       "Astra": 29
     },
     "deferred_intentionally": {
