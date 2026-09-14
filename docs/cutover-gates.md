@@ -285,3 +285,8 @@ image mappings must match before use. Existing V38 mappings and snapshots do not
 a later candidate. Store every private artifact outside the repository with mode
 `0600`; it contains customer PII. A database snapshot does not include Storage object
 bytes, so retain the separate Storage procedure linked above.
+
+
+## September 14 staging alias stop
+
+A READY Vercel staging build did not move the normal branch alias. The unique deployment URL and backend report `138f8ca`, while the pinned staging URL reports `f35395a`. The exact-pair verifier caught it after all 53 hosted SQL contracts passed. Do not substitute a unique URL to waive the pinned-pair gate or treat READY as proof of alias assignment. A bounded alias repair and fresh exact-pair verification are the proposed next step; none was executed at the stop. See [HANDOFF.md](remediation/HANDOFF.md). Production and authenticated application writes remain untouched.

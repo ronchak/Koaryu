@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September 14 release readback: staging database is V47; production remains V38. Staging web and billing cron are suspended after the failed hosted contract gate. Applications were not deployed. See [the execution record](remediation/staging-rehearsal-verification.md).
+Inventory baseline: 2026-08-24. September 14 release readback: staging database is V47; production remains V38. Staging web now serves `138f8ca`; the billing cron stays suspended. All 53 hosted contracts passed, but the staging frontend alias still serves `f35395a` after the new build completed. The release is stopped at that exact-SHA mismatch. Production applications were not deployed. See [the execution record](remediation/staging-rehearsal-verification.md).
 
 ## Quick map
 
