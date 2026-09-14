@@ -49,7 +49,9 @@ list, source manifest, and integration result. Fresh target inspection supplies 
 accepted predecessor, state-bound remainder, token, fingerprint, and exact approval
 body. Do not copy a version, count, head, fingerprint, or approval from this document.
 The compatibility explanations below remain historical context. No production apply
-or deployment was executed for the pinned packet.
+or deployment was executed for the pinned packet. The September 14 staging chain reached
+verified V47, then stopped at a failed hosted dashboard contract. Staging web and cron
+remain suspended; see the [execution record](remediation/staging-rehearsal-verification.md).
 
 V38 remains an accepted predecessor. Its remainder includes the V39 membership
 correction before V40. V39 preserves paused statuses and per-program joining dates
@@ -228,7 +230,7 @@ Before **each** irreversible or outward-facing release action:
 
 This applies to each migration apply, the production backup, each backend deployment and each frontend promotion. Database comes first, backend second, frontend last. The owner has allowed the exact recorded old-frontend/new-backend pair only during that planned transition; every unexpected SHA mismatch is a stop. Verify the matching final pair before declaring the release complete.
 
-A fresh pre-apply backup and verified disposable restore are mandatory. Stop on a failed or ambiguous migration, unexpected checkpoint state or change to pre-existing business rows, an unverifiable backup/restore, an unexpected deployed SHA, or the run's budget stop. Do not improvise recovery. Keep the safest reachable state, retain evidence and report the options.
+A fresh pre-apply backup and verified disposable restore are mandatory. Stop on a failed or ambiguous migration, unexpected checkpoint state or change to pre-existing business rows, an unverifiable backup/restore, an unexpected deployed SHA, or the run's applicable budget stop. The September 14 amendment applies 30 points only to starting a chain: estimate completion before the first production apply, do not start if projected total exceeds 35, and retain the hard 40-point ceiling. Budget alone must not stop an already-started chain at 30; technical stop conditions still do. Do not improvise recovery. Keep the safest reachable state, retain evidence and report the options.
 
 Exact-head CI, independent review, the guarded merge, production auto-deploy off readback, tenant isolation, authorization, payment safety and idempotency remain unchanged. The existing prohibition on running contract or migration SQL against production remains. Only the guarded rollout tool's authorized apply is an exception for migrations; contract SQL is never allowed. No historical financial backfill.
 

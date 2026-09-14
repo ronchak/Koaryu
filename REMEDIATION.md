@@ -36,9 +36,11 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 ## Current release run
 
-The September 14 run is authorized for four ordered phases: refund recovery, release governance, hosted rehearsal and verified backup/restore, then the production database/backend/frontend release. The budget starts at 51% weekly used, stops new work and release execution at 81%, and has an 86% ceiling. The remaining audit backlog is outside this run.
+The September 14 four-phase release stopped in phase 3 at the hosted dashboard contract gate. PR207/PR209 fixed refund recovery with V46/V47; PR208 added owner-authorized execution and audit records; PR210 added the reviewed one-migration mode. Frozen candidate `c1e933f5ddac862ce24387d45609052b8d0baad1` and its own exact-head CI are green.
 
-[PR207](https://github.com/ronchak/Koaryu/pull/207) landed V46 refund recovery at `1c10a193e66861fd3e2a8174251910798199eeca`. Both its reviewed head and merged main passed exact-head CI. The full local 141-migration/53-contract suite and 21 billing concurrency cases passed. PR209 subsequently corrected the different-key completion overlap and lease timing, merged as `63668a72d2b68542cfc1445884d7bb03a4b8b5dc`, after full exact-head CI and renewed independent review. The final V47 proof retains 23 concurrency cases. No hosted migration or deployment has run. PR208 supplies reviewed owner-authorization governance; the owner subsequently approved the bounded one-migration extension. Its [plan](docs/remediation/one-migration-plan.md) and [verification](docs/remediation/one-migration-verification.md) precede hosted rehearsal and backup/restore. [HANDOFF](docs/remediation/HANDOFF.md) records the active checkpoint and release dependencies.
+All nine staging migrations V39–V47 applied separately and verified. Retained business rows were unchanged after each file and after the failed contract. The suite completed 19 of 53 files, failed on the small-profile schedule-plan bound in file20, and left 33 unstarted. Staging web and cron remain suspended. No production migration, backup/restore or application deployment occurred. [The execution record](docs/remediation/staging-rehearsal-verification.md) and [HANDOFF](docs/remediation/HANDOFF.md) describe the failure and next investigation. No audit dispositions changed.
+
+The original usage baseline is 51%. The amended 30-point threshold controls starting a chain, never stopping mid-chain solely for budget. Before production, projected completion must fit 35 points total; absolute ceiling 40. Technical stop conditions remain. The remaining audit backlog is outside this run.
 
 ## Previous bounded run, September 13
 
