@@ -246,6 +246,7 @@ import {
   formatDiagnosisReport,
   formatNonSuccessProbeState,
   main,
+  oneMigrationPacket,
   parseSingleValueCsv,
   parseArguments,
   packetForAcceptedState,
@@ -287,6 +288,7 @@ import {
   validateV29OperationalReadiness,
   validateV28OperationalReadiness,
   verifySourceTree,
+  withOneMigrationFilesystemScope,
 } from "./studio-comp-migration-rollout.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -1346,6 +1348,7 @@ describe("studio-comp migration rollout guard", () => {
       releaseAuthorization: null,
       releaseOperator: null,
       confirmationPhrase: null,
+      oneMigration: false,
     });
     assert.throws(() => parseArguments([]), /--target must be staging or production/);
     assert.throws(
@@ -1371,6 +1374,19 @@ describe("studio-comp migration rollout guard", () => {
       ]),
       /valid only for inspection comparison or production apply/,
     );
+    for (const mode of ["packet", "diagnose"]) {
+      assert.throws(
+        () => parseArguments([
+          "--mode", mode, ...(mode === "diagnose" ? ["--target", "staging"] : []),
+          "--candidate-sha", candidateSha, "--one-migration",
+        ]),
+        /valid only with --mode inspect, dry-run, or apply/,
+      );
+    }
+    assert.equal(parseArguments([
+      "--mode", "inspect", "--target", "staging", "--candidate-sha", candidateSha,
+      "--one-migration",
+    ]).oneMigration, true);
   });
 
   it("accepts diagnose only with a pinned target and full candidate SHA", () => {
@@ -3027,6 +3043,78 @@ describe("studio-comp migration rollout guard", () => {
       "edbad08cc2cb60c853ac22d4f03b7e031b2254681963b973f7721d1977f225a5");
   });
 
+  it("selects each declared V38 through V47 step with its exact singleton hash", () => {
+    const packet = candidatePacket();
+    const transitions = [
+      ["v38", "20260908080420_student_membership_preservation_v39.sql", "be36dc10bf498d6003e542eab9cf5b45603415236e311005c69fcfa0541d6131", "v39"],
+      ["v39", "20260908133504_rank_history_command_ownership_v40.sql", "8dad140dbc8fb5414f2760049beff654cf6bbd6a723dc63a0d5586d324069293", "v40"],
+      ["v40", "20260908183744_serialize_billing_payer_balance_v41.sql", "230b1951f56771a223d384a6058dceed0eeb5b1e4fdd1d0f55b0ea2fef41942a", "v41"],
+      ["v41", "20260910084231_independent_program_joining_dates_v42.sql", "797ce082f1b70056bc88c7abb1c31ee158cbbf98f1126838160d096da3fbfec3", "v42"],
+      ["v42", "20260910093958_external_payment_command_ownership_v43.sql", "2c45531518d583cecab8b2c692b7682a9d28fb1f52a977b29e1c793f61d6a1d6", "v43"],
+      ["v43", "20260910135133_local_plan_write_ownership_v44.sql", "ba62895e95a8af0a346c85f9a4624ff5ead18dbd92b2494dc65a04cef8d95188", "v44"],
+      ["v44", "20260910185031_student_import_retry_ownership_v45.sql", "0090dff068011d75d9b1c0ecae73e59bf1c101475b6e07a0c55e82b34c182940", "v45"],
+      ["v45", "20260914033337_refund_projection_recovery_v46.sql", "c37b32eb9d04d96b8aa06f22cfe6ee3438c9d0e7af04560aba6efd8df9aebd7b", "v46"],
+      ["v46", "20260914055301_refund_completion_locking_v47.sql", "666a751926fc7d11608785a9c9576f6f56e0e547a48f678f4e518595473319f1", "post"],
+    ];
+    for (const [state, filename, manifestSha256, expectedAfterState] of transitions) {
+      const selected = oneMigrationPacket(packet, state);
+      assert.deepEqual(selected.pendingMigrations, [filename], state);
+      assert.deepEqual(selected.pendingManifest, packet.pendingManifest.filter(row => row.filename === filename), state);
+      assert.equal(selected.sourceManifestSha256, manifestSha256, state);
+      assert.equal(selected.expectedAfterState, expectedAfterState, state);
+    }
+    for (const state of ["pre", "v37", "post", null]) {
+      assert.throws(() => oneMigrationPacket(packet, state), /declared V38 through V47 chain/);
+    }
+  });
+
+  it("parks later files and restores their exact bytes after success and failure", async () => {
+    const packet = candidatePacket();
+    const remainder = packetForAcceptedState(packet, "v44");
+    const selected = oneMigrationPacket(packet, "v44");
+    const selectedIndex = expectedMigrationFiles.indexOf(selected.pendingMigrations[0]);
+    const appliedFilename = expectedMigrationFiles[selectedIndex - 1];
+    for (const outcome of ["success", "operation failure", "partial rename failure"]) {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-one-migration-test-"));
+      const migrationsDirectory = path.join(root, "supabase", "migrations");
+      fs.mkdirSync(migrationsDirectory, { recursive: true });
+      for (const filename of [appliedFilename, ...remainder.pendingMigrations]) {
+        fs.copyFileSync(
+          path.join(repositoryRoot, "supabase", "migrations", filename),
+          path.join(migrationsDirectory, filename),
+        );
+      }
+      const missingFilename = remainder.pendingMigrations[2];
+      if (outcome === "partial rename failure") {
+        fs.rmSync(path.join(migrationsDirectory, missingFilename));
+      }
+      const originalFilenames = fs.readdirSync(migrationsDirectory).sort();
+      const before = new Map(originalFilenames.map(filename => [
+        filename,
+        fs.readFileSync(path.join(migrationsDirectory, filename)),
+      ]));
+      const run = withOneMigrationFilesystemScope(root, remainder, selected, async () => {
+        assert.deepEqual(
+          fs.readdirSync(migrationsDirectory).sort(),
+          [appliedFilename, ...selected.pendingMigrations].sort(),
+        );
+        if (outcome === "operation failure") throw new Error("scope failure");
+      });
+      if (outcome === "operation failure") await assert.rejects(run, /scope failure/);
+      else if (outcome === "partial rename failure") await assert.rejects(run, /ENOENT/);
+      else await run;
+      assert.deepEqual(fs.readdirSync(migrationsDirectory).sort(), originalFilenames);
+      for (const [filename, bytes] of before) {
+        assert.deepEqual(fs.readFileSync(path.join(migrationsDirectory, filename)), bytes);
+      }
+      assert.deepEqual(
+        fs.readdirSync(path.dirname(migrationsDirectory)).filter(name => name.startsWith(".koaryu-later")),
+        [],
+      );
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps historical non-attested states inspectable but refuses to apply from them", () => {
     for (const state of ["intermediate", "recovery", "convergence"]) {
       assert.doesNotThrow(() => assertApplyableState("dry-run", state));
@@ -3093,6 +3181,48 @@ describe("studio-comp migration rollout guard", () => {
       ]),
       /Target inspection evidence/,
     );
+    const fullRemainder = packetForAcceptedState(packet, "v38");
+    const selectedStep = oneMigrationPacket(packet, "v38");
+    const result = { state: "v38" };
+    const selectedToken = buildInspectionTokenForAcceptedState(selectedStep, "staging", result);
+    assert.doesNotThrow(() => assertInspectionToken(selectedStep, "staging", result, selectedToken));
+    for (const wrongToken of [
+      buildInspectionTokenForAcceptedState(packet, "staging", result),
+      buildInspectionTokenForAcceptedState(fullRemainder, "staging", result),
+      buildInspectionTokenForAcceptedState(oneMigrationPacket(packet, "v39"), "staging", { state: "v39" }),
+    ]) {
+      assert.throws(
+        () => assertInspectionToken(selectedStep, "staging", result, wrongToken),
+        /candidate, target, and state/,
+      );
+    }
+    assert.throws(
+      () => confirmProductionApply(
+        selectedStep,
+        buildProductionConfirmationPhrase(fullRemainder),
+      ),
+      /did not match exactly/,
+    );
+    const approvalConfig = {
+      mode: "apply",
+      target: "staging",
+      approvalRecord: "https://github.com/ronchak/Koaryu/pull/138#issuecomment-123456789",
+    };
+    assert.throws(
+      () => validateApplyApprovalRecord(
+        approvalConfig,
+        selectedStep,
+        "v38",
+        () => JSON.stringify({
+          body: buildApplyApprovalRecordBody(fullRemainder, "staging", "v38"),
+          issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/138",
+          user: { login: "ronchak" },
+          author_association: "OWNER",
+        }),
+        {},
+      ),
+      /does not exactly bind/,
+    );
   });
 
   it("requires the dry-run to report exactly the packet migration set in order", () => {
@@ -3151,6 +3281,96 @@ describe("studio-comp migration rollout guard", () => {
     });
 
     assert.deepEqual(pending, packet.pendingMigrations);
+  });
+
+  it("runs a full dry-run, a scoped singleton dry-run, and one apply call", async () => {
+    const packet = candidatePacket();
+    const remainder = packetForAcceptedState(packet, "v38");
+    const selected = oneMigrationPacket(packet, "v38");
+    const approvalUrl = "https://github.com/ronchak/Koaryu/pull/138#issuecomment-123456789";
+    for (const [afterState, expectedError] of [
+      ["v39", null],
+      ["v40", /did not reach the exact expected v39 state/],
+    ]) {
+      const dryRunPackets = [];
+      let applyCalls = 0;
+      let stateReads = 0;
+      const invocation = main([
+        "--target", "staging", "--candidate-sha", candidateSha, "--mode", "apply",
+        "--one-migration",
+        "--inspection-token", buildInspectionTokenForAcceptedState(selected, "staging", { state: "v38" }),
+        "--confirm-project", ROLLOUT.stagingRef,
+        "--approval-record", approvalUrl,
+        "--approve-staging-apply",
+      ], {}, {
+        commandRunner(command, args) {
+          if (command === "supabase" && JSON.stringify(args) === JSON.stringify(["--version"])) {
+            return `${ROLLOUT.cliVersion}\n`;
+          }
+          if (command === "git") {
+            assert.deepEqual(args.slice(0, 3), ["worktree", "add", "--detach"]);
+            assert.equal(args.at(-1), candidateSha);
+            return "";
+          }
+          if (command === "supabase") {
+            assert.deepEqual(args, [
+              "link", "--project-ref", ROLLOUT.stagingRef, "--yes", "--agent=no",
+            ]);
+            return "";
+          }
+          if (command === "gh") {
+            assert.deepEqual(args, ["api", "repos/ronchak/Koaryu/issues/comments/123456789"]);
+            return JSON.stringify({
+              body: buildApplyApprovalRecordBody(selected, "staging", "v38"),
+              issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/138",
+              user: { login: "ronchak" },
+              author_association: "OWNER",
+            });
+          }
+          throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+        },
+        sourceVerifier(sourceRoot) {
+          const migrationsDirectory = path.join(sourceRoot, "supabase", "migrations");
+          fs.mkdirSync(migrationsDirectory, { recursive: true });
+          for (const row of remainder.pendingManifest) {
+            fs.copyFileSync(
+              path.join(repositoryRoot, "supabase", "migrations", row.filename),
+              path.join(migrationsDirectory, row.filename),
+            );
+          }
+          return packet;
+        },
+        linkedRefAsserter() {},
+        stateReader() {
+          stateReads += 1;
+          return { state: stateReads === 1 ? "v38" : afterState, providerFingerprint: null };
+        },
+        dryRunRunner(sourceRoot, requestedPacket) {
+          dryRunPackets.push(requestedPacket.pendingMigrations);
+          const visible = fs.readdirSync(path.join(sourceRoot, "supabase", "migrations")).sort();
+          assert.deepEqual(visible, requestedPacket.pendingMigrations);
+          return requestedPacket.pendingMigrations;
+        },
+        applyRunner(sourceRoot, _env, observer) {
+          applyCalls += 1;
+          assert.deepEqual(
+            fs.readdirSync(path.join(sourceRoot, "supabase", "migrations")),
+            selected.pendingMigrations,
+          );
+          observer({ stdout: "applied", stderr: "", exit_status: 0, signal: null, system_error_code: null });
+        },
+        now: (() => {
+          const timestamps = ["2026-09-14T01:00:00Z", "2026-09-14T01:00:01Z", "2026-09-14T01:00:02Z"];
+          return () => timestamps.shift();
+        })(),
+        output() {},
+      });
+      if (expectedError) await assert.rejects(invocation, expectedError);
+      else await invocation;
+      assert.deepEqual(dryRunPackets, [remainder.pendingMigrations, selected.pendingMigrations]);
+      assert.equal(applyCalls, 1);
+      assert.equal(stateReads, 2);
+    }
   });
 
   it("gates staging apply on exact project, inspection, and durable approval", () => {
