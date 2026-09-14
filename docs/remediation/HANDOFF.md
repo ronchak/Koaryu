@@ -30,13 +30,13 @@ PR208 replaces terminal detection with owner/release authorization, a named exec
 
 ## Exact ledger counts
 
-The original audit observations are unchanged by this release run:
+The authorized dashboard contract correction also fixes DC1-03. The counts after that change are:
 
 | Disposition | Astra | Sol | Total |
 | --- | ---: | ---: | ---: |
-| Fixed | 22 | 107 | 129 |
+| Fixed | 23 | 107 | 130 |
 | Resolved indirectly | 1 | 1 | 2 |
-| Pending | 29 | 104 | 133 |
+| Pending | 28 | 104 | 132 |
 | Deferred intentionally | 4 | 7 | 11 |
 | Deferred pending owner action | 0 | 1 | 1 |
 | Rejected after verification | 0 | 1 | 1 |
@@ -49,7 +49,7 @@ The delegated audit batches are outside this run. Batches 01, 02, 03, 05, 08, 09
 
 ## Next change and release boundary
 
-Investigate the hosted dashboard schedule-plan failure recorded in [staging-rehearsal-verification.md](staging-rehearsal-verification.md). The small fixture read two attendance rows where the test permits one. Reproduce it on disposable PostgreSQL; determine whether the assertion or query needs correction. Do not relax the gate or retry hosted writes to force acceptance. A justified correction needs its own review, exact-head CI and guarded merge.
+PR212 resolves the copied-plan assertion issue as recorded in [the correction plan](dashboard-plan-contract-plan.md). After its reviewed merge, repin the candidate and rerun every hosted contract from a clean state. The historical 19-pass/one-failure result does not count as a complete gate. Then complete authenticated application rehearsal and the production backup/restore prerequisites. DM3-04 and OPS1-06 remain separate pending runtime/ownership work; this test correction does not establish a general database I/O budget.
 
 Staging is exact V47, 142 migrations, head `20260914055301`. Its web service and billing cron remain suspended. No application deployment or staging branch move occurred. Restoring staging service is a separate announced release action after the failed gate is resolved; deploy the reviewed candidate and keep the cron paused. Complete all 53 hosted contracts and authenticated application rehearsal before production. The existing staging-owner account now authenticates with the approved stored password. The exact account, verified session and Keychain inventory are recorded privately in the release directory.
 
