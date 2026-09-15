@@ -3474,11 +3474,13 @@ export function validateApplyAuthorization(config) {
   if (config.confirmProject !== projectRef) {
     throw new RolloutError(`--confirm-project must exactly equal the pinned ${config.target} ref.`);
   }
-  assertPlainText("--approval-record", config.approvalRecord);
-  if (!/^https:\/\/github\.com\/ronchak\/Koaryu\/pull\/138#issuecomment-[1-9][0-9]*$/.test(config.approvalRecord)) {
-    throw new RolloutError(
-      "--approval-record must be an exact PR #138 GitHub issue-comment URL.",
-    );
+  if (config.target === "staging" || config.approvalRecord) {
+    assertPlainText("--approval-record", config.approvalRecord);
+    if (!/^https:\/\/github\.com\/ronchak\/Koaryu\/pull\/138#issuecomment-[1-9][0-9]*$/.test(config.approvalRecord)) {
+      throw new RolloutError(
+        "--approval-record must be an exact PR #138 GitHub issue-comment URL.",
+      );
+    }
   }
   if (config.target === "staging") {
     if (
@@ -3538,7 +3540,7 @@ export function validateApplyApprovalRecord(
   commandRunner = runCommand,
   env = process.env,
 ) {
-  if (config.mode !== "apply") return;
+  if (config.mode !== "apply" || (config.target === "production" && !config.approvalRecord)) return;
   const match = config.approvalRecord.match(
     /^https:\/\/github\.com\/ronchak\/Koaryu\/pull\/138#issuecomment-([1-9][0-9]*)$/,
   );
@@ -5612,7 +5614,7 @@ export async function main(
       && executionPacket.pendingMigrations.length > 1
     ) {
       throw new RolloutError(
-        "Production apply refuses more than one remaining migration. Use --one-migration with a fresh inspection token and approval record.",
+        "Production apply refuses more than one remaining migration. Use --one-migration with a fresh inspection token and release authorization.",
       );
     }
     validateApplyApprovalRecord(config, executionPacket, before.state, commandRunner, env);
