@@ -7,7 +7,7 @@ Preserve working behavior and safeguards while removing verified accidental comp
 
 ## Current position
 
-The September 14 release is paused at a staging alias mismatch. Main `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3` passed exact-head CI; PR212/213 corrected the hosted test failures and all 53 files now pass. The new staging backend and unique frontend build serve that candidate, but the normal staging URL still serves `f35395a5700876f6490336ae400c09849a368204`. No synthetic application writes or production release actions followed the failed pair check. See [the handoff](docs/remediation/HANDOFF.md).
+The production release completed September15. All nine V39–V47 migrations and original-row comparisons passed, backed by a fresh verified backup/restore. Both production applications serve `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`. PR215 enables the owner-authorized production path without per-migration GitHub comments; all other guarded-runner checks remain. See [verification](docs/remediation/production-release-verification.md) and [the handoff](docs/remediation/HANDOFF.md).
 
 V46 and the V47 completion-locking follow-up correct [PROGRAM-REFUND-01](docs/remediation/refund-completion-risk.md) at the database resource-version boundary. Its own verified refund projection no longer prevents receipt completion recovery. The application refund workflow and stored claim fingerprints stay unchanged. Production release remains a separate ordered program with hosted rehearsal, fresh backup/restore and explicit owner-authorized execution. The remaining 132 pending audit observations are outside this run.
 
@@ -38,11 +38,9 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 ## Current release run
 
-The September 14 four-phase release is paused in phase 3 at the staging alias mismatch, after all 53 hosted contracts passed. PR207/PR209 fixed refund recovery with V46/V47; PR208 added owner-authorized execution and audit records; PR210 added the reviewed one-migration mode. PR212/PR213 corrected the hosted test failures. Frozen candidate `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3` passed its own exact-head CI.
+The four-phase release completed under the owner's revised instructions. PR207/209 fixed refund recovery with V46/V47; PR208/210 established owner-authorized, one-file execution; PR212/213 corrected hosted test defects; PR215 made production GitHub comments optional under direct owner authorization. All 53 hosted contracts passed. The staging alias was repaired, the fresh production backup restored successfully, all nine production migrations preserved the tracked original rows, and both production applications now serve the reviewed PR215 head.
 
-All nine staging migrations V39–V47 applied separately and preserved tracked rows. The first hosted attempt stopped after 19 files. PR212 corrected its misleading copied-plan gate while retaining actual RPC/security checks, fixing DC1-03. The next attempt exposed two populated-staging fixture defects; PR213 corrected them. All 53 files then passed with unchanged retained rows and V47 fingerprint. Staging backend deployed, but the completed frontend build did not take over its branch alias. Application write rehearsal stopped at the mismatched pair. Production remains untouched. See [the execution record](docs/remediation/staging-rehearsal-verification.md) and [HANDOFF](docs/remediation/HANDOFF.md). DM3-04 and OPS1-06 remain pending runtime findings.
-
-The original usage baseline is 51%. The amended 30-point threshold controls starting a chain, never stopping mid-chain solely for budget. Before production, projected completion must fit 35 points total; absolute ceiling 40. Technical stop conditions remain. The remaining audit backlog is outside this run.
+Authenticated staging write/UI rehearsal was explicitly waived and not claimed. No live billing activation or historical financial backfill occurred. Audit dispositions remain unchanged after PR215 and this closeout. DC1-03 was fixed by PR212; DM3-04 and OPS1-06 remain pending. The final run cap is 45 points from the original 51%-used baseline, with no mid-chain budget stop. See the verification record for exact evidence and the final report for the last meter.
 
 ## Previous bounded run, September 13
 

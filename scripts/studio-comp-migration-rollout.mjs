@@ -5431,8 +5431,8 @@ function usage() {
 
 diagnose performs linked, read-only SELECT diagnosis and needs no inspection token.
 Dry-run and apply require the inspection_token from a preceding inspect. Apply additionally requires:
-  --confirm-project <exact-ref> --approval-record <exact-PR-138-issue-comment-url>
-  staging:    --approve-staging-apply
+  --confirm-project <exact-ref>
+  staging:    --approve-staging-apply --approval-record <exact-PR-138-issue-comment-url>
   production: --release-authorization ronchak:<exact-candidate-sha>
               --release-operator <named-coordinator>
               --confirmation-phrase <exact-production-confirmation-phrase>

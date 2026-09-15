@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September 14 release readback: staging database is V47; production remains V38. Staging web now serves `138f8ca`; the billing cron stays suspended. All 53 hosted contracts passed, but the staging frontend alias still serves `f35395a` after the new build completed. The release is stopped at that exact-SHA mismatch. Production applications were not deployed. See [the execution record](remediation/staging-rehearsal-verification.md).
+Inventory baseline: 2026-08-24. September15 release readback: both databases are V47. Production frontend/backend serve `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`; staging frontend/backend serve `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3` after its alias repair. Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed production verification](remediation/production-release-verification.md).
 
 ## Quick map
 
@@ -147,25 +147,8 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The paused remediation candidate and its V45 declarations are recorded in the pinned
-[production release packet](remediation/PRODUCTION-RELEASE.md) as dated, unfulfilled
-release evidence. For any current candidate, generate packet mode from its exact SHA
-and use the emitted post-history, migration list, source manifest, and integration
-result. Use fresh target inspection for the state-bound remainder and approval body.
-Do not promote the fixed values in this inventory into a new approval.
-The compatibility chain retains V19–V25 consumers after the complete V45 state
-is verified. Legacy import writes are deliberately refused; readiness compatibility
-does not make old import callers safe to resume.
+The completed V38-to-V47 release, immutable migration hashes and recovery limits are recorded in [the production packet](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Production and staging are now V47. Production frontend/backend serve `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`; staging frontend/backend serve `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`. Both production auto-deploy paths remain off. Future releases require a new exact-candidate packet and fresh target/backup evidence; the old V38 command blocks are completed history. Retained readiness compatibility does not authorize restarting legacy import writers.
 
-Read-only inspection on September11 UTC confirmed both databases still at V38,
-133/head `20260905022339`, and production frontend/backend at
-`c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. No remediation migration or application
-was deployed during wind-down. Render production auto-deploy was read back off;
-Vercel main auto-deployment remains disabled in the deployed and candidate config.
-
-The [V38-to-V47 production packet](remediation/PRODUCTION-RELEASE.md) owns the
-current ordered migration hashes, backup/restore prerequisites, rollout commands,
-compatibility limits and rollback rules. It is prepared for owner-authorized execution and remains blocked until its listed prerequisites are complete.
 V41 payer-balance, V43 external-payment and V44 local-plan guarantees require old
 split callers to drain. V45 requires stopping old import callers before migration.
 No historical financial backfill or live billing activation is included.
@@ -183,7 +166,7 @@ Both refs are pinned in `backend/app/core/config.py`. The backend refuses to boo
 if `ENVIRONMENT` and `SUPABASE_URL` disagree, so a staging process cannot be
 pointed at production data by editing one variable.
 
-Production inspection is read-only. Only the named coordinating agent or operator may apply migrations through `scripts/studio-comp-migration-rollout.mjs` under explicit owner authorization and the [announce-and-pause protocol](cutover-gates.md#owner-authorized-release-execution). All backup, restore, source, target and approval gates remain mandatory. Subagents have no production authority; contract SQL is never allowed against production.
+Production inspection is read-only. Only the named coordinating agent or operator may apply migrations through `scripts/studio-comp-migration-rollout.mjs` under explicit owner authorization and the [announce-and-pause protocol](cutover-gates.md#owner-authorized-release-execution). Backup, restore, source and target gates remain mandatory. Production may use explicit operating-session owner authorization without a GitHub comment; a supplied comment is fully validated. Subagents have no production authority; contract SQL is never allowed against production.
 
 ## Stripe — payments
 
