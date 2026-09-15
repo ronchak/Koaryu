@@ -3500,7 +3500,6 @@ describe("studio-comp migration rollout guard", () => {
       "--target", "production", "--candidate-sha", candidateSha, "--mode", "apply",
       "--inspection-token", buildInspectionToken(packet, "production", "pre"),
       "--confirm-project", ROLLOUT.productionRef,
-      "--approval-record", "https://github.com/ronchak/Koaryu/pull/138#issuecomment-987654321",
       "--release-authorization", `ronchak:${candidateSha}`,
       "--release-operator", "Release coordinator",
       "--confirmation-phrase", confirmationPhrase,
@@ -3509,6 +3508,9 @@ describe("studio-comp migration rollout guard", () => {
       "--restore-decision-authority", "Ronak Chakraborty",
     ]);
     assert.doesNotThrow(() => validateApplyAuthorization(config));
+    validateApplyApprovalRecord(config, packet, "pre", () => {
+      assert.fail("Direct owner authorization must not request a GitHub comment");
+    });
     // Syntactically valid stale or duplicated evidence must fail before apply.
     for (const fingerprint of [
       validFingerprint.replace(EXPECTED_V40_CRITICAL_SURFACE_MANIFEST, EXPECTED_CRITICAL_SURFACE_MANIFEST),
@@ -3548,7 +3550,6 @@ describe("studio-comp migration rollout guard", () => {
 
   it("enforces production entry and records linked terminal audit evidence", async () => {
     const packet = candidatePacket();
-    const approvalUrl = "https://github.com/ronchak/Koaryu/pull/138#issuecomment-987654321";
     const startedAt = "2026-09-14T01:02:03.000Z";
     const observedAt = "2026-09-14T01:02:04.000Z";
     const finishedAt = "2026-09-14T01:02:05.000Z";
@@ -3569,7 +3570,7 @@ describe("studio-comp migration rollout guard", () => {
         authorizing_owner: "ronchak",
         named_executor: "Release coordinator",
         intended_candidate: candidateSha,
-        approval_url: approvalUrl,
+        approval_url: null,
         target: "production",
         project_ref: ROLLOUT.productionRef,
         inspected_prestate: { state: testCase.beforeState, provider_fingerprint: null },
@@ -3585,7 +3586,6 @@ describe("studio-comp migration rollout guard", () => {
         "--target", "production", "--candidate-sha", candidateSha, "--mode", "apply",
         "--inspection-token", buildInspectionToken(packet, "production", testCase.beforeState),
         "--confirm-project", ROLLOUT.productionRef,
-        "--approval-record", approvalUrl,
         "--release-authorization", `ronchak:${candidateSha}`,
         "--release-operator", "Release coordinator",
         "--confirmation-phrase", testCase.badConfirmation
@@ -3613,15 +3613,7 @@ describe("studio-comp migration rollout guard", () => {
             ]);
             return "";
           }
-          assert.deepEqual(commands[3], [
-            "gh", "api", "repos/ronchak/Koaryu/issues/comments/987654321",
-          ]);
-          return JSON.stringify({
-            body: buildApplyApprovalRecordBody(remainingPacket, "production", testCase.beforeState),
-            issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/138",
-            user: { login: "ronchak" },
-            author_association: "OWNER",
-          });
+          assert.fail("Direct owner authorization must not request a GitHub comment");
         },
         sourceVerifier() { return packet; },
         linkedRefAsserter() {},
@@ -3661,7 +3653,7 @@ describe("studio-comp migration rollout guard", () => {
           /Migration apply failed and may have changed remote state.*(?:bounded apply failure|did not reach the exact expected post-state)/,
         );
       }
-      assert.equal(commands.length, testCase.bulkBlocked ? 3 : 4, testCase.name);
+      assert.equal(commands.length, 3, testCase.name);
       assert.equal(applyCalls, testCase.badConfirmation || testCase.bulkBlocked ? 0 : 1, testCase.name);
       const evidence = output
         .filter((line) => line.startsWith("audit_evidence="))
