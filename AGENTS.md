@@ -93,7 +93,7 @@ Exactly two operations may write to production, both owner-authorized and both o
 
 Nothing else. Both are described in `docs/cutover-gates.md`. A named coordinating agent may also deploy the backend and promote a production-target frontend build when the owner explicitly authorizes that release. Subagents do not receive production authority.
 
-Before each irreversible or outward-facing release action, announce the exact command, its effect and reversibility, and the immediate verification, then pause for 60 seconds. Use a separate announcement and standalone command for each action. A user interruption stops execution. Record the owner, executor, exact release, actions, timestamps and evidence. Follow the full [announce-and-pause protocol](docs/cutover-gates.md#owner-authorized-release-execution); authorization never waives technical release gates.
+Before each release action, announce the exact command, its effect and reversibility, and the immediate verification. Pause for 30 seconds before each production migration apply; staging and non-migration actions have no mandatory pause under the revised owner protocol. Use a separate announcement and standalone command for each action. A user interruption stops execution. Record the owner, executor, exact release, actions, timestamps and evidence. Follow the full [announce-and-pause protocol](docs/cutover-gates.md#owner-authorized-release-execution); authorization never waives technical release gates.
 
 ## Safety Boundaries
 

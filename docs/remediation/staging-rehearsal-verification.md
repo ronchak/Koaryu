@@ -2,7 +2,7 @@
 
 Initial migration candidate: `c1e933f5ddac862ce24387d45609052b8d0baad1`, PR210 merge. Its own Release candidate CI `34839365373` passed. This record describes hosted execution against that immutable candidate, not the later documentation merge.
 
-**Current stop: the staging alias serves the old frontend after the new build completed. All 53 hosted contracts now pass, but the application pair does not match. No synthetic application writes, production backup/restore or production deployment occurred.** The sections below retain the initial migration and failed-contract evidence; the resumed execution is recorded last.
+**Current status: complete hosted database gate; authenticated write/UI rehearsal explicitly waived.** All 53 contracts passed, the staging alias was repaired and the matching staging pair verified. Production subsequently completed V47 and application deployment. See [the production verification](production-release-verification.md). The sections below preserve the earlier failures and stop points as historical evidence.
 
 ## Database execution
 
@@ -64,3 +64,7 @@ The proposed next step is a bounded staging-alias repair, followed by the exact-
 Private evidence: `hosted-fixture-final-probe.log`, `hosted-fixture-review-result.md`, `merge-213.log`, `staging-138f-contracts.log`, `staging-138f-pre.txt`, `staging-138f-post.txt`, `staging-138f-before-contracts.json`, `staging-138f-after-contracts.json`, `staging-138f-backend-deploy.json`, `staging-138f-backend-readiness.json`, `staging-138f-branch-push.txt`, `staging-138f-vercel-state.json`, `staging-138f-pair.txt` and `staging-138f-pair-failure-readback.json`. Credentials and session files stay private. The browser connection was prepared, but no application page interaction or browser login was performed.
 
 Closing read-only checks confirmed production at exact V38 with all nine files pending and its unchanged `c5742fe...` application pair. Evidence: `production-138f-stop-inspect.txt` and `production-138f-stop-pair.txt`. A separate alias readback at 22:37:28 UTC still returned `f35395a`; the mismatch persisted after the build completed.
+
+## Owner-authorized completion
+
+On September15, Astra repaired the staging alias and the exact staging pair passed at `138f8ca`. The owner waived authenticated staging write/UI rehearsal; none was performed. Production then completed the nine separate V39–V47 applies and application deployment at `a4ef259`. The previous alias stop is resolved. The final production verification record is authoritative for current release state.
