@@ -24,9 +24,15 @@ and [Google provider setup](https://supabase.com/docs/guides/auth/social-login/a
 ## Ordered console setup
 
 1. In Google Cloud, use a dedicated Koaryu project. Configure the consent screen
-   with application name `Koaryu`, an owner-controlled support/contact email,
+   with application name `koaryu.app`, an owner-controlled support/contact email,
    homepage `https://koaryu.app`, privacy URL `https://koaryu.app/privacy`, and terms
    URL `https://koaryu.app/terms`. Request only `openid`, email and basic profile.
+   Verify homepage ownership in Google Search Console using the public Google
+   verification tag in `frontend/src/app/page.tsx`. Keep that tag after verification.
+   Submit **Verify branding**, resolve Google's checks, and use **Publish branding**
+   after approval. Publishing the OAuth audience alone does not publish a verified
+   name: until branding is approved and published, Google can show the Supabase
+   callback hostname in its account chooser.
 2. Create an OAuth client of type **Web application**, named `Koaryu web`.
    Add exactly these authorized redirect URIs:
    - `https://mimguepumzsgmcaycdsh.supabase.co/auth/v1/callback`
@@ -85,6 +91,13 @@ verify its actual behavior separately and report any defect without expanding th
   membership resolver, onboarding creation and account ownership are unchanged.
 
 ## Verification status
+
+Branding follow-up: the owner requested the account chooser label `koaryu.app`.
+The OAuth draft display name has been changed to that exact value and submitted
+for verification. Homepage ownership proof and an explicit Google sign-in privacy
+disclosure are being released to meet Google's checks. This is not yet a claim
+that Google has approved or published the name; verify the actual account chooser
+after publishing the approved branding.
 
 September 20, 2026: PR #229 merged. Reviewed application candidate
 `75d96cfab54440df58df85a843dd7f54d298cb2c` passed the exact-head Release
