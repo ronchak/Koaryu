@@ -26,6 +26,7 @@ const privacySections = [
     title: "Authentication and access",
     paragraphs: [
       "Koaryu checks each user's studio membership and role before allowing access to studio records. Users should protect their login details. Studio admins should remove access when a staff member no longer needs it.",
+      "If you choose Google sign-in, Google provides your name, email address, and profile picture to Supabase, Koaryu's authentication provider. This basic profile information is stored with your authentication account. Koaryu uses your identity and email address to sign you in and associate you with your existing account, and your name for your account profile. Koaryu does not receive your Google password or request access to your Gmail, Google Drive, or Google Calendar.",
     ],
   },
   {
