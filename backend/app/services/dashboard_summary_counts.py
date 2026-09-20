@@ -21,7 +21,7 @@ from app.services.dashboard_summary_attendance import (
     DashboardSummaryAttendanceMetrics,
 )
 from app.services.dashboard_summary_store import DashboardSummaryStore
-
+from app.services.supabase_rpc import execute_required_rpc
 
 BILLING_VISIBLE_ROLES = {"admin", "front_desk"}
 ACTIVE_LEAD_STAGES = ["inquiry", "trial_scheduled", "trial_completed", "offer_sent"]
@@ -257,24 +257,19 @@ class DashboardSummaryCounts:
         if role not in BILLING_VISIBLE_ROLES:
             return DashboardSummaryBillingCounts(can_view_billing=False)
 
-        payer_attention_count = self.count_rows(
-            "billing_payers",
-            lambda query: query.eq("studio_id", studio_id).in_(
-                "billing_status", ["past_due", "failed", "unpaid"]
-            ),
+        attention_result = execute_required_rpc(
+            self.supabase,
+            "billing_attention_count_v1",
+            {
+                "p_studio_id": studio_id,
+                "p_today": today.isoformat(),
+            },
         )
-        uncollectible_invoice_count = self.count_rows(
-            "billing_invoices",
-            lambda query: query.eq("studio_id", studio_id).eq("status", "uncollectible"),
-        )
-        overdue_open_invoice_count = self.count_rows(
-            "billing_invoices",
-            lambda query: (
-                query.eq("studio_id", studio_id)
-                .eq("status", "open")
-                .lte("due_date", today.isoformat())
-            ),
-        )
+        payment_attention_count = getattr(attention_result, "data", None)
+        if not isinstance(payment_attention_count, int) or isinstance(
+            payment_attention_count, bool
+        ):
+            raise TypeError("Invalid billing attention count")
         active_plan_count = self.count_rows(
             "billing_plans",
             lambda query: query.eq("studio_id", studio_id).is_("archived_at", "null"),
@@ -287,9 +282,7 @@ class DashboardSummaryCounts:
 
         return DashboardSummaryBillingCounts(
             can_view_billing=True,
-            payment_attention_count=payer_attention_count
-            + uncollectible_invoice_count
-            + overdue_open_invoice_count,
+            payment_attention_count=payment_attention_count,
             has_plans=active_plan_count > 0,
             payments_ready=bool(payment_account and payment_account.get("charges_enabled")),
             amounts=DashboardSummaryBillingAmounts(available=False),

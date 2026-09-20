@@ -26,7 +26,6 @@ from app.schemas.auth import AuthResponse, UserProfile
 from app.services.dashboard_summary_service import DashboardSummaryService
 from tests.fakes.supabase import FakeTableQuery, TableBackedSupabase
 
-
 ROOT_DIR = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = ROOT_DIR / "performance" / "dashboard-summary-budget.json"
 FIXTURE_REVISION = "dashboard-summary-endpoint-fixture-v2"
@@ -58,8 +57,16 @@ class CountingTableBackedSupabase(TableBackedSupabase):
         )
 
     def rpc(self, name, params):
-        assert name == "dashboard_summary_facts"
         self.rpc_calls.append((name, params))
+
+        if name == "billing_attention_count_v1":
+            assert params == {
+                "p_studio_id": STUDIO_ID,
+                "p_today": "2026-05-20",
+            }
+            return FakeRpcCall(lambda: 3)
+
+        assert name == "dashboard_summary_facts"
 
         def execute():
             self.record_table_result(FakeResult(self.facts))

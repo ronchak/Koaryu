@@ -50,7 +50,21 @@ export function BillingFamiliesTab({
               <p className="mb-1 text-xs font-medium text-muted md:hidden">Payer</p>
               <p className="font-medium text-text-primary">{payer.display_name}</p>
               <div className="mt-1"><StatusPill status={payer.billing_status} /></div>
-              <p className="mt-1 text-xs text-muted">{formatMoney(payer.balance_cents)}</p>
+              <div className="mt-1 space-y-0.5 text-xs text-muted">
+                <p>Outstanding {formatMoney(payer.balance_cents)}</p>
+                <p>
+                  Overdue{" "}
+                  {payer.overdue_balance_cents == null
+                    ? "Unavailable"
+                    : formatMoney(payer.overdue_balance_cents)}
+                </p>
+                <p>
+                  Uncollectible{" "}
+                  {payer.uncollectible_balance_cents == null
+                    ? "Unavailable"
+                    : formatMoney(payer.uncollectible_balance_cents)}
+                </p>
+              </div>
             </div>
             <div className="min-w-0 text-text-secondary">
               <p className="mb-1 text-xs font-medium text-muted md:hidden">Contact</p>

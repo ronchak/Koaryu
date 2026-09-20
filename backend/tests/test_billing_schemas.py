@@ -39,6 +39,24 @@ def payer_payload(**overrides):
 
 
 class BillingPayerResponseTest(unittest.TestCase):
+    def test_collection_facts_default_to_unavailable_and_keep_supported_values(self):
+        unavailable = BillingPayerResponse(**payer_payload())
+        self.assertIsNone(unavailable.overdue_balance_cents)
+        self.assertIsNone(unavailable.uncollectible_balance_cents)
+
+        for billing_status in ("outstanding", "uncollectible"):
+            with self.subTest(billing_status=billing_status):
+                payer = BillingPayerResponse(
+                    **payer_payload(
+                        billing_status=billing_status,
+                        overdue_balance_cents=0,
+                        uncollectible_balance_cents=725,
+                    )
+                )
+                self.assertEqual(payer.billing_status, billing_status)
+                self.assertEqual(payer.overdue_balance_cents, 0)
+                self.assertEqual(payer.uncollectible_balance_cents, 725)
+
     def test_card_brand_aliases_to_card_payment_method_type(self):
         payer = BillingPayerResponse(
             **payer_payload(

@@ -1048,6 +1048,118 @@
     },
     "subscription_terms_v49": {
       "kind": "subscription_terms_v49"
+    },
+    "payer_collection_facts_v50": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "billing_payer_balance_facts_v1",
+      "signature": "public.billing_payer_balance_facts_v1(uuid,uuid,date)",
+      "expected": "f81f1d839e26e5fe0abe9bf84af7bcb58c654f88cea4107f4e97b1cf993492b4",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": true,
+      "volatility": "s",
+      "returnType": "record",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    },
+    "payer_read_projection_v50": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "list_billing_payers_v1",
+      "signature": "public.list_billing_payers_v1(uuid,uuid,date)",
+      "expected": "ca4a6d2d6657cf82900a315b492af687a42be2fd1a6a3cad296119f6be72ff8d",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": true,
+      "volatility": "s",
+      "returnType": "jsonb",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    },
+    "invoice_collection_facts_v50": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "billing_invoice_collection_facts_v1",
+      "signature": "public.billing_invoice_collection_facts_v1(uuid,uuid,date)",
+      "expected": "40d16d06464c028c1bd4a27089163181865cd65a8ce963b1738ee0abe3c5eacc",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": true,
+      "volatility": "s",
+      "returnType": "record",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    },
+    "billing_attention_count_v50": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "billing_attention_count_v1",
+      "signature": "public.billing_attention_count_v1(uuid,date)",
+      "expected": "4e57973f97038e57ec411c502960453b07d5f59374ab0e2bc856a42ecbb7e036",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "s",
+      "returnType": "integer",
+      "configuration": [
+        "search_path=\"\""
+      ]
     }
   },
   "states": {
@@ -1213,6 +1325,45 @@
       "extends": "v48",
       "append": [
         "subscription_terms_v49"
+      ]
+    },
+    "v50": {
+      "extends": "v49",
+      "overrides": {
+        "payer_balance_rpc_v41": {
+          "expected": "78890d7907bb56bfdb337df262b17cc5144f8bd87d169df26a10fc048072670f"
+        },
+        "billing_landing_reads_v38": {
+          "functions": [
+            {
+              "signature": "public.billing_payment_cohort(uuid,timestamptz,timestamptz)",
+              "bodyHash": "5d6f683e3c56fe05db7e4101073d1a23792081192219cfa9eda4db8dcf734a1d"
+            },
+            {
+              "signature": "public.billing_landing_aggregates(uuid,timestamptz,timestamptz)",
+              "bodyHash": "9af84c3c261a4ddb8aad9bc1c9cc332260fb1e31b1e7f51816b402339e2ad576"
+            },
+            {
+              "signature": "public.billing_webhook_health(text,boolean,timestamptz)",
+              "bodyHash": "3bdcc77c7d768e5ede8750900c0b75ac98bdffbb14ada059c580185133a9fd52"
+            }
+          ]
+        },
+        "resource_ownership_manifest_v31": {
+          "expected": "0:6a9ba91a4a426dd893efcd0038e37f175170abe3d5cf4dfc90a12754d2974c3c"
+        },
+        "operational_manifest_v11": {
+          "expected": "5f7dada79a3390a33dbca4338dd8944d9b283584bc6d606526c81e8811a2b3f2"
+        },
+        "operational_manifest_v12": {
+          "expected": "474d0ab453b2589c2619f882ce522995881b064be9080aecabaee8088b0c6dc5"
+        }
+      },
+      "append": [
+        "invoice_collection_facts_v50",
+        "payer_collection_facts_v50",
+        "payer_read_projection_v50",
+        "billing_attention_count_v50"
       ]
     }
   }

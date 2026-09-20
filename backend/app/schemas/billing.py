@@ -51,6 +51,8 @@ PayerBillingStatus = Literal[
     "upcoming",
     "past_due",
     "failed",
+    "outstanding",
+    "uncollectible",
     "unpaid",
     "externally_paid",
     "no_payment_method",
@@ -402,6 +404,8 @@ class BillingPayerResponse(BaseModel):
     autopay_terms_accepted_at: Optional[str] = None
     billing_status: PayerBillingStatus = "no_payment_method"
     balance_cents: int = 0
+    overdue_balance_cents: Optional[int] = None
+    uncollectible_balance_cents: Optional[int] = None
     created_at: str
     updated_at: str
 

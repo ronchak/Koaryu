@@ -11,7 +11,7 @@ BEGIN
  INSERT INTO public.students(studio_id,legal_first_name,legal_last_name,status) VALUES(studio,'Same','Name','active'),(studio,'Same','Name','inactive'),(other,'Same','Name','active');
  INSERT INTO public.students(studio_id,legal_first_name,legal_last_name,status,deleted_at) VALUES(studio,'Deleted','Student','active',now());
  FOR n IN 1..201 LOOP
-  INSERT INTO public.billing_invoices(studio_id,payer_id,status,amount_due_cents,amount_remaining_cents) VALUES(studio,payer,'open',100,100);
+  INSERT INTO public.billing_invoices(studio_id,payer_id,status,amount_due_cents,amount_remaining_cents,due_date) VALUES(studio,payer,'open',100,100,CURRENT_DATE-2);
   IF n=200 THEN
    result := public.billing_landing_aggregates(studio,'2026-12-01Z','2027-01-01Z');
    ASSERT (result->>'open_invoice_amount_cents')::bigint=20000, '200 invoices';

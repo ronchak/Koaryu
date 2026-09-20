@@ -20,8 +20,7 @@ from app.services.dashboard_summary_service import (
     DashboardSummaryService,
 )
 from app.services.dashboard_summary_store import DashboardSummaryStore
-from tests.fakes.supabase import TableBackedSupabase
-
+from tests.fakes.supabase import RpcBackedSupabase, TableBackedSupabase
 
 PROTECTED_TABLES = {
     "attendance",
@@ -59,11 +58,18 @@ def assert_dashboard_student_columns(columns: str) -> None:
         )
 
 
-class FakeSupabase(TableBackedSupabase):
+class FakeSupabase(RpcBackedSupabase):
     def __init__(self, tables):
         super().__init__(tables)
+        self.billing_attention_count = 3
+        self.billing_attention_error = None
         self.required_eq_filters = {table: {"studio_id"} for table in PROTECTED_TABLES}
         self.select_assertions["students"] = assert_dashboard_student_columns
+
+    def _rpc_billing_attention_count_v1(self, _params):
+        if self.billing_attention_error:
+            raise self.billing_attention_error
+        return self.billing_attention_count
 
 
 def auth_response(role="admin", studio_id="studio-1"):
@@ -403,6 +409,7 @@ class DashboardSummaryServiceTest(unittest.TestCase):
 
     def test_summary_uses_exact_full_studio_counts_and_excludes_deleted_cross_tenant_rows(self):
         service = self.build_service(self.base_tables())
+        service.supabase.billing_attention_count = 7
 
         summary, _timings = service._build_summary_sync(
             auth_response(role="admin"),
@@ -419,7 +426,7 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         self.assertEqual(summary.students.on_hold_students, 1)
         self.assertEqual(summary.leads.active_leads, 1)
         self.assertEqual(summary.leads.enrolled_leads, 1)
-        self.assertEqual(summary.billing.payment_attention_count, 3)
+        self.assertEqual(summary.billing.payment_attention_count, 7)
         self.assertEqual(summary.belts.belt_count, 1)
         self.assertEqual(summary.belts.tip_count, 1)
         self.assertTrue(summary.emergency_contacts.available)
@@ -452,7 +459,22 @@ class DashboardSummaryServiceTest(unittest.TestCase):
                 for entry in service.supabase.log
             )
         )
-        self.assertEqual(len(service.supabase.log), 29)
+        self.assertEqual(len(service.supabase.log), 26)
+        self.assertEqual(
+            service.supabase.rpc_calls,
+            [
+                (
+                    "billing_attention_count_v1",
+                    {"p_studio_id": "studio-1", "p_today": "2026-05-20"},
+                )
+            ],
+        )
+        self.assertFalse(
+            any(
+                entry["table"] in {"billing_invoices", "billing_payers"}
+                for entry in service.supabase.log
+            )
+        )
 
         serialized = summary.model_dump(mode="json")
         self.assertTrue(
@@ -516,8 +538,8 @@ class DashboardSummaryServiceTest(unittest.TestCase):
             "studio_payment_accounts",
         }
         role_expectations = {
-            "admin": (30, True),
-            "front_desk": (30, True),
+            "admin": (27, True),
+            "front_desk": (27, True),
             "instructor": (25, False),
             None: (25, False),
         }
@@ -544,10 +566,26 @@ class DashboardSummaryServiceTest(unittest.TestCase):
                 self.assertEqual(summary.schedule.today_sessions, 2)
                 self.assertEqual(summary.billing.can_view_billing, can_view_billing)
                 if can_view_billing:
-                    self.assertEqual(len(billing_reads), 5)
+                    self.assertEqual(len(billing_reads), 2)
+                    self.assertEqual(
+                        service.supabase.rpc_calls,
+                        [
+                            (
+                                "billing_attention_count_v1",
+                                {"p_studio_id": "studio-1", "p_today": "2026-05-20"},
+                            )
+                        ],
+                    )
+                    self.assertFalse(
+                        any(
+                            entry["table"] in {"billing_invoices", "billing_payers"}
+                            for entry in billing_reads
+                        )
+                    )
                     self.assertEqual(serialized_billing["amounts"], {"available": False})
                 else:
                     self.assertEqual(billing_reads, [])
+                    self.assertEqual(service.supabase.rpc_calls, [])
                     self.assertNotIn("amounts", serialized_billing)
                     self.assertIsNone(serialized_billing["payment_attention_count"])
                     self.assertIsNone(serialized_billing["has_plans"])
@@ -556,6 +594,27 @@ class DashboardSummaryServiceTest(unittest.TestCase):
                 for query in service.supabase.log:
                     if query["table"] in PROTECTED_TABLES:
                         self.assertIn(("eq", "studio_id", "studio-1"), query["filters"])
+
+    def test_billing_attention_rpc_failure_does_not_fabricate_a_summary(self):
+        for client, expected_error in (
+            (TableBackedSupabase(self.fully_materialized_tables()), RuntimeError),
+            (FakeSupabase(self.fully_materialized_tables()), OSError),
+        ):
+            with self.subTest(expected_error=expected_error):
+                if isinstance(client, FakeSupabase):
+                    client.billing_attention_error = OSError("billing attention unavailable")
+                service = DashboardSummaryService(client)
+
+                with self.assertRaises(expected_error):
+                    service._build_summary_sync(
+                        auth_response(role="admin"),
+                        {
+                            "id": "studio-1",
+                            "name": "River City",
+                            "timezone": "America/Los_Angeles",
+                        },
+                        today_override=date(2026, 5, 20),
+                    )
 
     def test_today_returns_five_stably_sorted_rows_and_one_batched_attendance_query(self):
         session_specs = [

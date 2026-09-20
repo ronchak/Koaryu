@@ -44,7 +44,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Verify a pinned deployed Render/Vercel pair reports one exact SHA: `npm run verify:deployed-release -- --environment <staging|production> --expected-sha <full-sha> --frontend-origin <pinned-origin> --backend-api <pinned-api-v1>`
 - Capture privacy-safe dashboard timing evidence only after exact-SHA verification: `npm run capture:dashboard-performance -- <same release args> --storage-state <absolute-private-path>`
 - Verify all migrations and contract SQL on ephemeral PostgreSQL 17: `npm run check:supabase-contracts-local`
-- Inspect the next V38-to-V49 migration: `node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --mode inspect --one-migration --candidate-sha <full-sha>`
+- Inspect the next V38-to-V50 migration: `node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --mode inspect --one-migration --candidate-sha <full-sha>`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
 
 ## Monorepo Rules

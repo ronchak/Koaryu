@@ -50,7 +50,21 @@ export function BillingInvoicesTab({
                   <p className="break-words text-xs text-muted [overflow-wrap:anywhere]">{payer.email || "No email on file"}</p>
                 </div>
                 <div className="text-left sm:text-right">
-                  <p className="font-medium text-danger">{formatMoney(payer.balance_cents)}</p>
+                  <p className="font-medium text-danger">
+                    Outstanding {formatMoney(payer.balance_cents)}
+                  </p>
+                  <p className="text-xs text-muted">
+                    Overdue{" "}
+                    {payer.overdue_balance_cents == null
+                      ? "Unavailable"
+                      : formatMoney(payer.overdue_balance_cents)}
+                  </p>
+                  <p className="text-xs text-muted">
+                    Uncollectible{" "}
+                    {payer.uncollectible_balance_cents == null
+                      ? "Unavailable"
+                      : formatMoney(payer.uncollectible_balance_cents)}
+                  </p>
                   <StatusPill status={payer.billing_status} />
                 </div>
               </div>

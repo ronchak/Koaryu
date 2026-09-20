@@ -69,8 +69,13 @@ BEGIN
     END IF;
     PERFORM public.recompute_billing_payer_balance_v1(studio_a,payer_a);
     IF (SELECT ROW(balance_cents,billing_status) FROM public.billing_payers WHERE id=payer_a)
-        IS DISTINCT FROM ROW(1000,'past_due'::TEXT) THEN
-        RAISE EXCEPTION 'Status inclusion, explicit zero, negative clamp or date preservation failed';
+        IS DISTINCT FROM ROW(1000,'current'::TEXT) THEN
+        RAISE EXCEPTION 'Balance inclusion, explicit zero, negative clamp or non-overdue status failed';
+    END IF;
+    IF (SELECT ROW(balance_cents,overdue_balance_cents,uncollectible_balance_cents,billing_status)
+        FROM public.billing_payer_balance_facts_v1(studio_a,payer_a))
+        IS DISTINCT FROM ROW(1000::BIGINT,0::BIGINT,300::BIGINT,'outstanding'::TEXT) THEN
+        RAISE EXCEPTION 'Mixed draft, undated and uncollectible invoices lost their separate facts';
     END IF;
     PERFORM public.recompute_billing_payer_balance_v1(studio_b,payer_a);
     PERFORM public.recompute_billing_payer_balance_v1(studio_a,payer_b);
@@ -100,13 +105,130 @@ BEGIN
         RAISE EXCEPTION 'Overflow did not fail without changing the payer';
     END IF;
     -- Current schema excludes NULL remaining values. Do not weaken it to
-    -- manufacture a test of the retained legacy fallback expression.
+    -- manufacture an unreachable fallback in the financial calculation.
     IF NOT (SELECT attnotnull FROM pg_catalog.pg_attribute
         WHERE attrelid='public.billing_invoices'::regclass AND attname='amount_remaining_cents') THEN
         RAISE EXCEPTION 'Unexpected nullable invoice remaining-balance schema';
     END IF;
 END;
 $proof$;
+
+RESET ROLE;
+DO $collection_seed$
+DECLARE actor UUID := gen_random_uuid(); studio UUID := gen_random_uuid();
+BEGIN
+    INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+    VALUES(actor,'authenticated','authenticated',actor||'@example.invalid','{}','{}',now(),now());
+    INSERT INTO public.studios(id,name,slug,owner_id,timezone)
+    VALUES(studio,'Collection facts',studio::TEXT,actor,'UTC');
+    PERFORM set_config('balance_test.collection_studio',studio::TEXT,true);
+END;
+$collection_seed$;
+SET LOCAL ROLE service_role;
+DO $collection_facts$
+DECLARE
+    studio UUID := current_setting('balance_test.collection_studio')::UUID;
+    today DATE := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE;
+    payer UUID;
+    today_payer UUID;
+    overdue_payer UUID;
+    test_case RECORD;
+    facts RECORD;
+    projected JSONB;
+    before_row JSONB;
+    landing JSONB;
+    server_zone TEXT;
+BEGIN
+    FOR test_case IN SELECT * FROM (VALUES
+        ('draft','draft',-1,100,100,0,0,'outstanding'),
+        ('future','open',1,100,100,0,0,'outstanding'),
+        ('today','open',0,100,100,0,0,'outstanding'),
+        ('undated','open',NULL,100,100,0,0,'outstanding'),
+        ('overdue','open',-1,100,100,100,0,'past_due'),
+        ('uncollectible','uncollectible',-1,100,100,0,100,'uncollectible'),
+        ('partial refund','partially_refunded',-1,100,100,100,0,'past_due'),
+        ('paid','paid',-1,100,0,0,0,'current'),
+        ('void','void',-1,100,0,0,0,'current'),
+        ('refunded','refunded',-1,100,0,0,0,'current'),
+        ('zero','open',-1,0,0,0,0,'current'),
+        ('negative','open',-1,-50,0,0,0,'current')
+    ) AS cases(label,status,day_offset,remaining,balance,overdue,uncollectible,read_status)
+    LOOP
+        payer := gen_random_uuid();
+        INSERT INTO public.billing_payers(id,studio_id,display_name,balance_cents,billing_status)
+        VALUES(payer,studio,test_case.label,999,'past_due');
+        INSERT INTO public.billing_invoices(studio_id,payer_id,status,amount_due_cents,amount_remaining_cents,due_date,external)
+        VALUES(studio,payer,test_case.status,100,test_case.remaining,today+test_case.day_offset,true);
+        SELECT to_jsonb(p) INTO before_row FROM public.billing_payers p WHERE id=payer;
+        SELECT * INTO facts FROM public.billing_payer_balance_facts_v1(studio,payer,today);
+        IF ROW(facts.balance_cents,facts.overdue_balance_cents,facts.uncollectible_balance_cents,facts.billing_status)
+           IS DISTINCT FROM ROW(test_case.balance::BIGINT,test_case.overdue::BIGINT,test_case.uncollectible::BIGINT,test_case.read_status) THEN
+            RAISE EXCEPTION 'Collection policy failed for %: %',test_case.label,row_to_json(facts);
+        END IF;
+        SELECT p INTO projected FROM public.list_billing_payers_v1(studio,payer,today) p;
+        IF projected->>'id' IS DISTINCT FROM payer::TEXT
+           OR projected->>'billing_status' IS DISTINCT FROM test_case.read_status
+           OR (projected->>'overdue_balance_cents')::BIGINT IS DISTINCT FROM test_case.overdue::BIGINT
+           OR (SELECT to_jsonb(p) FROM public.billing_payers p WHERE id=payer) IS DISTINCT FROM before_row THEN
+            RAISE EXCEPTION 'Payer projection lost facts or rewrote retained rows for %',test_case.label;
+        END IF;
+        PERFORM public.recompute_billing_payer_balance_v1(studio,payer);
+        IF (SELECT ROW(balance_cents,billing_status) FROM public.billing_payers WHERE id=payer)
+           IS DISTINCT FROM ROW(test_case.balance,
+               CASE WHEN test_case.overdue>0 THEN 'past_due' ELSE 'current' END) THEN
+            RAISE EXCEPTION 'Stored compatibility snapshot disagrees for %',test_case.label;
+        END IF;
+        IF test_case.label='today' THEN today_payer:=payer; END IF;
+        IF test_case.label='overdue' THEN overdue_payer:=payer; END IF;
+    END LOOP;
+
+    SELECT to_jsonb(p) INTO before_row FROM public.billing_payers p WHERE id=today_payer;
+    SELECT p INTO projected FROM public.list_billing_payers_v1(studio,today_payer,today+1) p;
+    IF projected->>'billing_status' IS DISTINCT FROM 'past_due'
+       OR projected->>'overdue_balance_cents' IS DISTINCT FROM '100'
+       OR (SELECT to_jsonb(p) FROM public.billing_payers p WHERE id=today_payer) IS DISTINCT FROM before_row THEN
+        RAISE EXCEPTION 'Next-day reads require a payment event or rewrite the stored row';
+    END IF;
+    FOREACH server_zone IN ARRAY ARRAY['Pacific/Kiritimati','Etc/GMT+12'] LOOP
+        PERFORM set_config('TimeZone',server_zone,true);
+        SELECT * INTO facts FROM public.billing_payer_balance_facts_v1(studio,today_payer);
+        IF facts.overdue_balance_cents IS DISTINCT FROM 0::BIGINT THEN
+            RAISE EXCEPTION 'Today classification used server timezone %',server_zone;
+        END IF;
+        SELECT * INTO facts FROM public.billing_payer_balance_facts_v1(studio,overdue_payer);
+        IF facts.overdue_balance_cents IS DISTINCT FROM 100::BIGINT THEN
+            RAISE EXCEPTION 'Overdue classification used server timezone %',server_zone;
+        END IF;
+    END LOOP;
+    PERFORM set_config('TimeZone','UTC',true);
+    INSERT INTO public.billing_payers(studio_id,display_name,billing_status)
+    VALUES(studio,'Independent payment failure','failed');
+    INSERT INTO public.billing_invoices(studio_id,status,amount_due_cents,amount_remaining_cents,due_date,external)
+    VALUES (studio,'open',50,50,today-1,true),
+           (studio,'uncollectible',75,75,NULL,true),
+           (studio,'draft',25,25,today-1,true);
+    IF (SELECT SUM(balance_cents) FROM public.billing_payer_balance_facts_v1(studio)) IS DISTINCT FROM 700::NUMERIC
+       OR public.billing_attention_count_v1(studio,today) IS DISTINCT FROM 8
+       OR public.billing_attention_count_v1(studio,today+1) IS DISTINCT FROM 10 THEN
+        RAISE EXCEPTION 'Attention facts lost unassigned invoices or invented payer attribution';
+    END IF;
+    projected:=public.dashboard_summary_facts(studio,'billing_visible','UTC',today,'dashboard-summary-v1');
+    IF projected->'billing'->>'payment_attention_count' IS DISTINCT FROM '8' THEN
+        RAISE EXCEPTION 'Primary Dashboard did not consume the current billing attention facts';
+    END IF;
+    landing:=public.billing_landing_aggregates(studio,now()-INTERVAL '1 month',now());
+    IF landing->>'failed_payer_count' IS DISTINCT FROM '3'
+       OR landing->>'open_invoice_amount_cents' IS DISTINCT FROM '850' THEN
+        RAISE EXCEPTION 'Landing disagrees with scoped current payer facts: %',landing;
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.list_billing_payers_v1(
+        current_setting('balance_test.studio_b')::UUID,today_payer,today))
+       OR EXISTS (SELECT 1 FROM public.billing_payer_balance_facts_v1(
+        current_setting('balance_test.studio_b')::UUID,today_payer,today)) THEN
+        RAISE EXCEPTION 'Collection facts crossed a studio boundary';
+    END IF;
+END;
+$collection_facts$;
 
 RESET ROLE;
 CREATE FUNCTION pg_temp.fail_balance_update() RETURNS TRIGGER LANGUAGE plpgsql AS $fault$
@@ -140,6 +262,12 @@ DROP TRIGGER balance_contract_fault ON public.billing_payers;
 SET LOCAL ROLE anon;
 DO $anon$
 BEGIN
+    IF has_function_privilege(current_user,'public.billing_invoice_collection_facts_v1(uuid,uuid,date)','EXECUTE')
+       OR has_function_privilege(current_user,'public.billing_attention_count_v1(uuid,date)','EXECUTE')
+       OR has_function_privilege(current_user,'public.billing_payer_balance_facts_v1(uuid,uuid,date)','EXECUTE')
+       OR has_function_privilege(current_user,'public.list_billing_payers_v1(uuid,uuid,date)','EXECUTE') THEN
+        RAISE EXCEPTION 'Unprivileged caller can execute current payer reads';
+    END IF;
     BEGIN
         PERFORM public.recompute_billing_payer_balance_v1(NULL,NULL);
         RAISE EXCEPTION 'Anonymous caller unexpectedly executed balance RPC';
@@ -151,6 +279,12 @@ RESET ROLE;
 SET LOCAL ROLE authenticated;
 DO $authenticated$
 BEGIN
+    IF has_function_privilege(current_user,'public.billing_invoice_collection_facts_v1(uuid,uuid,date)','EXECUTE')
+       OR has_function_privilege(current_user,'public.billing_attention_count_v1(uuid,date)','EXECUTE')
+       OR has_function_privilege(current_user,'public.billing_payer_balance_facts_v1(uuid,uuid,date)','EXECUTE')
+       OR has_function_privilege(current_user,'public.list_billing_payers_v1(uuid,uuid,date)','EXECUTE') THEN
+        RAISE EXCEPTION 'Unprivileged caller can execute current payer reads';
+    END IF;
     BEGIN
         PERFORM public.recompute_billing_payer_balance_v1(NULL,NULL);
         RAISE EXCEPTION 'Authenticated caller unexpectedly executed balance RPC';
