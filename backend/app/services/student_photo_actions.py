@@ -6,6 +6,7 @@ from supabase import Client
 from app.schemas.student import StudentResponse
 from app.services.student_photo_store import StudentPhotoStore
 from app.services.student_response_builder import StudentResponseBuilder
+from app.services.studio_business_date import studio_today_for_studio
 
 
 class StudentPhotoActions:
@@ -60,6 +61,7 @@ class StudentPhotoActions:
         extension: str,
     ) -> StudentResponse:
         student = self._fetch_student_row_for_studio(student_id, studio_id)
+        response_today = studio_today_for_studio(self.supabase, studio_id)
         photo_path = self.photo_store.path_for(student, extension)
         previous_photo_path = student.get("photo_path")
 
@@ -85,6 +87,7 @@ class StudentPhotoActions:
             return self.response_builder.row_to_response(
                 {**student, **update_payload},
                 photo_url=self.photo_store.create_signed_url(photo_path),
+                today=response_today,
             )
 
         result = (
@@ -114,7 +117,7 @@ class StudentPhotoActions:
                 "size_bytes": len(content),
             },
         )
-        return self.response_builder.row_to_response(result.data[0])
+        return self.response_builder.row_to_response(result.data[0], today=response_today)
 
     async def delete(
         self,
@@ -123,6 +126,7 @@ class StudentPhotoActions:
         actor_id: str,
     ) -> StudentResponse:
         student = self._fetch_student_row_for_studio(student_id, studio_id)
+        response_today = studio_today_for_studio(self.supabase, studio_id)
         previous_photo_path = student.get("photo_path")
         if not previous_photo_path and not self.photo_store.columns_available():
             previous_photo_path = self.photo_store.path_for(student, "webp")
@@ -147,6 +151,7 @@ class StudentPhotoActions:
                     "photo_updated_at": None,
                 },
                 photo_url=None,
+                today=response_today,
             )
 
         result = (
@@ -172,7 +177,9 @@ class StudentPhotoActions:
             student_id,
             {"photo_path": previous_photo_path},
         )
-        return self.response_builder.row_to_response(result.data[0], photo_url=None)
+        return self.response_builder.row_to_response(
+            result.data[0], photo_url=None, today=response_today
+        )
 
     def _write_audit_log(
         self,

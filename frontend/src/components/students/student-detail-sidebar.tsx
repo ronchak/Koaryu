@@ -9,6 +9,7 @@ import {
   type StudentRankWithContext,
 } from "@/components/students/student-rank-badge";
 import { Button } from "@/components/ui/button";
+import { calendarAge } from "@/lib/student-age";
 import type { BeltRank, Program, Student } from "@/types";
 import { Camera, X } from "lucide-react";
 import styles from "./student-records.module.css";
@@ -55,12 +56,8 @@ function formatDateTime(d?: string | null) {
 }
 
 function calculateAge(dob: string | null | undefined, businessDate: string): string {
-  if (!dob) return "—";
-  const [birthYear, birthMonth, birthDay] = dob.split("-").map(Number);
-  const [currentYear, currentMonth, currentDay] = businessDate.split("-").map(Number);
-  const birthdayHasPassed =
-    currentMonth > birthMonth || (currentMonth === birthMonth && currentDay >= birthDay);
-  return `${currentYear - birthYear - (birthdayHasPassed ? 0 : 1)} yrs`;
+  const age = calendarAge(dob, businessDate);
+  return age === null ? "—" : `${age} yrs`;
 }
 
 export function StudentDetailSidebar({

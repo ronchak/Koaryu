@@ -182,7 +182,10 @@ export function useSchedulePageController({
     };
   }, [attendanceRefreshAttempt, refreshSessionAttendance, selectedSession]);
 
-  const activeStudents = useMemo(() => getActiveScheduleStudents(students), [students]);
+  const activeStudents = useMemo(
+    () => getActiveScheduleStudents(students, config.businessDate),
+    [config.businessDate, students],
+  );
   const selectedSessionAttendance = useMemo(
     () => getScheduleSessionAttendance(attendance, selectedSession),
     [attendance, selectedSession],

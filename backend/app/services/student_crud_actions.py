@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from typing import Any, Callable
 
 from fastapi import HTTPException
@@ -14,6 +15,7 @@ from app.schemas.student import (
     StudentUpdate,
 )
 from app.services.student_program_memberships import StudentProgramMembershipStore
+from app.services.studio_business_date import studio_today_for_studio
 from app.services.studio_scope import ensure_optional_studio_record
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
@@ -57,6 +59,11 @@ class StudentCrudActions:
         student_dict["program_id"] = program_ids[0]
         student_dict["studio_id"] = studio_id
         student_dict = self.prepare_student_write(student_dict, for_creation=True)
+        response_today = (
+            studio_today_for_studio(self.supabase, studio_id)
+            if student_dict.get("date_of_birth")
+            else None
+        )
 
         result = execute_required_rpc(
             self.supabase,
@@ -75,7 +82,7 @@ class StudentCrudActions:
         payload = first_rpc_row(result)
         if not payload or not isinstance(payload.get("result_student"), dict):
             raise HTTPException(status_code=500, detail="Failed to create student")
-        return self._write_response(payload)
+        return self._write_response(payload, today=response_today)
 
     async def get_student(self, student_id: str, studio_id: str) -> StudentResponse:
         result = (
@@ -115,6 +122,11 @@ class StudentCrudActions:
         )
 
         update_dict = self.prepare_student_write(update_dict, for_creation=False)
+        response_today = (
+            studio_today_for_studio(self.supabase, studio_id)
+            if update_dict.get("date_of_birth") is not None or "date_of_birth" not in update_dict
+            else None
+        )
         try:
             result = execute_required_rpc(
                 self.supabase,
@@ -142,9 +154,9 @@ class StudentCrudActions:
         if not payload or not isinstance(payload.get("result_student"), dict):
             raise HTTPException(status_code=404, detail="Student not found")
 
-        return self._write_response(payload)
+        return self._write_response(payload, today=response_today)
 
-    def _write_response(self, payload: dict) -> StudentResponse:
+    def _write_response(self, payload: dict, *, today: date | None) -> StudentResponse:
         student = payload["result_student"]
         guardians = [
             GuardianResponse.model_validate(row) for row in payload.get("result_guardians") or []
@@ -166,6 +178,7 @@ class StudentCrudActions:
             guardians=guardians,
             memberships=memberships,
             photo_url=photo_url,
+            today=today,
         )
 
     async def soft_delete_student(self, student_id: str, studio_id: str, actor_id: str) -> None:

@@ -1,4 +1,5 @@
 import type { AttendanceRecord, ClassSession, Student } from "@/types";
+import { withCurrentMinorStatus } from "./student-age.ts";
 
 export type SchedulePageView = "month" | "week" | "day";
 
@@ -265,8 +266,10 @@ export function recurringClassOverlapsRange(
   );
 }
 
-export function getActiveScheduleStudents(students: Student[]) {
-  return students.filter((student) => student.status === "active" || student.status === "trialing");
+export function getActiveScheduleStudents(students: Student[], businessDate: string) {
+  return students
+    .filter((student) => student.status === "active" || student.status === "trialing")
+    .map((student) => withCurrentMinorStatus(student, businessDate));
 }
 
 export function getScheduleSessionAttendance(

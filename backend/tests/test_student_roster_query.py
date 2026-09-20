@@ -1,6 +1,7 @@
 import base64
 import json
 import unittest
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -115,6 +116,58 @@ class StudentRosterQueryTest(unittest.TestCase):
         self.assertTrue(result.has_next)
         self.assertIsNotNone(result.next_cursor)
         self.assertEqual(result.items[0].guardian_email, None)
+
+    def test_paged_roster_replaces_stored_minor_flag_after_fetch(self):
+        from app.services.student_service import StudentService
+
+        row = roster_item()
+        row["date_of_birth"] = "2008-09-20"
+        row["is_minor"] = True
+        page = StudentRosterPageResponse(
+            items=[row],
+            total=1,
+            page_size=50,
+            page_ordinal=1,
+            has_next=False,
+            has_previous=False,
+        )
+        client = FakeSupabase([])
+        service = StudentService(client)
+        with (
+            patch("app.services.student_service.fetch_student_roster_page", return_value=page),
+            patch(
+                "app.services.student_service.studio_today_for_studio",
+                return_value=date(2026, 9, 20),
+            ) as studio_date,
+            patch.object(service._student_photo_store, "create_signed_urls", return_value={}),
+        ):
+            result = service.list_roster_page(STUDIO_ID)
+
+        studio_date.assert_called_once_with(client, STUDIO_ID)
+        self.assertFalse(result.items[0].is_minor)
+
+    def test_empty_paged_roster_does_not_load_date_context(self):
+        from app.services.student_service import StudentService
+
+        page = StudentRosterPageResponse(
+            items=[],
+            total=0,
+            page_size=50,
+            page_ordinal=1,
+            has_next=False,
+            has_previous=False,
+        )
+        client = FakeSupabase([])
+        service = StudentService(client)
+        with (
+            patch("app.services.student_service.fetch_student_roster_page", return_value=page),
+            patch("app.services.student_service.studio_today_for_studio") as studio_date,
+            patch.object(service._student_photo_store, "create_signed_urls", return_value={}),
+        ):
+            result = service.list_roster_page(STUDIO_ID)
+
+        studio_date.assert_not_called()
+        self.assertEqual(result.items, [])
 
     def test_cursor_is_bound_to_query_and_tampering_fails_closed(self):
         payload = {

@@ -79,6 +79,20 @@ const FILTER_DEFAULTS = {
 };
 
 describe("students page model", () => {
+  it("reprojects a cached row on its birthday without mutating the source record", () => {
+    const cached = student("birthday", {
+      date_of_birth: "2008-09-20",
+      is_minor: true,
+    });
+
+    const before = buildStudentRows([cached], [], "2026-09-19")[0].student;
+    const birthday = buildStudentRows([cached], [], "2026-09-20")[0].student;
+
+    assert.equal(before.is_minor, true);
+    assert.equal(birthday.is_minor, false);
+    assert.equal(cached.is_minor, true);
+  });
+
   it("builds roster rows with display, active program, contact, and tag fields", () => {
     const rows = buildStudentRows(
       [
@@ -86,6 +100,7 @@ describe("students page model", () => {
           legal_first_name: "Ari",
           legal_last_name: "Stone",
           preferred_name: "Ace",
+          date_of_birth: "2010-05-24",
           is_minor: true,
           guardians: [
             {
@@ -108,6 +123,7 @@ describe("students page model", () => {
         }),
       ],
       [program("kids", "Kids BJJ"), program("adults", "Adults")],
+      "2026-05-24",
     );
 
     assert.equal(rows[0].displayName, "Stone, Ace");
@@ -150,6 +166,7 @@ describe("students page model", () => {
         }),
       ],
       [program("kids", "Kids BJJ"), program("adults", "Adults")],
+      "2026-05-24",
     );
 
     const filtered = filterStudentRows(rows, {
@@ -178,6 +195,7 @@ describe("students page model", () => {
         student("ava", { legal_first_name: "Ava", legal_last_name: "Aardvark", status: "active" }),
       ],
       [],
+      "2026-05-24",
     );
 
     const filtered = filterStudentRows(rows, {

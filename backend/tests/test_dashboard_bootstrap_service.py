@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -12,9 +13,73 @@ from app.schemas.student import StudentResponse
 from app.schemas.auth import AuthResponse, UserProfile
 from app.schemas.dashboard_bootstrap import DashboardBootstrapResponse
 from app.services.dashboard_bootstrap_service import DashboardBootstrapService
+from tests.fakes.supabase import TableBackedSupabase
 
 
 class DashboardBootstrapServiceTest(unittest.TestCase):
+    def test_bootstrap_reuses_studio_timezone_for_current_student_projection(self):
+        supabase = TableBackedSupabase({"student_program_memberships": []})
+        supabase.options = SimpleNamespace(postgrest_client_timeout=10.0)
+        service = DashboardBootstrapService(supabase)
+        auth = AuthResponse(
+            user=UserProfile(id="user-1", email="owner@example.com", full_name="Owner"),
+            staff_profiles_available=True,
+            studio_id="studio-1",
+            role="admin",
+        )
+        student = {
+            "id": "student-1",
+            "studio_id": "studio-1",
+            "legal_first_name": "Birthday",
+            "legal_last_name": "Student",
+            "date_of_birth": "2008-09-20",
+            "is_minor": True,
+            "status": "active",
+            "tags": [],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+        }
+
+        def fetch(label, _method, _studio_id, _timeout):
+            if label == "studio":
+                result = SimpleNamespace(
+                    data={
+                        "id": "studio-1",
+                        "name": "West Coast",
+                        "slug": "west-coast",
+                        "timezone": "America/Los_Angeles",
+                    }
+                )
+            elif label == "students":
+                result = SimpleNamespace(data=[student], count=1)
+            elif label == "programs":
+                result = []
+            else:
+                result = SimpleNamespace(data=[])
+            return result, (label, 1.0)
+
+        with (
+            patch(
+                "app.services.dashboard_bootstrap_service.AuthService.get_user_profile",
+                new=AsyncMock(return_value=auth),
+            ),
+            patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"),
+            patch.object(
+                DashboardBootstrapService, "_timed_fetch_with_isolated_client", side_effect=fetch
+            ),
+            patch(
+                "app.services.dashboard_bootstrap_service.studio_today",
+                return_value=(date(2026, 9, 20), "America/Los_Angeles"),
+            ),
+        ):
+            payload, timings = asyncio.run(
+                service.get_dashboard_bootstrap("user-1", view="students")
+            )
+
+        self.assertFalse(payload.students[0].is_minor)
+        self.assertFalse(any(entry["table"] == "studios" for entry in supabase.log))
+        self.assertGreater(timings["students"], 1.0)
+
     def test_bootstrap_schema_inherits_optional_dashboard_enrichments(self):
         schema = DashboardBootstrapResponse.model_json_schema()
 
@@ -139,7 +204,12 @@ if __name__ == "__main__":
 # Projection failures must be opt-in so deployed older frontends never mistake
 # missing data for a successful empty collection during a rolling release.
 def partial_bootstrap_case(
-    *, failed=None, failure=None, enrichment_failure=False, allow_partial=True
+    *,
+    failed=None,
+    failure=None,
+    enrichment_failure=False,
+    allow_partial=True,
+    student_dob=None,
 ):
     supabase = SimpleNamespace(options=SimpleNamespace(postgrest_client_timeout=10.0))
     service = DashboardBootstrapService(supabase)
@@ -160,6 +230,7 @@ def partial_bootstrap_case(
         studio_id="partial-studio",
         legal_first_name="Healthy",
         legal_last_name="Student",
+        date_of_birth=student_dob,
         status="active",
         created_at="2026-09-05",
         updated_at="2026-09-05",
@@ -204,9 +275,15 @@ def partial_bootstrap_case(
         ),
         patch(
             "app.services.dashboard_bootstrap_service.StudentService.rows_to_responses",
-            side_effect=TimeoutError("private membership enrichment detail")
-            if enrichment_failure
-            else None,
+            side_effect=(
+                enrichment_failure
+                if isinstance(enrichment_failure, Exception)
+                else (
+                    TimeoutError("private membership enrichment detail")
+                    if enrichment_failure
+                    else None
+                )
+            ),
             return_value=[student],
         ),
     ):
@@ -234,6 +311,13 @@ def test_opted_bootstrap_retains_healthy_projections_and_marks_failed_data_unava
         assert payload.programs[0].id == "program-1"
     if failed == "studio":
         assert payload.studio is None and payload.studio_name is None
+        dated_payload, _ = partial_bootstrap_case(failed="studio", student_dob="2008-09-20")
+        assert dated_payload.dataset_errors.model_dump(exclude_none=True).keys() == {
+            "studio",
+            "students",
+        }
+        assert dated_payload.students == []
+        assert dated_payload.students_total is None
 
 
 def test_student_enrichment_failure_does_not_discard_healthy_programs_or_fabricate_roster_count():
@@ -256,6 +340,12 @@ def test_projection_access_failures_remain_fatal(allow_partial, status_code):
             allow_partial=allow_partial,
         )
     assert result.value.status_code == status_code
+    with pytest.raises(HTTPException) as mapped_result:
+        partial_bootstrap_case(
+            enrichment_failure=HTTPException(status_code=status_code),
+            allow_partial=allow_partial,
+        )
+    assert mapped_result.value.status_code == status_code
 
 
 def test_legacy_bootstrap_still_rejects_partial_data():

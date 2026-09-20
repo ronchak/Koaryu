@@ -75,7 +75,7 @@
     "attendance": ["id", "studio_id", "session_id", "student_id", "status", "checked_in_at"]
   },
   "data_hygiene_readiness": {
-    "students": ["id", "studio_id", "status", "deleted_at", "is_minor", "emergency_contact_name", "program_id", "current_belt_rank_id"],
+    "students": ["id", "studio_id", "status", "deleted_at", "date_of_birth", "emergency_contact_name", "program_id", "current_belt_rank_id"],
     "student_guardians": ["id", "student_id", "guardian_id"],
     "memberships": ["id", "studio_id", "student_id", "status", "current_belt_rank_id"],
     "billing_enrollments": ["id", "studio_id", "student_id"],

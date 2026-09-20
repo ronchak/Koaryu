@@ -132,6 +132,7 @@ SOURCE_VOCABULARY_COLUMNS = {
         "deleted_at",
         "created_at",
         "is_minor",
+        "date_of_birth",
         "emergency_contact_name",
         "program_id",
         "current_belt_rank_id",
@@ -299,6 +300,52 @@ class ReportExportDataBudgetTest(unittest.TestCase):
         snapshot = service.budget_snapshot
         self.assertEqual(snapshot.provider_calls, 3)
         self.assertEqual(snapshot.fetched_rows, 3)
+
+        student = {
+            "id": "student-1",
+            "studio_id": "studio-1",
+            "legal_first_name": "Ari",
+            "legal_last_name": "Stone",
+            "date_of_birth": "2010-01-01",
+            "status": "active",
+            "tags": [],
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+        }
+        student_supabase = TableBackedSupabase(
+            {
+                "students": [student],
+                "studios": [{"id": "studio-1", "timezone": "UTC"}],
+            }
+        )
+        student_service = ReportExportService(
+            student_supabase, budget=ReportExportBudget(clock=lambda: 0.0)
+        )
+        asyncio.run(student_service.build_csv("students", "studio-1"))
+        student_snapshot = student_service.budget_snapshot
+        self.assertEqual(student_snapshot.provider_calls, 2)
+        self.assertEqual(student_snapshot.fetched_rows, 2)
+        self.assertEqual(
+            [entry["table"] for entry in student_supabase.log], ["students", "studios"]
+        )
+
+        exhausted_supabase = TableBackedSupabase(
+            {
+                "students": [student],
+                "studios": [{"id": "studio-1", "timezone": "UTC"}],
+            }
+        )
+        exhausted_service = ReportExportService(
+            exhausted_supabase,
+            budget=ReportExportBudget(max_provider_calls=1, clock=lambda: 0.0),
+        )
+        with self.assertRaises(HTTPException) as exhausted:
+            asyncio.run(exhausted_service.build_csv("students", "studio-1"))
+        self.assertEqual(exhausted.exception.status_code, 413)
+        exhausted_snapshot = exhausted_service.budget_snapshot
+        self.assertEqual(exhausted_snapshot.provider_calls, 1)
+        self.assertEqual(exhausted_snapshot.fetched_rows, 1)
+        self.assertEqual([entry["table"] for entry in exhausted_supabase.log], ["students"])
 
     def test_staff_roles_hydrates_selected_auth_users_with_shared_budget(self):
         class AuthAdmin:

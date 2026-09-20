@@ -37,6 +37,7 @@ type CommitStudents = (
 ) => void;
 
 interface UseStoreStudentRosterActionsOptions {
+  businessDateRef: StoreRef<string>;
   beginLiveAuthRequest: BeginLiveAuthRequest;
   beltLaddersRef: StoreRef<BeltLadder[]>;
   beltRanksRef: StoreRef<BeltRank[]>;
@@ -55,6 +56,7 @@ interface UseStoreStudentRosterActionsOptions {
 }
 
 export function useStoreStudentRosterActions({
+  businessDateRef,
   beginLiveAuthRequest,
   beltLaddersRef,
   beltRanksRef,
@@ -78,6 +80,7 @@ export function useStoreStudentRosterActions({
           beltLadders: beltLaddersRef.current,
           beltRanks: beltRanksRef.current,
           idFactory: localId,
+          businessDate: businessDateRef.current,
         });
         persistStudents([newStudent, ...studentsRef.current]);
         onStudentMutation();
@@ -97,6 +100,7 @@ export function useStoreStudentRosterActions({
     },
     [
       beginLiveAuthRequest,
+      businessDateRef,
       beltLaddersRef,
       beltRanksRef,
       commitStudents,
@@ -122,6 +126,7 @@ export function useStoreStudentRosterActions({
             beltLadders: beltLaddersRef.current,
             beltRanks: beltRanksRef.current,
             idFactory: localId,
+            businessDate: businessDateRef.current,
           });
           return updatedStudent;
         });
@@ -149,6 +154,7 @@ export function useStoreStudentRosterActions({
     },
     [
       beginLiveAuthRequest,
+      businessDateRef,
       beltLaddersRef,
       beltRanksRef,
       commitStudents,

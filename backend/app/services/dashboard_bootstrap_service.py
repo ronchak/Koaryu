@@ -187,6 +187,40 @@ class DashboardBootstrapService:
         postgrest_client_timeout = self.supabase.options.postgrest_client_timeout
         errors: dict[str, str] = {}
         timings: dict[str, float] = {}
+        projection_error_messages = {
+            "studio": "Studio details could not be loaded. Please retry.",
+            "students": "Student roster could not be loaded. Please retry.",
+            "leads": "Leads could not be loaded. Please retry.",
+            "belts": "Belt plans could not be loaded. Please retry.",
+            "programs": "Programs could not be loaded. Please retry.",
+        }
+
+        def record_projection_failure(label: str, error: Exception) -> None:
+            if not allow_partial:
+                raise error
+            # Access failures must never become partial-success responses.
+            if isinstance(error, HTTPException) and (
+                error.status_code in {401, 402, 403}
+                or (label == "studio" and error.status_code == 404)
+            ):
+                raise error
+            if getattr(error, "code", None) in {
+                "42501",
+                "28000",
+                "28P01",
+                "PGRST301",
+                "PGRST302",
+                "PGRST303",
+            }:
+                raise error
+            errors[label] = projection_error_messages[label]
+            logger.warning(
+                "Dashboard bootstrap projection unavailable",
+                extra={
+                    "dataset": label,
+                    "error_type": type(error).__name__,
+                },
+            )
 
         async def load_projection(label: str, method_name: str, project: Callable[[Any], Any]):
             if label not in BOOTSTRAP_VIEW_DATASETS[view]:
@@ -204,38 +238,8 @@ class DashboardBootstrapService:
                 timings[label] = duration_ms
                 return value
             except Exception as error:
-                if not allow_partial:
-                    raise
-                # Access failures must never become partial-success responses.
-                if isinstance(error, HTTPException) and (
-                    error.status_code in {401, 402, 403}
-                    or (label == "studio" and error.status_code == 404)
-                ):
-                    raise
-                if getattr(error, "code", None) in {
-                    "42501",
-                    "28000",
-                    "28P01",
-                    "PGRST301",
-                    "PGRST302",
-                    "PGRST303",
-                }:
-                    raise
-                errors[label] = {
-                    "studio": "Studio details could not be loaded. Please retry.",
-                    "students": "Student roster could not be loaded. Please retry.",
-                    "leads": "Leads could not be loaded. Please retry.",
-                    "belts": "Belt plans could not be loaded. Please retry.",
-                    "programs": "Programs could not be loaded. Please retry.",
-                }[label]
+                record_projection_failure(label, error)
                 timings[label] = (time.perf_counter() - started) * 1000
-                logger.warning(
-                    "Dashboard bootstrap projection unavailable",
-                    extra={
-                        "dataset": label,
-                        "error_type": type(error).__name__,
-                    },
-                )
                 return None
 
         def studio_projection(result):
@@ -246,13 +250,9 @@ class DashboardBootstrapService:
             return DashboardBootstrapStudioSummary(**result.data)
 
         def students_projection(result):
-            students = StudentService(self.supabase).rows_to_responses(
-                result.data or [],
-                include_guardians=False,
-                include_photo_urls=False,
-            )
             total = getattr(result, "count", None)
-            return students, total if total is not None else len(students)
+            rows = result.data or []
+            return rows, total if total is not None else len(rows)
 
         studio, student_projection, leads, belt_ladders, programs = await asyncio.gather(
             load_projection("studio", "_fetch_studio_summary", studio_projection),
@@ -269,9 +269,29 @@ class DashboardBootstrapService:
             ),
             load_projection("programs", "_fetch_programs", lambda result: result),
         )
-        students, students_total = (
-            student_projection if student_projection is not None else ([], None)
-        )
+        students: list = []
+        students_total = None
+        if student_projection is not None:
+            mapping_started = time.perf_counter()
+            try:
+                student_rows, students_total = student_projection
+                if studio is None and any(row.get("date_of_birth") for row in student_rows):
+                    errors["students"] = projection_error_messages["students"]
+                    students_total = None
+                else:
+                    students = StudentService(self.supabase).rows_to_responses(
+                        student_rows,
+                        include_guardians=False,
+                        include_photo_urls=False,
+                        today=studio_today(studio.timezone)[0] if studio is not None else None,
+                    )
+            except Exception as error:
+                record_projection_failure("students", error)
+                students_total = None
+            finally:
+                timings["students"] = (
+                    timings.get("students", 0) + (time.perf_counter() - mapping_started) * 1000
+                )
         belt_ladders = belt_ladders if belt_ladders is not None else []
         timings["total"] = (time.perf_counter() - total_started) * 1000
 

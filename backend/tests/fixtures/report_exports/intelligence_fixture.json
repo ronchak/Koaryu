@@ -9,7 +9,7 @@
       "membership_start_date": "2026-01-01",
       "program_id": "program-1",
       "current_belt_rank_id": "rank-1",
-      "is_minor": false,
+      "date_of_birth": "1990-01-01",
       "emergency_contact_name": "Charles Lovelace",
       "deleted_at": null,
       "created_at": "2026-01-01T00:00:00Z"
@@ -23,7 +23,7 @@
       "membership_start_date": "2026-05-01",
       "program_id": "program-1",
       "current_belt_rank_id": "rank-1",
-      "is_minor": true,
+      "date_of_birth": "2010-01-01",
       "emergency_contact_name": null,
       "deleted_at": null,
       "created_at": "2026-05-01T00:00:00Z"
@@ -37,7 +37,7 @@
       "membership_start_date": "2025-01-01",
       "program_id": null,
       "current_belt_rank_id": null,
-      "is_minor": false,
+      "date_of_birth": null,
       "emergency_contact_name": null,
       "deleted_at": null,
       "created_at": "2025-01-01T00:00:00Z"

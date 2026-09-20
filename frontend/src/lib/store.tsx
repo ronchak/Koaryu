@@ -1554,6 +1554,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateStudent,
   } = useStoreStudentRosterActions({
     beginLiveAuthRequest,
+    businessDateRef,
     beltLaddersRef,
     beltRanksRef,
     commitStudents,
@@ -1585,6 +1586,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const { importStudents } = useStoreStudentImportActions({
     beginLiveAuthRequest,
+    businessDateRef,
     beltLaddersRef,
     beltRanksRef,
     commitStudents,
