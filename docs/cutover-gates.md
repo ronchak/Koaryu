@@ -41,7 +41,11 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-The completed V38-to-V47 release is recorded in [PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md) and [the production verification](remediation/production-release-verification.md). Production and staging are V47. Both production applications serve `a4ef259`; both staging applications serve `138f8ca`. The staging alias stop is resolved and its billing cron stays suspended. For future work, generate a new exact-candidate packet and fresh target evidence. Do not reuse a completed release's inspection token, fingerprint declaration or recovery snapshot as approval of a new state. The compatibility explanations below remain historical context.
+The completed V48–V49 release is recorded in [PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Production and staging are V49, 144 migrations; both application pairs serve `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`. The staging billing cron remains suspended. Future releases need a new exact-candidate packet and fresh target evidence. Do not reuse completed inspection tokens or recovery evidence as approval of a new state.
+
+V48 separates stable activation intent from its atomically owned first execution quantity, preserving already-attempted provider recovery. V49 permits unknown subscription currency/cadence without invented defaults. Neither migration rewrites historical rows. After new version-2 receipts or null subscription terms exist, readiness compatibility alone does not authorize an older backend rollback. Use the packet's recovery limits.
+
+## Retained migration compatibility
 
 V38 remains an accepted predecessor. Its remainder includes the V39 membership
 correction before V40. V39 preserves paused statuses and per-program joining dates
@@ -100,13 +104,13 @@ only after old Python plan split-write requests drain. V40 rank, V41 payer balan
 V42 catalog and semantics, and V43 external-payment facts remain unchanged. The old
 V41 and V43 split callers must still drain for those guarantees.
 
-The local verifier executes each logical restore continuation from V38 through V47.
+The local verifier executes each logical restore continuation from V38 through V49.
 Each uses a real synthetic dump and a new local restore database, accepts only the
 reviewed PostgreSQL 17 CHECK/default-ACL representation differences, and verifies
 business-data preservation and old/new caller continuation. These are local
 contract proofs, not production backup evidence. Candidate verification requires the
-V46-to-V47 canonical and logical restore continuation, all 142 migrations and 53 SQL
-contracts, and all 23 cases in `scripts/verify-billing-command-concurrency.py`.
+V47-to-V48 and V48-to-V49 canonical and logical restore continuations, all 144 migrations and 54 SQL
+contracts, and all 27 cases in `scripts/verify-billing-command-concurrency.py`.
 The renamed runner uses the existing concurrency helpers and adds no new framework.
 Earlier restore proofs remain in force. The operator's backup helper and
 release/image mappings must be updated and verified for the actual candidate
@@ -123,7 +127,7 @@ Migration 119 keeps the historical V24 response. The Payments chain retains its
 version-bound compatibility consumers. V47 adds full preflight V28 and makes V27
 return the V46 tuple only after the complete new state verifies. The existing chain
 retains V45 through V37 responses, including production's V38/V19 consumer. The
-candidate backend requires exact V47, 142 migrations. Compatibility preserves old
+candidate backend requires exact V49, 144 migrations, through full preflight V30. V48 introduced V29; V49 retains V29 compatibility only after verifying the complete V49 state. Compatibility preserves old
 readiness; it does not restore retired import behavior or give old split writers
 the new transactional guarantees.
 The temporary V22 and
@@ -138,22 +142,22 @@ look for it is wrong. `"status": "ready"` *is* the proof the attestation matched
 If migration 113 commits and migration 114 does not, stop. No approved
 application is eligible to serve at that partially migrated history. During the historical V24 release,
 the prior `709239` application required V16 and that release candidate required V24.
-The current candidate requires V47. Older V2 consumers from
+The current candidate requires V49. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
 Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
 post-110 rollback set. A database still at exact 110 must classify `state=staff-identity` and use its
-state-bound inspection token. The tool must select migrations 111 through 142 in
+state-bound inspection token. The tool must select migrations 111 through 144 in
 their immutable order. A separately approved disaster recovery to the proved
 restored V22 snapshot must classify exact `state=restored-v22` and select only
-migrations 116 through 142. Use the generated remaining-file list and its source
+migrations 116 through 144. Use the generated remaining-file list and its source
 manifest; do not maintain a second manual list. These are hypothetical recovery
 cases, not the current live state. Only the authorized operator runs production
-apply. Candidate promotion remains blocked until migration 142 produces exact
-V47 readiness and the final raw catalog/provider fingerprint. That raw evidence
+apply. Candidate promotion remains blocked until migration 144 produces exact
+V49 readiness and the final raw catalog/provider fingerprint. That raw evidence
 must independently attest the retained plan RPC and demo-clear facts, import receipts, refund ownership,
-and the V47 release facts. V40 rank-command,
+the V48 activation and V49 subscription-term facts, and the V49 release facts. V40 rank-command,
 V41 payer-balance, V42 catalog and semantic, and V43 external-payment pins remain
 unchanged.
 
@@ -207,7 +211,7 @@ Production apply requires `--release-authorization ronchak:<candidate-sha>`, `--
 
 The executor name is caller-reported attribution, not an authenticated process identity. When a comment is supplied, GitHub verifies its approval account and exact release scope. Direct CLI fields are operator assertions; they do not independently authenticate owner permission. A public owner/release label or a second name comparison cannot isolate a malicious process that shares provider credentials. The named-coordinator restriction remains an operating-policy requirement; subagents are not authorized.
 
-Default production bulk apply is refused. For the V38-to-V47 chain, use `--one-migration` on inspection, dry-run and apply. Each invocation binds the next file to its own token, exact owner/release authorization and confirmation and must verify its exact declared successor. Reinspect before the next invocation; never automate the sequence past a checkpoint. Every attempted provider apply records its actual stdout, stderr and process outcome before the final success or uncertain-failure record. Keep that audit output private.
+Default production bulk apply is refused. For an authorized remaining chain, use `--one-migration` on inspection, dry-run and apply. Each invocation binds the next file to its own token, exact owner/release authorization and confirmation and must verify its exact declared successor. Reinspect before the next invocation; never automate the sequence past a checkpoint. Every attempted provider apply records its actual stdout, stderr and process outcome before the final success or uncertain-failure record. Keep that audit output private.
 
 The exact phrase still binds the candidate, pending migration count, source manifest and production project. Supply it deliberately. Do not generate an automatic answer or fabricate a backup/restore claim to satisfy a field.
 
@@ -220,7 +224,7 @@ Before **each** irreversible or outward-facing release action:
 
 This applies to each migration apply, the production backup, each backend deployment and each frontend promotion. Database comes first, backend second, frontend last. The owner has allowed the exact recorded old-frontend/new-backend pair only during that planned transition; every unexpected SHA mismatch is a stop. Verify the matching final pair before declaring the release complete.
 
-A fresh pre-apply backup and verified disposable restore are mandatory. Stop on a failed or ambiguous migration, unexpected checkpoint state or change to pre-existing business rows, an unverifiable backup/restore, an unexpected deployed SHA, or the run's applicable budget stop. The final owner amendment authorizes 45 total weekly percentage points from the original 51%-used baseline. Do not stop mid-chain on budget; technical failure stops remain. The earlier 30/35/40 limits are superseded for this run. Do not improvise recovery. Keep the safest reachable state, retain evidence and report the options.
+A fresh pre-apply backup and verified disposable restore are mandatory. Stop on a failed or ambiguous migration, unexpected checkpoint state or change to pre-existing business rows, an unverifiable backup/restore, an unexpected deployed SHA, or the run's applicable budget stop. Use the current operating session's budget, not a previous release's allocation. Estimate completion before starting a production chain; never begin one that cannot finish within the authorized cap. Do not stop an already-started chain on budget; technical failure stops remain. Do not improvise recovery. Keep the safest reachable state, retain evidence and report the options.
 
 Executable changes retain exact-head CI and independent review. Documentation-only closeout uses focused verification and review without a required full-suite wait. Preserve branch protections, the guarded merge and production auto-deploy off readback. Tenant isolation, authorization, payment safety and idempotency remain unchanged. The existing prohibition on running contract or migration SQL against production remains. Only the guarded rollout tool's authorized apply is an exception for migrations; contract SQL is never allowed. No historical financial backfill.
 
@@ -277,6 +281,6 @@ a later candidate. Store every private artifact outside the repository with mode
 bytes, so retain the separate Storage procedure linked above.
 
 
-## Completed September 15 release
+## Completed September 20 release
 
-The staging alias mismatch was repaired before production work. All nine production migrations and tracked-row comparisons passed, followed by backend and production-target frontend deployment. Both production applications report `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`; the frontend proxy reaches that production backend. See [the verification record](remediation/production-release-verification.md). Do not repeat the completed chain. The fresh pre-V47 backup remains the recovery artifact; a future post-V47 backup needs reviewed helper support.
+Both production applies, original-row comparisons and application deployments passed under one fresh verified backup/restore. [The verification record](remediation/production-release-verification.md) contains exact SHAs, timestamps and evidence. Do not repeat the completed chain. The helper now has reviewed mappings through V49; future backups still require fresh source/image checks and a new verified restore.

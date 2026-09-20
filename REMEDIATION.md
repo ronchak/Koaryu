@@ -7,13 +7,11 @@ Preserve working behavior and safeguards while removing verified accidental comp
 
 ## Current position
 
-V49 records unknown subscription currency/cadence truthfully and closes BB2-08. The production currency query is USD-only, so the broader mixed-currency read-side work is intentionally deferred under the owner's decision. [The plan](docs/remediation/subscription-facts-plan.md) records the scope, compatibility and release gates. Production is still V47; the combined release is pending.
+The September 20 release is complete. Production and staging are V49, 144 migrations, with both application pairs serving `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`. Both guarded production applies preserved all 2,684 tracked original rows, backed by a fresh verified V47 backup/restore. No live billing activation or historical financial backfill occurred. See [verification](docs/remediation/production-release-verification.md) and [HANDOFF](docs/remediation/HANDOFF.md).
 
-The current V48 activation correction separates request identity from its first execution quantity, closes BB1-06 and PROGRAM-ACTIVATION-01, and preserves attempted-provider replay. [The plan](docs/remediation/activation-quantity-plan.md) records the boundary and proofs. This implementation has not yet been deployed; the authorized run will batch its production release with the remaining scoped work.
+PR219 separates activation request identity from execution quantity, closes BB1-06 and PROGRAM-ACTIVATION-01, and preserves attempted-provider replay. PR220 closes BB2-08 by recording unknown subscription facts honestly, including across webhook races. PR218 patches the release-blocking AnyIO advisories. The broader mixed-currency read path remains deliberately deferred after the USD-only production query. [Measurement](docs/remediation/live-measurement-20260920.md) records the actual provider signals and the navigation metrics that remain unavailable; no conditional performance optimization was justified or started.
 
-The production release completed September15. All nine V39–V47 migrations and original-row comparisons passed, backed by a fresh verified backup/restore. Both production applications serve `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`. PR215 enables the owner-authorized production path without per-migration GitHub comments; all other guarded-runner checks remain. See [verification](docs/remediation/production-release-verification.md) and [the handoff](docs/remediation/HANDOFF.md).
-
-V46 and the V47 completion-locking follow-up correct [PROGRAM-REFUND-01](docs/remediation/refund-completion-risk.md) at the database resource-version boundary. Its own verified refund projection no longer prevents receipt completion recovery. The application refund workflow and stored claim fingerprints stay unchanged. The production release completed through the ordered hosted rehearsal, verified backup/restore and owner-authorized execution. The remaining 130 pending audit observations are outside this run.
+The remaining 130 pending audit observations are outside this bounded run. The overall remediation program remains open.
 
 All 278 retained audit observations now have an individual disposition, reason, source evidence and execution track in the [ledger](docs/remediation/ledger.json). There are no repeated placeholder reasons. The [normalized map](docs/remediation/normalized-map.md) explains shared causes, dependencies, deliberate exclusions and verification limits. [Sol batches](docs/remediation/delegated/README.md) contain the delegated recipes.
 
@@ -38,13 +36,13 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 [PR169](https://github.com/ronchak/Koaryu/pull/169), merged as `e4ab4fc`, closes six shared UI findings. It combines identical views, removes dead options and fixes Button and System theme behavior. The associated tests shrink by 6 lines and one case; [verification](docs/remediation/shared-ui-verification.md) records scope and limits. [PR168](https://github.com/ronchak/Koaryu/pull/168), merged as `8c96132`, corrected the generator permission flag across supported Node releases.
 
-[PR179](https://github.com/ronchak/Koaryu/pull/179), merged as `7113d13`, enforces USD at new tuition financial writes and retires the unused pricing path. Historical financial attempts, exact replay and provider references remain protected. Empty provider headers do not authorize new non-USD amounts. Mixed-currency reporting, unknown provider facts and family attribution remain pending. See [verification](docs/remediation/tuition-currency-verification.md).
+[PR179](https://github.com/ronchak/Koaryu/pull/179), merged as `7113d13`, enforces USD at new tuition financial writes and retires the unused pricing path. Historical financial attempts, exact replay and provider references remain protected. Empty provider headers do not authorize new non-USD amounts. Mixed-currency reporting remains deliberately deferred. PR220 subsequently corrected unknown subscription facts; family attribution remains separately tracked. See [verification](docs/remediation/tuition-currency-verification.md).
 
 ## Current release run
 
-The four-phase release completed under the owner's revised instructions. PR207/209 fixed refund recovery with V46/V47; PR208/210 established owner-authorized, one-file execution; PR212/213 corrected hosted test defects; PR215 made production GitHub comments optional under direct owner authorization. All 53 hosted contracts passed. The staging alias was repaired, the fresh production backup restored successfully, all nine production migrations preserved the tracked original rows, and both production applications now serve the reviewed PR215 head.
+The September 19–20 run had 40 additional weekly percentage points from a 5%-used baseline. It completed the V47 bookkeeping, current-reference corrections, AnyIO patch, V48 activation correction and V49 unknown-term correction, followed by one production release. Fresh Sol tasks implemented each application item, with coordinator review and a fresh independent reviewer for every PR. Database work, integration and production execution remained with Astra. The handoff records the latest meter and remaining program.
 
-Authenticated staging write/UI rehearsal was explicitly waived and not claimed. No live billing activation or historical financial backfill occurred. Audit dispositions remain unchanged after PR215 and this closeout. DC1-03 was fixed by PR212; DM3-04 and OPS1-06 remain pending. The final run cap is 45 points from the original 51%-used baseline, with no mid-chain budget stop. See the verification record for exact evidence and the final report for the last meter.
+Authenticated write/UI rehearsal was not performed or claimed. The provider measurements were read-only; no production test password was hunted, reset or provisioned. The final release used the complete hosted contract gate, fresh verified backup/restore, separate applies and exact application identity checks.
 
 ## Previous bounded run, September 13
 
@@ -117,6 +115,12 @@ Each item used a fresh Sol implementer, coordinator review and a fresh independe
 | [205](https://github.com/ronchak/Koaryu/pull/205) | Selected-user staff Auth hydration | `4244384` | [Bounded run](docs/remediation/bounded-refactor-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
+| [216](https://github.com/ronchak/Koaryu/pull/216) | Closed the completed V47 release record | `b0fbd8a` | [Historical release](docs/remediation/production-v47-verification.md) |
+| [217](https://github.com/ronchak/Koaryu/pull/217) | Corrected stale current claims and seven retired service paths | `0af59f0` | [Current handoff](docs/remediation/HANDOFF.md) |
+| [218](https://github.com/ronchak/Koaryu/pull/218) | Patched AnyIO security advisories | `91d7663` | [Release verification](docs/remediation/production-release-verification.md) |
+| [219](https://github.com/ronchak/Koaryu/pull/219) | Fresh first-attempt activation quantity with preserved replay | `e7f697e` | [Activation plan](docs/remediation/activation-quantity-plan.md) |
+| [220](https://github.com/ronchak/Koaryu/pull/220) | Confirmed subscription terms, nullable unknowns and safe race retry | `c1e1c27` | [Subscription facts](docs/remediation/subscription-facts-plan.md) |
+
 
 ## Settled product decisions
 

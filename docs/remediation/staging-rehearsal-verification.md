@@ -2,7 +2,7 @@
 
 Initial migration candidate: `c1e933f5ddac862ce24387d45609052b8d0baad1`, PR210 merge. Its own Release candidate CI `34839365373` passed. This record describes hosted execution against that immutable candidate, not the later documentation merge.
 
-**Current status: complete hosted database gate; authenticated write/UI rehearsal explicitly waived.** All 53 contracts passed, the staging alias was repaired and the matching staging pair verified. Production subsequently completed V47 and application deployment. See [the production verification](production-release-verification.md). The sections below preserve the earlier failures and stop points as historical evidence.
+**Historical September 14–15 status: complete hosted database gate; authenticated write/UI rehearsal explicitly waived.** All 53 contracts passed, the staging alias was repaired and the matching staging pair verified. Production subsequently completed V47 and application deployment. See [the V47 production verification](production-v47-verification.md); [the current release](production-release-verification.md) subsequently completed V49. The sections below preserve the earlier failures and stop points as historical evidence.
 
 ## Database execution
 

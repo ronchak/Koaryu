@@ -1,325 +1,60 @@
-# Production release packet: V38 to V47
+# Completed V48–V49 production release
 
-**Completed September 15, 2026. Production database is V47 and both applications serve `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`. All nine separate applies, original-row comparisons and final readiness checks passed. The fresh pre-V47 backup and disposable restore are verified.** The chain is forward-only, with no approved down-migration. V40 adds durable command evidence; V45 retires legacy import writes. An application rollback cannot undo those changes or re-enable old imports. A database recovery can lose writes after its snapshot. Production has no verified managed point-in-time restore path.
+**Completed September 20, 2026. Do not rerun these applies.** Production is V49, 144 migrations, head `20260920052705`; both applications serve `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`. [Verification](production-release-verification.md) records the proof. The [older V39–V47 release](production-v47-verification.md) is historical.
 
-**Database first, backend second, frontend last. Neither application may be promoted before all nine migrations are applied and independently verified.** The new backend requires RPCs absent from production V38 and fails readiness before V47.
+**The chain is forward-only. There is no approved down-migration or automated production restore.** Its fresh pre-V48 backup and verified disposable restore exist at `/Users/openclaw/Koaryu Backups/production-20260920T071743Z`. A future release needs its own fresh evidence; this snapshot is not future approval. Restoring it can lose all later writes. The private helper restores only disposable containers, never a hosted database.
 
-The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). [The staging execution record](staging-rehearsal-verification.md) records what ran and the failed gate. Production execution completed as recorded in [the verification report](production-release-verification.md). The owner approved `--one-migration`. It selects the next reviewed file, binds its own inspection/approval/confirmation, and verifies the exact declared successor. Default production bulk apply remains refused. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
+## Ordered migration list
 
-## Pinned candidate and observed state
-
-Frozen release candidate: **`a4ef25910e76ed4b4111699f7b61ff02c30a67a0`**, reviewed PR215 head, exact-head Release candidate CI `34922721974` passed. The closing documentation merge does not change this candidate. Fresh inspection and approvals are still required for any future apply. Do not reuse a token from another candidate or checkpoint.
-
-Before this chain, production inspection confirmed V38 with nine remaining migrations and both applications at `c5742fe...`. After the chain, production preflight is ready at V47 with 142 migrations and zero security failures. Both production applications now report the pinned candidate. See the timestamped execution report for the before/after evidence.
-
-
-Expected final state: `post`, 142 migrations, head `20260914055301`, history `142:d3bab5f085e1c46ce72ab43046b1ca8b`, full preflight V28, manifest `release-db-attestation-v47`, 42 files in the tool's historical pending list, zero security failures. HTTP readiness reports `status=ready`; it does not echo the manifest string.
-
-## Exact ordered production remainder
-
-SHA-256 binds the final file bytes, not merely the Git commit where a file first appeared. The guarded tool also verifies ancestry, predecessor definitions, history and the raw catalog. Remote migration history has no intrinsic file content hash.
-
-| Order | Migration | SHA-256 |
+| Order | File | SHA-256 |
 | --- | --- | --- |
-| 134 / V39 | `20260908080420_student_membership_preservation_v39.sql` | `20a361288b22aa82358619c581adbca3410ffb8714e73ec3e7f729c7b4f0cb23` |
-| 135 / V40 | `20260908133504_rank_history_command_ownership_v40.sql` | `e92452b6ae034b6ee1ef5f9ce2db6047f39f25a053cc5604233508ebc2a7dba2` |
-| 136 / V41 | `20260908183744_serialize_billing_payer_balance_v41.sql` | `c8471ad12c1f534d0fe216a7f77db4c0dcfab1e1cc8f75075a2d6683fbc65ab7` |
-| 137 / V42 | `20260910084231_independent_program_joining_dates_v42.sql` | `33df4f374ec26a8c17814f8d794f5b06a7dcd9a7cdf21d469fc622180f86e0f2` |
-| 138 / V43 | `20260910093958_external_payment_command_ownership_v43.sql` | `a1378090e4988eeb372eee8d03038fbbd6aa03020627b0c65257395a9ab5b1ed` |
-| 139 / V44 | `20260910135133_local_plan_write_ownership_v44.sql` | `415a81f7f858edcaafbf1c5dd51ec13e19f179298abe636fa8425347889d729b` |
-| 140 / V45 | `20260910185031_student_import_retry_ownership_v45.sql` | `98e6da0a9a27165ca3cef349d282c54954608dad15fac918b048d9ceed27ecb7` |
-| 141 / V46 | `20260914033337_refund_projection_recovery_v46.sql` | `ccb5cac239f2270f9342ffd2ed7aeae1f4505cb296b9df10d286971723544b61` |
-| 142 / V47 | `20260914055301_refund_completion_locking_v47.sql` | `57a5d14eb376b9941e01ad2dae718e648619ed406992281925993d4edc43cc02` |
+| 1 | `20260920035023_enrollment_activation_execution_v48.sql` | `8051505b38d0cb78bc4480ea9e92caa723b92c62ee05323a83e99f81cf5f5f44` |
+| 2 | `20260920052705_subscription_unknown_terms_v49.sql` | `b93c130125d6aa2d3da1c0132dbec65a2b4d4d292145d2c31faa2496af5eba5f` |
 
-The nine-file remaining manifest at preparation is `f9eebe84299dbe2b226fa569a9259706d05c20590dd26b9e5a0d8c5073f5a704`. The full packet's historical pending list is longer and has a different manifest. Apply only the state-derived `remaining_migrations`, never the full historical `pending_migrations` list manually.
+The source was reviewed PR220 head `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`, merged as `c1e1c27c4a3071556958352207da2a435887276b` with an identical tree. Exact-head CI, independent review, all 144 local migrations, 54 local/hosted SQL contracts and canonical/restored continuations passed. Production auto-deploy remained off.
 
-All nine are forward corrections, without historical financial backfill. V39/V42 replace student date/membership behavior; V40 adds nullable promotion command fields and immutable prospective evidence; V41 adds serialized payer recomputation; V43 adds atomic external-payment/audit ownership; V44 adds atomic plan/link/audit ownership; V45 adds private receipts and a default-false legacy-run marker. V46 corrects the refund comparison without rewriting a business row or stored claim fingerprint. V47 refreshes that comparison after the receipt lock when a later request overlaps completion. DDL can wait on active writers. V40 alters the promotions table; V45 alters import runs. Measure staging duration and lock waits; do not assume a zero-downtime migration.
+## Execution order and commands retained
 
-**Completed procedure, not a new checklist.** The command blocks below preserve the executed V38-to-V47 packet for review. Do not rerun them against the now-V47 production database. Future releases require new candidate/state evidence and a backup helper with the correct source mapping. In particular, the old `backup --count 133` command is not valid for a new V47 backup.
+These commands are an execution record, not a recipe for applying the completed chain again. Each mutation ran separately. Release shells disabled tracing and explicitly sourced `/Users/openclaw/.config/koaryu/operator/release-env.sh` through the private `shell-init.sh`. All private files below are under `/Users/openclaw/Koaryu Releases/20260919-live-corrections`.
 
-## 1. Load credentials and pin reviewed sources
+1. Migrate staging with the exact candidate, then run the existing staging-only `staging-contracts.py` launcher. All 54 contracts passed; the 909 original rows remained unchanged. Deploy the staging backend, then advance the staging ref with its observed old SHA as a lease, assign the staging alias and verify the pair.
+2. Run `suspend-production-web.py`. Verify Render reports suspended, auto-deploy off and no in-flight API transactions.
+3. Run the complete backup and disposable restore below. Inspect `backup.json`, `restore-proof.json`, the restored V47 readiness result and cleanup evidence before any production apply.
+4. Capture `production-before-v48-rows.json` with the read-only `retained-rows.py` helper. Inspect production at the exact candidate with `--one-migration`; require V47 and only V48 selected.
+5. Announce and wait 30 seconds, then run `/bin/bash '/Users/openclaw/Koaryu Releases/20260919-live-corrections/apply-production-v48.sh'`. Its recorded arguments bind the candidate, V47 inspection token, one-file source hash, deliberate confirmation phrase, staging fingerprint, owner/executor and actual restore proof. Require verified V48 and compare all original rows.
+6. Reinspect V48 for V49. Announce and wait another 30 seconds, then run `/bin/bash '/Users/openclaw/Koaryu Releases/20260919-live-corrections/apply-production-v49.sh'`. Require verified V49, count 144, exact final fingerprint and unchanged original rows. Do not loop past a checkpoint.
+7. Run `resume-production-web.py`, then `render deploys create srv-d7mogk1kh4rs73aq6hqg --commit 591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5 --wait --output json --confirm`. Require both backend readiness URLs to report this SHA, production, ready and the existing Stripe live configuration.
+8. From `frontend/`, run `vercel api '/v13/deployments?teamId=team_gLZEwMI0jgTr9zGABNt3Rude' --method POST --input '/Users/openclaw/Koaryu Releases/20260919-live-corrections/vercel-production-request.json'`. The body selects the Koaryu project, `target=production` and this exact Git SHA. Require READY, `pdx1`, both production domains and the exact deployed pair. Never promote a preview build.
 
-Read repository AGENTS.md, supabase/AGENTS.md, docs/services.md, docs/cutover-gates.md and both private operator files first. Use Bash for this recipe with tracing disabled. A TTY is not an authorization control. Before each irreversible or outward-facing release action, announce its exact command, effect/reversibility and immediate verification, then wait 30 seconds before production apply only. Run every mutation as its own command; do not paste the packet as an unattended script. Stop if the owner interrupts. Preserve the authorization and execution evidence.
+The private apply scripts contain the complete immutable commands, including their long fingerprints. Their logs retain actual provider stdout/stderr, timestamps and verified successor records. They are historical after completion.
 
-```bash
-set -euo pipefail
-set +x
-source /Users/openclaw/.config/koaryu/operator/release-env.sh
-cd /Users/openclaw/Projects/Koaryu-Repo
-export KOARYU_CANDIDATE='a4ef25910e76ed4b4111699f7b61ff02c30a67a0'
-export KOARYU_RELEASE_DIR="/Users/openclaw/Koaryu Releases/V47-$(date -u +%Y%m%dT%H%M%SZ)"
-umask 077
-mkdir -p "$KOARYU_RELEASE_DIR"
-git fetch origin
-test -z "$(git status --porcelain)"
-git merge-base --is-ancestor "$KOARYU_CANDIDATE" origin/main
-git worktree add --detach "$KOARYU_RELEASE_DIR/candidate" "$KOARYU_CANDIDATE"
-cd "$KOARYU_RELEASE_DIR/candidate"
-test "$(git rev-parse HEAD)" = "$KOARYU_CANDIDATE"
-supabase --version
-node scripts/studio-comp-migration-rollout.mjs --mode packet \
-  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/packet.txt"
-gh run list --commit "$KOARYU_CANDIDATE" --workflow 'Release candidate' \
-  --json databaseId,headSha,status,conclusion > "$KOARYU_RELEASE_DIR/ci.json"
-```
+## Backup and restore
 
-Require Supabase CLI `2.95.4`, `integration_complete=true`, the exact candidate SHA, and a successful completed Release candidate run on that SHA. Private credentials/dumps/evidence remain outside Git. Do not source backend `.env`, use Vercel `[SENSITIVE]` exports as real keys, weaken transport guards, or reuse V38 approval files.
-
-Local full verification already passed 142 migrations and 53 contracts, all restore/negative/concurrency checks on byte-identical candidate SQL. A repeat, if needed, is `KOARYU_PG_BIN_DIR=/usr/local/opt/postgresql@17/bin npm run check:supabase-contracts-local`; it creates and removes only disposable local PostgreSQL. It is not production restore evidence.
-
-## 2. Rehearse on staging, then verify its database
-
-All nine staging actions below ran successfully on September 14; staging is now exact V47. Do not rerun them. These are the execution recipe for an accepted predecessor and the audit reference for this rehearsal. The full hosted contract gate then failed; see [the stop record](staging-rehearsal-verification.md). Future migration steps require fresh inspection of actual state, never an unattended loop. Announce and pause separately before each approval post and migration apply.
+For this release the actual source was V47, not the old private runbook's V38 example:
 
 ```bash
-KOARYU_STEP=v38
-node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect --one-migration \
-  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-inspect.txt"
-KOARYU_STAGING_TOKEN="$(sed -n 's/^inspection_token=//p' "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-inspect.txt")"
-KOARYU_EXPECTED_AFTER="$(sed -n 's/^expected_after_state=//p' "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-inspect.txt")"
-node scripts/studio-comp-migration-rollout.mjs --target staging --mode dry-run --one-migration \
-  --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_STAGING_TOKEN" \
-  > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-dry-run.txt"
-python3 - "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-inspect.txt" \
-  "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-approval.json" <<'PY'
-import json, pathlib, sys
-source = pathlib.Path(sys.argv[1]).read_text()
-body = source.split('approval_record_body_begin\n', 1)[1].split('\napproval_record_body_end', 1)[0]
-with open(sys.argv[2], 'x') as output:
-    json.dump({'body': body}, output)
-PY
+backend/venv/bin/python -I /Users/openclaw/.config/koaryu/operator/backup-restore.py backup --count 142 --head 20260914055301
 ```
 
-At the first checkpoint require `state=v38` and the full nine-file remainder. At every checkpoint require the full remainder to equal the corresponding suffix of the table, `selected_migrations` to name only its first file, and `expected_after_state` to name its declared successor. The two dry-runs must respectively show that full suffix and that single file. A different state is a stop. An already-complete `post` inspection has no next apply.
+The reviewed helper mapping supports exact V37, V38, V47, V48 and V49 count/head tuples. This run verified a real V47 snapshot against all 16 source comparisons and original readiness, using PostgreSQL image `17.6.1.155` and digest `sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b`. Encryption and temporary-role/container cleanup passed. A mapping entry alone does not prove a fresh backup or restore.
 
-The GitHub account must be `ronchak`. JSON preserves the exact approval body without adding a trailing newline. Review and post the generated single-file approval to PR138. Verify the returned body is byte-identical to the input, `user.login=ronchak`, `author_association=OWNER` and the exact PR138 `issue_url`; retain its `html_url`:
-
-```bash
-gh api user --jq .login
-gh api repos/ronchak/Koaryu/issues/138/comments --method POST \
-  --input "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-approval.json" \
-  > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-approval-response.json"
-KOARYU_STAGING_APPROVAL='<URL-returned-by-this-step-approval>'
-node scripts/studio-comp-migration-rollout.mjs --target staging --mode apply --one-migration \
-  --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_STAGING_TOKEN" \
-  --confirm-project nxgsektqsgrtyfhawxbc --approval-record "$KOARYU_STAGING_APPROVAL" \
-  --approve-staging-apply > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-apply.txt" 2>&1
-node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect --one-migration \
-  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-post.txt"
-test "$(sed -n 's/^state=//p' "$KOARYU_RELEASE_DIR/staging-$KOARYU_STEP-post.txt")" = "$KOARYU_EXPECTED_AFTER"
-```
-
-Verify retained business rows and the exact successor after each file. Then start fresh inspection/approval for that successor. Once all files are applied, obtain a fresh read-only final inspection in the current release directory. On resumption with V47 already applied, skip the migration blocks above and run this inspection; do not copy an old candidate's fingerprint or assume the new directory contains prior evidence:
-
-```bash
-node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect --one-migration \
-  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/staging-post.txt"
-test "$(sed -n 's/^state=//p' "$KOARYU_RELEASE_DIR/staging-post.txt")" = post
-```
-
-If the reviewed correction changes the release candidate or migration chain, repin the candidate and regenerate its packet first. This V47 record does not authorize a different chain. Fresh inspection does not replace the complete hosted contract gate or authenticated application rehearsal. The unchanged application/SQL bytes passed the former on staging. The owner explicitly waived authenticated application rehearsal for this release.
-
-Record per-migration duration, longest observed lock waits and relevant table cardinalities privately. Use current staging credentials to run all 53 contracts and their service/anon/authenticated privilege checks; the runner refuses production:
-
-```bash
-python3 - <<'PY'
-import os, pathlib, subprocess, urllib.parse
-password = pathlib.Path('/Users/openclaw/.config/koaryu/secrets/staging-supabase-db').read_text().strip()
-env = dict(os.environ, SUPABASE_DB_TARGET='linked')
-env['SUPABASE_DB_URL'] = 'postgresql://postgres.nxgsektqsgrtyfhawxbc:' + urllib.parse.quote(password, safe='') + '@aws-0-us-west-1.pooler.supabase.com:5432/postgres?sslmode=require'
-subprocess.run(['bash', 'scripts/verify-supabase-contracts.sh'], env=env, check=True)
-PY
-```
-
-The endpoint above is the verified staging session pooler, port5432. Stop on credential or target-validation failure; do not weaken the guard or substitute production. All contract data must be synthetic/rolled back. A real production dump must never be supplied to the synthetic restore/concurrency scripts.
-
-Then deploy the **same candidate** staging backend, keeping the staging cron suspended. Use the existing Render dashboard to confirm that suspension; do not activate any worker in this packet.
-
-```bash
-render deploys create srv-d98g4kutrd3s73ek0elg \
-  --commit "$KOARYU_CANDIDATE" --wait --output json
-```
-
-Require both staging backend `/health/ready` and `/api/v1/health/ready` URLs to report ready, environment staging, Stripe test and the exact candidate. Only after that, move the staging branch with an explicit lease; this triggers its frontend build:
-
-```bash
-git fetch origin refs/heads/staging:refs/remotes/origin/staging
-KOARYU_OLD_STAGING="$(git rev-parse refs/remotes/origin/staging)"
-git push origin "$KOARYU_CANDIDATE:refs/heads/staging" \
-  --force-with-lease="refs/heads/staging:$KOARYU_OLD_STAGING"
-test "$(git ls-remote --heads origin refs/heads/staging | awk '{print $1}')" = "$KOARYU_CANDIDATE"
-```
-
-Wait for its Vercel Git build to be READY, then:
-
-```bash
-npm run verify:deployed-release -- --environment staging \
-  --expected-sha "$KOARYU_CANDIDATE" \
-  --frontend-origin https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app \
-  --backend-api https://koaryu-staging.onrender.com/api/v1 --expected-stripe-mode test
-```
-
-The owner explicitly waived authenticated staging write/UI rehearsal for this release after all 53 hosted contracts passed. It was not performed or claimed. No new grants or synthetic financial writes were created.
-
-## 3. Establish the production write window and fresh backup
-
-This gate uses the single current backup owner documented in
-[staging-recovery-runbook.md](../staging-recovery-runbook.md#current-backup-owner-and-retained-storage-procedure).
-The older public dump recipes and completed image-patch shell program are historical and
-must not be used as alternatives.
-
-Establish and record a controlled maintenance window. Stop new imports and allow all old import requests to finish before V45. Confirm no legacy import writer is still executing; incomplete historical runs without receipts must remain blocked after the upgrade. Stop operator billing mutations and keep production scheduling/activation disabled as already configured. Record the old serving SHA, worker inventory, drain evidence and the time staff stopped writes. If a controlled pause/drain cannot be established, stop here; no new maintenance infrastructure is included in this packet.
-
-Re-read production auto-deploy off and the serving pair. Reinspect production with the pinned candidate; require exact V38. The private backup helper currently supports this **source** state, count133/preflight19, and image `17.6.1.155` with digest `sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b`. Confirm the provider still matches before use. It does not yet support a new V47 backup's readiness mapping; do not describe it as a post-V47 backup tool.
-
-The named owner-authorized coordinator runs the existing temporary backup-role workflow only after announcing the exact command with no mandatory pause under the revised owner protocol:
-
-```bash
-/Users/openclaw/Projects/Koaryu-Repo/backend/venv/bin/python -I \
-  /Users/openclaw/.config/koaryu/operator/backup-restore.py backup \
-  --count 133 --head 20260905022339
-KOARYU_BACKUP_DIR='<NEW-directory-reported-by-the-backup-helper>'
-export KOARYU_BACKUP_DIR
-/Users/openclaw/Projects/Koaryu-Repo/backend/venv/bin/python -I \
-  /Users/openclaw/.config/koaryu/operator/backup-restore.py restore "$KOARYU_BACKUP_DIR"
-```
-
-The helper takes a complete snapshot without schema filters, encrypts it, drops the temporary role, restores into a disposable exact-image container and compares all 16 evidence categories. Require a new `restore-proof.json` with `status=VERIFIED`, correct archive/helper/image hashes, `source_role_cleanup=PASS`, `restored_readiness=PASS`, all comparison categories passing and disposable-container cleanup. Record the snapshot time, last verified restore, named recovery decision-maker, and accepted maximum loss window. The September6 V38 backup is historical, not a fresh pre-apply backup. Do not assert `--confirmed-restore-window` until this evidence exists.
-
-The synthetic V38→V47 restore chain has passed, preserving business rows and legacy readiness. That is separate from this new production snapshot restore. Any changed image, source mapping or unknown dump representation requires reviewed helper support and fresh proof before apply. Never normalize production objects or repair migration history to force a pass.
-
-## 4. Inspect, approve and dry-run each production step
-
-Start with `KOARYU_STEP=v38`. Repeat inspection and approval only after the preceding file and retained-row checks pass.
-
-```bash
-KOARYU_STEP=v38
-node scripts/studio-comp-migration-rollout.mjs --target production --mode inspect --one-migration \
-  --candidate-sha "$KOARYU_CANDIDATE" > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-inspect.txt"
-export KOARYU_PRODUCTION_TOKEN="$(sed -n 's/^inspection_token=//p' "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-inspect.txt")"
-node scripts/studio-comp-migration-rollout.mjs --target production --mode dry-run --one-migration \
-  --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_PRODUCTION_TOKEN" \
-  > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-dry-run.txt"
-python3 - "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-inspect.txt" \
-  "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-approval.json" <<'PY'
-import json, pathlib, sys
-source = pathlib.Path(sys.argv[1]).read_text()
-body = source.split('approval_record_body_begin\n', 1)[1].split('\napproval_record_body_end', 1)[0]
-with open(sys.argv[2], 'x') as output:
-    json.dump({'body': body}, output)
-PY
-export KOARYU_STAGING_FINGERPRINT="$(sed -n 's/^provider_fingerprint=//p' "$KOARYU_RELEASE_DIR/staging-post.txt")"
-```
-
-Compare the new state and remaining suffix with this packet. The selected file must be exactly next, and its singleton manifest must bind this step's approval and confirmation. Record `expected_after_state` from the inspection. A token from another step or default bulk mode is invalid. An inspection token from this document's preparation is not supplied or reusable. The tool checks the staging fingerprint against the complete canonical V47 tuple before production apply; it accepts only that tuple or the explicitly proven restored-production variant.
-
-Production used the exact `--release-authorization ronchak:<candidate-sha>` and named executor from the owner-authorized session. Per-migration GitHub comments were expressly removed. `--approval-record` is optional for production; if supplied, the tool still validates it fully. Keep all source/target, inspection, dry-run, staging and verified-restore checks.
-
-## 5. Owner-authorized production apply and database verification
-
-This completed procedure required the verified staging SQL gate and fresh production backup/restore; authenticated application rehearsal was expressly waived. Every invocation below applies exactly one reviewed migration and returns control. Supply the deliberate exact phrase in `--confirmation-phrase`; terminal detection has been removed. The phrase format remains `APPLY <count> MIGRATIONS FROM <candidate> MANIFEST <source-manifest> TO mimguepumzsgmcaycdsh`. Validate it against the exact inspected packet. Capture the tool's structured authorization, provider response and outcome records privately. The executor name is caller-reported; it is not proof of process identity.
-
-```bash
-node scripts/studio-comp-migration-rollout.mjs --target production --mode apply --one-migration \
-  --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_PRODUCTION_TOKEN" \
-  --confirm-project mimguepumzsgmcaycdsh \
-  --release-authorization "ronchak:$KOARYU_CANDIDATE" --release-operator "Coordinating Astra" \
-  --confirmation-phrase "${KOARYU_CONFIRMATION:?Set the deliberately reviewed exact phrase}" \
-  --expected-provider-fingerprint "$KOARYU_STAGING_FINGERPRINT" \
-  --confirmed-restore-window "$KOARYU_RESTORE_RECORD" \
-  --restore-decision-authority "$KOARYU_RESTORE_OWNER" \
-  > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-apply.txt" 2>&1
-node scripts/studio-comp-migration-rollout.mjs --target production --mode inspect --one-migration \
-  --candidate-sha "$KOARYU_CANDIDATE" \
-  --expected-provider-fingerprint "$KOARYU_STAGING_FINGERPRINT" \
-  > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-post.txt"
-```
-
-The tool verifies the full suffix, limits the CLI to its first file and verifies the declared successor after that one apply. The pinned CLI commits a migration and its history entry transactionally. Each successor checks its predecessor. After each committed file, the expected count/head advances through the table above; record provider timing/lock evidence. On any error, stop and re-inspect before another command that could mutate state. A timeout may have committed. Do not manually apply individual SQL files, run production contracts, use history repair or blindly retry the old packet.
-
-For each invocation require the exact `expected_after_state` and unchanged retained rows. Get a new inspection and bind the next invocation to that state. After V47 require final `state=post`, exact142/headV47, matching approved fingerprint and zero failures. The tool independently checks raw function definitions/ACLs and the manifest, including the narrow private Auth-lock helper and receipt ownership. Only then may application promotion begin.
-
-## 6. Deploy the backend, verify it, then build the production frontend
-
-This section executes only after the authorized database release is fully verified. Keep production worker activation and new billing grants out of scope. Commands use existing provider logins.
-
-```bash
-render deploys create srv-d7mogk1kh4rs73aq6hqg \
-  --commit "$KOARYU_CANDIDATE" --wait --output json
-```
-
-Require the Render deploy's commit to equal the candidate. Both `https://koaryu.onrender.com/health/ready` and `https://koaryu.onrender.com/api/v1/health/ready` must return `status=ready`, `environment=production`, `configured_stripe_mode=live` and the exact candidate SHA. Inspect serving instances and let old requests drain. The V41/V43/V44 serialization/atomicity guarantees begin only after **all** serving backends/workers use the new RPCs and old split-write requests have finished. Do not call V33 retry-hash finalization during this release.
-
-The recorded old-frontend/new-backend pair is allowed only during this transition. Stop for any unexpected SHA. Create a new production-target Git build, never promote an existing preview:
-
-```bash
-python3 - <<'PY'
-import json, os, pathlib
-p = pathlib.Path(os.environ['KOARYU_RELEASE_DIR']) / 'vercel-production-request.json'
-p.write_text(json.dumps({'name':'koaryu','project':'prj_ROzEAXoVf0NbUn3jNIKEJPWjF9HU','target':'production','gitSource':{'type':'github','repoId':1214065065,'ref':os.environ['KOARYU_CANDIDATE']}}, indent=2)+'\n')
-PY
-cd /Users/openclaw/Projects/Koaryu-Repo/frontend
-vercel api '/v13/deployments?teamId=team_gLZEwMI0jgTr9zGABNt3Rude' \
-  --method POST --input "$KOARYU_RELEASE_DIR/vercel-production-request.json"
-cd "$KOARYU_RELEASE_DIR/candidate"
-```
-
-Wait for the returned deployment to be READY, with production variables and the intended production aliases. Verify Functions region `pdx1`, and that browser API requests go to `koaryu.onrender.com`. Then:
-
-```bash
-npm run verify:deployed-release -- --environment production \
-  --expected-sha "$KOARYU_CANDIDATE" --frontend-origin https://koaryu.app \
-  --backend-api https://koaryu.onrender.com/api/v1
-```
-
-Do not pass `--expected-stripe-mode` for production. Check tenant authorization, ordinary reads and retained record values without creating historical financial changes. Re-read auto-deploy controls off and save final provider/deployment identities privately. Reopen affected staff workflows only after the new pair and drain evidence pass. Keep unresolved financial risks and live-billing gates explicit.
+Follow [the backup-owner and retained Storage procedure](../staging-recovery-runbook.md#current-backup-owner-and-retained-storage-procedure). The database dump does not contain Storage object bytes. Never substitute the retired filtered dump recipe. No backup, restore, migration or deployment is authorized merely by this document.
 
 ## Per-migration recovery checkpoints
 
-The pinned CLI executes each file and its history insert in one transaction. These nine files contain no standalone transaction commits or concurrent index builds that would split that boundary. A SQL failure normally leaves the predecessor intact; a lost connection or timeout can leave either predecessor or successor. Never infer which from the exit status. Read-only inspection must settle it before any further action.
+- V47 before the chain: keep the original application pair serving until the planned write pause. Failure to verify the backup/restore blocks the first apply.
+- V48 after the first apply: require exact V48 readiness and unchanged rows, then freshly inspect the single V49 remainder. An apply failure, partial/unknown state or changed/deleted original row is a stop; do not repair history or improvise recovery.
+- V49 after the second apply: require exact V49 readiness and unchanged rows before application deployment. No frontend or new backend may be promoted before its required migrations exist.
+- After application promotion: require matching frontend/backend SHA and the correct production environment. A mismatch is a stop, not permission to deploy unrelated commits until one works.
 
-| File | Before → verified after | Atomic change and rollback limit |
-| --- | --- | --- |
-| V39 / `20260908080420` | V38 / 133 → V39 / 134 | Membership-preservation functions and attestation. No business-row backfill. |
-| V40 / `20260908133504` | V39 / 134 → V40 / 135 | Rank command ownership and prospective evidence. Old code cannot undo newly recorded command evidence. |
-| V41 / `20260908183744` | V40 / 135 → V41 / 136 | Serialized payer-balance RPC and attestation. No automatic balance recomputation. |
-| V42 / `20260910084231` | V41 / 136 → V42 / 137 | Independent joining-date semantics and catalog checks. Existing membership dates stay unchanged. |
-| V43 / `20260910093958` | V42 / 137 → V43 / 138 | Atomic external-payment/audit RPC. Existing financial rows are not rewritten. |
-| V44 / `20260910135133` | V43 / 138 → V44 / 139 | Atomic plan/link/audit writer and clear coordination. Existing plan rows are not rewritten. |
-| V45 / `20260910185031` | V44 / 139 → V45 / 140 | Import receipts, actor locking and refusal of legacy writes. Keep old import callers stopped after commit. |
-| V46 / `20260914033337` | V45 / 140 → V46 / 141 | Refund projection recovery. Existing stored claim fingerprints are not rewritten. |
-| V47 / `20260914055301` | V46 / 141 → `post` / 142 | Completion-lock comparison and fresh lease time. No financial backfill. |
+The old V47 backend `a4ef25910e76ed4b4111699f7b61ff02c30a67a0` remains readiness-compatible during the database-first window. That is not blanket rollback approval. Once new version-2 activation receipts or null subscription terms are written, older backend behavior is not approved. The old frontend tolerates these responses because it does not consume subscription terms; its brief overlap with the new backend was explicitly authorized.
 
-For **every** row, the recovery decision is the same:
+Recovery choices are a separately reviewed forward correction or owner-directed restoration from the verified pre-chain snapshot, accepting loss of later writes and restoring a compatible application pair. No hosted restore or down-migration command is approved here. Do not use the disposable restore helper as a production recovery tool.
 
-- If exact predecessor state and retained rows are unchanged, stop the run and report the failure. A reviewed resumption may retry that same immutable file only after the cause is understood, the recovery window remains valid, and fresh inspection/approval/dry-run evidence exists.
-- If exact successor state committed and retained rows are unchanged, report the committed checkpoint. Do not retry the old command. A reviewed resumption starts from a new inspection and approval for the next file.
-- If state is partial/unknown or an original business row changed, stop. Restore from the verified pre-apply backup may be necessary; that can lose every later write. There is no approved hosted restore command here. The disposable restore helper cannot restore production. Present that recovery option and a separately reviewed forward correction to the named decision-maker; execute neither automatically.
+Final pair check used:
 
-Application promotion must not precede exact V47. These checkpoints make a stopped prefix diagnosable; they do not authorize promotion at an intermediate state or bypass the stop conditions.
+```bash
+npm run verify:deployed-release -- --environment production --expected-sha 591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5 --frontend-origin https://koaryu.app --backend-api https://koaryu.onrender.com/api/v1
+```
 
-## Compatibility and recovery
-
-| Backend | Database-first compatibility | Limit |
-| --- | --- | --- |
-| Previously served `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`, V38 | Its V19 readiness consumer retains the V38 tuple through the compatibility chain after V47. Existing non-import interfaces are retained. | V45 refuses fresh/incomplete legacy imports. Old Python payer/payment/plan split writers do not gain the new guarantees. Use only with affected workflows paused and no newly activated billing. |
-| Earlier remediation V39–V44 backend candidates | V20–V25 readiness consumers retain their original exact tuple through the verified compatibility chain. | This is schema/readiness compatibility, not blanket approval of every historical application. All pre-PR178 import callers have the V45 refusal. Prefer the observed deployed artifact for rollback, not an arbitrary old SHA. |
-| PR179 merge `7113d130a1523d5048cb9cb15529aed6277a4770`, V44 | V25 compatibility remains. | Includes tuition USD guards but still has legacy import callers; imports remain blocked. |
-| V45 application candidates from PR178 through PR206 | Their V26 readiness consumers retain the exact V45 tuple through the V46/V47 compatibility bridges. | This proves schema/readiness compatibility, not every historical application build. Prefer the recorded deployed artifact for a rollback. |
-| PR207 | V27 retains its exact V46 tuple after V47. | Schema/readiness compatibility only; prefer the recorded deployed artifact for rollback. |
-| PR209 and the governance candidate | Full V28 requires exact V47. | Cannot serve before all nine migrations. Deploy one exact candidate SHA to both surfaces. |
-
-The local restore suite proves retained readiness and scoped old/new business contracts. It does not execute every old backend build. Do not authorize pre-V38, temporary bridge or untested older artifacts by extrapolation.
-
-- **Before any migration commits:** abort the release; the old application and V38 remain. If writes resumed after the backup, its possible loss window increases and must be reassessed.
-- **A prefix commits:** keep the old compatible application and affected workflows paused. Reinspect. Exact accepted V39–V46 states may resume only their immutable suffix with a new state-bound token, dry-run and explicit owner/release authorization. An unknown/partially attested state is a stop, not a reason to repair history.
-- **All nine commit but candidate deployment fails:** keep the old artifact or redeploy the recorded `c5742fe...` backend with `render deploys create srv-d7mogk1kh4rs73aq6hqg --commit c5742fe393a8bfb3a1faddb1f488e46a00bd5091 --wait --output json`. Verify its V38 compatibility readiness. Leave imports and affected financial writes paused; this restores application availability, not old database semantics. If a frontend rollback is necessary, create a fresh production-target build from that same old SHA using the request shape above, then verify the pair. Never promote a preview.
-- **Database/correctness failure:** prefer a reviewed forward correction. There is no approved automated hosted-restore command in this repository. The named authorized decision-maker must decide disaster recovery using the new verified snapshot, reconfirm the restore target and image, and accept loss of every later write. The private helper restores only disposable containers; it cannot restore production. Stop here for a separately reviewed hosted-restore operation. Do not invent a down migration or pipe a dump into production.
-
-The private backup helper still needs reviewed V47 support before taking/attesting a future post-V47 backup. Until then, retain the new pre-apply snapshot and its proof. Owner authorization, provider retention and tested recovery remain real gates, not fields to fill with plausible text.
-
-## Execution record
-
-The chain and production deployment completed on September15. See [production-release-verification.md](production-release-verification.md) for all nine apply timestamps, retained-row scope, backup proof, deployed identities and explicitly waived checks. The original staging failures and their reviewed fixes remain in [staging-rehearsal-verification.md](staging-rehearsal-verification.md).
-
-The final owner amendment authorizes 45 total points from the original 51%-used baseline and forbids stopping mid-chain on budget. The earlier 30/35/40 limits are superseded. No live billing activation or historical financial backfill was performed.
+Both backend readiness paths and `/api/proxy/health/ready` also passed. No live billing activation or historical financial backfill occurred.

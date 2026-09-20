@@ -189,11 +189,12 @@ restore execution belongs only to the guarded Home Server operator defined by
 `/Users/openclaw/.config/koaryu/operator/RELEASE-RUNBOOK.md` and
 `/Users/openclaw/.config/koaryu/operator/AUTHENTICATION.md`, using
 `/Users/openclaw/.config/koaryu/operator/backup-restore.py`. The operator must verify
-its candidate and provider image mappings before use. The helper currently knows the
-documented V37 and V38 readiness mappings and does not attest a future post-V45 backup.
+its candidate and provider image mappings before use. The installed helper has reviewed exact count/head mappings for V37, V38, V47, V48
+and V49. The September 20 run verified a real V47 backup and disposable restore.
+A mapping entry alone does not attest any future backup or restore.
 No existing snapshot counts as fresh candidate approval. The pre-apply gate and current
 limits are recorded in
-[the production release packet](remediation/PRODUCTION-RELEASE.md#3-establish-the-production-write-window-and-fresh-backup).
+[the production release packet](remediation/PRODUCTION-RELEASE.md#backup-and-restore).
 
 The validated Wave 0 backup at
 `$HOME/Koaryu Backups/production-20260710T070020Z` is dated historical evidence. It

@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September15 release readback: both databases are V47. Production frontend/backend serve `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`; staging frontend/backend serve `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3` after its alias repair. Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed production verification](remediation/production-release-verification.md).
+Inventory baseline: 2026-08-24. September 20 release readback: both databases are V49, 144 migrations. Production and staging frontend/backend pairs serve `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`. Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
 
 ## Quick map
 
@@ -147,7 +147,7 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The completed V38-to-V47 release, immutable migration hashes and recovery limits are recorded in [the production packet](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Production and staging are now V47. Production frontend/backend serve `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`; staging frontend/backend serve `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`. Both production auto-deploy paths remain off. Future releases require a new exact-candidate packet and fresh target/backup evidence; the old V38 command blocks are completed history. Retained readiness compatibility does not authorize restarting legacy import writers.
+The completed V48–V49 release, immutable migration hashes and recovery limits are recorded in [the production packet](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Future releases require a new exact-candidate packet and fresh target/backup evidence. Completed apply commands are history, not authority to run them again. Readiness compatibility does not authorize older backends after new activation receipts or unknown subscription terms have been written.
 
 V41 payer-balance, V43 external-payment and V44 local-plan guarantees require old
 split callers to drain. V45 requires stopping old import callers before migration.

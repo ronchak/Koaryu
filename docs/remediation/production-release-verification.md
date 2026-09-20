@@ -1,53 +1,38 @@
-# Production release, September 15, 2026
+# Production release, September 20, 2026
 
-Koaryu is live on `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`. Both production applications report that exact SHA and the production environment. The frontend proxy also returns the new production backend's ready response. Production database is V47, 142 migrations, head `20260914055301`, manifest `release-db-attestation-v47`, with zero security failures.
+Production and staging are V49, 144 migrations, head `20260920052705`. Both application pairs serve `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`. Production's two backend readiness URLs and frontend proxy passed; its frontend is a new production-target Git build in `pdx1`. The [September 15 V47 record](production-v47-verification.md) is historical.
 
-## Authorization and source
+## Source and verification
 
-The owner explicitly authorized coordinating Astra to finish the release, raised the total budget to 45 weekly percentage points and prohibited stopping mid-chain on budget. The owner removed the go/no-go approval checkpoint, staging authenticated workflow rehearsal, per-migration GitHub comments, intermediate bookkeeping PRs and mandatory waits on staging/non-migration actions. Each production apply retained its separate announcement and 30-second interruption window. Existing technical source/target, restore, one-file, row-preservation and failure-stop checks remained.
+PR216 closed the earlier release record. PR217 corrected seven obsolete service references; the other ten matching references name valid tests. PR218 patched AnyIO to 4.14.2 after new security advisories blocked CI. PR219 fixes activation retry quantities and closes BB1-06 / PROGRAM-ACTIVATION-01. PR220 records only confirmed subscription facts and closes BB2-08.
 
-PR215 makes the existing owner/candidate authorization usable without a production GitHub comment. A supplied comment is still checked; staging retains its comment requirement. Permission comes from the operating session. The CLI owner/executor fields are attribution and intent binding, not independently authenticated approval. Final head `a4ef25910e76ed4b4111699f7b61ff02c30a67a0` passed fresh independent review and exact-head CI `34922721974`. Merge `5e22ef6cddf226e80054d18981860bbd4313742d` passed its own CI `34923265249`. All 70 focused tests passed independently; test count stayed flat and test code fell from 3,922 to 3,914 lines. The application and SQL files are byte-identical to the staging-proven `138f8ca` candidate.
+Final reviewed head `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5` passed independent review and exact-head CI `35494455293`, including 1,913 backend tests, frontend checks, security audits and the database suite. Main merge `c1e1c27c4a3071556958352207da2a435887276b` has an identical tree and passed CI `35494772358`. The complete local gate passed all 144 migrations, 54 SQL contracts, restore continuations, tamper checks and concurrency proofs. All 54 hosted staging contracts also passed, with 909 original rows unchanged across 69 tables.
 
-The earlier fresh Sol execution task refused before any external mutation because it misclassified old user-level guidance as developer policy. Astra inspected the saved message roles and supplied one correction. Sol still refused, then the owner explicitly returned execution to Astra. No global/private policy file was edited to force execution.
+The fresh subscription reviewer caught a null-fill race before release. Conditional null checks now protect the actual update. A lost race enters the existing durable webhook retry path; replay preserves the winner and applies the remaining term and status. The two subscription test files grew from 938 to 1,210 lines and 19 to 23 methods, including 15 new parameterized subcases. Activation added five backend cases; its five measured test files grew from 7,477 to 7,787 lines. These are financial/retry contracts, not source-text assertions. The activation database proof grew from 23 to 27 cases.
 
-## Backup and write window
+## Backup and production applies
 
-Production web was suspended at 03:01:04 UTC after a read-only check found no active writers or import queries. It remained suspended through all nine migrations and row comparisons. The pre-V45 drain check again found zero active writers/import writers. The production billing scheduler stayed disabled; no production cron, grant or live billing activation was created.
+Owner `ronchak` authorized coordinating executor `Astra-release-20260920` under the standing PR215 process. Each apply received a separate exact-command announcement and 30-second interruption window. There was no production approval-comment requirement and no bulk apply.
 
-Fresh backup: `/Users/openclaw/Koaryu Backups/production-20260915T030226Z`. The complete snapshot was encrypted, restored into a disposable PostgreSQL `17.6.1.155` container and verified at `2026-09-15T03:03:28.083416+00:00`. All 16 comparison categories, original V38 readiness, temporary backup-role cleanup and disposable-container cleanup passed. Archive SHA-256: `0fcb3139ffeb872fcaa9cbb42d53863802853013918f3270ea911b6a8f6a7ce0`. The helper and image hashes were checked against the proof. No production restore was performed.
+The API was suspended at `2026-09-20T07:17:11.442168+00:00`; a fresh read found zero in-flight API transactions. The verified pre-chain backup is `/Users/openclaw/Koaryu Backups/production-20260920T071743Z`, restored at `2026-09-20T07:18:45.637373+00:00`. All 16 comparisons, source V47 readiness, encryption, temporary-role removal and disposable-container cleanup passed. Proof SHA-256: `0c752cc6db339f147ecc0495a903903281503200347dcc1334060ee6a86a0b32`. Image: PostgreSQL `17.6.1.155`, digest `sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b`.
 
-This is a pre-V47 recovery snapshot. The private backup helper still needs reviewed V47 source/readiness support before taking a future post-V47 backup. There is no approved down-migration or automatic hosted recovery. Restoring the snapshot can lose later writes; use the separately documented recovery decision path, not a disposable-restore command against production.
+| Apply | Started UTC | Verified UTC | Original rows |
+| --- | --- | --- | --- |
+| V48, `20260920035023` | 07:23:25.059 | 07:25:34.742 | All 2,684 unchanged |
+| V49, `20260920052705` | 07:32:37.662 | 07:34:51.970 | All 2,684 unchanged |
 
-## Nine separate production applies
+The comparison covered every public table, private tables except release-attestation expectation tables, `auth.users`, `storage.buckets` and `storage.objects`: 69 tables. Both comparisons found zero changed/deleted rows; final row hashes exactly equal the pre-chain hashes. Provider operational/session tables were outside this comparison. The complete backup separately covered the database.
 
-Every invocation ran the guarded tool's full-suffix and selected-file dry runs, applied exactly one file, verified its declared successor and recorded the provider result. Owner: `ronchak`; executor: `Astra-production-20260915`. Direct authorization used no GitHub comment URL. All 1,163 original business rows in the ten tracked tables remained identical after every apply, with no additions. Those tables are students, program memberships, invoices, payers, payments, refunds, provider operations, operation resources, resource aliases and audit logs.
+The final production preflight independently returned ready, count 144, head `20260920052705` and no security failures. The guarded tool accepted its reviewed restored-production fingerprint. No expectations were loosened or historical financial records backfilled.
 
-| Release | Version | Apply started UTC | Success verified UTC | Tracked rows |
-| --- | --- | --- | --- | --- |
-| V39 | `20260908080420` | 2026-09-15T03:07:39.948Z | 2026-09-15T03:08:55.285Z | Unchanged |
-| V40 | `20260908133504` | 2026-09-15T03:14:24.628Z | 2026-09-15T03:15:54.650Z | Unchanged |
-| V41 | `20260908183744` | 2026-09-15T03:20:19.493Z | 2026-09-15T03:21:56.064Z | Unchanged |
-| V42 | `20260910084231` | 2026-09-15T03:26:26.517Z | 2026-09-15T03:28:00.384Z | Unchanged |
-| V43 | `20260910093958` | 2026-09-15T03:32:29.389Z | 2026-09-15T03:34:09.018Z | Unchanged |
-| V44 | `20260910135133` | 2026-09-15T03:39:17.648Z | 2026-09-15T03:41:09.484Z | Unchanged |
-| V45 | `20260910185031` | 2026-09-15T03:46:17.083Z | 2026-09-15T03:48:07.756Z | Unchanged |
-| V46 | `20260914033337` | 2026-09-15T03:53:41.916Z | 2026-09-15T03:56:15.609Z | Unchanged |
-| V47 | `20260914055301` | 2026-09-15T04:03:08.172Z | 2026-09-15T04:05:45.876Z | Unchanged |
+## Applications and remaining limits
 
-Final raw catalog evidence matched the already reviewed restored-production V47 fingerprint. Its scoped-constraint digest differs from canonical staging by the known restored syntax variant; no expected hash or tolerance was changed. A separate production preflight read matched all generated V47 fields. Its misleadingly named `pending_versions` field is the declared 58-version historical contract list, not 58 unapplied migrations. The rollout tool's historical pending list has 42 files. Neither is the live remaining count: all nine release migrations are applied.
+The API resumed at `2026-09-20T07:35:57.029065+00:00`. Render deployment `dep-danopu98h0ls7388uqrg` became live at `2026-09-20T07:37:22.428905Z`. Both backend readiness paths then reported the exact candidate, production and the existing Stripe live configuration.
 
-Two additional coordinator assertions initially assumed canonical staging fingerprint equality and an empty preflight history list. Those assumptions were stricter than the declared contract, not database failures. Comparing against the existing reviewed fingerprint variants and generated readiness metadata passed without changing the tool, SQL or expectations.
+Vercel deployment `dpl_6gsv6BmcXYzQ3tFTQvSPFGiZBBfK` reached READY at `2026-09-20T07:39:22.784000+00:00`, using production variables and region `pdx1`. It assigned `koaryu.app`, `www.koaryu.app` and `koaryu.vercel.app`. The exact-pair verifier and frontend proxy check passed. No preview was promoted. The temporary old-frontend/new-backend pair existed only during the authorized deployment transition.
 
-## Applications
+Staging backend `dep-dano4p6gekts739k0f5g` and frontend `dpl_Fmz3gcrAbzY3x7uQrdxhQx4g6uwx` serve the same candidate. Vercel did not assign the staging alias automatically; the separately authorized alias assignment completed before pair verification. Both web services are active. The staging billing cron stays suspended and production's billing scheduler stays disabled. No live billing activation or synthetic production application write was performed.
 
-Production web resumed at 04:09:56 UTC, followed immediately by the new backend deployment. Render deployment `dep-dakcacsaim2s739206ug` completed at `2026-09-15T04:11:31.159903Z`. Both readiness paths reported ready, production, the expected existing Stripe live configuration and `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`. The temporary old-frontend/new-backend transition was within the owner's approved deployment order.
+[The live measurement record](live-measurement-20260920.md) reports the available provider numbers and the unmeasured navigation/FCP/LCP results. The USD-only production query deliberately leaves mixed-currency totals and decimal formatting deferred. Authenticated write/UI rehearsal was not performed or claimed; no production test password was hunted or changed.
 
-Vercel deployment `dpl_AHGxRuvhJqwgXC3hu4BMXBCqCPPC` was built from Git with `target=production`, not promoted from a preview. It reached READY in `pdx1` and assigned `koaryu.app`, `www.koaryu.app` and `koaryu.vercel.app`. The literal deployed-pair verifier passed, and `https://koaryu.app/api/proxy/health/ready` independently reached the same ready production backend. Existing Stripe mode is not a new live-billing activation.
-
-Staging remains V47 with both applications at `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`. Its branch alias was explicitly repaired before production work and the exact pair passed. The first verifier request timed out; direct readbacks and the unchanged verifier then passed. No authenticated staging write/UI rehearsal was performed, as explicitly waived. The production application-test password remains missing and was not sought. No synthetic production writes, live billing activation or historical financial backfill occurred.
-
-## Evidence and closeout
-
-Private evidence: `/Users/openclaw/Koaryu Releases/20260915-astra-production`. The numbered apply scripts/command JSON/logs retain the exact commands, inspection tokens, snapshot reference, confirmation phrases, provider responses and success records. Original-row snapshots, `production-final-audit.json`, `production-final-db-state.json`, `verified-backup.json`, backend/Vercel deployment records, `production-pair.txt` and `production-proxy-readiness.json` substantiate this report. Keep them private; do not reuse completed apply commands or tokens.
-
-One final bookkeeping PR records the completed release and aligns the active policy, packet and CLI help. No audit finding dispositions change. The pre-closeout usage read at 04:19 UTC was 86% used against the original 51% baseline, or 35 of the authorized 45 points. The final report records the last meter. Documentation-only changes do not require waiting for the full CI suite under the owner's revised instructions; repository branch protections and production auto-deploy controls remain enabled.
+Private commands, approvals, backup proof, row hashes and provider records are in `/Users/openclaw/Koaryu Releases/20260919-live-corrections`. Do not reuse completed apply scripts or inspection tokens. [The packet](PRODUCTION-RELEASE.md) records recovery limits; [HANDOFF](HANDOFF.md) records the remaining program and budget.

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "e7f697efd8e53d2eb8ed85ee52ad5da788db7a02",
+  "last_reconciled_main": "c1e1c27c4a3071556958352207da2a435887276b",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2322,7 +2322,7 @@
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "1020833707a1ebc0d5afaceb2e52e813f2d84490",
-      "verification": "Behavioral timeout/interleaving/cancellation and recovery tests, plus real PostgreSQL first-attempt ownership and rollback proofs. See activation-quantity-plan.md. Production rollout is a separate pending step.",
+      "verification": "Behavioral timeout/interleaving/cancellation and recovery tests, plus real PostgreSQL first-attempt ownership and rollback proofs. See activation-quantity-plan.md. Production V48/V49 and the exact application pair verified September 20; original rows unchanged.",
       "source_paths": [
         "backend/app/services/billing_enrollment_activation.py"
       ],
@@ -2967,11 +2967,13 @@
       "reason": "Recovered subscriptions use only complete, consistent provider price evidence. V49 permits null currency and cadence with no invented storage or response defaults. Existing non-null facts remain unchanged; automatic grouping excludes unknown terms.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "1d78231ddb81aab6e72cae4eb7485bef3b045357",
+      "verified_against": "591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5",
       "source_paths": [
         "backend/app/services/billing_subscription_webhook_projection.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        220
+      ],
       "track": "Astra",
       "root_cause": "invented-subscription-recovery-facts",
       "collapse_with": [],
@@ -2995,7 +2997,7 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion.",
-      "verification": "Behavioral projector/schema tests, generated API contract and frontend compatibility checks; real SQL grouping/provider-identity contract and canonical/restored V48-to-V49 row preservation. See subscription-facts-plan.md. Production rollout remains pending."
+      "verification": "Behavioral projector/schema and interleaved retry tests, generated API contract, SQL grouping/provider identity, canonical/restored V48-to-V49 preservation, all 54 hosted contracts and exact-head CI. Conditional writes preserve facts another event just confirmed. See subscription-facts-plan.md. Production V48/V49 and the exact application pair verified September 20; original rows unchanged."
     },
     {
       "id": "BB2-09",
@@ -13056,7 +13058,8 @@
       "pull_requests": [
         172,
         175,
-        179
+        179,
+        220
       ],
       "initial_evidence": [
         {
@@ -13156,9 +13159,10 @@
         "backend/requirements-dev.txt"
       ],
       "next_change": "None for the verified advisories; continue normal dependency audits.",
-      "verification": "Online npm audits and development-lock pip-audit report no known vulnerabilities. Clean installs, lint/build, frontend914 and backend1897 passed. The patched worktree compiler reproduced the lock twice with SHA25652776944c532e1c30aa7402bcac543535caec2021860e07d4559f5d08d2aa081; coordinator independently reran its dry-run and pip check. See dependency-maintenance-verification.md.",
+      "verification": "Online npm audits and development-lock pip-audit report no known vulnerabilities. Clean installs, lint/build, frontend914 and backend1897 passed. The patched worktree compiler reproduced the lock twice with SHA25652776944c532e1c30aa7402bcac543535caec2021860e07d4559f5d08d2aa081; coordinator independently reran its dry-run and pip check. See dependency-maintenance-verification.md. PR218 also pins AnyIO 4.14.2 after fresh release-blocking advisories; final candidate dependency audits pass.",
       "pull_requests": [
-        166
+        166,
+        218
       ],
       "delegated_batch": "docs/remediation/delegated/13-dependency-maintenance.md",
       "normalization_track": "Sol",
@@ -13199,9 +13203,9 @@
         "BB1-06",
         "BT1-02"
       ],
-      "verification": "Original repro writes [2, 2] for three active seats and blocks cancellation. Corrected behavioral proof writes [2, 3], then cancellation writes 2. Real PostgreSQL count commit/rollback, atomic attempt, scope/lease and unresolved-attempt checks; canonical/restored V47 continuation preserves rows and legacy identity. See activation-quantity-plan.md. Production currently remains V47.",
+      "verification": "Original repro writes [2, 2] for three active seats and blocks cancellation. Corrected behavioral proof writes [2, 3], then cancellation writes 2. Real PostgreSQL count commit/rollback, atomic attempt, scope/lease and unresolved-attempt checks; canonical/restored V47 continuation preserves rows and legacy identity. See activation-quantity-plan.md. Production V48/V49 and the exact application pair verified September 20 with all original rows unchanged.",
       "execution_ownership": "Astra owns any forward database prepare/defer/lease contract; Sol owns the backend implementation and fixtures. One coordinated design.",
-      "next_change": "Deploy in the authorized combined release after exact-head CI, fresh verified production backup/restore, guarded one-file apply and row preservation.",
+      "next_change": "No remaining implementation or deployment for this finding.",
       "pull_requests": [
         219
       ]
