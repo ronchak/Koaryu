@@ -86,9 +86,56 @@ verify its actual behavior separately and report any defect without expanding th
 
 ## Verification status
 
-Local mounted tests exercise both real page components with synthetic auth I/O,
-callback messages, Google options, loading state and email fallback. Route tests
-exercise PKCE exchange, recovery destinations, cookie accumulation and cache headers.
-All twelve hostile redirect inputs remain rejected. These do not prove Google
-provider behavior or hosted identity linking. Hosted results must be recorded before
-production release; no hosted Google flow has been claimed yet.
+September 20, 2026: PR #229 merged. Reviewed application candidate
+`75d96cfab54440df58df85a843dd7f54d298cb2c` passed the exact-head Release
+candidate gate and independent review. The full frontend suite passed 912 tests;
+production build and lint passed. Both production and staging frontend/backend
+pairs now serve that candidate. Production Render deployment
+`dep-dao67h2jnfac73aoa670` passed both readiness paths with Stripe live mode.
+Production-target Vercel deployment `dpl_2ZFeFBLovTX9wbpXSBVKJWwXfU89` is READY
+in `pdx1` and owns `koaryu.app` and `www.koaryu.app`. Production auto-deploy remains
+off; no migration was applied. Real Google sign-in from both `koaryu.app/login` and `koaryu.app/signup` reached
+`/dashboard`; provider readback confirmed the pre-existing production account UUID,
+studio membership, and role were unchanged.
+
+Google Cloud project `koaryu-auth-20260920` has a Web application client with both
+exact Supabase callbacks, basic identity scopes, and an external audience published
+as **In production**. Both Supabase projects have Google enabled. Email confirmation
+is required, Google email is required, nonce checks are enabled, and manual linking
+is disabled. Existing redirect allowlists remain unchanged. Vercel production
+`NEXT_PUBLIC_PREVIEW_MODE=false` was explicitly saved and read back.
+
+The staging tests used a real Google account that had no pre-existing staging user.
+Fixtures were prepared through supported Supabase identity APIs. During preparation
+only, staging manual linking was briefly enabled to unlink the test identity, then
+restored to false and read back before Google transitions. No production identity
+fixture was created. No schema changed, no paid entitlement was fabricated, and
+no Stripe checkout or charge was performed.
+
+| Flow | Observed result |
+| --- | --- |
+| New Google user | Real consent led to onboarding. One studio was created, legal-name setup completed, and the normal subscription setup screen appeared. |
+| Returning Google user | Same auth UUID and one original studio; no duplicate onboarding or studio. |
+| Confirmed email linking | Prepared a confirmed email-only identity while retaining its UUID/studio, then signed in with Google. Both UUID and studio remained identical. Original password worked through Auth and the actual login page. |
+| Unconfirmed email | A fresh unconfirmed password account retained its UUID after real Google sign-in. Its old password was rejected with `invalid_credentials`. |
+| Denied consent | Canceling the real Google consent screen returned to a usable login page with recovery guidance. The reviewed wording also covers expired email links. |
+| Invited front desk | The actual StaffService sent a fresh invitation and bound its returned Auth UUID. Google retained that UUID and selected the exact invited studio with `front_desk` role. |
+
+The invitation fixture invoked the real service after verifying its fixture admin,
+without fabricating a subscription entitlement. The resulting front-desk session
+correctly showed restricted workspace access because the disposable studio was
+unsubscribed. This proves membership routing; it is not a claim that the paid-studio
+invitation UI or subscription checkout was exercised.
+
+Local tests covered password/magic-link form fallback, signup rendering, fixed error
+messages, code exchange, password-recovery destinations, all callback cookie updates,
+and SSR cache headers. All twelve hostile redirect inputs were rejected. Real email
+magic-link delivery, signup email confirmation, and password-reset email delivery
+were not rerun. The emailed invitation-link path was not claimed as verified; the
+Google acceptance path was.
+
+Private account IDs, fixture credentials, provider readbacks, and event evidence are
+stored outside the repository in the Home Server operator's `google-sso-release`
+directory. The original test studio is retained for inspection. An attempted direct
+cleanup was refused by the database; no cleanup guard was bypassed. The empty,
+zero-membership unconfirmed-account fixture was removed through the Auth admin API.
