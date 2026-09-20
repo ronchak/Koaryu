@@ -1,22 +1,17 @@
 # Production release packet: V38 to V47
 
-**Release stopped at the staging frontend alias on September 14. All nine staging migrations reached V47 and all 53 hosted contracts now pass. The staging backend and unique frontend build serve `138f8ca`, but the normal staging URL still serves `f35395a`. Authenticated write rehearsal and fresh production backup/restore remain incomplete. Do not apply to production or promote production applications.** The chain is forward-only, with no approved down-migration. V40 adds durable command evidence; V45 retires legacy import writes. An application rollback cannot undo those changes or re-enable old imports. A database recovery can lose writes after its snapshot. Production has no verified managed point-in-time restore path.
+**Completed September 15, 2026. Production database is V47 and both applications serve `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`. All nine separate applies, original-row comparisons and final readiness checks passed. The fresh pre-V47 backup and disposable restore are verified.** The chain is forward-only, with no approved down-migration. V40 adds durable command evidence; V45 retires legacy import writes. An application rollback cannot undo those changes or re-enable old imports. A database recovery can lose writes after its snapshot. Production has no verified managed point-in-time restore path.
 
 **Database first, backend second, frontend last. Neither application may be promoted before all nine migrations are applied and independently verified.** The new backend requires RPCs absent from production V38 and fails readiness before V47.
 
-The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). [The staging execution record](staging-rehearsal-verification.md) records what ran and the failed gate. No production apply or production application deployment happened. The owner approved `--one-migration`. It selects the next reviewed file, binds its own inspection/approval/confirmation, and verifies the exact declared successor. Default production bulk apply remains refused. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
+The owner has authorized coordinating Astra to execute this release under the [announce-and-pause protocol](../cutover-gates.md#owner-authorized-release-execution). [The staging execution record](staging-rehearsal-verification.md) records what ran and the failed gate. Production execution completed as recorded in [the verification report](production-release-verification.md). The owner approved `--one-migration`. It selects the next reviewed file, binds its own inspection/approval/confirmation, and verifies the exact declared successor. Default production bulk apply remains refused. Do not use bulk apply to bypass the required pause before each migration. Keep live billing activation, historical financial backfill, production auto-deploy and unrelated provider changes out of this release. Known financial/concurrency findings remain pending in [HANDOFF.md](HANDOFF.md); production acceptance must explicitly account for affected workflows rather than treating merged CI as acceptance of those risks.
 
 ## Pinned candidate and observed state
 
-Frozen release candidate: **`138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`**, PR213 merge, own exact-head Release candidate CI `34903006341` passed. The closing documentation merge does not change this candidate. Fresh inspection and approvals are still required for any future apply. Do not reuse a token from another candidate or checkpoint.
+Frozen release candidate: **`a4ef25910e76ed4b4111699f7b61ff02c30a67a0`**, reviewed PR215 head, exact-head Release candidate CI `34922721974` passed. The closing documentation merge does not change this candidate. Fresh inspection and approvals are still required for any future apply. Do not reuse a token from another candidate or checkpoint.
 
-Closing read-only production inspection against the pinned candidate confirmed exact V38 with nine remaining migrations. No production migration was applied. Earlier candidate/checkpoint inspection tokens cannot authorize a future apply; reinspect after all prerequisites pass.
+Before this chain, production inspection confirmed V38 with nine remaining migrations and both applications at `c5742fe...`. After the chain, production preflight is ready at V47 with 142 migrations and zero security failures. Both production applications now report the pinned candidate. See the timestamped execution report for the before/after evidence.
 
-Read-only inspection on September 11, 2026 UTC confirmed both staging and production at exact `v38`, 133 migrations, head `20260905022339`. Production image: `17.6.1.155`, status `ACTIVE_HEALTHY`. Frontend and backend both served `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`, environment production, backend Stripe live. Render returned `autoDeploy=no` and `autoDeployTrigger=off`; deployed and candidate `frontend/vercel.json` both disable main auto-deployment. Recheck all of this at execution time.
-
-The September 14 closeout read freshly verified the production frontend/backend pair still at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Private evidence is `production-138f-stop-pair.txt` under the current release directory. No production deployment occurred. The provider image observation above remains older evidence.
-
-September 14 closing readback against the frozen candidate confirmed production still at V38 with all nine files pending and both applications still at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Staging is V47 and all 53 hosted contracts passed; the frontend alias mismatch now blocks application rehearsal. See [the execution record](staging-rehearsal-verification.md).
 
 Expected final state: `post`, 142 migrations, head `20260914055301`, history `142:d3bab5f085e1c46ce72ab43046b1ca8b`, full preflight V28, manifest `release-db-attestation-v47`, 42 files in the tool's historical pending list, zero security failures. HTTP readiness reports `status=ready`; it does not echo the manifest string.
 
@@ -40,16 +35,18 @@ The nine-file remaining manifest at preparation is `f9eebe84299dbe2b226fa569a925
 
 All nine are forward corrections, without historical financial backfill. V39/V42 replace student date/membership behavior; V40 adds nullable promotion command fields and immutable prospective evidence; V41 adds serialized payer recomputation; V43 adds atomic external-payment/audit ownership; V44 adds atomic plan/link/audit ownership; V45 adds private receipts and a default-false legacy-run marker. V46 corrects the refund comparison without rewriting a business row or stored claim fingerprint. V47 refreshes that comparison after the receipt lock when a later request overlaps completion. DDL can wait on active writers. V40 alters the promotions table; V45 alters import runs. Measure staging duration and lock waits; do not assume a zero-downtime migration.
 
+**Completed procedure, not a new checklist.** The command blocks below preserve the executed V38-to-V47 packet for review. Do not rerun them against the now-V47 production database. Future releases require new candidate/state evidence and a backup helper with the correct source mapping. In particular, the old `backup --count 133` command is not valid for a new V47 backup.
+
 ## 1. Load credentials and pin reviewed sources
 
-Read repository AGENTS.md, supabase/AGENTS.md, docs/services.md, docs/cutover-gates.md and both private operator files first. Use Bash for this recipe with tracing disabled. A TTY is not an authorization control. Before each irreversible or outward-facing release action, announce its exact command, effect/reversibility and immediate verification, then wait 60 seconds. Run every mutation as its own command; do not paste the packet as an unattended script. Stop if the owner interrupts. Preserve the authorization and execution evidence.
+Read repository AGENTS.md, supabase/AGENTS.md, docs/services.md, docs/cutover-gates.md and both private operator files first. Use Bash for this recipe with tracing disabled. A TTY is not an authorization control. Before each irreversible or outward-facing release action, announce its exact command, effect/reversibility and immediate verification, then wait 30 seconds before production apply only. Run every mutation as its own command; do not paste the packet as an unattended script. Stop if the owner interrupts. Preserve the authorization and execution evidence.
 
 ```bash
 set -euo pipefail
 set +x
 source /Users/openclaw/.config/koaryu/operator/release-env.sh
 cd /Users/openclaw/Projects/Koaryu-Repo
-export KOARYU_CANDIDATE='138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3'
+export KOARYU_CANDIDATE='a4ef25910e76ed4b4111699f7b61ff02c30a67a0'
 export KOARYU_RELEASE_DIR="/Users/openclaw/Koaryu Releases/V47-$(date -u +%Y%m%dT%H%M%SZ)"
 umask 077
 mkdir -p "$KOARYU_RELEASE_DIR"
@@ -120,7 +117,7 @@ node scripts/studio-comp-migration-rollout.mjs --target staging --mode inspect -
 test "$(sed -n 's/^state=//p' "$KOARYU_RELEASE_DIR/staging-post.txt")" = post
 ```
 
-If the reviewed correction changes the release candidate or migration chain, repin the candidate and regenerate its packet first. This V47 record does not authorize a different chain. Fresh inspection does not replace the complete hosted contract gate or authenticated application rehearsal. The current candidate passed the former; the staging alias mismatch still blocks the latter.
+If the reviewed correction changes the release candidate or migration chain, repin the candidate and regenerate its packet first. This V47 record does not authorize a different chain. Fresh inspection does not replace the complete hosted contract gate or authenticated application rehearsal. The unchanged application/SQL bytes passed the former on staging. The owner explicitly waived authenticated application rehearsal for this release.
 
 Record per-migration duration, longest observed lock waits and relevant table cardinalities privately. Use current staging credentials to run all 53 contracts and their service/anon/authenticated privilege checks; the runner refuses production:
 
@@ -162,7 +159,7 @@ npm run verify:deployed-release -- --environment staging \
   --backend-api https://koaryu-staging.onrender.com/api/v1 --expected-stripe-mode test
 ```
 
-With the existing approved staging login and synthetic records, record import retry, ordinary student edits, rank history, external-payment replay and unchanged plan saves. Record expected before/after values and any refresh failure distinctly from save failure. Do not create new live grants or rely on the partial sensitive frontend export. A database-only staging proof is not complete application rehearsal.
+The owner explicitly waived authenticated staging write/UI rehearsal for this release after all 53 hosted contracts passed. It was not performed or claimed. No new grants or synthetic financial writes were created.
 
 ## 3. Establish the production write window and fresh backup
 
@@ -175,7 +172,7 @@ Establish and record a controlled maintenance window. Stop new imports and allow
 
 Re-read production auto-deploy off and the serving pair. Reinspect production with the pinned candidate; require exact V38. The private backup helper currently supports this **source** state, count133/preflight19, and image `17.6.1.155` with digest `sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b`. Confirm the provider still matches before use. It does not yet support a new V47 backup's readiness mapping; do not describe it as a post-V47 backup tool.
 
-The named owner-authorized coordinator runs the existing temporary backup-role workflow only after announcing the exact command and waiting 60 seconds:
+The named owner-authorized coordinator runs the existing temporary backup-role workflow only after announcing the exact command with no mandatory pause under the revised owner protocol:
 
 ```bash
 /Users/openclaw/Projects/Koaryu-Repo/backend/venv/bin/python -I \
@@ -216,25 +213,16 @@ export KOARYU_STAGING_FINGERPRINT="$(sed -n 's/^provider_fingerprint=//p' "$KOAR
 
 Compare the new state and remaining suffix with this packet. The selected file must be exactly next, and its singleton manifest must bind this step's approval and confirmation. Record `expected_after_state` from the inspection. A token from another step or default bulk mode is invalid. An inspection token from this document's preparation is not supplied or reusable. The tool checks the staging fingerprint against the complete canonical V47 tuple before production apply; it accepts only that tuple or the explicitly proven restored-production variant.
 
-As `ronchak`, post the exact new production approval body to PR138 only after staging rehearsal, backup/restore and the maintenance window are accepted. Verify the same exact body, owner, association and issue URL checks as staging, then retain `html_url`:
-
-```bash
-gh api repos/ronchak/Koaryu/issues/138/comments --method POST \
-  --input "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-approval.json" \
-  > "$KOARYU_RELEASE_DIR/production-$KOARYU_STEP-approval-response.json"
-KOARYU_PRODUCTION_APPROVAL='<URL-returned-by-the-owner-approval-comment>'
-KOARYU_RESTORE_RECORD='<verified-proof-path-snapshot-time-and-accepted-recovery-window>'
-KOARYU_RESTORE_OWNER='<named-authorized-recovery-decision-maker>'
-```
+Production used the exact `--release-authorization ronchak:<candidate-sha>` and named executor from the owner-authorized session. Per-migration GitHub comments were expressly removed. `--approval-record` is optional for production; if supplied, the tool still validates it fully. Keep all source/target, inspection, dry-run, staging and verified-restore checks.
 
 ## 5. Owner-authorized production apply and database verification
 
-Production remains blocked until all phase-three evidence is complete. Every invocation below applies exactly one reviewed migration and returns control. Supply the deliberate exact phrase in `--confirmation-phrase`; terminal detection has been removed. The phrase format remains `APPLY <count> MIGRATIONS FROM <candidate> MANIFEST <source-manifest> TO mimguepumzsgmcaycdsh`. Validate it against the exact inspected packet. Capture the tool's structured authorization, provider response and outcome records privately. The executor name is caller-reported; it is not proof of process identity.
+This completed procedure required the verified staging SQL gate and fresh production backup/restore; authenticated application rehearsal was expressly waived. Every invocation below applies exactly one reviewed migration and returns control. Supply the deliberate exact phrase in `--confirmation-phrase`; terminal detection has been removed. The phrase format remains `APPLY <count> MIGRATIONS FROM <candidate> MANIFEST <source-manifest> TO mimguepumzsgmcaycdsh`. Validate it against the exact inspected packet. Capture the tool's structured authorization, provider response and outcome records privately. The executor name is caller-reported; it is not proof of process identity.
 
 ```bash
 node scripts/studio-comp-migration-rollout.mjs --target production --mode apply --one-migration \
   --candidate-sha "$KOARYU_CANDIDATE" --inspection-token "$KOARYU_PRODUCTION_TOKEN" \
-  --confirm-project mimguepumzsgmcaycdsh --approval-record "$KOARYU_PRODUCTION_APPROVAL" \
+  --confirm-project mimguepumzsgmcaycdsh \
   --release-authorization "ronchak:$KOARYU_CANDIDATE" --release-operator "Coordinating Astra" \
   --confirmation-phrase "${KOARYU_CONFIRMATION:?Set the deliberately reviewed exact phrase}" \
   --expected-provider-fingerprint "$KOARYU_STAGING_FINGERPRINT" \
@@ -249,7 +237,7 @@ node scripts/studio-comp-migration-rollout.mjs --target production --mode inspec
 
 The tool verifies the full suffix, limits the CLI to its first file and verifies the declared successor after that one apply. The pinned CLI commits a migration and its history entry transactionally. Each successor checks its predecessor. After each committed file, the expected count/head advances through the table above; record provider timing/lock evidence. On any error, stop and re-inspect before another command that could mutate state. A timeout may have committed. Do not manually apply individual SQL files, run production contracts, use history repair or blindly retry the old packet.
 
-For each invocation require the exact `expected_after_state` and unchanged retained rows. Get a new inspection and approval before the next invocation. After V47 require final `state=post`, exact142/headV47, matching approved fingerprint and zero failures. The tool independently checks raw function definitions/ACLs and the manifest, including the narrow private Auth-lock helper and receipt ownership. Only then may application promotion begin.
+For each invocation require the exact `expected_after_state` and unchanged retained rows. Get a new inspection and bind the next invocation to that state. After V47 require final `state=post`, exact142/headV47, matching approved fingerprint and zero failures. The tool independently checks raw function definitions/ACLs and the manifest, including the narrow private Auth-lock helper and receipt ownership. Only then may application promotion begin.
 
 ## 6. Deploy the backend, verify it, then build the production frontend
 
@@ -308,13 +296,13 @@ For **every** row, the recovery decision is the same:
 - If exact successor state committed and retained rows are unchanged, report the committed checkpoint. Do not retry the old command. A reviewed resumption starts from a new inspection and approval for the next file.
 - If state is partial/unknown or an original business row changed, stop. Restore from the verified pre-apply backup may be necessary; that can lose every later write. There is no approved hosted restore command here. The disposable restore helper cannot restore production. Present that recovery option and a separately reviewed forward correction to the named decision-maker; execute neither automatically.
 
-The complete application release remains blocked until exact V47. These checkpoints make a stopped prefix diagnosable; they do not authorize promotion at an intermediate state or bypass the stop conditions.
+Application promotion must not precede exact V47. These checkpoints make a stopped prefix diagnosable; they do not authorize promotion at an intermediate state or bypass the stop conditions.
 
 ## Compatibility and recovery
 
 | Backend | Database-first compatibility | Limit |
 | --- | --- | --- |
-| Currently served `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`, V38 | Its V19 readiness consumer retains the V38 tuple through the compatibility chain after V47. Existing non-import interfaces are retained. | V45 refuses fresh/incomplete legacy imports. Old Python payer/payment/plan split writers do not gain the new guarantees. Use only with affected workflows paused and no newly activated billing. |
+| Previously served `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`, V38 | Its V19 readiness consumer retains the V38 tuple through the compatibility chain after V47. Existing non-import interfaces are retained. | V45 refuses fresh/incomplete legacy imports. Old Python payer/payment/plan split writers do not gain the new guarantees. Use only with affected workflows paused and no newly activated billing. |
 | Earlier remediation V39–V44 backend candidates | V20–V25 readiness consumers retain their original exact tuple through the verified compatibility chain. | This is schema/readiness compatibility, not blanket approval of every historical application. All pre-PR178 import callers have the V45 refusal. Prefer the observed deployed artifact for rollback, not an arbitrary old SHA. |
 | PR179 merge `7113d130a1523d5048cb9cb15529aed6277a4770`, V44 | V25 compatibility remains. | Includes tuition USD guards but still has legacy import callers; imports remain blocked. |
 | V45 application candidates from PR178 through PR206 | Their V26 readiness consumers retain the exact V45 tuple through the V46/V47 compatibility bridges. | This proves schema/readiness compatibility, not every historical application build. Prefer the recorded deployed artifact for a rollback. |
@@ -324,7 +312,7 @@ The complete application release remains blocked until exact V47. These checkpoi
 The local restore suite proves retained readiness and scoped old/new business contracts. It does not execute every old backend build. Do not authorize pre-V38, temporary bridge or untested older artifacts by extrapolation.
 
 - **Before any migration commits:** abort the release; the old application and V38 remain. If writes resumed after the backup, its possible loss window increases and must be reassessed.
-- **A prefix commits:** keep the old compatible application and affected workflows paused. Reinspect. Exact accepted V39–V46 states may resume only their immutable suffix with a new state-bound token, dry-run and exact-body PR138 approval. An unknown/partially attested state is a stop, not a reason to repair history.
+- **A prefix commits:** keep the old compatible application and affected workflows paused. Reinspect. Exact accepted V39–V46 states may resume only their immutable suffix with a new state-bound token, dry-run and explicit owner/release authorization. An unknown/partially attested state is a stop, not a reason to repair history.
 - **All nine commit but candidate deployment fails:** keep the old artifact or redeploy the recorded `c5742fe...` backend with `render deploys create srv-d7mogk1kh4rs73aq6hqg --commit c5742fe393a8bfb3a1faddb1f488e46a00bd5091 --wait --output json`. Verify its V38 compatibility readiness. Leave imports and affected financial writes paused; this restores application availability, not old database semantics. If a frontend rollback is necessary, create a fresh production-target build from that same old SHA using the request shape above, then verify the pair. Never promote a preview.
 - **Database/correctness failure:** prefer a reviewed forward correction. There is no approved automated hosted-restore command in this repository. The named authorized decision-maker must decide disaster recovery using the new verified snapshot, reconfirm the restore target and image, and accept loss of every later write. The private helper restores only disposable containers; it cannot restore production. Stop here for a separately reviewed hosted-restore operation. Do not invent a down migration or pipe a dump into production.
 
@@ -332,6 +320,6 @@ The private backup helper still needs reviewed V47 support before taking/attesti
 
 ## Execution record
 
-On September 14, all nine staging migrations V39–V47 applied separately and reached verified V47. After PR212/213 corrected test-only failures, candidate `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3` passed all 53 hosted contracts, unchanged retained-row hashes and the exact pre/post database fingerprint. Its staging backend deployed and its staging frontend build completed, but the branch alias still serves `f35395a5700876f6490336ae400c09849a368204`. The exact-pair gate failed before synthetic application writes. Staging web is active; its billing cron stays suspended. No production migration, backup/restore, backend deployment, frontend promotion or live billing activation occurred. See [the execution record](staging-rehearsal-verification.md) and [the next-step handoff](HANDOFF.md). The [operator-policy proposal](operator-governance-proposal.patch) remains unapplied to private files.
+The chain and production deployment completed on September15. See [production-release-verification.md](production-release-verification.md) for all nine apply timestamps, retained-row scope, backup proof, deployed identities and explicitly waived checks. The original staging failures and their reviewed fixes remain in [staging-rehearsal-verification.md](staging-rehearsal-verification.md).
 
-Budget amendment: original baseline 51% used; 30 points stops starting a chain, not continuing one. Before production starts, estimate the entire remaining release/verification and refuse to start if projected total exceeds 35. Hard ceiling 40. These budget rules never waive a technical stop condition. This run stopped on the staging alias mismatch before production began.
+The final owner amendment authorizes 45 total points from the original 51%-used baseline and forbids stopping mid-chain on budget. The earlier 30/35/40 limits are superseded. No live billing activation or historical financial backfill was performed.

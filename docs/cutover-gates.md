@@ -41,17 +41,7 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-The prepared V38-to-V47 remediation release is pinned in
-[PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md). Its values and unfulfilled
-gates are dated evidence, not a current release declaration. For new work, generate
-packet mode from the exact candidate SHA and use its post-history, ordered migration
-list, source manifest, and integration result. Fresh target inspection supplies the
-accepted predecessor, state-bound remainder, token, fingerprint, and exact approval
-body. Do not copy a version, count, head, fingerprint, or approval from this document.
-The compatibility explanations below remain historical context. No production apply
-or deployment was executed for the pinned packet. The September 14 staging chain reached
-verified V47, then stopped at a failed hosted dashboard contract. Staging web and cron
-remain suspended; see the [execution record](remediation/staging-rehearsal-verification.md).
+The completed V38-to-V47 release is recorded in [PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md) and [the production verification](remediation/production-release-verification.md). Production and staging are V47. Both production applications serve `a4ef259`; both staging applications serve `138f8ca`. The staging alias stop is resolved and its billing cron stays suspended. For future work, generate a new exact-candidate packet and fresh target evidence. Do not reuse a completed release's inspection token, fingerprint declaration or recovery snapshot as approval of a new state. The compatibility explanations below remain historical context.
 
 V38 remains an accepted predecessor. Its remainder includes the V39 membership
 correction before V40. V39 preserves paused statuses and per-program joining dates
@@ -213,26 +203,26 @@ A stale approval record is rejected after any code, state, or remainder change.
 
 The owner may explicitly authorize a named coordinating agent to apply production migrations, deploy the backend and promote the frontend. This replaces the former human-only terminal rule as of September 14, 2026. Subagents have no production authority. Live billing activation still needs separate authorization.
 
-Production apply requires `--release-authorization ronchak:<candidate-sha>`, `--release-operator <named-executor>` and `--confirmation-phrase <exact-phrase>`. The authorization names the owner and intended release. The tool retains the exact PR138 OWNER approval, source and target checks, inspection token, dry-run, staging fingerprint and restore evidence requirements. It records the owner, executor, release, intended/applied versions, status and timestamps in its output. A terminal is not proof of authorization.
+Production apply requires `--release-authorization ronchak:<candidate-sha>`, `--release-operator <named-executor>` and `--confirmation-phrase <exact-phrase>`. The authorization names the owner and intended release. Production may omit the PR138 comment under explicit operating-session owner authorization. If supplied, the comment is validated in full. Source and target checks, inspection token, dry runs, staging fingerprint and restore evidence requirements remain. It records the owner, executor, release, intended/applied versions, status and timestamps in its output. A terminal is not proof of authorization.
 
-The executor name is caller-reported attribution, not an authenticated process identity. GitHub verifies the approval account and exact release scope. A public owner/release label or a second name comparison cannot isolate a malicious process that shares provider credentials. The named-coordinator restriction remains an operating-policy requirement; subagents are not authorized.
+The executor name is caller-reported attribution, not an authenticated process identity. When a comment is supplied, GitHub verifies its approval account and exact release scope. Direct CLI fields are operator assertions; they do not independently authenticate owner permission. A public owner/release label or a second name comparison cannot isolate a malicious process that shares provider credentials. The named-coordinator restriction remains an operating-policy requirement; subagents are not authorized.
 
-Default production bulk apply is refused. For the V38-to-V47 chain, use `--one-migration` on inspection, dry-run and apply. Each invocation binds the next file to its own token, approval and confirmation and must verify its exact declared successor. Reinspect before the next invocation; never automate the sequence past a checkpoint. Every attempted provider apply records its actual stdout, stderr and process outcome before the final success or uncertain-failure record. Keep that audit output private.
+Default production bulk apply is refused. For the V38-to-V47 chain, use `--one-migration` on inspection, dry-run and apply. Each invocation binds the next file to its own token, exact owner/release authorization and confirmation and must verify its exact declared successor. Reinspect before the next invocation; never automate the sequence past a checkpoint. Every attempted provider apply records its actual stdout, stderr and process outcome before the final success or uncertain-failure record. Keep that audit output private.
 
 The exact phrase still binds the candidate, pending migration count, source manifest and production project. Supply it deliberately. Do not generate an automatic answer or fabricate a backup/restore claim to satisfy a field.
 
 Before **each** irreversible or outward-facing release action:
 
 1. Post the exact command, what it changes, whether it is reversible, and the check that follows it.
-2. Wait at least 60 seconds before execution. If the owner interrupts, stop and report the current state.
+2. Before each production migration apply, wait at least 30 seconds. Staging and non-migration actions have no mandatory pause. If the owner interrupts, stop and report the current state.
 3. Execute that command alone. Never combine two irreversible steps in one announcement or put a mutation inside a compound command.
 4. Verify the result before the next action. Retain the command, authorization, timestamps, candidate, provider response and verification evidence outside the repository when it contains operator data.
 
 This applies to each migration apply, the production backup, each backend deployment and each frontend promotion. Database comes first, backend second, frontend last. The owner has allowed the exact recorded old-frontend/new-backend pair only during that planned transition; every unexpected SHA mismatch is a stop. Verify the matching final pair before declaring the release complete.
 
-A fresh pre-apply backup and verified disposable restore are mandatory. Stop on a failed or ambiguous migration, unexpected checkpoint state or change to pre-existing business rows, an unverifiable backup/restore, an unexpected deployed SHA, or the run's applicable budget stop. The September 14 amendment applies 30 points only to starting a chain: estimate completion before the first production apply, do not start if projected total exceeds 35, and retain the hard 40-point ceiling. Budget alone must not stop an already-started chain at 30; technical stop conditions still do. Do not improvise recovery. Keep the safest reachable state, retain evidence and report the options.
+A fresh pre-apply backup and verified disposable restore are mandatory. Stop on a failed or ambiguous migration, unexpected checkpoint state or change to pre-existing business rows, an unverifiable backup/restore, an unexpected deployed SHA, or the run's applicable budget stop. The final owner amendment authorizes 45 total weekly percentage points from the original 51%-used baseline. Do not stop mid-chain on budget; technical failure stops remain. The earlier 30/35/40 limits are superseded for this run. Do not improvise recovery. Keep the safest reachable state, retain evidence and report the options.
 
-Exact-head CI, independent review, the guarded merge, production auto-deploy off readback, tenant isolation, authorization, payment safety and idempotency remain unchanged. The existing prohibition on running contract or migration SQL against production remains. Only the guarded rollout tool's authorized apply is an exception for migrations; contract SQL is never allowed. No historical financial backfill.
+Executable changes retain exact-head CI and independent review. Documentation-only closeout uses focused verification and review without a required full-suite wait. Preserve branch protections, the guarded merge and production auto-deploy off readback. Tenant isolation, authorization, payment safety and idempotency remain unchanged. The existing prohibition on running contract or migration SQL against production remains. Only the guarded rollout tool's authorized apply is an exception for migrations; contract SQL is never allowed. No historical financial backfill.
 
 Private operator guidance must agree with this policy. The [proposed operator-policy diff](remediation/operator-governance-proposal.patch) is reviewable; the private runbooks remain unchanged. The owner's explicit authorization governs this run while those notes await alignment.
 
@@ -287,6 +277,6 @@ a later candidate. Store every private artifact outside the repository with mode
 bytes, so retain the separate Storage procedure linked above.
 
 
-## September 14 staging alias stop
+## Completed September 15 release
 
-A READY Vercel staging build did not move the normal branch alias. The unique deployment URL and backend report `138f8ca`, while the pinned staging URL reports `f35395a`. The exact-pair verifier caught it after all 53 hosted SQL contracts passed. Do not substitute a unique URL to waive the pinned-pair gate or treat READY as proof of alias assignment. A bounded alias repair and fresh exact-pair verification are the proposed next step; none was executed at the stop. See [HANDOFF.md](remediation/HANDOFF.md). Production and authenticated application writes remain untouched.
+The staging alias mismatch was repaired before production work. All nine production migrations and tracked-row comparisons passed, followed by backend and production-target frontend deployment. Both production applications report `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`; the frontend proxy reaches that production backend. See [the verification record](remediation/production-release-verification.md). Do not repeat the completed chain. The fresh pre-V47 backup remains the recovery artifact; a future post-V47 backup needs reviewed helper support.

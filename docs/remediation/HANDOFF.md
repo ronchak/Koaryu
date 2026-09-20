@@ -1,51 +1,34 @@
 # Koaryu release handoff
 
-## Current stop
+## Live state
 
-Phase 3 is paused at a staging frontend alias mismatch. All nine V39–V47 migrations and the complete 53-file hosted contract suite passed. The staging backend and unique frontend build serve `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`; the normal staging URL still serves `f35395a5700876f6490336ae400c09849a368204`. The pair verifier failed. No synthetic application writes, production backup/restore, production deployment or live billing activation followed it.
+The production release completed September15, 2026. Both `https://koaryu.app` and the production backend report `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`, environment production. Both backend readiness paths and the frontend's `/api/proxy/health/ready` passed. Vercel built a new production-target artifact in `pdx1`; no preview was promoted.
 
-Staging web is active. Its billing cron remains suspended. Production remains V38, with the previously verified frontend/backend pair `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Nothing was applied to production in this run. Read [the execution record](staging-rehearsal-verification.md) and [release packet](PRODUCTION-RELEASE.md) before continuing.
+Production database is V47: 142 migrations, head `20260914055301`, manifest `release-db-attestation-v47`, zero security failures. Nine separate guarded applies completed, each after its own 30-second announcement and followed by a row comparison. All 1,163 tracked original business rows across ten tables remained unchanged, with no additions. The final fingerprint matches the existing reviewed restored-production variant; no expectation was relaxed. See [verification](production-release-verification.md).
 
-## Source and budget
+Staging database is also V47, with both applications at `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`. Its normal alias was repaired and the exact pair passed. Both web services are active. Staging billing cron stays suspended; production billing scheduler stays disabled. Production auto-deploy stays off. No live billing activation, financial backfill or synthetic production write occurred.
 
-Main at preparation of this documentation closeout and the frozen release candidate are `138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3`, PR213 merge. Its own exact-head CI `34903006341` passed. The final report and Git identify the subsequent documentation-only merge and its own CI; do not mistake that later SHA for the deployed candidate.
+## Source, PRs and budget
 
-Original weekly baseline remains 51% used. At September 14 22:36 UTC the meter was 80% used, or 29 points spent. This is a technical-gate stop, not budget exhaustion. Check the live meter before resuming. At 30 points, do not start a production chain. Before the first apply, estimate the whole remaining release and verification: do not start if projected total exceeds 35. Once started, finish the chain past 30 unless a technical safety stop occurs. Hard ceiling is 40 points, or 91% used. Weekly reset is September 19 10:16:57 UTC. Never reset the baseline on continuation.
+Deployed candidate: `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`, PR215 head, independent review and exact-head CI `34922721974` passed. Main before the single bookkeeping closeout: `5e22ef6cddf226e80054d18981860bbd4313742d`, PR215 merge, own CI `34923265249` passed. The final report identifies the bookkeeping PR/merge; it does not change the deployed candidate.
 
-Canonical repo: `/Users/openclaw/Projects/Koaryu-Repo`. Private evidence: `/Users/openclaw/Koaryu Releases/20260914-refund-release`. Usage helper: `.git/orchestrator/20260914-refund-release/usage.py`. Credentials, dumps, sessions and operator evidence stay outside Git.
+PR207/209 delivered V46 refund recovery and V47 completion locking. PR208/210 delivered owner-authorized single-file execution. PR212/213 repaired the hosted contracts; all 53 staging files passed before production. PR215 allowed the owner's direct production authorization without a per-migration GitHub comment, preserving target/source, inspection, restore, one-file, confirmation and successor guards. Staging comments remain required; supplied production comments still receive full validation.
 
-## Next action
+Original weekly baseline remains 51% used. At 04:19 UTC the meter was 86% used, or 35 of the authorized 45 points. Read the live meter before new work; the final report records the last reading. Earlier 30/35/40 limits are superseded for this run. The helper `.git/orchestrator/20260914-refund-release/usage.py` still prints old stop labels: use its raw meter and the current owner's budget, not those old labels. Weekly reset is September 19 at 10:16:57 UTC.
 
-No new product PR is needed before diagnosing and resolving the stopped alias assignment. Vercel deployment `dpl_Cm7wLHQTo3SdqLH8RvrM9iszGE5j` is READY and its unique URL reports the correct staging identity. Its `automaticAliases` lists the expected staging URL, but its assigned `alias` list is empty. The readback at 22:31:18 UTC found the old SHA at the normal alias and the new SHA at the unique URL, both cache MISS.
+Canonical repo: `/Users/openclaw/Projects/Koaryu-Repo`. Current execution evidence: `/Users/openclaw/Koaryu Releases/20260915-astra-production`. Older staging evidence: `/Users/openclaw/Koaryu Releases/20260914-refund-release`. Credentials, dumps, sessions and raw operator records stay outside Git.
 
-The bounded proposed repair, **not executed**, is:
+## Backup and recovery
 
-```bash
-vercel alias set koaryu-6pcxf6i1r-ronakchak2569-8303s-projects.vercel.app \
-  koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app \
-  --scope team_gLZEwMI0jgTr9zGABNt3Rude
-```
+Fresh pre-V47 snapshot: `/Users/openclaw/Koaryu Backups/production-20260915T030226Z`. Disposable restore verified at 03:03:28 UTC. All 16 comparisons, source V38 readiness, archive/helper/image hashes, backup-role removal and restore-container cleanup passed. Production web was paused from 03:01:04 until 04:09:56 UTC, covering the snapshot and migration row comparisons.
 
-Resolve the owner's stop condition before executing recovery. Re-read the deployment's exact SHA, environment and current alias first; announce the exact assignment, wait 60 seconds, then verify the pinned pair with the existing `verify:deployed-release` command from the packet. Do not substitute the unique URL to waive that gate, promote a preview to production, or redeploy blindly. The alias change is reversible, but neither reassignment nor rollback was attempted here.
+The private helper supports the old V38 source, not a new V47 backup. Do not run `backup --count 133` against current production. The next bounded maintenance change should add reviewed V47 source/readiness support with a disposable proof, because future backups must attest today's schema. This was not started during release. Keep the verified pre-V47 recovery snapshot; a restore can lose later writes. There is no approved down-migration or automatic hosted-restore command. Do not improvise recovery.
 
-After a matching pair: finish authenticated student edit/program-date independence, rank replay/history, CSV import replay, external-payment replay and unchanged local-plan save checks on synthetic records. The private `staging-api-rehearsal-recipe.md` describes the payloads. Use `staging-request.py` so tokens stay out of argv/logs; one mutation and verification at a time. `request-student-create.json` and `rehearsal-run.json` are prepared but unexecuted. Program/ladder GETs already returned 200. No synthetic student, payer, payment, plan or import was created.
+## Deliberately skipped
 
-Then establish the controlled production write window, fresh backup and verified disposable restore. The helper's V38 source/image mapping must match fresh production readback. No backup exists for this release yet. Re-estimate cost before any production apply, then use the separate guarded one-file invocations and stop conditions in the packet.
+The owner explicitly waived authenticated staging write/UI rehearsal after all 53 hosted contracts passed, removed the go/no-go approval checkpoint and per-migration production GitHub comments, and removed mandatory pauses on staging/non-migration actions. Only production applies retained 30-second windows. Documentation-only closeout does not require waiting for full CI; branch protections and auto-deploy checks remain.
 
-## What landed
-
-- PR207/209: V46 refund recovery and V47 completion locking, with real database, restore and concurrency proofs. Stored fingerprints and historical financial rows remain unchanged.
-- PR208/210: owner-authorized execution audit trail and approved one-migration mode. Technical gates remain intact; the private runbook policy diff is still proposed, not applied.
-- PR212: evidence-based removal of the copied dashboard query-plan/source assertions. Actual RPC/security checks and fixture rows remain. DC1-03 is fixed.
-- PR213: reconciliation inventory and owned-profile fixtures now work on populated staging. Final head `c0d7559542cd4887aea9a48b10b528fe5726f0bd` passed fresh review and exact-head CI `34902266976`. All 53 hosted contracts then passed on its merge, with unchanged tracked rows and V47 fingerprint. Runtime/migration bytes are unchanged from PR210.
-
-The 53-file pass supersedes neither earlier failed attempt: the first stopped after 19 files, and the second attempted all 53 with two failures. Keep those logs. The final complete pass is `staging-138f-contracts.log`; the post-run fingerprint is `staging-138f-post.txt`. Fixture rollbacks can advance sequences, so retained-row preservation is not a claim that sequence counters are unchanged.
-
-## Credentials
-
-The explicitly authorized fresh Sol tasks on the MacBook Air recovered the original staging-owner pairing. Read-only Auth verification, one correctly paired login and a later session refresh succeeded. The earlier failed attempt used a different account; do not retry that pairing. No account/password was changed or provisioned. Twelve provider/staging/backup credential entries are now in this Mac's login Keychain and were read back byte-for-byte. The original operator files and CLI logins remain available.
-
-The historical production application-test password was not recovered. Provider and backup credentials are available, but do not claim production browser authentication. Exact account/session references and Keychain inventory are private. The refreshed staging session expires; refresh it through the existing helper rather than printing credentials or guessing passwords. Browser connection was prepared only; no UI rehearsal occurred.
+The production application-test password is still missing. It was not hunted, reset or provisioned. Existing provider/backup credentials are available, with 12 verified Keychain entries. Staging owner authentication was recovered and verified earlier; no authenticated write rehearsal was claimed. The fresh Sol task refused on an instruction-role misclassification before any external mutation; the owner explicitly returned execution to Astra. Private/global human-only policy text was not edited to force a model to proceed.
 
 ## Exact ledger counts
 
@@ -60,16 +43,16 @@ The historical production application-test password was not recovered. Provider 
 | Obsolete | 0 | 1 | 1 |
 | Total | 56 | 222 | 278 |
 
-Seven separate program findings: fixed Astra 2/Sol 2; pending Astra 3/Sol 0. PROGRAM-CURRENCY-01, PROGRAM-IMPORT-01 and PROGRAM-ACTIVATION-01 remain pending. No risk was newly accepted. PR213 and this closeout change no dispositions.
+Seven separate program findings: fixed Astra 2/Sol 2; pending Astra 3/Sol 0. PROGRAM-CURRENCY-01, PROGRAM-IMPORT-01 and PROGRAM-ACTIVATION-01 remain pending. No new audit risk was accepted or closed in this production run.
 
-Audit batches are outside this release. Batches 01, 02, 03, 05, 08, 09, 10, 12 and 13 are complete. Batches 04, 06 and 11 retain BT4-06, BT3-07 and FC3-08 behind database prerequisites. Batch07 retains FT1-11/FT2-08. Recipes14/15 are complete. The original 55-finding cohort remains 49 fixed, one obsolete and five pending. Use [the batch index](delegated/README.md).
+Audit batches remain outside this release. Batches 01, 02, 03, 05, 08, 09, 10, 12, 13 and recipes 14/15 are complete. Batches 04, 06, 11 retain BT4-06, BT3-07 and FC3-08 behind database prerequisites. Batch 07 retains FT1-11/FT2-08. The original 55-finding cohort remains 49 fixed, one obsolete and five pending. Use [the batch index](delegated/README.md).
 
 ## Traps
 
-- No task migration or contract process remains running. Disposable PostgreSQL probes were removed; do not infer a reusable local schema. Confirm clean worktrees, pushed commits and exact-head main CI before resuming.
-- READY does not prove a staging alias moved. Do not cite a branch build or superseded green CI as deployed-pair evidence.
-- Production is still V38. New backend RPCs require V47. Database first, backend second, frontend last; no historical backfill or live activation. The chain has no approved down-migration or automatic hosted recovery.
-- The private backup helper supports the current V38 source, not post-V47 backups. A complete verified restore and current provider image are mandatory. The September6 backup is historical.
-- Production auto-deploy remains off. Staging cron remains suspended. No mail, DNS, new grants or worker activation is authorized.
-- DOC1-05 remains owner action. The plain-HTTP `crypto.randomUUID` issue and restore-script duplication remain unstarted. Formatter and three timing-sensitive tests were fixed earlier; the stale import 870-line claim was already removed.
-- The prior refund-refresh test failure at `frontend/tests/billing-data-mounted.test.mjs:935` remains an unverified React cursor-settling concern. Subsequent CI passed; do not weaken billing assertions to hide it.
+- Do not reuse completed apply scripts or inspection tokens. All nine files are applied. `pending_versions` in the preflight is a declared historical list, not an unapplied count; compare it with generated readiness metadata.
+- The known restored-production constraint fingerprint differs from canonical staging. Use the existing reviewed variants; never normalize an unexpected mismatch away.
+- A provider READY state does not prove a domain moved. Verify the durable URL, exact SHA and environment. Staging needed explicit alias assignment; production assigned its domains correctly.
+- Old V38 readiness compatibility does not restore legacy import writes or give old split writers the new guarantees. Use the packet's recovery limits.
+- The private backup helper's disposable target must never become a hosted restore target. Future post-V47 backup support remains unimplemented.
+- No task migration, database proof or deployment process remains active after completion. Confirm refs and worktree state before a new run; do not infer local database state from old disposable probes.
+- DOC1-05 remains owner action. The plain-HTTP `crypto.randomUUID` issue and restore-script duplication remain unstarted. Formatter and timing-test fixes landed earlier. The old refund-refresh test race remains an unverified concern despite passing subsequent CI; do not weaken financial assertions to hide it.

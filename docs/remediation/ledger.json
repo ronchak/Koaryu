@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3",
+  "last_reconciled_main": "5e22ef6cddf226e80054d18981860bbd4313742d",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -13243,8 +13243,8 @@
         "BT1-02",
         "BB1-09"
       ],
-      "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md. Hosted staging applied V39–V47 separately and preserved tracked rows. After PR212/213 corrected test-only failures, candidate 138f8ca75b20fe9c3d233a6c5bacfe7fe597ecd3 passed all 53 hosted contracts, identical pre/post V47 fingerprint and unchanged tracked business rows. Application rehearsal stopped before writes because the normal staging frontend alias still serves f35395a while the backend and unique frontend build serve 138f8ca. Production remains unmodified. See staging-rehearsal-verification.md.",
-      "next_change": "Resolve the stopped staging alias assignment and verify the pinned pair before authenticated write rehearsal. Then establish the production write window and fresh backup/verified restore, and re-estimate the complete production release against the amended budget. No production chain has started.",
+      "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md. Hosted staging passed all 53 contracts after the reviewed PR212/213 fixture corrections. Production then applied V39–V47 separately with a fresh verified backup/restore. All 1,163 tracked original rows were unchanged after each apply. Final V47 preflight and the reviewed restored-production fingerprint passed. Both production applications and the frontend proxy verified a4ef25910e76ed4b4111699f7b61ff02c30a67a0. No live billing activation, historical financial backfill or synthetic production financial write occurred. See production-release-verification.md.",
+      "next_change": "No remaining release step for this correction. Future work remains in the separately pending audit/program findings; authenticated workflow rehearsal was waived by the owner for this release.",
       "execution_ownership": "Astra owns database design, migration and SQL/concurrency verification. Sol may implement a separately bounded application/test portion after that prerequisite is settled.",
       "pull_requests": [
         207,
@@ -13291,7 +13291,7 @@
   },
   "execution_policy": {
     "updated": "2026-09-14",
-    "authority": "Owner-authorized four-phase release run. Original weekly baseline is 51% used. Stop starting a chain at 30 points spent. Before production starts, refuse if projected completion of the release and verification exceeds 35 total points. Once started, continue the chain and verification past 30 unless a technical safety stop occurs. Absolute ceiling is 40 points, or 91% used; never start a chain that cannot finish within it.",
+    "authority": "Owner-authorized release completed September15. Final amendment: 45 total weekly percentage points from the original 51%-used baseline; no mid-chain budget stop. Authenticated staging rehearsal, per-migration production GitHub comments and staging/non-migration pauses were explicitly removed. Production applies retained 30-second announcements, fresh verified backup/restore, separate invocations and original-row comparisons. No live activation or historical backfill.",
     "Sol": "All backend/frontend implementation, including financial and authorization application code; docs and maintenance. Existing safety requirements remain.",
     "Astra": "All supabase, migrations, SQL contracts and database concurrency proofs personally. Mixed findings retain one database coordinating track with Sol owning app paths.",
     "note": "normalization_track preserves the earlier risk-based classification. Current track is execution responsibility, not severity or historical authorship.",
