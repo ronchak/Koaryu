@@ -132,19 +132,19 @@ class BeltEligibilityCalculator:
             for context_key, promoted_at in latest_promotions_by_context.items()
             if promoted_at
         }
-        student_ids_with_promotions = [
+        fully_bounded_student_ids = [
             student_id
             for student_id in student_ids
-            if any(
+            if all(
                 context["context_key"] in parsed_promotion_dates
                 for context in contexts_by_student[student_id]
             )
         ]
-        student_ids_with_promotion_set = set(student_ids_with_promotions)
-        student_ids_without_promotions = [
+        fully_bounded_student_id_set = set(fully_bounded_student_ids)
+        unbounded_student_ids = [
             student_id
             for student_id in student_ids
-            if student_id not in student_ids_with_promotion_set
+            if student_id not in fully_bounded_student_id_set
         ]
 
         def build_attendance_query(
@@ -197,7 +197,7 @@ class BeltEligibilityCalculator:
 
                     attendance_counts[context["context_key"]] += 1
 
-        for student_id_chunk in self._chunked(student_ids_without_promotions):
+        for student_id_chunk in self._chunked(unbounded_student_ids):
             process_attendance_rows(
                 self._fetch_paged(
                     lambda student_id_chunk=student_id_chunk: build_attendance_query(
@@ -206,9 +206,13 @@ class BeltEligibilityCalculator:
                 )
             )
 
-        if student_ids_with_promotions:
-            lower_bound = min(parsed_promotion_dates.values()).isoformat()
-            for student_id_chunk in self._chunked(student_ids_with_promotions):
+        if fully_bounded_student_ids:
+            lower_bound = min(
+                parsed_promotion_dates[context["context_key"]]
+                for student_id in fully_bounded_student_ids
+                for context in contexts_by_student[student_id]
+            ).isoformat()
+            for student_id_chunk in self._chunked(fully_bounded_student_ids):
                 process_attendance_rows(
                     self._fetch_paged(
                         lambda student_id_chunk=student_id_chunk, lower_bound=lower_bound: (

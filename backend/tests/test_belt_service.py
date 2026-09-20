@@ -13,7 +13,9 @@ from tests.fakes.supabase import RpcBackedSupabase
 STUDIO_ID = "11111111-1111-1111-1111-111111111111"
 STUDENT_ID = "22222222-2222-2222-2222-222222222222"
 PROGRAM_ID = "33333333-3333-3333-3333-333333333333"
+SECOND_PROGRAM_ID = "44444444-4444-4444-8444-444444444444"
 LADDER_ID = "55555555-5555-5555-5555-555555555555"
+SECOND_LADDER_ID = "99999999-9999-4999-8999-999999999999"
 FROM_RANK_ID = "66666666-6666-6666-6666-666666666666"
 TO_RANK_ID = "77777777-7777-7777-7777-777777777777"
 ACTOR_ID = "88888888-8888-8888-8888-888888888888"
@@ -152,62 +154,174 @@ class BeltServiceTest(unittest.TestCase):
 
         self.assertEqual(ladders, [])
 
-    def test_eligibility_attendance_excludes_deleted_and_canceled_sessions(self):
+    def test_unfiltered_eligibility_fetches_full_history_for_unpromoted_program(self):
+        second_from_rank_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        second_to_rank_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        first_membership_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        second_membership_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        promotion_time = "2026-05-20T12:00:00Z"
+        rank_defaults = {
+            "studio_id": STUDIO_ID,
+            "min_classes": 0,
+            "min_months": 0,
+            "requires_approval": False,
+        }
+        attendance_defaults = {
+            "studio_id": STUDIO_ID,
+            "student_id": STUDENT_ID,
+            "status": "present",
+            "counts_toward_eligibility": True,
+            "class_sessions.status": "scheduled",
+            "class_sessions.deleted_at": None,
+        }
         supabase = FakeSupabase(
             {
+                "belt_ladders": [
+                    {
+                        "id": LADDER_ID,
+                        "studio_id": STUDIO_ID,
+                        "name": "First program",
+                        "program_id": PROGRAM_ID,
+                    },
+                    {
+                        "id": SECOND_LADDER_ID,
+                        "studio_id": STUDIO_ID,
+                        "name": "Second program",
+                        "program_id": SECOND_PROGRAM_ID,
+                    },
+                ],
+                "belt_ranks": [
+                    {
+                        **rank_defaults,
+                        "id": FROM_RANK_ID,
+                        "ladder_id": LADDER_ID,
+                        "name": "First current",
+                        "color_hex": "#ffffff",
+                        "display_order": 1,
+                    },
+                    {
+                        **rank_defaults,
+                        "id": TO_RANK_ID,
+                        "ladder_id": LADDER_ID,
+                        "name": "First next",
+                        "color_hex": "#111111",
+                        "display_order": 2,
+                        "min_classes": 1,
+                    },
+                    {
+                        **rank_defaults,
+                        "id": second_from_rank_id,
+                        "ladder_id": SECOND_LADDER_ID,
+                        "name": "Second current",
+                        "color_hex": "#eeeeee",
+                        "display_order": 1,
+                    },
+                    {
+                        **rank_defaults,
+                        "id": second_to_rank_id,
+                        "ladder_id": SECOND_LADDER_ID,
+                        "name": "Second next",
+                        "color_hex": "#222222",
+                        "display_order": 2,
+                        "min_classes": 1,
+                    },
+                ],
+                "students": [
+                    {
+                        "id": STUDENT_ID,
+                        "studio_id": STUDIO_ID,
+                        "legal_first_name": "Two",
+                        "legal_last_name": "Programs",
+                        "preferred_name": None,
+                        "membership_start_date": "2026-01-01T00:00:00Z",
+                        "program_id": PROGRAM_ID,
+                        "current_belt_rank_id": FROM_RANK_ID,
+                        "status": "active",
+                        "deleted_at": None,
+                    }
+                ],
+                "student_program_memberships": [
+                    {
+                        "id": first_membership_id,
+                        "student_id": STUDENT_ID,
+                        "studio_id": STUDIO_ID,
+                        "program_id": PROGRAM_ID,
+                        "status": "active",
+                        "ended_at": None,
+                        "started_at": "2026-01-01T00:00:00Z",
+                        "current_belt_rank_id": FROM_RANK_ID,
+                    },
+                    {
+                        "id": second_membership_id,
+                        "student_id": STUDENT_ID,
+                        "studio_id": STUDIO_ID,
+                        "program_id": SECOND_PROGRAM_ID,
+                        "status": "active",
+                        "ended_at": None,
+                        "started_at": "2026-01-01T00:00:00Z",
+                        "current_belt_rank_id": second_from_rank_id,
+                    },
+                ],
+                "promotions": [
+                    {
+                        "student_id": STUDENT_ID,
+                        "student_program_membership_id": first_membership_id,
+                        "program_id": PROGRAM_ID,
+                        "studio_id": STUDIO_ID,
+                        "promoted_at": promotion_time,
+                    }
+                ],
                 "attendance": [
                     {
-                        "id": "attendance-valid",
-                        "studio_id": STUDIO_ID,
-                        "student_id": STUDENT_ID,
-                        "status": "present",
-                        "checked_in_at": "2026-05-24T12:00:00Z",
-                        "counts_toward_eligibility": True,
+                        **attendance_defaults,
+                        "checked_in_at": promotion_time,
                         "class_sessions": {"program_id": PROGRAM_ID},
-                        "class_sessions.status": "scheduled",
-                        "class_sessions.deleted_at": None,
                     },
                     {
-                        "id": "attendance-canceled",
-                        "studio_id": STUDIO_ID,
-                        "student_id": STUDENT_ID,
-                        "status": "present",
-                        "checked_in_at": "2026-05-25T12:00:00Z",
-                        "counts_toward_eligibility": True,
+                        **attendance_defaults,
+                        "checked_in_at": "2026-05-01T12:00:00Z",
+                        "class_sessions": {"program_id": SECOND_PROGRAM_ID},
+                    },
+                    {
+                        **attendance_defaults,
+                        "checked_in_at": "2026-05-02T12:00:00Z",
+                        "counts_toward_eligibility": False,
+                        "class_sessions": {"program_id": SECOND_PROGRAM_ID},
+                    },
+                    {
+                        **attendance_defaults,
+                        "studio_id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                        "checked_in_at": "2026-05-03T12:00:00Z",
+                        "class_sessions": {"program_id": SECOND_PROGRAM_ID},
+                    },
+                    {
+                        **attendance_defaults,
+                        "checked_in_at": "2026-05-21T12:00:00Z",
                         "class_sessions": {"program_id": PROGRAM_ID},
                         "class_sessions.status": "canceled",
-                        "class_sessions.deleted_at": None,
                     },
                     {
-                        "id": "attendance-deleted",
-                        "studio_id": STUDIO_ID,
-                        "student_id": STUDENT_ID,
-                        "status": "present",
-                        "checked_in_at": "2026-05-26T12:00:00Z",
-                        "counts_toward_eligibility": True,
+                        **attendance_defaults,
+                        "checked_in_at": "2026-05-22T12:00:00Z",
                         "class_sessions": {"program_id": PROGRAM_ID},
-                        "class_sessions.status": "scheduled",
-                        "class_sessions.deleted_at": "2026-05-26T13:00:00Z",
+                        "class_sessions.deleted_at": "2026-05-22T13:00:00Z",
                     },
                 ],
             }
         )
         calculator = BeltEligibilityCalculator(supabase)
 
-        counts = calculator._fetch_attendance_counts_by_student(
-            STUDIO_ID,
-            [
-                {
-                    "context_key": "membership-context",
-                    "student": {"id": STUDENT_ID},
-                    "target_ladder_id": LADDER_ID,
-                }
-            ],
-            {},
-            {LADDER_ID: {"program_id": PROGRAM_ID}},
-        )
+        unfiltered = asyncio.run(calculator.get_eligibility(STUDIO_ID))
+        first_filtered = asyncio.run(calculator.get_eligibility(STUDIO_ID, LADDER_ID))
+        second_filtered = asyncio.run(calculator.get_eligibility(STUDIO_ID, SECOND_LADDER_ID))
 
-        self.assertEqual(counts["membership-context"], 1)
+        unfiltered_counts = {entry.program_id: entry.classes_since_promo for entry in unfiltered}
+        self.assertEqual(unfiltered_counts[PROGRAM_ID], 1)
+        self.assertEqual(unfiltered_counts[SECOND_PROGRAM_ID], 1)
+        self.assertEqual(unfiltered_counts[PROGRAM_ID], first_filtered[0].classes_since_promo)
+        self.assertEqual(
+            unfiltered_counts[SECOND_PROGRAM_ID], second_filtered[0].classes_since_promo
+        )
 
     def test_eligibility_pages_students_and_chunks_membership_queries(self):
         students = [
