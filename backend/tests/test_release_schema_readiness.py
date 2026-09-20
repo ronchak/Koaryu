@@ -49,14 +49,14 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             with self.subTest(row=row), self.assertRaises(ReleaseSchemaNotReadyError):
                 validate_release_schema_preflight(row)
 
-    def test_coherent_v46_predecessor_cannot_satisfy_v47_readiness(self):
+    def test_coherent_v47_predecessor_cannot_satisfy_v48_readiness(self):
         previous = {
             "ready": True,
-            "migration_count": 141,
-            "migration_head": "20260914033337",
+            "migration_count": 142,
+            "migration_head": "20260914055301",
             "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
             "security_failures": [],
-            "manifest_version": "release-db-attestation-v46",
+            "manifest_version": "release-db-attestation-v47",
         }
         with self.assertRaises(ReleaseSchemaNotReadyError):
             validate_release_schema_preflight(previous)
@@ -67,7 +67,10 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
         # Each row changes one field so another mismatch cannot mask a missing check.
         for field, values in {
             "ready": [False, "true", None],
-            "migration_count": [141, 143],
+            "migration_count": [
+                EXPECTED_RELEASE_MIGRATION_COUNT - 1,
+                EXPECTED_RELEASE_MIGRATION_COUNT + 1,
+            ],
             "migration_head": ["20260908133504", "20990101000000"],
             "pending_versions": [
                 EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
@@ -97,7 +100,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v28", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v29", {})])
 
     def test_hosted_check_does_not_fallback_on_provider_failure(self):
         calls = []
@@ -121,7 +124,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             self.assertRaises(PostgrestAPIError),
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v28", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v29", {})])
 
     def test_hosted_check_fails_closed_when_current_rpc_is_missing(self):
         calls = []
@@ -133,7 +136,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
                     "code": "PGRST202",
                     "message": (
                         "Could not find the function "
-                        "public.koaryu_release_schema_preflight_v28 in the schema cache"
+                        "public.koaryu_release_schema_preflight_v29 in the schema cache"
                     ),
                 }
             )
@@ -148,7 +151,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, "Apply the database migrations"),
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v28", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v29", {})])
 
     def test_success_cache_rechecks_only_after_ttl(self):
         now = [10.0]

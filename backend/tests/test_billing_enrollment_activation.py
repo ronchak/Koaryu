@@ -11,6 +11,8 @@ from app.services.stripe_mutation_policy import StripeMutationBlocked
 from app.services.billing_provider_operations import (
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
+    OPERATION_CONCURRENT_DETAIL,
+    OPERATION_RECONCILIATION_DETAIL,
 )
 from app.services.platform_billing_helpers import stable_hash
 from tests.billing_enrollment_activation_fixtures import (
@@ -68,6 +70,12 @@ def _existing_subscription_case(branch):
         )
         facade = _EnrollmentFixture(_tables(group=_group(), peers=[peer]))
         provider = _provider_subscription(items=[item])
+    facade.supabase.activation_begin_execution.update(
+        branch=branch,
+        expected_subscription_id="sub_1",
+        expected_item_id=None if branch == "add_item" else "si_shared",
+        expected_quantity=1 if branch == "add_item" else 2,
+    )
     _Stripe.subscriptions["sub_1"] = provider
     return facade
 
@@ -178,7 +186,12 @@ def test_historical_non_usd_activation_uses_saved_provider_outcome(stage, error)
         lease,
     )
     if stage != "unattempted":
-        operation = operations.transition(context, operation, "provider_request_in_flight")
+        operation = operations.transition(
+            context,
+            operation,
+            "provider_request_in_flight",
+            result_summary="enrollment_branch:add_item:quantity:1",
+        )
     if stage == "confirmed":
         operations.transition(
             context,
@@ -313,11 +326,13 @@ def test_activation_branches_preserve_exact_owner_replay_and_release_lock(
         "add_item": ("sub_1", None, 1),
         "update_quantity": ("sub_1", "si_shared", 2),
     }[branch]
-    assert intent["branch"] == branch
+    execution = intent["executions"][parent["id"]]
+    assert intent["version"] == 2
+    assert execution["branch"] == branch
     assert (
-        intent["expected_subscription_id"],
-        intent["expected_item_id"],
-        intent["expected_quantity"],
+        execution["expected_subscription_id"],
+        execution["expected_item_id"],
+        execution["expected_quantity"],
     ) == expected
     assert (
         calls[branch][0]["idempotency_key"]
@@ -350,6 +365,9 @@ def test_activation_branches_preserve_exact_owner_replay_and_release_lock(
 def test_provider_backed_legacy_group_adopts_generation_before_add_item():
     group = _group(metadata={"legacy_marker": "keep"})
     facade = _EnrollmentFixture(_tables(group=group))
+    facade.supabase.activation_begin_execution.update(
+        branch="add_item", expected_subscription_id="sub_1"
+    )
     _Stripe.subscriptions["sub_1"] = _provider_subscription()
 
     result = asyncio.run(
@@ -409,7 +427,7 @@ def test_local_scheduled_whole_subscription_rejects_activation_without_mutation(
         )
 
     assert exc.value.status_code == 409
-    assert "scheduled for cancellation" in exc.value.detail
+    assert "not open for activation" in exc.value.detail
     assert _operation(facade)["state"] == "definitive_rejected"
     assert _Stripe.create_subscription_calls == []
     assert _Stripe.add_item_calls == []
@@ -430,7 +448,7 @@ def test_provider_scheduled_whole_subscription_rejects_activation_without_mutati
         )
 
     assert exc.value.status_code == 409
-    assert "scheduled for cancellation" in exc.value.detail
+    assert "not open for activation" in exc.value.detail
     assert _operation(facade)["state"] == "definitive_rejected"
     assert _Stripe.add_item_calls == []
     assert _Stripe.update_item_calls == []
@@ -464,7 +482,7 @@ def test_shared_item_schedule_blocks_activation_before_add_or_quantity_update(gu
         )
 
     assert blocked.value.status_code == 409
-    assert "scheduled for cancellation" in blocked.value.detail
+    assert "not open for activation" in blocked.value.detail
     assert _Stripe.add_item_calls == []
     assert _Stripe.update_item_calls == []
 
@@ -472,29 +490,25 @@ def test_shared_item_schedule_blocks_activation_before_add_or_quantity_update(gu
 @pytest.mark.parametrize("branch", ["add_item", "update_quantity"])
 def test_schedule_inserted_between_activation_checks_prevents_provider_mutation(branch):
     facade = _existing_subscription_case(branch)
-    original_transition = facade.supabase._rpc_transition_billing_provider_operation_v1
 
-    def transition_with_schedule_race(params):
-        result = original_transition(params)
-        if (
-            params["p_operation_type"].startswith("enrollment.activate.")
-            and params["p_to_state"] == "provider_request_in_flight"
-        ):
-            facade.supabase.tables["billing_subscriptions"][0]["cancel_at_period_end"] = True
-            facade.supabase.tables.setdefault("billing_enrollment_transition_intents", []).append(
-                {
-                    "id": "transition_race",
-                    "studio_id": "studio_1",
-                    "billing_subscription_id": "group_1",
-                    "transition_kind": "schedule_period_end",
-                    "mutation_strategy": "subscription_cancel_at_period_end",
-                    "state": "scheduled",
-                }
-            )
-            _Stripe.subscriptions["sub_1"]["cancel_at_period_end"] = True
-        return result
+    def insert_schedule_before_begin():
+        facade.supabase.tables["billing_subscriptions"][0]["cancel_at_period_end"] = True
+        facade.supabase.tables.setdefault("billing_enrollment_transition_intents", []).append(
+            {
+                "id": "transition_race",
+                "studio_id": "studio_1",
+                "billing_subscription_id": "group_1",
+                "transition_kind": "schedule_period_end",
+                "mutation_strategy": "subscription_cancel_at_period_end",
+                "state": "scheduled",
+            }
+        )
+        _Stripe.subscriptions["sub_1"]["cancel_at_period_end"] = True
+        facade.supabase.activation_begin_error_message = (
+            "billing_enrollment_activation_subscription_closed"
+        )
 
-    facade.supabase._rpc_transition_billing_provider_operation_v1 = transition_with_schedule_race
+    facade.supabase.activation_begin_hook = insert_schedule_before_begin
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(
@@ -506,6 +520,46 @@ def test_schedule_inserted_between_activation_checks_prevents_provider_mutation(
     assert exc.value.status_code == 409
     assert _operation(facade)["state"] == "definitive_rejected"
     assert _Stripe.add_item_calls == []
+    assert _Stripe.update_item_calls == []
+
+
+@pytest.mark.parametrize(
+    "code,message,status_code,detail",
+    [
+        (
+            "55000",
+            "billing_enrollment_activation_prior_attempt_unresolved",
+            409,
+            OPERATION_RECONCILIATION_DETAIL,
+        ),
+        (
+            "23514",
+            "billing_enrollment_activation_identity_mismatch",
+            409,
+            OPERATION_CONCURRENT_DETAIL,
+        ),
+        (
+            "42501",
+            "billing_enrollment_activation_actor_invalid",
+            403,
+            "Billing operation is not permitted.",
+        ),
+    ],
+)
+def test_begin_activation_maps_named_errors(code, message, status_code, detail):
+    facade = _existing_subscription_case("update_quantity")
+    facade.supabase.activation_begin_error_code = code
+    facade.supabase.activation_begin_error_message = message
+
+    with pytest.raises(HTTPException) as failure:
+        asyncio.run(
+            _manager(facade).activate_enrollment(
+                "enrollment_1", "studio_1", "actor_1", f"begin-error-{code}"
+            )
+        )
+
+    assert (failure.value.status_code, failure.value.detail) == (status_code, detail)
+    assert _operation(facade)["provider_request_attempt_count"] == 0
     assert _Stripe.update_item_calls == []
 
 
@@ -562,7 +616,7 @@ def test_balance_failure_stays_projected_and_same_actor_replay_completes():
 
 
 def test_provider_ambiguity_is_reconciliation_and_does_not_retry():
-    facade = _EnrollmentFixture(_tables())
+    facade = _existing_subscription_case("update_quantity")
     _Stripe.provider_error = TimeoutError("raw provider payload")
     manager = _manager(facade)
 
@@ -572,8 +626,9 @@ def test_provider_ambiguity_is_reconciliation_and_does_not_retry():
         )
     assert exc.value.status_code == 503
     assert "raw" not in exc.value.detail
-    assert _operation(facade)["state"] == "reconciliation_required"
-    assert len(_Stripe.create_subscription_calls) == 1
+    operation = _operation(facade)
+    assert operation["state"] == "reconciliation_required"
+    assert len(_Stripe.update_item_calls) == 1
 
     _Stripe.provider_error = None
     with pytest.raises(HTTPException) as replay:
@@ -581,11 +636,144 @@ def test_provider_ambiguity_is_reconciliation_and_does_not_retry():
             manager.activate_enrollment("enrollment_1", "studio_1", "actor_1", "ambiguous-adopter")
         )
     assert replay.value.status_code == 409
-    assert len(_Stripe.create_subscription_calls) == 1
+    assert len(_Stripe.update_item_calls) == 1
     assert (
         "stripe_quantity_sync_lock"
         not in facade.supabase.tables["billing_subscriptions"][0]["metadata"]
     )
+
+    operation.update(
+        state="recovery_authorized",
+        recovery_outcome="provider_no_object_safe_to_retry",
+        revision=operation["revision"] + 1,
+    )
+    committed = copy.deepcopy(facade.supabase.tables["student_billing_enrollments"][1])
+    committed.update(id="enrollment_committed", student_id="student_committed")
+    facade.supabase.tables["student_billing_enrollments"].append(committed)
+    facade.supabase.advance_billing_provider_clock(seconds=31)
+    with pytest.raises(HTTPException) as stale_recovery:
+        asyncio.run(
+            manager.activate_enrollment("enrollment_1", "studio_1", "actor_1", "ambiguous-key")
+        )
+    assert stale_recovery.value.status_code == 409
+    assert len(_Stripe.update_item_calls) == 1
+
+    facade.supabase.tables["student_billing_enrollments"].remove(committed)
+    _Stripe.subscriptions["sub_1"]["cancel_at_period_end"] = True
+    facade.supabase.advance_billing_provider_clock(seconds=31)
+    with pytest.raises(HTTPException) as closed_recovery:
+        asyncio.run(
+            manager.activate_enrollment("enrollment_1", "studio_1", "actor_1", "ambiguous-key")
+        )
+    assert closed_recovery.value.status_code == 409
+    assert operation["state"] == "recovery_authorized"
+    assert len(_Stripe.update_item_calls) == 1
+
+
+def test_preread_timeout_stays_unattempted_and_retry_refreshes_shared_quantity():
+    facade = _existing_subscription_case("update_quantity")
+    later = _enrollment(id="enrollment_later", student_id="student_later")
+    facade.supabase.tables["student_billing_enrollments"].append(later)
+    facade.supabase.tables["billing_subscriptions"][0]["current_period_end"] = (
+        "2026-09-01T00:00:00+00:00"
+    )
+    provider = _Stripe.subscriptions["sub_1"]
+    provider["items"]["data"][0]["metadata"]["product"] = "koaryu_payments"
+    provider.update(
+        {
+            "collection_method": "send_invoice",
+            "application_fee_percent": 0.5,
+            "billing_cycle_anchor": 1785628800,
+            "cancel_at_period_end": False,
+            "current_period_end": 1788220800,
+            "days_until_due": 7,
+            "invoice_settings": {"issuer": {"type": "self"}},
+            "schedule": None,
+        }
+    )
+    manager = _manager(facade)
+
+    _Stripe.retrieve_error_once = TimeoutError("pre-provider safety read timed out")
+    with pytest.raises(HTTPException) as timed_out:
+        asyncio.run(
+            manager.activate_enrollment("enrollment_1", "studio_1", "actor_1", "stable-key")
+        )
+    operation = next(
+        row
+        for row in facade.supabase.billing_provider_operations.values()
+        if row["caller_request_key"] == "stable-key"
+    )
+    intent = facade.supabase.tables["student_billing_enrollments"][0]["metadata"][
+        "provider_activation_intent"
+    ]
+    assert timed_out.value.status_code == 503
+    assert operation["state"] == "started"
+    assert operation["provider_request_attempt_count"] == 0
+    assert intent["executions"] == {}
+    assert _Stripe.update_item_calls == []
+
+    asyncio.run(
+        manager.activate_enrollment("enrollment_later", "studio_1", "actor_1", "later-activation")
+    )
+    facade.supabase.advance_billing_provider_clock(seconds=31)
+    facade.supabase.activation_begin_execution["expected_quantity"] = 3
+    retried = asyncio.run(
+        manager.activate_enrollment("enrollment_1", "studio_1", "actor_1", "stable-key")
+    )
+    assert retried.status == "active"
+    assert [call["quantity"] for call in _Stripe.update_item_calls] == [2, 3]
+    assert intent["executions"][operation["id"]]["expected_quantity"] == 3
+    assert _Stripe.subscriptions["sub_1"]["items"]["data"][0]["quantity"] == 3
+
+    canceled = asyncio.run(
+        manager.cancel_immediate(
+            "enrollment_1",
+            "studio_1",
+            "actor_1",
+            "cancel-after-retry",
+            "staff_requested",
+        )
+    )
+    assert canceled["intent"]["state"] == "completed"
+    assert facade.supabase.tables["student_billing_enrollments"][0]["status"] == "canceled"
+    assert [call["quantity"] for call in _Stripe.update_item_calls] == [2, 3, 2]
+
+
+def test_postwrite_readback_uses_current_local_quantity(monkeypatch):
+    facade = _existing_subscription_case("update_quantity")
+    original_update = _Stripe.update_connected_subscription_item
+
+    def update_then_add_local_seat(self, **payload):
+        result = original_update(self, **payload)
+        facade.supabase.tables["student_billing_enrollments"].append(
+            _enrollment(
+                id="enrollment_raced",
+                student_id="student_raced",
+                billing_subscription_id="group_1",
+                stripe_subscription_id="sub_1",
+                stripe_subscription_item_id="si_shared",
+                status="active",
+            )
+        )
+        return result
+
+    monkeypatch.setattr(_Stripe, "update_connected_subscription_item", update_then_add_local_seat)
+
+    with pytest.raises(HTTPException) as mismatch:
+        asyncio.run(
+            _manager(facade).activate_enrollment(
+                "enrollment_1", "studio_1", "actor_1", "postwrite-current-count"
+            )
+        )
+
+    assert mismatch.value.status_code == 503
+    operation = _operation(facade)
+    execution = facade.supabase.tables["student_billing_enrollments"][0]["metadata"][
+        "provider_activation_intent"
+    ]["executions"][operation["id"]]
+    assert execution["expected_quantity"] == 2
+    assert _Stripe.subscriptions["sub_1"]["items"]["data"][0]["quantity"] == 2
+    assert operation["state"] == "reconciliation_required"
 
 
 def test_prerequisites_fail_before_resource_or_provider():
@@ -824,6 +1012,7 @@ def test_precommit_cleanup_failure_same_key_reestablishes_policy_proof():
     assert len(facade.supabase.tables["billing_subscriptions"]) == 1
     assert _Stripe.subscriptions == {}
 
+    facade.supabase.advance_billing_provider_clock(seconds=31)
     with pytest.raises(HTTPException) as converged:
         asyncio.run(
             blocked_manager.activate_enrollment(
@@ -1038,7 +1227,18 @@ def test_tampered_intent_and_unowned_provider_link_fail_closed():
         "provider": {"id": "sub_created", "status": "active"},
     }
     enrollment = facade.supabase.tables["student_billing_enrollments"][0]
-    enrollment["metadata"]["provider_activation_intent"]["expected_quantity"] = 99
+    operation = _operation(facade)
+    execution = enrollment["metadata"]["provider_activation_intent"]["executions"][operation["id"]]
+    execution["expected_quantity"] = 99
+    with pytest.raises(HTTPException) as execution_tampered:
+        asyncio.run(
+            manager.activate_enrollment("enrollment_1", "studio_1", "actor_1", "tamper-adopter")
+        )
+    assert execution_tampered.value.status_code == 503
+    assert len(_Stripe.create_subscription_calls) == 1
+
+    execution["expected_quantity"] = 1
+    enrollment["metadata"]["provider_activation_intent"]["price_id"] = "price_tampered"
     with pytest.raises(HTTPException) as tampered:
         asyncio.run(
             manager.activate_enrollment("enrollment_1", "studio_1", "actor_1", "tamper-adopter")
@@ -1089,6 +1289,9 @@ def test_incomplete_and_past_due_readback_keep_enrollment_past_due():
     for provider_status in ("incomplete", "past_due"):
         _Stripe.reset()
         facade = _EnrollmentFixture(_tables(group=_group()))
+        facade.supabase.activation_begin_execution.update(
+            branch="add_item", expected_subscription_id="sub_1"
+        )
         _Stripe.subscriptions["sub_1"] = _provider_subscription(status=provider_status)
 
         result = asyncio.run(

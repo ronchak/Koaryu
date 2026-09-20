@@ -34,16 +34,16 @@ The production application-test password is still missing. It was not hunted, re
 
 | Disposition | Astra | Sol | Total |
 | --- | ---: | ---: | ---: |
-| Fixed | 23 | 107 | 130 |
+| Fixed | 23 | 108 | 131 |
 | Resolved indirectly | 1 | 1 | 2 |
-| Pending | 28 | 104 | 132 |
+| Pending | 28 | 103 | 131 |
 | Deferred intentionally | 4 | 7 | 11 |
 | Deferred pending owner action | 0 | 1 | 1 |
 | Rejected after verification | 0 | 1 | 1 |
 | Obsolete | 0 | 1 | 1 |
 | Total | 56 | 222 | 278 |
 
-Seven separate program findings: fixed Astra 2/Sol 2; pending Astra 3/Sol 0. PROGRAM-CURRENCY-01, PROGRAM-IMPORT-01 and PROGRAM-ACTIVATION-01 remain pending. No new audit risk was accepted or closed in this production run.
+Seven separate program findings: fixed Astra 3/Sol 2; pending Astra 2/Sol 0. PROGRAM-CURRENCY-01 and PROGRAM-IMPORT-01 remain pending. PROGRAM-ACTIVATION-01 is corrected in V48 code and awaits the current combined production release. No new audit risk was accepted or closed in this production run.
 
 Audit batches remain outside this release. Batches 01, 02, 03, 05, 08, 09, 10, 12, 13 and recipes 14/15 are complete. Batches 04, 06, 11 retain BT4-06, BT3-07 and FC3-08 behind database prerequisites. Batch 07 retains FT1-11/FT2-08. The original 55-finding cohort remains 49 fixed, one obsolete and five pending. Use [the batch index](delegated/README.md).
 

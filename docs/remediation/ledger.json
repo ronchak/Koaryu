@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "5e22ef6cddf226e80054d18981860bbd4313742d",
+  "last_reconciled_main": "0af59f05587324fa8812b4baac4d3b9d41c3adce",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2317,12 +2317,12 @@
       "id": "BB1-06",
       "title": "Activation reports temporary read failures as a canceled subscription",
       "cluster": "access_and_recovery",
-      "disposition": "pending",
-      "reason": "Both eligibility checks still convert every exception into terminal cancellation rejection, including read failures and non-cancellation identity failures. Capability-gated callers remain present.",
+      "disposition": "fixed",
+      "reason": "Only confirmed non-open subscription facts reject activation. Unavailable reads return retryable503 without consuming an attempt; provider identity failures no longer masquerade as cancellation. Already-attempted recovery keeps its receipt and fails before a stale or closed mutation.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No hosted activity or new runtime tests in this normalization.",
+      "verified_against": "1020833707a1ebc0d5afaceb2e52e813f2d84490",
+      "verification": "Behavioral timeout/interleaving/cancellation and recovery tests, plus real PostgreSQL first-attempt ownership and rollback proofs. See activation-quantity-plan.md. Production rollout is a separate pending step.",
       "source_paths": [
         "backend/app/services/billing_enrollment_activation.py"
       ],
@@ -2333,21 +2333,10 @@
       "current_evidence": [
         {
           "path": "backend/app/services/billing_enrollment_activation.py",
-          "line": 317,
-          "observation": "Broad exception handling rejects local eligibility failures; line 367 repeats this for provider reads."
-        },
-        {
-          "path": "backend/app/services/billing_enrollment_activation.py",
-          "line": 573,
-          "observation": "Persists definitive_rejected with cancellation code and cancellation instructions."
-        },
-        {
-          "path": "frontend/src/lib/billing-enrollment-actions.ts",
-          "line": 76,
-          "observation": "Activation caller uses the enrollment.activate capability and retained request key."
+          "observation": "Provider preflight precedes first-attempt ownership; typed confirmed-closed facts are distinguished from read failure."
         }
       ],
-      "next_change": "Separate confirmed cancellation, other confirmed ineligibility, and unavailable reads. Return unavailable for read failures and preserve recoverable operation ownership without asserting a mutation occurred.",
+      "next_change": "No further implementation for this finding.",
       "validation_plan": "Exercise both branches with database failure, provider timeout, confirmed cancellation, and identity mismatch; verify operation state, retry ownership, and zero premature mutations.",
       "scope_constraints": [
         "Consent, tenant and provider identity checks, capability gates, quantity locks, and idempotency.",
@@ -3867,7 +3856,7 @@
       "title": "Billing SQL fakes accept impossible state transitions and incomplete ownership checks",
       "cluster": "database_concurrency_and_workers",
       "disposition": "pending",
-      "reason": "PR179 corrected the three omitted step-plan registration fields in the shared fake. The broader fake still omits completion/lease checks and misrepresents some partial-phase transitions; actual SQL proofs remain necessary. This wider contract-drift observation stays pending.",
+      "reason": "PR179 corrected the three omitted step-plan registration fields in the shared fake. The broader fake still omits completion/lease checks and misrepresents some partial-phase transitions; actual SQL proofs remain necessary. This wider contract-drift observation stays pending. V48 corrects activation lease/adoption fixtures and scripts RPC execution facts instead of copying SQL quantity derivation; broader fake-state gaps remain pending.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
@@ -13202,10 +13191,10 @@
       "id": "PROGRAM-ACTIVATION-01",
       "title": "Transient activation reads can freeze a stale subscription quantity",
       "track": "Astra",
-      "disposition": "pending",
+      "disposition": "fixed",
       "root_cause": "activation_request_and_execution_snapshot_ownership",
-      "reason": "Coordinator reproduction: a pre-provider read timeout becomes a definitive rejection and consumes an attempt without a financial mutation. A different enrollment then activates; retrying the first request can retain stale derived quantity. Three active enrollments produced provider quantity2 with observed writes[2,2]. Catch-only retry changes do not correct the frozen snapshot. Logged only during wind-down.",
-      "verified_against": "f942dad3509a2e2cc9b55d546c2d22e097f77abe",
+      "reason": "V48 separates stable activation identity from the per-operation execution snapshot and stores that snapshot atomically with the first attempt. Retry after unavailable preflight derives current seats; attempted recovery preserves its original snapshot/key and refuses changed quantity or identity. Independent current-count readback detects under-billing before projection.",
+      "verified_against": "1020833707a1ebc0d5afaceb2e52e813f2d84490",
       "source_paths": [
         "backend/app/services/billing_enrollment_activation.py",
         "backend/app/services/billing_provider_operations.py"
@@ -13214,9 +13203,9 @@
         "BB1-06",
         "BT1-02"
       ],
-      "verification": "Private activation-readiness/root-reproduction.json and investigation.last.md. No production mutation or fix.",
+      "verification": "Original repro writes[2,2] for3active seats and blocks cancellation. Corrected behavioral proof writes[2,3], then cancellation writes2. Real PostgreSQL count commit/rollback, atomic attempt, scope/lease and unresolved-attempt checks; canonical/restoredV47 continuation preserves rows and legacy identity. See activation-quantity-plan.md. Production currently remainsV47.",
       "execution_ownership": "Astra owns any forward database prepare/defer/lease contract; Sol owns the backend implementation and fixtures. One coordinated design.",
-      "next_change": "Design stable request identity separately from the execution quantity snapshot. Preserve existing attempted operations and idempotency; verify zero-attempt and post-attempt boundaries with real concurrency before a bounded correction.",
+      "next_change": "Deploy in the authorized combined release after exact-head CI, fresh verified production backup/restore, guarded one-file apply and row preservation.",
       "pull_requests": []
     },
     {
@@ -13277,16 +13266,16 @@
     }
   },
   "current_counts": {
-    "fixed": 130,
+    "fixed": 131,
     "rejected_after_verification": 1,
-    "pending": 132,
+    "pending": 131,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 104,
+    "Sol": 103,
     "Astra": 28
   },
   "execution_policy": {
@@ -13299,14 +13288,14 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 107,
+      "Sol": 108,
       "Astra": 23
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 104,
+      "Sol": 103,
       "Astra": 28
     },
     "deferred_intentionally": {

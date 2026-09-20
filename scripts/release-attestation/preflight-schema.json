@@ -989,6 +989,62 @@
       "configuration": [
         "search_path=pg_catalog"
       ]
+    },
+    "activation_begin_v48": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "begin_billing_enrollment_activation_v1",
+      "signature": "public.begin_billing_enrollment_activation_v1(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,uuid,text,text)",
+      "expected": "a104d7696ec9a711358697783ca065c9d78233ffa4c63d77633c8fcf42ff5e59",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": true,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "jsonb",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    },
+    "activation_rejection_v48": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "reject_billing_autopay_activation_without_provider_v31",
+      "signature": "public.reject_billing_autopay_activation_without_provider_v31(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,integer,uuid,text,text,bigint)",
+      "expected": "b2bee4e53471d0a949ff4533f7ab14938c4fc919e8c97ce8d767f854bc876b44",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": true,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "jsonb",
+      "configuration": [
+        "search_path=\"\""
+      ]
     }
   },
   "states": {
@@ -1134,6 +1190,21 @@
           "expected": "2403d556a024b07689002f8efa68dd6448bade1fdf6bf823d6a80952556105c2"
         }
       }
+    },
+    "v48": {
+      "extends": "v47",
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:5731ec7341d720be1805b1dbf2526ec48fc68bc2708ab7894581240da0838cfe"
+        },
+        "operational_manifest_v12": {
+          "expected": "1081f356132d9a2d9305575c7479d23e30d1ef5f773f0ec3283f0244edbbfebf"
+        }
+      },
+      "append": [
+        "activation_begin_v48",
+        "activation_rejection_v48"
+      ]
     }
   }
 }
