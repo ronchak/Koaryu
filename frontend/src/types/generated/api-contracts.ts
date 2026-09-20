@@ -313,8 +313,10 @@ export interface ApiBillingPayerResponse {
   autopay_authorized_at?: string | null;
   autopay_disabled_at?: string | null;
   autopay_terms_accepted_at?: string | null;
-  billing_status: "current" | "upcoming" | "past_due" | "failed" | "unpaid" | "externally_paid" | "no_payment_method" | "no_billing_plan";
+  billing_status: "current" | "upcoming" | "past_due" | "failed" | "outstanding" | "uncollectible" | "unpaid" | "externally_paid" | "no_payment_method" | "no_billing_plan";
   balance_cents: number;
+  overdue_balance_cents?: number | null;
+  uncollectible_balance_cents?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -1366,7 +1368,7 @@ export interface ApiStudentBillingEnrollmentResponse {
   subscription_id?: string | null;
   collection_mode: "autopay" | "invoice_link" | "external";
   status: "pending" | "active" | "paused" | "ended" | "canceled";
-  billing_status: "current" | "upcoming" | "past_due" | "failed" | "unpaid" | "externally_paid" | "no_payment_method" | "no_billing_plan";
+  billing_status: "current" | "upcoming" | "past_due" | "failed" | "outstanding" | "uncollectible" | "unpaid" | "externally_paid" | "no_payment_method" | "no_billing_plan";
   start_date: string;
   end_date?: string | null;
   next_bill_on?: string | null;

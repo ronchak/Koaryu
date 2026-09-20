@@ -8,6 +8,24 @@ import { describe, it } from "node:test";
 
 import {
   ROLLOUT,
+  EXPECTED_V50_OPERATIONAL_MANIFEST_V10,
+  EXPECTED_V50_OPERATIONAL_MANIFEST_V11,
+  EXPECTED_V50_CRITICAL_SURFACE_MANIFEST,
+  EXPECTED_V50_EXPECTATION_STATE,
+  EXPECTED_V50_RESOURCE_OWNERSHIP_MANIFEST,
+  EXPECTED_V50_OPERATIONAL_CONTRACT,
+  EXPECTED_V50_OPERATIONAL_MANIFEST_V12,
+  EXPECTED_V50_INVOICE_FACTS_STATE,
+  EXPECTED_V50_ATTENTION_STATE,
+  EXPECTED_V50_RELEASE_MANIFEST,
+  V50_RELEASE_MANIFEST_SQL,
+  EXPECTED_V50_PAYER_BALANCE_STATE,
+  EXPECTED_V50_COLLECTION_FACTS_STATE,
+  EXPECTED_V50_PAYER_READ_STATE,
+  EXPECTED_V50_LANDING_STATE,
+  EXPECTED_V49_OPERATIONAL_READINESS,
+  V49_OPERATIONAL_READINESS_SQL,
+  EXPECTED_V49_RESTORED_CATALOG_STATE,
   EXPECTED_V43_OPERATIONAL_READINESS,
   V43_OPERATIONAL_READINESS_SQL,
   EXPECTED_V44_OPERATIONAL_READINESS,
@@ -366,6 +384,7 @@ const expectedMigrationFiles = [
   "20260914055301_refund_completion_locking_v47.sql",
   "20260920035023_enrollment_activation_execution_v48.sql",
   "20260920052705_subscription_unknown_terms_v49.sql",
+  "20260920154441_billing_due_date_facts_v50.sql",
 ];
 const migrationBoundaries = new Map([
   ["pre", "20260814043325_default_program_memberships_to_starting_belt.sql"],
@@ -408,6 +427,7 @@ const migrationBoundaries = new Map([
   ["v46", "20260914055301_refund_completion_locking_v47.sql"],
   ["v47", "20260920035023_enrollment_activation_execution_v48.sql"],
   ["v48", "20260920052705_subscription_unknown_terms_v49.sql"],
+  ["v49", "20260920154441_billing_due_date_facts_v50.sql"],
 ]);
 function expectedRemaining(state) {
   const first = expectedMigrationFiles.indexOf(migrationBoundaries.get(state));
@@ -429,22 +449,22 @@ const validFingerprint =
   `v29_expectation=${EXPECTED_V37_COMPAT_V29_EXPECTATION_STATE};` +
   `v29_transition=${EXPECTED_V34_COMPAT_V29_TRANSITION_MANIFEST};` +
   `v29_contract=${EXPECTED_V37_COMPAT_V29_OPERATIONAL_CONTRACT};` +
-  `v29_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V10};` +
+  `v29_manifest=${EXPECTED_V50_OPERATIONAL_MANIFEST_V10};` +
   `v30_expectation=${EXPECTED_V37_COMPAT_V30_EXPECTATION_STATE};` +
   `v30_replay=${EXPECTED_V37_COMPAT_V30_REPLAY_REPAIRS_MANIFEST};` +
   `v30_contract=${EXPECTED_V37_COMPAT_V30_OPERATIONAL_CONTRACT};` +
-  `v30_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V11};` +
-  `v31_compat_v30_manifest=${EXPECTED_V40_OPERATIONAL_MANIFEST_V11};` +
-  `v31_expectation=${EXPECTED_V49_EXPECTATION_STATE};` +
-  `v31_resource=${EXPECTED_V49_RESOURCE_OWNERSHIP_MANIFEST};` +
-  `v31_contract=${EXPECTED_V49_OPERATIONAL_CONTRACT};` +
-  `v31_manifest=${EXPECTED_V49_OPERATIONAL_MANIFEST_V12};` +
+  `v30_manifest=${EXPECTED_V50_OPERATIONAL_MANIFEST_V11};` +
+  `v31_compat_v30_manifest=${EXPECTED_V50_OPERATIONAL_MANIFEST_V11};` +
+  `v31_expectation=${EXPECTED_V50_EXPECTATION_STATE};` +
+  `v31_resource=${EXPECTED_V50_RESOURCE_OWNERSHIP_MANIFEST};` +
+  `v31_contract=${EXPECTED_V50_OPERATIONAL_CONTRACT};` +
+  `v31_manifest=${EXPECTED_V50_OPERATIONAL_MANIFEST_V12};` +
   `v35_evidence=${EXPECTED_V35_EVIDENCE_MANIFEST};` +
   `v36_recovery=${EXPECTED_V36_RECOVERY_MANIFEST};` +
   `v37_trigger_guard=${EXPECTED_V37_TRIGGER_GUARD_MANIFEST};` +
-  `v49_release=${EXPECTED_V49_RELEASE_MANIFEST};v49_terms=${EXPECTED_V49_SUBSCRIPTION_TERMS_STATE};v48_activation=${EXPECTED_V48_ACTIVATION_STATE};v44_plan=${EXPECTED_V44_LOCAL_PLAN_STATE};v44_clear=${EXPECTED_V44_CLEAR_STATE};v43_external=${EXPECTED_V43_EXTERNAL_PAYMENT_STATE};v41_balance=${EXPECTED_V41_PAYER_BALANCE_STATE};` +
+  `v50_release=${EXPECTED_V50_RELEASE_MANIFEST};v50_collection=${EXPECTED_V50_COLLECTION_FACTS_STATE};v50_payer_read=${EXPECTED_V50_PAYER_READ_STATE};v50_landing=${EXPECTED_V50_LANDING_STATE};v50_invoice_facts=${EXPECTED_V50_INVOICE_FACTS_STATE};v50_attention=${EXPECTED_V50_ATTENTION_STATE};v49_terms=${EXPECTED_V49_SUBSCRIPTION_TERMS_STATE};v48_activation=${EXPECTED_V48_ACTIVATION_STATE};v44_plan=${EXPECTED_V44_LOCAL_PLAN_STATE};v44_clear=${EXPECTED_V44_CLEAR_STATE};v43_external=${EXPECTED_V43_EXTERNAL_PAYMENT_STATE};v41_balance=${EXPECTED_V50_PAYER_BALANCE_STATE};` +
   `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};` +
-  `critical_surface=${EXPECTED_V40_CRITICAL_SURFACE_MANIFEST}`;
+  `critical_surface=${EXPECTED_V50_CRITICAL_SURFACE_MANIFEST}`;
 const validRestoredFingerprint = validFingerprint.replace(
   `catalog=${EXPECTED_V49_CATALOG_STATE}`,
   `catalog=${expectedV49RestoredCatalogState}`,
@@ -512,7 +532,7 @@ function preSnapshot(overrides = {}) {
 }
 
 function snapshotQueryValues(snapshot) {
-  const headers = { history: "history_state", v40RankCommandState: "rank_command_state", v41PayerBalanceState: "payer_balance_state", v43ExternalPaymentState: "external_payment_state", v44LocalPlanState: "local_plan_state", v44ClearState: "clear_state", v48ActivationState: "activation_state", v49SubscriptionTermsState: "subscription_terms_state" };
+  const headers = { history: "history_state", v40RankCommandState: "rank_command_state", v41PayerBalanceState: "payer_balance_state", v43ExternalPaymentState: "external_payment_state", v44LocalPlanState: "local_plan_state", v44ClearState: "clear_state", v48ActivationState: "activation_state", v49SubscriptionTermsState: "subscription_terms_state", v50CollectionFactsState: "collection_facts_state", v50PayerReadState: "payer_read_state", v50LandingState: "landing_state", v50InvoiceFactsState: "invoice_facts_state", v50AttentionState: "attention_state" };
   return Object.fromEntries(Object.entries(snapshot).map(([key, value]) => [
     headers[key] ?? key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`),
     key === "historyColumns" ? JSON.stringify(value) : value,
@@ -528,22 +548,22 @@ function postSnapshot(packet, overrides = {}) {
     functionState: "3:0123456789abcdef0123456789abcdef:0",
     triggerState: "1:fedcba9876543210fedcba9876543210:0",
     catalogState: validCatalogState,
-    criticalSurfaceManifest: EXPECTED_V40_CRITICAL_SURFACE_MANIFEST,
+    criticalSurfaceManifest: EXPECTED_V50_CRITICAL_SURFACE_MANIFEST,
     v26ExpectationState: EXPECTED_V37_COMPAT_V26_EXPECTATION_STATE,
     v27ExpectationState: EXPECTED_V37_COMPAT_V27_EXPECTATION_STATE,
     v28ExpectationState: EXPECTED_V37_COMPAT_V28_EXPECTATION_STATE,
     v29ExpectationState: EXPECTED_V37_COMPAT_V29_EXPECTATION_STATE,
     v29TransitionManifest: EXPECTED_V34_COMPAT_V29_TRANSITION_MANIFEST,
     v29OperationalContract: EXPECTED_V37_COMPAT_V29_OPERATIONAL_CONTRACT,
-    v29OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V10,
+    v29OperationalManifest: EXPECTED_V50_OPERATIONAL_MANIFEST_V10,
     v30ExpectationState: EXPECTED_V37_COMPAT_V30_EXPECTATION_STATE,
     v30ReplayRepairsManifest: EXPECTED_V37_COMPAT_V30_REPLAY_REPAIRS_MANIFEST,
     v30OperationalContract: EXPECTED_V37_COMPAT_V30_OPERATIONAL_CONTRACT,
-    v30OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V11,
-    v31ExpectationState: EXPECTED_V49_EXPECTATION_STATE,
-    v31ResourceOwnershipManifest: EXPECTED_V49_RESOURCE_OWNERSHIP_MANIFEST,
-    v31OperationalContract: EXPECTED_V49_OPERATIONAL_CONTRACT,
-    v31OperationalManifest: EXPECTED_V49_OPERATIONAL_MANIFEST_V12,
+    v30OperationalManifest: EXPECTED_V50_OPERATIONAL_MANIFEST_V11,
+    v31ExpectationState: EXPECTED_V50_EXPECTATION_STATE,
+    v31ResourceOwnershipManifest: EXPECTED_V50_RESOURCE_OWNERSHIP_MANIFEST,
+    v31OperationalContract: EXPECTED_V50_OPERATIONAL_CONTRACT,
+    v31OperationalManifest: EXPECTED_V50_OPERATIONAL_MANIFEST_V12,
     v35EvidenceManifest: EXPECTED_V35_EVIDENCE_MANIFEST,
     v36RecoveryManifest: EXPECTED_V36_RECOVERY_MANIFEST,
     v37TriggerGuardManifest: EXPECTED_V37_TRIGGER_GUARD_MANIFEST,
@@ -552,9 +572,16 @@ function postSnapshot(packet, overrides = {}) {
     v42ReleaseManifest: null,
     v43ReleaseManifest: null,
     v44ReleaseManifest: null,
-    v49ReleaseManifest: EXPECTED_V49_RELEASE_MANIFEST,
+    v49ReleaseManifest: null,
+    v50ReleaseManifest: EXPECTED_V50_RELEASE_MANIFEST,
+    v50CollectionFactsState: EXPECTED_V50_COLLECTION_FACTS_STATE,
+    v50PayerReadState: EXPECTED_V50_PAYER_READ_STATE,
+    v50LandingState: EXPECTED_V50_LANDING_STATE,
+    v50InvoiceFactsState: EXPECTED_V50_INVOICE_FACTS_STATE,
+    v50AttentionState: EXPECTED_V50_ATTENTION_STATE,
+    v49CompatibilityReadiness: EXPECTED_V49_OPERATIONAL_READINESS,
     v49SubscriptionTermsState: EXPECTED_V49_SUBSCRIPTION_TERMS_STATE,
-    v48CompatibilityReadiness: EXPECTED_V48_OPERATIONAL_READINESS,
+    v48CompatibilityReadiness: null,
     v48ActivationState: EXPECTED_V48_ACTIVATION_STATE,
     v47CompatibilityReadiness: EXPECTED_V47_OPERATIONAL_READINESS,
     v46CompatibilityReadiness: EXPECTED_V46_OPERATIONAL_READINESS,
@@ -566,7 +593,7 @@ function postSnapshot(packet, overrides = {}) {
     v43ExternalPaymentState: EXPECTED_V43_EXTERNAL_PAYMENT_STATE,
     v42CompatibilityReadiness: EXPECTED_V42_OPERATIONAL_READINESS,
     v41CompatibilityReadiness: EXPECTED_V41_OPERATIONAL_READINESS,
-    v41PayerBalanceState: EXPECTED_V41_PAYER_BALANCE_STATE,
+    v41PayerBalanceState: EXPECTED_V50_PAYER_BALANCE_STATE,
     v40CompatibilityReadiness: EXPECTED_V40_OPERATIONAL_READINESS,
     v40RankCommandState: EXPECTED_V40_RANK_COMMAND_STATE,
     v39CompatibilityReadiness: EXPECTED_V39_OPERATIONAL_READINESS,
@@ -579,6 +606,10 @@ function postSnapshot(packet, overrides = {}) {
 
 function v43Snapshot(packet, overrides = {}) {
   return postSnapshot(packet, {
+    v30OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V11,
+    v29OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V10,
+    criticalSurfaceManifest: EXPECTED_V40_CRITICAL_SURFACE_MANIFEST,
+    v41PayerBalanceState: EXPECTED_V41_PAYER_BALANCE_STATE,
     history: packet.v43History, targetHistory: packet.v43TargetHistory,
     operationalReadiness: EXPECTED_V43_OPERATIONAL_READINESS,
     catalogState: EXPECTED_V42_CATALOG_STATE,
@@ -593,8 +624,32 @@ function v43Snapshot(packet, overrides = {}) {
   });
 }
 
+function v49Snapshot(packet, overrides = {}) {
+  return postSnapshot(packet, {
+    v31OperationalManifest: EXPECTED_V49_OPERATIONAL_MANIFEST_V12,
+    v31OperationalContract: EXPECTED_V49_OPERATIONAL_CONTRACT,
+    v31ResourceOwnershipManifest: EXPECTED_V49_RESOURCE_OWNERSHIP_MANIFEST,
+    v31ExpectationState: EXPECTED_V49_EXPECTATION_STATE,
+    v30OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V11,
+    v29OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V10,
+    criticalSurfaceManifest: EXPECTED_V40_CRITICAL_SURFACE_MANIFEST,
+    history: packet.v49History, targetHistory: packet.v49TargetHistory,
+    operationalReadiness: EXPECTED_V49_OPERATIONAL_READINESS,
+    v49ReleaseManifest: EXPECTED_V49_RELEASE_MANIFEST,
+    v48CompatibilityReadiness: EXPECTED_V48_OPERATIONAL_READINESS,
+    v41PayerBalanceState: EXPECTED_V41_PAYER_BALANCE_STATE,
+    v50ReleaseManifest: null, v50CollectionFactsState: null,
+    v50PayerReadState: null, v50LandingState: null, v49CompatibilityReadiness: null,
+    ...overrides,
+  });
+}
+
 function v48Snapshot(packet, overrides = {}) {
   return postSnapshot(packet, {
+    v30OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V11,
+    v29OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V10,
+    criticalSurfaceManifest: EXPECTED_V40_CRITICAL_SURFACE_MANIFEST,
+    v41PayerBalanceState: EXPECTED_V41_PAYER_BALANCE_STATE,
     history: packet.v48History, targetHistory: packet.v48TargetHistory,
     operationalReadiness: EXPECTED_V48_OPERATIONAL_READINESS,
     catalogState: EXPECTED_V48_CATALOG_STATE,
@@ -611,6 +666,10 @@ function v48Snapshot(packet, overrides = {}) {
 
 function v47Snapshot(packet, overrides = {}) {
   return postSnapshot(packet, {
+    v30OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V11,
+    v29OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V10,
+    criticalSurfaceManifest: EXPECTED_V40_CRITICAL_SURFACE_MANIFEST,
+    v41PayerBalanceState: EXPECTED_V41_PAYER_BALANCE_STATE,
     history: packet.v47History, targetHistory: packet.v47TargetHistory,
     operationalReadiness: EXPECTED_V47_OPERATIONAL_READINESS,
     catalogState: EXPECTED_V47_CATALOG_STATE,
@@ -627,6 +686,10 @@ function v47Snapshot(packet, overrides = {}) {
 
 function v46Snapshot(packet, overrides = {}) {
   return postSnapshot(packet, {
+    v30OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V11,
+    v29OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V10,
+    criticalSurfaceManifest: EXPECTED_V40_CRITICAL_SURFACE_MANIFEST,
+    v41PayerBalanceState: EXPECTED_V41_PAYER_BALANCE_STATE,
     history: packet.v46History, targetHistory: packet.v46TargetHistory,
     operationalReadiness: EXPECTED_V46_OPERATIONAL_READINESS,
     catalogState: EXPECTED_V46_CATALOG_STATE,
@@ -642,6 +705,10 @@ function v46Snapshot(packet, overrides = {}) {
 
 function v45Snapshot(packet, overrides = {}) {
   return postSnapshot(packet, {
+    v30OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V11,
+    v29OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V10,
+    criticalSurfaceManifest: EXPECTED_V40_CRITICAL_SURFACE_MANIFEST,
+    v41PayerBalanceState: EXPECTED_V41_PAYER_BALANCE_STATE,
     history: packet.v45History, targetHistory: packet.v45TargetHistory,
     operationalReadiness: EXPECTED_V45_OPERATIONAL_READINESS,
     catalogState: EXPECTED_V45_CATALOG_STATE,
@@ -657,6 +724,10 @@ function v45Snapshot(packet, overrides = {}) {
 
 function v44Snapshot(packet, overrides = {}) {
   return postSnapshot(packet, {
+    v30OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V11,
+    v29OperationalManifest: EXPECTED_V40_OPERATIONAL_MANIFEST_V10,
+    criticalSurfaceManifest: EXPECTED_V40_CRITICAL_SURFACE_MANIFEST,
+    v41PayerBalanceState: EXPECTED_V41_PAYER_BALANCE_STATE,
     history: packet.v44History, targetHistory: packet.v44TargetHistory,
     operationalReadiness: EXPECTED_V44_OPERATIONAL_READINESS,
     catalogState: EXPECTED_V42_CATALOG_STATE,
@@ -1297,7 +1368,7 @@ describe("studio-comp migration rollout guard", () => {
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|144\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|145\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -1334,7 +1405,7 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-144 packet through V49 and the Payments predecessors", () => {
+  it("derives an exact 100-to-145 packet through V50 and the Payments predecessors", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
     assert.equal(ROLLOUT.scheduleV25MigrationCount, 119);
@@ -1352,7 +1423,7 @@ describe("studio-comp migration rollout guard", () => {
       ],
     );
     assert.equal(ROLLOUT.v26MigrationCount, 121);
-    assert.equal(packet.migrationCount, 144);
+    assert.equal(packet.migrationCount, 145);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
@@ -2250,7 +2321,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.equal(postSql.at(-1), FINAL_OPERATIONAL_READINESS_SQL);
     assert.ok(postSql.includes(V41_PAYER_BALANCE_STATE_SQL));
     assert.ok(postSql.includes(V43_EXTERNAL_PAYMENT_STATE_SQL));
-    assert.ok(postSql.includes(V49_RELEASE_MANIFEST_SQL));
+    assert.ok(postSql.includes(V50_RELEASE_MANIFEST_SQL));
     assert.ok(postSql.includes(V44_LOCAL_PLAN_STATE_SQL));
     assert.ok(postSql.includes(V44_CLEAR_STATE_SQL));
     assert.ok(postSql.includes(V40_CATALOG_STATE_SQL));
@@ -3072,12 +3143,12 @@ describe("studio-comp migration rollout guard", () => {
   });
 
 
-  it("refuses to certify post-state before the exact 144-migration integration", () => {
+  it("refuses to certify post-state before the exact 145-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 144-migration sequence/,
+      /exact final 145-migration sequence/,
     );
   });
 
@@ -3107,7 +3178,7 @@ describe("studio-comp migration rollout guard", () => {
       "edbad08cc2cb60c853ac22d4f03b7e031b2254681963b973f7721d1977f225a5");
   });
 
-  it("selects each declared V38 through V49 step with its exact singleton hash", () => {
+  it("selects each declared V38 through V50 step with its exact singleton hash", () => {
     const packet = candidatePacket();
     const transitions = [
       ["v38", "20260908080420_student_membership_preservation_v39.sql", "be36dc10bf498d6003e542eab9cf5b45603415236e311005c69fcfa0541d6131", "v39"],
@@ -3120,7 +3191,8 @@ describe("studio-comp migration rollout guard", () => {
       ["v45", "20260914033337_refund_projection_recovery_v46.sql", "c37b32eb9d04d96b8aa06f22cfe6ee3438c9d0e7af04560aba6efd8df9aebd7b", "v46"],
       ["v46", "20260914055301_refund_completion_locking_v47.sql", "666a751926fc7d11608785a9c9576f6f56e0e547a48f678f4e518595473319f1", "v47"],
       ["v47", "20260920035023_enrollment_activation_execution_v48.sql", "c5374242fd080621927252bfb27d7d82b3a64fc7a23160714d91d4688d982eef", "v48"],
-      ["v48", "20260920052705_subscription_unknown_terms_v49.sql", "61130979d0225e126b1d383a3e6ebd8a72b2911b4af9723fdffa122fb3508f8b", "post"],
+      ["v48", "20260920052705_subscription_unknown_terms_v49.sql", "61130979d0225e126b1d383a3e6ebd8a72b2911b4af9723fdffa122fb3508f8b", "v49"],
+      ["v49", "20260920154441_billing_due_date_facts_v50.sql", "017feb820d9e56ed12bac25501296d60ba38bbc63b5322d5db9c8c7c0f973f29", "post"],
     ];
     for (const [state, filename, manifestSha256, expectedAfterState] of transitions) {
       const selected = oneMigrationPacket(packet, state);
@@ -3130,7 +3202,7 @@ describe("studio-comp migration rollout guard", () => {
       assert.equal(selected.expectedAfterState, expectedAfterState, state);
     }
     for (const state of ["pre", "v37", "post", null]) {
-      assert.throws(() => oneMigrationPacket(packet, state), /declared V38 through V49 chain/);
+      assert.throws(() => oneMigrationPacket(packet, state), /declared V38 through V50 chain/);
     }
   });
 
@@ -3579,7 +3651,7 @@ describe("studio-comp migration rollout guard", () => {
     });
     // Syntactically valid stale or duplicated evidence must fail before apply.
     for (const fingerprint of [
-      validFingerprint.replace(EXPECTED_V40_CRITICAL_SURFACE_MANIFEST, EXPECTED_CRITICAL_SURFACE_MANIFEST),
+      validFingerprint.replace(EXPECTED_V50_CRITICAL_SURFACE_MANIFEST, EXPECTED_CRITICAL_SURFACE_MANIFEST),
       validFingerprint.replace(";catalog=", ";catalog=unexpected;catalog="),
     ]) assert.throws(() => validateApplyAuthorization({
       ...config, expectedProviderFingerprint: fingerprint,
@@ -3620,16 +3692,16 @@ describe("studio-comp migration rollout guard", () => {
     const observedAt = "2026-09-14T01:02:04.000Z";
     const finishedAt = "2026-09-14T01:02:05.000Z";
     const cases = [
-      { name: "V48 single-migration success", beforeState: "v48", afterState: "post" },
-      { name: "apply failure", beforeState: "v48", applyError: new Error("bounded apply failure") },
-      { name: "post-state mismatch", beforeState: "v48", afterState: "v48" },
-      { name: "bad confirmation", beforeState: "v48", badConfirmation: true },
+      { name: "V49 single-migration success", beforeState: "v49", afterState: "post" },
+      { name: "apply failure", beforeState: "v49", applyError: new Error("bounded apply failure") },
+      { name: "post-state mismatch", beforeState: "v49", afterState: "v49" },
+      { name: "bad confirmation", beforeState: "v49", badConfirmation: true },
       { name: "V38 bulk remainder", beforeState: "v38", bulkBlocked: true },
     ];
 
     for (const testCase of cases) {
       const remainingPacket = packetForAcceptedState(packet, testCase.beforeState);
-      if (testCase.bulkBlocked) assert.equal(remainingPacket.pendingMigrations.length, 11);
+      if (testCase.bulkBlocked) assert.equal(remainingPacket.pendingMigrations.length, 12);
       else assert.equal(remainingPacket.pendingMigrations.length, 1);
       const plannedVersions = remainingPacket.pendingMigrations.map((filename) => filename.slice(0, 14));
       const sharedEvidence = {
@@ -3707,7 +3779,7 @@ describe("studio-comp migration rollout guard", () => {
         output(line) { output.push(line); },
       });
 
-      if (testCase.name === "V48 single-migration success") {
+      if (testCase.name === "V49 single-migration success") {
         await promise;
       } else if (testCase.bulkBlocked) {
         await assert.rejects(promise, /refuses more than one remaining migration/);
@@ -3739,7 +3811,7 @@ describe("studio-comp migration rollout guard", () => {
         system_error_code: null,
         observed_at: observedAt,
       });
-      if (testCase.name === "V48 single-migration success") {
+      if (testCase.name === "V49 single-migration success") {
         assert.deepEqual(evidence[2], {
           ...sharedEvidence,
           status: "verified_success",
@@ -3795,7 +3867,7 @@ describe("studio-comp migration rollout guard", () => {
   });
 });
 
-describe("V49 subscription fact migration cutover", () => {
+describe("V50 current invoice facts migration cutover", () => {
   it("accepts exact V37 and V38 predecessor evidence", () => {
     const packet = candidatePacket();
     for (const [state, history, targetHistory, readiness] of [
@@ -3821,22 +3893,28 @@ describe("V49 subscription fact migration cutover", () => {
     ]) assert.throws(() => classifyStateSnapshot(v38Snapshot(packet, change), packet));
   });
 
-  it("rejects final V49 readiness with missing or historical release safeguards", () => {
+  it("rejects final V50 readiness with missing or historical release safeguards", () => {
     const packet = candidatePacket();
     for (const change of [
       { v45CompatibilityReadiness: null },
       { v45CompatibilityReadiness: EXPECTED_V44_OPERATIONAL_READINESS },
       { v46CompatibilityReadiness: null },
       { v46CompatibilityReadiness: EXPECTED_V45_OPERATIONAL_READINESS },
-      { v49ReleaseManifest: null },
+      { v50ReleaseManifest: null },
+      { v50CollectionFactsState: null },
+      { v50PayerReadState: null },
+      { v50LandingState: null },
+      { v50InvoiceFactsState: null },
+      { v50AttentionState: null },
+      { v41PayerBalanceState: EXPECTED_V41_PAYER_BALANCE_STATE },
       { v49SubscriptionTermsState: null },
       { v49SubscriptionTermsState: EXPECTED_PRE_V49_SUBSCRIPTION_TERMS_STATE },
-      { v48CompatibilityReadiness: null },
+      { v49CompatibilityReadiness: null },
       { v48ActivationState: null },
       { v48ActivationState: `${EXPECTED_V48_ACTIVATION_STATE}extra` },
       { v47CompatibilityReadiness: null },
-      { v49ReleaseManifest: EXPECTED_V44_RELEASE_MANIFEST },
-      { v49ReleaseManifest: `${EXPECTED_V49_RELEASE_MANIFEST}extra` },
+      { v50ReleaseManifest: EXPECTED_V44_RELEASE_MANIFEST },
+      { v50ReleaseManifest: `${EXPECTED_V50_RELEASE_MANIFEST}extra` },
       { v44CompatibilityReadiness: null },
       { v44CompatibilityReadiness: EXPECTED_V43_OPERATIONAL_READINESS },
       { v44LocalPlanState: null },
@@ -3879,11 +3957,11 @@ describe("V49 subscription fact migration cutover", () => {
       { v31OperationalContract: EXPECTED_V39_OPERATIONAL_CONTRACT_V31 },
       { v31OperationalManifest: EXPECTED_V39_OPERATIONAL_MANIFEST_V12 },
     ]) assert.throws(() => classifyStateSnapshot(postSnapshot(packet, change), packet), JSON.stringify(change));
-    for (const field of [`v49_release=${EXPECTED_V49_RELEASE_MANIFEST};`, `v49_terms=${EXPECTED_V49_SUBSCRIPTION_TERMS_STATE};`, `v48_activation=${EXPECTED_V48_ACTIVATION_STATE};`, `v44_plan=${EXPECTED_V44_LOCAL_PLAN_STATE};`, `v44_clear=${EXPECTED_V44_CLEAR_STATE};`, `v43_external=${EXPECTED_V43_EXTERNAL_PAYMENT_STATE};`, `v41_balance=${EXPECTED_V41_PAYER_BALANCE_STATE};`, `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};`]) {
+    for (const field of [`v50_release=${EXPECTED_V50_RELEASE_MANIFEST};`, `v50_collection=${EXPECTED_V50_COLLECTION_FACTS_STATE};`, `v50_payer_read=${EXPECTED_V50_PAYER_READ_STATE};`, `v50_landing=${EXPECTED_V50_LANDING_STATE};`, `v50_invoice_facts=${EXPECTED_V50_INVOICE_FACTS_STATE};`, `v50_attention=${EXPECTED_V50_ATTENTION_STATE};`, `v49_terms=${EXPECTED_V49_SUBSCRIPTION_TERMS_STATE};`, `v48_activation=${EXPECTED_V48_ACTIVATION_STATE};`, `v44_plan=${EXPECTED_V44_LOCAL_PLAN_STATE};`, `v44_clear=${EXPECTED_V44_CLEAR_STATE};`, `v43_external=${EXPECTED_V43_EXTERNAL_PAYMENT_STATE};`, `v41_balance=${EXPECTED_V50_PAYER_BALANCE_STATE};`, `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};`]) {
       assert.throws(() => approvedProviderFingerprintVariants(validFingerprint.replace(field, "")));
     }
     assert.throws(() => approvedProviderFingerprintVariants(validFingerprint.replace(
-      `critical_surface=${EXPECTED_V40_CRITICAL_SURFACE_MANIFEST}`, `critical_surface=${EXPECTED_CRITICAL_SURFACE_MANIFEST}`)));
+      `critical_surface=${EXPECTED_V50_CRITICAL_SURFACE_MANIFEST}`, `critical_surface=${EXPECTED_CRITICAL_SURFACE_MANIFEST}`)));
   });
 
   it("accepts V39 canonical/restored predecessors without accepting V40 or incomplete evidence", () => {
@@ -3920,6 +3998,7 @@ describe("V49 subscription fact migration cutover", () => {
       ["v46", v46Snapshot, [EXPECTED_V46_CATALOG_STATE, EXPECTED_V46_RESTORED_CATALOG_STATE]],
       ["v47", v47Snapshot, [EXPECTED_V47_CATALOG_STATE, EXPECTED_V47_RESTORED_CATALOG_STATE]],
       ["v48", v48Snapshot, [EXPECTED_V48_CATALOG_STATE, EXPECTED_V48_RESTORED_CATALOG_STATE]],
+      ["v49", v49Snapshot, [EXPECTED_V49_CATALOG_STATE, EXPECTED_V49_RESTORED_CATALOG_STATE]],
     ]) {
     for (const catalogState of catalogs) {
       assert.deepEqual(classifyStateSnapshot(snapshot(packet, { catalogState }), packet), { state, providerFingerprint: null });
@@ -3928,7 +4007,7 @@ describe("V49 subscription fact migration cutover", () => {
     for (const change of [
       { targetHistory: packet.postTargetHistory },
       { operationalReadiness: EXPECTED_OPERATIONAL_READINESS },
-      { [state + "ReleaseManifest"]: EXPECTED_V49_RELEASE_MANIFEST },
+      { [state + "ReleaseManifest"]: EXPECTED_V50_RELEASE_MANIFEST },
       { [state + "ReleaseManifest"]: null },
       { v40RankCommandState: null },
       { catalogState: EXPECTED_V39_CATALOG_STATE },
@@ -3942,7 +4021,7 @@ describe("V49 subscription fact migration cutover", () => {
     }
   });
 
-  it("queries only the matching V38 through V48 predecessor contracts", () => {
+  it("queries only the matching V38 through V49 predecessor contracts", () => {
     const packet = candidatePacket();
     for (const [state, snapshot, readinessSql, rawHeader, rawSql] of [
       ["v38", v38Snapshot(packet), V38_OPERATIONAL_READINESS_SQL, "v38_billing_manifest", V38_BILLING_MANIFEST_SQL],
@@ -3956,6 +4035,7 @@ describe("V49 subscription fact migration cutover", () => {
       ["v46", v46Snapshot(packet), V46_OPERATIONAL_READINESS_SQL, "v46_release_manifest", V46_RELEASE_MANIFEST_SQL],
       ["v47", v47Snapshot(packet), V47_OPERATIONAL_READINESS_SQL, "v47_release_manifest", V47_RELEASE_MANIFEST_SQL],
       ["v48", v48Snapshot(packet), V48_OPERATIONAL_READINESS_SQL, "v48_release_manifest", V48_RELEASE_MANIFEST_SQL],
+      ["v49", v49Snapshot(packet), V49_OPERATIONAL_READINESS_SQL, "v49_release_manifest", V49_RELEASE_MANIFEST_SQL],
     ]) {
       const queried = new Map();
       const values = snapshotQueryValues(snapshot);
@@ -3964,32 +4044,33 @@ describe("V49 subscription fact migration cutover", () => {
         queried.set(header, sql);
         return values[header];
       }), { state, providerFingerprint: null });
-      assert.equal(queried.get("catalog_state"), ["v40", "v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48"].includes(state) ? V40_CATALOG_STATE_SQL : CATALOG_STATE_SQL);
+      assert.equal(queried.get("catalog_state"), ["v40", "v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48", "v49"].includes(state) ? V40_CATALOG_STATE_SQL : CATALOG_STATE_SQL);
       assert.equal(queried.get("operational_readiness"), readinessSql);
       assert.equal(queried.get(rawHeader), rawSql);
       assert.ok(queried.has("v37_compatibility_readiness"));
       assert.equal(queried.has("v38_compatibility_readiness"), state !== "v38");
       assert.equal(queried.has("v40_release_manifest"), state === "v40");
-      assert.equal(queried.has("rank_command_state"), ["v40", "v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48"].includes(state));
-      assert.equal(queried.has("v39_compatibility_readiness"), ["v40", "v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48"].includes(state));
-      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v21")), ["v40", "v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48"].includes(state));
-      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v22")), ["v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48"].includes(state));
+      assert.equal(queried.has("rank_command_state"), ["v40", "v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48", "v49"].includes(state));
+      assert.equal(queried.has("v39_compatibility_readiness"), ["v40", "v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48", "v49"].includes(state));
+      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v21")), ["v40", "v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48", "v49"].includes(state));
+      assert.equal([...queried.values()].some(sql => sql.includes("koaryu_release_schema_preflight_v22")), ["v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48", "v49"].includes(state));
       assert.equal(queried.has("v41_release_manifest"), state === "v41");
-      assert.equal(queried.has("v41_compatibility_readiness"), ["v42", "v43", "v44", "v45", "v46", "v47", "v48"].includes(state));
-      for (const header of ["payer_balance_state", "v40_compatibility_readiness"]) assert.equal(queried.has(header), ["v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48"].includes(state));
+      assert.equal(queried.has("v41_compatibility_readiness"), ["v42", "v43", "v44", "v45", "v46", "v47", "v48", "v49"].includes(state));
+      for (const header of ["payer_balance_state", "v40_compatibility_readiness"]) assert.equal(queried.has(header), ["v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48", "v49"].includes(state));
       assert.equal(queried.has("v43_release_manifest"), state === "v43");
-      for (const header of ["external_payment_state", "v42_compatibility_readiness"]) assert.equal(queried.has(header), ["v43", "v44", "v45", "v46", "v47", "v48"].includes(state));
+      for (const header of ["external_payment_state", "v42_compatibility_readiness"]) assert.equal(queried.has(header), ["v43", "v44", "v45", "v46", "v47", "v48", "v49"].includes(state));
       assert.equal(queried.has("v44_release_manifest"), state === "v44");
-      for (const header of ["local_plan_state", "clear_state", "v43_compatibility_readiness"]) assert.equal(queried.has(header), ["v44", "v45", "v46", "v47", "v48"].includes(state));
+      for (const header of ["local_plan_state", "clear_state", "v43_compatibility_readiness"]) assert.equal(queried.has(header), ["v44", "v45", "v46", "v47", "v48", "v49"].includes(state));
       assert.equal(queried.has("v45_release_manifest"), state === "v45");
-      assert.equal(queried.has("v44_compatibility_readiness"), state === "v45" || state === "v46" || state === "v47" || state === "v48");
+      assert.equal(queried.has("v44_compatibility_readiness"), state === "v45" || state === "v46" || state === "v47" || state === "v48" || state === "v49");
       assert.equal(queried.has("v46_release_manifest"), state === "v46");
-      assert.equal(queried.has("v45_compatibility_readiness"), state === "v46" || state === "v47" || state === "v48");
+      assert.equal(queried.has("v45_compatibility_readiness"), state === "v46" || state === "v47" || state === "v48" || state === "v49");
       assert.equal(queried.has("v47_release_manifest"), state === "v47");
-      assert.equal(queried.has("v46_compatibility_readiness"), state === "v47" || state === "v48");
-      for (const header of ["v48_release_manifest", "v47_compatibility_readiness", "activation_state"]) assert.equal(queried.has(header), state === "v48");
-      assert.equal(queried.has("subscription_terms_state"), state === "v47" || state === "v48");
-      for (const header of ["v49_release_manifest", "v48_compatibility_readiness"]) assert.equal(queried.has(header), false);
+      assert.equal(queried.has("v46_compatibility_readiness"), state === "v47" || state === "v48" || state === "v49");
+      assert.equal(queried.has("v48_release_manifest"), state === "v48");
+      for (const header of ["v47_compatibility_readiness", "activation_state"]) assert.equal(queried.has(header), state === "v48" || state === "v49");
+      assert.equal(queried.has("subscription_terms_state"), state === "v47" || state === "v48" || state === "v49");
+      for (const header of ["v49_release_manifest", "v48_compatibility_readiness"]) assert.equal(queried.has(header), state === "v49");
     }
   });
 });

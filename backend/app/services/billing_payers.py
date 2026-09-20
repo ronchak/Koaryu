@@ -31,7 +31,7 @@ from app.services.platform_billing_helpers import (
 )
 from app.services.stripe_mutation_policy import StripeMutationBlocked, configured_stripe_mode
 from app.services.stripe_service import StripeService, StripeTestClockRejected
-from app.services.supabase_rpc import execute_required_rpc
+from app.services.supabase_rpc import execute_required_rpc, rpc_rows
 
 
 PAYER_SYNC_AMBIGUOUS_DETAIL = (
@@ -143,14 +143,12 @@ class BillingPayerManager:
             raise HTTPException(status_code=404, detail="Guardian not found.")
 
     async def list_payers(self, studio_id: str) -> list[BillingPayerResponse]:
-        result = (
-            self.supabase.table("billing_payers")
-            .select("*")
-            .eq("studio_id", studio_id)
-            .order("display_name")
-            .execute()
+        result = execute_required_rpc(
+            self.supabase,
+            "list_billing_payers_v1",
+            {"p_studio_id": studio_id},
         )
-        return [BillingPayerResponse(**row) for row in (result.data or [])]
+        return [BillingPayerResponse(**row) for row in rpc_rows(result)]
 
     async def create_payer(
         self, data: BillingPayerCreate, studio_id: str, actor_id: str
@@ -174,7 +172,18 @@ class BillingPayerManager:
         return BillingPayerResponse(**payer)
 
     async def get_payer(self, payer_id: str, studio_id: str) -> BillingPayerResponse:
-        return BillingPayerResponse(**get_payer_or_404(self.supabase, payer_id, studio_id))
+        result = execute_required_rpc(
+            self.supabase,
+            "list_billing_payers_v1",
+            {
+                "p_studio_id": studio_id,
+                "p_payer_id": payer_id,
+            },
+        )
+        rows = rpc_rows(result)
+        if not rows:
+            raise HTTPException(status_code=404, detail="Payer not found.")
+        return BillingPayerResponse(**rows[0])
 
     async def update_payer(
         self,

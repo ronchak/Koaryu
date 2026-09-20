@@ -475,14 +475,103 @@ class BillingPayerManagerTests(unittest.TestCase):
                 "actor_1",
             )
         )
+        self.assertEqual(facade.supabase.rpc_calls, [])
+        self.assertIsNone(created.overdue_balance_cents)
+        self.assertIsNone(updated.uncollectible_balance_cents)
+
+        created_row = next(
+            row for row in facade.supabase.tables["billing_payers"] if row["id"] == created.id
+        )
+        payer_rows = {
+            created.id: {
+                **created_row,
+                "overdue_balance_cents": 0,
+                "uncollectible_balance_cents": 0,
+            },
+            "payer_z": {
+                **facade.supabase.tables["billing_payers"][0],
+                "overdue_balance_cents": 2500,
+                "uncollectible_balance_cents": 700,
+            },
+        }
+
+        def list_billing_payers(params):
+            if params.get("p_payer_id"):
+                return [payer_rows[params["p_payer_id"]]]
+            return [payer_rows[created.id], payer_rows["payer_z"]]
+
+        facade.supabase._rpc_list_billing_payers_v1 = list_billing_payers
+        facade.supabase.rpc_calls = []
+        facade.supabase.query_log = []
         fetched = asyncio.run(manager.get_payer(created.id, "studio_1"))
         listed = asyncio.run(manager.list_payers("studio_1"))
 
         self.assertEqual(created.display_name, "Alice")
         self.assertEqual(updated.phone, "555-0100")
         self.assertEqual(fetched.email, "alice@example.com")
+        self.assertEqual(fetched.overdue_balance_cents, 0)
         self.assertEqual([payer.display_name for payer in listed], ["Alice", "Zed"])
+        self.assertEqual(listed[1].overdue_balance_cents, 2500)
+        self.assertEqual(listed[1].uncollectible_balance_cents, 700)
+        self.assertEqual(
+            facade.supabase.rpc_calls,
+            [
+                (
+                    "list_billing_payers_v1",
+                    {"p_studio_id": "studio_1", "p_payer_id": created.id},
+                ),
+                ("list_billing_payers_v1", {"p_studio_id": "studio_1"}),
+            ],
+        )
+        self.assertEqual(facade.supabase.query_log, [])
         self.assertEqual(facade.supabase.tables["audit_logs"][0]["action"], "billing.payer_created")
+
+    def test_get_payer_returns_404_when_scoped_projection_is_empty(self):
+        facade = _PayerFixture({})
+        facade.supabase._rpc_list_billing_payers_v1 = lambda _params: []
+
+        with self.assertRaises(HTTPException) as missing:
+            asyncio.run(facade.manager.get_payer("payer_missing", "studio_1"))
+
+        self.assertEqual(missing.exception.status_code, 404)
+        self.assertEqual(missing.exception.detail, "Payer not found.")
+        self.assertEqual(
+            facade.supabase.rpc_calls,
+            [
+                (
+                    "list_billing_payers_v1",
+                    {"p_studio_id": "studio_1", "p_payer_id": "payer_missing"},
+                )
+            ],
+        )
+        self.assertEqual(facade.supabase.query_log, [])
+
+    def test_list_payers_propagates_missing_required_projection_rpc(self):
+        facade = _PayerFixture({})
+        failure = PostgrestAPIError(
+            {
+                "code": "PGRST202",
+                "message": (
+                    "Could not find the function public.list_billing_payers_v1 in the schema cache"
+                ),
+                "details": "",
+                "hint": "",
+            }
+        )
+
+        def missing_rpc(_params):
+            raise failure
+
+        facade.supabase._rpc_list_billing_payers_v1 = missing_rpc
+
+        with self.assertRaisesRegex(RuntimeError, "Apply the database migrations"):
+            asyncio.run(facade.manager.list_payers("studio_1"))
+
+        self.assertEqual(
+            facade.supabase.rpc_calls,
+            [("list_billing_payers_v1", {"p_studio_id": "studio_1"})],
+        )
+        self.assertEqual(facade.supabase.query_log, [])
 
     def test_create_and_update_stay_local_when_connect_is_ready(self):
         _FakeStripeService.reset()

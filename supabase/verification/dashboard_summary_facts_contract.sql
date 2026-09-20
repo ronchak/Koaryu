@@ -304,7 +304,7 @@ BEGIN
             v_fact->'operational', v_medium_fact->'operational', v_large_fact->'operational';
     END IF;
     IF v_fact->'billing'->>'can_view_billing' <> 'true'
-       OR v_fact->'billing'->>'payment_attention_count' <> '3'
+       OR v_fact->'billing'->>'payment_attention_count' <> '1'
        OR v_fact->'billing'->>'has_plans' <> 'true'
        OR v_fact->'billing'->>'payments_ready' <> 'true'
        OR v_fact->'billing'->'amounts'->>'available' <> 'false' THEN
@@ -372,16 +372,20 @@ BEGIN
     -- Expand independent non-roster dimensions after the focused formula checks.
     INSERT INTO public.leads (studio_id, first_name, last_name, stage)
     SELECT v_large, 'Duplicate', 'Name', 'inquiry' FROM generate_series(1, 5000);
-    INSERT INTO public.billing_invoices (studio_id, status, due_date)
-    SELECT v_medium, 'open', DATE '2026-05-20' FROM generate_series(1, 200);
-    INSERT INTO public.billing_invoices (studio_id, status, due_date)
-    SELECT v_large, 'open', DATE '2026-05-20' FROM generate_series(1, 201);
+    INSERT INTO public.billing_invoices (studio_id, status, due_date, amount_due_cents, amount_remaining_cents)
+    SELECT v_medium, 'open', DATE '2026-05-20', 100, 100 FROM generate_series(1, 200);
+    INSERT INTO public.billing_invoices (studio_id, status, due_date, amount_due_cents, amount_remaining_cents)
+    SELECT v_large, 'open', DATE '2026-05-20', 100, 100 FROM generate_series(1, 201);
     v_fact := public.dashboard_summary_facts(v_empty, 'billing_visible', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1');
     IF (v_fact->'students'->>'total_students')::INTEGER <> 0
        OR (v_fact->'leads'->>'active_leads')::INTEGER <> 0 THEN
         RAISE EXCEPTION 'Empty studio leaked facts from populated studios.';
     END IF;
     v_fact := public.dashboard_summary_facts(v_large, 'billing_visible', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1');
+    IF (v_fact->'billing'->>'payment_attention_count')::INTEGER <> 0 THEN
+        RAISE EXCEPTION 'Invoices due today were counted as overdue.';
+    END IF;
+    v_fact := public.dashboard_summary_facts(v_large, 'billing_visible', 'UTC', DATE '2026-05-21', 'dashboard-summary-v1');
     IF (v_fact->'leads'->>'active_leads')::INTEGER <> 5000
        OR (v_fact->'billing'->>'payment_attention_count')::INTEGER <> 201 THEN
         RAISE EXCEPTION 'Scaled lead or uncapped invoice fact mismatch.';

@@ -93,9 +93,9 @@ VALUES('{ids['actor']}','authenticated','authenticated','{ids['actor']}@example.
 INSERT INTO public.studios(id,name,slug,owner_id) VALUES('{ids['studio']}','Balance lock fixture','balance-{ids['studio']}','{ids['actor']}');
 INSERT INTO public.billing_payers(id,studio_id,display_name,balance_cents) VALUES
 ('{ids['payer']}','{ids['studio']}','Primary',100),('{ids['other']}','{ids['studio']}','Independent',0);
-INSERT INTO public.billing_invoices(id,studio_id,payer_id,status,amount_due_cents,amount_remaining_cents,external)VALUES
-('{ids['invoice']}','{ids['studio']}','{ids['payer']}','open',100,100,true),
-('{ids['other_invoice']}','{ids['studio']}','{ids['other']}','open',200,200,true);
+INSERT INTO public.billing_invoices(id,studio_id,payer_id,status,amount_due_cents,amount_remaining_cents,due_date,external)VALUES
+('{ids['invoice']}','{ids['studio']}','{ids['payer']}','open',100,100,CURRENT_DATE-2,true),
+('{ids['other_invoice']}','{ids['studio']}','{ids['other']}','open',200,200,CURRENT_DATE-2,true);
 COMMIT;""")
         for commit in [True,False]:
             sql(f"BEGIN; UPDATE public.billing_invoices SET status='open',amount_paid_cents=0,amount_remaining_cents=100 WHERE id='{ids['invoice']}'; UPDATE public.billing_payers SET balance_cents=100,billing_status='past_due' WHERE id='{ids['payer']}'; COMMIT;")

@@ -7,7 +7,7 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
 const require = createRequire(import.meta.url);
 
-function loadBillingOverviewTab() {
+function loadBillingComponents() {
   globalThis.__billingTestReact = React;
   globalThis.__billingTestJsxRuntime = require("react/jsx-runtime");
   const { add, modules } = createCommonJsPacker({
@@ -19,7 +19,9 @@ function loadBillingOverviewTab() {
     "@/components/ui/modal-frame":
       'const React=require("react");exports.ModalFrame=({children})=>React.createElement("div",null,children);',
   });
-  const componentId = add("@/components/billing/billing-page-sections");
+  const sectionsId = add("@/components/billing/billing-page-sections");
+  const familiesId = add("@/components/billing/billing-families-tab");
+  const invoicesId = add("@/components/billing/billing-invoices-tab");
   const factories = Function(`return [${modules.join(",")}];`)();
   const cache = {};
   const packedRequire = (id) => {
@@ -29,10 +31,45 @@ function loadBillingOverviewTab() {
     return packedModule.exports;
   };
 
-  const component = packedRequire(componentId).BillingOverviewTab;
+  const sections = packedRequire(sectionsId);
+  const components = {
+    BillingOverviewTab: sections.BillingOverviewTab,
+    BillingFamiliesTab: packedRequire(familiesId).BillingFamiliesTab,
+    BillingInvoicesTab: packedRequire(invoicesId).BillingInvoicesTab,
+  };
   delete globalThis.__billingTestReact;
   delete globalThis.__billingTestJsxRuntime;
-  return component;
+  return components;
+}
+
+const { BillingFamiliesTab, BillingInvoicesTab, BillingOverviewTab } = loadBillingComponents();
+
+function payer(overrides) {
+  return {
+    id: "payer-1",
+    studio_id: "studio-1",
+    display_name: "Payer",
+    email: null,
+    phone: null,
+    stripe_customer_id: null,
+    stripe_payment_method_id: null,
+    stripe_payment_method_type: null,
+    stripe_payment_method_brand: null,
+    stripe_payment_method_last4: null,
+    autopay_status: "not_configured",
+    billing_status: "current",
+    balance_cents: 0,
+    created_at: "2026-09-20T00:00:00Z",
+    updated_at: "2026-09-20T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function renderedText(markup) {
+  return markup
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 const platform = {
@@ -62,7 +99,6 @@ function renderOverview({
   paymentCohortAvailable = true,
   stripePaymentTotal = 0,
 } = {}) {
-  const BillingOverviewTab = loadBillingOverviewTab();
   const noop = () => {};
   return renderToStaticMarkup(
     React.createElement(BillingOverviewTab, {
@@ -197,5 +233,91 @@ describe("billing overview availability", () => {
     for (const scenario of scenarios) {
       assert.doesNotThrow(() => scenario.verify(renderOverview(scenario.props)), scenario.name);
     }
+  });
+});
+
+describe("payer collection facts", () => {
+  const payers = [
+    payer({
+      id: "missing",
+      display_name: "Missing Facts",
+      billing_status: "past_due",
+      balance_cents: 9000,
+    }),
+    payer({
+      id: "zero",
+      display_name: "Known Zero",
+      billing_status: "failed",
+      overdue_balance_cents: 0,
+      uncollectible_balance_cents: 0,
+    }),
+    payer({
+      id: "split",
+      display_name: "Split Balance",
+      billing_status: "past_due",
+      balance_cents: 6000,
+      overdue_balance_cents: 4000,
+      uncollectible_balance_cents: 2000,
+    }),
+    payer({
+      id: "not-queued",
+      display_name: "Uncollectible Only",
+      billing_status: "uncollectible",
+      balance_cents: 2000,
+      overdue_balance_cents: 0,
+      uncollectible_balance_cents: 2000,
+    }),
+  ];
+
+  it("keeps queue membership status-based and renders each amount independently", () => {
+    const text = renderedText(
+      renderToStaticMarkup(
+        React.createElement(BillingInvoicesTab, {
+          billingInvoices: [],
+          billingPayers: payers,
+          canReconcileInvoices: false,
+          canUseWorkflow: () => false,
+          isActionLoading: false,
+          isLoadingAction: () => false,
+          isPreviewMode: false,
+          onInvoiceAction: () => {},
+        }),
+      ),
+    );
+
+    assert.match(
+      text,
+      /Missing Facts .* Outstanding \$90 Overdue Unavailable Uncollectible Unavailable/,
+    );
+    assert.match(text, /Known Zero .* Outstanding \$0 Overdue \$0 Uncollectible \$0/);
+    assert.match(text, /Split Balance .* Outstanding \$60 Overdue \$40 Uncollectible \$20/);
+    assert.doesNotMatch(text, /Uncollectible Only/);
+  });
+
+  it("labels family totals as outstanding without inventing missing facts", () => {
+    const text = renderedText(
+      renderToStaticMarkup(
+        React.createElement(BillingFamiliesTab, {
+          billingPayers: payers,
+          canUseWorkflow: () => false,
+          isActionLoading: false,
+          isLoadingAction: () => false,
+          onAutopayDisable: () => {},
+          onAutopaySetup: () => {},
+          onPayerSync: () => {},
+        }),
+      ),
+    );
+
+    assert.match(
+      text,
+      /Missing Facts past due Outstanding \$90 Overdue Unavailable Uncollectible Unavailable/,
+    );
+    assert.match(text, /Known Zero failed Outstanding \$0 Overdue \$0 Uncollectible \$0/);
+    assert.match(text, /Split Balance past due Outstanding \$60 Overdue \$40 Uncollectible \$20/);
+    assert.match(
+      text,
+      /Uncollectible Only uncollectible Outstanding \$20 Overdue \$0 Uncollectible \$20/,
+    );
   });
 });
