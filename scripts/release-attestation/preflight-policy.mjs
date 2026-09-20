@@ -1,5 +1,16 @@
 import { sqlLiteral } from "./sql.mjs";
 
+export function render_subscription_terms_v49(check) {
+  return `    IF (SELECT count(*) FROM pg_catalog.pg_attribute a
+        LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+        WHERE a.attrelid='public.billing_subscriptions'::REGCLASS
+          AND a.attname IN ('currency','billing_interval') AND NOT a.attisdropped
+          AND a.atttypid='text'::REGTYPE AND NOT a.attnotnull AND d.oid IS NULL
+          AND a.attidentity='' AND a.attgenerated='') IS DISTINCT FROM 2 THEN
+        v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+}
+
 // Named catalog and semantic policies shared by release declarations.
 // Business assertions remain explicit; the generator does not infer them.
 

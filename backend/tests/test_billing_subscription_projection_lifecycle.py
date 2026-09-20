@@ -1,12 +1,282 @@
 from __future__ import annotations
 
+from fastapi import HTTPException
+
+from app.services.billing_subscription_webhook_projection import (
+    BillingSubscriptionWebhookProjector,
+)
 from tests.billing_lifecycle_helpers import (
     BillingPaymentsLifecycleTestBase,
     _FakeSupabase,
 )
 
 
+def _subscription_item(*, currency="usd", interval="month", interval_count=1, item_id="si_1"):
+    recurring = {"interval": interval}
+    if interval_count is not None:
+        recurring["interval_count"] = interval_count
+    return {
+        "id": item_id,
+        "metadata": {},
+        "price": {"currency": currency, "recurring": recurring},
+    }
+
+
 class BillingSubscriptionProjectionLifecycleTest(BillingPaymentsLifecycleTestBase):
+    def _project_subscription_items(self, items, *, existing=None):
+        service = self.service()
+        subscriptions = []
+        if existing is not None:
+            subscriptions.append(
+                {
+                    "id": "subscription_1",
+                    "studio_id": "studio_1",
+                    "payer_id": "payer_1",
+                    "stripe_account_id": "acct_1",
+                    "stripe_subscription_id": "sub_1",
+                    "status": "active",
+                    **existing,
+                }
+            )
+        service.supabase = _FakeSupabase(
+            {
+                "studio_payment_accounts": [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_connected_account_id": "acct_1",
+                    }
+                ],
+                "billing_subscriptions": subscriptions,
+                "student_billing_enrollments": [],
+            }
+        )
+        projector = BillingSubscriptionWebhookProjector(
+            service.supabase, service._connect_accounts()
+        )
+        projector.project_subscription(
+            {
+                "id": "sub_1",
+                "status": "active",
+                "customer": "cus_1",
+                "currency": "cad",
+                "items": items,
+                "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+            },
+            "acct_1",
+            "customer.subscription.updated",
+            event_created=200,
+        )
+        return service.supabase.tables["billing_subscriptions"][0]
+
+    def test_missing_subscription_derives_each_supported_shared_item_cadence(self):
+        cases = (
+            ("week", 1, "weekly"),
+            ("week", 2, "biweekly"),
+            ("month", 1, "monthly"),
+            ("year", 1, "annual"),
+        )
+
+        for interval, interval_count, expected in cases:
+            with self.subTest(interval=interval, interval_count=interval_count):
+                row = self._project_subscription_items(
+                    {
+                        "data": [
+                            _subscription_item(
+                                currency=" USD ",
+                                interval=interval,
+                                interval_count=interval_count,
+                            )
+                        ],
+                        "has_more": False,
+                    }
+                )
+
+                self.assertEqual((row["currency"], row["billing_interval"]), ("usd", expected))
+
+    def test_missing_subscription_keeps_unconfirmed_item_facts_null(self):
+        monthly_usd = _subscription_item()
+        cases = (
+            ("missing completeness", {"data": [monthly_usd]}, (None, None)),
+            (
+                "incomplete page",
+                {"data": [monthly_usd], "has_more": True},
+                (None, None),
+            ),
+            ("empty complete list", {"data": [], "has_more": False}, (None, None)),
+            (
+                "missing price",
+                {"data": [{"id": "si_1", "metadata": {}}], "has_more": False},
+                (None, None),
+            ),
+            (
+                "mixed currency",
+                {
+                    "data": [monthly_usd, _subscription_item(currency="eur", item_id="si_2")],
+                    "has_more": False,
+                },
+                (None, "monthly"),
+            ),
+            (
+                "mixed cadence",
+                {
+                    "data": [
+                        monthly_usd,
+                        _subscription_item(interval="year", item_id="si_2"),
+                    ],
+                    "has_more": False,
+                },
+                ("usd", None),
+            ),
+            (
+                "unsupported cadence",
+                {
+                    "data": [_subscription_item(interval="day", interval_count=7)],
+                    "has_more": False,
+                },
+                ("usd", None),
+            ),
+            (
+                "missing interval count",
+                {
+                    "data": [_subscription_item(interval_count=None)],
+                    "has_more": False,
+                },
+                ("usd", None),
+            ),
+        )
+
+        for label, items, expected in cases:
+            with self.subTest(label=label):
+                row = self._project_subscription_items(items)
+
+                self.assertEqual((row["currency"], row["billing_interval"]), expected)
+
+    def test_existing_subscription_only_fills_null_facts_from_complete_evidence(self):
+        complete_items = {"data": [_subscription_item()], "has_more": False}
+        cases = (
+            (
+                "fill null facts",
+                {"currency": None, "billing_interval": None},
+                complete_items,
+                ("usd", "monthly"),
+            ),
+            (
+                "preserve known facts",
+                {"currency": "eur", "billing_interval": "annual"},
+                complete_items,
+                ("eur", "annual"),
+            ),
+            (
+                "do not fill from incomplete page",
+                {"currency": None, "billing_interval": None},
+                {"data": [_subscription_item()], "has_more": True},
+                (None, None),
+            ),
+        )
+
+        for label, existing, items, expected in cases:
+            with self.subTest(label=label):
+                row = self._project_subscription_items(items, existing=existing)
+
+                self.assertEqual((row.get("currency"), row.get("billing_interval")), expected)
+
+    def test_fact_fill_race_retries_then_fills_the_independently_missing_fact(self):
+        service = self.service()
+        service.supabase = _FakeSupabase(
+            {
+                "studio_payment_accounts": [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_connected_account_id": "acct_1",
+                    }
+                ],
+                "billing_subscriptions": [
+                    {
+                        "id": "subscription_1",
+                        "studio_id": "studio_1",
+                        "payer_id": "payer_1",
+                        "stripe_account_id": "acct_1",
+                        "stripe_subscription_id": "sub_1",
+                        "currency": None,
+                        "billing_interval": None,
+                        "status": "active",
+                        "last_stripe_event_created": 100,
+                    }
+                ],
+                "student_billing_enrollments": [],
+            }
+        )
+        projector = BillingSubscriptionWebhookProjector(
+            service.supabase, service._connect_accounts()
+        )
+        outer_event = {
+            "id": "sub_1",
+            "status": "past_due",
+            "customer": "cus_1",
+            "items": {
+                "data": [_subscription_item(interval="year")],
+                "has_more": False,
+            },
+            "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+        }
+
+        def project_intervening_event(_rows):
+            projector.project_subscription(
+                {
+                    "id": "sub_1",
+                    "status": "active",
+                    "customer": "cus_1",
+                    "items": {
+                        "data": [_subscription_item(currency=None)],
+                        "has_more": False,
+                    },
+                    "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+                },
+                "acct_1",
+                "customer.subscription.updated",
+                event_created=200,
+            )
+
+        service.supabase.before_update = project_intervening_event
+
+        with self.assertRaises(HTTPException) as raised:
+            projector.project_subscription(
+                outer_event,
+                "acct_1",
+                "customer.subscription.updated",
+                event_created=201,
+            )
+
+        self.assertEqual(raised.exception.status_code, 503)
+        row = service.supabase.tables["billing_subscriptions"][0]
+        self.assertEqual(
+            (
+                row["currency"],
+                row["billing_interval"],
+                row["status"],
+                row["last_stripe_event_created"],
+            ),
+            (None, "monthly", "active", 200),
+        )
+
+        projector.project_subscription(
+            outer_event,
+            "acct_1",
+            "customer.subscription.updated",
+            event_created=201,
+        )
+
+        row = service.supabase.tables["billing_subscriptions"][0]
+        self.assertEqual(
+            (
+                row["currency"],
+                row["billing_interval"],
+                row["status"],
+                row["last_stripe_event_created"],
+            ),
+            ("usd", "monthly", "past_due", 201),
+        )
+
     def test_subscription_invoice_parent_metadata_repairs_invoice_identity_and_period(self):
         service = self.service()
         service.supabase = _FakeSupabase(

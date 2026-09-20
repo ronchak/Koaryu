@@ -193,6 +193,8 @@ class ApiContractSchemaTest(unittest.TestCase):
         )
 
         self.assertEqual(subscription.status, "pending")
+        self.assertIsNone(subscription.model_dump()["billing_interval"])
+        self.assertIsNone(subscription.model_dump()["currency"])
         enrollment = StudentBillingEnrollmentResponse(
             id="enrollment-1",
             studio_id="studio-1",

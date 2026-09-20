@@ -7,26 +7,28 @@ Preserve working behavior and safeguards while removing verified accidental comp
 
 ## Current position
 
+V49 records unknown subscription currency/cadence truthfully and closes BB2-08. The production currency query is USD-only, so the broader mixed-currency read-side work is intentionally deferred under the owner's decision. [The plan](docs/remediation/subscription-facts-plan.md) records the scope, compatibility and release gates. Production is still V47; the combined release is pending.
+
 The current V48 activation correction separates request identity from its first execution quantity, closes BB1-06 and PROGRAM-ACTIVATION-01, and preserves attempted-provider replay. [The plan](docs/remediation/activation-quantity-plan.md) records the boundary and proofs. This implementation has not yet been deployed; the authorized run will batch its production release with the remaining scoped work.
 
 The production release completed September15. All nine V39–V47 migrations and original-row comparisons passed, backed by a fresh verified backup/restore. Both production applications serve `a4ef25910e76ed4b4111699f7b61ff02c30a67a0`. PR215 enables the owner-authorized production path without per-migration GitHub comments; all other guarded-runner checks remain. See [verification](docs/remediation/production-release-verification.md) and [the handoff](docs/remediation/HANDOFF.md).
 
-V46 and the V47 completion-locking follow-up correct [PROGRAM-REFUND-01](docs/remediation/refund-completion-risk.md) at the database resource-version boundary. Its own verified refund projection no longer prevents receipt completion recovery. The application refund workflow and stored claim fingerprints stay unchanged. The production release completed through the ordered hosted rehearsal, verified backup/restore and owner-authorized execution. The remaining 131 pending audit observations are outside this run.
+V46 and the V47 completion-locking follow-up correct [PROGRAM-REFUND-01](docs/remediation/refund-completion-risk.md) at the database resource-version boundary. Its own verified refund projection no longer prevents receipt completion recovery. The application refund workflow and stored claim fingerprints stay unchanged. The production release completed through the ordered hosted rehearsal, verified backup/restore and owner-authorized execution. The remaining 130 pending audit observations are outside this run.
 
 All 278 retained audit observations now have an individual disposition, reason, source evidence and execution track in the [ledger](docs/remediation/ledger.json). There are no repeated placeholder reasons. The [normalized map](docs/remediation/normalized-map.md) explains shared causes, dependencies, deliberate exclusions and verification limits. [Sol batches](docs/remediation/delegated/README.md) contain the delegated recipes.
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 131 |
+| Fixed | 132 |
 | Resolved indirectly | 2 |
-| Pending | 131 |
+| Pending | 130 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Obsolete | 1 |
 | Total | 278 |
 
-Pending work is split between 28 Astra and 103 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
+Pending work is split between 27 Astra and 103 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 

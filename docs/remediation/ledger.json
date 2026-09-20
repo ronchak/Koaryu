@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "0af59f05587324fa8812b4baac4d3b9d41c3adce",
+  "last_reconciled_main": "e7f697efd8e53d2eb8ed85ee52ad5da788db7a02",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -2318,7 +2318,7 @@
       "title": "Activation reports temporary read failures as a canceled subscription",
       "cluster": "access_and_recovery",
       "disposition": "fixed",
-      "reason": "Only confirmed non-open subscription facts reject activation. Unavailable reads return retryable503 without consuming an attempt; provider identity failures no longer masquerade as cancellation. Already-attempted recovery keeps its receipt and fails before a stale or closed mutation.",
+      "reason": "Only confirmed non-open subscription facts reject activation. Unavailable reads return retryable 503 without consuming an attempt; provider identity failures no longer masquerade as cancellation. Already-attempted recovery keeps its receipt and fails before a stale or closed mutation.",
       "audit_importance": "medium",
       "evidence_role": "observation",
       "verified_against": "1020833707a1ebc0d5afaceb2e52e813f2d84490",
@@ -2326,7 +2326,9 @@
       "source_paths": [
         "backend/app/services/billing_enrollment_activation.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        219
+      ],
       "track": "Sol",
       "root_cause": "activation_eligibility_failure_classification",
       "collapse_with": [],
@@ -2961,11 +2963,11 @@
       "id": "BB2-08",
       "title": "Recovered subscription rows invent monthly USD billing facts",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Missing-group recovery still unconditionally writes monthly/USD. Schema and response defaults also prevent a truthful unknown representation, so a projector-only substitution is insufficient.",
+      "disposition": "fixed",
+      "reason": "Recovered subscriptions use only complete, consistent provider price evidence. V49 permits null currency and cadence with no invented storage or response defaults. Existing non-null facts remain unchanged; automatic grouping excludes unknown terms.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "1d78231ddb81aab6e72cae4eb7485bef3b045357",
       "source_paths": [
         "backend/app/services/billing_subscription_webhook_projection.py"
       ],
@@ -2976,21 +2978,14 @@
       "current_evidence": [
         {
           "path": "backend/app/services/billing_subscription_webhook_projection.py",
-          "line": 89,
-          "observation": "Missing local subscriptions are inserted with billing_interval monthly and currency usd regardless of provider items."
+          "observation": "Complete item evidence supplies independent currency/cadence facts; missing or inconsistent evidence remains null."
         },
         {
-          "path": "supabase/migrations/20260428000028_real_koaryu_payments_lifecycle.sql",
-          "line": 56,
-          "observation": "Both columns are NOT NULL with monthly/USD defaults."
-        },
-        {
-          "path": "backend/app/schemas/billing.py",
-          "line": 382,
-          "observation": "Subscription responses also define monthly/USD defaults."
+          "path": "supabase/migrations/20260920052705_subscription_unknown_terms_v49.sql",
+          "observation": "Only the two subscription term columns become nullable without defaults; existing rows are not rewritten."
         }
       ],
-      "next_change": "Derive only confirmed, consistent currency and supported interval facts from complete provider item evidence. Add nullable unknown representation across storage/response contracts, remove recovery defaults, and mark incomplete or conflicting reconstruction for reconciliation. Keep unknown groups out of automatic grouping/activation.",
+      "next_change": "No further implementation for this finding.",
       "validation_plan": "Weekly, biweekly, annual, non-USD, mixed, missing and incomplete-item fixtures; verify unknowns remain empty through persistence and response serialization. Check the additive schema contract locally and API types.",
       "scope_constraints": [
         "Never invent monthly/USD or infer unconfirmed provider facts.",
@@ -2999,7 +2994,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
+      "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion.",
+      "verification": "Behavioral projector/schema tests, generated API contract and frontend compatibility checks; real SQL grouping/provider-identity contract and canonical/restored V48-to-V49 row preservation. See subscription-facts-plan.md. Production rollout remains pending."
     },
     {
       "id": "BB2-09",
@@ -13004,9 +13000,9 @@
       "id": "PROGRAM-CURRENCY-01",
       "title": "Mixed-currency writes feed currency-blind totals",
       "track": "Astra",
-      "disposition": "pending",
-      "reason": "PR172/V43 covers new external payments, PR175 covers local plan definitions, and merged PR179 covers fresh provider prices, activation and invoice monetary items. Saved financial attempts and historical replay remain protected. Unknown provider-fact recovery and truthful mixed/unknown-currency readers remain pending; no historical record is converted.",
-      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
+      "disposition": "deferred_intentionally",
+      "reason": "Owner decision applied to the September 20 read-only production query: all 7 invoices, 5 payments and 5 plans use USD. The invented subscription facts path is corrected with BB2-08/V49. Mixed-currency transaction aggregates and decimal formatting remain intentionally deferred; confirmed non-USD records must never be converted or backfilled.",
+      "verified_against": "1d78231ddb81aab6e72cae4eb7485bef3b045357",
       "source_paths": [
         "backend/app/api/v1/endpoints/billing.py",
         "backend/app/schemas/billing.py",
@@ -13055,8 +13051,8 @@
         "BB1-03"
       ],
       "owner_decision": "September9: USD-only new tuition and external-payment writes; preserve existing confirmed non-USD records and prevent misleading combined totals.",
-      "next_change": "Keep open for shared overdue/currency read facts, provider unknown-fact recovery and report attribution. The fresh tuition write boundary is implemented; an empty product or invoice header does not authorize a new non-USD financial write.",
-      "verification": "Target accepted USD writes, rejected non-USD new writes, unchanged historical replay, and mixed/unknown-currency aggregates. Verify tenant, provider identity and idempotency boundaries.",
+      "next_change": "Reopen the read-side currency grouping/decimal work if confirmed non-USD transaction records appear. Existing USD-only new-write policy remains unchanged.",
+      "verification": "Production currency query and narrow implementation/SQL proofs recorded in subscription-facts-plan.md and the current private release evidence.",
       "pull_requests": [
         172,
         175,
@@ -13203,10 +13199,12 @@
         "BB1-06",
         "BT1-02"
       ],
-      "verification": "Original repro writes[2,2] for3active seats and blocks cancellation. Corrected behavioral proof writes[2,3], then cancellation writes2. Real PostgreSQL count commit/rollback, atomic attempt, scope/lease and unresolved-attempt checks; canonical/restoredV47 continuation preserves rows and legacy identity. See activation-quantity-plan.md. Production currently remainsV47.",
+      "verification": "Original repro writes [2, 2] for three active seats and blocks cancellation. Corrected behavioral proof writes [2, 3], then cancellation writes 2. Real PostgreSQL count commit/rollback, atomic attempt, scope/lease and unresolved-attempt checks; canonical/restored V47 continuation preserves rows and legacy identity. See activation-quantity-plan.md. Production currently remains V47.",
       "execution_ownership": "Astra owns any forward database prepare/defer/lease contract; Sol owns the backend implementation and fixtures. One coordinated design.",
       "next_change": "Deploy in the authorized combined release after exact-head CI, fresh verified production backup/restore, guarded one-file apply and row preservation.",
-      "pull_requests": []
+      "pull_requests": [
+        219
+      ]
     },
     {
       "id": "PROGRAM-REFUND-01",
@@ -13266,9 +13264,9 @@
     }
   },
   "current_counts": {
-    "fixed": 131,
+    "fixed": 132,
     "rejected_after_verification": 1,
-    "pending": 131,
+    "pending": 130,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
@@ -13276,7 +13274,7 @@
   },
   "current_pending_tracks": {
     "Sol": 103,
-    "Astra": 28
+    "Astra": 27
   },
   "execution_policy": {
     "updated": "2026-09-14",
@@ -13289,14 +13287,14 @@
   "current_disposition_tracks": {
     "fixed": {
       "Sol": 108,
-      "Astra": 23
+      "Astra": 24
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
       "Sol": 103,
-      "Astra": 28
+      "Astra": 27
     },
     "deferred_intentionally": {
       "Sol": 7,

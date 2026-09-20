@@ -437,8 +437,8 @@ class BillingSubscriptionResponse(BaseModel):
     stripe_customer_id: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
     collection_mode: BillingCollectionMode = "invoice_link"
-    billing_interval: BillingInterval = "monthly"
-    currency: str = "usd"
+    billing_interval: Optional[BillingInterval] = None
+    currency: Optional[str] = None
     status: BillingSubscriptionStatus = "pending"
     current_period_start: Optional[str] = None
     current_period_end: Optional[str] = None
