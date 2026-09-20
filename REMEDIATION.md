@@ -113,14 +113,13 @@ Each item used a fresh Sol implementer, coordinator review and a fresh independe
 | [203](https://github.com/ronchak/Koaryu/pull/203) | Deterministic export and provider deadline tests | `308c569` | [Bounded run](docs/remediation/bounded-refactor-verification.md) |
 | [204](https://github.com/ronchak/Koaryu/pull/204) | Shared fixtures and fewer incidental source checks | `a6cf758` | [Bounded run](docs/remediation/bounded-refactor-verification.md) |
 | [205](https://github.com/ronchak/Koaryu/pull/205) | Selected-user staff Auth hydration | `4244384` | [Bounded run](docs/remediation/bounded-refactor-verification.md) |
-
-Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 | [216](https://github.com/ronchak/Koaryu/pull/216) | Closed the completed V47 release record | `b0fbd8a` | [Historical release](docs/remediation/production-v47-verification.md) |
 | [217](https://github.com/ronchak/Koaryu/pull/217) | Corrected stale current claims and seven retired service paths | `0af59f0` | [Current handoff](docs/remediation/HANDOFF.md) |
 | [218](https://github.com/ronchak/Koaryu/pull/218) | Patched AnyIO security advisories | `91d7663` | [Release verification](docs/remediation/production-release-verification.md) |
 | [219](https://github.com/ronchak/Koaryu/pull/219) | Fresh first-attempt activation quantity with preserved replay | `e7f697e` | [Activation plan](docs/remediation/activation-quantity-plan.md) |
 | [220](https://github.com/ronchak/Koaryu/pull/220) | Confirmed subscription terms, nullable unknowns and safe race retry | `c1e1c27` | [Subscription facts](docs/remediation/subscription-facts-plan.md) |
 
+Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 
 ## Settled product decisions
 
@@ -140,4 +139,4 @@ Use short-lived `codex/` branches from current main, one coherent rollback bound
 
 When a subsystem changes, remove or consolidate its brittle source assertions, copied algorithms, duplicate fixtures and obsolete tests. Preserve strong financial, destructive-write, authorization, tenant and migration assurance. Report material test additions/deletions and why the resulting coverage is stronger. The [test cleanup inventory](docs/remediation/source-test-cleanup.md) assigns every identified source-assertion file an owner; it is not a demand for one new mounted test per old grep.
 
-Production auto-deploy must remain off and be verified before merging. The owner has explicitly authorized coordinating Astra to execute this release through the [announce-and-pause protocol](docs/cutover-gates.md#owner-authorized-release-execution). All technical gates remain mandatory. Live billing activation and historical financial backfill remain outside scope. Old approvals, inspection tokens, provider/image mappings and restore evidence are historical, not reusable release authority. Credentials, dumps and private evidence stay outside the repository.
+Production auto-deploy must remain off and be verified before merging. The September 20 owner-authorized release is complete. A future production release requires explicit owner authorization for its candidate and the [announce-and-pause protocol](docs/cutover-gates.md#owner-authorized-release-execution). All technical gates remain mandatory. Live billing activation and historical financial backfill remain outside scope. Old approvals, inspection tokens, provider/image mappings and restore evidence are historical, not reusable release authority. Credentials, dumps and private evidence stay outside the repository.
