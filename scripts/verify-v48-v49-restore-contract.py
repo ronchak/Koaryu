@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove V45 refund receipts survive restore and complete after their own verified projection."""
+"""Prove known subscription facts survive V48 restore and V49 permits unknown terms without inventing defaults."""
 import hashlib
 import json
 import os
@@ -9,59 +9,28 @@ import sys
 
 from local_postgres_verification import ACL_SQL, CONSTRAINT_SQL, PAIR_PATH, LocalPostgres, normalization_plan, require
 
-MIGRATION = "20260914033337_refund_projection_recovery_v46.sql"
+MIGRATION = "20260920052705_subscription_unknown_terms_v49.sql"
 TABLES = ("auth.users", "public.staff_profiles", "public.studios", "public.staff_roles",
-          "public.studio_payment_accounts", "public.billing_payers", "public.billing_payments",
-          "public.billing_refunds", "public.billing_provider_operations",
-          "public.billing_provider_operation_resources", "public.billing_provider_operation_resource_aliases",
-          "public.students", "public.billing_invoices", "public.audit_logs")
+          "public.studio_payment_accounts", "public.billing_payers", "public.billing_subscriptions",
+          "public.students", "public.billing_plans", "public.billing_invoices", "public.billing_payments", "public.audit_logs")
 SEED_SQL = """
 BEGIN;
-DO $proof$
-DECLARE
-  actor UUID:=gen_random_uuid(); studio UUID:=gen_random_uuid(); payer UUID:=gen_random_uuid();
-  payment UUID:=gen_random_uuid(); lease UUID:=gen_random_uuid(); operation JSONB; claim JSONB; state TEXT;
+DO $seed$
+DECLARE actor UUID:=gen_random_uuid(); studio UUID:=gen_random_uuid(); payer UUID:=gen_random_uuid();
 BEGIN
-  INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
-  VALUES(actor,'authenticated','authenticated',actor||'@example.invalid','{}','{}',now(),now());
-  INSERT INTO public.studios(id,name,slug,owner_id) VALUES(studio,'Refund recovery',studio::TEXT,actor);
-  INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,actor,'admin');
-  INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,charges_enabled,payouts_enabled,metadata)
-  VALUES(studio,'acct_refundproof',true,true,'{"connect_account_generation":1}');
-  INSERT INTO public.billing_payers(id,studio_id,display_name,stripe_account_id,stripe_customer_id,connect_account_generation)
-  VALUES(payer,studio,'Refund payer','acct_refundproof','cus_refundproof',1);
-  INSERT INTO public.billing_payments(id,studio_id,payer_id,stripe_customer_id,stripe_payment_intent_id,stripe_charge_id,
-    stripe_account_id,connect_account_generation,status,amount_cents,currency,net_collected_amount_cents,refundable_amount_cents,processed_at)
-  VALUES(payment,studio,payer,'cus_refundproof','pi_refundproof','ch_refundproof','acct_refundproof',1,'succeeded',1000,'usd',1000,1000,now());
-  claim:=public.claim_billing_provider_operation_resource_v1(studio,actor,'payment.refund','payment',payment,payer,
-    'refund-proof',repeat('a',64),'acct_refundproof',1,lease,30);
-  operation:=claim->'operation';
-  FOREACH state IN ARRAY ARRAY['provider_request_in_flight','provider_succeeded','projected'] LOOP
-    IF state='projected' THEN
-      INSERT INTO public.billing_refunds(studio_id,payment_id,stripe_refund_id,stripe_charge_id,stripe_payment_intent_id,
-        stripe_account_id,connect_account_generation,amount_cents,status)
-      VALUES(studio,payment,'re_refundproof','ch_refundproof','pi_refundproof','acct_refundproof',1,500,'succeeded');
-    END IF;
-    operation:=public.transition_billing_provider_operation_v1((operation->>'id')::UUID,studio,actor,'payment.refund',
-      'refund-proof',repeat('a',64),'acct_refundproof',1,lease,(operation->>'revision')::BIGINT,state,
-      p_provider_object_id=>CASE WHEN state<>'provider_request_in_flight' THEN 're_refundproof' END,
-      p_result_code=>CASE state WHEN 'provider_request_in_flight' THEN 'payment_refund_started'
-        WHEN 'provider_succeeded' THEN 'payment_refund_status_succeeded' ELSE 'payment_refund_projected' END,
-      p_result_summary=>'amount_cents:500')->'operation';
-  END LOOP;
-  BEGIN
-    PERFORM public.complete_billing_provider_operation_v1((operation->>'id')::UUID,studio,actor,'payment.refund',
-      'refund-proof',repeat('a',64),'acct_refundproof',1,lease,(operation->>'revision')::BIGINT,'payment_refund_completed');
-    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='injected_before_commit';
-  EXCEPTION WHEN SQLSTATE 'P0001' THEN
-    IF SQLERRM<>'injected_before_commit' THEN RAISE; END IF;
-  END;
-  IF (SELECT refunded_amount_cents FROM public.billing_payments WHERE id=payment) IS DISTINCT FROM 500
-     OR (SELECT billing_provider_operations.state FROM public.billing_provider_operations WHERE id=(operation->>'id')::UUID) IS DISTINCT FROM 'projected' THEN
-    RAISE EXCEPTION 'Completion failure did not preserve the projected refund.';
-  END IF;
+    INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+    VALUES(actor,'authenticated','authenticated',actor||'@example.invalid','{}','{}',now(),now());
+    INSERT INTO public.studios(id,name,slug,owner_id) VALUES(studio,'Known terms',studio::TEXT,actor);
+    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,actor,'admin');
+    INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,status,charges_enabled,payouts_enabled,metadata)
+    VALUES(studio,'acct_RestoreTerms49','charges_enabled',TRUE,TRUE,'{"connect_account_generation":1}');
+    INSERT INTO public.billing_payers(id,studio_id,display_name,stripe_account_id,stripe_customer_id,connect_account_generation)
+    VALUES(payer,studio,'Legacy confirmed payer','acct_RestoreTerms49','cus_RestoreTerms49',1);
+    INSERT INTO public.billing_subscriptions(studio_id,payer_id,stripe_account_id,stripe_customer_id,stripe_subscription_id,
+        collection_mode,billing_interval,currency,status)
+    VALUES(studio,payer,'acct_RestoreTerms49','cus_RestoreTerms49','sub_RestoreTerms49','invoice_link','annual','cad','active');
 END;
-$proof$;
+$seed$;
 SELECT 'seeded';
 COMMIT;
 """
@@ -77,14 +46,15 @@ def main(arguments):
     shared = Path(__file__).with_name("local_postgres_verification.py")
     shared_hash = hashlib.sha256(shared.read_bytes()).hexdigest()
     names = [
+        "V48_OPERATIONAL_READINESS_SQL", "EXPECTED_V48_OPERATIONAL_READINESS",
+        "V48_CATALOG_STATE_SQL", "EXPECTED_V48_CATALOG_STATE", "EXPECTED_V48_RESTORED_CATALOG_STATE",
+        "V48_RELEASE_MANIFEST_SQL", "EXPECTED_V48_RELEASE_MANIFEST",
+        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V48_EXPECTATION_STATE",
+        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V48_RESOURCE_OWNERSHIP_MANIFEST",
+        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V48_OPERATIONAL_CONTRACT",
+        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V48_OPERATIONAL_MANIFEST_V12",
+        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
         "V45_OPERATIONAL_READINESS_SQL", "EXPECTED_V45_OPERATIONAL_READINESS",
-        "V45_CATALOG_STATE_SQL", "EXPECTED_V45_CATALOG_STATE", "EXPECTED_V45_RESTORED_CATALOG_STATE",
-        "V45_RELEASE_MANIFEST_SQL", "EXPECTED_V45_RELEASE_MANIFEST",
-        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V45_EXPECTATION_STATE",
-        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V45_RESOURCE_OWNERSHIP_MANIFEST",
-        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V45_OPERATIONAL_CONTRACT",
-        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V45_OPERATIONAL_MANIFEST_V12",
-        "V46_OPERATIONAL_READINESS_SQL", "EXPECTED_V46_OPERATIONAL_READINESS",
         "V44_OPERATIONAL_READINESS_SQL", "EXPECTED_V44_OPERATIONAL_READINESS",
         "V43_OPERATIONAL_READINESS_SQL", "EXPECTED_V43_OPERATIONAL_READINESS",
         "V42_OPERATIONAL_READINESS_SQL", "EXPECTED_V42_OPERATIONAL_READINESS",
@@ -93,17 +63,21 @@ def main(arguments):
         "V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS",
         "V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS",
         "V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS",
-        "V46_CATALOG_STATE_SQL", "EXPECTED_V46_CATALOG_STATE", "EXPECTED_V46_RESTORED_CATALOG_STATE",
-        "V46_RELEASE_MANIFEST_SQL", "EXPECTED_V46_RELEASE_MANIFEST",
-        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V46_EXPECTATION_STATE",
-        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V46_RESOURCE_OWNERSHIP_MANIFEST",
-        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V46_OPERATIONAL_CONTRACT",
-        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V46_OPERATIONAL_MANIFEST_V12",
+        "V49_CATALOG_STATE_SQL", "EXPECTED_V49_CATALOG_STATE", "EXPECTED_V49_RESTORED_CATALOG_STATE",
+        "V49_RELEASE_MANIFEST_SQL", "EXPECTED_V49_RELEASE_MANIFEST",
+        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V49_EXPECTATION_STATE",
+        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V49_RESOURCE_OWNERSHIP_MANIFEST",
+        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V49_OPERATIONAL_CONTRACT",
+        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V49_OPERATIONAL_MANIFEST_V12",
         "V40_RANK_COMMAND_STATE_SQL", "EXPECTED_V40_RANK_COMMAND_STATE",
         "V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V41_PAYER_BALANCE_STATE",
         "V43_EXTERNAL_PAYMENT_STATE_SQL", "EXPECTED_V43_EXTERNAL_PAYMENT_STATE",
         "V44_LOCAL_PLAN_STATE_SQL", "EXPECTED_V44_LOCAL_PLAN_STATE",
         "V44_CLEAR_STATE_SQL", "EXPECTED_V44_CLEAR_STATE",
+        "V47_OPERATIONAL_READINESS_SQL", "EXPECTED_V47_OPERATIONAL_READINESS",
+        "V46_OPERATIONAL_READINESS_SQL", "EXPECTED_V46_OPERATIONAL_READINESS",
+        "V49_SUBSCRIPTION_TERMS_STATE_SQL", "EXPECTED_PRE_V49_SUBSCRIPTION_TERMS_STATE",
+        "V49_SUBSCRIPTION_TERMS_STATE_SQL", "EXPECTED_V49_SUBSCRIPTION_TERMS_STATE",
     ]
     module = (root / "scripts/studio-comp-migration-rollout.mjs").as_uri()
     pinned = json.loads(local.run(["node", "--input-type=module", "--eval",
@@ -124,42 +98,38 @@ def main(arguments):
             fields.append(f"'{table}',(SELECT COALESCE(jsonb_agg({value} ORDER BY to_jsonb(t)->>'id',"
                           f"to_jsonb(t)::TEXT COLLATE \"C\"),'[]'::JSONB) FROM {table} t)")
         return json.loads(local.sql(database, "SET TIME ZONE 'UTC'; SELECT jsonb_build_object(" + ",".join(fields) + ");"))
-    contract_sources = {
-        name: (root / "supabase" / "verification" / name).read_bytes()
-        for name in ("refund_projection_recovery_contract.sql",)
-    }
+    contract_path = root / "supabase/verification/billing_subscription_terms.sql"
+    contract_bytes = contract_path.read_bytes()
 
     def semantics(database):
         return {signature: local.sql(database, f"SELECT {signature};") for signature in ["private.koaryu_release_critical_surface_manifest_v16()","private.koaryu_release_critical_surface_manifest_v17()","private.koaryu_release_critical_surface_manifest_v18()","private.koaryu_release_operational_manifest_v10()","private.koaryu_release_operational_manifest_v11()"]}
 
     def predecessor(database, restored=False):
-        check(database, "V45_OPERATIONAL_READINESS_SQL", "EXPECTED_V45_OPERATIONAL_READINESS")
-        check(database, "V45_CATALOG_STATE_SQL", "EXPECTED_V45_RESTORED_CATALOG_STATE" if restored else "EXPECTED_V45_CATALOG_STATE")
-        check(database, "V45_RELEASE_MANIFEST_SQL", "EXPECTED_V45_RELEASE_MANIFEST")
-        check(database, "V31_EXPECTATION_STATE_SQL", "EXPECTED_V45_EXPECTATION_STATE")
-        check(database, "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V45_RESOURCE_OWNERSHIP_MANIFEST")
-        check(database, "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V45_OPERATIONAL_CONTRACT")
-        check(database, "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V45_OPERATIONAL_MANIFEST_V12")
-        require(local.sql(database, "SELECT count(*)=140 AND max(version)='20260910185031' FROM supabase_migrations.schema_migrations;") == "t",
-                "Restore requires the actual V45 history")
-        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v27()') IS NULL;") == "t",
-                "Restore predecessor already contains V46 functions")
+        check(database, "V48_OPERATIONAL_READINESS_SQL", "EXPECTED_V48_OPERATIONAL_READINESS")
+        check(database, "V48_CATALOG_STATE_SQL", "EXPECTED_V48_RESTORED_CATALOG_STATE" if restored else "EXPECTED_V48_CATALOG_STATE")
+        check(database, "V48_RELEASE_MANIFEST_SQL", "EXPECTED_V48_RELEASE_MANIFEST")
+        check(database, "V31_EXPECTATION_STATE_SQL", "EXPECTED_V48_EXPECTATION_STATE")
+        check(database, "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V48_RESOURCE_OWNERSHIP_MANIFEST")
+        check(database, "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V48_OPERATIONAL_CONTRACT")
+        check(database, "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V48_OPERATIONAL_MANIFEST_V12")
+        check(database, "V49_SUBSCRIPTION_TERMS_STATE_SQL", "EXPECTED_PRE_V49_SUBSCRIPTION_TERMS_STATE")
+        require(local.sql(database, "SELECT count(*)=143 AND max(version)='20260920035023' FROM supabase_migrations.schema_migrations;") == "t",
+                "Restore requires the actual V48 history")
+        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v30()') IS NULL;") == "t",
+                "Restore predecessor already contains V49 functions")
 
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 144 and list(hashes)[-5:] == [
-        "20260910185031_student_import_retry_ownership_v45.sql", MIGRATION,
-        "20260914055301_refund_completion_locking_v47.sql",
-        "20260920035023_enrollment_activation_execution_v48.sql",
-        "20260920052705_subscription_unknown_terms_v49.sql"], "Unexpected migration inventory")
+    require(len(hashes) == 144 and list(hashes)[-2:] == [
+        "20260920035023_enrollment_activation_execution_v48.sql", MIGRATION], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
-    source = f"koaryu_v46_source_{os.getpid()}"
-    restored = f"koaryu_v46_restore_{os.getpid()}"
-    canonical = f"koaryu_v46_canonical_{os.getpid()}"
-    dump = temporary / f"v45-before-v46-{os.getpid()}.dump"
+    source = f"koaryu_v49_source_{os.getpid()}"
+    restored = f"koaryu_v49_restore_{os.getpid()}"
+    canonical = f"koaryu_v49_canonical_{os.getpid()}"
+    dump = temporary / f"v48-before-v49-{os.getpid()}.dump"
     owned, outcomes = [], {}
     try:
         for database, template in [(source, "postgres"), (restored, "template0")]:
@@ -168,10 +138,10 @@ def main(arguments):
             local.sql(database, f'ALTER DATABASE {database} SET search_path TO "$user",public,extensions;')
         seed = local.sql(source, SEED_SQL)
         before = snapshot(source)
-        require(seed == "seeded" and len(before["public.billing_payments"]) == 1
-                and before["public.billing_payments"][0]["refunded_amount_cents"] == 500
-                and before["public.billing_provider_operations"][0]["state"] == "projected"
-                and len(before["public.billing_refunds"]) == 1, "Refund restore seed is incomplete")
+        require(seed == "seeded" and len(before["public.billing_subscriptions"]) == 1
+                and before["public.billing_subscriptions"][0]["currency"] == "cad"
+                and before["public.billing_subscriptions"][0]["billing_interval"] == "annual",
+                "Known non-USD subscription fixture is incomplete")
         predecessor(source)
         expected_semantics = semantics(source)
         constraints, acls = json.loads(local.sql(source, CONSTRAINT_SQL)), json.loads(local.sql(source, ACL_SQL))
@@ -200,6 +170,9 @@ def main(arguments):
                        f"--command=INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('{version}','{name}');"])
             require(snapshot(database) == before, "Migration changed retained rows before continuation")
             checks = [
+                ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
+                ("V48_OPERATIONAL_READINESS_SQL", "EXPECTED_V48_OPERATIONAL_READINESS"),
+                ("V47_OPERATIONAL_READINESS_SQL", "EXPECTED_V47_OPERATIONAL_READINESS"),
                 ("V46_OPERATIONAL_READINESS_SQL", "EXPECTED_V46_OPERATIONAL_READINESS"),
                 ("V45_OPERATIONAL_READINESS_SQL", "EXPECTED_V45_OPERATIONAL_READINESS"),
                 ("V44_OPERATIONAL_READINESS_SQL", "EXPECTED_V44_OPERATIONAL_READINESS"),
@@ -210,39 +183,26 @@ def main(arguments):
                 ("V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS"),
                 ("V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS"),
                 ("V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS"),
-                ("V46_CATALOG_STATE_SQL", "EXPECTED_V46_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V46_CATALOG_STATE"),
-                ("V46_RELEASE_MANIFEST_SQL", "EXPECTED_V46_RELEASE_MANIFEST"),
-                ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V46_EXPECTATION_STATE"),
-                ("V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V46_RESOURCE_OWNERSHIP_MANIFEST"),
-                ("V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V46_OPERATIONAL_CONTRACT"),
-                ("V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V46_OPERATIONAL_MANIFEST_V12"),
+                ("V49_CATALOG_STATE_SQL", "EXPECTED_V49_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V49_CATALOG_STATE"),
+                ("V49_RELEASE_MANIFEST_SQL", "EXPECTED_V49_RELEASE_MANIFEST"),
+                ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V49_EXPECTATION_STATE"),
+                ("V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V49_RESOURCE_OWNERSHIP_MANIFEST"),
+                ("V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V49_OPERATIONAL_CONTRACT"),
+                ("V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V49_OPERATIONAL_MANIFEST_V12"),
                 ("V40_RANK_COMMAND_STATE_SQL", "EXPECTED_V40_RANK_COMMAND_STATE"),
                 ("V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V41_PAYER_BALANCE_STATE"),
                 ("V43_EXTERNAL_PAYMENT_STATE_SQL", "EXPECTED_V43_EXTERNAL_PAYMENT_STATE"),
                 ("V44_LOCAL_PLAN_STATE_SQL", "EXPECTED_V44_LOCAL_PLAN_STATE"),
                 ("V44_CLEAR_STATE_SQL", "EXPECTED_V44_CLEAR_STATE"),
+                ("V49_SUBSCRIPTION_TERMS_STATE_SQL", "EXPECTED_V49_SUBSCRIPTION_TERMS_STATE"),
             ]
             values = {query: check(database, query, expected) for query, expected in checks}
             require(semantics(database) == expected_semantics, "Upgrade or continuation changed declared semantic manifests")
-            operation = before["public.billing_provider_operations"][0]
-            payment = before["public.billing_payments"][0]
-            claim = json.loads(local.sql(database, f"SET ROLE service_role; SELECT public.claim_billing_provider_operation_resource_v1('{operation['studio_id']}','{operation['actor_id']}','payment.refund','payment','{payment['id']}','{payment['payer_id']}','refund-proof','{operation['request_sha256']}','acct_refundproof',1,'{operation['lease_owner']}',30);"))
-            require(claim["operation"]["id"] == operation["id"] and claim["operation"]["state"] == "projected",
-                    "Restored receipt did not retain its recovery identity")
-            completed = json.loads(local.sql(database, f"SET ROLE service_role; SELECT public.complete_billing_provider_operation_v1('{operation['id']}','{operation['studio_id']}','{operation['actor_id']}','payment.refund','refund-proof','{operation['request_sha256']}','acct_refundproof',1,'{operation['lease_owner']}',{claim['operation']['revision']},'payment_refund_completed');"))
-            require(completed["operation"]["state"] == "completed"
-                    and completed["operation"]["provider_request_attempt_count"] == 1,
-                    "Refund continuation did not complete the original single attempt")
-            after = snapshot(database)
-            require(all(after[table] == before[table] for table in TABLES
-                        if table != "public.billing_provider_operations"),
-                    "Refund completion changed payment, refund, claim or unrelated rows")
-            for name, content in contract_sources.items():
-                local.sql(database, content.decode("utf8"))
-                require((root / "supabase" / "verification" / name).read_bytes() == content,
-                        "Refund continuation contract changed during verification")
-            require(snapshot(database) == after, "Rollback-scoped proof changed retained rows")
-            outcomes["contract_inputs"] = {name: hashlib.sha256(content).hexdigest() for name, content in contract_sources.items()}
+            local.sql(database, contract_bytes.decode("utf8"))
+            require(contract_path.read_bytes() == contract_bytes,
+                    "Subscription fact contract changed during verification")
+            require(snapshot(database) == before, "Subscription fact proof changed retained rows")
+            outcomes["subscription_terms_contract_sha256"] = hashlib.sha256(contract_bytes).hexdigest()
             require({query: check(database, query, expected) for query, expected in checks} == values,
                     "Continuation changed the attested state")
             require(semantics(database) == expected_semantics, "Upgrade or continuation changed declared semantic manifests")
@@ -262,9 +222,8 @@ def main(arguments):
             "business_before_sha256": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
             "constraint_pairs": len(pairs), "billing_replays": 6, "acl_representations": len(statements) - 6,
         }
-        (temporary / "v45-v46-restore-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
-        print("[restored V46] PASS canonical/restored V45 receipts and rows preserved, "
-              "same-key refund completion and retained backend readiness", flush=True)
+        (temporary / "v48-v49-restore-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        print("[restored V49] PASS retained subscription facts and rows preserved; omitted/unknown terms, exact grouping and provider identity verified", flush=True)
     finally:
         errors = []
         for database in reversed(owned):

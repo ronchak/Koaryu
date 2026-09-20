@@ -1045,6 +1045,9 @@
       "configuration": [
         "search_path=\"\""
       ]
+    },
+    "subscription_terms_v49": {
+      "kind": "subscription_terms_v49"
     }
   },
   "states": {
@@ -1204,6 +1207,12 @@
       "append": [
         "activation_begin_v48",
         "activation_rejection_v48"
+      ]
+    },
+    "v49": {
+      "extends": "v48",
+      "append": [
+        "subscription_terms_v49"
       ]
     }
   }

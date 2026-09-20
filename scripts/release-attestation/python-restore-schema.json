@@ -301,6 +301,56 @@
       "state": "v48",
       "query": "V31_OPERATIONAL_MANIFEST_SQL",
       "expected": "EXPECTED_V48_OPERATIONAL_MANIFEST_V12"
+    },
+    "readiness-v49": {
+      "kind": "readiness",
+      "state": "v49",
+      "finalAlias": true
+    },
+    "catalog-v49": {
+      "kind": "catalog",
+      "state": "v49",
+      "queryState": "v49"
+    },
+    "release-v49": {
+      "kind": "release",
+      "state": "v49"
+    },
+    "expectation-v49": {
+      "kind": "export",
+      "state": "v49",
+      "query": "V31_EXPECTATION_STATE_SQL",
+      "expected": "EXPECTED_V49_EXPECTATION_STATE"
+    },
+    "resource-v49": {
+      "kind": "export",
+      "state": "v49",
+      "query": "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL",
+      "expected": "EXPECTED_V49_RESOURCE_OWNERSHIP_MANIFEST"
+    },
+    "contract-v49": {
+      "kind": "export",
+      "state": "v49",
+      "query": "V31_OPERATIONAL_CONTRACT_SQL",
+      "expected": "EXPECTED_V49_OPERATIONAL_CONTRACT"
+    },
+    "operational-v49": {
+      "kind": "export",
+      "state": "v49",
+      "query": "V31_OPERATIONAL_MANIFEST_SQL",
+      "expected": "EXPECTED_V49_OPERATIONAL_MANIFEST_V12"
+    },
+    "terms-v48": {
+      "kind": "export",
+      "state": "v48",
+      "query": "V49_SUBSCRIPTION_TERMS_STATE_SQL",
+      "expected": "EXPECTED_PRE_V49_SUBSCRIPTION_TERMS_STATE"
+    },
+    "terms-v49": {
+      "kind": "export",
+      "state": "v49",
+      "query": "V49_SUBSCRIPTION_TERMS_STATE_SQL",
+      "expected": "EXPECTED_V49_SUBSCRIPTION_TERMS_STATE"
     }
   },
   "cases": {
@@ -1497,6 +1547,190 @@
       ],
       "passLines": [
         "[restored V48] PASS canonical/restored rows and legacy activation identity preserved; fresh quantity owned with one attempt"
+      ]
+    },
+    "v49": {
+      "format": "forward",
+      "docstring": "Prove known subscription facts survive V48 restore and V49 permits unknown terms without inventing defaults.",
+      "exports": [
+        [
+          "readiness-v48.query",
+          "readiness-v48.expected"
+        ],
+        [
+          "catalog-v48.query",
+          "catalog-v48.expected",
+          "catalog-v48.restored"
+        ],
+        [
+          "release-v48.query",
+          "release-v48.expected"
+        ],
+        [
+          "expectation-v48.query",
+          "expectation-v48.expected"
+        ],
+        [
+          "resource-v48.query",
+          "resource-v48.expected"
+        ],
+        [
+          "contract-v48.query",
+          "contract-v48.expected"
+        ],
+        [
+          "operational-v48.query",
+          "operational-v48.expected"
+        ],
+        [
+          "readiness-v49.query",
+          "readiness-v49.expected"
+        ],
+        [
+          "readiness-v45.query",
+          "readiness-v45.expected"
+        ],
+        [
+          "readiness-v44.query",
+          "readiness-v44.expected"
+        ],
+        [
+          "readiness-v43.query",
+          "readiness-v43.expected"
+        ],
+        [
+          "readiness-v42.query",
+          "readiness-v42.expected"
+        ],
+        [
+          "readiness-v41.query",
+          "readiness-v41.expected"
+        ],
+        [
+          "readiness-v40.query",
+          "readiness-v40.expected"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v39.expected"
+        ],
+        [
+          "readiness-v38.query",
+          "readiness-v38.expected"
+        ],
+        [
+          "readiness-v37.query",
+          "readiness-v37.expected"
+        ],
+        [
+          "catalog-v49.query",
+          "catalog-v49.expected",
+          "catalog-v49.restored"
+        ],
+        [
+          "release-v49.query",
+          "release-v49.expected"
+        ],
+        [
+          "expectation-v49.query",
+          "expectation-v49.expected"
+        ],
+        [
+          "resource-v49.query",
+          "resource-v49.expected"
+        ],
+        [
+          "contract-v49.query",
+          "contract-v49.expected"
+        ],
+        [
+          "operational-v49.query",
+          "operational-v49.expected"
+        ],
+        [
+          "rank-v40.query",
+          "rank-v40.expected"
+        ],
+        [
+          "payer-v41.query",
+          "payer-v41.expected"
+        ],
+        [
+          "external-payment-v43.query",
+          "external-payment-v43.expected"
+        ],
+        [
+          "local-plan-v44.query",
+          "local-plan-v44.expected"
+        ],
+        [
+          "plan-clear-v44.query",
+          "plan-clear-v44.expected"
+        ],
+        [
+          "readiness-v47.query",
+          "readiness-v47.expected"
+        ],
+        [
+          "readiness-v46.query",
+          "readiness-v46.expected"
+        ],
+        [
+          "terms-v48.query",
+          "terms-v48.expected"
+        ],
+        [
+          "terms-v49.query",
+          "terms-v49.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v48",
+        "catalog-v48",
+        "release-v48",
+        "expectation-v48",
+        "resource-v48",
+        "contract-v48",
+        "operational-v48",
+        "terms-v48"
+      ],
+      "checks": [
+        "readiness-v49",
+        "readiness-v48",
+        "readiness-v47",
+        "readiness-v46",
+        "readiness-v45",
+        "readiness-v44",
+        "readiness-v43",
+        "readiness-v42",
+        "readiness-v41",
+        "readiness-v40",
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "catalog-v49",
+        "release-v49",
+        "expectation-v49",
+        "resource-v49",
+        "contract-v49",
+        "operational-v49",
+        "rank-v40",
+        "payer-v41",
+        "external-payment-v43",
+        "local-plan-v44",
+        "plan-clear-v44",
+        "terms-v49"
+      ],
+      "absentFunctions": [],
+      "semanticManifests": [
+        "private.koaryu_release_critical_surface_manifest_v16()",
+        "private.koaryu_release_critical_surface_manifest_v17()",
+        "private.koaryu_release_critical_surface_manifest_v18()",
+        "private.koaryu_release_operational_manifest_v10()",
+        "private.koaryu_release_operational_manifest_v11()"
+      ],
+      "passLines": [
+        "[restored V49] PASS retained subscription facts and rows preserved; omitted/unknown terms, exact grouping and provider identity verified"
       ]
     }
   }

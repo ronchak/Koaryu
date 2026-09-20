@@ -24,6 +24,7 @@ export const EXPECTED_SUPABASE_CONTRACTS = Object.freeze([
   "billing_landing_aggregates_contract.sql",
   "billing_plan_write_ownership.sql",
   "billing_provider_operation_steps.sql",
+  "billing_subscription_terms.sql",
   "billing_provider_operations_and_payer_consent.sql",
   "client_read_access_controls.sql",
   "core_operational_client_write_controls.sql",

@@ -15,6 +15,58 @@ from app.services.billing_webhook_event_state import (
 )
 
 
+def _subscription_item_facts(
+    subscription: dict[str, Any],
+) -> tuple[Optional[str], Optional[str]]:
+    items = subscription.get("items")
+    if (
+        not isinstance(items, dict)
+        or items.get("has_more") is not False
+        or not isinstance(items.get("data"), list)
+    ):
+        return None, None
+
+    item_rows = items["data"]
+    currencies: set[Optional[str]] = set()
+    billing_intervals: set[Optional[str]] = set()
+    supported_intervals = {
+        ("week", 1): "weekly",
+        ("week", 2): "biweekly",
+        ("month", 1): "monthly",
+        ("year", 1): "annual",
+    }
+    for item in item_rows:
+        price = item.get("price") if isinstance(item, dict) else None
+        if not isinstance(price, dict):
+            currencies.add(None)
+            billing_intervals.add(None)
+            continue
+
+        raw_currency = price.get("currency")
+        currencies.add(
+            raw_currency.strip().lower()
+            if isinstance(raw_currency, str) and raw_currency.strip()
+            else None
+        )
+
+        recurring = price.get("recurring")
+        raw_interval = recurring.get("interval") if isinstance(recurring, dict) else None
+        interval_count = recurring.get("interval_count") if isinstance(recurring, dict) else None
+        interval = (
+            supported_intervals.get((raw_interval.strip().lower(), interval_count))
+            if isinstance(raw_interval, str)
+            and raw_interval.strip()
+            and type(interval_count) is int
+            and interval_count > 0
+            else None
+        )
+        billing_intervals.add(interval)
+
+    currency = next(iter(currencies)) if len(currencies) == 1 else None
+    billing_interval = next(iter(billing_intervals)) if len(billing_intervals) == 1 else None
+    return currency, billing_interval
+
+
 class BillingSubscriptionWebhookProjector:
     def __init__(self, supabase: Client, connect_accounts: BillingConnectAccountStore):
         self.supabase = supabase
@@ -52,6 +104,7 @@ class BillingSubscriptionWebhookProjector:
             status_order=SUBSCRIPTION_STATUS_ORDER,
         ):
             return local
+        currency, billing_interval = _subscription_item_facts(subscription)
         period_start, period_end = subscription_period_bounds(subscription)
         update = {
             "studio_id": studio_id,
@@ -70,6 +123,10 @@ class BillingSubscriptionWebhookProjector:
             else (local or {}).get("last_stripe_event_created"),
         }
         if local:
+            if local.get("currency") is None and currency is not None:
+                update["currency"] = currency
+            if local.get("billing_interval") is None and billing_interval is not None:
+                update["billing_interval"] = billing_interval
             query = (
                 self.supabase.table("billing_subscriptions").update(update).eq("id", local["id"])
             )
@@ -84,8 +141,8 @@ class BillingSubscriptionWebhookProjector:
                     "collection_mode": "autopay"
                     if subscription.get("collection_method") == "charge_automatically"
                     else "invoice_link",
-                    "billing_interval": "monthly",
-                    "currency": "usd",
+                    "billing_interval": billing_interval,
+                    "currency": currency,
                 }
             )
             result = self.supabase.table("billing_subscriptions").insert(update).execute()

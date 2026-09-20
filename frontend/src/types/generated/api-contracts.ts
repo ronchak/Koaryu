@@ -495,8 +495,8 @@ export interface ApiBillingSubscriptionResponse {
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
   collection_mode: "autopay" | "invoice_link" | "external";
-  billing_interval: "weekly" | "biweekly" | "monthly" | "annual" | "paid_in_full" | "fixed_term" | "trial";
-  currency: string;
+  billing_interval?: "weekly" | "biweekly" | "monthly" | "annual" | "paid_in_full" | "fixed_term" | "trial" | null;
+  currency?: string | null;
   status: "pending" | "trialing" | "active" | "past_due" | "unpaid" | "canceled" | "incomplete" | "incomplete_expired" | "paused";
   current_period_start?: string | null;
   current_period_end?: string | null;

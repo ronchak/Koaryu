@@ -70,7 +70,7 @@ def main(arguments):
         "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V47_RESOURCE_OWNERSHIP_MANIFEST",
         "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V47_OPERATIONAL_CONTRACT",
         "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V47_OPERATIONAL_MANIFEST_V12",
-        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
+        "V48_OPERATIONAL_READINESS_SQL", "EXPECTED_V48_OPERATIONAL_READINESS",
         "V45_OPERATIONAL_READINESS_SQL", "EXPECTED_V45_OPERATIONAL_READINESS",
         "V44_OPERATIONAL_READINESS_SQL", "EXPECTED_V44_OPERATIONAL_READINESS",
         "V43_OPERATIONAL_READINESS_SQL", "EXPECTED_V43_OPERATIONAL_READINESS",
@@ -131,8 +131,9 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 143 and list(hashes)[-2:] == [
-        "20260914055301_refund_completion_locking_v47.sql", MIGRATION], "Unexpected migration inventory")
+    require(len(hashes) == 144 and list(hashes)[-3:] == [
+        "20260914055301_refund_completion_locking_v47.sql", MIGRATION,
+        "20260920052705_subscription_unknown_terms_v49.sql"], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
@@ -179,7 +180,7 @@ def main(arguments):
                        f"--command=INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('{version}','{name}');"])
             require(snapshot(database) == before, "Migration changed retained rows before continuation")
             checks = [
-                ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
+                ("V48_OPERATIONAL_READINESS_SQL", "EXPECTED_V48_OPERATIONAL_READINESS"),
                 ("V47_OPERATIONAL_READINESS_SQL", "EXPECTED_V47_OPERATIONAL_READINESS"),
                 ("V45_OPERATIONAL_READINESS_SQL", "EXPECTED_V45_OPERATIONAL_READINESS"),
                 ("V44_OPERATIONAL_READINESS_SQL", "EXPECTED_V44_OPERATIONAL_READINESS"),
