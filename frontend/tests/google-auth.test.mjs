@@ -4,6 +4,8 @@ import { authErrorMessage } from "../src/lib/auth-error.ts";
 import { resolveAuthCallbackNextPath } from "../src/lib/auth-callback.ts";
 
 test("callback errors use fixed recovery messages and ignore untrusted text", () => {
+  assert.match(authErrorMessage("access_denied"), /request a new email link/);
+  assert.doesNotMatch(authErrorMessage("access_denied"), /Google/);
   for (const code of ["callback_failed", "missing_code", "access_denied"]) {
     assert.match(authErrorMessage(code), /sign-in/);
   }

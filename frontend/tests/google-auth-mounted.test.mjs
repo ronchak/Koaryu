@@ -3,9 +3,10 @@ import { test } from "node:test";
 import { chromium } from "@playwright/test";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
-function bundle(pageName, errorCode) {
+function bundle(pageName) {
   const { add, modules } = createCommonJsPacker({
-    "next/navigation": `exports.useRouter=()=>({push:()=>{},refresh:()=>{}});exports.useSearchParams=()=>new URLSearchParams(${JSON.stringify(errorCode ? `error=${errorCode}` : "")});`,
+    "next/navigation":
+      "exports.useRouter=()=>({push:()=>{},refresh:()=>{}});exports.useSearchParams=()=>new URLSearchParams(window.testSearch);",
     "next/link":
       'exports.__esModule=true;exports.default=({children,...props})=>require("react").createElement("a",props,children);',
     "@/lib/supabase/client": `exports.createClient=()=>({auth:{signInWithOAuth:async(options)=>{window.calls.push(options);return await new Promise(resolve=>window.finish=resolve)},signInWithPassword:async()=>({error:{message:'Password attempt reached auth'}}),signInWithOtp:async()=>({error:null})}});`,
@@ -73,7 +74,10 @@ test("login displays only recognized callback failures", async () => {
     for (const code of ["missing_code", "callback_failed", "access_denied", "untrusted", null]) {
       const page = await browser.newPage();
       await page.setContent('<div id="root"></div>');
-      await page.addScriptTag({ content: bundle("login", code) });
+      await page.evaluate((code) => {
+        window.testSearch = code ? `error=${code}` : "";
+      }, code);
+      await page.addScriptTag({ content: bundle("login") });
       await page.getByRole("button", { name: "Continue with Google" }).waitFor();
       assert.equal(await page.getByRole("alert").count(), code && code !== "untrusted" ? 1 : 0);
       await page.close();
