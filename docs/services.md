@@ -27,6 +27,15 @@ Inventory baseline: 2026-08-24. September 20 release readback: both databases ar
 Neither production surface auto-deploys. Both require an explicit owner-authorized release —
 see [Deployment triggers](#deployment-triggers).
 
+## Google identity provider
+
+- Google Cloud project: `Koaryu` (`koaryu-auth-20260920`), created September 20, 2026.
+- One Web application OAuth client serves the production and staging Supabase
+  callback URLs. The client secret belongs in those two Supabase Google-provider
+  configurations and owner-only operator storage, never in frontend variables.
+- Setup and release verification are tracked in [Google SSO setup](google-sso-setup.md).
+  Project creation alone does not mean the provider is enabled or verified.
+
 ## GitHub
 
 - Repository: `ronchak/Koaryu`

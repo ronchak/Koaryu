@@ -8,6 +8,7 @@ import { getAuthCallbackUrl } from "@/lib/auth-redirect";
 import { clearActiveStudioIdCookie, setStudioStateCookie } from "@/lib/studio-state-cookie";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { GoogleSignIn } from "@/components/auth/google-sign-in";
 
 export default function SignupPage() {
   const [fullName, setFullName] = useState("");
@@ -86,6 +87,8 @@ export default function SignupPage() {
       <h2 className="text-lg font-semibold text-text-primary mb-1">Create your account</h2>
       <p className="text-sm text-text-secondary mb-5">Set up your studio in under two minutes.</p>
 
+      <GoogleSignIn disabled={isLoading} onLoadingChange={setIsLoading} />
+
       <form onSubmit={handleSignup} className="space-y-4">
         <Input
           label="Full name"
@@ -135,7 +138,13 @@ export default function SignupPage() {
         {error && <p className="text-xs text-danger">{error}</p>}
         {notice && <p className="text-xs text-success">{notice}</p>}
 
-        <Button type="submit" variant="primary" size="lg" isLoading={isLoading} className="w-full">
+        <Button
+          type="submit"
+          variant="secondary"
+          size="lg"
+          isLoading={isLoading}
+          className="w-full"
+        >
           Create account
         </Button>
       </form>
