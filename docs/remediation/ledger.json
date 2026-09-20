@@ -13281,12 +13281,12 @@
     "Astra": 27
   },
   "execution_policy": {
-    "updated": "2026-09-14",
-    "authority": "Owner-authorized release completed September15. Final amendment: 45 total weekly percentage points from the original 51%-used baseline; no mid-chain budget stop. Authenticated staging rehearsal, per-migration production GitHub comments and staging/non-migration pauses were explicitly removed. Production applies retained 30-second announcements, fresh verified backup/restore, separate invocations and original-row comparisons. No live activation or historical backfill.",
+    "updated": "2026-09-20",
+    "authority": "The owner-authorized September 19–20 run is complete. Its allocation was 40 additional weekly percentage points from a 5%-used baseline. The V48/V49 production release used fresh verified backup/restore, separate one-file invocations, 30-second announcements and original-row comparisons. No live billing activation or historical backfill occurred. Historical budgets and completed release approvals must not be reused.",
     "Sol": "All backend/frontend implementation, including financial and authorization application code; docs and maintenance. Existing safety requirements remain.",
     "Astra": "All supabase, migrations, SQL contracts and database concurrency proofs personally. Mixed findings retain one database coordinating track with Sol owning app paths.",
     "note": "normalization_track preserves the earlier risk-based classification. Current track is execution responsibility, not severity or historical authorship.",
-    "release": "Only the named coordinating Astra task may execute this authorized production release, with the announce-and-pause protocol and all technical gates. Subagents may not execute production actions. Live billing activation and historical financial backfill remain outside scope."
+    "release": "No production execution remains in this run. A future release requires explicit owner authorization for its candidate, with the named coordinating executor and all current technical gates. This ledger grants no production authority. Subagents may not execute production actions. Live billing activation and historical financial backfill remain outside scope."
   },
   "current_disposition_tracks": {
     "fixed": {

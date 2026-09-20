@@ -53,3 +53,27 @@ Staging remains V47 with both applications at `138f8ca75b20fe9c3d233a6c5bacfe7fe
 Private evidence: `/Users/openclaw/Koaryu Releases/20260915-astra-production`. The numbered apply scripts/command JSON/logs retain the exact commands, inspection tokens, snapshot reference, confirmation phrases, provider responses and success records. Original-row snapshots, `production-final-audit.json`, `production-final-db-state.json`, `verified-backup.json`, backend/Vercel deployment records, `production-pair.txt` and `production-proxy-readiness.json` substantiate this report. Keep them private; do not reuse completed apply commands or tokens.
 
 One final bookkeeping PR records the completed release and aligns the active policy, packet and CLI help. No audit finding dispositions change. The pre-closeout usage read at 04:19 UTC was 86% used against the original 51% baseline, or 35 of the authorized 45 points. The final report records the last meter. Documentation-only changes do not require waiting for the full CI suite under the owner's revised instructions; repository branch protections and production auto-deploy controls remain enabled.
+
+## Per-migration recovery checkpoints
+
+The pinned CLI executes each file and its history insert in one transaction. These nine files contain no standalone transaction commits or concurrent index builds that would split that boundary. A SQL failure normally leaves the predecessor intact; a lost connection or timeout can leave either predecessor or successor. Never infer which from the exit status. Read-only inspection must settle it before any further action.
+
+| File | Before → verified after | Atomic change and rollback limit |
+| --- | --- | --- |
+| V39 / `20260908080420` | V38 / 133 → V39 / 134 | Membership-preservation functions and attestation. No business-row backfill. |
+| V40 / `20260908133504` | V39 / 134 → V40 / 135 | Rank command ownership and prospective evidence. Old code cannot undo newly recorded command evidence. |
+| V41 / `20260908183744` | V40 / 135 → V41 / 136 | Serialized payer-balance RPC and attestation. No automatic balance recomputation. |
+| V42 / `20260910084231` | V41 / 136 → V42 / 137 | Independent joining-date semantics and catalog checks. Existing membership dates stay unchanged. |
+| V43 / `20260910093958` | V42 / 137 → V43 / 138 | Atomic external-payment/audit RPC. Existing financial rows are not rewritten. |
+| V44 / `20260910135133` | V43 / 138 → V44 / 139 | Atomic plan/link/audit writer and clear coordination. Existing plan rows are not rewritten. |
+| V45 / `20260910185031` | V44 / 139 → V45 / 140 | Import receipts, actor locking and refusal of legacy writes. Keep old import callers stopped after commit. |
+| V46 / `20260914033337` | V45 / 140 → V46 / 141 | Refund projection recovery. Existing stored claim fingerprints are not rewritten. |
+| V47 / `20260914055301` | V46 / 141 → `post` / 142 | Completion-lock comparison and fresh lease time. No financial backfill. |
+
+For **every** row, the recovery decision is the same:
+
+- If exact predecessor state and retained rows are unchanged, stop the run and report the failure. A reviewed resumption may retry that same immutable file only after the cause is understood, the recovery window remains valid, and fresh inspection/approval/dry-run evidence exists.
+- If exact successor state committed and retained rows are unchanged, report the committed checkpoint. Do not retry the old command. A reviewed resumption starts from a new inspection and approval for the next file.
+- If state is partial/unknown or an original business row changed, stop. Restore from the verified pre-apply backup may be necessary; that can lose every later write. There is no approved hosted restore command here. The disposable restore helper cannot restore production. Present that recovery option and a separately reviewed forward correction to the named decision-maker; execute neither automatically.
+
+Application promotion must not precede exact V47. These checkpoints make a stopped prefix diagnosable; they do not authorize promotion at an intermediate state or bypass the stop conditions.
