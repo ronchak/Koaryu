@@ -28,3 +28,5 @@ There is no historical financial backfill, currency conversion, billing activati
 - Billing and both Dashboard read paths consume the shared rule. Role-hidden financial data stays unavailable.
 - Existing payer lock ordering, post-lock commit/rollback visibility, monetary overflow, tenant scope and payment/idempotency cases remain protected.
 - A real V49 logical restore advances to V50 with retained rows intact and old-caller readiness preserved. Every current SQL contract, prior restore continuation and negative attestation check still runs.
+
+The local tamper gate checks every declared metadata mutation against the current full preflight and independent raw facts. For each routine, the missing-function case also checks every compatibility reader and its rollback baseline. The immutable compatibility bodies forward the same current failure, so repeating that entire chain for every other mutation adds execution cost without testing a different contract. All historical positive readiness checks and all SQL contract files remain.

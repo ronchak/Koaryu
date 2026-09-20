@@ -1212,17 +1212,27 @@ readiness_snapshot_sql="SELECT jsonb_build_array(
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v19() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v18() r));"
 readiness_before="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$readiness_snapshot_sql")"
+current_readiness_sql="SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v31() r;"
+current_readiness_before="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$current_readiness_sql")"
 assert_payment_writer_rejects() {
   local label="$1" mutation_sql="$2" writer_query="$3" expected_writer="$4" expected_failure="$5"
+  local check_compatibility="${6:-true}"
+  local snapshot_sql="$current_readiness_sql" snapshot_before="$current_readiness_before"
   local raw="" after="" readiness_after=""
+  if [[ "$check_compatibility" == true ]]; then
+    snapshot_sql="$readiness_snapshot_sql"
+    snapshot_before="$readiness_before"
+  fi
   echo "[payment writer negative] RUN $label"
   raw="$({
-    printf "BEGIN;\nSET LOCAL koaryu.writer_failure = '%s';\n%s\n%s\n" "$expected_failure" "$mutation_sql" "$writer_query"
+    printf "BEGIN;\nSET LOCAL koaryu.writer_failure = '%s';\nSET LOCAL koaryu.check_compatibility = '%s';\n%s\n%s\n" "$expected_failure" "$check_compatibility" "$mutation_sql" "$writer_query"
     cat <<'SQL'
 DO $check$
 DECLARE version INTEGER; result RECORD;
+    versions INTEGER[] := CASE WHEN current_setting('koaryu.check_compatibility')::BOOLEAN
+        THEN ARRAY[31,30,29,28,27,26,25,24,23,22,21,20,19,18] ELSE ARRAY[31] END;
 BEGIN
-  FOREACH version IN ARRAY ARRAY[31,30,29,28,27,26,25,24,23,22,21,20,19,18] LOOP
+  FOREACH version IN ARRAY versions LOOP
     EXECUTE format('SELECT * FROM public.koaryu_release_schema_preflight_v%s()',version) INTO result;
     IF result.ready IS DISTINCT FROM FALSE
        OR (current_setting('koaryu.writer_failure')=ANY(result.security_failures)) IS DISTINCT FROM TRUE THEN
@@ -1239,8 +1249,8 @@ SQL
     exit 1
   fi
   after="$(printf '%s\n' "$writer_query" | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
-  readiness_after="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$readiness_snapshot_sql")"
-  if [[ "$after" != "$expected_writer" || "$readiness_after" != "$readiness_before" ]]; then
+  readiness_after="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$snapshot_sql")"
+  if [[ "$after" != "$expected_writer" || "$readiness_after" != "$snapshot_before" ]]; then
     echo "[payment writer negative] FAIL $label did not restore the exact raw/readiness baseline" >&2
     exit 1
   fi
@@ -1257,7 +1267,11 @@ while IFS='|' read -r writer_name writer_rpc query_export expected_export failur
     exit 1
   fi
   while IFS='|' read -r mutation_name mutation_sql; do
-    assert_payment_writer_rejects "$writer_name: $mutation_name" "$mutation_sql" "$writer_query" "$expected_writer" "$failure_key"
+    # Compatibility forwards the same current failure. Prove that chain once
+    # per routine; every mutation still checks current readiness and raw facts.
+    check_compatibility=false
+    if [[ "$mutation_name" == "missing function" ]]; then check_compatibility=true; fi
+    assert_payment_writer_rejects "$writer_name: $mutation_name" "$mutation_sql" "$writer_query" "$expected_writer" "$failure_key" "$check_compatibility"
   done <<MUTATIONS
 missing function|DROP FUNCTION $writer_rpc;
 incorrect volatility|ALTER FUNCTION $writer_rpc $wrong_volatility;
