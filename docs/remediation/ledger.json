@@ -2368,7 +2368,7 @@
       "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "verification": "Current source and relevant callers inspected; see current_evidence and retained merged implementation evidence. No new runtime tests or hosted activity during normalization.",
       "source_paths": [
-        "backend/app/services/billing_invoice_operations.py"
+        "backend/app/services/billing_invoices.py"
       ],
       "pull_requests": [
         162
@@ -2509,7 +2509,7 @@
         "backend/app/services/billing_autopay.py",
         "backend/app/services/billing_enrollment_activation.py",
         "backend/app/services/billing_enrollment_transitions.py",
-        "backend/app/services/billing_invoice_operations.py",
+        "backend/app/services/billing_invoices.py",
         "backend/app/services/billing_payers.py",
         "backend/app/services/billing_payments.py"
       ],
@@ -4531,7 +4531,7 @@
       "verification": "Current source and relevant callers inspected; see current_evidence and retained merged implementation evidence. No new runtime tests or hosted activity during normalization.",
       "source_paths": [
         "backend/tests/test_billing_invoice_operations.py",
-        "backend/app/services/billing_invoice_operations.py"
+        "backend/app/services/billing_invoices.py"
       ],
       "pull_requests": [
         162
@@ -11542,7 +11542,7 @@
       "source_paths": [
         "supabase/migrations/20260801060000_operational_alert_delivery_state.sql",
         "backend/app/services/operational_alerts.py",
-        "backend/app/services/billing_invoice_operations.py",
+        "backend/app/services/billing_invoices.py",
         "supabase/migrations/20260826185651_payment_refund_payer_sync_resource_ownership.sql"
       ],
       "pull_requests": [],
@@ -13027,7 +13027,7 @@
         "backend/app/services/billing_plans.py",
         "backend/app/services/billing_plan_sync.py",
         "supabase/migrations/20260518022655_billing_concurrency_hardening.sql",
-        "backend/app/services/billing_invoice_operations.py",
+        "backend/app/services/billing_invoices.py",
         "supabase/migrations/20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
         "backend/app/services/stripe_connect_gateway.py",
         "supabase/migrations/20260905022339_billing_landing_aggregates.sql",
@@ -13045,8 +13045,8 @@
           "observation": "One explicit USD predicate is used by the three provider write owners and plan readiness."
         },
         {
-          "path": "backend/app/services/billing_invoice_operations.py",
-          "line": 1940,
+          "path": "backend/app/services/billing_invoices.py",
+          "line": 2191,
           "observation": "Saved header work is distinguished from financial-item attempts before new invoice lines."
         },
         {
@@ -13115,9 +13115,9 @@
           "observation": "Live subscription uniqueness includes currency, rather than enforcing one currency per studio."
         },
         {
-          "path": "backend/app/services/billing_invoice_operations.py",
-          "line": 162,
-          "observation": "Local invoice intent retains data.currency and a positive draft receivable; the intent is persisted at line 190 before provider execution."
+          "path": "backend/app/services/billing_invoices.py",
+          "line": 387,
+          "observation": "Local invoice intent retains data.currency and a positive draft receivable; the intent is persisted at line 403 before provider execution."
         },
         {
           "path": "supabase/migrations/20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
