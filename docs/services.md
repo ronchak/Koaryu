@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September 20 release readback: both databases are V49, 144 migrations. Production and staging frontend/backend pairs serve `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`. Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
+Inventory baseline: 2026-08-24. September 20 release readback: both databases are V50, 145 migrations. Production and staging frontend/backend pairs serve `dce52efff1d28358eca421769d00791b60045c6c`. Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
 
 ## Quick map
 
@@ -147,7 +147,7 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The completed V48–V49 release, immutable migration hashes and recovery limits are recorded in [the production packet](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Future releases require a new exact-candidate packet and fresh target/backup evidence. Completed apply commands are history, not authority to run them again. Readiness compatibility does not authorize older backends after new activation receipts or unknown subscription terms have been written.
+The completed V50 release, immutable migration hash and recovery limits are recorded in [the production packet](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Future releases require a new exact-candidate packet and fresh target/backup evidence. Completed apply commands are history, not authority to run them again. Readiness compatibility does not authorize older backends after new activation receipts or unknown subscription terms have been written.
 
 V41 payer-balance, V43 external-payment and V44 local-plan guarantees require old
 split callers to drain. V45 requires stopping old import callers before migration.

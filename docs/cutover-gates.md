@@ -41,9 +41,11 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-The completed V48–V49 release is recorded in [PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Production and staging are V49, 144 migrations; both application pairs serve `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`. The staging billing cron remains suspended. Future releases need a new exact-candidate packet and fresh target evidence. Do not reuse completed inspection tokens or recovery evidence as approval of a new state.
+The completed V50 release is recorded in [PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Production and staging are V50, 145 migrations; both application pairs serve `dce52efff1d28358eca421769d00791b60045c6c`. The staging billing cron remains suspended. Future releases need a new exact-candidate packet and fresh target evidence. Do not reuse completed inspection tokens or recovery evidence as approval of a new state.
 
 V48 separates stable activation intent from its atomically owned first execution quantity, preserving already-attempted provider recovery. V49 permits unknown subscription currency/cadence without invented defaults. Neither migration rewrites historical rows. After new version-2 receipts or null subscription terms exist, readiness compatibility alone does not authorize an older backend rollback. Use the packet's recovery limits.
+
+V50 makes overdue status a current business-date fact shared by Billing and Dashboard reads. It preserves stored payer enum compatibility and changes no customer rows. The previous V49 application remains schema/readiness-compatible for the database-first window; the new backend requires V50. See the packet for recovery limits.
 
 ## Retained migration compatibility
 
@@ -105,12 +107,12 @@ only after old Python plan split-write requests drain. V40 rank, V41 payer balan
 V42 catalog and semantics, and V43 external-payment facts remain unchanged. The old
 V41 and V43 split callers must still drain for those guarantees.
 
-The local verifier executes each logical restore continuation from V38 through V49.
+The local verifier executes each logical restore continuation from V38 through V50.
 Each uses a real synthetic dump and a new local restore database, accepts only the
 reviewed PostgreSQL 17 CHECK/default-ACL representation differences, and verifies
 business-data preservation and old/new caller continuation. These are local
 contract proofs, not production backup evidence. Candidate verification requires the
-V47-to-V48 and V48-to-V49 canonical and logical restore continuations, all 144 migrations and 54 SQL
+V47-to-V48, V48-to-V49 and V49-to-V50 canonical and logical restore continuations, all 145 migrations and 54 SQL
 contracts, and all 27 cases in `scripts/verify-billing-command-concurrency.py`.
 The renamed runner uses the existing concurrency helpers and adds no new framework.
 Earlier restore proofs remain in force. The operator's backup helper and
@@ -118,7 +120,7 @@ release/image mappings must be updated and verified for the actual candidate
 before an authorized hosted rollout. Old V38 approvals and mappings are not reusable.
 
 Exact V31 through V37 remain state-bound forward-recovery points. They may
-resume only their immutable suffix through V49; hybrid histories, catalogs or
+resume only their immutable suffix through V50; hybrid histories, catalogs or
 readiness results are refused. A predecessor before V38 also needs the historical
 billing-index migration. Its ordinary index builds hold write locks that can delay
 billing and webhook writes until that transaction finishes. Plan that write pause
@@ -128,7 +130,7 @@ Migration 119 keeps the historical V24 response. The Payments chain retains its
 version-bound compatibility consumers. V47 adds full preflight V28 and makes V27
 return the V46 tuple only after the complete new state verifies. The existing chain
 retains V45 through V37 responses, including the historical V38/V19 consumer. The
-candidate backend requires exact V49, 144 migrations, through full preflight V30. V48 introduced V29; V49 retains V29 compatibility only after verifying the complete V49 state. Compatibility preserves old
+candidate backend requires exact V50, 145 migrations, through full preflight V31. V50 retains V30 compatibility only after verifying the complete V50 state. V48 introduced V29; V49 retains V29 compatibility only after verifying the complete V49 state. Compatibility preserves old
 readiness; it does not restore retired import behavior or give old split writers
 the new transactional guarantees.
 The temporary V22 and
@@ -143,24 +145,23 @@ look for it is wrong. `"status": "ready"` *is* the proof the attestation matched
 If migration 113 commits and migration 114 does not, stop. No approved
 application is eligible to serve at that partially migrated history. During the historical V24 release,
 the prior `709239` application required V16 and that release candidate required V24.
-The current candidate requires V49. Older V2 consumers from
+The current candidate requires V50. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
 Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
 post-110 rollback set. A database still at exact 110 must classify `state=staff-identity` and use its
-state-bound inspection token. The tool must select migrations 111 through 144 in
+state-bound inspection token. The tool must select migrations 111 through 145 in
 their immutable order. A separately approved disaster recovery to the proved
 restored V22 snapshot must classify exact `state=restored-v22` and select only
-migrations 116 through 144. Use the generated remaining-file list and its source
+migrations 116 through 145. Use the generated remaining-file list and its source
 manifest; do not maintain a second manual list. These are hypothetical recovery
 cases, not the current live state. Only the authorized operator runs production
-apply. Candidate promotion remains blocked until migration 144 produces exact
-V49 readiness and the final raw catalog/provider fingerprint. That raw evidence
+apply. Candidate promotion remains blocked until migration 145 produces exact
+V50 readiness and the final raw catalog/provider fingerprint. That raw evidence
 must independently attest the retained plan RPC and demo-clear facts, import receipts, refund ownership,
-the V48 activation and V49 subscription-term facts, and the V49 release facts. V40 rank-command,
-V41 payer-balance, V42 catalog and semantic, and V43 external-payment pins remain
-unchanged.
+the V48 activation, V49 subscription terms and V50 invoice facts, and the V50 release facts. V40 rank-command,
+V42 catalog and semantic and V43 external-payment pins remain unchanged. V50 updates the V41 balance function to consume the shared date rule while preserving its serialization.
 
 The V33 retry-hash capture stays enabled throughout the database-first rolling
 deploy. Do not call `finalize_billing_invoice_retry_hash_capture_v33` during the
@@ -284,4 +285,4 @@ bytes, so retain the separate Storage procedure linked above.
 
 ## Completed September 20 release
 
-Both production applies, original-row comparisons and application deployments passed under one fresh verified backup/restore. [The verification record](remediation/production-release-verification.md) contains exact SHAs, timestamps and evidence. Do not repeat the completed chain. The helper now has reviewed mappings through V49; future backups still require fresh source/image checks and a new verified restore.
+The single V50 production apply, original-row comparison and application deployments passed under one fresh verified V49 backup/restore. [The verification record](remediation/production-release-verification.md) contains exact SHAs, timestamps and evidence. Do not repeat the completed chain. The helper now has reviewed mappings through V50; future backups still require fresh source/image checks and a new verified restore.

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "c1e1c27c4a3071556958352207da2a435887276b",
+  "last_reconciled_main": "7d7308afe8c77578094db8ffb81ee0c9a9e37fe2",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -77,7 +77,7 @@
     },
     {
       "id": "CTA1-02",
-      "title": "Database quick-start bypasses the repository’s current target guidance",
+      "title": "Database quick-start bypasses the repository\u2019s current target guidance",
       "cluster": "release_and_evidence",
       "disposition": "fixed",
       "reason": "PR156 corrected the database quick-start and explicitly made ordinary verification local/disposable; the cited unsafe guidance is no longer current.",
@@ -167,7 +167,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "CTA1-04",
@@ -340,7 +340,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "CTA1-08",
@@ -877,37 +877,28 @@
       "id": "OPS1-02",
       "title": "A promotion in one program can erase eligibility attendance in another",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "Mixed promoted/unpromoted contexts still lose required history in the unfiltered eligibility API. Current ladder-specific UI requests avoid the demonstrated trigger.",
+      "disposition": "fixed",
+      "reason": "Eligibility attendance is bounded only when every requested context has a promotion boundary. Mixed promoted and unpromoted contexts retain full required history, then apply each context filter.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "7d7308afe8c77578094db8ffb81ee0c9a9e37fe2",
+      "verification": "Real two-program behavioral fixture covers attendance credit, canceled/deleted/foreign records; original code reproduced the missing count.",
       "source_paths": [
         "backend/app/services/belt_eligibility.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        224
+      ],
       "track": "Sol",
       "root_cause": "eligibility_fetch_boundary",
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "backend/app/services/belt_eligibility.py",
-          "line": 131,
-          "observation": "Any promoted context puts the student into the timestamp-bounded fetch group, even when another context requires unbounded history."
-        },
-        {
-          "path": "backend/app/services/belt_eligibility.py",
-          "line": 193,
-          "observation": "The earliest promotion becomes a database lower bound before individual context filtering."
-        },
-        {
-          "path": "frontend/src/lib/store.tsx",
-          "line": 1008,
-          "observation": "The current screen requests eligibility with ladder_id; the backend endpoint still permits its omission."
+          "path": "docs/remediation/queued-findings-verification.md",
+          "observation": "Eligibility attendance is bounded only when every requested context has a promotion boundary. Mixed promoted and unpromoted contexts retain full required history, then apply each context filter."
         }
       ],
-      "next_change": "Use an unbounded fetch for students with any unbounded context; bound only students whose every context has a promotion. Retain individual context filtering.",
+      "next_change": "No further implementation for this finding.",
       "validation_plan": "Focused eligibility scenario with two programs, one promotion and older attendance in the unpromoted program; compare filtered and unfiltered results.",
       "scope_constraints": "Preserve tenant filters, pagination, program matching, explicit credit exclusions and existing promotion timestamp semantics.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -1552,15 +1543,17 @@
       "id": "OPS2-03",
       "title": "Week generation ignores template start and end dates",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "The callable legacy week generator still ignores template date bounds. The current UI uses range materialization, so this is not evidence that its newer generator has the same defect.",
+      "disposition": "fixed",
+      "reason": "The legacy week generator applies inclusive template start and end dates before creating sessions, preserving existing actor audit and tenant scope.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7d7308afe8c77578094db8ffb81ee0c9a9e37fe2",
       "source_paths": [
         "backend/app/services/schedule_service.py"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        225
+      ],
       "track": "Sol",
       "root_cause": "legacy-week-date-bounds",
       "collapse_with": [
@@ -1568,22 +1561,11 @@
       ],
       "current_evidence": [
         {
-          "path": "backend/app/services/schedule_service.py",
-          "line": 482,
-          "observation": "Weekday calculation proceeds directly to existence checking and creation without template start/end predicates."
-        },
-        {
-          "path": "backend/app/api/v1/endpoints/schedule.py",
-          "line": 247,
-          "observation": "The generate-week endpoint remains exposed."
-        },
-        {
-          "path": "supabase/migrations/20260710001153_atomic_recurring_session_materialization.sql",
-          "line": 66,
-          "observation": "Canonical materialization bounds generated dates by template start and end."
+          "path": "docs/remediation/queued-findings-verification.md",
+          "observation": "The legacy week generator applies inclusive template start and end dates before creating sessions, preserving existing actor audit and tenant scope."
         }
       ],
-      "next_change": "Add the canonical inclusive template-date predicates before legacy session creation, preserving its response and actor-audit behavior.",
+      "next_change": "No further implementation for this finding.",
       "validation_plan": "Generate weeks before, on and after template boundaries; verify open-ended templates and existing occurrences.",
       "scope_constraints": [
         "Explicit materialization write semantics",
@@ -1593,7 +1575,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Existing audit case now exercises seven date-boundary scenarios; 17 test cases remain 17."
     },
     {
       "id": "OPS2-04",
@@ -2159,43 +2142,29 @@
       "id": "BB1-03",
       "title": "An unpaid draft or future invoice is classified as past due",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Balance serialization moved the defect into SQL without changing policy. Positive draft, future and undated balances still become past_due; uncollectible remains conflated with ordinary delinquency.",
+      "disposition": "fixed",
+      "reason": "One read-time invoice rule separates outstanding, overdue and uncollectible amounts using the studio business date. Drafts, future/today due dates and missing dates are never overdue. Payer reads, billing totals and both dashboard paths consume the rule; unassigned invoices remain in global totals. Serialized writes retain locks and legacy storage compatibility, with no customer backfill.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7d7308afe8c77578094db8ffb81ee0c9a9e37fe2",
       "source_paths": [
         "backend/app/services/billing_payers.py",
         "frontend/src/components/billing/billing-invoices-tab.tsx",
         "supabase/migrations/20260905022339_billing_landing_aggregates.sql"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        226
+      ],
       "track": "Astra",
       "root_cause": "outstanding-is-not-overdue",
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "backend/app/services/billing_payers.py",
-          "line": 925,
-          "observation": "Balance recomputation now delegates to recompute_billing_payer_balance_v1."
-        },
-        {
-          "path": "supabase/migrations/20260908183744_serialize_billing_payer_balance_v41.sql",
-          "line": 64,
-          "observation": "Includes draft/open/uncollectible/partially_refunded without due_date; line 68 maps every positive balance to past_due."
-        },
-        {
-          "path": "frontend/src/components/billing/billing-invoices-tab.tsx",
-          "line": 28,
-          "observation": "The failed-payment queue consumes payer past_due/failed status."
-        },
-        {
-          "path": "supabase/migrations/20260905022339_billing_landing_aggregates.sql",
-          "line": 47,
-          "observation": "Landing attention counts use the same stored payer status."
+          "path": "docs/remediation/queued-findings-verification.md",
+          "observation": "One read-time invoice rule separates outstanding, overdue and uncollectible amounts using the studio business date. Drafts, future/today due dates and missing dates are never overdue. Payer reads, billing totals and both dashboard paths consume the rule; unassigned invoices remain in global totals. Serialized writes retain locks and legacy storage compatibility, with no customer backfill."
         }
       ],
-      "next_change": "Separate outstanding, overdue and uncollectible facts in the current serialized calculation through an additive migration. Overdue requires a collectible positive balance and due_date before today. Align queue/aggregate consumers and ensure date rollover updates the displayed classification without requiring a new payment event.",
+      "next_change": "No further implementation for this finding.",
       "validation_plan": "Disposable SQL cases for yesterday/today/tomorrow/no-date, draft, paid, uncollectible and mixed invoices; retain payer concurrency checks and verify queue/aggregate agreement.",
       "scope_constraints": [
         "No grace period; overdue starts the day after due date.",
@@ -2204,7 +2173,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
+      "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion.",
+      "verification": "V50 SQL date matrix, tenant/grant/overflow boundaries, lock and snapshot concurrency, canonical/restored continuation and application behavior. See current-invoice-facts-plan.md and queued-findings-verification.md."
     },
     {
       "id": "BB1-04",
@@ -5157,10 +5127,10 @@
       "title": "Ordinary program and schedule edits lack the failure coverage given to newer workflows",
       "cluster": "lead_and_schedule_commands",
       "disposition": "pending",
-      "reason": "Program tests remain read-side, while schedule tests cover materializer bounds and legacy audit/input validation. They do not establish paired-write rollback or explicit-null persistence.",
+      "reason": "PR225 now covers inclusive legacy template date bounds. Paired-write rollback and explicit-null persistence remain separate unverified contracts, so the umbrella stays pending.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7d7308afe8c77578094db8ffb81ee0c9a9e37fe2",
       "source_paths": [
         "backend/tests/test_program_service.py",
         "backend/tests/test_schedule_service.py",
@@ -5191,7 +5161,7 @@
           "observation": "Legacy generation tests cover actor audit and invalid week_start; no direct template-update clearing case was found."
         }
       ],
-      "next_change": "Attach focused paired-write failure, omission/null/value and legacy boundary cases to their three owning fixes.",
+      "next_change": "Attach paired-write failure and omission/null/value cases to their owning fixes; do not duplicate the completed legacy date-boundary proof.",
       "validation_plan": "Each case must exercise the real service or transaction boundary and expose its corresponding current defect.",
       "scope_constraints": [
         "Route authorization tests",
@@ -6062,7 +6032,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "DOC1-09",
@@ -6116,7 +6086,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "DOC1-10",
@@ -7597,7 +7567,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FR1-07",
@@ -7629,7 +7599,7 @@
           "observation": "Adjacent collector counts streamed bytes and cancels on limit or deadline."
         }
       ],
-      "next_change": "Reuse the adjacent collector’s bounded byte-stream/deadline mechanics for CSP input, cancel on overflow and decode only accepted bytes. Preserve content-type, early declared-length and privacy behavior; no collector framework.",
+      "next_change": "Reuse the adjacent collector\u2019s bounded byte-stream/deadline mechanics for CSP input, cancel on overflow and decode only accepted bytes. Preserve content-type, early declared-length and privacy behavior; no collector framework.",
       "validation_plan": "Missing/understated length, multibyte UTF-8 overflow, stalled stream, malformed JSON and valid report cases.",
       "scope_constraints": [
         "Unauthenticated browser reporting",
@@ -7954,7 +7924,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FR1-14",
@@ -8153,43 +8123,29 @@
       "id": "FC1-04",
       "title": "Unavailable billing figures become fabricated zero values lower on the page",
       "cluster": "financial_facts_and_local_edits",
-      "disposition": "pending",
-      "reason": "Top metrics and Reports honor cohort availability, but lower Overview cards still format fallback zero totals. Missing platform usage still appears as 0/500 with zero overage.",
+      "disposition": "fixed",
+      "reason": "Lower billing totals and usage now preserve unavailable facts rather than inventing zero values. Actual zero remains visible, and unknown or zero allowance does not invent a utilization meter.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "7d7308afe8c77578094db8ffb81ee0c9a9e37fe2",
       "source_paths": [
         "frontend/src/components/billing/billing-page-sections.tsx",
         "frontend/src/lib/billing-page-model.ts",
         "frontend/src/lib/billing-data-controller.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        222
+      ],
       "track": "Sol",
       "root_cause": "unavailable-financial-facts-rendered-as-zero",
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "frontend/src/lib/billing-page-model.ts",
-          "line": 136,
-          "observation": "Missing live cohort data yields zero totals while line 183 separately exposes availability."
-        },
-        {
-          "path": "frontend/src/components/billing/billing-page-sections.tsx",
-          "line": 269,
-          "observation": "Stripe total is formatted without availability; external total repeats this at line 276."
-        },
-        {
-          "path": "frontend/src/components/billing/billing-page-sections.tsx",
-          "line": 358,
-          "observation": "Missing usage defaults to 0/500; overage defaults to zero at line 366."
-        },
-        {
-          "path": "frontend/src/lib/billing-data-controller.ts",
-          "line": 191,
-          "observation": "Absent platform status is explicitly stored as null."
+          "path": "docs/remediation/queued-findings-verification.md",
+          "observation": "Lower billing totals and usage now preserve unavailable facts rather than inventing zero values. Actual zero remains visible, and unknown or zero allowance does not invent a utilization meter."
         }
       ],
-      "next_change": "Use cohort availability for both lower totals and platform-status availability for usage/overage. Render Unavailable for missing facts, preserve actual zero values and handle zero allowance without division fallback. Keep fixtures confined to explicit preview mode.",
+      "next_change": "No further implementation for this finding.",
       "validation_plan": "Render missing/failed/unauthorized data, valid zero totals, missing usage and zero allowance; confirm Overview and Reports agree.",
       "scope_constraints": [
         "Do not widen financial permissions or change amount calculations.",
@@ -8197,7 +8153,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Mounted/SSR behavior uses actual formatter and status components; two source assertions removed."
     },
     {
       "id": "FC1-05",
@@ -8387,7 +8344,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FC1-09",
@@ -8700,18 +8657,20 @@
       "id": "FC2-02",
       "title": "Program and student saves discard edits made during the request",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "Program store races were fixed, but program form reset and student form closure still discard edits accepted during an outstanding save.",
+      "disposition": "fixed",
+      "reason": "Program and student draft-changing controls are locked while their save is pending. Duplicate submissions and edit switches cannot discard a newer draft; rejection retains the submitted draft.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and prior merged implementation evidence. No runtime test or hosted activity during normalization.",
+      "verified_against": "7d7308afe8c77578094db8ffb81ee0c9a9e37fe2",
+      "verification": "Mounted forms verify pending controls, duplicate submission, success and rejection.",
       "source_paths": [
         "frontend/src/components/settings/programs-section.tsx",
         "frontend/src/components/students/student-form.tsx",
         "frontend/src/lib/student-detail-page-controller.ts"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        223
+      ],
       "track": "Sol",
       "root_cause": "submitted-draft-ownership",
       "collapse_with": [
@@ -8720,22 +8679,11 @@
       ],
       "current_evidence": [
         {
-          "path": "frontend/src/components/settings/programs-section.tsx",
-          "line": 101,
-          "observation": "Successful save resets the form; fields and other rows' Edit controls remain enabled."
-        },
-        {
-          "path": "frontend/src/components/students/student-form-state.ts",
-          "line": 268,
-          "observation": "setField always accepts changes while onSubmit is pending."
-        },
-        {
-          "path": "frontend/src/lib/student-detail-page-controller.ts",
-          "line": 280,
-          "observation": "Successful profile update unconditionally closes the form."
+          "path": "docs/remediation/queued-findings-verification.md",
+          "observation": "Program and student draft-changing controls are locked while their save is pending. Duplicate submissions and edit switches cannot discard a newer draft; rejection retains the submitted draft."
         }
       ],
-      "next_change": "Freeze draft-changing controls during program/student submission, including program Edit switches, or use revision-owned reset/close behavior.",
+      "next_change": "No further implementation for this finding.",
       "validation_plan": "Delay program A save and attempt editing B; delay a student save and attempt changing a field. Verify success and rejection preserve the chosen ownership policy.",
       "scope_constraints": "Preserve student unknown-outcome handling, lifecycle permissions and independent joining/program dates; add no date-ordering rules.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -8846,7 +8794,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FC2-05",
@@ -9451,7 +9399,7 @@
     },
     {
       "id": "FC3-01",
-      "title": "Roster bulk actions can overlap and close one another’s panels",
+      "title": "Roster bulk actions can overlap and close one another\u2019s panels",
       "cluster": "read_and_mutation_ownership",
       "disposition": "pending",
       "reason": "Bulk actions still have separate pending flags while selection and panel switching remain unrestricted. Earlier completion can close a newer panel or clear newer selection.",
@@ -9668,7 +9616,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FC3-05",
@@ -9729,7 +9677,7 @@
     },
     {
       "id": "FC3-06",
-      "title": "Button’s asChild mode advertises props it silently drops",
+      "title": "Button\u2019s asChild mode advertises props it silently drops",
       "cluster": "presentation_and_dead_interfaces",
       "disposition": "fixed",
       "reason": "asChild forwards native attributes and composed refs, including React 19 cleanup, while preserving child-then-wrapper clicks and disabled navigation blocking.",
@@ -10362,7 +10310,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FSH1-11",
@@ -10473,7 +10421,7 @@
       "delegated_batch": "docs/remediation/delegated/03-customer-copy-and-first-read-docs.md",
       "normalization_track": "Sol",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19→18 cases. See customer-product-truth-verification.md."
+      "verification": "Coordinator reviewed the complete source/caller changes, verified 16 frontend syntax trees, checked desktop/mobile built error layout, passed 31 focused cases and verified staging isolation 19\u219218 cases. See customer-product-truth-verification.md."
     },
     {
       "id": "FSH2-01",
@@ -10526,12 +10474,12 @@
       "id": "FSH2-02",
       "title": "Several confirmed saves disappear locally when a session token renews",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "Belt-plan, program and staff settlement were repaired by PRs #153/#159/#160. Promotion and demotion still clear receipts then skip local settlement after ordinary token renewal.",
+      "disposition": "fixed",
+      "reason": "Confirmed rank writes settle across same-identity token renewal. Operation-scoped receipt cleanup and read-only reconciliation preserve confirmed results without crossing staff or studio identity.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and prior merged implementation evidence. No runtime test or hosted activity during normalization.",
+      "verified_against": "7d7308afe8c77578094db8ffb81ee0c9a9e37fe2",
+      "verification": "Mounted deferred-request checks cover renewal, completion and identity change; no mutation replay for refresh failure.",
       "source_paths": [
         "frontend/src/lib/store-program-actions.ts",
         "frontend/src/lib/store-staff-actions.ts",
@@ -10542,34 +10490,19 @@
       "pull_requests": [
         153,
         159,
-        160
+        160,
+        223
       ],
       "track": "Sol",
       "root_cause": "rank-mutation-renewal-settlement",
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "frontend/src/lib/store-belt-actions.ts",
-          "line": 334,
-          "observation": "Belt-plan save now uses canCommitLiveMutation before applying confirmed data."
-        },
-        {
-          "path": "frontend/src/lib/store-belt-actions.ts",
-          "line": 515,
-          "observation": "Promotion clears its transition and returns on old-token isCurrent failure before history commit/reconciliation."
-        },
-        {
-          "path": "frontend/src/lib/store-belt-actions.ts",
-          "line": 594,
-          "observation": "Demotion has the same remaining settlement gap."
-        },
-        {
-          "path": "frontend/src/lib/belt-tracker-page-controller.ts",
-          "line": 373,
-          "observation": "A resolved promotion promise closes the dialog and reports success."
+          "path": "docs/remediation/queued-findings-verification.md",
+          "observation": "Confirmed rank writes settle across same-identity token renewal. Operation-scoped receipt cleanup and read-only reconciliation preserve confirmed results without crossing staff or studio identity."
         }
       ],
-      "next_change": "Give rank completion, receipt cleanup and history recovery one scoped owner. Settle confirmed writes across same-identity renewal and reconcile using current credentials.",
+      "next_change": "No further implementation for this finding.",
       "validation_plan": "Delay promotion/demotion success across renewal and access replacement; check history, receipt ownership and reconciliation without duplicate writes.",
       "scope_constraints": "Preserve operation IDs, unknown-outcome recovery, authorization and USER_UPDATED access resets; no SQL/deployment/backfill.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -11292,7 +11225,7 @@
           "observation": "Explicit preview src takes precedence over the saved photo URL."
         }
       ],
-      "next_change": "Handle photo preview, file retention and completion truth with the existing photo/profile owner in FSH3-02. A rejected or unknown upload must not be presented as saved; do not infer server rollback from timeout or clear another command’s draft.",
+      "next_change": "Handle photo preview, file retention and completion truth with the existing photo/profile owner in FSH3-02. A rejected or unknown upload must not be presented as saved; do not infer server rollback from timeout or clear another command\u2019s draft.",
       "validation_plan": "Reject an upload and confirm preview cleanup, saved-avatar restoration and visible failure/unknown-outcome wording.",
       "scope_constraints": "Do not delete server photos, add automatic upload retries or change permissions.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -11397,40 +11330,31 @@
       "id": "DM1-01",
       "title": "Students remain marked as minors after their eighteenth birthday",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "Minor status remains a write-time value returned by current reads. Passing the eighteenth birthday alone does not refresh it.",
+      "disposition": "fixed",
+      "reason": "Student API, roster/detail/attendance UI, preview and student/hygiene exports derive current minor status from DOB and studio business date. Stored flags remain compatible. Eighteen, leap-day and null-DOB behavior are preserved, with no history rewrite or new guardian policy. Required write-response date reads precede mutations.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "7d7308afe8c77578094db8ffb81ee0c9a9e37fe2",
+      "verification": "Behavioral birthday/null/leap cases, cached projections, export budget, scoped batch reads, partial bootstrap and photo/profile write ordering; see current-minor-status-plan.md.",
       "source_paths": [
         "supabase/migrations/20260421000002_students.sql",
         "supabase/migrations/20260820025759_roster_read_rpc.sql",
         "backend/app/services/report_intelligence_operations.py",
         "frontend/src/components/students/student-detail-sidebar.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        227
+      ],
       "track": "Astra",
       "root_cause": "stored_minor_status_staleness",
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "supabase/migrations/20260421000002_students.sql",
-          "line": 181,
-          "observation": "The minor-status trigger runs only before insert or update."
-        },
-        {
-          "path": "supabase/migrations/20260820025759_roster_read_rpc.sql",
-          "line": 525,
-          "observation": "The current roster projection returns student.is_minor unchanged."
-        },
-        {
-          "path": "backend/app/services/report_intelligence_operations.py",
-          "line": 217,
-          "observation": "Hygiene discards today and uses stored is_minor to report missing guardians."
+          "path": "docs/remediation/queued-findings-verification.md",
+          "observation": "Student API, roster/detail/attendance UI, preview and student/hygiene exports derive current minor status from DOB and studio business date. Stored flags remain compatible. Eighteen, leap-day and null-DOB behavior are preserved, with no history rewrite or new guardian policy. Required write-response date reads precede mutations."
         }
       ],
-      "next_change": "Derive current status from DOB and business date in roster/detail read projections and hygiene input processing. Keep the stored column for compatibility; align preview derivation without rewriting historical rows. Preserve the existing18-year cutoff and null-DOB behavior; do not introduce a new guardian or legal-age policy.",
+      "next_change": "No further implementation for this finding.",
       "validation_plan": "An unchanged student row transitions on its eighteenth birthday across roster, detail and hygiene; include unknown DOB and leap-day boundaries in local contracts.",
       "scope_constraints": "Preserve existing unknown-DOB behavior, tenant/guardian access and program dates. New migration only if needed; no production apply or historical backfill.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -13234,7 +13158,7 @@
         "BT1-02",
         "BB1-09"
       ],
-      "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md. Hosted staging passed all 53 contracts after the reviewed PR212/213 fixture corrections. Production then applied V39–V47 separately with a fresh verified backup/restore. All 1,163 tracked original rows were unchanged after each apply. Final V47 preflight and the reviewed restored-production fingerprint passed. Both production applications and the frontend proxy verified a4ef25910e76ed4b4111699f7b61ff02c30a67a0. No live billing activation, historical financial backfill or synthetic production financial write occurred. See production-v47-verification.md.",
+      "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md. Hosted staging passed all 53 contracts after the reviewed PR212/213 fixture corrections. Production then applied V39\u2013V47 separately with a fresh verified backup/restore. All 1,163 tracked original rows were unchanged after each apply. Final V47 preflight and the reviewed restored-production fingerprint passed. Both production applications and the frontend proxy verified a4ef25910e76ed4b4111699f7b61ff02c30a67a0. No live billing activation, historical financial backfill or synthetic production financial write occurred. See production-v47-verification.md.",
       "next_change": "No remaining release step for this correction. Future work remains in the separately pending audit/program findings; authenticated workflow rehearsal was waived by the owner for this release.",
       "execution_ownership": "Astra owns database design, migration and SQL/concurrency verification. Sol may implement a separately bounded application/test portion after that prerequisite is settled.",
       "pull_requests": [
@@ -13268,21 +13192,21 @@
     }
   },
   "current_counts": {
-    "fixed": 132,
+    "fixed": 139,
     "rejected_after_verification": 1,
-    "pending": 130,
+    "pending": 123,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 103,
-    "Astra": 27
+    "Sol": 98,
+    "Astra": 25
   },
   "execution_policy": {
     "updated": "2026-09-20",
-    "authority": "The owner-authorized September 19–20 run is complete. Its allocation was 40 additional weekly percentage points from a 5%-used baseline. The V48/V49 production release used fresh verified backup/restore, separate one-file invocations, 30-second announcements and original-row comparisons. No live billing activation or historical backfill occurred. Historical budgets and completed release approvals must not be reused.",
+    "authority": "The owner-authorized September 19\u201320 run is complete. Its allocation was 40 additional weekly percentage points from a 5%-used baseline. The V48/V49 production release used fresh verified backup/restore, separate one-file invocations, 30-second announcements and original-row comparisons. No live billing activation or historical backfill occurred. Historical budgets and completed release approvals must not be reused.",
     "Sol": "All backend/frontend implementation, including financial and authorization application code; docs and maintenance. Existing safety requirements remain.",
     "Astra": "All supabase, migrations, SQL contracts and database concurrency proofs personally. Mixed findings retain one database coordinating track with Sol owning app paths.",
     "note": "normalization_track preserves the earlier risk-based classification. Current track is execution responsibility, not severity or historical authorship.",
@@ -13290,15 +13214,15 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 108,
-      "Astra": 24
+      "Sol": 113,
+      "Astra": 26
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 103,
-      "Astra": 27
+      "Sol": 98,
+      "Astra": 25
     },
     "deferred_intentionally": {
       "Sol": 7,
