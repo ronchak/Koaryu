@@ -7,26 +7,26 @@ Preserve working behavior and safeguards while removing verified accidental comp
 
 ## Current position
 
-The September 20 release is complete. Production and staging are V49, 144 migrations, with both application pairs serving `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`. Both guarded production applies preserved all 2,684 tracked original rows, backed by a fresh verified V47 backup/restore. No live billing activation or historical financial backfill occurred. See [verification](docs/remediation/production-release-verification.md) and [HANDOFF](docs/remediation/HANDOFF.md).
+The seven queued corrections are live in V50, 145 migrations. Production and staging frontend/backend pairs serve `dce52efff1d28358eca421769d00791b60045c6c`. The single production V50 apply preserved all 2,684 tracked original rows, backed by a fresh verified V49 backup/restore. No live billing activation or historical financial backfill occurred. See [verification](docs/remediation/production-release-verification.md) and [HANDOFF](docs/remediation/HANDOFF.md).
 
-PR219 separates activation request identity from execution quantity, closes BB1-06 and PROGRAM-ACTIVATION-01, and preserves attempted-provider replay. PR220 closes BB2-08 by recording unknown subscription facts honestly, including across webhook races. PR218 patches the release-blocking AnyIO advisories. The broader mixed-currency read path remains deliberately deferred after the USD-only production query. [Measurement](docs/remediation/live-measurement-20260920.md) records the actual provider signals and the navigation metrics that remain unavailable; no conditional performance optimization was justified or started.
+PR222 fixes fabricated billing zeroes. PR223 preserves confirmed rank saves through token renewal and protects pending program/student drafts. PR224 preserves attendance across program promotion boundaries; PR225 honors weekly template dates. PR226 separates outstanding, overdue and uncollectible invoice facts. PR227 derives current minor status without rewriting stored rows. All seven requested findings are fixed. [The record](docs/remediation/queued-findings-verification.md) includes exact heads, review, tests and limits.
 
-The remaining 130 pending audit observations are outside this bounded run. The overall remediation program remains open.
+The earlier V48–V49 release fixed activation quantity ownership and unknown subscription facts. Mixed-currency reads remain deliberately deferred after the USD-only production query. [Measurement](docs/remediation/live-measurement-20260920.md) retains the actual provider signals and the navigation metrics still unavailable. The remaining 123 pending audit observations are outside this bounded follow-up; the wider program remains open.
 
 All 278 retained audit observations now have an individual disposition, reason, source evidence and execution track in the [ledger](docs/remediation/ledger.json). There are no repeated placeholder reasons. The [normalized map](docs/remediation/normalized-map.md) explains shared causes, dependencies, deliberate exclusions and verification limits. [Sol batches](docs/remediation/delegated/README.md) contain the delegated recipes.
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 132 |
+| Fixed | 139 |
 | Resolved indirectly | 2 |
-| Pending | 130 |
+| Pending | 123 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Obsolete | 1 |
 | Total | 278 |
 
-Pending work is split between 27 Astra and 103 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
+Pending work is split between 25 Astra and 98 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
@@ -40,7 +40,7 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 ## Current release run
 
-The September 19–20 run had 40 additional weekly percentage points from a 5%-used baseline. It completed the V47 bookkeeping, current-reference corrections, AnyIO patch, V48 activation correction and V49 unknown-term correction, followed by one production release. Fresh Sol tasks implemented each application item, with coordinator review and a fresh independent reviewer for every PR. Database work, integration and production execution remained with Astra. The handoff records the latest meter and remaining program.
+The September 19–20 allocation is 40 additional weekly percentage points from a 5%-used baseline. It covered the initial V48–V49 release, then the owner's seven queued findings and one batched V50 release. Fresh Sol tasks implemented application items, the coordinator reviewed every result, and every PR had its own independent reviewer. Database work, integration and production execution remained with Astra. All seven queued items landed; none was dropped. The handoff records the latest meter and remaining program.
 
 Authenticated write/UI rehearsal was not performed or claimed. The provider measurements were read-only; no production test password was hunted, reset or provisioned. The final release used the complete hosted contract gate, fresh verified backup/restore, separate applies and exact application identity checks.
 
@@ -115,9 +115,16 @@ Each item used a fresh Sol implementer, coordinator review and a fresh independe
 | [205](https://github.com/ronchak/Koaryu/pull/205) | Selected-user staff Auth hydration | `4244384` | [Bounded run](docs/remediation/bounded-refactor-verification.md) |
 | [216](https://github.com/ronchak/Koaryu/pull/216) | Closed the completed V47 release record | `b0fbd8a` | [Historical release](docs/remediation/production-v47-verification.md) |
 | [217](https://github.com/ronchak/Koaryu/pull/217) | Corrected stale current claims and seven retired service paths | `0af59f0` | [Current handoff](docs/remediation/HANDOFF.md) |
-| [218](https://github.com/ronchak/Koaryu/pull/218) | Patched AnyIO security advisories | `91d7663` | [Release verification](docs/remediation/production-release-verification.md) |
+| [218](https://github.com/ronchak/Koaryu/pull/218) | Patched AnyIO security advisories | `91d7663` | [V48–V49 verification](docs/remediation/production-v48-v49-verification.md) |
 | [219](https://github.com/ronchak/Koaryu/pull/219) | Fresh first-attempt activation quantity with preserved replay | `e7f697e` | [Activation plan](docs/remediation/activation-quantity-plan.md) |
 | [220](https://github.com/ronchak/Koaryu/pull/220) | Confirmed subscription terms, nullable unknowns and safe race retry | `c1e1c27` | [Subscription facts](docs/remediation/subscription-facts-plan.md) |
+| [221](https://github.com/ronchak/Koaryu/pull/221) | Recorded the completed V49 release | `82b7c56` | [V48–V49 verification](docs/remediation/production-v48-v49-verification.md) |
+| [222](https://github.com/ronchak/Koaryu/pull/222) | Truthful lower billing figures and usage | `8da1980` | [Queued findings](docs/remediation/queued-findings-verification.md) |
+| [223](https://github.com/ronchak/Koaryu/pull/223) | Confirmed rank settlement and protected pending drafts | `a68d33b` | [Queued findings](docs/remediation/queued-findings-verification.md) |
+| [224](https://github.com/ronchak/Koaryu/pull/224) | Attendance retained across program promotion contexts | `8a7c582` | [Queued findings](docs/remediation/queued-findings-verification.md) |
+| [225](https://github.com/ronchak/Koaryu/pull/225) | Inclusive legacy week template dates | `cb806f3` | [Queued findings](docs/remediation/queued-findings-verification.md) |
+| [226](https://github.com/ronchak/Koaryu/pull/226) | V50 current invoice collection facts | `f62a45f` | [Queued findings](docs/remediation/queued-findings-verification.md) |
+| [227](https://github.com/ronchak/Koaryu/pull/227) | Current minor status at read boundaries | `7d7308a` | [Queued findings](docs/remediation/queued-findings-verification.md) |
 
 Earlier PRs reused cumulative review threads. Their recorded checks remain evidence, but the review process was not sufficiently independent. From PR162 onward, each PR has one fresh reviewer with a bounded diff and relevant plan. No earlier reviewer is reused for a subsequent PR.
 

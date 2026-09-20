@@ -1,60 +1,50 @@
-# Completed V48–V49 production release
+# Completed V50 production release
 
-**Completed September 20, 2026. Do not rerun these applies.** Production is V49, 144 migrations, head `20260920052705`; both applications serve `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`. [Verification](production-release-verification.md) records the proof. The [older V39–V47 release](production-v47-verification.md) is historical.
+**Completed September 20, 2026. Do not rerun this apply.** Both application pairs serve `dce52efff1d28358eca421769d00791b60045c6c`; both databases are V50. [Verification](production-release-verification.md) records exact execution and comparisons.
 
-**The chain is forward-only. There is no approved down-migration or automated production restore.** Its fresh pre-V48 backup and verified disposable restore exist at `/Users/openclaw/Koaryu Backups/production-20260920T071743Z`. A future release needs its own fresh evidence; this snapshot is not future approval. Restoring it can lose all later writes. The private helper restores only disposable containers, never a hosted database.
+Release candidate: `dce52efff1d28358eca421769d00791b60045c6c`, merged in code main `7d7308afe8c77578094db8ffb81ee0c9a9e37fe2` with an identical tree. [The seven-finding record](queued-findings-verification.md) covers application changes. The completed [V48–V49 packet](production-v48-v49-packet.md) and [verification](production-v48-v49-verification.md) are historical; never repeat their applies.
 
-## Ordered migration list
+**Forward-only: there is no approved down-migration or automated production restore. A fresh verified backup is mandatory before apply.** The fresh source V49 snapshot is `/Users/openclaw/Koaryu Backups/production-20260920T193053Z`, with all 16 comparisons and original readiness verified at `2026-09-20T19:31:54.106814+00:00`. Temporary role and disposable container cleanup passed. A previous snapshot or a readiness-mapping entry is not evidence for this release. Restoring a pre-apply snapshot can lose later writes.
+
+## Immutable migration
 
 | Order | File | SHA-256 |
 | --- | --- | --- |
-| 1 | `20260920035023_enrollment_activation_execution_v48.sql` | `8051505b38d0cb78bc4480ea9e92caa723b92c62ee05323a83e99f81cf5f5f44` |
-| 2 | `20260920052705_subscription_unknown_terms_v49.sql` | `b93c130125d6aa2d3da1c0132dbec65a2b4d4d292145d2c31faa2496af5eba5f` |
+| 1 | `20260920154441_billing_due_date_facts_v50.sql` | `76a736cc45ec2ca3c26dec9423d88f30da35daee8236b57a9449b4ba5f870845` |
 
-The source was reviewed PR220 head `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5`, merged as `c1e1c27c4a3071556958352207da2a435887276b` with an identical tree. Exact-head CI, independent review, all 144 local migrations, 54 local/hosted SQL contracts and canonical/restored continuations passed. Production auto-deploy remained off.
+Source: exact V49, 144 migrations, head `20260920052705`. Successor: V50, 145 migrations, head `20260920154441`, full preflight V31. The selected one-file manifest is `017feb820d9e56ed12bac25501296d60ba38bbc63b5322d5db9c8c7c0f973f29`. V50 updates read functions and a guarded private release checksum; it does not rewrite customer rows.
 
-## Execution order and commands retained
+**Do not deploy the new backend or frontend before V50.** The backend calls RPCs that V49 does not have and requires V50 readiness. Keep production auto-deploy off. Only the exact planned old-frontend/new-backend pair is allowed during deployment; the final pair must match.
 
-These commands are an execution record, not a recipe for applying the completed chain again. Each mutation ran separately. Release shells disabled tracing and explicitly sourced `/Users/openclaw/.config/koaryu/operator/release-env.sh` through the private `shell-init.sh`. All private files below are under `/Users/openclaw/Koaryu Releases/20260919-live-corrections`.
+## Ordered execution record
 
-1. Migrate staging with the exact candidate, then run the existing staging-only `staging-contracts.py` launcher. All 54 contracts passed; the 909 original rows remained unchanged. Deploy the staging backend, then advance the staging ref with its observed old SHA as a lease, assign the staging alias and verify the pair.
-2. Run `suspend-production-web.py`. Verify Render reports suspended, auto-deploy off and no in-flight API transactions.
-3. Run the complete backup and disposable restore below. Inspect `backup.json`, `restore-proof.json`, the restored V47 readiness result and cleanup evidence before any production apply.
-4. Capture `production-before-v48-rows.json` with the read-only `retained-rows.py` helper. Inspect production at the exact candidate with `--one-migration`; require V47 and only V48 selected.
-5. Announce and wait 30 seconds, then run `/bin/bash '/Users/openclaw/Koaryu Releases/20260919-live-corrections/apply-production-v48.sh'`. Its recorded arguments bind the candidate, V47 inspection token, one-file source hash, deliberate confirmation phrase, staging fingerprint, owner/executor and actual restore proof. Require verified V48 and compare all original rows.
-6. Reinspect V48 for V49. Announce and wait another 30 seconds, then run `/bin/bash '/Users/openclaw/Koaryu Releases/20260919-live-corrections/apply-production-v49.sh'`. Require verified V49, count 144, exact final fingerprint and unchanged original rows. Do not loop past a checkpoint.
-7. Run `resume-production-web.py`, then `render deploys create srv-d7mogk1kh4rs73aq6hqg --commit 591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5 --wait --output json --confirm`. Require both backend readiness URLs to report this SHA, production, ready and the existing Stripe live configuration.
-8. From `frontend/`, run `vercel api '/v13/deployments?teamId=team_gLZEwMI0jgTr9zGABNt3Rude' --method POST --input '/Users/openclaw/Koaryu Releases/20260919-live-corrections/vercel-production-request.json'`. The body selects the Koaryu project, `target=production` and this exact Git SHA. Require READY, `pdx1`, both production domains and the exact deployed pair. Never promote a preview build.
+The following commands are historical after completion. They are not permission to repeat the migration.
 
-The private apply scripts contain the complete immutable commands, including their long fingerprints. Their logs retain actual provider stdout/stderr, timestamps and verified successor records. They are historical after completion.
+This packet records the owner-authorized coordinating release. It does not independently authorize another run. Private scripts and evidence are under `/Users/openclaw/Koaryu Releases/20260920-queued-findings`. Every release shell disables tracing and explicitly sources `/Users/openclaw/.config/koaryu/operator/release-env.sh`.
 
-## Backup and restore
-
-For this release the actual source was V47, not the old private runbook's V38 example:
+1. Inspect staging using the exact candidate and `--one-migration`, then dry-run its state-bound token. Record the exact owner authorization required by the staging tool. Pause the staging web service, capture original rows, and run `apply-staging-v50.sh`. Require verified V50, unchanged original rows, and all 54 staging SQL contracts. Never run contract SQL against production.
+2. Resume and deploy the staging backend at the candidate. Advance the staging Git ref using its observed old SHA as a lease, assign the staging frontend alias if needed, then require one exact staging application SHA, correct environment and proxy readiness.
+3. Recheck production V49 history and provider image. Pause the production web service and verify no in-flight API transaction. Use the complete backup helper below. Verify all 16 source/restore comparisons, original V49 readiness, encrypted archive, temporary-role cleanup and disposable-container cleanup. Follow the [retained Storage procedure](../staging-recovery-runbook.md#current-backup-owner-and-retained-storage-procedure); the database archive does not contain Storage object bytes.
+4. Capture production original-row hashes. Inspect/dry-run production with `--one-migration`; require only V50 selected. Read the actual restore proof before preparing the confirmation. The private apply command binds the exact candidate, current token, one-file manifest, owner/executor, final staging fingerprint and actual backup proof.
+5. Announce the standalone command and wait 30 seconds, then run `/bin/bash '/Users/openclaw/Koaryu Releases/20260920-queued-findings/apply-production-v50.sh'`. Require verified V50, exact count/head/raw fingerprint and unchanged original rows before proceeding.
+6. Resume production backend, then deploy `dce52efff1d28358eca421769d00791b60045c6c` with `render deploys create srv-d7mogk1kh4rs73aq6hqg --commit dce52efff1d28358eca421769d00791b60045c6c --wait --output json --confirm`. Require both `/health/ready` and `/api/v1/health/ready` to report ready, production, the existing Stripe live configuration and this exact SHA.
+7. From `frontend/`, create a new production-target Git deployment with `vercel api '/v13/deployments?teamId=team_gLZEwMI0jgTr9zGABNt3Rude' --method POST --input '/Users/openclaw/Koaryu Releases/20260920-queued-findings/vercel-production-request.json'`. Its body must name project `prj_ROzEAXoVf0NbUn3jNIKEJPWjF9HU`, `target=production` and this exact Git SHA. Require READY, production variables, `pdx1` and the production domains. Never promote a preview build.
+8. Run the exact pair verifier below and check frontend proxy readiness. One closeout PR records results; no additional application deployment is needed for documentation.
 
 ```bash
-backend/venv/bin/python -I /Users/openclaw/.config/koaryu/operator/backup-restore.py backup --count 142 --head 20260914055301
+backend/venv/bin/python -I /Users/openclaw/.config/koaryu/operator/backup-restore.py backup --count 144 --head 20260920052705
 ```
 
-The reviewed helper mapping supports exact V37, V38, V47, V48 and V49 count/head tuples. This run verified a real V47 snapshot against all 16 source comparisons and original readiness, using PostgreSQL image `17.6.1.155` and digest `sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b`. Encryption and temporary-role/container cleanup passed. A mapping entry alone does not prove a fresh backup or restore.
-
-Follow [the backup-owner and retained Storage procedure](../staging-recovery-runbook.md#current-backup-owner-and-retained-storage-procedure). The database dump does not contain Storage object bytes. Never substitute the retired filtered dump recipe. No backup, restore, migration or deployment is authorized merely by this document.
-
-## Per-migration recovery checkpoints
-
-- V47 before the chain: keep the original application pair serving until the planned write pause. Failure to verify the backup/restore blocks the first apply.
-- V48 after the first apply: require exact V48 readiness and unchanged rows, then freshly inspect the single V49 remainder. An apply failure, partial/unknown state or changed/deleted original row is a stop; do not repair history or improvise recovery.
-- V49 after the second apply: require exact V49 readiness and unchanged rows before application deployment. No frontend or new backend may be promoted before its required migrations exist.
-- After application promotion: require matching frontend/backend SHA and the correct production environment. A mismatch is a stop, not permission to deploy unrelated commits until one works.
-
-The old V47 backend `a4ef25910e76ed4b4111699f7b61ff02c30a67a0` remains readiness-compatible during the database-first window. That is not blanket rollback approval. Once new version-2 activation receipts or null subscription terms are written, older backend behavior is not approved. The old frontend tolerates these responses because it does not consume subscription terms; its brief overlap with the new backend was explicitly authorized.
-
-Recovery choices are a separately reviewed forward correction or owner-directed restoration from the verified pre-chain snapshot, accepting loss of later writes and restoring a compatible application pair. No hosted restore or down-migration command is approved here. Do not use the disposable restore helper as a production recovery tool.
-
-Final pair check used:
+The reviewed helper mapping supports V49 and V50, with the same image pin and comparisons. [The V50 mapping patch](operator-backup-v50.patch) adds only the exact new tuple. Provider image and digest must still match at execution.
 
 ```bash
-npm run verify:deployed-release -- --environment production --expected-sha 591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5 --frontend-origin https://koaryu.app --backend-api https://koaryu.onrender.com/api/v1
+npm run verify:deployed-release -- --environment production --expected-sha dce52efff1d28358eca421769d00791b60045c6c --frontend-origin https://koaryu.app --backend-api https://koaryu.onrender.com/api/v1
 ```
 
-Both backend readiness paths and `/api/proxy/health/ready` also passed. No live billing activation or historical financial backfill occurred.
+## Stop and recovery
+
+Stop on failed or ambiguous apply, unexpected history/readiness, an unverifiable backup/restore, any changed or deleted original row, or an unexpected/final application SHA mismatch. Retain evidence and attempt no improvised recovery.
+
+The previous V49 application `591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5` remains schema/readiness-compatible during the V50 window: V50 preserves legacy stored statuses and changes no customer-row representation. Earlier applications are not approved after V48 receipts or V49 unknown subscription terms exist. Compatibility is not automatic rollback authorization. Recovery choices are a reviewed forward correction, a specifically reviewed compatible application rollback, or owner-directed restoration from the verified snapshot with an appropriate application pair and acceptance of lost later writes. The backup helper restores only disposable containers, never a hosted database.
+
+No live billing activation, historical financial backfill or currency conversion is part of this release.
