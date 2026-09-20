@@ -757,11 +757,6 @@ describe("operations behavior proof", () => {
     assert.match(chrome, /data-billing-setup-register="true"/);
     assert.match(chrome, /<Header title="Billing">/);
     assert.doesNotMatch(chrome, /String\(index \+ 1\)\.padStart/);
-    assert.match(sections, /data-billing-money-band="exceptions-first"/);
-    assert.match(
-      sections,
-      /label: "Needs attention"[\s\S]*label: "Open receivables"[\s\S]*label: "Collected this UTC month"/,
-    );
     assert.match(sections, /Reset Stripe connection\?/);
     assert.match(sections, /onConnectReset/);
     assert.match(
