@@ -92,8 +92,9 @@ financial operations, confirmed results and product-only maintenance retain thei
 currency and recovery identity. A confirmed product alone does not authorize an
 unattempted non-USD price. An empty invoice header likewise does not authorize new
 non-USD line amounts; partial evidence stays in reconciliation. The provider
-guard takes effect when all serving writers run the updated application. Unknown
-provider-fact recovery and mixed-currency totals remain separate pending work.
+guard takes effect when all serving writers run the updated application. V49 subsequently corrected
+unknown provider-fact recovery. Mixed-currency totals remain intentionally deferred
+after the USD-only production query.
 
 Local plan writes take a studio-scoped shared transaction advisory lock first, then
 the studio KEY SHARE lock, plan lock, and ordered program locks. Guarded demo clear

@@ -13004,7 +13004,7 @@
       "track": "Astra",
       "disposition": "deferred_intentionally",
       "reason": "Owner decision applied to the September 20 read-only production query: all 7 invoices, 5 payments and 5 plans use USD. The invented subscription facts path is corrected with BB2-08/V49. Mixed-currency transaction aggregates and decimal formatting remain intentionally deferred; confirmed non-USD records must never be converted or backfilled.",
-      "verified_against": "1d78231ddb81aab6e72cae4eb7485bef3b045357",
+      "verified_against": "591e6299a5d56dcd2623bdc144f5cd5e1dabc9c5",
       "source_paths": [
         "backend/app/api/v1/endpoints/billing.py",
         "backend/app/schemas/billing.py",
@@ -13043,8 +13043,8 @@
         },
         {
           "path": "backend/app/services/billing_subscription_webhook_projection.py",
-          "line": 89,
-          "observation": "Unknown provider group facts still require the separate nullable-fact recovery correction."
+          "line": 19,
+          "observation": "V49 and PR220 completed nullable-fact recovery: only complete, consistent provider facts are stored; unknown terms remain null and confirmed terms survive overlapping events."
         }
       ],
       "related_findings": [
@@ -13234,7 +13234,7 @@
         "BT1-02",
         "BB1-09"
       ],
-      "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md. Hosted staging passed all 53 contracts after the reviewed PR212/213 fixture corrections. Production then applied V39–V47 separately with a fresh verified backup/restore. All 1,163 tracked original rows were unchanged after each apply. Final V47 preflight and the reviewed restored-production fingerprint passed. Both production applications and the frontend proxy verified a4ef25910e76ed4b4111699f7b61ff02c30a67a0. No live billing activation, historical financial backfill or synthetic production financial write occurred. See production-release-verification.md.",
+      "verification": "PR207 fixed same-key projection recovery. PR209 fixed a real different-key completion overlap and a pre-wait lease timestamp. Final head 9905be40fc8e8ef50e8dd87e99c9647bdf0f7d70 passed independent review, completed automated review and full exact-head Release candidate CI 34817037645. Amended canonical/logical restore, all 23 concurrency cases and the refund contract passed locally. The original candidate also passed all 142 migrations and 53 contracts locally. Stored fingerprints, historical financial rows and identity/lease guards remain intact. Merge 63668a72d2b68542cfc1445884d7bb03a4b8b5dc. See refund-completion-locking-plan.md. Hosted staging passed all 53 contracts after the reviewed PR212/213 fixture corrections. Production then applied V39–V47 separately with a fresh verified backup/restore. All 1,163 tracked original rows were unchanged after each apply. Final V47 preflight and the reviewed restored-production fingerprint passed. Both production applications and the frontend proxy verified a4ef25910e76ed4b4111699f7b61ff02c30a67a0. No live billing activation, historical financial backfill or synthetic production financial write occurred. See production-v47-verification.md.",
       "next_change": "No remaining release step for this correction. Future work remains in the separately pending audit/program findings; authenticated workflow rehearsal was waived by the owner for this release.",
       "execution_ownership": "Astra owns database design, migration and SQL/concurrency verification. Sol may implement a separately bounded application/test portion after that prerequisite is settled.",
       "pull_requests": [
