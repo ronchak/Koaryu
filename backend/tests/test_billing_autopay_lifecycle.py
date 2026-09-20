@@ -3325,6 +3325,13 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "audit_logs": [],
             }
         )
+        service.supabase.activation_begin_execution = {
+            "version": 1,
+            "branch": "update_quantity" if existing_group else "create_subscription",
+            "expected_subscription_id": "sub_1" if existing_group else None,
+            "expected_item_id": "si_existing" if existing_group else None,
+            "expected_quantity": 2 if existing_group else 1,
+        }
         service.supabase.insert_defaults["billing_subscriptions"] = {
             "id": "subscription_created",
             "metadata": {},
@@ -3366,8 +3373,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             def update_connected_subscription_item(self, **payload):
                 enrollment = service.supabase.tables["student_billing_enrollments"][0]
                 intent = enrollment["metadata"]["provider_activation_intent"]
-                test_case.assertEqual(intent["branch"], "update_quantity")
-                test_case.assertEqual(intent["expected_quantity"], 2)
+                execution = next(iter(intent["executions"].values()))
+                test_case.assertEqual(execution["branch"], "update_quantity")
+                test_case.assertEqual(execution["expected_quantity"], 2)
                 test_case.assertIn(
                     "stripe_quantity_sync_lock",
                     service.supabase.tables["billing_subscriptions"][0]["metadata"],

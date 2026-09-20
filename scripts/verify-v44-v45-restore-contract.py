@@ -126,10 +126,11 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 142 and list(hashes)[-4:] == [
+    require(len(hashes) == 143 and list(hashes)[-5:] == [
         "20260910135133_local_plan_write_ownership_v44.sql", MIGRATION,
         "20260914033337_refund_projection_recovery_v46.sql",
-        "20260914055301_refund_completion_locking_v47.sql"], "Unexpected migration inventory")
+        "20260914055301_refund_completion_locking_v47.sql",
+        "20260920035023_enrollment_activation_execution_v48.sql"], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)

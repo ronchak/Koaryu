@@ -160,7 +160,15 @@ class _ActivationSupabase(_FakeSupabase):
             }
             and (metadata.get("stripe_quantity_sync_lock") or {}).get("token")
             == params["p_quantity_lock_token"]
-            and intent.get("branch") == "create_subscription"
+            and (
+                intent.get("branch") == "create_subscription"
+                or (
+                    intent.get("version") == 2
+                    and intent.get("group_id") == params["p_billing_subscription_id"]
+                    and intent.get("enrollment_id") == params["p_enrollment_id"]
+                    and intent.get("payer_id") == params["p_payer_id"]
+                )
+            )
             and intent.get("desired_sha256") == params["p_request_sha256"]
             and not linked
         )
@@ -279,6 +287,7 @@ class _Stripe:
     update_item_calls = []
     retrieve_calls = []
     provider_error = None
+    retrieve_error_once = None
 
     @classmethod
     def reset(cls):
@@ -288,6 +297,7 @@ class _Stripe:
         cls.update_item_calls = []
         cls.retrieve_calls = []
         cls.provider_error = None
+        cls.retrieve_error_once = None
 
     def create_connected_subscription(self, **payload):
         self.__class__.create_subscription_calls.append(copy.deepcopy(payload))
@@ -335,6 +345,10 @@ class _Stripe:
 
     def retrieve_connected_subscription(self, **payload):
         self.__class__.retrieve_calls.append(copy.deepcopy(payload))
+        if self.__class__.retrieve_error_once:
+            error = self.__class__.retrieve_error_once
+            self.__class__.retrieve_error_once = None
+            raise error
         return copy.deepcopy(self.__class__.subscriptions[payload["subscription_id"]])
 
 

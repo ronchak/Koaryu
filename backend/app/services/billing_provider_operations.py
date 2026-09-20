@@ -862,6 +862,65 @@ class BillingProviderOperationCoordinator:
             expected_key="operation",
         )
 
+    def begin_enrollment_activation(
+        self,
+        context: BillingProviderOperationContext,
+        *,
+        operation: dict[str, Any],
+        enrollment_id: str,
+        quantity_lock_token: str,
+        expected_subscription_id: str | None,
+    ) -> dict[str, Any]:
+        try:
+            envelope = self._rpc(
+                "begin_billing_enrollment_activation_v1",
+                {
+                    "p_operation_id": context.operation_id,
+                    "p_studio_id": context.studio_id,
+                    "p_actor_id": context.actor_id,
+                    "p_operation_type": context.operation_type,
+                    "p_caller_request_key": context.caller_request_key,
+                    "p_request_sha256": context.request_sha256,
+                    "p_stripe_connected_account_id": context.stripe_connected_account_id,
+                    "p_connect_account_generation": context.connect_account_generation,
+                    "p_lease_owner": context.lease_owner,
+                    "p_expected_revision": int(operation["revision"]),
+                    "p_enrollment_id": enrollment_id,
+                    "p_quantity_lock_token": quantity_lock_token,
+                    "p_expected_subscription_id": expected_subscription_id,
+                },
+                expected_key="operation",
+            )
+        except PostgrestAPIError as exc:
+            code = str(getattr(exc, "code", "") or "")
+            message = str(getattr(exc, "message", "") or exc).strip()
+            if (
+                code == "55000"
+                and message == "billing_enrollment_activation_prior_attempt_unresolved"
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=OPERATION_RECONCILIATION_DETAIL,
+                ) from exc
+            if code == "23514" and message == "billing_enrollment_activation_identity_mismatch":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=OPERATION_CONCURRENT_DETAIL,
+                ) from exc
+            if code == "42501" and message == "billing_enrollment_activation_actor_invalid":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Billing operation is not permitted.",
+                ) from exc
+            raise
+        execution = envelope.get("execution")
+        if not isinstance(execution, dict):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Enrollment activation execution state could not be verified.",
+            )
+        return envelope
+
     def mark_payer_setup_reconciliation(
         self,
         *,

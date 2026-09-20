@@ -51,6 +51,10 @@ OPEN_WHOLE_SUBSCRIPTION_TRANSITION_STATES = (
 ACTIVATABLE_SUBSCRIPTION_STATUSES = frozenset({"active", "trialing", "past_due", "incomplete"})
 
 
+class _SubscriptionNotOpenForActivation(RuntimeError):
+    pass
+
+
 class BillingEnrollmentActivationWorkflow:
     def __init__(
         self,
@@ -315,12 +319,13 @@ class BillingEnrollmentActivationWorkflow:
             else:
                 raise HTTPException(status_code=503, detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL)
 
+            execution = self._execution_for_operation(intent, operation)
             operation = operations.transition(
                 context,
                 operation,
                 "projected",
                 result_code="enrollment_activation_projected",
-                result_summary=self._result_summary(intent),
+                result_summary=self._result_summary(execution),
             )
             self._recompute_balance_or_raise(studio_id, payer["id"])
             operations.complete(context, operation, result_code="enrollment_activation_completed")
@@ -371,23 +376,64 @@ class BillingEnrollmentActivationWorkflow:
                 error_code="tuition_currency_requires_usd",
             )
             raise HTTPException(status_code=400, detail=NEW_TUITION_CURRENCY_DETAIL)
-        branch = intent["branch"]
         stripe_service = self.stripe_service_cls()
-        if branch in {"add_item", "update_quantity"}:
+        expected_subscription_id = group.get("stripe_subscription_id")
+        execution = (
+            self._execution_for_operation(intent, operation)
+            if operation.get("state") == "recovery_authorized"
+            else None
+        )
+        if execution is not None:
+            current_item_id = (
+                self.records.subscription_item_id_for_group_plan(
+                    context.studio_id, str(group["id"]), str(plan["id"])
+                )
+                if expected_subscription_id
+                else None
+            )
+            current_quantity = (
+                self.records.active_enrollment_count_for_subscription_item(
+                    context.studio_id,
+                    str(group["id"]),
+                    current_item_id,
+                    exclude_enrollment_id=str(enrollment["id"]),
+                )
+                + 1
+            )
+            if (
+                execution.get("expected_subscription_id") != expected_subscription_id
+                or execution.get("expected_item_id") != current_item_id
+                or int(execution["expected_quantity"]) != current_quantity
+            ):
+                raise HTTPException(status_code=409, detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL)
+        if expected_subscription_id:
             try:
                 self._require_subscription_open_for_activation(
                     group,
                     context=context,
-                    intent=intent,
-                    check_provider=False,
+                    expected_subscription_id=str(expected_subscription_id),
+                    stripe_service=stripe_service,
                 )
-            except Exception as exc:
-                self._reject_scheduled_subscription_activation(
+            except _SubscriptionNotOpenForActivation as exc:
+                if operation.get("state") == "recovery_authorized":
+                    raise HTTPException(
+                        status_code=409, detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL
+                    ) from exc
+                self._reject_closed_subscription_activation(
                     operations,
                     context,
                     operation,
                     exc,
                 )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail=ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL,
+                ) from exc
+        branch = str(
+            (execution or {}).get("branch")
+            or ("create_subscription" if not expected_subscription_id else "")
+        )
         if branch == "create_subscription" and reservation_created:
             mutation_authorizer = getattr(
                 stripe_service,
@@ -416,28 +462,39 @@ class BillingEnrollmentActivationWorkflow:
                         status_code=409,
                         detail=("Enrollment activation was rejected. Use a new Idempotency-Key."),
                     ) from exc
-        operation = operations.transition(
-            context,
-            operation,
-            "provider_request_in_flight",
-            result_code="enrollment_activation_started",
-            result_summary=self._result_summary(intent),
-        )
-        if branch in {"add_item", "update_quantity"}:
+        if execution is None:
             try:
-                self._require_subscription_open_for_activation(
-                    group,
-                    context=context,
-                    intent=intent,
-                    check_provider=True,
+                begun = operations.begin_enrollment_activation(
+                    context,
+                    operation=operation,
+                    enrollment_id=str(enrollment["id"]),
+                    quantity_lock_token=quantity_lock_token,
+                    expected_subscription_id=(
+                        str(expected_subscription_id) if expected_subscription_id else None
+                    ),
                 )
-            except Exception as exc:
-                self._reject_scheduled_subscription_activation(
+            except PostgrestAPIError as exc:
+                if exc.message != "billing_enrollment_activation_subscription_closed":
+                    raise
+                self._reject_closed_subscription_activation(
                     operations,
                     context,
                     operation,
                     exc,
                 )
+            operation = begun["operation"]
+            execution = begun["execution"]
+            intent.setdefault("executions", {})[context.operation_id] = dict(execution)
+            execution = self._execution_for_operation(intent, operation)
+            branch = str(execution.get("branch") or "")
+        else:
+            operation = operations.transition(
+                context,
+                operation,
+                "provider_request_in_flight",
+                result_code="enrollment_activation_started",
+                result_summary=self._result_summary(execution),
+            )
         key = build_idempotency_key(
             "enrollment-activate", context.operation_id, branch.replace("_", "-")
         )
@@ -474,23 +531,23 @@ class BillingEnrollmentActivationWorkflow:
                 provider = stripe_service.create_connected_subscription_item(
                     account_id=context.stripe_connected_account_id,
                     studio_id=context.studio_id,
-                    subscription_id=intent["expected_subscription_id"],
+                    subscription_id=execution["expected_subscription_id"],
                     price_id=plan["stripe_price_id"],
                     metadata=self._item_metadata(enrollment, group, plan),
                     idempotency_key=key,
                 )
-                subscription_id = intent["expected_subscription_id"]
+                subscription_id = execution["expected_subscription_id"]
                 item_id = _stripe_id(provider)
             else:
                 provider = stripe_service.update_connected_subscription_item(
                     account_id=context.stripe_connected_account_id,
                     studio_id=context.studio_id,
-                    subscription_item_id=intent["expected_item_id"],
-                    quantity=intent["expected_quantity"],
+                    subscription_item_id=execution["expected_item_id"],
+                    quantity=execution["expected_quantity"],
                     proration_behavior="none",
                     idempotency_key=key,
                 )
-                subscription_id = intent["expected_subscription_id"]
+                subscription_id = execution["expected_subscription_id"]
                 item_id = _stripe_id(provider)
         except StripeMutationBlocked:
             if branch == "create_subscription" and reservation_created:
@@ -600,8 +657,8 @@ class BillingEnrollmentActivationWorkflow:
         group: dict[str, Any],
         *,
         context: BillingProviderOperationContext,
-        intent: dict[str, Any],
-        check_provider: bool,
+        expected_subscription_id: str,
+        stripe_service: StripeService,
     ) -> None:
         current_group = self.records.get_row_or_404(
             "billing_subscriptions",
@@ -620,29 +677,30 @@ class BillingEnrollmentActivationWorkflow:
             .execute()
         )
         if current_group.get("cancel_at_period_end") is True or pending.data:
-            raise RuntimeError("subscription_scheduled_for_cancellation")
-        if not check_provider:
-            return
-        provider = self.stripe_service_cls().retrieve_connected_subscription(
+            raise _SubscriptionNotOpenForActivation("subscription_not_open_for_activation")
+        provider = stripe_service.retrieve_connected_subscription(
             account_id=context.stripe_connected_account_id,
-            subscription_id=str(intent["expected_subscription_id"]),
+            subscription_id=expected_subscription_id,
             expand=["items.data"],
         )
         metadata = _object_get(provider, "metadata") or {}
         if (
-            _stripe_id(provider) != intent.get("expected_subscription_id")
-            or _stripe_id(_object_get(provider, "customer")) != intent.get("customer_id")
+            _stripe_id(provider) != expected_subscription_id
+            or _stripe_id(_object_get(provider, "customer")) != group.get("stripe_customer_id")
             or str(metadata.get("studio_id") or "") != context.studio_id
-            or str(metadata.get("payer_id") or "") != str(intent["payer_id"])
+            or str(metadata.get("payer_id") or "") != str(group["payer_id"])
             or str(metadata.get("billing_subscription_id") or "") != str(group["id"])
-            or str(_object_get(provider, "status") or "") not in ACTIVATABLE_SUBSCRIPTION_STATUSES
+        ):
+            raise RuntimeError("subscription_not_open_for_activation")
+        if (
+            str(_object_get(provider, "status") or "") not in ACTIVATABLE_SUBSCRIPTION_STATUSES
             or bool(_object_get(provider, "cancel_at_period_end"))
             or bool(_stripe_id(_object_get(provider, "schedule")))
         ):
-            raise RuntimeError("subscription_not_open_for_activation")
+            raise _SubscriptionNotOpenForActivation("subscription_not_open_for_activation")
 
     @staticmethod
-    def _reject_scheduled_subscription_activation(
+    def _reject_closed_subscription_activation(
         operations: BillingProviderOperationCoordinator,
         context: BillingProviderOperationContext,
         operation: dict[str, Any],
@@ -652,13 +710,13 @@ class BillingEnrollmentActivationWorkflow:
             context,
             operation,
             "definitive_rejected",
-            error_code="subscription_scheduled_for_cancellation",
+            error_code="subscription_not_open_for_activation",
         )
         raise HTTPException(
             status_code=409,
             detail=(
-                "Billing subscription is scheduled for cancellation. "
-                "Revoke the scheduled cancellation before activating another enrollment."
+                "Billing subscription is not open for activation. "
+                "Check its status and any scheduled cancellation."
             ),
         ) from cause
 
@@ -674,16 +732,28 @@ class BillingEnrollmentActivationWorkflow:
         group: dict[str, Any],
     ) -> dict[str, Any]:
         try:
+            execution = self._execution_for_operation(intent, operation)
             provider = self.stripe_service_cls().retrieve_connected_subscription(
                 account_id=context.stripe_connected_account_id,
                 subscription_id=str(operation["provider_object_id"]),
                 expand=["items.data", "latest_invoice"],
+            )
+            expected_quantity = (
+                self.records.active_enrollment_count_for_subscription_item(
+                    context.studio_id,
+                    str(group["id"]),
+                    str(operation["provider_secondary_object_id"]),
+                    exclude_enrollment_id=str(enrollment["id"]),
+                )
+                + 1
             )
             self._verify_subscription(
                 provider,
                 context=context,
                 operation=operation,
                 intent=intent,
+                execution=execution,
+                expected_quantity=expected_quantity,
                 plan=plan,
                 payer=payer,
                 group=group,
@@ -697,9 +767,16 @@ class BillingEnrollmentActivationWorkflow:
             )
             if projected_group.get("id") != group.get("id"):
                 raise RuntimeError("enrollment_activation_group_projection_mismatch")
-            metadata = dict(enrollment.get("metadata") or {})
-            saved_intent = dict(intent)
-            saved_intent["operation_id"] = context.operation_id
+            current_enrollment = self.records.get_row_or_404(
+                "student_billing_enrollments",
+                str(enrollment["id"]),
+                context.studio_id,
+                "Billing enrollment not found.",
+            )
+            metadata = dict(current_enrollment.get("metadata") or {})
+            saved_intent = dict(metadata.get(ACTIVATION_INTENT_KEY) or intent)
+            if int(saved_intent.get("version") or 0) == 1:
+                saved_intent["operation_id"] = context.operation_id
             metadata[ACTIVATION_INTENT_KEY] = saved_intent
             provider_status = str(_object_get(provider, "status") or "")
             update = {
@@ -747,7 +824,6 @@ class BillingEnrollmentActivationWorkflow:
         existing = metadata.get(ACTIVATION_INTENT_KEY)
         if isinstance(existing, dict):
             expected = {
-                "version": 1,
                 "operation_type": operation_type,
                 "studio_id": enrollment["studio_id"],
                 "enrollment_id": enrollment["id"],
@@ -766,47 +842,27 @@ class BillingEnrollmentActivationWorkflow:
                     status_code=409,
                     detail="Enrollment activation intent conflicts with current identity.",
                 )
-            hash_payload = {
-                key: value
-                for key, value in existing.items()
-                if key not in {"desired_sha256", "operation_id"}
-            }
-            if (
-                existing.get("branch") not in {"create_subscription", "add_item", "update_quantity"}
-                or int(existing.get("expected_quantity") or 0) <= 0
-                or stable_hash(hash_payload) != existing.get("desired_sha256")
-            ):
+            version = int(existing.get("version") or 0)
+            ignored = {"desired_sha256", "operation_id", "executions"}
+            hash_payload = {key: value for key, value in existing.items() if key not in ignored}
+            valid = stable_hash(hash_payload) == existing.get("desired_sha256")
+            if version == 1:
+                valid = valid and (
+                    existing.get("branch") in {"create_subscription", "add_item", "update_quantity"}
+                    and int(existing.get("expected_quantity") or 0) > 0
+                )
+            elif version == 2:
+                executions = existing.get("executions")
+                valid = valid and isinstance(executions, dict)
+            else:
+                valid = False
+            if not valid:
                 raise HTTPException(
                     status_code=409, detail="Enrollment activation intent is invalid."
                 )
             return existing
-        subscription_id = group.get("stripe_subscription_id")
-        item_id = (
-            self.records.subscription_item_id_for_group_plan(
-                enrollment["studio_id"], group["id"], plan["id"]
-            )
-            if subscription_id
-            else None
-        )
-        if not subscription_id:
-            branch = "create_subscription"
-            quantity = 1
-        elif not item_id:
-            branch = "add_item"
-            quantity = 1
-        else:
-            branch = "update_quantity"
-            quantity = (
-                self.records.active_enrollment_count_for_subscription_item(
-                    enrollment["studio_id"],
-                    group["id"],
-                    item_id,
-                    exclude_enrollment_id=enrollment["id"],
-                )
-                + 1
-            )
         intent = {
-            "version": 1,
+            "version": 2,
             "operation_type": operation_type,
             "studio_id": enrollment["studio_id"],
             "enrollment_id": enrollment["id"],
@@ -819,12 +875,11 @@ class BillingEnrollmentActivationWorkflow:
             "product_id": plan["stripe_product_id"],
             "price_id": price["stripe_price_id"],
             "group_id": group["id"],
-            "branch": branch,
-            "expected_subscription_id": subscription_id,
-            "expected_item_id": item_id,
-            "expected_quantity": quantity,
+            "executions": {},
         }
-        intent["desired_sha256"] = stable_hash(intent)
+        intent["desired_sha256"] = stable_hash(
+            {key: value for key, value in intent.items() if key != "executions"}
+        )
         metadata[ACTIVATION_INTENT_KEY] = intent
         result = (
             self.supabase.table("student_billing_enrollments")
@@ -1033,17 +1088,25 @@ class BillingEnrollmentActivationWorkflow:
             context.studio_id,
             "Billing enrollment not found.",
         )
+        execution = self._execution_for_operation(intent, operation)
         saved = (enrollment.get("metadata") or {}).get(ACTIVATION_INTENT_KEY)
+        saved_execution = (
+            self._execution_for_operation(saved, operation) if isinstance(saved, dict) else None
+        )
+        legacy_operation_matches = isinstance(saved, dict) and (
+            int(saved.get("version") or 0) != 1 or saved.get("operation_id") == context.operation_id
+        )
         if (
             not isinstance(saved, dict)
             or saved.get("desired_sha256") != intent.get("desired_sha256")
-            or saved.get("operation_id") != context.operation_id
+            or not legacy_operation_matches
+            or saved_execution != execution
             or enrollment.get("status") != "active"
             or enrollment.get("billing_subscription_id") != intent.get("group_id")
             or enrollment.get("stripe_subscription_id") != operation.get("provider_object_id")
             or enrollment.get("stripe_subscription_item_id")
             != operation.get("provider_secondary_object_id")
-            or operation.get("result_summary") != self._result_summary(intent)
+            or operation.get("result_summary") != self._result_summary(execution)
         ):
             raise RuntimeError("enrollment_activation_saved_result_mismatch")
         return enrollment
@@ -1055,12 +1118,14 @@ class BillingEnrollmentActivationWorkflow:
         context: BillingProviderOperationContext,
         operation: dict[str, Any],
         intent: dict[str, Any],
+        execution: dict[str, Any],
+        expected_quantity: int,
         plan: dict[str, Any],
         payer: dict[str, Any],
         group: dict[str, Any],
     ) -> None:
         metadata = _object_get(provider, "metadata") or {}
-        branch = str(intent.get("branch") or "")
+        branch = str(execution.get("branch") or "")
         if (
             _stripe_id(provider) != operation.get("provider_object_id")
             or _stripe_id(_object_get(provider, "customer")) != payer.get("stripe_customer_id")
@@ -1074,11 +1139,12 @@ class BillingEnrollmentActivationWorkflow:
             )
             or (
                 branch in {"add_item", "update_quantity"}
-                and operation.get("provider_object_id") != intent.get("expected_subscription_id")
+                and operation.get("provider_object_id") != execution.get("expected_subscription_id")
             )
             or (
                 branch == "update_quantity"
-                and operation.get("provider_secondary_object_id") != intent.get("expected_item_id")
+                and operation.get("provider_secondary_object_id")
+                != execution.get("expected_item_id")
             )
         ):
             raise RuntimeError("enrollment_activation_subscription_readback_mismatch")
@@ -1097,7 +1163,7 @@ class BillingEnrollmentActivationWorkflow:
         item_metadata = _object_get(matched, "metadata") or {}
         if (
             price_id != plan.get("stripe_price_id")
-            or int(_object_get(matched, "quantity", 0) or 0) != int(intent["expected_quantity"])
+            or int(_object_get(matched, "quantity", 0) or 0) != expected_quantity
             or (
                 str(item_metadata.get("studio_id") or "") != context.studio_id
                 or str(item_metadata.get("payer_id") or "") != str(payer["id"])
@@ -1119,6 +1185,54 @@ class BillingEnrollmentActivationWorkflow:
             if (_object_get(item, "metadata") or {}).get("enrollment_id") == enrollment_id:
                 return _stripe_id(item)
         return _stripe_id(items[0]) if items else None
+
+    @staticmethod
+    def _execution_for_operation(
+        intent: dict[str, Any], operation: dict[str, Any]
+    ) -> dict[str, Any]:
+        operation_id = str(operation.get("id") or "")
+        executions = intent.get("executions")
+        execution = executions.get(operation_id) if isinstance(executions, dict) else None
+        if not isinstance(execution, dict) and int(intent.get("version") or 0) == 1:
+            execution = {
+                "version": 1,
+                "branch": intent.get("branch"),
+                "expected_subscription_id": intent.get("expected_subscription_id"),
+                "expected_item_id": intent.get("expected_item_id"),
+                "expected_quantity": intent.get("expected_quantity"),
+            }
+        if (
+            not isinstance(execution, dict)
+            or int(execution.get("version") or 0) != 1
+            or execution.get("branch") not in {"create_subscription", "add_item", "update_quantity"}
+            or int(execution.get("expected_quantity") or 0) <= 0
+        ):
+            raise RuntimeError("enrollment_activation_execution_invalid")
+        branch = str(execution["branch"])
+        subscription_id = execution.get("expected_subscription_id")
+        item_id = execution.get("expected_item_id")
+        if (
+            (branch == "create_subscription" and (subscription_id or item_id))
+            or (branch == "add_item" and (not subscription_id or item_id))
+            or (branch == "update_quantity" and (not subscription_id or not item_id))
+        ):
+            raise RuntimeError("enrollment_activation_execution_identity_invalid")
+        normalized = {
+            "version": 1,
+            "branch": branch,
+            "expected_subscription_id": subscription_id,
+            "expected_item_id": item_id,
+            "expected_quantity": int(execution["expected_quantity"]),
+        }
+        summary = (
+            f"enrollment_branch:{normalized['branch']}:quantity:{normalized['expected_quantity']}"
+        )
+        if (
+            int(operation.get("provider_request_attempt_count") or 0) > 0
+            and operation.get("result_summary") != summary
+        ):
+            raise RuntimeError("enrollment_activation_execution_mismatch")
+        return normalized
 
     def _local_ready_account(self, studio_id: str) -> dict[str, Any]:
         account = self.connect_accounts.ensure_row(studio_id)
@@ -1167,8 +1281,11 @@ class BillingEnrollmentActivationWorkflow:
         }
 
     @staticmethod
-    def _result_summary(intent: dict[str, Any]) -> str:
-        return f"enrollment_branch:{intent['branch']}:quantity:{int(intent['expected_quantity'])}"
+    def _result_summary(execution: dict[str, Any]) -> str:
+        return (
+            f"enrollment_branch:{execution['branch']}:"
+            f"quantity:{int(execution['expected_quantity'])}"
+        )
 
     @staticmethod
     def _mark_reconciliation(

@@ -476,6 +476,102 @@ SELECT 'RESULT_READY'; COMMIT;
                     "original_resource_version": resource_version,
                 }
             )
+        def activation_fixture(legacy=False):
+            f={name:str(uuid4()) for name in ['actor','studio','payer','plan','group','student','enrollment','existing_student','existing','later_student','later','lease']}
+            f['account']='acct_Activation48'+uuid4().hex[:8]
+            intent={'version':1 if legacy else 2,'operation_type':'enrollment.activate.invoice',
+                'studio_id':f['studio'],'enrollment_id':f['enrollment'],'student_id':f['student'],
+                'payer_id':f['payer'],'plan_id':f['plan'],'account_id':f['account'],'generation':1,
+                'customer_id':'cus_activation48','product_id':'prod_activation48','price_id':'price_activation48','group_id':f['group']}
+            if legacy:
+                intent.update(branch='update_quantity',expected_subscription_id='sub_activation48',expected_item_id='si_activation48',expected_quantity=99)
+            f['hash']=hashlib.sha256(json.dumps(intent,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+            intent['desired_sha256']=f['hash']
+            sql(f"""INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+VALUES('{f['actor']}','authenticated','authenticated','activation48-{f['actor']}@example.invalid','{{}}','{{}}',now(),now());
+INSERT INTO public.studios(id,name,slug,owner_id)VALUES('{f['studio']}','Activation proof','activation-{f['studio']}','{f['actor']}');
+INSERT INTO public.staff_roles(studio_id,user_id,role)VALUES('{f['studio']}','{f['actor']}','admin');
+INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,status,charges_enabled,payouts_enabled,details_submitted,metadata)
+VALUES('{f['studio']}','{f['account']}','charges_enabled',true,true,true,'{{"connect_account_generation":1}}');
+INSERT INTO public.billing_payers(id,studio_id,display_name,stripe_account_id,stripe_customer_id,connect_account_generation)
+VALUES('{f['payer']}','{f['studio']}','Activation payer','{f['account']}','cus_activation48',1);
+INSERT INTO public.billing_plans(id,studio_id,name,amount_cents,currency,billing_interval,status,stripe_account_id,stripe_product_id,stripe_price_id)
+VALUES('{f['plan']}','{f['studio']}','Activation plan',5000,'usd','monthly','active','{f['account']}','prod_activation48','price_activation48');
+INSERT INTO public.billing_subscriptions(id,studio_id,payer_id,stripe_account_id,stripe_customer_id,stripe_subscription_id,collection_mode,billing_interval,currency,status,metadata)
+VALUES('{f['group']}','{f['studio']}','{f['payer']}','{f['account']}','cus_activation48','sub_activation48','invoice_link','monthly','usd','active','{{"connect_account_generation":1}}');
+INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name)VALUES
+('{f['student']}','{f['studio']}','Pending','Seat'),('{f['existing_student']}','{f['studio']}','Existing','Seat'),('{f['later_student']}','{f['studio']}','Later','Seat');
+INSERT INTO public.student_billing_enrollments(id,studio_id,student_id,payer_id,billing_plan_id,collection_mode,status,metadata)VALUES
+('{f['enrollment']}','{f['studio']}','{f['student']}','{f['payer']}','{f['plan']}','invoice_link','pending','{json.dumps({'provider_activation_intent':intent})}'),
+('{f['later']}','{f['studio']}','{f['later_student']}','{f['payer']}','{f['plan']}','invoice_link','pending','{{}}');
+INSERT INTO public.student_billing_enrollments(id,studio_id,student_id,payer_id,billing_plan_id,collection_mode,status,billing_subscription_id,stripe_subscription_id,stripe_subscription_item_id)
+VALUES('{f['existing']}','{f['studio']}','{f['existing_student']}','{f['payer']}','{f['plan']}','invoice_link','active','{f['group']}','sub_activation48','si_activation48');
+SELECT public.claim_billing_subscription_quantity_sync('{f['studio']}','{f['group']}','{f['lease']}',120);""")
+            claimed=json.loads(sql(f"SELECT public.claim_billing_provider_operation_resource_v1('{f['studio']}','{f['actor']}','enrollment.activate.invoice','enrollment','{f['enrollment']}','{f['payer']}','activation-proof','{f['hash']}','{f['account']}',1,'{f['lease']}',300);"))
+            f['operation']=claimed['operation']
+            return f
+        def begin_activation(f,revision=None,token=None):
+            return f"SELECT public.begin_billing_enrollment_activation_v1('{f['operation']['id']}','{f['studio']}','{f['actor']}','enrollment.activate.invoice','activation-proof','{f['hash']}','{f['account']}',1,'{f['lease']}',{revision if revision is not None else f['operation']['revision']},'{f['enrollment']}','{token or f['lease']}','sub_activation48');"
+        def activation_facts(f):
+            return json.loads(sql(f"SELECT jsonb_build_object('intent',e.metadata->'provider_activation_intent','state',o.state,'attempts',o.provider_request_attempt_count,'revision',o.revision) FROM public.student_billing_enrollments e JOIN public.billing_provider_operations o ON o.id='{f['operation']['id']}' WHERE e.id='{f['enrollment']}';"))
+        def activation_denied(statement,error):
+            denied=start('activation_denied',statement,hold=False)
+            code=denied['process'].wait(timeout=15)
+            for thread in denied['threads']:thread.join(timeout=2)
+            assert code!=0 and any(error in line for line in denied['errors']),denied['errors']
+        for commit in [True,False]:
+            f=activation_fixture()
+            holder=start('activation_count_owner',f"SELECT id FROM public.billing_subscriptions WHERE id='{f['group']}' FOR UPDATE; UPDATE public.student_billing_enrollments SET status='active',billing_subscription_id='{f['group']}',stripe_subscription_id='sub_activation48',stripe_subscription_item_id='si_activation48' WHERE id='{f['later']}';")
+            ready(holder)
+            waiter=start('activation_begin',begin_activation(f),hold=False)
+            lock=wait_blocked(holder,waiter)
+            before=activation_facts(f)
+            assert before['attempts']==0 and 'executions' not in before['intent'],before
+            release(holder,commit);ready(waiter);finish(waiter)
+            result=json.loads(next(line for line in waiter['lines'] if line.startswith('{')))
+            expected=3 if commit else 2
+            assert result['execution']=={'version':1,'branch':'update_quantity','expected_subscription_id':'sub_activation48','expected_item_id':'si_activation48','expected_quantity':expected},result
+            observed=activation_facts(f)
+            assert observed['attempts']==1 and observed['state']=='provider_request_in_flight'
+            assert observed['intent']['executions'][f['operation']['id']]==result['execution']
+            results.append({'case':'activation_count_after_'+('commit' if commit else 'rollback'),'lock':lock,'quantity':expected,'attempts':1})
+        f=activation_fixture(legacy=True)
+        sql(f"UPDATE public.billing_plans SET currency='USD' WHERE id='{f['plan']}'; UPDATE public.billing_subscriptions SET currency='USD' WHERE id='{f['group']}';")
+        before=activation_facts(f)
+        activation_denied(begin_activation(f).replace(f['actor'],str(uuid4())),'billing_enrollment_activation_actor_invalid')
+        assert activation_facts(f)==before
+        activation_denied(begin_activation(f,revision=999),'billing_provider_operation_stale_revision')
+        assert activation_facts(f)==before
+        activation_denied(begin_activation(f,token=str(uuid4())),'billing_enrollment_activation_attempt_not_owned')
+        assert activation_facts(f)==before
+        sql(f"UPDATE public.billing_subscriptions SET cancel_at_period_end=true WHERE id='{f['group']}';")
+        activation_denied(begin_activation(f),'billing_enrollment_activation_subscription_closed')
+        assert activation_facts(f)==before
+        sql(f"UPDATE public.billing_subscriptions SET cancel_at_period_end=false WHERE id='{f['group']}';")
+        first=start('activation_first_attempt',begin_activation(f));ready(first)
+        second=start('activation_second_attempt',begin_activation(f),hold=False)
+        lock=wait_blocked(first,second)
+        release(first)
+        code=second['process'].wait(timeout=15)
+        for thread in second['threads']:thread.join(timeout=2)
+        assert code!=0 and any('billing_enrollment_activation_attempt_not_owned' in line for line in second['errors']),second['errors']
+        observed=activation_facts(f)
+        assert observed['intent']['desired_sha256']==before['intent']['desired_sha256']
+        assert observed['intent']['expected_quantity']==99 and observed['attempts']==1
+        assert observed['intent']['executions'][f['operation']['id']]['expected_quantity']==2
+        results.append({'case':'activation_first_attempt_atomic_and_legacy_identity_retained','lock':lock,'attempts':1})
+        # An expired group token cannot release an unresolved financial attempt.
+        later=dict(f,enrollment=f['later'],student=f['later_student'],lease=str(uuid4()))
+        intent=dict(before['intent'],version=2,enrollment_id=later['enrollment'],student_id=later['student'])
+        for key in ['branch','expected_subscription_id','expected_item_id','expected_quantity','desired_sha256']:intent.pop(key,None)
+        later['hash']=hashlib.sha256(json.dumps(intent,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        intent['desired_sha256']=later['hash']
+        sql(f"UPDATE public.student_billing_enrollments SET metadata=jsonb_build_object('provider_activation_intent','{json.dumps(intent)}'::jsonb) WHERE id='{later['enrollment']}'; SELECT public.finish_billing_subscription_quantity_sync('{f['studio']}','{f['group']}','{f['lease']}'); SELECT public.claim_billing_subscription_quantity_sync('{f['studio']}','{f['group']}','{later['lease']}',120);")
+        later['operation']=json.loads(sql(f"SELECT public.claim_billing_provider_operation_resource_v1('{later['studio']}','{later['actor']}','enrollment.activate.invoice','enrollment','{later['enrollment']}','{later['payer']}','activation-later','{later['hash']}','{later['account']}',1,'{later['lease']}',300);"))['operation']
+        prior=activation_facts(later)
+        activation_denied(begin_activation(later).replace("'activation-proof'","'activation-later'"),'billing_enrollment_activation_prior_attempt_unresolved')
+        assert activation_facts(later)==prior and activation_facts(f)==observed
+        results.append({'case':'activation_unresolved_attempt_blocks_new_quantity','attempts':0})
         return results
     finally:
         for child in children:

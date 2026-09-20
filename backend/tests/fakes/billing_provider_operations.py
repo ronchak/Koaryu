@@ -94,6 +94,73 @@ class BillingProviderOperationRpcMixin:
         self.billing_invoice_mutation_owners: dict[tuple[str, str], dict[str, str]] = {}
         self.billing_enrollment_transition_intents: dict[str, dict[str, Any]] = {}
         self.billing_enrollment_transition_aliases: dict[tuple[str, str, str], str] = {}
+        self.activation_begin_hook = None
+        self.activation_begin_execution = {
+            "version": 1,
+            "branch": "create_subscription",
+            "expected_subscription_id": None,
+            "expected_item_id": None,
+            "expected_quantity": 1,
+        }
+        self.activation_begin_error_code = "23514"
+        self.activation_begin_error_message = None
+
+    def _rpc_begin_billing_enrollment_activation_v1(self, params: dict[str, Any]) -> dict[str, Any]:
+        if self.activation_begin_hook is not None:
+            self.activation_begin_hook()
+        if self.activation_begin_error_message:
+            raise PostgrestAPIError(
+                {
+                    "code": self.activation_begin_error_code,
+                    "message": self.activation_begin_error_message,
+                    "details": "",
+                    "hint": "",
+                }
+            )
+        operation = self._operation_by_id(params["p_operation_id"])
+        enrollment = next(
+            row
+            for row in self.tables["student_billing_enrollments"]
+            if row["id"] == params["p_enrollment_id"] and row["studio_id"] == params["p_studio_id"]
+        )
+        intent = enrollment["metadata"]["provider_activation_intent"]
+        group = next(
+            row
+            for row in self.tables["billing_subscriptions"]
+            if row["id"] == intent["group_id"] and row["studio_id"] == params["p_studio_id"]
+        )
+        lock = (group.get("metadata") or {}).get("stripe_quantity_sync_lock") or {}
+        assert operation["state"] == "started"
+        assert operation["provider_request_attempt_count"] == 0
+        assert operation["revision"] == params["p_expected_revision"]
+        assert operation["lease_owner"] == params["p_lease_owner"]
+        assert operation["request_sha256"] == params["p_request_sha256"]
+        assert lock.get("token") == params["p_quantity_lock_token"]
+        assert group.get("stripe_subscription_id") == params["p_expected_subscription_id"]
+
+        execution = dict(self.activation_begin_execution or {})
+        assert execution.get("version") == 1
+        branch = execution["branch"]
+        quantity = int(execution["expected_quantity"])
+        executions = dict(intent.get("executions") or {})
+        existing = executions.get(operation["id"])
+        assert existing is None or existing == execution
+        executions[operation["id"]] = execution
+        intent["executions"] = executions
+
+        operation.update(
+            {
+                "state": "provider_request_in_flight",
+                "provider_request_attempt_count": 1,
+                "provider_request_in_flight_at": self._billing_provider_timestamp(
+                    self.billing_provider_now
+                ),
+                "result_code": "enrollment_activation_started",
+                "result_summary": f"enrollment_branch:{branch}:quantity:{quantity}",
+                "revision": operation["revision"] + 1,
+            }
+        )
+        return {"operation": dict(operation), "execution": execution}
 
     def advance_billing_provider_clock(self, *, seconds: int) -> None:
         self.billing_provider_now += timedelta(seconds=seconds)
@@ -174,6 +241,10 @@ class BillingProviderOperationRpcMixin:
             "provider_succeeded",
             "projected",
         }
+        if str(operation.get("operation_type") or "").startswith(
+            "enrollment.activate."
+        ) and state in {"started", "recovery_authorized", "provider_succeeded", "projected"}:
+            lease_transferable = True
         lease_owner = operation.get("lease_owner")
         lease_expires_at = operation.get("lease_expires_at")
         lease_expired = (
@@ -721,6 +792,17 @@ class BillingProviderOperationRpcMixin:
                 operation.get("operation_type") == "invoice.retry"
                 and operation.get("caller_request_key") == params["p_caller_request_key"]
             ):
+                claimed = self._rpc_claim_billing_provider_operation_v1(params)
+                operation = claimed["operation"]
+                outcome = claimed["outcome"]
+            elif str(operation.get("operation_type") or "").startswith(
+                "enrollment.activate."
+            ) and operation.get("state") in {
+                "started",
+                "recovery_authorized",
+                "provider_succeeded",
+                "projected",
+            }:
                 claimed = self._rpc_claim_billing_provider_operation_v1(params)
                 operation = claimed["operation"]
                 outcome = claimed["outcome"]
