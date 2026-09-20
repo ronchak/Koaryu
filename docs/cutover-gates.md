@@ -41,7 +41,7 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-The completed V50 release is recorded in [PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Production and staging are V50, 145 migrations; both application pairs serve `dce52efff1d28358eca421769d00791b60045c6c`. The staging billing cron remains suspended. Future releases need a new exact-candidate packet and fresh target evidence. Do not reuse completed inspection tokens or recovery evidence as approval of a new state.
+The completed V50 release is recorded in [PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Production and staging are V50, 145 migrations; both application pairs now serve Google SSO candidate `75d96cfab54440df58df85a843dd7f54d298cb2c`, with no migration added. See [Google SSO verification](google-sso-setup.md#verification-status). The staging billing cron remains suspended. Future releases need a new exact-candidate packet and fresh target evidence. Do not reuse completed inspection tokens or recovery evidence as approval of a new state.
 
 V48 separates stable activation intent from its atomically owned first execution quantity, preserving already-attempted provider recovery. V49 permits unknown subscription currency/cadence without invented defaults. Neither migration rewrites historical rows. After new version-2 receipts or null subscription terms exist, readiness compatibility alone does not authorize an older backend rollback. Use the packet's recovery limits.
 

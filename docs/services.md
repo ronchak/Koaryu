@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September 20 release readback: both databases are V50, 145 migrations. Production and staging frontend/backend pairs serve `dce52efff1d28358eca421769d00791b60045c6c`. Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
+Inventory baseline: 2026-08-24. September 20 release readback: both databases are V50, 145 migrations. Production and staging frontend/backend pairs now serve Google SSO candidate `75d96cfab54440df58df85a843dd7f54d298cb2c`. See [Google SSO verification](google-sso-setup.md#verification-status). Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
 
 ## Quick map
 
@@ -34,7 +34,8 @@ see [Deployment triggers](#deployment-triggers).
   callback URLs. The client secret belongs in those two Supabase Google-provider
   configurations and owner-only operator storage, never in frontend variables.
 - Setup and release verification are tracked in [Google SSO setup](google-sso-setup.md).
-  Project creation alone does not mean the provider is enabled or verified.
+  The client is published for external Google accounts and enabled in both
+  Supabase projects. Email confirmation remains required and manual linking off.
 
 ## GitHub
 
