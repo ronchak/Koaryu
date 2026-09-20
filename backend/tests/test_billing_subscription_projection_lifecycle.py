@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from fastapi import HTTPException
+
 from app.services.billing_subscription_webhook_projection import (
     BillingSubscriptionWebhookProjector,
 )
@@ -177,6 +179,103 @@ class BillingSubscriptionProjectionLifecycleTest(BillingPaymentsLifecycleTestBas
                 row = self._project_subscription_items(items, existing=existing)
 
                 self.assertEqual((row.get("currency"), row.get("billing_interval")), expected)
+
+    def test_fact_fill_race_retries_then_fills_the_independently_missing_fact(self):
+        service = self.service()
+        service.supabase = _FakeSupabase(
+            {
+                "studio_payment_accounts": [
+                    {
+                        "studio_id": "studio_1",
+                        "stripe_connected_account_id": "acct_1",
+                    }
+                ],
+                "billing_subscriptions": [
+                    {
+                        "id": "subscription_1",
+                        "studio_id": "studio_1",
+                        "payer_id": "payer_1",
+                        "stripe_account_id": "acct_1",
+                        "stripe_subscription_id": "sub_1",
+                        "currency": None,
+                        "billing_interval": None,
+                        "status": "active",
+                        "last_stripe_event_created": 100,
+                    }
+                ],
+                "student_billing_enrollments": [],
+            }
+        )
+        projector = BillingSubscriptionWebhookProjector(
+            service.supabase, service._connect_accounts()
+        )
+        outer_event = {
+            "id": "sub_1",
+            "status": "past_due",
+            "customer": "cus_1",
+            "items": {
+                "data": [_subscription_item(interval="year")],
+                "has_more": False,
+            },
+            "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+        }
+
+        def project_intervening_event(_rows):
+            projector.project_subscription(
+                {
+                    "id": "sub_1",
+                    "status": "active",
+                    "customer": "cus_1",
+                    "items": {
+                        "data": [_subscription_item(currency=None)],
+                        "has_more": False,
+                    },
+                    "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+                },
+                "acct_1",
+                "customer.subscription.updated",
+                event_created=200,
+            )
+
+        service.supabase.before_update = project_intervening_event
+
+        with self.assertRaises(HTTPException) as raised:
+            projector.project_subscription(
+                outer_event,
+                "acct_1",
+                "customer.subscription.updated",
+                event_created=201,
+            )
+
+        self.assertEqual(raised.exception.status_code, 503)
+        row = service.supabase.tables["billing_subscriptions"][0]
+        self.assertEqual(
+            (
+                row["currency"],
+                row["billing_interval"],
+                row["status"],
+                row["last_stripe_event_created"],
+            ),
+            (None, "monthly", "active", 200),
+        )
+
+        projector.project_subscription(
+            outer_event,
+            "acct_1",
+            "customer.subscription.updated",
+            event_created=201,
+        )
+
+        row = service.supabase.tables["billing_subscriptions"][0]
+        self.assertEqual(
+            (
+                row["currency"],
+                row["billing_interval"],
+                row["status"],
+                row["last_stripe_event_created"],
+            ),
+            ("usd", "monthly", "past_due", 201),
+        )
 
     def test_subscription_invoice_parent_metadata_repairs_invoice_identity_and_period(self):
         service = self.service()

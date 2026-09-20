@@ -8,6 +8,8 @@ Only explicit complete item pages can supply evidence. Currency and cadence are 
 
 The existing exact currency/cadence grouping query excludes null terms. The Stripe subscription identity index still prevents duplicate provider records. The frontend currently counts subscription status and does not format these terms, so the planned old-frontend/new-backend window is compatible. The regenerated API type accepts null.
 
+Null fills also require null at write time. A competing fill returns a retriable 503 through the existing durable webhook failure handling. Replay reads the confirmed terms again, preserves them, and applies the remaining facts and status together.
+
 ## Verification and release
 
 V49 preserves all previously attested operational manifests. It adds an explicit column contract and independent raw observation, including the old column state for V47/V48 inspections. Missing unknown support or restored invented defaults must fail readiness. All historical migration files remain unchanged.

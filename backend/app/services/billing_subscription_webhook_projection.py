@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from fastapi import HTTPException, status
 from supabase import Client
 
 from app.services.billing_connect_accounts import BillingConnectAccountStore
@@ -131,7 +132,19 @@ class BillingSubscriptionWebhookProjector:
                 self.supabase.table("billing_subscriptions").update(update).eq("id", local["id"])
             )
             query = add_stripe_event_created_guard(query, event_created)
+            if "currency" in update:
+                query = query.is_("currency", "null")
+            if "billing_interval" in update:
+                query = query.is_("billing_interval", "null")
             result = query.execute()
+            if not result.data and ("currency" in update or "billing_interval" in update):
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=(
+                        "Billing subscription facts changed during webhook processing. "
+                        "Retry the webhook."
+                    ),
+                )
             if not result.data and event_created is not None:
                 return local
             row = result.data[0] if result.data else {**local, **update}
