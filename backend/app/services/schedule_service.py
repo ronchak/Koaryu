@@ -497,6 +497,12 @@ class ScheduleService:
         for template in templates:
             days_ahead = (template.day_of_week - self._studio_weekday(start)) % 7
             session_date = start + timedelta(days=days_ahead)
+            template_start = self._parse_date(template.start_date)
+            template_end = self._parse_date(template.end_date) if template.end_date else None
+            if session_date < template_start or (
+                template_end is not None and session_date > template_end
+            ):
+                continue
 
             existing = (
                 self.supabase.table("class_sessions")

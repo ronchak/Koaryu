@@ -566,24 +566,71 @@ class ScheduleServiceTest(unittest.TestCase):
         )
         self.assertFalse(any(query["table"] == "attendance" for query in supabase.query_log))
 
-    def test_generate_week_uses_actor_for_created_session_audit(self):
-        supabase = FakeSupabase(
-            {
-                "class_templates": [template_row("template-1", "Youth Basics")],
-                "class_sessions": [],
-                "audit_logs": [],
-            }
+    def test_generate_week_respects_template_dates_and_existing_occurrences(self):
+        occurrence_date = "2026-05-31"
+        cases = (
+            ("before start", "2026-06-01", None, None, False),
+            ("on start", occurrence_date, None, None, True),
+            ("open after start", "2026-05-24", None, None, True),
+            ("on end", "2026-05-24", occurrence_date, None, True),
+            ("after end", "2026-05-24", "2026-05-30", None, False),
+            ("active occurrence", "2026-05-24", None, "active", False),
+            ("deleted occurrence", "2026-05-24", None, "deleted", False),
         )
-        service = ScheduleService(supabase)
+        for name, start_date, end_date, existing_state, should_create in cases:
+            with self.subTest(name=name):
+                template = template_row("template-1", "Youth Basics")
+                template["start_date"] = start_date
+                template["end_date"] = end_date
+                foreign_template = template_row("template-2", "Other Studio")
+                foreign_template["studio_id"] = "studio-2"
+                existing_sessions = []
+                if existing_state is not None:
+                    existing = session_row("existing-session", "template-1", occurrence_date)
+                    if existing_state == "deleted":
+                        existing["deleted_at"] = "2026-05-30T12:00:00Z"
+                        existing["status"] = "canceled"
+                    existing_sessions.append(existing)
+                if name == "on start":
+                    foreign = session_row("foreign-session", "template-1", occurrence_date)
+                    foreign["studio_id"] = "studio-2"
+                    existing_sessions.append(foreign)
+                supabase = FakeSupabase(
+                    {
+                        "class_templates": [template, foreign_template],
+                        "class_sessions": existing_sessions,
+                        "audit_logs": [],
+                    }
+                )
+                service = ScheduleService(supabase)
 
-        created = asyncio.run(
-            service.generate_sessions_for_week("studio-1", "2026-05-25", "actor-1")
-        )
+                created = asyncio.run(
+                    service.generate_sessions_for_week("studio-1", "2026-05-25", "actor-1")
+                )
 
-        self.assertEqual(len(created), 1)
-        self.assertEqual(created[0].date, "2026-05-31")
-        self.assertEqual(supabase.tables["audit_logs"][0]["actor_id"], "actor-1")
-        self.assertEqual(supabase.tables["audit_logs"][0]["action"], "class_session.created")
+                self.assertEqual(
+                    [session.date for session in created],
+                    [occurrence_date] if should_create else [],
+                )
+                audits = supabase.tables["audit_logs"]
+                self.assertEqual(len(audits), int(should_create))
+                if should_create:
+                    self.assertEqual(audits[0]["actor_id"], "actor-1")
+                    self.assertEqual(audits[0]["action"], "class_session.created")
+                    self.assertEqual(audits[0]["studio_id"], "studio-1")
+                scoped_reads = [
+                    query
+                    for query in supabase.query_log
+                    if query["table"] in {"class_templates", "class_sessions"}
+                    and query["insert"] is None
+                ]
+                self.assertTrue(scoped_reads)
+                self.assertTrue(
+                    all(
+                        ("eq", "studio_id", "studio-1") in query["filters"]
+                        for query in scoped_reads
+                    )
+                )
 
     def test_generate_week_rejects_bad_week_start_before_querying(self):
         for week_start, detail in (
