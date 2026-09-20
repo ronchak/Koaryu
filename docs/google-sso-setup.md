@@ -92,21 +92,30 @@ verify its actual behavior separately and report any defect without expanding th
 
 ## Verification status
 
-Branding follow-up: the owner requested the account chooser label `koaryu.app`.
-The OAuth draft display name has been changed to that exact value and submitted
-for verification. Homepage ownership proof and an explicit Google sign-in privacy
-disclosure are being released to meet Google's checks. This is not yet a claim
-that Google has approved or published the name; verify the actual account chooser
-after publishing the approved branding.
+Branding follow-up, September 20, 2026: Google Search Console verified ownership
+of `https://koaryu.app/` through the public homepage tag. Google then approved and
+published the exact OAuth display name `koaryu.app`. A fresh production Google
+account chooser was observed displaying **to continue to koaryu.app**. No custom
+Supabase domain, DNS change, new OAuth client, or callback change was needed.
+Completing that branded Google flow reached the production dashboard. Readback
+confirmed the existing auth UUID, studio membership and role were unchanged.
+
+The branding website candidate `f1320ee179f28df54b85616ae7752a14823b4db7` is now
+verified on both frontend/backend pairs. Production Render deployment
+`dep-dao6juf40ujc73e40pi0` and production-target Vercel deployment
+`dpl_vFa2cGHs5xtt7mmP9RafR9ScDnXJ` are live, with Vercel in `pdx1`. The exact public
+verification tag and Google privacy disclosure were checked on staging and on
+unauthenticated production pages. The release gate, build, lint, and independent
+review passed. Keep the verification tag to preserve Google's ownership proof.
 
 September 20, 2026: PR #229 merged. Reviewed application candidate
 `75d96cfab54440df58df85a843dd7f54d298cb2c` passed the exact-head Release
 candidate gate and independent review. The full frontend suite passed 912 tests;
 production build and lint passed. Both production and staging frontend/backend
-pairs now serve that candidate. Production Render deployment
+pairs served that initial candidate before the branding follow-up above. Production Render deployment
 `dep-dao67h2jnfac73aoa670` passed both readiness paths with Stripe live mode.
-Production-target Vercel deployment `dpl_2ZFeFBLovTX9wbpXSBVKJWwXfU89` is READY
-in `pdx1` and owns `koaryu.app` and `www.koaryu.app`. Production auto-deploy remains
+Production-target Vercel deployment `dpl_2ZFeFBLovTX9wbpXSBVKJWwXfU89` was READY
+in `pdx1` and served `koaryu.app` and `www.koaryu.app` before the branding deployment. Production auto-deploy remains
 off; no migration was applied. Real Google sign-in from both `koaryu.app/login` and `koaryu.app/signup` reached
 `/dashboard`; provider readback confirmed the pre-existing production account UUID,
 studio membership, and role were unchanged.

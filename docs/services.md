@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September 20 release readback: both databases are V50, 145 migrations. Production and staging frontend/backend pairs now serve Google SSO candidate `75d96cfab54440df58df85a843dd7f54d298cb2c`. See [Google SSO verification](google-sso-setup.md#verification-status). Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
+Inventory baseline: 2026-08-24. September 20 release readback: both databases are V50, 145 migrations. Production and staging frontend/backend pairs now serve Google branding candidate `f1320ee179f28df54b85616ae7752a14823b4db7`. See [Google SSO verification](google-sso-setup.md#verification-status). Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
 
 ## Quick map
 
@@ -36,6 +36,8 @@ see [Deployment triggers](#deployment-triggers).
 - Setup and release verification are tracked in [Google SSO setup](google-sso-setup.md).
   The client is published for external Google accounts and enabled in both
   Supabase projects. Email confirmation remains required and manual linking off.
+- Google verified and published the display name `koaryu.app`; the live account
+  chooser was checked. Search Console ownership uses the public homepage tag.
 
 ## GitHub
 
