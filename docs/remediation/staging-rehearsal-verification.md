@@ -2,7 +2,7 @@
 
 Initial migration candidate: `c1e933f5ddac862ce24387d45609052b8d0baad1`, PR210 merge. Its own Release candidate CI `34839365373` passed. This record describes hosted execution against that immutable candidate, not the later documentation merge.
 
-**Current status: complete hosted database gate; authenticated write/UI rehearsal explicitly waived.** All 53 contracts passed, the staging alias was repaired and the matching staging pair verified. Production subsequently completed V47 and application deployment. See [the production verification](production-release-verification.md). The sections below preserve the earlier failures and stop points as historical evidence.
+**Historical September 14–15 status: complete hosted database gate; authenticated write/UI rehearsal explicitly waived.** All 53 contracts passed, the staging alias was repaired and the matching staging pair verified. Production subsequently completed V47 and application deployment. See [the V47 production verification](production-v47-verification.md); [the current release](production-release-verification.md) subsequently completed V49. The sections below preserve the earlier failures and stop points as historical evidence.
 
 ## Database execution
 
@@ -40,7 +40,7 @@ Next, reproduce the captured plan on a disposable database with representative s
 
 Private evidence is under `/Users/openclaw/Koaryu Releases/20260914-refund-release`, mode 0700 with files 0600. Per-step files use the predecessor version: `staging-v38-...` through `staging-v46-...` contain inspections, dry-runs, exact approval JSON/API responses and apply audit records. `staging-post.txt` contains the final independent inspection. `staging-retained-paused.json` is the original comparison baseline; `staging-v39-rows.json` through `staging-v47-rows.json` and `staging-after-contracts-rows.json` contain comparisons. `staging-contracts.log` retains the complete failure and query plan. Do not commit these operator files.
 
-The written per-migration recovery plan remains in [PRODUCTION-RELEASE.md](PRODUCTION-RELEASE.md#per-migration-recovery-checkpoints). Fresh production backup/verified restore, authenticated staging application rehearsal and the controlled production write window remain unfulfilled. Closing read-only inspection confirmed production at V38 with all nine files still pending; the deployed-release verifier confirmed both production applications at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Evidence is `production-stopped-inspect.txt` and `production-stopped-pair.txt`. Production has not started, so no production completion-cost estimate or approval has been asserted. The budget amendment never waives these technical gates.
+The written per-migration recovery plan remains in [the historical V39–V47 packet](production-v47-verification.md#per-migration-recovery-checkpoints). Fresh production backup/verified restore, authenticated staging application rehearsal and the controlled production write window remain unfulfilled. Closing read-only inspection confirmed production at V38 with all nine files still pending; the deployed-release verifier confirmed both production applications at `c5742fe393a8bfb3a1faddb1f488e46a00bd5091`. Evidence is `production-stopped-inspect.txt` and `production-stopped-pair.txt`. Production has not started, so no production completion-cost estimate or approval has been asserted. The budget amendment never waives these technical gates.
 
 ## Closeout validation
 

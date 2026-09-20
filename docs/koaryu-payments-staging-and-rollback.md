@@ -245,9 +245,9 @@ Rollback closes new writes and preserves evidence:
    a response was lost.
 7. Require zero active UI/provider workflows before declaring rollback complete.
 
-## Production packet awaiting approval
+## Historical production preparation
 
-This section records an earlier prepared release. Current execution requires the [production packet](remediation/PRODUCTION-RELEASE.md) and its owner-authorization protocol; worker and live-billing activation remain separate approvals:
+This section records an earlier preparation. The linked [production packet](remediation/PRODUCTION-RELEASE.md) is now completed; there is no approved unapplied packet. Future execution needs a newly generated exact-candidate packet, fresh target/restore evidence and explicit owner authorization. Worker and live-billing activation remain separate approvals. The historical preparation sequence was:
 
 1. Merge only after a separate approval and all exact-head gates.
 2. Complete the guarded database backup gate, inspect production, obtain the state-bound

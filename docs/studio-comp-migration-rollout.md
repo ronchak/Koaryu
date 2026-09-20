@@ -1,6 +1,6 @@
 # Studio-Comp Migration Rollout
 
-Status: **Historical V24–V38 rollout documentation. Current release execution instructions are in [the remediation production packet](remediation/PRODUCTION-RELEASE.md). Do not use the historical candidate counts below for the current release.**
+Status: **Historical V24–V38 rollout documentation. The latest [production packet](remediation/PRODUCTION-RELEASE.md) records a completed release. No unapplied packet is currently approved; future execution requires a newly generated candidate-specific packet and explicit owner authorization. Do not execute the historical commands below.**
 
 ## Combined schedule-window, Payments, and performance extension
 
@@ -459,9 +459,9 @@ Production inspection and dry-run repeat the exact-target and exact-state checks
 
 The coordinating agent or operator supplies `--release-authorization ronchak:<candidate-sha>`, `--release-operator <named-executor>` and the deliberate `--confirmation-phrase`. The phrase still binds the exact candidate, pending migration count, source manifest and production ref. A TTY is no longer an authorization test. The tool records authorization, versions, timestamps and the verified or uncertain outcome.
 
-Executor names in the authorization audit are caller-reported. A supplied GitHub comment verifies its OWNER account and release scope. Direct CLI fields record operator assertions; permission comes from the explicitly authorized operating session, not an authenticated process identity. Default production bulk apply is refused. The current V38-to-V47 packet uses `--one-migration` for each newly inspected and owner-authorized step. Preserve the provider-response audit records privately, including stderr and uncertain outcomes.
+Executor names in the authorization audit are caller-reported. A supplied GitHub comment verifies its OWNER account and release scope. Direct CLI fields record operator assertions; permission comes from the explicitly authorized operating session, not an authenticated process identity. Default production bulk apply is refused. The guarded runner uses `--one-migration` for each newly inspected and owner-authorized step. Preserve the provider-response audit records privately, including stderr and uncertain outcomes.
 
-Use the current [production packet](remediation/PRODUCTION-RELEASE.md), not a historical command from this record. Announce each release action and its verification. Wait 30 seconds before each production migration apply; staging and non-migration actions have no mandatory pause under the revised owner protocol. Execute one action per announcement and command. Stop if the owner interrupts. The complete [execution protocol](cutover-gates.md#owner-authorized-release-execution) applies.
+The linked [production packet](remediation/PRODUCTION-RELEASE.md) is a completed record. For future work, generate a fresh exact-candidate packet with the guarded tool's `--mode packet --candidate-sha <full-sha>`, inspect the actual target and obtain explicit owner authorization. Neither this historical record nor its completed packet authorizes another apply. Announce each release action and its verification. Wait 30 seconds before each production migration apply; staging and non-migration actions have no mandatory pause under the revised owner protocol. Execute one action per announcement and command. Stop if the owner interrupts. The complete [execution protocol](cutover-gates.md#owner-authorized-release-execution) applies.
 
 Keep credentials and evidence in a private, non-traced shell and private files. Production contract SQL, synthetic rows, comp changes, Auth mutations, Storage writes, Realtime changes and live billing activation are not authorized by a database release approval.
 
