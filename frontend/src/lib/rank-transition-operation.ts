@@ -83,10 +83,13 @@ export function persistPendingRankTransition(
 export function clearPendingRankTransition(
   kind: RankTransitionKind,
   studentId: string,
+  operationId: string,
   storage: StorageLike | null = browserSessionStorage(),
 ): void {
   if (!storage) return;
   try {
+    const pending = loadPendingRankTransition(kind, studentId, storage);
+    if (pending?.operationId !== operationId) return;
     storage.removeItem(storageKey(kind, studentId));
   } catch {
     // Best-effort browser cleanup only.

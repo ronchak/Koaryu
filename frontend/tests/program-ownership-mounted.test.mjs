@@ -4,6 +4,7 @@ import { chromium } from "@playwright/test";
 import { bundle } from "./helpers/store-browser-harness.mjs";
 
 const source = bundle("production");
+const programSource = bundle("production", { programsSection: true });
 let browser;
 before(async () => {
   browser = await chromium.launch();
@@ -16,7 +17,7 @@ const flush = (page) =>
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );
 
-async function fixturePage({ holdBootstrap = false } = {}) {
+async function fixturePage({ holdBootstrap = false, showPrograms = false } = {}) {
   const page = await browser.newPage();
   page.setDefaultTimeout(6000);
   await page.route("**/*", (route) =>
@@ -141,15 +142,98 @@ async function fixturePage({ holdBootstrap = false } = {}) {
     },
     { holdBootstrap },
   );
-  await page.addScriptTag({ content: source });
+  await page.addScriptTag({ content: showPrograms ? programSource : source });
   await page.waitForFunction(() => fixture.store?.identityReady);
   if (holdBootstrap) await page.waitForFunction(() => fixture.features.length === 1);
   else
     await page.waitForFunction(
       () => fixture.store.programsLoaded && fixture.store.programs.length === 2,
     );
+  if (showPrograms) {
+    await page.locator('[data-program-form="true"]').waitFor();
+    await page.waitForFunction(() => fixture.reads.length === 1);
+    await page.evaluate(() => fixture.reads[0].resolve(fixture.reads[0].snapshot));
+    await flush(page);
+  }
   return page;
 }
+
+test("a submitted program draft stays fixed through success and rejection", async () => {
+  const page = await fixturePage({ showPrograms: true });
+  try {
+    const name = page.locator('[data-program-input="name"]');
+    const description = page.locator('[data-program-input="description"]');
+    const firstEdit = page.getByRole("button", { name: "Edit", exact: true }).first();
+    await firstEdit.click();
+    await name.fill("Program A saved");
+    await description.fill("Submitted description");
+    await page.locator('[data-program-swatch="#F59E0B"]').click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.waitForFunction(() => fixture.writes.length === 1);
+
+    assert.equal(await name.isDisabled(), true);
+    assert.equal(await description.isDisabled(), true);
+    assert.equal(await page.locator('[data-program-swatch="#38BDF8"]').isDisabled(), true);
+    assert.equal(await page.getByRole("button", { name: "Edit", exact: true }).count(), 2);
+    assert.equal(
+      await page.getByRole("button", { name: "Edit", exact: true }).first().isDisabled(),
+      true,
+    );
+    assert.equal(
+      await page.getByRole("button", { name: "Edit", exact: true }).last().isDisabled(),
+      true,
+    );
+    assert.equal(await name.inputValue(), "Program A saved");
+    await page.locator('[data-program-form="true"]').evaluate((form) => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush(page);
+    assert.equal(
+      await page.evaluate(() => fixture.writes.length),
+      1,
+      "one draft has one save owner",
+    );
+
+    await page.evaluate(() => {
+      fixture.rows[0] = {
+        ...fixture.rows[0],
+        name: "Program A saved",
+        description: "Submitted description",
+        color_hex: "#F59E0B",
+      };
+      fixture.writes[0].resolve(structuredClone(fixture.rows[0]));
+    });
+    await page.waitForFunction(() => fixture.reads.length === 2);
+    await page.evaluate(() => fixture.reads[1].resolve(fixture.reads[1].snapshot));
+    await page.getByText("Program updated.", { exact: true }).waitFor();
+    assert.equal(await name.inputValue(), "");
+    assert.equal(await description.inputValue(), "");
+    assert.equal(await page.getByRole("button", { name: "Edit", exact: true }).count(), 2);
+
+    await page.getByRole("button", { name: "Edit", exact: true }).first().click();
+    await name.fill("Rejected program A");
+    await description.fill("Keep this draft");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.waitForFunction(() => fixture.writes.length === 2);
+    await page.evaluate(() => fixture.writes[1].reject(new Error("Synthetic program rejection")));
+    await page.getByText("Synthetic program rejection", { exact: true }).waitFor();
+    assert.equal(await name.inputValue(), "Rejected program A");
+    assert.equal(await description.inputValue(), "Keep this draft");
+    assert.equal(await name.isEnabled(), true);
+    assert.equal(await page.getByRole("button", { name: "Edit", exact: true }).count(), 2);
+    assert.equal(
+      await page.getByRole("button", { name: "Edit", exact: true }).first().isEnabled(),
+      true,
+    );
+    assert.equal(
+      await page.getByRole("button", { name: "Edit", exact: true }).last().isEnabled(),
+      true,
+    );
+  } finally {
+    await page.close();
+  }
+});
 
 test("program reads cannot replace a confirmed archive or certify data during a pending write", async () => {
   for (const readDuringWrite of [false, true]) {

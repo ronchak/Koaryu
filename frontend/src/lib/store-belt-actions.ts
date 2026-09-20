@@ -36,6 +36,7 @@ import { localId } from "@/lib/store-storage";
 import { MOCK_BELT_LADDER } from "@/lib/mock-data";
 import {
   canCommitLiveMutation,
+  withCurrentLiveAuthRead,
   type BeginLiveAuthRequest,
   type StoreRef,
 } from "@/lib/store-action-types";
@@ -122,10 +123,15 @@ export function useStoreBeltActions({
     [],
   );
 
-  const clearRankTransition = useCallback((kind: RankTransitionKind, studentId: string) => {
-    pendingRankTransitionsRef.current.delete(`${kind}:${studentId}`);
-    clearPendingRankTransition(kind, studentId);
-  }, []);
+  const clearRankTransition = useCallback(
+    (kind: RankTransitionKind, studentId: string, pending: PendingRankTransition) => {
+      const key = `${kind}:${studentId}`;
+      if (pendingRankTransitionsRef.current.get(key)?.operationId !== pending.operationId) return;
+      pendingRankTransitionsRef.current.delete(key);
+      clearPendingRankTransition(kind, studentId, pending.operationId);
+    },
+    [],
+  );
 
   const refreshBelts = useCallback(
     async (preferredLadderId?: string | null, options?: { requireEligibility?: boolean }) => {
@@ -133,24 +139,27 @@ export function useStoreBeltActions({
         return;
       }
 
-      const request = beginLiveAuthRequest();
-      const beltLaddersRes = await api.get<BeltLadder[]>("/belts/ladders", request.token);
-      if (!request.isCurrent()) {
-        return;
-      }
+      await withCurrentLiveAuthRead(
+        beginLiveAuthRequest,
+        async (request) => {
+          const beltLaddersRes = await api.get<BeltLadder[]>("/belts/ladders", request.token);
+          if (!request.isCurrent()) return;
 
-      const selectedLadder = applyLadderSelection(
-        beltLaddersRes,
-        preferredLadderId ?? currentLadderIdRef.current,
+          const selectedLadder = applyLadderSelection(
+            beltLaddersRes,
+            preferredLadderId ?? currentLadderIdRef.current,
+          );
+          const eligibilityRefresh = loadEligibilityForLadder(selectedLadder?.id ?? null, {
+            force: true,
+          });
+          if (options?.requireEligibility) {
+            await eligibilityRefresh;
+          } else {
+            await eligibilityRefresh.catch(() => undefined);
+          }
+        },
+        () => {},
       );
-      const eligibilityRefresh = loadEligibilityForLadder(selectedLadder?.id ?? null, {
-        force: true,
-      });
-      if (options?.requireEligibility) {
-        await eligibilityRefresh;
-      } else {
-        await eligibilityRefresh.catch(() => undefined);
-      }
     },
     [
       applyLadderSelection,
@@ -431,22 +440,25 @@ export function useStoreBeltActions({
         result = await api.post<Promotion>("/belts/promote", requestData, liveRequest.token);
       } catch (error) {
         if (isTerminalRankTransitionError(error)) {
-          clearRankTransition("promotion", data.student_id);
+          if (canCommitLiveMutation(liveRequest)) {
+            clearRankTransition("promotion", data.student_id, pending);
+          }
           throw error;
         }
+        if (!canCommitLiveMutation(liveRequest)) throw error;
         delete promotionHistoryRequestsRef.current[data.student_id];
         const history = await loadPromotionHistory(data.student_id, { force: true }).catch(
           () => null,
         );
+        if (!canCommitLiveMutation(liveRequest)) throw error;
         const recovered = history?.find((item) => item.operation_id === pending.operationId);
         if (!recovered) throw error;
-        clearRankTransition("promotion", data.student_id);
         result = recovered;
       }
-      clearRankTransition("promotion", data.student_id);
-      if (!liveRequest.isCurrent()) {
+      if (!canCommitLiveMutation(liveRequest)) {
         return result;
       }
+      clearRankTransition("promotion", data.student_id, pending);
 
       commitLivePromotionHistoryItem(data.student_id, result);
 
@@ -508,22 +520,25 @@ export function useStoreBeltActions({
         result = await api.post<Promotion>("/belts/demote", requestData, liveRequest.token);
       } catch (error) {
         if (isTerminalRankTransitionError(error)) {
-          clearRankTransition("demotion", data.student_id);
+          if (canCommitLiveMutation(liveRequest)) {
+            clearRankTransition("demotion", data.student_id, pending);
+          }
           throw error;
         }
+        if (!canCommitLiveMutation(liveRequest)) throw error;
         delete promotionHistoryRequestsRef.current[data.student_id];
         const history = await loadPromotionHistory(data.student_id, { force: true }).catch(
           () => null,
         );
+        if (!canCommitLiveMutation(liveRequest)) throw error;
         const recovered = history?.find((item) => item.operation_id === pending.operationId);
         if (!recovered) throw error;
-        clearRankTransition("demotion", data.student_id);
         result = recovered;
       }
-      clearRankTransition("demotion", data.student_id);
-      if (!liveRequest.isCurrent()) {
+      if (!canCommitLiveMutation(liveRequest)) {
         return result;
       }
+      clearRankTransition("demotion", data.student_id, pending);
 
       commitLivePromotionHistoryItem(data.student_id, result);
 

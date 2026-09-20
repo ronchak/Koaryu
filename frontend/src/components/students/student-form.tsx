@@ -43,13 +43,17 @@ export function StudentForm(props: StudentFormProps) {
     }
     return (props.onSubmit as (data: StudentCreate) => Promise<void> | void)(data as StudentCreate);
   };
-  const { error, outcomeUnknown, fields, handleSubmit, setField, setTab, tab } =
+  const { error, outcomeUnknown, fields, handleSubmit, isSubmitting, setField, setTab, tab } =
     useStudentFormState({
       initialData,
       businessDate,
       includeLifecycleFields: canManageLifecycle,
       onSubmit: submitFormPayload,
     });
+  const isLocked = Boolean(isLoading || isSubmitting);
+  const handleClose = () => {
+    if (!isLocked) onClose();
+  };
   const statusSelectId = "student-form-status";
   const notesId = "student-form-notes";
 
@@ -58,7 +62,7 @@ export function StudentForm(props: StudentFormProps) {
       rootClassName="p-4"
       panelClassName="w-full max-w-[560px] bg-surface rounded-[18px] shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="student-form-title"
-      onBackdropClick={onClose}
+      onBackdropClick={isLocked ? undefined : onClose}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-border">
@@ -68,7 +72,8 @@ export function StudentForm(props: StudentFormProps) {
         <button
           type="button"
           aria-label={isEdit ? "Close edit student dialog" : "Close add student dialog"}
-          onClick={onClose}
+          onClick={handleClose}
+          disabled={isLocked}
           className="text-muted hover:text-text-secondary transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
@@ -80,7 +85,9 @@ export function StudentForm(props: StudentFormProps) {
         {studentFormTabs.map((t) => (
           <button
             key={t.id}
+            type="button"
             onClick={() => setTab(t.id)}
+            disabled={isLocked}
             className={`min-h-11 rounded-[10px] px-4 py-2.5 text-sm cursor-pointer transition-[color,background-color] duration-150 ${
               tab === t.id
                 ? "bg-surface-raised text-text-primary"
@@ -93,7 +100,7 @@ export function StudentForm(props: StudentFormProps) {
       </div>
 
       <form onSubmit={handleSubmit}>
-        <div className="px-4 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+        <fieldset disabled={isLocked} className="px-4 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
           {/* ---- Basic Info Tab ---- */}
           {tab === "info" && (
             <>
@@ -340,20 +347,26 @@ export function StudentForm(props: StudentFormProps) {
               />
             </>
           )}
-        </div>
+        </fieldset>
 
         {/* Footer */}
         <div className="px-4 py-4 border-t border-border flex items-center justify-between">
           {error && <p className="text-xs text-danger">{error}</p>}
           <div className={`flex gap-2 ${error ? "" : "ml-auto"}`}>
-            <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleClose}
+              disabled={isLocked}
+            >
               Cancel
             </Button>
             <Button
               type="submit"
               variant="primary"
               size="sm"
-              isLoading={isLoading}
+              isLoading={isLocked}
               disabled={outcomeUnknown}
             >
               {isEdit ? "Save changes" : "Add student"}

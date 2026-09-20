@@ -203,4 +203,38 @@ describe("store promotion history model", () => {
     assert.deepEqual(committed, []);
     assert.equal(requests["student-1"], undefined);
   });
+
+  it("retries a discarded history read with renewed credentials before resolving", async () => {
+    const requests = {};
+    const committed = [];
+    const tokens = [];
+    let currentToken = "token-1";
+
+    const result = await loadPromotionHistoryWithCache({
+      studentId: "student-1",
+      isPreviewMode: false,
+      cache: {},
+      requests,
+      generation: 1,
+      isGenerationCurrent: () => true,
+      beginLiveAuthRequest: () => {
+        const token = currentToken;
+        return {
+          token,
+          isCurrent: () => token === currentToken,
+          canRetryAfterTokenChange: () => token !== currentToken,
+        };
+      },
+      fetchPromotionHistory: async (_studentId, token) => {
+        tokens.push(token);
+        if (token === "token-1") currentToken = "token-2";
+        return [promotion(token)];
+      },
+      commitCache: (_studentId, items) => committed.push(items),
+    });
+
+    assert.deepEqual(tokens, ["token-1", "token-2"]);
+    assert.deepEqual(result, [promotion("token-2")]);
+    assert.deepEqual(committed, [[promotion("token-2")]]);
+  });
 });

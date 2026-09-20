@@ -3,6 +3,11 @@ import { test } from "node:test";
 import { chromium } from "@playwright/test";
 import { bundle } from "./helpers/store-browser-harness.mjs";
 
+const flush = (page) =>
+  page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+
 async function fixturePage(browser, options = {}) {
   const page = await browser.newPage({ timezoneId: options.timezone });
   if (options.now) await page.clock.install({ time: new Date(options.now) });
@@ -127,7 +132,7 @@ async function fixturePage(browser, options = {}) {
             students: f.uncached ? [] : [f.student],
             students_may_be_partial: true,
             leads: [f.lead],
-            programs: [],
+            programs: f.programRows ?? [],
             belt_ladders: [],
             primary_belt_ladder: null,
             summary: f.summaryResponse,
@@ -209,15 +214,30 @@ async function fixturePage(browser, options = {}) {
     };
   });
   await page.evaluate(
-    ({ path, holdFeature, uncached }) => {
+    ({ path, holdFeature, uncached, formProgram }) => {
       if (path) {
         fixture.pathname = path;
         history.replaceState(null, "", path);
       }
       fixture.holdFeature = holdFeature;
       fixture.uncached = uncached;
+      if (formProgram)
+        fixture.programRows = [
+          {
+            id: "program-1",
+            name: "Test Program",
+            color_hex: "#38BDF8",
+            archived_at: null,
+            is_system: false,
+          },
+        ];
     },
-    { path: options.path, holdFeature: options.holdFeature, uncached: options.uncached },
+    {
+      path: options.path,
+      holdFeature: options.holdFeature,
+      uncached: options.uncached,
+      formProgram: options.formProgram,
+    },
   );
   await page.addScriptTag({ content: bundle(options.mode ?? "production", options) });
   await page.waitForFunction(() => fixture.store?.identityReady);
@@ -653,6 +673,94 @@ test("studio midnight updates day-sensitive context without clearing a form draf
     await page.evaluate(() => fixture.root.unmount());
   } finally {
     await browser.close();
+  }
+});
+
+test("submitted student create and edit drafts stay locked and survive rejection", async () => {
+  for (const mode of ["create", "edit"]) {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, {
+        path: "/students",
+        studentForm: true,
+        formProgram: true,
+      });
+      await page.evaluate(() => {
+        fixture.controlStudentForm = true;
+        fixture.formSubmissions = [];
+      });
+      if (mode === "create") {
+        await page.getByRole("button", { name: "Open form", exact: true }).click();
+        await page.getByLabel("Legal first name", { exact: false }).fill("Create");
+        await page.getByLabel("Legal last name", { exact: false }).fill("Draft");
+      } else {
+        await page.evaluate(() =>
+          fixture.openStudentEdit({
+            legal_first_name: "Edit",
+            legal_last_name: "Draft",
+            status: "active",
+          }),
+        );
+        await page.getByRole("dialog").waitFor();
+        await page.getByLabel("Legal first name", { exact: false }).fill("Edited");
+      }
+      await page.getByLabel("Test Program", { exact: true }).check();
+      const firstName = page.getByLabel("Legal first name", { exact: false });
+      const submittedName = await firstName.inputValue();
+      const submitName = mode === "create" ? "Add student" : "Save changes";
+      await page.getByRole("button", { name: submitName, exact: true }).click();
+      await page.waitForFunction(() => fixture.formSubmissions.length === 1);
+
+      assert.equal(await firstName.isDisabled(), true);
+      assert.equal(await page.getByLabel("Test Program", { exact: true }).isDisabled(), true);
+      assert.equal(
+        await page.getByRole("button", { name: "Contact", exact: true }).isDisabled(),
+        true,
+      );
+      assert.equal(
+        await page.getByRole("button", { name: "Cancel", exact: true }).isDisabled(),
+        true,
+      );
+      assert.equal(
+        await page
+          .getByRole("button", {
+            name: mode === "create" ? "Close add student dialog" : "Close edit student dialog",
+          })
+          .isDisabled(),
+        true,
+      );
+      await page.locator("form").evaluate((form) => {
+        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+      await page.locator(".koaryu-modal-backdrop").dispatchEvent("click");
+      await page.getByRole("dialog").press("Escape");
+      await flush(page);
+      assert.equal(await page.evaluate(() => fixture.formSubmissions.length), 1);
+      assert.equal(await page.getByRole("dialog").count(), 1);
+      assert.equal(await firstName.inputValue(), submittedName);
+      assert.equal(await page.getByLabel("Test Program", { exact: true }).isChecked(), true);
+
+      await page.evaluate(() =>
+        fixture.formSubmissions[0].reject(new Error("Synthetic student rejection")),
+      );
+      await page.getByText("Synthetic student rejection", { exact: true }).waitFor();
+      assert.equal(await firstName.inputValue(), submittedName);
+      assert.equal(await page.getByLabel("Test Program", { exact: true }).isChecked(), true);
+      assert.equal(await firstName.isEnabled(), true);
+      assert.equal(
+        await page.getByRole("button", { name: "Contact", exact: true }).isEnabled(),
+        true,
+      );
+
+      await page.getByRole("button", { name: submitName, exact: true }).click();
+      await page.waitForFunction(() => fixture.formSubmissions.length === 2);
+      await page.evaluate(() => fixture.formSubmissions[1].resolve());
+      await page.getByRole("dialog").waitFor({ state: "detached" });
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
   }
 });
 
