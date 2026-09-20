@@ -147,6 +147,10 @@ export function BillingOverviewTab({
 }) {
   const coreCheckoutAvailable = canStartCoreCheckout(billingPlatform);
   const [showConnectResetConfirm, setShowConnectResetConfirm] = useState(false);
+  const emailUsage = billingPlatform?.email_usage;
+  const emailUsageProgress = emailUsage && emailUsage.included > 0
+    ? Math.min(100, (emailUsage.sent / emailUsage.included) * 100)
+    : null;
   const moneyBand = [
     { label: "Needs attention", value: paymentCohortAvailable ? String(failedInvoiceCount) : "Unavailable", helper: "Failed or past-due tuition", tone: "exception" },
     { label: "Open receivables", value: paymentCohortAvailable ? formatMoney(openInvoiceTotal) : "Unavailable", helper: "All outstanding invoices", tone: "receivable" },
@@ -266,14 +270,14 @@ export function BillingOverviewTab({
             </div>
             <div>
               <p className="text-xs text-muted">UTC-month Stripe payment cohort</p>
-              <p className="mt-1 text-sm text-text-primary">{formatMoney(stripePaymentTotal)}</p>
+              <p className="mt-1 text-sm text-text-primary">{paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"}</p>
               <p className="mt-1 text-[11px] text-muted">
                 {billingProviderCopy.connectPayments}
               </p>
             </div>
             <div>
               <p className="text-xs text-muted">UTC-month external payment cohort</p>
-              <p className="mt-1 text-sm text-text-primary">{formatMoney(externalPaymentTotal)}</p>
+              <p className="mt-1 text-sm text-text-primary">{paymentCohortAvailable ? formatMoney(externalPaymentTotal) : "Unavailable"}</p>
             </div>
           </div>
           {billingConnect?.stripe_connected_account_id ? (
@@ -352,18 +356,22 @@ export function BillingOverviewTab({
         <SectionHeader icon={Mail} title="Message usage" description="Automation is included for every studio. Only email volume above the included monthly allowance is metered." />
         <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
           <div>
-            <div className="h-2 rounded-full bg-surface-raised">
-              <div
-                className="h-2 rounded-full bg-accent"
-                style={{ width: `${Math.min(100, ((billingPlatform?.email_usage.sent || 0) / (billingPlatform?.email_usage.included || 500)) * 100)}%` }}
-              />
-            </div>
+            {emailUsageProgress !== null ? (
+              <div className="h-2 rounded-full bg-surface-raised">
+                <div
+                  className="h-2 rounded-full bg-accent"
+                  style={{ width: `${emailUsageProgress}%` }}
+                />
+              </div>
+            ) : null}
             <p className="mt-2 text-xs text-muted">
-              {billingPlatform?.email_usage.sent || 0} of {billingPlatform?.email_usage.included || 500} emails used this month. Overage is $0.002 per email.
+              {emailUsage
+                ? `${emailUsage.sent} of ${emailUsage.included} emails used this month. Overage is $0.002 per email.`
+                : "Unavailable"}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-sm font-medium text-text-primary">{formatMoney(billingPlatform?.email_usage.estimated_overage_cents || 0)}</p>
+            <p className="text-sm font-medium text-text-primary">{emailUsage ? formatMoney(emailUsage.estimated_overage_cents) : "Unavailable"}</p>
             <p className="text-xs text-muted">Estimated overage</p>
           </div>
         </div>
