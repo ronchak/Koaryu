@@ -136,10 +136,7 @@ export function bundle(
       : {}),
     ...(programsSection
       ? {
-          "@/components/ui/input": `exports.Input=()=>null;`,
-          "@/components/ui/button": `exports.Button=({children,onClick})=>require('react').createElement('button',{onClick},children);`,
-          "@/components/ui/dismissible-notice": `exports.DismissibleNotice=({children})=>children;`,
-          "lucide-react": `for (const name of ['Archive','Check','Plus','RefreshCw','RotateCcw','Save','Settings2','UserPlus']) exports[name]=()=>null;`,
+          "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
         }
       : {}),
     ...(subscriptionPage || realApi
@@ -301,7 +298,7 @@ window.fixture.renderRecordsLoading = (props) => {
   const formObserver =
     form === null
       ? ""
-      : `function StudentFormFixture(){const [open,setOpen]=React.useState(false);const store=useStore();return React.createElement(React.Fragment,null,React.createElement('button',{onClick:()=>setOpen(true)},'Open form'),open?React.createElement(require(${form}).StudentForm,{onClose:()=>setOpen(false),onSubmit:async(data)=>{window.fixture.submitted=data;await store.addStudent(data);}}):null);}`;
+      : `function StudentFormFixture(){const [open,setOpen]=React.useState(false);const [initialData,setInitialData]=React.useState(null);const store=useStore();window.fixture.openStudentEdit=data=>{setInitialData(data);setOpen(true)};const submit=async data=>{window.fixture.submitted=data;if(window.fixture.controlStudentForm)await new Promise((resolve,reject)=>(window.fixture.formSubmissions??=[]).push({data,resolve,reject}));else if(initialData)await store.updateStudent('student-1',data);else await store.addStudent(data);setOpen(false)};return React.createElement(React.Fragment,null,React.createElement('button',{onClick:()=>{setInitialData(null);setOpen(true)}},'Open form'),open?React.createElement(require(${form}).StudentForm,{onClose:()=>setOpen(false),onSubmit:submit,...(initialData?{initialData}:{} )}):null);}`;
   const roster = rosterController ? add("@/lib/students-page-controller") : null;
   const rosterObserver =
     roster === null

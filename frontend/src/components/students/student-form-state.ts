@@ -1,7 +1,7 @@
 "use client";
 
 import { CommandOutcomeUnknown } from "../../lib/command-outcome.ts";
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useRef, useState, type FormEvent } from "react";
 import type { GuardianCreate, StudentCreate, StudentStatus, StudentUpdate } from "@/types";
 
 export type StudentFormTab = "info" | "contact" | "guardian";
@@ -265,6 +265,8 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
   const [tab, setTab] = useState<StudentFormTab>("info");
   const [error, setError] = useState("");
   const [outcomeUnknown, setOutcomeUnknown] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const initialData = options.initialData;
   const [fields, setFields] = useState(() => ({
     ...buildInitialStudentFormFields(initialData),
@@ -280,7 +282,7 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (outcomeUnknown) return;
+    if (outcomeUnknown || isSubmittingRef.current) return;
     setError("");
 
     const validation = validateStudentFormFields(fields, {
@@ -292,6 +294,8 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
       return;
     }
 
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     try {
       await options.onSubmit(
         buildStudentFormSubmitPayload(fields, initialData, {
@@ -301,6 +305,9 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
     } catch (err: unknown) {
       if (err instanceof CommandOutcomeUnknown) setOutcomeUnknown(true);
       setError(err instanceof Error ? err.message : "Failed to add student");
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   }
 
@@ -309,6 +316,7 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
     outcomeUnknown,
     fields,
     handleSubmit,
+    isSubmitting,
     setField,
     setTab,
     tab,
