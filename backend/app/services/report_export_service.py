@@ -359,7 +359,12 @@ class ReportExportService:
         return build_data_hygiene_readiness(data, reference_date)
 
     def _current_student_date(self, studio_id: str) -> date:
-        return self._student_today or studio_today_for_studio(self.supabase, studio_id)
+        if self._student_today is not None:
+            return self._student_today
+        self.budget.admit_provider_call()
+        current_date = studio_today_for_studio(self.supabase, studio_id)
+        self.budget.consume_rows(1)
+        return current_date
 
     def _fetch_intelligence_dataset(self, studio_id: str) -> dict[str, list[dict[str, Any]]]:
         if self._active_report is None:

@@ -163,6 +163,7 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertIn("minor_without_guardian", before_hygiene)
         self.assertNotIn("minor_without_guardian", birthday_hygiene)
         self.assertTrue(student["is_minor"])
+        self.assertFalse(any(entry["table"] == "studios" for entry in supabase.log))
 
     def test_student_export_propagates_failed_studio_date_lookup(self):
         student = student_row(1)

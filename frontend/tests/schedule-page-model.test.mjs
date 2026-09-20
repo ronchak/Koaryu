@@ -20,8 +20,8 @@ import {
   runSessionAttendanceRefresh,
 } from "../src/lib/schedule-page-model.ts";
 
-function student(id, status) {
-  return { id, status };
+function student(id, status, overrides = {}) {
+  return { id, status, ...overrides };
 }
 
 function deferred() {
@@ -136,15 +136,32 @@ describe("schedule page model", () => {
   });
 
   it("keeps only active and trialing students available for attendance", () => {
+    const birthday = student("active", "active", {
+      date_of_birth: "2008-05-20",
+      is_minor: true,
+    });
+    const nullDob = student("trialing", "trialing", {
+      date_of_birth: null,
+      is_minor: true,
+    });
+    const source = [
+      birthday,
+      nullDob,
+      student("inactive", "inactive"),
+      student("paused", "paused"),
+    ];
+    const beforeBirthday = getActiveScheduleStudents(source, "2026-05-19");
+    const current = getActiveScheduleStudents(source, "2026-05-20");
+
     assert.deepEqual(
-      getActiveScheduleStudents([
-        student("active", "active"),
-        student("trialing", "trialing"),
-        student("inactive", "inactive"),
-        student("paused", "paused"),
-      ]).map((item) => item.id),
+      current.map((item) => item.id),
       ["active", "trialing"],
     );
+    assert.equal(beforeBirthday[0].is_minor, true);
+    assert.equal(current[0].is_minor, false);
+    assert.equal(current[1].is_minor, false);
+    assert.equal(birthday.is_minor, true);
+    assert.equal(nullDob.is_minor, true);
   });
 
   it("tracks session attendance refresh through pending and success", async () => {
