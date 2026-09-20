@@ -132,6 +132,7 @@ SOURCE_VOCABULARY_COLUMNS = {
         "deleted_at",
         "created_at",
         "is_minor",
+        "date_of_birth",
         "emergency_contact_name",
         "program_id",
         "current_belt_rank_id",

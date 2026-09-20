@@ -7,8 +7,7 @@ import type {
   StudentStatus,
   StudentUpdate,
 } from "@/types";
-
-const MINOR_AGE_MS = 18 * 365.25 * 24 * 60 * 60 * 1000;
+import { isMinorOnDate } from "./student-age.ts";
 
 export function normalizeStudentIds(studentIds: string[]): string[] {
   return Array.from(new Set(studentIds.map((studentId) => studentId.trim()).filter(Boolean)));
@@ -85,13 +84,13 @@ export function buildPreviewStudent(
     beltRanks = [],
     idFactory,
     now = new Date(),
-    nowMs = Date.now(),
+    businessDate = now.toISOString().split("T")[0],
   }: {
     beltLadders?: BeltLadder[];
     beltRanks?: BeltRank[];
     idFactory: () => string;
     now?: Date;
-    nowMs?: number;
+    businessDate?: string;
   },
 ): Student {
   const selectedProgramIds = data.program_ids?.length
@@ -116,9 +115,7 @@ export function buildPreviewStudent(
     legal_last_name: data.legal_last_name,
     preferred_name: data.preferred_name,
     date_of_birth: data.date_of_birth,
-    is_minor: data.date_of_birth
-      ? nowMs - new Date(data.date_of_birth).getTime() < MINOR_AGE_MS
-      : false,
+    is_minor: isMinorOnDate(data.date_of_birth, businessDate),
     hold_start_date: data.hold_start_date,
     hold_end_date: data.hold_end_date,
     email: data.email,
@@ -183,11 +180,13 @@ export function applyPreviewStudentUpdate(
     beltRanks = [],
     idFactory,
     now = new Date(),
+    businessDate = now.toISOString().split("T")[0],
   }: {
     beltLadders?: BeltLadder[];
     beltRanks?: BeltRank[];
     idFactory: () => string;
     now?: Date;
+    businessDate?: string;
   },
 ): Student {
   const nowIso = now.toISOString();
@@ -201,6 +200,7 @@ export function applyPreviewStudentUpdate(
     tags: data.tags ?? student.tags,
     updated_at: nowIso,
   };
+  baseStudent.is_minor = isMinorOnDate(baseStudent.date_of_birth, businessDate);
 
   if (!hasProgramUpdate) {
     return baseStudent;

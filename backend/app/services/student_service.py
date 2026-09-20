@@ -36,6 +36,8 @@ from app.services.student_photo_store import StudentPhotoStore
 from app.services.student_program_memberships import StudentProgramMembershipStore
 from app.services.student_response_builder import PHOTO_URL_UNSET, StudentResponseBuilder
 from app.services.student_roster_query import StudentRosterQuery, fetch_student_roster_page
+from app.services.student_age import is_minor_on_date
+from app.services.studio_business_date import studio_today_for_studio
 from app.services.student_write_payload import (
     prepare_student_write_payload,
 )
@@ -102,11 +104,13 @@ class StudentService:
         *,
         include_guardians: bool = True,
         include_photo_urls: bool = True,
+        today: Optional[date] = None,
     ) -> list[StudentResponse]:
         return self._student_responses().rows_to_responses(
             rows,
             include_guardians=include_guardians,
             include_photo_urls=include_photo_urls,
+            today=today,
         )
 
     def row_to_response(
@@ -115,12 +119,14 @@ class StudentService:
         guardians: Optional[list[GuardianResponse]] = None,
         memberships: Optional[list[StudentProgramMembershipResponse]] = None,
         photo_url: Any = PHOTO_URL_UNSET,
+        today: Optional[date] = None,
     ) -> StudentResponse:
         return self._student_responses().row_to_response(
             row,
             guardians=guardians,
             memberships=memberships,
             photo_url=photo_url,
+            today=today,
         )
 
     # ---- CRUD ----
@@ -183,6 +189,14 @@ class StudentService:
             page_size=page_size,
         )
         page = fetch_student_roster_page(self.supabase, query, cursor=cursor)
+        dated_items = [item for item in page.items if item.date_of_birth]
+        for item in page.items:
+            if not item.date_of_birth:
+                item.is_minor = False
+        if dated_items:
+            reference_date = studio_today_for_studio(self.supabase, studio_id)
+            for item in dated_items:
+                item.is_minor = is_minor_on_date(item.date_of_birth, reference_date)
         photo_urls = self._student_photos().create_signed_urls(
             [item.photo_path for item in page.items if item.photo_path]
         )

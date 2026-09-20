@@ -275,8 +275,8 @@ export function useStudentsPageController({
   ]);
   const visibleStudents = usesDerivedRosterFilters ? students : pagedStudents;
   const studentRows = useMemo(
-    () => buildStudentRows(visibleStudents, programs),
-    [programs, visibleStudents],
+    () => buildStudentRows(visibleStudents, programs, config.businessDate),
+    [config.businessDate, programs, visibleStudents],
   );
   const inactivityRows = useMemo(
     () =>

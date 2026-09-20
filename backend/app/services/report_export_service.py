@@ -31,6 +31,8 @@ from app.services.report_intelligence import (
     build_schedule_utilization_demand,
 )
 from app.services.staff_service import StaffService
+from app.services.student_age import is_minor_on_date
+from app.services.studio_business_date import studio_today_for_studio
 
 REPORT_EXPORT_ROLE_RANK = {
     "front_desk": 10,
@@ -189,6 +191,7 @@ class ReportExportService:
     ):
         self.supabase = supabase
         self.today = today or date.today()
+        self._student_today = today
         self.budget = budget or ReportExportBudget()
         self._active_report: Optional[CsvReport] = None
 
@@ -347,7 +350,16 @@ class ReportExportService:
         )
 
     def _build_data_hygiene_readiness_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_data_hygiene_readiness(self._fetch_intelligence_dataset(studio_id), self.today)
+        data = self._fetch_intelligence_dataset(studio_id)
+        reference_date = (
+            self._current_student_date(studio_id)
+            if any(student.get("date_of_birth") for student in data.get("students", []))
+            else None
+        )
+        return build_data_hygiene_readiness(data, reference_date)
+
+    def _current_student_date(self, studio_id: str) -> date:
+        return self._student_today or studio_today_for_studio(self.supabase, studio_id)
 
     def _fetch_intelligence_dataset(self, studio_id: str) -> dict[str, list[dict[str, Any]]]:
         if self._active_report is None:
@@ -355,7 +367,18 @@ class ReportExportService:
         return self._report_data().fetch_intelligence_dataset(self._active_report, studio_id)
 
     def _fetch_table_rows(self, report: CsvReport, studio_id: str) -> list[dict[str, Any]]:
-        return self._report_data().fetch_table_rows(report, studio_id)
+        rows = self._report_data().fetch_table_rows(report, studio_id)
+        if report.id != "students":
+            return rows
+        dated_rows = [row for row in rows if row.get("date_of_birth")]
+        projected_rows = [{**row, "is_minor": False} for row in rows]
+        if not dated_rows:
+            return projected_rows
+        reference_date = self._current_student_date(studio_id)
+        for row in projected_rows:
+            if row.get("date_of_birth"):
+                row["is_minor"] = is_minor_on_date(row["date_of_birth"], reference_date)
+        return projected_rows
 
     def _write_csv(self, columns: tuple[str, ...], rows: list[dict[str, Any]]) -> str:
         output = StringIO()

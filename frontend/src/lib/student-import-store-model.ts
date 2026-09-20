@@ -10,6 +10,7 @@ import type {
 } from "@/types";
 import { resolvePreviewImportStudentIds } from "./csv-import.ts";
 import { findPreviewStartingRankId } from "./student-store-model.ts";
+import { isMinorOnDate } from "./student-age.ts";
 
 export const CSV_IMPORT_STATUS_ALIASES: Record<string, StudentStatus> = {
   current: "active",
@@ -27,7 +28,6 @@ const VALID_CSV_IMPORT_STATUSES: StudentStatus[] = [
   "paused",
   "canceled",
 ];
-const MINOR_AGE_MS = 18 * 365.25 * 24 * 60 * 60 * 1000;
 const NAME_PARTICLES = new Set([
   "da",
   "das",
@@ -57,7 +57,7 @@ interface BuildPreviewStudentImportResultInput {
   existingStudents: Student[];
   idFactory: () => string;
   now?: () => Date;
-  nowMs?: () => number;
+  businessDate?: string;
 }
 
 export interface PreviewStudentImportExecution {
@@ -170,7 +170,7 @@ function buildImportedPreviewStudent({
   beltRankId,
   idFactory,
   now,
-  nowMs,
+  businessDate,
 }: {
   mapped: Record<string, string>;
   status: StudentStatus;
@@ -178,7 +178,7 @@ function buildImportedPreviewStudent({
   beltRankId?: string;
   idFactory: () => string;
   now: () => Date;
-  nowMs: () => number;
+  businessDate: string;
 }): Student {
   const tags = mapped.tags
     ? mapped.tags
@@ -187,7 +187,7 @@ function buildImportedPreviewStudent({
         .filter(Boolean)
     : [];
   const dob = mapped.date_of_birth || undefined;
-  const isMinor = dob ? nowMs() - new Date(dob).getTime() < MINOR_AGE_MS : false;
+  const isMinor = isMinorOnDate(dob, businessDate);
   const createdAt = now().toISOString();
   const updatedAt = now().toISOString();
   const studentId = idFactory();
@@ -272,7 +272,7 @@ export function buildPreviewStudentImportResult({
   existingStudents,
   idFactory,
   now = () => new Date(),
-  nowMs = () => Date.now(),
+  businessDate = now().toISOString().split("T")[0],
 }: BuildPreviewStudentImportResultInput): PreviewStudentImportExecution {
   const importedStudents: Student[] = [];
   const issueRows: CsvImportResult["rows"] = [];
@@ -363,7 +363,7 @@ export function buildPreviewStudentImportResult({
         beltRankId: resolvedBeltRankId,
         idFactory,
         now,
-        nowMs,
+        businessDate,
       }),
     );
   }

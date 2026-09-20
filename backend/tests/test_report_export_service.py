@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import unittest
+from datetime import date
 from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -120,6 +121,57 @@ class StaffExportSupabase(TableBackedSupabase):
 
 
 class ReportExportServiceTest(unittest.TestCase):
+    def test_student_and_hygiene_exports_project_current_minor_status_from_dob(self):
+        student = student_row(1)
+        student.update(
+            {
+                "date_of_birth": "2008-09-20",
+                "is_minor": True,
+                "emergency_contact_name": "Emergency contact",
+            }
+        )
+        supabase = TableBackedSupabase(
+            {
+                "students": [student],
+                "student_guardians": [],
+                "student_program_memberships": [],
+                "student_billing_enrollments": [],
+                "leads": [],
+                "billing_payers": [],
+            }
+        )
+
+        before_csv, _ = asyncio.run(
+            ReportExportService(supabase, today=date(2026, 9, 19)).build_csv("students", "studio-1")
+        )
+        birthday_csv, _ = asyncio.run(
+            ReportExportService(supabase, today=date(2026, 9, 20)).build_csv("students", "studio-1")
+        )
+        before_hygiene, _ = asyncio.run(
+            ReportExportService(supabase, today=date(2026, 9, 19)).build_csv(
+                "data_hygiene_readiness", "studio-1"
+            )
+        )
+        birthday_hygiene, _ = asyncio.run(
+            ReportExportService(supabase, today=date(2026, 9, 20)).build_csv(
+                "data_hygiene_readiness", "studio-1"
+            )
+        )
+
+        self.assertEqual(next(csv.DictReader(StringIO(before_csv)))["is_minor"], "true")
+        self.assertEqual(next(csv.DictReader(StringIO(birthday_csv)))["is_minor"], "false")
+        self.assertIn("minor_without_guardian", before_hygiene)
+        self.assertNotIn("minor_without_guardian", birthday_hygiene)
+        self.assertTrue(student["is_minor"])
+
+    def test_student_export_propagates_failed_studio_date_lookup(self):
+        student = student_row(1)
+        student["date_of_birth"] = "2010-01-01"
+        supabase = TableBackedSupabase({"students": [student], "studios": []})
+
+        with self.assertRaisesRegex(RuntimeError, "timezone could not be loaded"):
+            asyncio.run(ReportExportService(supabase).build_csv("students", "studio-1"))
+
     def test_deferred_billing_reports_are_not_in_available_catalog(self):
         service = ReportExportService(TableBackedSupabase({}))
         deferred_reports = build_billing_table_report_catalog(ReportExportService)
@@ -358,6 +410,7 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertTrue(lines[0].startswith("id,studio_id"))
         self.assertTrue(lines[1].startswith("s-0000,studio-1"))
         student_queries = [entry for entry in supabase.log if entry["table"] == "students"]
+        self.assertFalse(any(entry["table"] == "studios" for entry in supabase.log))
         self.assertEqual([entry["range"] for entry in student_queries], [(0, 999), (1000, 1999)])
         self.assertEqual(
             student_queries[0]["orders"],

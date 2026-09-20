@@ -1,4 +1,5 @@
 import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
+import { withCurrentMinorStatus } from "./student-age.ts";
 import type { Program, Student, StudentListQueryContract, StudentRosterRowResponse } from "@/types";
 
 export type SortKey = NonNullable<StudentListQueryContract["sort_by"]>;
@@ -275,8 +276,13 @@ export function isCurrentStudent(student: Student) {
   );
 }
 
-export function buildStudentRows(students: Student[], programs: Program[]): StudentRosterRow[] {
-  return students.map((student) => {
+export function buildStudentRows(
+  students: Student[],
+  programs: Program[],
+  businessDate: string,
+): StudentRosterRow[] {
+  return students.map((sourceStudent) => {
+    const student = withCurrentMinorStatus(sourceStudent, businessDate);
     const activeMemberships = student.program_memberships || [];
     return {
       student,

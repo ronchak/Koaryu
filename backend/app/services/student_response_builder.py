@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Optional
 
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -11,6 +12,8 @@ from app.schemas.student import (
 )
 from app.services.student_photo_store import StudentPhotoStore
 from app.services.student_program_memberships import is_optional_student_membership_schema_error
+from app.services.student_age import is_minor_on_date
+from app.services.studio_business_date import studio_today_for_studio
 
 PHOTO_URL_UNSET = object()
 
@@ -169,7 +172,16 @@ class StudentResponseBuilder:
         *,
         include_guardians: bool = True,
         include_photo_urls: bool = True,
+        today: Optional[date] = None,
     ) -> list[StudentResponse]:
+        if not rows:
+            return []
+        studio_ids = {row.get("studio_id") for row in rows if row.get("studio_id")}
+        if len(studio_ids) != 1:
+            raise RuntimeError("Student response batch must belong to one studio.")
+        reference_date = today
+        if reference_date is None and any(row.get("date_of_birth") for row in rows):
+            reference_date = studio_today_for_studio(self.supabase, studio_ids.pop())
         student_ids = [row["id"] for row in rows if row.get("id")]
         student_studio_ids = {
             row["id"]: row["studio_id"] for row in rows if row.get("id") and row.get("studio_id")
@@ -197,6 +209,7 @@ class StudentResponseBuilder:
                 photo_url=photo_urls_by_path.get(row.get("photo_path"))
                 if include_photo_urls
                 else None,
+                today=reference_date,
             )
             for row in rows
         ]
@@ -207,6 +220,7 @@ class StudentResponseBuilder:
         guardians: Optional[list[GuardianResponse]] = None,
         memberships: Optional[list[StudentProgramMembershipResponse]] = None,
         photo_url: Any = PHOTO_URL_UNSET,
+        today: Optional[date] = None,
     ) -> StudentResponse:
         if guardians is None:
             guardians = self.embedded_guardians_from_row(row)
@@ -222,8 +236,15 @@ class StudentResponseBuilder:
                     row = {**row, "photo_path": photo_path}
             photo_url = self.photo_store.create_signed_url(photo_path)
 
+        date_of_birth = row.get("date_of_birth")
+        is_minor = False
+        if date_of_birth:
+            reference_date = today or studio_today_for_studio(self.supabase, row["studio_id"])
+            is_minor = is_minor_on_date(date_of_birth, reference_date)
+
         normalized_row = {
             **{k: v for k, v in row.items() if k not in ("deleted_at", "student_guardians")},
+            "is_minor": is_minor,
             "tags": row.get("tags") or [],
             "photo_url": photo_url,
         }

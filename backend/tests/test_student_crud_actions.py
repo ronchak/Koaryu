@@ -179,6 +179,7 @@ class FakeStudentWriteSupabase(RpcBackedSupabase):
 
 
 def build_actions(supabase, *, create_signed_photo_url=lambda path: f"signed:{path}"):
+    supabase.tables.setdefault("studios", [{"id": "studio-1", "timezone": "UTC"}])
     return StudentCrudActions(
         supabase=supabase,
         membership_store=FakeMembershipStore(),
@@ -192,6 +193,76 @@ def build_actions(supabase, *, create_signed_photo_url=lambda path: f"signed:{pa
 
 
 class StudentCrudActionsTest(unittest.TestCase):
+    def test_failed_date_lookup_prevents_create_and_update_rpc_writes(self):
+        create_supabase = FakeStudentWriteSupabase(
+            {
+                "programs": [{"id": "program-1", "studio_id": "studio-1"}],
+                "students": [],
+                "student_program_memberships": [],
+                "guardians": [],
+                "student_guardians": [],
+                "audit_logs": [],
+            }
+        )
+        create_actions = build_actions(create_supabase)
+        create_supabase.tables["studios"] = []
+
+        with self.assertRaisesRegex(RuntimeError, "timezone could not be loaded"):
+            asyncio.run(
+                create_actions.create_student(
+                    StudentCreate(
+                        legal_first_name="Aiko",
+                        legal_last_name="Tanaka",
+                        date_of_birth="2010-01-01",
+                    ),
+                    "studio-1",
+                    "actor-1",
+                )
+            )
+
+        self.assertEqual(create_supabase.rpc_calls, [])
+        self.assertEqual(create_supabase.tables["students"], [])
+        self.assertEqual(create_supabase.tables["audit_logs"], [])
+
+        update_supabase = FakeStudentWriteSupabase(
+            {
+                "programs": [],
+                "students": [
+                    {
+                        "id": "student-1",
+                        "studio_id": "studio-1",
+                        "legal_first_name": "Aiko",
+                        "legal_last_name": "Tanaka",
+                        "date_of_birth": "2010-01-01",
+                        "status": "active",
+                        "tags": [],
+                        "created_at": "2026-05-20T00:00:00+00:00",
+                        "updated_at": "2026-05-20T00:00:00+00:00",
+                    }
+                ],
+                "student_program_memberships": [],
+                "guardians": [],
+                "student_guardians": [],
+                "audit_logs": [],
+            }
+        )
+        update_actions = build_actions(update_supabase)
+        update_supabase.tables["studios"] = []
+
+        with self.assertRaisesRegex(RuntimeError, "timezone could not be loaded"):
+            asyncio.run(
+                update_actions.update_student(
+                    "student-1",
+                    StudentUpdate(preferred_name="Ai"),
+                    "studio-1",
+                    "actor-1",
+                )
+            )
+
+        self.assertEqual(update_supabase.rpc_calls, [])
+        self.assertNotIn("preferred_name", update_supabase.tables["students"][0])
+        self.assertEqual(update_supabase.tables["audit_logs"], [])
+
     def test_update_missing_student_maps_atomic_rpc_error_to_not_found(self):
         class MissingStudentSupabase(FakeStudentWriteSupabase):
             def _rpc_write_student_profile_v2_atomic(self, _params):

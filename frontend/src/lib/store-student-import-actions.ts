@@ -24,6 +24,7 @@ type CommitStudents = (
 ) => void;
 
 interface UseStoreStudentImportActionsOptions {
+  businessDateRef: StoreRef<string>;
   beginLiveAuthRequest: BeginLiveAuthRequest;
   beltLaddersRef: StoreRef<BeltLadder[]>;
   beltRanksRef: StoreRef<BeltRank[]>;
@@ -41,6 +42,7 @@ interface UseStoreStudentImportActionsOptions {
 }
 
 export function useStoreStudentImportActions({
+  businessDateRef,
   beginLiveAuthRequest,
   beltLaddersRef,
   beltRanksRef,
@@ -74,6 +76,7 @@ export function useStoreStudentImportActions({
           fallbackRanks: beltRanksRef.current,
           existingStudents: studentsRef.current,
           idFactory: localId,
+          businessDate: businessDateRef.current,
         });
         if (execution.importedStudents.length > 0) {
           persistStudents(execution.students);
@@ -215,6 +218,7 @@ export function useStoreStudentImportActions({
     },
     [
       beginLiveAuthRequest,
+      businessDateRef,
       beltLaddersRef,
       beltRanksRef,
       commitStudents,

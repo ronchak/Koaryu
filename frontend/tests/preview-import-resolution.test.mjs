@@ -64,6 +64,7 @@ describe("preview import resolution", () => {
           Tags: "trial, vip",
           Guardian: "Mina Lane",
           "Guardian Email": "mina@example.test",
+          DOB: "2008-05-24",
         },
         {
           Name: "Bo Kim",
@@ -82,6 +83,7 @@ describe("preview import resolution", () => {
         Tags: "tags",
         Guardian: "guardian_name",
         "Guardian Email": "guardian_email",
+        DOB: "date_of_birth",
       },
       options: {
         create_missing_programs: false,
@@ -106,7 +108,7 @@ describe("preview import resolution", () => {
       existingStudents: [],
       idFactory: idFactory(),
       now: () => new Date("2026-05-24T12:00:00.000Z"),
-      nowMs: () => new Date("2026-05-24T12:00:00.000Z").getTime(),
+      businessDate: "2026-05-24",
     });
 
     assert.equal(execution.importedStudents.length, 1);
@@ -123,6 +125,8 @@ describe("preview import resolution", () => {
     assert.equal(student.legal_last_name, "Lane");
     assert.equal(student.program_id, "program-bjj");
     assert.equal(student.current_belt_rank_id, "rank-stripe-1");
+    assert.equal(student.date_of_birth, "2008-05-24");
+    assert.equal(student.is_minor, false);
     assert.notEqual(student.program_id, "Brazilian Jiu Jitsu");
     assert.notEqual(student.current_belt_rank_id, "Stripe 1");
     assert.equal(student.status, "active");
@@ -178,7 +182,7 @@ describe("preview import resolution", () => {
       existingStudents: [],
       idFactory: idFactory(),
       now: () => new Date("2026-05-24T12:00:00.000Z"),
-      nowMs: () => new Date("2026-05-24T12:00:00.000Z").getTime(),
+      businessDate: "2026-05-24",
     });
 
     assert.equal(execution.importedStudents[0].current_belt_rank_id, "rank-white");
@@ -222,7 +226,7 @@ describe("preview import resolution", () => {
       existingStudents: [],
       idFactory: idFactory(),
       now: () => new Date("2026-05-24T12:00:00.000Z"),
-      nowMs: () => new Date("2026-05-24T12:00:00.000Z").getTime(),
+      businessDate: "2026-05-24",
     });
 
     assert.equal(execution.importedStudents[0].current_belt_rank_id, "rank-white");

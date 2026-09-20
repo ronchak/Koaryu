@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Optional
 
 from app.services.report_intelligence_helpers import (
     OPEN_LEAD_STAGES,
@@ -15,6 +15,7 @@ from app.services.report_intelligence_helpers import (
     _student_name,
     _student_start_date,
 )
+from app.services.student_age import is_minor_on_date
 
 
 def build_belt_momentum_testing_pipeline(
@@ -306,9 +307,8 @@ def build_instructor_staff_impact(
 
 
 def build_data_hygiene_readiness(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: Optional[date]
 ) -> list[dict[str, Any]]:
-    del today
     guardians_by_student = _index_many(data.get("student_guardians", []), "student_id")
     billing_enrollments_by_student = _index_many(data.get("billing_enrollments", []), "student_id")
     memberships_by_student = _index_many(data.get("memberships", []), "student_id")
@@ -318,7 +318,15 @@ def build_data_hygiene_readiness(
             continue
         student_id = student.get("id")
         active = _is_active_student(student)
-        if student.get("is_minor") and not guardians_by_student.get(student_id):
+        date_of_birth = student.get("date_of_birth")
+        if date_of_birth and today is None:
+            raise RuntimeError("Student date context is required for hygiene readiness.")
+        if (
+            date_of_birth
+            and today is not None
+            and is_minor_on_date(date_of_birth, today)
+            and not guardians_by_student.get(student_id)
+        ):
             rows.append(
                 _hygiene_row(
                     "minor_without_guardian",

@@ -4,6 +4,7 @@ import { useResumeRefresh } from "@/lib/use-resume-refresh";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { safeStudentsReturn } from "@/lib/student-roster-location";
+import { withCurrentMinorStatus } from "./student-age";
 import { api } from "@/lib/api";
 import { buildStudentDetailModel, validateStudentPhotoFile } from "@/lib/student-detail-page-model";
 import type {
@@ -248,7 +249,11 @@ export function useStudentDetailPageController({
     token,
   ]);
 
-  const student = hydratedStudent ?? listStudent;
+  const sourceStudent = hydratedStudent ?? listStudent;
+  const student = useMemo(
+    () => (sourceStudent ? withCurrentMinorStatus(sourceStudent, config.businessDate) : undefined),
+    [config.businessDate, sourceStudent],
+  );
   const detailReady = isPreviewMode ? Boolean(student) : Boolean(hydratedStudent);
   const promotionHistory =
     promotionHistoryState?.studentId === id ? promotionHistoryState.items : EMPTY_PROMOTION_HISTORY;

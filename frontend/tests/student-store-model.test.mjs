@@ -161,6 +161,34 @@ function membershipFacts(value) {
 }
 
 describe("student store model", () => {
+  it("uses the studio business date for preview DOB changes", () => {
+    const source = student("leap", {
+      date_of_birth: "2008-02-29",
+      is_minor: true,
+    });
+    const draft = { legal_first_name: "Draft name" };
+
+    const february = applyPreviewStudentUpdate(source, draft, [], {
+      idFactory: idFactory(),
+      businessDate: "2026-02-28",
+    });
+    const march = applyPreviewStudentUpdate(source, draft, [], {
+      idFactory: idFactory(),
+      businessDate: "2026-03-01",
+    });
+    const cleared = applyPreviewStudentUpdate(source, { date_of_birth: null }, [], {
+      idFactory: idFactory(),
+      businessDate: "2026-02-28",
+    });
+
+    assert.equal(february.is_minor, true);
+    assert.equal(march.is_minor, false);
+    assert.equal(cleared.date_of_birth, null);
+    assert.equal(cleared.is_minor, false);
+    assert.equal(draft.legal_first_name, "Draft name");
+    assert.equal(source.is_minor, true);
+  });
+
   it("normalizes bulk student ids and tags before API/store updates", () => {
     assert.deepEqual(normalizeStudentIds([" s-1 ", "", "s-2", "s-1"]), ["s-1", "s-2"]);
     assert.deepEqual(normalizeTags([" vip ", "trial", "vip", ""]), ["vip", "trial"]);
@@ -229,7 +257,7 @@ describe("student store model", () => {
         ],
         idFactory: idFactory(),
         now: new Date("2026-05-24T12:00:00.000Z"),
-        nowMs: new Date("2026-05-24T12:00:00.000Z").getTime(),
+        businessDate: "2026-05-24",
       },
     );
 
