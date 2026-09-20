@@ -117,7 +117,7 @@ release/image mappings must be updated and verified for the actual candidate
 before an authorized hosted rollout. Old V38 approvals and mappings are not reusable.
 
 Exact V31 through V37 remain state-bound forward-recovery points. They may
-resume only their immutable suffix through V47; hybrid histories, catalogs or
+resume only their immutable suffix through V49; hybrid histories, catalogs or
 readiness results are refused. A predecessor before V38 also needs the historical
 billing-index migration. Its ordinary index builds hold write locks that can delay
 billing and webhook writes until that transaction finishes. Plan that write pause
@@ -126,7 +126,7 @@ for a separately authorized rollout; its hosted duration has not been measured.
 Migration 119 keeps the historical V24 response. The Payments chain retains its
 version-bound compatibility consumers. V47 adds full preflight V28 and makes V27
 return the V46 tuple only after the complete new state verifies. The existing chain
-retains V45 through V37 responses, including production's V38/V19 consumer. The
+retains V45 through V37 responses, including the historical V38/V19 consumer. The
 candidate backend requires exact V49, 144 migrations, through full preflight V30. V48 introduced V29; V49 retains V29 compatibility only after verifying the complete V49 state. Compatibility preserves old
 readiness; it does not restore retired import behavior or give old split writers
 the new transactional guarantees.
