@@ -1,4 +1,5 @@
 import type { Promotion } from "@/types";
+import { withCurrentLiveAuthRead, type BeginLiveAuthRequest } from "./store-action-types.ts";
 
 export const PROMOTION_HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -129,7 +130,7 @@ export async function loadPromotionHistoryWithCache({
   requests: PromotionHistoryRequests;
   generation: number;
   isGenerationCurrent: (generation: number) => boolean;
-  beginLiveAuthRequest: () => { token: string; isCurrent: () => boolean };
+  beginLiveAuthRequest: BeginLiveAuthRequest;
   fetchPromotionHistory: (studentId: string, token: string) => Promise<Promotion[]>;
   commitCache: (studentId: string, items: Promotion[]) => void;
 }): Promise<Promotion[]> {
@@ -149,9 +150,10 @@ export async function loadPromotionHistoryWithCache({
     return loadPlan.request;
   }
 
-  const liveRequest = beginLiveAuthRequest();
-  const request = fetchPromotionHistory(studentId, liveRequest.token)
-    .then((result) => {
+  const request = withCurrentLiveAuthRead(
+    beginLiveAuthRequest,
+    async (liveRequest) => {
+      const result = await fetchPromotionHistory(studentId, liveRequest.token);
       if (
         requests[studentId] === request &&
         isGenerationCurrent(generation) &&
@@ -160,12 +162,13 @@ export async function loadPromotionHistoryWithCache({
         commitCache(studentId, result);
       }
       return result;
-    })
-    .finally(() => {
-      if (requests[studentId] === request) {
-        delete requests[studentId];
-      }
-    });
+    },
+    () => {},
+  ).finally(() => {
+    if (requests[studentId] === request) {
+      delete requests[studentId];
+    }
+  });
 
   requests[studentId] = request;
   return request;

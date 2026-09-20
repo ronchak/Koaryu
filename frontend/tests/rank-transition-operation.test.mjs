@@ -19,7 +19,7 @@ function storage() {
 }
 
 describe("rank transition operation receipts", () => {
-  it("restores the same exact transition after a remount and clears on success", () => {
+  it("restores a transition and clears only its exact operation", () => {
     const session = storage();
     const pending = {
       fingerprint: rankTransitionFingerprint({
@@ -32,7 +32,11 @@ describe("rank transition operation receipts", () => {
     persistPendingRankTransition("promotion", "student-1", pending, session);
     assert.deepEqual(loadPendingRankTransition("promotion", "student-1", session), pending);
     assert.equal(loadPendingRankTransition("demotion", "student-1", session), null);
-    clearPendingRankTransition("promotion", "student-1", session);
+    const replacement = { ...pending, operationId: "22222222-2222-4222-8222-222222222222" };
+    persistPendingRankTransition("promotion", "student-1", replacement, session);
+    clearPendingRankTransition("promotion", "student-1", pending.operationId, session);
+    assert.deepEqual(loadPendingRankTransition("promotion", "student-1", session), replacement);
+    clearPendingRankTransition("promotion", "student-1", replacement.operationId, session);
     assert.equal(loadPendingRankTransition("promotion", "student-1", session), null);
   });
 
