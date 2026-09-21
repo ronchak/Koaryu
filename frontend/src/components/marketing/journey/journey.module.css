@@ -1475,6 +1475,10 @@
     text-align: center;
     text-overflow: ellipsis;
   }
+  .mobileProgress option {
+    color: var(--koaryu-ink);
+    background: var(--koaryu-paper);
+  }
 }
 
 @media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
