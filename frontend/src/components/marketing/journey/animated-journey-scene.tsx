@@ -31,6 +31,10 @@ export const AnimatedJourneyScene = memo(function AnimatedJourneyScene({
     const origin = progressRef.current;
     const destination = target.progress;
     const duration = sceneTransitionDuration(origin, destination) * (compact ? 0.62 : 1);
+    // The doorway camera already accelerates cubically. A second ease-in makes
+    // the mobile 05/06 transition appear stalled before it suddenly rushes past.
+    const mobileDoorway =
+      compact && Math.min(origin, destination) >= 0.516 && Math.max(origin, destination) <= 0.64;
     const started = performance.now();
     let animation: number;
     const tick = (now: number) => {
@@ -38,15 +42,33 @@ export const AnimatedJourneyScene = memo(function AnimatedJourneyScene({
         target.animate && Math.abs(destination - origin) > 0.0001
           ? clamp((now - started) / duration)
           : 1;
-      const eased = Math.max(origin, destination) > 0.52 ? easeInOut(raw) : easeOut(raw);
+      const eased =
+        Math.max(origin, destination) > 0.52 && !mobileDoorway ? easeInOut(raw) : easeOut(raw);
       const next = mix(origin, destination, eased);
       progressRef.current = next;
       setProgress(next);
-      const lightMix = clamp(rangeProgress(next, 0.048, 0.096) - rangeProgress(next, 0.48, 0.52));
-      rootRef.current?.style.setProperty(
-        "--journey-chrome-color",
-        `color-mix(in srgb, var(--koaryu-ink-light) ${Math.round(lightMix * 100)}%, var(--koaryu-ink))`,
-      );
+      if (compact) {
+        // The phone crop keeps the ceiling behind the header longer than desktop.
+        // The footer is over the darker mountains only at the start of the story.
+        const headerLight = next >= 0.075 && next < 0.6;
+        const footerLight = next < 0.19;
+        const style = rootRef.current?.style;
+        for (const [property, light] of [
+          ["--journey-mobile-header-color", headerLight],
+          ["--journey-mobile-footer-color", footerLight],
+        ] as const) {
+          const color = light ? "var(--koaryu-ink-light)" : "var(--koaryu-ink)";
+          // Inherited custom properties otherwise invalidate the whole page on
+          // each camera frame, even though mobile only needs two color switches.
+          if (style?.getPropertyValue(property) !== color) style?.setProperty(property, color);
+        }
+      } else {
+        const lightMix = clamp(rangeProgress(next, 0.048, 0.096) - rangeProgress(next, 0.48, 0.52));
+        rootRef.current?.style.setProperty(
+          "--journey-chrome-color",
+          `color-mix(in srgb, var(--koaryu-ink-light) ${Math.round(lightMix * 100)}%, var(--koaryu-ink))`,
+        );
+      }
       if (raw < 1) animation = requestAnimationFrame(tick);
     };
     animation = requestAnimationFrame(tick);

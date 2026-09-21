@@ -809,9 +809,13 @@ function dojoCamera(progress: number) {
 const Dojo = memo(function Dojo({
   progress,
   ids,
+  compact,
+  frame,
 }: {
   readonly progress: number;
   readonly ids: SceneIds;
+  readonly compact: boolean;
+  readonly frame: SceneFrame;
 }) {
   const door = easeInOut(rangeProgress(progress, SCENE_PHASES.door[0], SCENE_PHASES.door[1]));
   const camera = dojoCamera(progress);
@@ -824,10 +828,43 @@ const Dojo = memo(function Dojo({
     return null;
   }
 
+  // Once the open doorway covers the viewport, none of the dojo is visible.
+  // Avoid repainting its enlarged offscreen textures during the rest of the zoom.
+  if (compact && door === 1) {
+    const [, top, , height] = frame.viewBox.split(" ").map(Number);
+    const openingTop = camera.project(VIEW.doorLeft + 9, VIEW.doorTop + 4);
+    const openingBottom = camera.project(VIEW.doorRight - 9, VIEW.doorBottom - 10);
+    if (
+      openingTop.x < VIEW.centerX - frame.visibleHalfWidth &&
+      openingBottom.x > VIEW.centerX + frame.visibleHalfWidth &&
+      openingTop.y < top! &&
+      openingBottom.y > top! + height!
+    )
+      return null;
+  }
+
+  return (
+    <g opacity={opacity} transform={camera.transform} data-scene-layer="dojo">
+      <DojoInterior door={door} ids={ids} compact={compact} />
+    </g>
+  );
+});
+
+// The door is stationary by chapter 05. Keep its paper layers out of subsequent
+// camera-frame reconciliation, including the much larger 05 to 06 zoom.
+const DojoInterior = memo(function DojoInterior({
+  door,
+  ids,
+  compact,
+}: {
+  readonly door: number;
+  readonly ids: SceneIds;
+  readonly compact: boolean;
+}) {
   const slide = mix(0, 185, door);
   const panelWidth = 185;
   return (
-    <g opacity={opacity} transform={camera.transform} data-scene-layer="dojo">
+    <>
       <SideWall side="left" ids={ids} />
       <SideWall side="right" ids={ids} />
       <DojoFloor />
@@ -868,7 +905,10 @@ const Dojo = memo(function Dojo({
         opacity="0.9"
       />
       <g clipPath={`url(#${ids.back})`}>
-        <g transform={`translate(${-slide} 0)`} filter={`url(#${ids.lifted})`}>
+        <g
+          transform={`translate(${-slide} 0)`}
+          filter={compact ? undefined : `url(#${ids.lifted})`}
+        >
           <Shoji
             x={VIEW.doorLeft}
             y={VIEW.doorTop}
@@ -880,7 +920,7 @@ const Dojo = memo(function Dojo({
             ids={ids}
           />
         </g>
-        <g transform={`translate(${slide} 0)`} filter={`url(#${ids.lifted})`}>
+        <g transform={`translate(${slide} 0)`} filter={compact ? undefined : `url(#${ids.lifted})`}>
           <Shoji
             x={VIEW.doorLeft + panelWidth}
             y={VIEW.doorTop}
@@ -1031,7 +1071,7 @@ const Dojo = memo(function Dojo({
         <rect x="0" y="186" width="86" height="14" fill={PALETTE.wood} />
         <rect x="30" y="44" width="26" height="94" rx="6" fill={PALETTE.beam} opacity="0.3" />
       </g>
-    </g>
+    </>
   );
 });
 
@@ -1477,7 +1517,7 @@ export const JourneyScene = memo(function JourneyScene({
       ) : null}
       {safeProgress > SCENE_PHASES.mountains[1] - 0.006 &&
       safeProgress < SCENE_PHASES.through[1] + 0.05 ? (
-        <Dojo progress={safeProgress} ids={ids} />
+        <Dojo progress={safeProgress} ids={ids} compact={compact} frame={resolvedFrame} />
       ) : null}
       {safeProgress < SCENE_PHASES.settle[1] + 0.03 ? (
         <Curtain progress={safeProgress} ids={ids} />

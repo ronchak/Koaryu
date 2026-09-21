@@ -1232,9 +1232,9 @@
     gap: 16px;
     min-height: 64px;
     padding: 10px 16px;
-    border-bottom: 1px solid var(--koaryu-line);
-    color: var(--koaryu-ink);
-    background: var(--koaryu-paper);
+    border: 0;
+    color: var(--journey-mobile-header-color, var(--koaryu-ink));
+    background: transparent;
     transition: none;
   }
 
@@ -1242,6 +1242,7 @@
     display: none;
   }
   .journey[data-enhanced="true"] .mobileNav {
+    border: 0;
     right: 16px;
     width: min(360px, calc(100vw - 32px));
     max-height: calc(100dvh - 160px);
@@ -1259,7 +1260,7 @@
     grid-column: 3;
     grid-row: 1;
     border-radius: 8px;
-    border-color: var(--koaryu-line);
+    border: 0;
   }
 
   .journey[data-enhanced="true"] .chapter,
@@ -1292,7 +1293,7 @@
   .journey[data-enhanced="true"] .framedPlane,
   .journey[data-enhanced="true"] .ledgerPlane {
     padding: 22px;
-    border: 1px solid var(--koaryu-line);
+    border: 0;
     border-radius: 12px;
     box-shadow: 0 4px 16px rgb(45 34 18 / 7%);
   }
@@ -1392,7 +1393,7 @@
     gap: 7px;
     margin-bottom: 16px;
     padding: 14px 18px;
-    border: 1px solid var(--koaryu-line);
+    border: 0;
     border-radius: 12px;
     color: var(--koaryu-ink);
     background: var(--koaryu-paper);
@@ -1407,7 +1408,7 @@
     width: 100%;
     min-height: 44px;
     padding: 8px 12px;
-    border: 1px solid var(--koaryu-rule);
+    border: 0;
     border-radius: 7px;
     font: inherit;
     font-size: 16px;
@@ -1437,14 +1438,16 @@
     align-items: center;
     min-height: max(76px, calc(env(safe-area-inset-bottom) + 68px));
     padding: 10px 20px max(12px, env(safe-area-inset-bottom));
-    border-top: 1px solid var(--koaryu-line);
-    color: var(--koaryu-ink);
-    background: var(--koaryu-paper);
+    border: 0;
+    color: var(--journey-mobile-footer-color, var(--koaryu-ink));
+    background: transparent;
     transform: none;
   }
   .journey[data-enhanced="true"] .pager > button {
-    border-color: var(--koaryu-rule);
+    border: 0;
+    color: inherit;
     background: transparent;
+    opacity: 1;
   }
   .journey[data-enhanced="true"] .pager > button:disabled {
     opacity: 0.3;
@@ -1467,7 +1470,7 @@
     font: inherit;
     font-size: 16px;
     font-weight: 600;
-    color: var(--koaryu-ink);
+    color: inherit;
     background: transparent;
     text-align: center;
     text-overflow: ellipsis;

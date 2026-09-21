@@ -103,6 +103,23 @@ describe("Journey scene geometry", () => {
 });
 
 describe("Journey scene rendered SVG", () => {
+  it("keeps the dojo until the open doorway covers the mobile viewport", () => {
+    const mobile = (progress) =>
+      renderToStaticMarkup(
+        React.createElement(JourneyScene, {
+          progress,
+          compact: true,
+          frame: model.frameForDimensions(393, 617),
+        }),
+      );
+    assert.match(mobile(0.59), /data-scene-layer="dojo"/);
+    assert.doesNotMatch(mobile(0.615), /data-scene-layer="dojo"/);
+    assert.match(mobile(0.615), /data-scene-layer="sky"/);
+    assert.match(renderScene(0.615), /data-scene-layer="dojo"/);
+    assert.doesNotMatch(mobile(0.52), /filter="url\(#[^"]*lifted/);
+    assert.match(renderScene(0.52), /filter="url\(#[^"]*lifted/);
+  });
+
   it("is decorative, pointer-inert, and uses valid local references", () => {
     const html = renderScene(0.7);
     assert.match(html, /^<svg[^>]*aria-hidden="true"[^>]*focusable="false"/);
