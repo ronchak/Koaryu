@@ -69,30 +69,24 @@ async function gesture(
 ) {
   await page.locator('[data-journey-chapter][aria-hidden="false"]').evaluate((panel, options) => {
     const target = panel.firstElementChild!;
-    const start = new Touch({ identifier: 1, target, clientX: 170, clientY: 450 });
-    const second = new Touch({ identifier: 2, target, clientX: 230, clientY: 450 });
-    target.dispatchEvent(
-      new TouchEvent("touchstart", {
-        bubbles: true,
-        touches: options.multi ? [start, second] : [start],
-      }),
-    );
+    type Contact = { identifier: number; clientX: number; clientY: number };
+    // WebKit exposes Touch but disallows constructing it. These events exercise
+    // boundary decisions; the separate wheel test covers native scrolling.
+    const dispatchTouch = (type: string, touches: Contact[], changedTouches: Contact[] = []) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        touches: { value: touches },
+        changedTouches: { value: changedTouches },
+      });
+      target.dispatchEvent(event);
+    };
+    const start = { identifier: 1, clientX: 170, clientY: 450 };
+    const second = { identifier: 2, clientX: 230, clientY: 450 };
+    dispatchTouch("touchstart", options.multi ? [start, second] : [start]);
     if (options.scroll) panel.scrollTop = panel.scrollHeight;
-    if (options.cancel) target.dispatchEvent(new TouchEvent("touchcancel", { bubbles: true }));
-    const end = new Touch({
-      identifier: 1,
-      target,
-      clientX: 170 + (options.dx ?? 0),
-      clientY: 370,
-    });
-    target.dispatchEvent(
-      new TouchEvent("touchend", {
-        bubbles: true,
-        cancelable: true,
-        touches: [],
-        changedTouches: [end],
-      }),
-    );
+    if (options.cancel) dispatchTouch("touchcancel", []);
+    const end = { identifier: 1, clientX: 170 + (options.dx ?? 0), clientY: 370 };
+    dispatchTouch("touchend", [], [end]);
   }, options);
 }
 
