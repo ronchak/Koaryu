@@ -182,3 +182,32 @@ test("mobile animation settles after interruption and uses the baked materials",
     "0.29",
   );
 });
+
+test("Home and End navigate short compact chapters but scroll long chapters", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await openJourney(page, "#studio-view");
+  await page.locator("#studio-view").focus();
+  await page.keyboard.press("End");
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "begin",
+  );
+  await page.locator("#begin").focus();
+  await page.keyboard.press("Home");
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "welcome",
+  );
+  await page.getByRole("button", { name: "Go to chapter 6: Use Cases", exact: true }).click();
+  await page.locator("#use-cases").focus();
+  await page.keyboard.press("End");
+  await expect
+    .poll(() => page.locator("#use-cases").evaluate((e) => e.scrollTop))
+    .toBeGreaterThan(0);
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "use-cases",
+  );
+  await page.keyboard.press("Home");
+  await expect.poll(() => page.locator("#use-cases").evaluate((e) => e.scrollTop)).toBe(0);
+});

@@ -361,11 +361,15 @@ export function JourneyController({ children }: JourneyControllerProps) {
         }
       }
 
-      const panel =
+      const scrollPanel =
         closestScrollPanel(activeElement, compact) ??
         (compact
           ? root.querySelector<HTMLElement>('[data-journey-chapter][aria-hidden="false"]')
           : null);
+      const panel =
+        compact && scrollPanel && scrollPanel.scrollHeight <= scrollPanel.clientHeight + 2
+          ? null
+          : scrollPanel;
       const decision = decideJourneyKey({
         key: event.key,
         shiftKey: event.shiftKey,
