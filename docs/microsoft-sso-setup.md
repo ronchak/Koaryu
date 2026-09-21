@@ -48,7 +48,8 @@ may still require administrator approval; do not disable those policies.
 
 ## Email and account safety
 
-The app requests only the `email profile` scopes, with `openid` supplied by Supabase and uses the account chooser. It requests no
+The app requests only the `email profile` scopes, with `openid` supplied by
+Supabase, and uses the account chooser. It requests no
 mail, file, calendar, or offline access. Both buttons share a submission lock so
 concurrent provider requests cannot replace each other's PKCE verifier. Successful
 OAuth initiation stays locked until navigation; returning via the browser's page
@@ -96,12 +97,31 @@ application IDs or create a replacement app to renew a secret.
 
 ## Current status
 
-Implementation passes the local frontend suite, 915 tests, plus build and lint.
-These are synthetic auth tests, not hosted Microsoft verification. Both Supabase projects had
-Microsoft disabled and no configured client at the initial readback. The available
-browser session belongs to external university/employer directories; application
-ownership must be established in an owner-controlled directory before registration.
-The owner authorized creating `koaryu@outlook.com` if no suitable saved personal
-account is available; creation and Entra tenant setup remain pending.
-No Microsoft provider has been enabled, no Microsoft hosted flow is claimed as
-verified, and production remains on the working Google release.
+The owner account `koaryu@outlook.com` and its Azure directory are created. The
+tenant is `88ec6a60-28f5-4ba8-9419-238d02384c6d`, domain
+`koaryuoutlook.onmicrosoft.com`, on Microsoft Entra ID Free. Portal readback showed
+current Azure cost `0.00`, no deployed Azure resources, and no enabled Defender
+coverage. No paid Azure resources or premium identity licenses are part of this
+feature. Supabase's normal auth usage limits still apply.
+
+The `koaryu.app` registration has application ID
+`dcc03dac-aac6-4b8f-9dc1-74ac1da30832`. Both Web callback URLs, the mixed account
+audience, token version 2, and optional verification claims were saved and read
+back. The save request explicitly set `removeUnverifiedEmailClaim=true`; the
+portal's standard manifest export does not return that property. The new app also
+falls under Microsoft's default removal of unverified email claims. Preserve the
+private saved request and provider success/readback evidence.
+
+The client secret expires **2027-03-20 01:40:44 UTC**. Its value is held only in
+private operator storage and Supabase. Follow the rotation procedure before expiry.
+The public publisher-domain association file is
+`frontend/public/.well-known/microsoft-identity-association.json`. It identifies
+this app only; it contains no secret. Verify it at the production domain before
+using Microsoft's **Verify and save domain** action. Domain verification does not
+by itself grant Microsoft's verified-publisher badge.
+
+The implementation passed 915 local frontend tests, a production build, targeted
+lint, independent review and CI at the initial application head. These are
+synthetic auth tests, not hosted Microsoft verification. The staging Azure provider is enabled; hosted verification remains pending.
+No Microsoft hosted flow is claimed as verified, and production
+remains on the working Google release until the required staging checks pass.
