@@ -39,6 +39,22 @@ see [Deployment triggers](#deployment-triggers).
 - Google verified and published the display name `koaryu.app`; the live account
   chooser was checked. Search Console ownership uses the public homepage tag.
 
+## Microsoft identity provider
+
+- Owner account: held in private operator storage.
+- Tenant: `Default Directory`, `koaryuoutlook.onmicrosoft.com`
+  (`88ec6a60-28f5-4ba8-9419-238d02384c6d`), Microsoft Entra ID Free.
+- App display name: `koaryu.app`.
+- Application client ID: `dcc03dac-aac6-4b8f-9dc1-74ac1da30832`.
+- Audience: personal Microsoft accounts and accounts in any Entra directory.
+- Both exact Supabase Auth callback URLs are registered as Web redirects.
+- Client credentials stay in Supabase and private operator storage; no client
+  secret belongs in the frontend. Setup and verification status are in
+  [Microsoft SSO setup](microsoft-sso-setup.md).
+- App registration and basic Microsoft OAuth use the free identity service. No
+  Azure compute, storage, premium identity license, or pay-as-you-go upgrade is
+  part of this feature. Normal Supabase auth usage limits still apply.
+
 ## GitHub
 
 - Repository: `ronchak/Koaryu`

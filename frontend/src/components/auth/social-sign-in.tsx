@@ -1,11 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getAuthCallbackUrl } from "@/lib/auth-redirect";
 import { Button } from "@/components/ui/button";
 
-export function GoogleSignIn({
+export function SocialSignIn({
   disabled,
   onLoadingChange,
 }: {
@@ -13,32 +13,44 @@ export function GoogleSignIn({
   onLoadingChange: (loading: boolean) => void;
 }) {
   const pending = useRef(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<"google" | "azure" | null>(null);
   const [error, setError] = useState("");
 
-  async function signIn() {
+  useEffect(() => {
+    function restoreAfterNavigation(event: PageTransitionEvent) {
+      if (!event.persisted) return;
+      pending.current = false;
+      setLoading(null);
+      onLoadingChange(false);
+    }
+    window.addEventListener("pageshow", restoreAfterNavigation);
+    return () => window.removeEventListener("pageshow", restoreAfterNavigation);
+  }, [onLoadingChange]);
+
+  async function signIn(provider: "google" | "azure") {
     if (pending.current || disabled) return;
     pending.current = true;
-    setLoading(true);
+    setLoading(provider);
     onLoadingChange(true);
     setError("");
     try {
       if (process.env.NEXT_PUBLIC_PREVIEW_MODE === "true") {
-        throw new Error("Google sign-in requires live authentication.");
+        throw new Error("Social sign-in requires live authentication.");
       }
       const { error: authError } = await createClient().auth.signInWithOAuth({
-        provider: "google",
+        provider,
         options: {
           redirectTo: getAuthCallbackUrl(),
+          ...(provider === "azure" ? { scopes: "email profile" } : {}),
           queryParams: { prompt: "select_account" },
         },
       });
       if (authError) throw authError;
     } catch {
-      setError("Google sign-in couldn't start. Please try again or sign in with email.");
-    } finally {
+      const name = provider === "azure" ? "Microsoft" : "Google";
+      setError(`${name} sign-in couldn't start. Please try again or sign in with email.`);
       pending.current = false;
-      setLoading(false);
+      setLoading(null);
       onLoadingChange(false);
     }
   }
@@ -49,8 +61,8 @@ export function GoogleSignIn({
         type="button"
         size="lg"
         disabled={disabled}
-        isLoading={loading}
-        onClick={signIn}
+        isLoading={loading === "google"}
+        onClick={() => signIn("google")}
         className="w-full min-h-11 bg-white text-[#1f1f1f] border border-[#747775] hover:bg-[#f2f2f2] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         <svg aria-hidden="true" width="20" height="20" viewBox="0 0 48 48">
@@ -72,6 +84,22 @@ export function GoogleSignIn({
           />
         </svg>
         Continue with Google
+      </Button>
+      <Button
+        type="button"
+        size="lg"
+        disabled={disabled}
+        isLoading={loading === "azure"}
+        onClick={() => signIn("azure")}
+        className="mt-3 w-full min-h-11 bg-white text-[#1f1f1f] border border-[#747775] hover:bg-[#f2f2f2] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      >
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 21 21">
+          <path fill="#f25022" d="M1 1h9v9H1z" />
+          <path fill="#00a4ef" d="M1 11h9v9H1z" />
+          <path fill="#7fba00" d="M11 1h9v9h-9z" />
+          <path fill="#ffb900" d="M11 11h9v9h-9z" />
+        </svg>
+        Sign in with Microsoft
       </Button>
       {error && (
         <p role="alert" className="mt-3 text-xs text-danger">

@@ -11,7 +11,7 @@ import { parseAuthProfileResponse } from "@/lib/store-bootstrap-model";
 import { syncStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { GoogleSignIn } from "@/components/auth/google-sign-in";
+import { SocialSignIn } from "@/components/auth/social-sign-in";
 import { CallbackError } from "@/components/auth/callback-error";
 
 export default function LoginPage() {
@@ -142,7 +142,7 @@ export default function LoginPage() {
       </h2>
 
       <Suspense fallback={null}><CallbackError /></Suspense>
-      <GoogleSignIn disabled={isLoading} onLoadingChange={setIsLoading} />
+      <SocialSignIn disabled={isLoading} onLoadingChange={setIsLoading} />
 
       {mode === "password" ? (
         <form onSubmit={handlePasswordLogin} className="space-y-4">
