@@ -120,8 +120,59 @@ this app only; it contains no secret. Verify it at the production domain before
 using Microsoft's **Verify and save domain** action. Domain verification does not
 by itself grant Microsoft's verified-publisher badge.
 
+## September 20 release verification
+
+[PR #233](https://github.com/ronchak/Koaryu/pull/233) shipped candidate
+`cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225`. Production and staging frontend/backend
+pairs passed exact-commit verification. Both databases remain V50 with 145
+migrations; this release added no migration. Production auto-deploy remains off.
+
 The implementation passed 915 local frontend tests, a production build, targeted
-lint, independent review and CI at the initial application head. These are
-synthetic auth tests, not hosted Microsoft verification. The staging Azure provider is enabled; hosted verification remains pending.
-No Microsoft hosted flow is claimed as verified, and production
-remains on the working Google release until the required staging checks pass.
+lint, independent review, and all exact-head CI checks, including the Release
+candidate gate. Real staging checks then verified:
+
+- Personal and school Microsoft accounts completed OAuth. Supabase-stored Azure
+  identity metadata contained `email_verified=true` and `custom_claims.xms_edov`:
+  string `"1"` for the personal account and boolean `true` for the school account.
+  This is stored provider metadata, not direct inspection of signed tokens.
+- New-user onboarding created one studio. Returning login preserved the UUID and
+  studio and bypassed onboarding.
+- Microsoft linked to a confirmed matching-email account without changing its
+  UUID or studio. The original password continued to work.
+- After Microsoft authenticated an unconfirmed email's owner, the old unconfirmed
+  password was rejected with `invalid_credentials`.
+- A real StaffService invitation retained the invited UUID, studio and front-desk
+  role after Microsoft login. The unpaid test studio correctly showed restricted
+  workspace access. This does not claim the paid invitation UI was exercised.
+- Declined consent returned fixed recovery guidance with usable sign-in controls.
+  Google completed a real login with the same UUID and role. Password login passed;
+  the magic-link entry form was checked, without a new email-delivery test.
+
+Final staging provider readback confirmed manual linking disabled, email
+confirmation required, and Google and Microsoft enabled. Production provider
+configuration preserved those controls and existing callback URLs. Live login and
+signup displayed the Microsoft button. A real production Microsoft login reached
+onboarding with a separate new auth account and no studio creation; the existing
+Google owner's UUID, studio and role remained unchanged.
+
+Deployment records:
+
+| Environment | Render | Vercel |
+| --- | --- | --- |
+| Staging | `dep-dao8t3p42hec738tibj0` | `dpl_7MKEnA38BtSTMuLcRV1Cdbm4vyKL` |
+| Production | `dep-dao93mugekts73bc0ll0` | `dpl_D2HfY4gvdDgtbZRwT5h5ALcWuccP` |
+
+The production association URL returned HTTP 200, JSON and the registered app ID.
+Azure verified and saved publisher domain `koaryu.app`. A fresh consent display
+still showed app name `koaryu.app` and an **unverified** publisher badge. Microsoft
+Partner Center publisher verification is separate and was not completed.
+
+The observed authorization URL requested exactly `openid email profile`. The
+school-account consent screen also displayed “Maintain access to data you have
+given it access to.” Microsoft documents that this wording can appear without an
+explicit `offline_access` request. The application does not request that scope or
+mail, calendar or file permissions. See [Microsoft scopes and consent](https://learn.microsoft.com/en-us/entra/identity-platform/scopes-oidc).
+
+Credential values, fixture identities and operator evidence remain outside the
+repository in the private `microsoft-sso-release` operator directory. Rotate the
+client secret before March 20, 2027, using the procedure above.
