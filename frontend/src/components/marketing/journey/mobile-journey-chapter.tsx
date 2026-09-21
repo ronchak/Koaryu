@@ -46,13 +46,15 @@ function Panel({
   intro,
   children,
   dark = false,
+  layout,
 }: {
   intro: ReactNode;
   children: ReactNode;
   dark?: boolean;
+  layout?: "overview" | "questions" | "pricing";
 }) {
   return (
-    <article className={styles.panel} data-dark={dark || undefined}>
+    <article className={styles.panel} data-dark={dark || undefined} data-layout={layout}>
       <div className={styles.intro}>{intro}</div>
       <div className={styles.body}>{children}</div>
     </article>
@@ -71,13 +73,11 @@ function Heading({ kicker, title }: { kicker: string; title: string }) {
 function Choices({
   label,
   heading,
-  lede,
   entries,
   link,
 }: {
   label: string;
   heading: string;
-  lede?: string;
   entries: readonly Detail[];
   link: JourneyAction;
 }) {
@@ -115,14 +115,7 @@ function Choices({
       </Panel>
     );
   return (
-    <Panel
-      intro={
-        <>
-          <Heading kicker={label} title={heading} />
-          {lede ? <p className={styles.lede}>{lede}</p> : null}
-        </>
-      }
-    >
+    <Panel layout="overview" intro={<Heading kicker={label} title={heading} />}>
       <div ref={overviewRef}>
         <div className={styles.choices} aria-label={`${label} details`}>
           {entries.map((entry, index) => (
@@ -161,18 +154,33 @@ function MobileFaq({
   );
   const group = chapter.groups[groupIndex] ?? chapter.groups[0]!;
   const item = group.items[Math.max(0, itemIndex)] ?? group.items[0]!;
-  const { titleRef, overviewRef } = useDetailFocus(
-    view === "topics" ? null : view === "questions" ? -1 : itemIndex,
-  );
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const topicsRef = useRef<HTMLDivElement>(null);
+  const questionsRef = useRef<HTMLDivElement>(null);
+  const previousView = useRef<typeof view | null>(null);
+  useLayoutEffect(() => {
+    if (view === "topics" && previousView.current !== null) {
+      topicsRef.current
+        ?.querySelector<HTMLElement>(`[data-mobile-topic="${groupIndex}"]`)
+        ?.focus({ preventScroll: true });
+    } else if (view === "questions" && previousView.current === "answer") {
+      questionsRef.current
+        ?.querySelector<HTMLElement>(`[data-mobile-question="${itemIndex}"]`)
+        ?.focus({ preventScroll: true });
+    } else if (view !== "topics" && previousView.current !== view) {
+      titleRef.current?.focus({ preventScroll: true });
+    }
+    previousView.current = view;
+  }, [view, groupIndex, itemIndex]);
   if (view === "topics")
     return (
-      <Panel intro={<h2>{chapter.kicker}</h2>}>
-        <div ref={overviewRef} className={styles.choices} aria-label="Question topics">
+      <Panel layout="overview" intro={<h2>{chapter.kicker}</h2>}>
+        <div ref={topicsRef} className={styles.choices} aria-label="Question topics">
           {chapter.groups.map((topic, i) => (
             <button
               key={topic.title}
               type="button"
-              data-detail-trigger={i === groupIndex ? "" : undefined}
+              data-mobile-topic={i}
               onClick={() => {
                 setView("questions");
                 onChange(i, 0);
@@ -188,6 +196,7 @@ function MobileFaq({
   if (view === "questions")
     return (
       <Panel
+        layout="questions"
         intro={
           <>
             <button type="button" className={styles.back} onClick={() => setView("topics")}>
@@ -199,10 +208,16 @@ function MobileFaq({
           </>
         }
       >
-        <div className={styles.choices} aria-label="Questions">
+        <div
+          ref={questionsRef}
+          className={styles.choices}
+          data-count={group.items.length}
+          aria-label="Questions"
+        >
           {group.items.map((question, i) => (
             <button
               key={question.question}
+              data-mobile-question={i}
               type="button"
               onClick={() => {
                 setView("answer");
@@ -259,10 +274,12 @@ export function MobileJourneyChapter({
         <Choices
           label={chapter.kind === "features" ? "Features" : "Use cases"}
           heading={chapter.heading}
-          lede={chapter.kind === "features" ? chapter.lede : undefined}
-          entries={chapter.rows.map((row) => ({
+          entries={chapter.rows.map((row, rowIndex) => ({
             title: row.title,
-            body: row.description,
+            body:
+              chapter.kind === "features" && rowIndex === 0
+                ? `${chapter.lede} ${row.description}`
+                : row.description,
             href: row.detail.href,
           }))}
           link={chapter.link}
@@ -349,7 +366,7 @@ export function MobileJourneyChapter({
           <Action action={chapter.setupAction} primary />
         </Panel>
       ) : (
-        <Panel intro={<Heading kicker={chapter.kicker} title={chapter.heading} />}>
+        <Panel layout="pricing" intro={<Heading kicker={chapter.kicker} title={chapter.heading} />}>
           <div className={styles.priceRow}>
             <p className={styles.price}>{chapter.displayPrice}</p>
             <p>{chapter.period}</p>

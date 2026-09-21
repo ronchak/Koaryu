@@ -80,6 +80,7 @@ async function inspectDetails(page: Page, chapter: number) {
         await expect(section.getByRole("heading", { name: question, exact: true })).toBeVisible();
         await fits(page, question);
         await section.getByRole("button", { name: `← ${topic}`, exact: true }).click();
+        await expect(section.getByRole("button", { name: question, exact: true })).toBeFocused();
       }
       await section.getByRole("button", { name: "← Question topics", exact: true }).click();
     }
@@ -92,6 +93,8 @@ for (const [width, height] of [
   [393, 617],
   [390, 844],
   [844, 390],
+  [568, 320],
+  [667, 375],
   [768, 1024],
 ]) {
   test(`every chapter and detail fits without scrolling at ${width} × ${height}`, async ({
