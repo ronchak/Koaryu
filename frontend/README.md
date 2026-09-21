@@ -32,12 +32,14 @@ The `NEXT_PUBLIC_` variables are read during `next build`, so they must also be 
 
 Production deploys should be verified after every dependency update with `npm run lint`, `npm run build`, and a Vercel deployment check. A local build proves the static/runtime bundle compiles, but it does not prove Vercel has the right environment values baked into the deployed build.
 
-## Google sign-in
+## Social sign-in
 
-Login and signup offer Google before email. Provider configuration and required
-real-account staging checks are in [Google SSO setup](../docs/google-sso-setup.md).
-Google uses the existing PKCE callback and membership routing. Keep production
-`NEXT_PUBLIC_PREVIEW_MODE=false`; the Google client secret belongs only in Supabase.
+Login and signup offer Google, then Microsoft, before email. Google configuration
+and required staging checks are in [Google SSO setup](../docs/google-sso-setup.md).
+Both providers use the existing PKCE callback and membership routing. Microsoft
+configuration and required account-type tests are in
+[Microsoft SSO setup](../docs/microsoft-sso-setup.md). Keep production
+`NEXT_PUBLIC_PREVIEW_MODE=false`; provider client secrets belong only in Supabase.
 
 ## Development
 
