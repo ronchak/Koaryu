@@ -13,10 +13,21 @@ async function openJourney(page: Page, hash = "") {
   await expect(page.locator("[data-enhanced]")).toHaveAttribute("data-enhanced", "true");
 }
 
+async function chooseChapter(page: Page, index: number) {
+  await page
+    .getByRole("combobox", { name: "Choose chapter", exact: true })
+    .selectOption(String(index));
+  await expect(page.locator('[data-journey-chapter][aria-hidden="false"]')).toHaveAttribute(
+    "data-chapter-index",
+    String(index),
+  );
+}
+
 for (const [width, height] of [
   [320, 568],
   [375, 667],
   [390, 844],
+  [393, 665],
   [844, 390],
   [768, 1024],
 ]) {
@@ -120,8 +131,8 @@ test("native wheel scrolling reaches the bottom without skipping, and mobile FAQ
     "data-active-chapter",
     "use-cases",
   );
-  await page.getByRole("button", { name: "Go to chapter 12: Questions", exact: true }).click();
-  await page.getByRole("link", { name: "Pricing & Payments", exact: true }).click();
+  await chooseChapter(page, 11);
+  await page.getByRole("combobox", { name: "Question topic", exact: true }).selectOption("3");
   await page
     .getByRole("button", { name: "Do I have to use Koaryu for payments?", exact: true })
     .click();
@@ -157,10 +168,8 @@ test("mobile animation settles after interruption and uses the baked materials",
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await openJourney(page);
   await expect(page.locator("svg image")).toHaveCount(3);
-  await page.getByRole("button", { name: "Go to chapter 8: Explore", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Go to chapter 3: Your morning is already sorted.", exact: true })
-    .click();
+  await chooseChapter(page, 7);
+  await chooseChapter(page, 2);
   await expect(page.locator("svg[data-scene-progress]")).toHaveAttribute(
     "data-scene-progress",
     "0.24",
@@ -196,7 +205,7 @@ test("Home and End navigate short compact chapters but scroll long chapters", as
     "data-active-chapter",
     "welcome",
   );
-  await page.getByRole("button", { name: "Go to chapter 6: Use Cases", exact: true }).click();
+  await chooseChapter(page, 5);
   await expect(page.locator("#use-cases")).toBeVisible();
   await page.locator("#use-cases").focus();
   await expect(page.locator("#use-cases")).toBeFocused();
@@ -210,4 +219,70 @@ test("Home and End navigate short compact chapters but scroll long chapters", as
   );
   await page.keyboard.press("Home");
   await expect.poll(() => page.locator("#use-cases").evaluate((e) => e.scrollTop)).toBe(0);
+});
+
+test("mobile framing keeps balanced margins, contrast and readable topic controls", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 393, height: 665 });
+  await openJourney(page, "#studio-view");
+  const framing = await page.locator("#studio-view article").evaluate((card) => {
+    const r = card.getBoundingClientRect();
+    const header = document.querySelector("header")!;
+    return {
+      left: r.left,
+      right: innerWidth - r.right,
+      top: r.top - header.getBoundingClientRect().bottom,
+      color: getComputedStyle(header).color,
+      background: getComputedStyle(header).backgroundColor,
+    };
+  });
+  expect(Math.abs(framing.left - framing.right)).toBeLessThan(1);
+  expect(framing.top).toBeGreaterThanOrEqual(16);
+  expect(framing.top).toBeLessThanOrEqual(24);
+  expect(framing.color).not.toBe(framing.background);
+  await chooseChapter(page, 4);
+  expect(await page.locator("header").evaluate((e) => getComputedStyle(e).color)).toBe(
+    framing.color,
+  );
+  await expect(
+    page.getByRole("navigation", { name: "Journey chapters", exact: true }),
+  ).toBeHidden();
+  await page.locator("#features").evaluate((e) => (e.scrollTop = e.scrollHeight));
+  await chooseChapter(page, 7);
+  await chooseChapter(page, 4);
+  expect(await page.locator("#features").evaluate((e) => e.scrollTop)).toBe(0);
+  await chooseChapter(page, 11);
+  await page.getByRole("combobox", { name: "Question topic", exact: true }).selectOption("4");
+  await expect(page).toHaveURL(/#faq-data$/);
+  await expect(
+    page.getByRole("button", { name: "Who owns the studio data?", exact: true }),
+  ).toHaveAttribute("aria-expanded", "true");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByRole("combobox", { name: "Question topic", exact: true })).toBeHidden();
+  await expect(page.getByRole("link", { name: "Data & Access", exact: true })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+});
+
+test("landscape mobile navigation opens and fits above the chapter controls", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await openJourney(page);
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  const menu = page.getByRole("navigation", { name: "Mobile", exact: true });
+  await expect(menu).toBeVisible();
+  expect(
+    await menu.evaluate(
+      (e) =>
+        e.getBoundingClientRect().bottom <=
+        document.querySelector('[aria-label="Journey controls"]')!.getBoundingClientRect().top,
+    ),
+  ).toBe(true);
+  await menu.getByRole("link", { name: "Pricing", exact: true }).click();
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "pricing",
+  );
+  await expect(menu).toBeHidden();
 });

@@ -33,6 +33,22 @@ import { SCENE_HEIGHT, SCENE_WIDTH, clamp, frameForDimensions } from "./scene-mo
 import styles from "./journey.module.css";
 
 const chapters = landingPageContent.chapters;
+const mobileChapterLabels: Readonly<Record<string, string>> = {
+  welcome: "Welcome",
+  "the-problem": "Daily admin",
+  "studio-view": "Your morning",
+  product: "Connected records",
+  features: "Features",
+  "use-cases": "Use cases",
+  "signals-gather": "Attendance",
+  explore: "Explore",
+  "class-ready": "Shared history",
+  pricing: "Pricing",
+  about: "About Koaryu",
+  faq: "Questions",
+  stillness: "Your studio",
+  begin: "Get started",
+};
 const firstChapter = chapters[0];
 const lastChapterIndex = chapters.length - 1;
 const faqChapterIndex = chapters.findIndex(({ id }) => id === "faq");
@@ -243,6 +259,9 @@ export function JourneyController({ children }: JourneyControllerProps) {
       chapter.setAttribute("aria-hidden", active ? "false" : "true");
     }
 
+    const faqSelect = root.querySelector<HTMLSelectElement>("[data-faq-select]");
+    if (faqSelect) faqSelect.value = String(faqGroup);
+
     for (const topic of root.querySelectorAll<HTMLElement>("[data-faq-topic]")) {
       const active = Number(topic.dataset.faqTopic) === faqGroup;
       topic.tabIndex = active ? 0 : -1;
@@ -269,6 +288,13 @@ export function JourneyController({ children }: JourneyControllerProps) {
       answer?.setAttribute("aria-hidden", active ? "false" : "true");
     }
   }, [compact, enhanced, faqGroup, openFaq, pageIndex]);
+
+  useLayoutEffect(() => {
+    if (!compact || !enhanced) return;
+    rootRef.current
+      ?.querySelector<HTMLElement>(`[data-chapter-index="${pageIndex}"]`)
+      ?.scrollTo({ top: 0, behavior: "instant" });
+  }, [compact, enhanced, pageIndex]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -537,6 +563,12 @@ export function JourneyController({ children }: JourneyControllerProps) {
       data-active-ink={activeInk}
       data-compact={compact ? "true" : "false"}
       onClickCapture={onContentClickCapture}
+      onChangeCapture={(event) => {
+        const target = event.target;
+        if (target instanceof HTMLSelectElement && target.hasAttribute("data-faq-select")) {
+          selectFaqGroup(Number(target.value));
+        }
+      }}
     >
       <div className={styles.sceneLayer} aria-hidden="true">
         <AnimatedJourneyScene
@@ -556,15 +588,15 @@ export function JourneyController({ children }: JourneyControllerProps) {
             </MarketingNavLink>
           ))}
         </nav>
+        <MarketingNavLink href="/login" prefetch={false} className={styles.signIn}>
+          Sign In
+        </MarketingNavLink>
         <MarketingMenuButton
           className={styles.menuButton}
           aria-expanded={menuOpen}
           aria-controls="journey-mobile-navigation"
           onClick={() => setMenuOpen((open) => !open)}
         />
-        <MarketingNavLink href="/login" prefetch={false} className={styles.signIn}>
-          Sign In
-        </MarketingNavLink>
         <nav
           id="journey-mobile-navigation"
           className={styles.mobileNav}
@@ -593,6 +625,24 @@ export function JourneyController({ children }: JourneyControllerProps) {
         >
           ↑
         </button>
+        {compact ? (
+          <label className={styles.mobileProgress}>
+            <span>
+              {String(pageIndex + 1).padStart(2, "0")} / {chapters.length}
+            </span>
+            <select
+              aria-label="Choose chapter"
+              value={pageIndex}
+              onChange={(event) => navigateTo(Number(event.target.value))}
+            >
+              {chapters.map((chapter, index) => (
+                <option key={chapter.id} value={index}>
+                  {mobileChapterLabels[chapter.id] ?? chapter.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <button
           type="button"
           onClick={() => navigateTo(pageIndex + 1)}
