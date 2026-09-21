@@ -29,6 +29,7 @@ import {
   type ScrollMetrics,
 } from "./interaction-model";
 import { AnimatedJourneyScene, type SceneTarget } from "./animated-journey-scene";
+import { MobileJourneyChapter } from "./mobile-journey-chapter";
 import { SCENE_HEIGHT, SCENE_WIDTH, clamp, frameForDimensions } from "./scene-model";
 import styles from "./journey.module.css";
 
@@ -101,9 +102,8 @@ function closestScrollPanel(target: EventTarget | null, compact: boolean): HTMLE
   if (typeof Element === "undefined" || !(target instanceof Element)) {
     return null;
   }
-  const panel = target.closest<HTMLElement>(
-    compact ? "[data-journey-chapter]" : "[data-faq-scroll]",
-  );
+  if (compact) return null;
+  const panel = target.closest<HTMLElement>("[data-faq-scroll]");
   return panel instanceof HTMLElement ? panel : null;
 }
 
@@ -236,11 +236,13 @@ export function JourneyController({ children }: JourneyControllerProps) {
     };
 
     window.addEventListener("resize", onResize);
+    compactQuery.addEventListener("change", onResize);
     window.addEventListener("hashchange", onHashChange);
     motionQuery.addEventListener("change", onMotionChange);
     return () => {
       window.cancelAnimationFrame(activationFrame);
       window.removeEventListener("resize", onResize);
+      compactQuery.removeEventListener("change", onResize);
       window.removeEventListener("hashchange", onHashChange);
       motionQuery.removeEventListener("change", onMotionChange);
     };
@@ -291,10 +293,39 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
   useLayoutEffect(() => {
     if (!compact || !enhanced) return;
-    rootRef.current
-      ?.querySelector<HTMLElement>(`[data-chapter-index="${pageIndex}"]`)
-      ?.scrollTo({ top: 0, behavior: "instant" });
-  }, [compact, enhanced, pageIndex]);
+    const root = rootRef.current;
+    if (!root) return;
+    const html = document.documentElement;
+    const previous = html.getAttribute("data-koaryu-mobile-journey");
+    html.setAttribute("data-koaryu-mobile-journey", "true");
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    const viewport = window.visualViewport;
+    const updateViewport = () => {
+      const zoomed = (viewport?.scale ?? 1) > 1.01;
+      root.dataset.zoomed = String(zoomed);
+      if (!zoomed) {
+        root.style.setProperty(
+          "--journey-viewport-height",
+          `${viewport?.height ?? window.innerHeight}px`,
+        );
+        root.style.setProperty("--journey-viewport-top", `${viewport?.offsetTop ?? 0}px`);
+      }
+    };
+    updateViewport();
+    viewport?.addEventListener("resize", updateViewport);
+    viewport?.addEventListener("scroll", updateViewport);
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      if (previous === null) html.removeAttribute("data-koaryu-mobile-journey");
+      else html.setAttribute("data-koaryu-mobile-journey", previous);
+      viewport?.removeEventListener("resize", updateViewport);
+      viewport?.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("resize", updateViewport);
+      root.style.removeProperty("--journey-viewport-height");
+      root.style.removeProperty("--journey-viewport-top");
+      delete root.dataset.zoomed;
+    };
+  }, [compact, enhanced]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -324,6 +355,9 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (
         !eventBelongsToJourney(event.target) ||
         menuOpen ||
+        (compact &&
+          event.target instanceof Element &&
+          Boolean(event.target.closest("select, input, textarea"))) ||
         event.ctrlKey ||
         Math.abs(event.deltaX) > Math.abs(event.deltaY)
       ) {
@@ -387,15 +421,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         }
       }
 
-      const scrollPanel =
-        closestScrollPanel(activeElement, compact) ??
-        (compact
-          ? root.querySelector<HTMLElement>('[data-journey-chapter][aria-hidden="false"]')
-          : null);
-      const panel =
-        compact && scrollPanel && scrollPanel.scrollHeight <= scrollPanel.clientHeight + 2
-          ? null
-          : scrollPanel;
+      const panel = closestScrollPanel(activeElement, compact);
       const decision = decideJourneyKey({
         key: event.key,
         shiftKey: event.shiftKey,
@@ -436,7 +462,16 @@ export function JourneyController({ children }: JourneyControllerProps) {
         touchStartY = null;
         return;
       }
-      if (menuOpen || isInteractiveTarget(event.target)) {
+      const target = event.target instanceof Element ? event.target : null;
+      const mobileControl =
+        !target?.closest("[data-mobile-stage]") ||
+        Boolean(target?.closest("select, input, textarea, [contenteditable='true']"));
+      if (
+        menuOpen ||
+        (compact
+          ? mobileControl || (window.visualViewport?.scale ?? 1) > 1.01
+          : isInteractiveTarget(event.target))
+      ) {
         touchStartY = null;
         return;
       }
@@ -445,6 +480,24 @@ export function JourneyController({ children }: JourneyControllerProps) {
       touchPanel = closestScrollPanel(event.target, compact);
       touchMetrics = touchPanel ? metricsFor(touchPanel) : null;
       touchPanelStart = touchPanel?.scrollTop ?? 0;
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (
+        !compact ||
+        touchStartY === null ||
+        event.touches.length !== 1 ||
+        (window.visualViewport?.scale ?? 1) > 1.01
+      )
+        return;
+      const touch = event.touches[0];
+      if (
+        touch &&
+        Math.abs(touch.clientY - touchStartY) >= Math.abs(touch.clientX - touchStartX) &&
+        event.cancelable
+      ) {
+        event.preventDefault();
+      }
     };
 
     const onTouchEnd = (event: TouchEvent) => {
@@ -488,12 +541,14 @@ export function JourneyController({ children }: JourneyControllerProps) {
     window.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
     window.addEventListener("touchend", onTouchEnd, { passive: false });
     return () => {
       window.removeEventListener("touchcancel", onTouchCancel);
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("touchend", onTouchEnd);
     };
   }, [compact, enhanced, menuOpen, navigateTo, selectFaqGroup]);
@@ -614,7 +669,22 @@ export function JourneyController({ children }: JourneyControllerProps) {
         </nav>
       </header>
 
-      {children}
+      {compact ? (
+        <MobileJourneyChapter
+          key={`${activeChapter.id}:${activeChapter.id === "faq" ? faqGroup : ""}`}
+          chapter={activeChapter}
+          index={pageIndex}
+          count={chapters.length}
+          faqGroup={faqGroup}
+          faqItem={openFaq}
+          onFaqChange={(group, item) => {
+            selectFaqGroup(group);
+            setOpenFaq(item);
+          }}
+        />
+      ) : (
+        children
+      )}
 
       <div className={styles.pager} aria-label="Journey controls">
         <button

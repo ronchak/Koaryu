@@ -1100,8 +1100,8 @@
   }
 }
 
-/* Keep the artwork and chapter navigation. Give long mobile chapters their own
-   native reading area, bounded by the header and pager. */
+/* Server chapter fallback during the responsive handoff. The hydrated compact
+   controller replaces this tree with MobileJourneyChapter's tap-through panels. */
 @media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
   .journey[data-enhanced="true"] .chapter,
   .journey[data-enhanced="true"] .chapter[data-placement="upper"] {
@@ -1471,6 +1471,49 @@
     background: transparent;
     text-align: center;
     text-overflow: ellipsis;
+  }
+}
+
+@media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
+  .journey[data-enhanced="true"][data-compact="true"] {
+    --mobile-header-height: 65px;
+    --mobile-footer-height: max(82px, calc(env(safe-area-inset-bottom) + 70px));
+    position: fixed;
+    inset: var(--journey-viewport-top, 0px) 0 auto;
+    width: 100%;
+    height: var(--journey-viewport-height, 100dvh);
+    touch-action: pan-x pinch-zoom;
+    overscroll-behavior: none;
+  }
+  .journey[data-enhanced="true"][data-zoomed="true"] {
+    touch-action: auto;
+  }
+  .journey[data-enhanced="true"] .topbar {
+    height: var(--mobile-header-height);
+    min-height: 0;
+  }
+  .journey[data-enhanced="true"] .pager {
+    height: var(--mobile-footer-height);
+    min-height: 0;
+  }
+  .journey[data-enhanced="true"] .mobileNav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    max-height: none;
+    overflow: visible;
+  }
+}
+@media (max-width: 820px) and (max-height: 600px),
+  (min-width: 821px) and (max-width: 1024px) and (max-height: 500px) {
+  .journey[data-enhanced="true"][data-compact="true"] {
+    --mobile-header-height: 57px;
+    --mobile-footer-height: max(68px, calc(env(safe-area-inset-bottom) + 64px));
+  }
+  .journey[data-enhanced="true"] .topbar {
+    padding-block: 6px;
+  }
+  .journey[data-enhanced="true"] .pager {
+    padding-block: 4px max(4px, env(safe-area-inset-bottom));
   }
 }
 

@@ -1,10 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const origin = process.env.KOARYU_E2E_FRONTEND_URL || "http://127.0.0.1:4000";
-if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname)) {
+if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname))
   throw new Error("Mobile journey checks may run only against loopback.");
-}
-
 test.use({ contextOptions: { reducedMotion: "reduce", hasTouch: true } });
 
 async function openJourney(page: Page, hash = "") {
@@ -12,63 +10,102 @@ async function openJourney(page: Page, hash = "") {
   await page.goto(`${origin}/${hash}`);
   await expect(page.locator("[data-enhanced]")).toHaveAttribute("data-enhanced", "true");
 }
-
 async function chooseChapter(page: Page, index: number) {
   await page
     .getByRole("combobox", { name: "Choose chapter", exact: true })
     .selectOption(String(index));
-  await expect(page.locator('[data-journey-chapter][aria-hidden="false"]')).toHaveAttribute(
+  await expect(page.locator("[data-journey-chapter]")).toHaveAttribute(
     "data-chapter-index",
     String(index),
   );
+}
+async function fits(page: Page, label: string) {
+  const geometry = await page
+    .locator("[data-mobile-stage] [data-journey-chapter]")
+    .evaluate((section) => {
+      const r = section.getBoundingClientRect(),
+        content = section.firstElementChild!.getBoundingClientRect();
+      const frame = document.querySelector("[data-enhanced]")!.getBoundingClientRect();
+      return {
+        clipped: Math.max(0, content.bottom - r.bottom, r.top - content.top),
+        overflow: Math.max(0, section.scrollHeight - section.clientHeight),
+        horizontal: Math.max(0, section.scrollWidth - section.clientWidth),
+        windowY: scrollY,
+        frameTop: frame.top,
+        frameBottom: frame.bottom,
+        viewport: innerHeight,
+      };
+    });
+  expect(geometry.clipped, `${label}: clipped content`).toBeLessThanOrEqual(1);
+  expect(geometry.overflow, `${label}: internal scrolling`).toBeLessThanOrEqual(1);
+  expect(geometry.horizontal, `${label}: horizontal overflow`).toBeLessThanOrEqual(1);
+  expect(geometry.windowY, label).toBe(0);
+  expect(geometry.frameTop, label).toBe(0);
+  expect(geometry.frameBottom, label).toBe(geometry.viewport);
+}
+async function inspectDetails(page: Page, chapter: number) {
+  const section = page.locator("[data-mobile-stage] section");
+  if ([4, 5, 7, 9, 10].includes(chapter)) {
+    const names = await section
+      .getByRole("button")
+      .evaluateAll((buttons) => buttons.map((b) => b.textContent!.replace("↗", "").trim()));
+    for (const name of names) {
+      await section.getByRole("button", { name, exact: true }).click();
+      await expect(section.getByRole("heading", { name, exact: true })).toBeVisible();
+      await fits(page, name);
+      await section.getByRole("button", { name: /^←/ }).click();
+      await expect(section.getByRole("button", { name, exact: true })).toBeFocused();
+    }
+  } else if (chapter === 2) {
+    await section.getByRole("button", { name: "This morning →", exact: true }).click();
+    await expect(section.getByRole("heading", { name: "This morning", exact: true })).toBeVisible();
+    await fits(page, "morning example");
+  } else if (chapter === 11) {
+    const topics = await section
+      .getByRole("button")
+      .evaluateAll((buttons) => buttons.map((b) => b.textContent!.replace("↗", "").trim()));
+    for (const topic of topics) {
+      await section.getByRole("button", { name: topic, exact: true }).click();
+      await expect(section.getByRole("heading", { name: topic, exact: true })).toBeVisible();
+      await fits(page, `FAQ topic ${topic}`);
+      const questions = await section
+        .getByRole("button")
+        .evaluateAll((buttons) =>
+          buttons
+            .filter((b) => !b.textContent!.startsWith("←"))
+            .map((b) => b.textContent!.replace("↗", "").trim()),
+        );
+      for (const question of questions) {
+        await section.getByRole("button", { name: question, exact: true }).click();
+        await expect(section.getByRole("heading", { name: question, exact: true })).toBeVisible();
+        await fits(page, question);
+        await section.getByRole("button", { name: `← ${topic}`, exact: true }).click();
+      }
+      await section.getByRole("button", { name: "← Question topics", exact: true }).click();
+    }
+  }
 }
 
 for (const [width, height] of [
   [320, 568],
   [375, 667],
+  [393, 617],
   [390, 844],
-  [393, 665],
   [844, 390],
   [768, 1024],
 ]) {
-  test(`all chapters remain readable at ${width} × ${height}`, async ({ page }) => {
+  test(`every chapter and detail fits without scrolling at ${width} × ${height}`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width, height });
     const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("pageerror", (e) => errors.push(e.message));
     await openJourney(page);
+    await expect(page.locator("html")).toHaveAttribute("data-koaryu-mobile-journey", "true");
     for (let index = 0; index < 14; index++) {
-      if (index) await page.getByRole("button", { name: "Next chapter", exact: true }).click();
-      const chapter = page.locator('[data-journey-chapter][aria-hidden="false"]');
-      await expect(chapter).toHaveAttribute("data-chapter-index", String(index));
-      const geometry = await chapter.evaluate((element) => {
-        const panel = element as HTMLElement;
-        const bounds = panel.getBoundingClientRect();
-        const content = panel.firstElementChild as HTMLElement;
-        const start = content.getBoundingClientRect();
-        panel.scrollTop = panel.scrollHeight;
-        const end = content.getBoundingClientRect();
-        const pager = document
-          .querySelector('[aria-label="Journey controls"]')!
-          .getBoundingClientRect();
-        return {
-          horizontalOverflow: panel.scrollWidth - panel.clientWidth,
-          startVisible: start.top >= bounds.top - 1,
-          endReachable: end.bottom <= bounds.bottom + 1,
-          clearsPager: bounds.bottom <= pager.top,
-          hiddenCopy: [...panel.querySelectorAll("p")].filter(
-            (p) => getComputedStyle(p).display === "none",
-          ).length,
-          documentOverflow: document.documentElement.scrollWidth > innerWidth,
-        };
-      });
-      expect(geometry, `chapter ${index + 1}`).toEqual({
-        horizontalOverflow: 0,
-        startVisible: true,
-        endReachable: true,
-        clearsPager: true,
-        hiddenCopy: 0,
-        documentOverflow: false,
-      });
+      await chooseChapter(page, index);
+      await fits(page, `chapter ${index + 1}`);
+      await inspectDetails(page, index);
     }
     expect(errors).toEqual([]);
   });
@@ -76,95 +113,161 @@ for (const [width, height] of [
 
 async function gesture(
   page: Page,
-  options: { scroll?: boolean; dx?: number; cancel?: boolean; multi?: boolean } = {},
+  options: { dx?: number; cancel?: boolean; multi?: boolean } = {},
 ) {
-  await page.locator('[data-journey-chapter][aria-hidden="false"]').evaluate((panel, options) => {
-    const target = panel.firstElementChild!;
-    type Contact = { identifier: number; clientX: number; clientY: number };
-    // WebKit exposes Touch but disallows constructing it. These events exercise
-    // boundary decisions; the separate wheel test covers native scrolling.
-    const dispatchTouch = (type: string, touches: Contact[], changedTouches: Contact[] = []) => {
+  return page.locator("[data-mobile-stage] section").evaluate((section, options) => {
+    const target = section.firstElementChild!;
+    type Contact = { clientX: number; clientY: number };
+    const dispatch = (type: string, touches: Contact[], changedTouches: Contact[] = []) => {
       const event = new Event(type, { bubbles: true, cancelable: true });
       Object.defineProperties(event, {
         touches: { value: touches },
         changedTouches: { value: changedTouches },
       });
       target.dispatchEvent(event);
+      return event.defaultPrevented;
     };
-    const start = { identifier: 1, clientX: 170, clientY: 450 };
-    const second = { identifier: 2, clientX: 230, clientY: 450 };
-    dispatchTouch("touchstart", options.multi ? [start, second] : [start]);
-    if (options.scroll) panel.scrollTop = panel.scrollHeight;
-    if (options.cancel) dispatchTouch("touchcancel", []);
-    const end = { identifier: 1, clientX: 170 + (options.dx ?? 0), clientY: 370 };
-    dispatchTouch("touchend", [], [end]);
+    const start = { clientX: 170, clientY: 350 },
+      end = { clientX: 170 + (options.dx ?? 0), clientY: 270 };
+    dispatch("touchstart", options.multi ? [start, { clientX: 210, clientY: 350 }] : [start]);
+    const prevented = dispatch("touchmove", [end]);
+    if (options.cancel) dispatch("touchcancel", []);
+    dispatch("touchend", [], [end]);
+    return prevented;
   }, options);
 }
 
-test("reading scroll, horizontal swipes, canceled touches and pinches never skip a chapter", async ({
+test("vertical gestures advance directly, while horizontal, canceled and multi-touch gestures do not", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 375, height: 667 });
+  await page.setViewportSize({ width: 393, height: 617 });
   await openJourney(page, "#use-cases");
-  const journey = page.locator("[data-active-chapter]");
-  await gesture(page, { scroll: true });
-  await expect(journey).toHaveAttribute("data-active-chapter", "use-cases");
   await gesture(page, { dx: 160 });
   await gesture(page, { cancel: true });
   await gesture(page, { multi: true });
-  await expect(journey).toHaveAttribute("data-active-chapter", "use-cases");
-  await gesture(page);
-  await expect(journey).toHaveAttribute("data-active-chapter", "signals-gather");
-});
-
-test("native wheel scrolling reaches the bottom without skipping, and mobile FAQ has one scroll area", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await openJourney(page, "#use-cases");
-  await page.mouse.move(170, 450);
-  await page.mouse.wheel(0, 180);
-  await expect
-    .poll(() => page.locator("#use-cases").evaluate((e) => e.scrollTop))
-    .toBeGreaterThan(0);
   await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
     "data-active-chapter",
     "use-cases",
   );
-  await chooseChapter(page, 11);
-  await page.getByRole("combobox", { name: "Question topic", exact: true }).selectOption("3");
-  await page
-    .getByRole("button", { name: "Do I have to use Koaryu for payments?", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Do I have to use Koaryu for payments?", exact: true }),
-  ).toHaveAttribute("aria-expanded", "true");
-  expect(
-    await page.locator("[data-faq-scroll]").evaluate((e) => getComputedStyle(e).overflowY),
-  ).toBe("visible");
-});
-
-test("desktop keeps the original scene materials and chapter geometry", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openJourney(page);
-  await expect(page.locator("[data-compact]")).toHaveAttribute("data-compact", "false");
-  expect(
-    await page
-      .locator("#welcome")
-      .evaluate((e) => ({ height: e.clientHeight, overflow: getComputedStyle(e).overflowY })),
-  ).toEqual({ height: 900, overflow: "clip" });
-  await expect(page.locator("svg image")).toHaveCount(0);
-  await page.getByRole("link", { name: "See how it works", exact: true }).click();
+  expect(await gesture(page)).toBe(true);
   await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
     "data-active-chapter",
-    "studio-view",
+    "signals-gather",
   );
+  await fits(page, "after swipe");
 });
 
-test("mobile animation settles after interruption and uses the baked materials", async ({
+test("native touch movement leaves the document fixed before and after changing chapters", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Chromium supplies native touch input through CDP.");
+  await page.setViewportSize({ width: 393, height: 617 });
+  await openJourney(page, "#features");
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x: 180, y: 340 }],
+  });
+  for (const y of [332, 316, 294, 264]) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 180, y }] });
+    expect(
+      await page.evaluate(() => ({
+        y: scrollY,
+        top: document.querySelector("[data-enhanced]")!.getBoundingClientRect().top,
+      })),
+    ).toEqual({ y: 0, top: 0 });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "use-cases",
+  );
+  await fits(page, "native swipe");
+});
+
+test("wheel and keyboard navigation change chapters instead of scrolling a card", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 393, height: 617 });
+  await openJourney(page, "#use-cases");
+  await page.mouse.move(180, 350);
+  await page.mouse.wheel(0, 120);
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "signals-gather",
+  );
+  await page.locator("[data-journey-chapter]").focus();
+  await page.keyboard.press("End");
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "begin",
+  );
+  await page.locator("[data-journey-chapter]").focus();
+  await page.keyboard.press("Home");
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "welcome",
+  );
+  await fits(page, "keyboard navigation");
+});
+
+test("mobile document lock cleans up on desktop resize and route exit", async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 617 });
+  await openJourney(page, "#features");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator("html")).not.toHaveAttribute("data-koaryu-mobile-journey", "true");
+  await expect(page.locator("[data-journey-chapter]")).toHaveCount(14);
+  await expect(page.locator("svg image")).toHaveCount(0);
+  expect(await page.evaluate(() => getComputedStyle(document.body).position)).not.toBe("fixed");
+  await page.setViewportSize({ width: 393, height: 617 });
+  await expect(page.locator("[data-mobile-stage]")).toBeVisible();
+  await page.getByRole("button", { name: "Student CRM", exact: true }).click();
+  await page.getByRole("link", { name: "Explore this feature", exact: true }).click();
+  await expect(page).toHaveURL(/\/features\/student-management$/);
+  await expect(page.locator("html")).not.toHaveAttribute("data-koaryu-mobile-journey", "true");
+  expect(await page.evaluate(() => getComputedStyle(document.body).position)).not.toBe("fixed");
+  await page.evaluate(() => window.scrollTo(0, 300));
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(0);
+  await page.goBack();
+  await expect(page.locator("html")).toHaveAttribute("data-koaryu-mobile-journey", "true");
+  await fits(page, "returned to journey");
+});
+
+test("FAQ deep links, question selection and landscape menu stay usable without scrolling", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 393, height: 617 });
+  await openJourney(page, "#faq-pricing");
+  await expect(
+    page.getByRole("heading", { name: "Pricing & Payments", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "← Question topics", exact: true }).click();
+  await page.getByRole("button", { name: "Data & Access", exact: true }).click();
+  await expect(page).toHaveURL(/#faq-data$/);
+  await page
+    .getByRole("button", { name: "Can staff have different permissions?", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Can staff have different permissions?", exact: true }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  const menu = page.getByRole("navigation", { name: "Mobile", exact: true });
+  await expect(menu).toBeVisible();
+  expect(await menu.evaluate((e) => e.scrollHeight - e.clientHeight)).toBe(0);
+  await menu.getByRole("link", { name: "Pricing", exact: true }).click();
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "pricing",
+  );
+  await fits(page, "landscape pricing");
+});
+
+test("mobile animation settles after interruption and respects reduced motion", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 393, height: 617 });
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await openJourney(page);
   await expect(page.locator("svg image")).toHaveCount(3);
@@ -174,115 +277,10 @@ test("mobile animation settles after interruption and uses the baked materials",
     "data-scene-progress",
     "0.24",
   );
-  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
-    "data-active-chapter",
-    "studio-view",
-  );
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.getByRole("button", { name: "Next chapter", exact: true }).click();
+  await chooseChapter(page, 3);
   await expect(page.locator("svg[data-scene-progress]")).toHaveAttribute(
     "data-scene-progress",
     "0.29",
   );
-});
-
-test("Home and End navigate short compact chapters but scroll long chapters", async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 667 });
-  await openJourney(page, "#studio-view");
-  await expect(page.locator("#studio-view")).toBeVisible();
-  await page.locator("#studio-view").focus();
-  await expect(page.locator("#studio-view")).toBeFocused();
-  await page.keyboard.press("End");
-  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
-    "data-active-chapter",
-    "begin",
-  );
-  await expect(page.locator("#begin")).toBeVisible();
-  await page.locator("#begin").focus();
-  await expect(page.locator("#begin")).toBeFocused();
-  await page.keyboard.press("Home");
-  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
-    "data-active-chapter",
-    "welcome",
-  );
-  await chooseChapter(page, 5);
-  await expect(page.locator("#use-cases")).toBeVisible();
-  await page.locator("#use-cases").focus();
-  await expect(page.locator("#use-cases")).toBeFocused();
-  await page.keyboard.press("End");
-  await expect
-    .poll(() => page.locator("#use-cases").evaluate((e) => e.scrollTop))
-    .toBeGreaterThan(0);
-  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
-    "data-active-chapter",
-    "use-cases",
-  );
-  await page.keyboard.press("Home");
-  await expect.poll(() => page.locator("#use-cases").evaluate((e) => e.scrollTop)).toBe(0);
-});
-
-test("mobile framing keeps balanced margins, contrast and readable topic controls", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 393, height: 665 });
-  await openJourney(page, "#studio-view");
-  const framing = await page.locator("#studio-view article").evaluate((card) => {
-    const r = card.getBoundingClientRect();
-    const header = document.querySelector("header")!;
-    return {
-      left: r.left,
-      right: innerWidth - r.right,
-      top: r.top - header.getBoundingClientRect().bottom,
-      color: getComputedStyle(header).color,
-      background: getComputedStyle(header).backgroundColor,
-    };
-  });
-  expect(Math.abs(framing.left - framing.right)).toBeLessThan(1);
-  expect(framing.top).toBeGreaterThanOrEqual(16);
-  expect(framing.top).toBeLessThanOrEqual(24);
-  expect(framing.color).not.toBe(framing.background);
-  await chooseChapter(page, 4);
-  expect(await page.locator("header").evaluate((e) => getComputedStyle(e).color)).toBe(
-    framing.color,
-  );
-  await expect(
-    page.getByRole("navigation", { name: "Journey chapters", exact: true }),
-  ).toBeHidden();
-  await page.locator("#features").evaluate((e) => (e.scrollTop = e.scrollHeight));
-  await chooseChapter(page, 7);
-  await chooseChapter(page, 4);
-  expect(await page.locator("#features").evaluate((e) => e.scrollTop)).toBe(0);
-  await chooseChapter(page, 11);
-  await page.getByRole("combobox", { name: "Question topic", exact: true }).selectOption("4");
-  await expect(page).toHaveURL(/#faq-data$/);
-  await expect(
-    page.getByRole("button", { name: "Who owns the studio data?", exact: true }),
-  ).toHaveAttribute("aria-expanded", "true");
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(page.getByRole("combobox", { name: "Question topic", exact: true })).toBeHidden();
-  await expect(page.getByRole("link", { name: "Data & Access", exact: true })).toHaveAttribute(
-    "aria-current",
-    "true",
-  );
-});
-
-test("landscape mobile navigation opens and fits above the chapter controls", async ({ page }) => {
-  await page.setViewportSize({ width: 844, height: 390 });
-  await openJourney(page);
-  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-  const menu = page.getByRole("navigation", { name: "Mobile", exact: true });
-  await expect(menu).toBeVisible();
-  expect(
-    await menu.evaluate(
-      (e) =>
-        e.getBoundingClientRect().bottom <=
-        document.querySelector('[aria-label="Journey controls"]')!.getBoundingClientRect().top,
-    ),
-  ).toBe(true);
-  await menu.getByRole("link", { name: "Pricing", exact: true }).click();
-  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
-    "data-active-chapter",
-    "pricing",
-  );
-  await expect(menu).toBeHidden();
 });
