@@ -87,6 +87,7 @@ interface SceneIds {
   readonly glow: string;
   readonly vignette: string;
   readonly lifted: string;
+  readonly grain: string;
   readonly pulp: string;
   readonly fine: string;
   readonly crumpleTile: string;
@@ -100,6 +101,7 @@ interface SceneIds {
 
 export interface JourneySceneProps {
   readonly progress: number;
+  readonly compact?: boolean;
   readonly frame?: SceneFrame;
   readonly viewportWidth?: number;
   readonly viewportHeight?: number;
@@ -258,6 +260,7 @@ function makeIds(reactId: string): SceneIds {
     glow: id("glow"),
     vignette: id("vignette"),
     lifted: id("lifted"),
+    grain: id("grain"),
     pulp: id("pulp"),
     fine: id("fine"),
     crumpleTile: id("crumple-tile"),
@@ -270,7 +273,13 @@ function makeIds(reactId: string): SceneIds {
   };
 }
 
-const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
+const SceneDefs = memo(function SceneDefs({
+  ids,
+  compact,
+}: {
+  readonly ids: SceneIds;
+  readonly compact: boolean;
+}) {
   return (
     <defs>
       <linearGradient id={ids.skyMountain} x1="0" y1="0" x2="0" y2="1">
@@ -361,7 +370,11 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
         />
       </filter>
       <pattern id={ids.crumple} patternUnits="userSpaceOnUse" x="0" y="0" width="360" height="360">
-        <rect x="0" y="0" width="360" height="360" filter={`url(#${ids.crumpleTile})`} />
+        {compact ? (
+          <image href="/marketing/crumple.webp" width="360" height="360" />
+        ) : (
+          <rect x="0" y="0" width="360" height="360" filter={`url(#${ids.crumpleTile})`} />
+        )}
       </pattern>
       <filter id={ids.washiNoise} x="0" y="0" width="100%" height="100%">
         <feTurbulence
@@ -376,20 +389,45 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
           <feFuncA type="linear" slope="0.76" />
         </feComponentTransfer>
       </filter>
+      <pattern id={ids.grain} width="360" height="360" patternUnits="userSpaceOnUse">
+        {compact ? <image href="/marketing/scene-grain.webp" width="360" height="360" /> : null}
+      </pattern>
       <pattern id={ids.washi} width="220" height="220" patternUnits="userSpaceOnUse">
-        <rect
-          width="220"
-          height="220"
-          fill="#8B7B60"
-          filter={`url(#${ids.washiNoise})`}
-          opacity="0.24"
-        />
+        {compact ? (
+          <image href="/marketing/washi.webp" width="220" height="220" />
+        ) : (
+          <rect
+            width="220"
+            height="220"
+            fill="#8B7B60"
+            filter={`url(#${ids.washiNoise})`}
+            opacity="0.24"
+          />
+        )}
       </pattern>
     </defs>
   );
 });
 
-const SceneGrain = memo(function SceneGrain({ ids }: { readonly ids: SceneIds }) {
+const SceneGrain = memo(function SceneGrain({
+  ids,
+  compact,
+}: {
+  readonly ids: SceneIds;
+  readonly compact: boolean;
+}) {
+  if (compact) {
+    return (
+      <g pointerEvents="none">
+        <rect
+          {...overscanRect()}
+          fill={`url(#${ids.grain})`}
+          style={{ mixBlendMode: "multiply" }}
+        />
+        <rect {...overscanRect()} fill={`url(#${ids.vignette})`} />
+      </g>
+    );
+  }
   return (
     <g pointerEvents="none">
       <rect
@@ -1394,6 +1432,7 @@ function isNear(progress: number, start: number, end: number, padding = 0.05): b
 
 export const JourneyScene = memo(function JourneyScene({
   progress,
+  compact = false,
   frame,
   viewportWidth = SCENE_WIDTH,
   viewportHeight = SCENE_HEIGHT,
@@ -1420,7 +1459,7 @@ export const JourneyScene = memo(function JourneyScene({
       data-scene-progress={round2(safeProgress)}
       data-scene-frame={resolvedFrame.variant}
     >
-      <SceneDefs ids={ids} />
+      <SceneDefs ids={ids} compact={compact} />
       <clipPath id={ids.back}>
         <rect
           x={VIEW.backLeft}
@@ -1452,7 +1491,7 @@ export const JourneyScene = memo(function JourneyScene({
       {isNear(safeProgress, SCENE_PHASES.students[0], 1.01, 0.04) ? (
         <Students progress={safeProgress} horizon={horizon} spread={resolvedFrame.studentSpread} />
       ) : null}
-      <SceneGrain ids={ids} />
+      <SceneGrain ids={ids} compact={compact} />
     </svg>
   );
 });

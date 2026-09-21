@@ -1,0 +1,184 @@
+import { expect, test, type Page } from "@playwright/test";
+
+const origin = process.env.KOARYU_E2E_FRONTEND_URL || "http://127.0.0.1:4000";
+if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname)) {
+  throw new Error("Mobile journey checks may run only against loopback.");
+}
+
+test.use({ contextOptions: { reducedMotion: "reduce", hasTouch: true } });
+
+async function openJourney(page: Page, hash = "") {
+  await page.route("**/api/proxy/health", (route) => route.fulfill({ json: { status: "ok" } }));
+  await page.goto(`${origin}/${hash}`);
+  await expect(page.locator("[data-enhanced]")).toHaveAttribute("data-enhanced", "true");
+}
+
+for (const [width, height] of [
+  [320, 568],
+  [375, 667],
+  [390, 844],
+  [844, 390],
+  [768, 1024],
+]) {
+  test(`all chapters remain readable at ${width} × ${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await openJourney(page);
+    for (let index = 0; index < 14; index++) {
+      if (index) await page.getByRole("button", { name: "Next chapter", exact: true }).click();
+      const chapter = page.locator('[data-journey-chapter][aria-hidden="false"]');
+      await expect(chapter).toHaveAttribute("data-chapter-index", String(index));
+      const geometry = await chapter.evaluate((element) => {
+        const panel = element as HTMLElement;
+        const bounds = panel.getBoundingClientRect();
+        const content = panel.firstElementChild as HTMLElement;
+        const start = content.getBoundingClientRect();
+        panel.scrollTop = panel.scrollHeight;
+        const end = content.getBoundingClientRect();
+        const pager = document
+          .querySelector('[aria-label="Journey controls"]')!
+          .getBoundingClientRect();
+        return {
+          horizontalOverflow: panel.scrollWidth - panel.clientWidth,
+          startVisible: start.top >= bounds.top - 1,
+          endReachable: end.bottom <= bounds.bottom + 1,
+          clearsPager: bounds.bottom <= pager.top,
+          hiddenCopy: [...panel.querySelectorAll("p")].filter(
+            (p) => getComputedStyle(p).display === "none",
+          ).length,
+          documentOverflow: document.documentElement.scrollWidth > innerWidth,
+        };
+      });
+      expect(geometry, `chapter ${index + 1}`).toEqual({
+        horizontalOverflow: 0,
+        startVisible: true,
+        endReachable: true,
+        clearsPager: true,
+        hiddenCopy: 0,
+        documentOverflow: false,
+      });
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
+async function gesture(
+  page: Page,
+  options: { scroll?: boolean; dx?: number; cancel?: boolean; multi?: boolean } = {},
+) {
+  await page.locator('[data-journey-chapter][aria-hidden="false"]').evaluate((panel, options) => {
+    const target = panel.firstElementChild!;
+    const start = new Touch({ identifier: 1, target, clientX: 170, clientY: 450 });
+    const second = new Touch({ identifier: 2, target, clientX: 230, clientY: 450 });
+    target.dispatchEvent(
+      new TouchEvent("touchstart", {
+        bubbles: true,
+        touches: options.multi ? [start, second] : [start],
+      }),
+    );
+    if (options.scroll) panel.scrollTop = panel.scrollHeight;
+    if (options.cancel) target.dispatchEvent(new TouchEvent("touchcancel", { bubbles: true }));
+    const end = new Touch({
+      identifier: 1,
+      target,
+      clientX: 170 + (options.dx ?? 0),
+      clientY: 370,
+    });
+    target.dispatchEvent(
+      new TouchEvent("touchend", {
+        bubbles: true,
+        cancelable: true,
+        touches: [],
+        changedTouches: [end],
+      }),
+    );
+  }, options);
+}
+
+test("reading scroll, horizontal swipes, canceled touches and pinches never skip a chapter", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await openJourney(page, "#use-cases");
+  const journey = page.locator("[data-active-chapter]");
+  await gesture(page, { scroll: true });
+  await expect(journey).toHaveAttribute("data-active-chapter", "use-cases");
+  await gesture(page, { dx: 160 });
+  await gesture(page, { cancel: true });
+  await gesture(page, { multi: true });
+  await expect(journey).toHaveAttribute("data-active-chapter", "use-cases");
+  await gesture(page);
+  await expect(journey).toHaveAttribute("data-active-chapter", "signals-gather");
+});
+
+test("native wheel scrolling reaches the bottom without skipping, and mobile FAQ has one scroll area", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openJourney(page, "#use-cases");
+  await page.mouse.move(170, 450);
+  await page.mouse.wheel(0, 180);
+  await expect
+    .poll(() => page.locator("#use-cases").evaluate((e) => e.scrollTop))
+    .toBeGreaterThan(0);
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "use-cases",
+  );
+  await page.getByRole("button", { name: "Go to chapter 12: Questions", exact: true }).click();
+  await page.getByRole("link", { name: "Pricing & Payments", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Do I have to use Koaryu for payments?", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Do I have to use Koaryu for payments?", exact: true }),
+  ).toHaveAttribute("aria-expanded", "true");
+  expect(
+    await page.locator("[data-faq-scroll]").evaluate((e) => getComputedStyle(e).overflowY),
+  ).toBe("visible");
+});
+
+test("desktop keeps the original scene materials and chapter geometry", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openJourney(page);
+  await expect(page.locator("[data-compact]")).toHaveAttribute("data-compact", "false");
+  expect(
+    await page
+      .locator("#welcome")
+      .evaluate((e) => ({ height: e.clientHeight, overflow: getComputedStyle(e).overflowY })),
+  ).toEqual({ height: 900, overflow: "clip" });
+  await expect(page.locator("svg image")).toHaveCount(0);
+  await page.getByRole("link", { name: "See how it works", exact: true }).click();
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "studio-view",
+  );
+});
+
+test("mobile animation settles after interruption and uses the baked materials", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await openJourney(page);
+  await expect(page.locator("svg image")).toHaveCount(3);
+  await page.getByRole("button", { name: "Go to chapter 8: Explore", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Go to chapter 3: Your morning is already sorted.", exact: true })
+    .click();
+  await expect(page.locator("svg[data-scene-progress]")).toHaveAttribute(
+    "data-scene-progress",
+    "0.24",
+  );
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "studio-view",
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.getByRole("button", { name: "Next chapter", exact: true }).click();
+  await expect(page.locator("svg[data-scene-progress]")).toHaveAttribute(
+    "data-scene-progress",
+    "0.29",
+  );
+});
