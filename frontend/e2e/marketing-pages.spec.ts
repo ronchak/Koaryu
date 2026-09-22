@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { parseCsvText } from "../src/lib/student-import-page-model";
 
 const origin = process.env.KOARYU_E2E_FRONTEND_URL || "http://127.0.0.1:4000";
 if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname)) {
@@ -288,9 +289,36 @@ test("every guide control reaches a distinct answer or provides the promised fil
         expect(response.ok()).toBeTruthy();
         expect(response.headers()["content-type"]).toMatch(/csv|text\/plain|octet-stream/);
         const contents = await response.text();
-        expect(contents).toMatch(/first.?name/i);
-        expect(contents).toMatch(/last.?name/i);
-        expect(contents).toMatch(/example\.com/);
+        const [headers, ...rows] = parseCsvText(contents);
+        expect(headers).toEqual(
+          expect.arrayContaining([
+            "First Name",
+            "Last Name",
+            "Date of Birth",
+            "Guardian Name",
+            "Guardian Email",
+          ]),
+        );
+        for (const row of rows) expect(row).toHaveLength(headers.length);
+        const records = rows.map((row) =>
+          Object.fromEntries(headers.map((header, index) => [header, row[index]])),
+        );
+        expect(records).toEqual([
+          expect.objectContaining({
+            "First Name": "Alex",
+            "Last Name": "Morgan",
+            "Date of Birth": "2016-06-15",
+            "Guardian Name": "Jordan Morgan",
+            "Guardian Email": "jordan@example.com",
+          }),
+          expect.objectContaining({
+            "First Name": "Sam",
+            "Last Name": "Lee",
+            "Date of Birth": "2017-03-08",
+            "Guardian Name": "Taylor Lee",
+            "Guardian Email": "taylor@example.com",
+          }),
+        ]);
         const downloadEvent = page.waitForEvent("download");
         await page.locator(`main a[href="${control.href}"]`).click();
         const download = await downloadEvent;
@@ -316,6 +344,18 @@ test("every guide control reaches a distinct answer or provides the promised fil
         "data-active-chapter",
         destination.hash.slice(1),
       );
+    } else if (destination.pathname === "/signup") {
+      await expect(
+        page.getByRole("heading", { name: "Create your account", exact: true }),
+        label,
+      ).toBeVisible();
+      for (const field of ["Full name", "Email", "Password", "Confirm password"]) {
+        await expect(page.getByLabel(field, { exact: true }), label).toBeVisible();
+      }
+      await expect(
+        page.getByRole("button", { name: "Create account", exact: true }),
+        label,
+      ).toBeVisible();
     } else {
       await expect(page.locator("h1").first(), label).toBeVisible();
     }
