@@ -1,11 +1,7 @@
 import type { Metadata } from "next";
-import {
-  BreadcrumbJsonLd,
-  MarketingIndexPage,
-  PageStructuredData,
-} from "@/components/marketing/public-pages";
+import { BreadcrumbJsonLd, PageStructuredData } from "@/components/marketing/public-pages";
+import { WorkflowIndexPage } from "@/components/marketing/workflow-pages";
 import { APP_NAME } from "@/lib/constants";
-import { useCasePages } from "@/lib/marketing-pages";
 
 export const metadata: Metadata = {
   title: "Martial Arts Studio Use Cases | Koaryu",
@@ -38,16 +34,7 @@ export default function UseCasesPage() {
           url: "https://koaryu.app/use-cases",
         }}
       />
-      <MarketingIndexPage
-        eyebrow="Use cases"
-        title="Operating moments where Koaryu earns its place in the studio."
-        description="From trial follow-up to tuition cleanup, these are the situations where an owner needs a calmer system before the next class starts."
-        pages={useCasePages}
-        sectionTitle="Studio workflows"
-        basePath="/use-cases"
-        listHeading="Start with the pressure point you recognize"
-        listDescription="Each workflow is written around a real owner problem: cleaning up records, keeping families engaged, preparing tests, and knowing what needs attention today."
-      />
+      <WorkflowIndexPage />
     </>
   );
 }
