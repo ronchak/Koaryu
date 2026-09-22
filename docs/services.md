@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September 20 release readback: both databases are V50, 145 migrations. Production and staging frontend/backend pairs now serve Google branding candidate `f1320ee179f28df54b85616ae7752a14823b4db7`. See [Google SSO verification](google-sso-setup.md#verification-status). Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
+Inventory baseline: 2026-08-24. September 20 release readback: both databases are V50, 145 migrations. Production and staging frontend/backend pairs now serve Microsoft sign-in candidate `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225`. See [Microsoft SSO verification](microsoft-sso-setup.md#september-20-release-verification). Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
 
 ## Quick map
 
@@ -44,9 +44,12 @@ see [Deployment triggers](#deployment-triggers).
 - Owner account: held in private operator storage.
 - Tenant: `Default Directory`, `koaryuoutlook.onmicrosoft.com`
   (`88ec6a60-28f5-4ba8-9419-238d02384c6d`), Microsoft Entra ID Free.
-- App display name: `koaryu.app`.
+- App display name and verified publisher domain: `koaryu.app`. The separate
+  Microsoft verified-publisher badge is not configured.
 - Application client ID: `dcc03dac-aac6-4b8f-9dc1-74ac1da30832`.
 - Audience: personal Microsoft accounts and accounts in any Entra directory.
+  Enabled in both Supabase projects; real personal and school login verified.
+  Client secret expires March 20, 2027; rotate using the setup runbook.
 - Both exact Supabase Auth callback URLs are registered as Web redirects.
 - Client credentials stay in Supabase and private operator storage; no client
   secret belongs in the frontend. Setup and verification status are in
