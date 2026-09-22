@@ -1,851 +1,704 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { MarketingActionLink } from "@/components/marketing/marketing-primitives";
 import { PublicPageShell } from "@/components/marketing/public-pages";
 import { useCasePages, type MarketingPage } from "@/lib/marketing-pages";
 
 import styles from "./workflow-pages.module.css";
 
-const workflowStories = {
+const guides = {
   "spreadsheets-to-studio-crm": {
-    title: "Bring the roster. Leave the patchwork.",
+    title: "Prepare a student roster for CSV import",
     intro:
-      "Your spreadsheet got the school this far. Move the student records into Koaryu, check the details, and give the next class a better starting point.",
-    question: "Which spreadsheet has the right version?",
-    answer: "Move student records into one roster, with a chance to review before you import.",
-    step: "Start with your student CSV",
-    action: "Plan your first import",
+      "Use the sample below to map your spreadsheet, check the preview, and account for every imported or rejected row. The import creates student records. Keep your old attendance, promotion history, and billing records separately.",
+    link: "Prepare a roster import",
+    ready: "Your student CSV and the program and belt names used by your school.",
+    output: "A checked column mapping, a sample CSV, and a way to verify the import result.",
   },
   "student-retention": {
-    title: "Notice the empty spot on the mat.",
+    title: "Review an attendance gap before contacting a family",
     intro:
-      "A missed week can turn into a missing student. Put attendance history, family context, and the next conversation together before the gap gets harder to explain.",
-    question: "Who haven't we seen in a while?",
-    answer: "Use attendance gaps to find the students who need a personal check-in.",
-    step: "Review students going quiet",
-    action: "Follow the attendance signal",
+      "A student can appear absent because they stopped coming, took a planned break, or attended a class nobody marked. Check which explanation fits before you send a message.",
+    link: "Review an attendance gap",
+    ready: "Attendance history, student status, any hold dates, and the family contact.",
+    output:
+      "A decision to contact, correct attendance, or check a planned break, plus wording you can use.",
   },
   "trial-to-enrollment": {
-    title: "A good first class deserves a next step.",
+    title: "Follow up with a trial family and create their student record",
     intro:
-      "Keep the inquiry, the trial, and the follow-up in the same record. When a family is ready to join, carry that context into enrollment.",
-    question: "Did anyone call the trial family?",
-    answer: "Give each inquiry a stage, a follow-up date, and notes for the next conversation.",
-    step: "Check the due follow-ups",
-    action: "Walk through the handoff",
+      "Admin and Front Desk staff can assign a lead, change its stage, schedule a follow-up, and convert it to a student. This guide follows one inquiry through those actions and explains what the new student record receives.",
+    link: "Follow up on a trial inquiry",
+    ready: "The lead's contact details, selected program, stage, and follow-up date.",
+    output: "A supported follow-up action and a field-by-field check after conversion.",
   },
   "tuition-cleanup": {
-    title: "Understand the tuition issue before the conversation.",
+    title: "Choose the right action for a tuition record",
     intro:
-      "A missing payer, an overdue invoice, and a payment made elsewhere need different responses. Koaryu helps authorized staff see which record needs attention and why.",
-    question: "What actually happened with this payment?",
-    answer: "Separate missing records, Stripe invoices, and payments recorded outside Koaryu.",
-    step: "Identify the record that needs attention",
-    action: "Sort out the next action",
+      "Start with the student, the payer, and the evidence of what happened. A missing billing enrollment, a stale Stripe invoice, and a check received at the desk need different actions.",
+    link: "Check a tuition problem",
+    ready: "Student and payer names, the invoice if there is one, and any payment evidence.",
+    output: "The record to change, the expected result, and anything that still needs resolving.",
   },
   "belt-test-readiness": {
-    title: "A test list with a reason beside every name.",
+    title: "Prepare a belt-test shortlist with reasons",
     intro:
-      "Class counts and time at rank can build a shortlist. Your instructors bring the judgment. Prepare for testing with both in view.",
-    question: "Who's ready, and what are we basing that on?",
-    answer: "Review the requirements and student history behind the next belt decision.",
-    step: "Open the readiness shortlist",
-    action: "Build the review list",
+      "Use the next rank's requirements to review class counts and time at rank. Keep a reason beside each student's name so instructors can distinguish a teaching decision from missing attendance or uncertain rank history.",
+    link: "Prepare a belt-test review",
+    ready: "The program's rank ladder, qualifying attendance, and each student's rank history.",
+    output: "A shortlist marked for instructor review, more classes, or a history check.",
   },
 } as const;
 
-type WorkflowSlug = keyof typeof workflowStories;
+type WorkflowSlug = keyof typeof guides;
 
-function Arrow() {
-  return <span aria-hidden="true">↗</span>;
-}
+// Kept identical to the downloadable file; both are checked with the roster parser.
+const sampleCsv = `First Name,Last Name,Guardian Name,Guardian Email,Program,Current Belt,Status,Membership Start Date,Schedule note,Office note,Tuition balance
+Alex,Morgan,Jordan Morgan,jordan@example.com,Juniors,Yellow,Active,2026-06-01,Tuesday classes,Prefers email,150
+Sam,Lee,Taylor Lee,taylor@example.com,Juniors,White,Trial,2026-09-01,Thursday classes,Call after 4pm,0`;
 
-function Eyebrow({ children }: { children: ReactNode }) {
-  return <p className={styles.eyebrow}>{children}</p>;
-}
-
-function Example({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <figure className={styles.example} aria-label={label}>
-      <figcaption className={styles.exampleCaption}>
-        <span>{label}</span>
-        <span>Illustrative example</span>
-      </figcaption>
-      {children}
-    </figure>
-  );
-}
-
-function RosterExample() {
-  return (
-    <Example label="A student record, connected">
-      <div className={styles.importSlip}>
-        <span className={styles.fileLabel}>STUDENTS.csv</span>
-        <dl className={styles.csvFields}>
-          <div>
-            <dt>Full name</dt>
-            <dd>Alex Morgan</dd>
-          </div>
-          <div>
-            <dt>Program</dt>
-            <dd>Juniors</dd>
-          </div>
-          <div>
-            <dt>Current belt</dt>
-            <dd>Yellow</dd>
-          </div>
-        </dl>
-      </div>
-      <p className={styles.mapConnector}>
-        <span aria-hidden="true">↓</span> Map columns · Review · Import
-      </p>
-      <div className={styles.studentSlip}>
-        <div className={styles.studentIdentity}>
-          <span className={styles.monogram} aria-hidden="true">
-            AM
-          </span>
-          <div>
-            <strong>Alex Morgan</strong>
-            <span>Juniors · Yellow belt</span>
-          </div>
-        </div>
-        <div className={styles.recordLinks}>
-          <span>Student profile</span>
-          <span>Attendance</span>
-          <span>Rank history</span>
-        </div>
-      </div>
-    </Example>
-  );
-}
-
-function RetentionExample() {
-  return (
-    <Example label="A gap worth checking">
-      <div className={styles.attendanceHeading}>
-        <span>Attendance history</span>
-        <strong>Last seen 14 days ago</strong>
-      </div>
-      <div
-        className={styles.attendanceWeeks}
-        role="img"
-        aria-label="Example pattern: four attended classes, followed by four missed classes"
-      >
-        {[
-          ["Week 1", true],
-          ["Week 2", true],
-          ["Week 3", false],
-          ["Week 4", false],
-        ].map(([week, attended]) => (
-          <div key={String(week)}>
-            <span>{week}</span>
-            <div aria-hidden="true">
-              <i className={attended ? styles.attended : styles.missed} />
-              <i className={attended ? styles.attended : styles.missed} />
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className={styles.attendanceKey}>
-        <span>
-          <i className={styles.attended} /> Attended
-        </span>
-        <span>
-          <i className={styles.missed} /> Missed
-        </span>
-      </div>
-      <div className={styles.deskNote}>
-        <span className={styles.noteLabel}>Before you reach out</span>
-        <p>Check the history. Read the notes. Ask what has changed.</p>
-      </div>
-    </Example>
-  );
-}
-
-function TrialExample() {
-  return (
-    <Example label="The conversation continues">
-      <div className={styles.trialReceipt}>
-        <div className={styles.receiptTop}>
-          <span>Trial completed</span>
-          <span aria-hidden="true">✓</span>
-        </div>
-        <h2>
-          They enjoyed class.
-          <br />
-          Now what?
-        </h2>
-        <dl className={styles.receiptFields}>
-          <div>
-            <dt>Program interest</dt>
-            <dd>Junior martial arts</dd>
-          </div>
-          <div>
-            <dt>Family question</dt>
-            <dd>Which days can we attend?</dd>
-          </div>
-          <div>
-            <dt>Next follow-up</dt>
-            <dd>Tomorrow</dd>
-          </div>
-        </dl>
-        <div className={styles.receiptAction}>
-          <span>Next conversation</span>
-          <strong>Confirm the schedule and discuss joining.</strong>
-        </div>
-      </div>
-    </Example>
-  );
-}
-
-function TuitionExample() {
-  return (
-    <Example label="Three issues, three responses">
-      <div className={styles.tuitionLedger}>
-        {[
-          ["01", "Payer missing", "Check the family record", "Record gap"],
-          ["02", "Invoice overdue", "Review the linked invoice", "Stripe invoice"],
-          ["03", "Paid by check", "Record the check payment", "External payment"],
-        ].map(([number, title, detail, kind]) => (
-          <div key={title}>
-            <span className={styles.ledgerNumber}>{number}</span>
-            <div>
-              <small>{kind}</small>
-              <strong>{title}</strong>
-              <p>{detail}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-      <p className={styles.exampleFootnote}>
-        Recording a payment made elsewhere does not move money.
-      </p>
-    </Example>
-  );
-}
-
-function BeltExample() {
-  return (
-    <Example label="Readiness is a review">
-      <div className={styles.beltSheet}>
-        <div className={styles.beltHeading}>
-          <span className={styles.rankSwatch} aria-hidden="true" />
-          <div>
-            <span>Next rank</span>
-            <strong>Yellow belt review</strong>
-          </div>
-        </div>
-        <div className={styles.readinessRow}>
-          <span>Classes attended</span>
-          <strong>24 / 24</strong>
-          <span className={styles.readinessBar}>
-            <i />
-          </span>
-        </div>
-        <div className={styles.readinessRow}>
-          <span>Time at rank</span>
-          <strong>3 / 3 months</strong>
-          <span className={styles.readinessBar}>
-            <i />
-          </span>
-        </div>
-        <div className={styles.approvalRow}>
-          <span aria-hidden="true">◎</span>
-          <div>
-            <strong>Instructor review</strong>
-            <span>Requirements met. Teaching judgment still needed.</span>
-          </div>
-        </div>
-      </div>
-      <p className={styles.exampleFootnote}>
-        Example requirements only. Each school sets its own rank rules.
-      </p>
-    </Example>
-  );
-}
-
-function SectionHeading({
-  eyebrow,
-  title,
-  description,
+function GuideTable({
+  caption,
+  columns,
+  rows,
 }: {
-  eyebrow: string;
-  title: string;
-  description?: string;
+  caption: string;
+  columns: string[];
+  rows: ReactNode[][];
 }) {
   return (
-    <div className={styles.sectionHeading}>
-      <Eyebrow>{eyebrow}</Eyebrow>
-      <h2>{title}</h2>
-      {description ? <p>{description}</p> : null}
-    </div>
-  );
-}
-
-function Step({ number, title, children }: { number: string; title: string; children: ReactNode }) {
-  return (
-    <li className={styles.step}>
-      <span className={styles.stepNumber}>{number}</span>
-      <div>
-        <h3>{title}</h3>
-        {children}
-      </div>
-    </li>
-  );
-}
-
-function RosterWorkflow() {
-  return (
-    <>
-      <section id="page-details" className={styles.section}>
-        <SectionHeading
-          eyebrow="The first import"
-          title="A move you can check as you go."
-          description="Bring a student-roster CSV. You don't need to solve every old spreadsheet at the same time."
-        />
-        <ol className={styles.steps}>
-          <Step number="01" title="Choose the roster you trust most">
-            <p>
-              Start with the list of people who train at your school. Keep your original file as a
-              reference, and export a copy as CSV.
-            </p>
-            <p className={styles.stepAside}>
-              Useful fields: student names, contact details, guardian details, program, current
-              belt, status, and notes.
-            </p>
-          </Step>
-          <Step number="02" title="Tell Koaryu what the columns mean">
-            <p>
-              Map your column names to student fields. Match programs and current belts to your
-              school. An unusual column can become a note instead of disappearing.
-            </p>
-          </Step>
-          <Step number="03" title="Review before you commit">
-            <p>
-              Preview the records and address validation issues or duplicate warnings. Decide how to
-              handle missing programs and belts before importing.
-            </p>
-          </Step>
-          <Step number="04" title="Use the roster in the next class">
-            <p>
-              Check a few student profiles with your staff. Add the schedule, start recording
-              attendance, and use that same roster for future rank reviews.
-            </p>
-          </Step>
-        </ol>
-      </section>
-      <section className={styles.importBoundary}>
-        <div className={styles.sectionInner}>
-          <SectionHeading
-            eyebrow="What comes with you"
-            title="Move the records. Check the assumptions."
-          />
-          <div className={styles.boundaryColumns}>
-            <div>
-              <h3>Student-roster import</h3>
-              <ul className={styles.bulletList}>
-                <li>Names, contact information, and guardian details</li>
-                <li>Program and current-belt mapping</li>
-                <li>Student status, membership start date, and notes</li>
-                <li>A preview so you can resolve issues before import</li>
-              </ul>
-            </div>
-            <div>
-              <h3>Handle separately</h3>
-              <ul className={styles.bulletList}>
-                <li>Historical payments and subscriptions</li>
-                <li>Old attendance and promotion histories</li>
-                <li>Processor setup and tuition collection</li>
-                <li>Details that need a conversation with a family</li>
-              </ul>
-              <p className={styles.smallCopy}>
-                The roster importer skips billing columns. Importing a current belt does not
-                recreate every past promotion.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-      <section className={`${styles.section} ${styles.compactSection}`}>
-        <SectionHeading
-          eyebrow="After the move"
-          title="Retire one duplicate list at a time."
-          description="Start with the roster. Then let attendance, rank tracking, and lead follow-up use the same student context. Keep your source files until you've checked what you brought over."
-        />
-        <div className={styles.linkStack}>
-          <Link href="/features/student-management">
-            See the student record <Arrow />
-          </Link>
-          <Link href="/features/attendance">
-            See how attendance uses it <Arrow />
-          </Link>
-        </div>
-      </section>
-    </>
-  );
-}
-
-function RetentionWorkflow() {
-  return (
-    <>
-      <section id="page-details" className={styles.section}>
-        <SectionHeading
-          eyebrow="The daily check"
-          title="The gap is a signal. The reason needs a person."
-          description="Koaryu highlights students who haven't attended in 14 or more days. Use that list to start a review, then bring what you know about the student."
-        />
-        <ol className={styles.steps}>
-          <Step number="01" title="Open the attendance gap">
-            <p>
-              Review the students going quiet from the dashboard. Read the attendance history before
-              deciding whether the pattern needs attention.
-            </p>
-          </Step>
-          <Step number="02" title="Put the absence in context">
-            <p>
-              Check the student&apos;s status, program, notes, and guardian contact. A planned break
-              calls for a different conversation than a family you&apos;ve lost touch with.
-            </p>
-          </Step>
-          <Step number="03" title="Make a personal check-in">
-            <p>
-              Contact the student or guardian through your usual channel. Ask about the gap, agree
-              on a useful next step, and save the relevant context in their notes.
-            </p>
-            <p className={styles.stepAside}>
-              The queue helps you notice. Your staff decides when to reach out and what to say.
-            </p>
-          </Step>
-        </ol>
-      </section>
-      <section className={styles.retentionBand}>
-        <div className={styles.sectionInner}>
-          <SectionHeading
-            eyebrow="A conversation with context"
-            title="Ask a better first question."
-          />
-          <div className={styles.conversation}>
-            <p className={styles.conversationPrompt}>An example check-in</p>
-            <blockquote>
-              &quot;We haven&apos;t seen Alex in a couple of weeks. Is the class schedule still
-              working for your family?&quot;
-            </blockquote>
-            <p>
-              A useful next step might be a different class time, a return date, or simply knowing
-              the family is away. The attendance gap alone cannot tell you which.
-            </p>
-          </div>
-        </div>
-      </section>
-      <section className={styles.section}>
-        <SectionHeading
-          eyebrow="Read the rest of the story"
-          title="Attendance is where you start."
-        />
-        <div className={styles.contextList}>
-          <article>
-            <span aria-hidden="true">01</span>
-            <div>
-              <h3>A trial waiting for a reply</h3>
-              <p>
-                Review dated lead follow-ups separately. A family can be interested and still need
-                one clear conversation to choose their next class.
-              </p>
-              <Link href="/use-cases/trial-to-enrollment">
-                Follow the trial handoff <Arrow />
-              </Link>
-            </div>
-          </article>
-          <article>
-            <span aria-hidden="true">02</span>
-            <div>
-              <h3>A milestone that needs attention</h3>
-              <p>
-                Readiness requirements and promotion history give an instructor context for
-                discussing progress. Meeting a count does not promise a promotion.
-              </p>
-              <Link href="/use-cases/belt-test-readiness">
-                Prepare the readiness review <Arrow />
-              </Link>
-            </div>
-          </article>
-          <article>
-            <span aria-hidden="true">03</span>
-            <div>
-              <h3>A payment question left unresolved</h3>
-              <p>
-                Authorized staff can check the family&apos;s existing billing records before
-                starting a tuition conversation.
-              </p>
-              <Link href="/use-cases/tuition-cleanup">
-                Understand tuition attention <Arrow />
-              </Link>
-            </div>
-          </article>
-        </div>
-      </section>
-    </>
-  );
-}
-
-function TrialWorkflow() {
-  const stages = [
-    {
-      title: "Inquiry",
-      question: "What brought them here?",
-      body: "Record the lead source, program interest, contact details, and what the family wants from training. Set the next follow-up date while the conversation is fresh.",
-    },
-    {
-      title: "Trial scheduled",
-      question: "What should staff know before class?",
-      body: "Keep the trial date and useful notes with the lead. A question about confidence, age group, or schedule should reach the person welcoming the family.",
-    },
-    {
-      title: "Trial completed",
-      question: "What happened in the room?",
-      body: "Record how the trial went and what still needs an answer. Give the next conversation a date so it appears in the follow-up queue.",
-    },
-    {
-      title: "Offer sent",
-      question: "What is holding up the decision?",
-      body: "Keep the enrollment conversation visible while the family decides. Update the notes and next follow-up instead of treating an unanswered offer as a finished task.",
-    },
-    {
-      title: "Enrolled",
-      question: "What should the student record carry forward?",
-      body: "When the family joins, authorized staff can convert the lead into a student. Contact details, program context, and notes support the handoff into the roster.",
-    },
-  ];
-  return (
-    <>
-      <section id="page-details" className={styles.trialSection}>
-        <SectionHeading
-          eyebrow="Five stages. One conversation."
-          title="Know the next question to ask."
-          description="The lead pipeline shows where each family is. A follow-up date tells you when the next conversation is due."
-        />
-        <ol className={styles.trialStages}>
-          {stages.map((stage, index) => (
-            <li key={stage.title}>
-              <span className={styles.stageNumber}>{String(index + 1).padStart(2, "0")}</span>
-              <div>
-                <p className={styles.stageLabel}>{stage.title}</p>
-                <h3>{stage.question}</h3>
-                <p>{stage.body}</p>
-              </div>
-            </li>
+    <table className={styles.table} role="table">
+      <caption>{caption}</caption>
+      <thead role="rowgroup">
+        <tr role="row">
+          {columns.map((column) => (
+            <th scope="col" key={column} role="columnheader">
+              {column}
+            </th>
           ))}
-        </ol>
-      </section>
-      <section className={styles.trialHandoff}>
-        <div className={styles.sectionInner}>
-          <SectionHeading
-            eyebrow="Before the next class"
-            title="A short list beats a long memory."
-          />
-          <div>
-            <p className={styles.featureCopy}>
-              The follow-up queue separates due and overdue conversations. Open the lead, read the
-              notes, and record what you learn after you contact the family.
-            </p>
-            <div className={styles.handoffNotes}>
-              <h3>If the answer is &quot;not now&quot;</h3>
-              <p>
-                Record the reason when closing a lead, such as timing, no response, or a no-show. A
-                truthful status is more useful than leaving every family in the active pipeline.
-              </p>
-            </div>
-            <p className={styles.smallCopy}>
-              Pipeline stages organize your work. Staff still handles the conversation; moving a
-              lead to &quot;Offer sent&quot; is not a promise of an automated message.
-            </p>
-          </div>
-        </div>
-      </section>
-      <section className={`${styles.section} ${styles.compactSection}`}>
-        <SectionHeading
-          eyebrow="Once they join"
-          title="Start with what you already know."
-          description="Review the new student profile, guardian details, and program. Enrollment and tuition setup are separate steps, so confirm the studio's billing availability before activating payments."
-        />
-        <div className={styles.linkStack}>
-          <Link href="/features/student-management">
-            See the student CRM <Arrow />
-          </Link>
-          <Link href="/features/billing">
-            Understand billing availability <Arrow />
-          </Link>
-        </div>
-      </section>
-    </>
-  );
-}
-
-function TuitionWorkflow() {
-  return (
-    <>
-      <section id="page-details" className={styles.tuitionSection}>
-        <SectionHeading
-          eyebrow="Start with the record"
-          title="Same queue. Different next steps."
-          description="Read the student and payer context first. Then choose the path that matches the issue, instead of assuming every alert calls for another charge."
-        />
-        <div className={styles.tuitionPaths}>
-          <article>
-            <span className={styles.pathNumber}>01 / A record is missing</span>
-            <h3>Find the gap.</h3>
-            <p>
-              Check the student&apos;s billing assignment and payer context. Confirm who is
-              responsible and how the family pays.
-            </p>
-            <div className={styles.pathDecision}>
-              <strong>Useful next action</strong>
-              <p>
-                Where appropriate, attach an external-only local billing record. This records the
-                arrangement without creating a Stripe subscription.
-              </p>
-            </div>
-          </article>
-          <article>
-            <span className={styles.pathNumber}>02 / An invoice needs attention</span>
-            <h3>Check the Stripe invoice.</h3>
-            <p>
-              Read the existing invoice and its payment status alongside the family record. An
-              overdue or failed status is a reason to investigate.
-            </p>
-            <div className={styles.pathDecision}>
-              <strong>Useful next action</strong>
-              <p>
-                When available to your role and studio, refresh an existing Stripe-linked invoice
-                from Stripe to update the Koaryu record.
-              </p>
-            </div>
-          </article>
-          <article>
-            <span className={styles.pathNumber}>03 / The family paid elsewhere</span>
-            <h3>Record what happened.</h3>
-            <p>
-              A cash, check, Zelle, Venmo, or other external payment needs a clear record of what
-              was paid and how.
-            </p>
-            <div className={styles.pathDecision}>
-              <strong>Useful next action</strong>
-              <p>
-                Authorized staff can record the payment against the payer. Koaryu keeps a record of
-                the payment made elsewhere; it does not transfer money.
-              </p>
-            </div>
-          </article>
-        </div>
-      </section>
-      <section className={styles.billingBoundary}>
-        <div className={styles.sectionInner}>
-          <SectionHeading
-            eyebrow="Before you activate payments"
-            title="Visibility and collection have different requirements."
-          />
-          <div>
-            <p className={styles.featureCopy}>
-              Tuition collection is not generally available without separate activation for the
-              exact studio. Available Stripe actions depend on the staff member&apos;s role and what
-              has been activated for the studio.
-            </p>
-            <ul className={styles.bulletList}>
-              <li>Review existing records and identify what needs attention.</li>
-              <li>Confirm studio activation before promising payment collection.</li>
-              <li>Keep records of external payments distinct from Stripe transactions.</li>
-            </ul>
-            <Link href="/features/billing" className={styles.lightLink}>
-              Read the billing scope <Arrow />
-            </Link>
-          </div>
-        </div>
-      </section>
-      <section className={`${styles.section} ${styles.compactSection}`}>
-        <SectionHeading
-          eyebrow="At the front desk"
-          title="One conversation, with the right context."
-          description="Keep student, guardian, payer, and invoice information connected. Authorized staff should be able to explain the record before asking a family to act on it."
-        />
-        <div className={styles.deskNote}>
-          <span className={styles.noteLabel}>A useful check before you call</span>
-          <p>
-            Who is the payer? Which record needs attention? Has a payment already happened
-            elsewhere?
-          </p>
-        </div>
-      </section>
-    </>
-  );
-}
-
-function BeltWorkflow() {
-  return (
-    <>
-      <section id="page-details" className={styles.section}>
-        <SectionHeading
-          eyebrow="Before the test list"
-          title="Make your school's requirements visible."
-          description="Ordered rank ladders can use class-count, time-at-rank, and instructor-approval requirements. Review the rules for the student's program before relying on the shortlist."
-        />
-        <div className={styles.requirements}>
-          <article>
-            <span className={styles.requirementSymbol} aria-hidden="true">
-              24
-            </span>
-            <h3>Classes at rank</h3>
-            <p>
-              Compare recorded attendance with the class requirement for the next rank. Check
-              missing or incorrect attendance before making the decision.
-            </p>
-          </article>
-          <article>
-            <span className={styles.requirementSymbol} aria-hidden="true">
-              3m
-            </span>
-            <h3>Time at rank</h3>
-            <p>
-              Review time against the configured requirement. The recorded rank history gives that
-              waiting period its starting point.
-            </p>
-          </article>
-          <article>
-            <span className={styles.requirementSymbol} aria-hidden="true">
-              ◎
-            </span>
-            <h3>Instructor approval</h3>
-            <p>
-              Where required, keep approval as a separate part of the review. Technical readiness,
-              confidence, and judgment belong to the instructor.
-            </p>
-          </article>
-        </div>
-      </section>
-      <section className={styles.beltDecision}>
-        <div className={styles.sectionInner}>
-          <div>
-            <Eyebrow>The teaching decision</Eyebrow>
-            <h2>Meeting the numbers earns a review.</h2>
-            <p>It does not award a belt.</p>
-          </div>
-          <div className={styles.decisionCopy}>
-            <p>
-              Koaryu shows the requirements and the student&apos;s history. Instructors decide
-              whether the student is ready to test or needs more time.
-            </p>
-            <p>
-              For a student who needs more time, record a useful note about what to work on. The
-              next review can start from that conversation.
-            </p>
-          </div>
-        </div>
-      </section>
-      <section className={styles.section}>
-        <SectionHeading
-          eyebrow="After the review"
-          title="Leave a record for the next instructor."
-        />
-        <ol className={styles.steps}>
-          <Step number="01" title="Review the shortlist together">
-            <p>
-              Look at the current rank, attendance, time, and any approval requirement. Discuss the
-              students whose history needs a closer look before planning the test.
-            </p>
-          </Step>
-          <Step number="02" title="Record the promotion after the decision">
-            <p>
-              When a student earns the next rank, record the change and date. The student profile
-              keeps that promotion history.
-            </p>
-          </Step>
-          <Step number="03" title="Let the next period build on it">
-            <p>
-              Keep recording attendance against the same student record. The next readiness review
-              has the new rank and its history to work from.
-            </p>
-          </Step>
-        </ol>
-      </section>
-    </>
-  );
-}
-
-const workflowViews: Record<WorkflowSlug, { Example: () => ReactNode; Body: () => ReactNode }> = {
-  "spreadsheets-to-studio-crm": { Example: RosterExample, Body: RosterWorkflow },
-  "student-retention": { Example: RetentionExample, Body: RetentionWorkflow },
-  "trial-to-enrollment": { Example: TrialExample, Body: TrialWorkflow },
-  "tuition-cleanup": { Example: TuitionExample, Body: TuitionWorkflow },
-  "belt-test-readiness": { Example: BeltExample, Body: BeltWorkflow },
-};
-
-function WorkflowNextSteps({ pages }: { pages: MarketingPage[] }) {
-  return (
-    <section className={styles.nextSteps}>
-      <div className={styles.nextHeading}>
-        <Eyebrow>See the tools behind the workflow</Eyebrow>
-        <h2>Keep exploring.</h2>
-      </div>
-      <ul className={styles.relatedLinks}>
-        {pages.map((page) => (
-          <li key={page.href}>
-            <Link href={page.href}>
-              <span>
-                <strong>{page.eyebrow}</strong>
-                <span>{page.description}</span>
-              </span>
-              <Arrow />
-            </Link>
-          </li>
+        </tr>
+      </thead>
+      <tbody role="rowgroup">
+        {rows.map((row, rowIndex) => (
+          <tr key={rowIndex} role="row">
+            {row.map((cell, cellIndex) => (
+              <td key={columns[cellIndex]} role="cell">
+                <span className={styles.cellLabel} aria-hidden="true">
+                  {columns[cellIndex]}
+                </span>
+                {cell}
+              </td>
+            ))}
+          </tr>
         ))}
-      </ul>
-      <div className={styles.closing}>
-        <div>
-          <h3>Start with your school.</h3>
-          <p>Build the roster, then work through the next task that needs attention.</p>
-        </div>
-        <MarketingActionLink href="/signup" prefetch={false} className={styles.action}>
-          Start setup
-        </MarketingActionLink>
-      </div>
-    </section>
+      </tbody>
+    </table>
   );
 }
+
+function RosterGuide() {
+  return (
+    <>
+      <section className={styles.section} aria-labelledby="sample-heading">
+        <h2 id="sample-heading">A two-student file you can adapt</h2>
+        <p>
+          These are fictional records. Replace them with your own students before importing. For the
+          results shown here, the school already has a Juniors program with White and Yellow ranks
+          in its ladder. Match your program and belt names before reviewing your own file.
+        </p>
+        <a
+          className={styles.download}
+          href="/marketing/resources/student-roster-example.csv"
+          download="koaryu-student-roster-example.csv"
+        >
+          Download the sample CSV
+          <span aria-hidden="true">↓</span>
+        </a>
+        <GuideTable
+          caption="How to map the sample's columns"
+          columns={["CSV column and example", "Choose in Koaryu", "Result to check"]}
+          rows={[
+            [
+              "First Name: Alex / Last Name: Morgan",
+              "First Name / Last Name",
+              "Alex Morgan has separate first and last names.",
+            ],
+            [
+              "Guardian Name: Jordan Morgan / Guardian Email: jordan@example.com",
+              "Guardian Name / Guardian Email",
+              "Jordan is linked as Alex's guardian. This does not create a tuition payer.",
+            ],
+            [
+              "Program: Juniors / Current Belt: Yellow",
+              "Program / Current Belt",
+              "Alex joins Juniors with its matching Yellow rank. No earlier promotions are created.",
+            ],
+            [
+              "Status: Active or Trial",
+              "Status",
+              "With status normalization enabled, Active becomes active and Trial becomes trialing. This is the student's roster status.",
+            ],
+            [
+              "Membership Start Date: 2026-06-01",
+              "Membership Start Date",
+              "The student's start date is June 1, 2026. This is not the date they earned Yellow.",
+            ],
+            [
+              "Schedule note / Office note",
+              "Map both columns to Notes",
+              "Alex's notes contain 'Schedule note: Tuesday classes' and 'Office note: Prefers email'. The column labels stay with the text.",
+            ],
+            [
+              "Tuition balance: 150",
+              "Skip this column",
+              "No balance, invoice, payment, or billing enrollment is created.",
+            ],
+          ]}
+        />
+        <p className={styles.sampleLabel}>The complete downloadable CSV</p>
+        <pre className={styles.csv}>
+          <code>{sampleCsv}</code>
+        </pre>
+      </section>
+
+      <section className={styles.section} aria-labelledby="mapping-heading">
+        <h2 id="mapping-heading">Fix the mapping before you import</h2>
+        <p>
+          First Name and Last Name must be mapped. A Full Name column can supply both, but check how
+          compound names split in the preview. Other supported fields include date of birth,
+          preferred name, student contact details, address, tags, emergency contact, and guardian
+          phone and relation.
+        </p>
+        <p>
+          Only Notes can receive more than one column. If two columns map to another field, choose
+          one and skip the other. Leave payment columns unmapped. A column called Payment Status
+          cannot stand in for the student&#39;s Status, and an unfamiliar billing header may need
+          you to skip it manually.
+        </p>
+        <GuideTable
+          caption="What a preview result means"
+          columns={["What you see", "What to do"]}
+          rows={[
+            [
+              "Missing last name or invalid date",
+              "Correct that row in the source file, then review it again. A column mapping alone cannot fill a missing value.",
+            ],
+            [
+              "Program cannot be matched",
+              "Use the existing program's name, set it up first, or review the option to create missing programs if available. Do not assume the row will join the intended program.",
+            ],
+            [
+              "Current belt cannot be matched",
+              "The default keeps the unmatched belt text in Notes, for example 'Imported current belt (unresolved): Yellow'. A configured program starts the student at its first full belt; without one, the student remains unranked. Review any offered belt-setup option if you want to create the missing rank instead.",
+            ],
+            [
+              "8 valid rows and 2 rows with blockers",
+              "Import 8 students imports those valid rows and skips the two blocked rows. To keep the roster together, fix the blockers before importing. Otherwise, identify the skipped rows and later import only those corrected students.",
+            ],
+          ]}
+        />
+      </section>
+
+      <section className={styles.section} aria-labelledby="retry-heading">
+        <h2 id="retry-heading">A retry is different from an updated roster</h2>
+        <p>
+          If the connection drops during import, retry with the exact file, mapping, and options.
+          Koaryu recognizes that import attempt and avoids creating its completed rows again.
+          Editing and importing the full roster is a new import. The importer does not find existing
+          people by name or email, merge their records, or update them in place.
+        </p>
+        <h3>Check the result before retiring the spreadsheet</h3>
+        <ul className={styles.checklist}>
+          <li>
+            Compare the imported count with the number you intended to add. Keep a list of every
+            blocked row.
+          </li>
+          <li>
+            Open a student and verify the guardian contact, program, status, start date, and
+            combined notes.
+          </li>
+          <li>
+            Check a matched belt and, if present, a student whose belt could not be matched. A
+            default starting belt may differ from the belt in your spreadsheet. Resolve that
+            assignment before using it for rank review.
+          </li>
+          <li>
+            Keep the source spreadsheet and historical records. The CSV does not reconstruct
+            attendance, promotions, or tuition history.
+          </li>
+        </ul>
+        <Link className={styles.referenceLink} href="/features/student-management">
+          See what a student profile contains <span aria-hidden="true">→</span>
+        </Link>
+      </section>
+    </>
+  );
+}
+
+function RetentionGuide() {
+  return (
+    <>
+      <section className={styles.section} aria-labelledby="gap-heading">
+        <h2 id="gap-heading">Four gaps that need different responses</h2>
+        <GuideTable
+          caption="Fictional review examples, not a live student list"
+          columns={["Recorded facts", "Check first", "Staff decision"]}
+          rows={[
+            [
+              "Alex is active. The last recorded visit was 16 days ago, with no known break.",
+              "Read the profile notes, confirm recent classes were marked, and check the guardian contact.",
+              "Send a personal check-in. Ask about the absence without guessing its cause.",
+            ],
+            [
+              "Sam's family says they are traveling through September 28.",
+              "Check whether a hold is already recorded and confirm the return plan with the family.",
+              "Ask Admin or Front Desk to record the agreed hold dates if needed. An existing current hold removes Sam from the inactivity watch.",
+            ],
+            [
+              "An instructor remembers Lee in Tuesday's class, but the session has no check-in for Lee.",
+              "Open that dated session and confirm Lee attended it.",
+              "Correct attendance before contacting the family about an absence. A missing record does not establish a missed class.",
+            ],
+            [
+              "Robin was imported today as active, with a membership start six months ago and no attendance history.",
+              "Ask staff when Robin last attended and check the old attendance source.",
+              "Establish the attendance history first. Importing the roster did not bring past check-ins with it.",
+            ],
+          ]}
+        />
+      </section>
+      <section className={styles.section} aria-labelledby="inactivity-heading">
+        <h2 id="inactivity-heading">What the 14-day watch actually measures</h2>
+        <p>
+          The dashboard watch includes active and trialing students who have reached 14 days without
+          recorded attendance. It excludes paused students and students on a current hold. It looks
+          for the most recent attendance entry that isn&#39;t Absent within the last 90 days. If
+          there isn&#39;t one, it uses the membership start date, then the record&#39;s creation
+          date if no start date exists.
+        </p>
+        <p>
+          This does not count how many scheduled classes the student missed. For an imported
+          student, an old membership date can trigger the watch immediately even if they trained
+          yesterday. Review the actual check-ins and ask the instructor before treating the gap as a
+          reason to contact the family.
+        </p>
+        <Link className={styles.referenceLink} href="/features/attendance">
+          See how attendance is saved and corrected <span aria-hidden="true">→</span>
+        </Link>
+      </section>
+      <section className={styles.section} aria-labelledby="outreach-heading">
+        <h2 id="outreach-heading">Two messages you can adapt</h2>
+        <p>
+          Once you&#39;ve checked the records, send the message through your usual email, phone, or
+          messaging channel.
+        </p>
+        <div className={styles.messagePair}>
+          <div>
+            <h3>When the attendance record is complete</h3>
+            <blockquote>
+              Hi [guardian], we haven&#39;t recorded a visit for [student] since [date]. Has the
+              class schedule changed for you? If you plan to return, which class should we expect
+              you at?
+            </blockquote>
+          </div>
+          <div>
+            <h3>When recent check-ins may be missing</h3>
+            <blockquote>
+              Hi [guardian], I&#39;m checking our attendance records for [student]. Do you remember
+              their most recent class, and are they planning to come this week?
+            </blockquote>
+          </div>
+        </div>
+        <h3>Save the answer in the student&#39;s Notes</h3>
+        <p>
+          Open the student&#39;s edit form and add the response without removing useful existing
+          notes. Record what the family said and the agreed action. For example:
+        </p>
+        <blockquote>
+          September 22: Jordan confirmed Alex has been away visiting family. Plans to return to
+          Juniors on September 29. Front Desk to confirm the hold ends September 28.
+        </blockquote>
+        <p>
+          Admin and Front Desk can manage hold dates. If the family is undecided, keep the agreed
+          check-in date in Notes and your staff reminder system. A student note does not create a
+          dated follow-up task or send a message.
+        </p>
+      </section>
+    </>
+  );
+}
+
+function TrialGuide() {
+  return (
+    <>
+      <section className={styles.section} aria-labelledby="handoff-heading">
+        <h2 id="handoff-heading">One inquiry from Tuesday to Monday</h2>
+        <p className={styles.sampleLabel}>Fictional staff plan for September 2026</p>
+        <ol className={styles.timeline}>
+          <li>
+            <span className={styles.date}>Tuesday, September 22</span>
+            <h3>Add Alex&#39;s inquiry</h3>
+            <p>
+              Select Juniors as the program, mark Alex as a minor, enter guardian Jordan&#39;s name
+              and contact details, and assign a staff member. Set Follow-up date to September 24.
+              Initial Notes can say, &quot;Jordan asked whether Tuesday classes fit Alex&#39;s
+              schedule.&quot; Check these details before saving; the lead inspector has no editor
+              for them.
+            </p>
+          </li>
+          <li>
+            <span className={styles.date}>Thursday, September 24</span>
+            <h3>Contact the family, then record the action</h3>
+            <p>
+              The follow-up is due today; it becomes overdue if left for a later day. Staff call
+              Jordan outside Koaryu. Jordan is still deciding, so choose Mark contacted. That clears
+              September 24 from the lead&#39;s follow-up date and adds a generic contact entry to
+              its activity trail. It does not save a transcript or a new note.
+            </p>
+          </li>
+          <li>
+            <span className={styles.date}>After Thursday&#39;s call</span>
+            <h3>Give the pending inquiry another date</h3>
+            <p>
+              Enter September 28 in Follow-up date and choose Reschedule. Confirm that the new date
+              appears on the lead. If you change the date before Mark contacted, that action clears
+              it again. Keep detailed call notes in your staff&#39;s existing record while the lead
+              inspector has no notes editor.
+            </p>
+          </li>
+          <li>
+            <span className={styles.date}>Monday, September 28</span>
+            <h3>Convert only after the family agrees</h3>
+            <p>
+              When Jordan confirms enrollment, choose Convert to student. Koaryu opens Alex&#39;s
+              new profile. Check the program, student contact, guardian, and initial notes there. If
+              Jordan declines because the schedule won&#39;t work, use Mark lost with Timing
+              instead. Other reasons are No-show, Price objection, No response, and Other.
+            </p>
+          </li>
+        </ol>
+      </section>
+      <section className={styles.section} aria-labelledby="lead-fields-heading">
+        <h2 id="lead-fields-heading">What staff can record</h2>
+        <GuideTable
+          caption="Fields at creation and actions after saving"
+          columns={["When", "Available fields or actions", "Boundary"]}
+          rows={[
+            [
+              "Add new lead",
+              "First and last name, email, phone, source, program, minor and guardian details, assigned staff, follow-up date, and initial Notes.",
+              "The inspector displays the saved identity, contact, source, program, guardian details, and notes, but has no edit controls for those fields.",
+            ],
+            [
+              "After creation",
+              "Change Stage or Assigned staff; set a Follow-up date with Reschedule; Mark contacted; Mark lost; Convert to student.",
+              "Mark contacted clears the follow-up date. The adjacent Move to stage action also marks contact and clears the date. Reschedule afterward if a follow-up is still needed.",
+            ],
+          ]}
+        />
+        <h3>Stages describe progress</h3>
+        <p>
+          The stages are Inquiry, Trial Scheduled, Trial Completed, Offer Sent, and Enrolled. Trial
+          Scheduled does not book a class. There is no separate trial-date field; keep the booking
+          in your scheduling process. Offer Sent does not send an offer. Changing to Enrolled
+          performs the student conversion. Closed Lost records a declined or ended inquiry with a
+          reason.
+        </p>
+      </section>
+      <section className={styles.section} aria-labelledby="conversion-heading">
+        <h2 id="conversion-heading">Check what arrived in the student profile</h2>
+        <GuideTable
+          caption="The result of the example's September 28 conversion"
+          columns={["Lead information", "Student result"]}
+          rows={[
+            [
+              "Alex's name, email, and phone",
+              "Copied to the new student. Guardian contact details remain separate; they do not replace Alex's contact fields.",
+            ],
+            [
+              "Selected Juniors program",
+              "Used for the student's program. In this example Juniors is an active program selected when the lead was created.",
+            ],
+            [
+              "Minor selected and guardian name Jordan Morgan entered",
+              "Creates a linked guardian with the supplied guardian email and phone. Both the minor flag and a guardian name are needed.",
+            ],
+            [
+              "Initial Notes",
+              "Copied to student Notes. The lead's activity timeline is not copied into that field.",
+            ],
+            [
+              "Convert to student on September 28",
+              "Creates an active student with September 28 as the membership start date in the studio's timezone. The lead becomes Enrolled and its follow-up date clears.",
+            ],
+          ]}
+        />
+        <p>
+          Conversion creates the student record. It does not attach tuition, start a subscription,
+          or charge the family. Admin and Front Desk can manage and convert leads; Instructors
+          cannot perform those actions.
+        </p>
+        <Link className={styles.referenceLink} href="/features/billing">
+          Check tuition setup and billing availability <span aria-hidden="true">→</span>
+        </Link>
+      </section>
+    </>
+  );
+}
+
+function TuitionGuide() {
+  return (
+    <>
+      <p className={styles.scopeNote}>
+        Admin and Front Desk can review billing records, attach external billing enrollments, record
+        external payments, and refresh eligible existing Stripe invoices. Instructors cannot access
+        billing. Tuition collection requires separate activation for your studio and is not
+        generally available. New billing exports are unavailable.
+      </p>
+      <section className={styles.section} aria-labelledby="billing-cases-heading">
+        <h2 id="billing-cases-heading">Match the case to the record</h2>
+        <div className={styles.cases}>
+          <section>
+            <h3>The student has no external billing enrollment</h3>
+            <p>
+              Confirm the arrangement, student, existing plan, and payer. In Attach external student
+              billing, choose the Student and Plan, select the existing Payer when appropriate, and
+              enter the Start, End, and Next bill dates that apply. Choose Attach.
+            </p>
+            <p>
+              Check that the enrollment appears with the right student and plan. This creates a
+              record only. It does not create a Stripe subscription, collect payment, or change the
+              student&#39;s training status.
+            </p>
+          </section>
+          <section>
+            <h3>The payer is missing</h3>
+            <p>
+              Check Families for an existing payer under the adult&#39;s name and confirm who is
+              responsible for payment. A guardian record alone is not a payer. The Attach form can
+              leave Payer blank, but that does not create or recover the missing payer.
+            </p>
+            <p>
+              Stop before recording an external payment, which requires a payer. Have the studio
+              Admin resolve the payer setup available for the studio. Family setup and collection
+              actions depend on activation; this form cannot supply a missing payer account.
+            </p>
+          </section>
+          <section>
+            <h3>A Stripe invoice looks stale or overdue</h3>
+            <p>
+              Confirm that it is the intended invoice and compare its status with the linked Stripe
+              record. When Reconcile is available on that existing invoice, use it to refresh
+              Koaryu&#39;s status from Stripe. An external invoice has no Stripe status to refresh.
+            </p>
+            <p>
+              Read the refreshed result. If it still says open or overdue, the invoice still needs
+              attention. Reconcile does not attempt a charge. Resolve payment with the person who
+              manages the studio&#39;s Stripe billing before promising that the balance is cleared.
+            </p>
+          </section>
+          <section>
+            <h3>The family paid outside Stripe</h3>
+            <p>
+              Confirm the payment evidence, payer, amount, and method, then use Record external
+              payment. Check for an existing record first so the same check or transfer isn&#39;t
+              recorded twice. The example below shows exactly what to enter and what it changes.
+            </p>
+          </section>
+        </div>
+      </section>
+      <section className={styles.section} aria-labelledby="check-heading">
+        <h2 id="check-heading">A $150 check will not close a Stripe invoice</h2>
+        <p>
+          In this fictional example, Jordan Morgan paid $150 USD by check on September 21. Staff
+          verified check 1042 and are recording it on September 22. Jordan is already a payer in
+          Koaryu.
+        </p>
+        <dl className={styles.paymentFields}>
+          <div>
+            <dt>Payer</dt>
+            <dd>Jordan Morgan</dd>
+          </div>
+          <div>
+            <dt>Amount</dt>
+            <dd>150.00, recorded in USD</dd>
+          </div>
+          <div>
+            <dt>Method</dt>
+            <dd>Check</dd>
+          </div>
+          <div>
+            <dt>Note</dt>
+            <dd>Check 1042 received September 21 for Alex&#39;s September tuition.</dd>
+          </div>
+        </dl>
+        <p>
+          Choose Record. The result is a payment attached to Jordan as payer, with the amount,
+          method, note, and the time it was recorded. There is no payment-date field. September 21
+          in the note is text; it does not backdate the payment record.
+        </p>
+        <p>
+          This entry does not move money or settle, reduce, or update a Stripe invoice. If
+          Alex&#39;s September invoice is still open in Stripe, the person managing Stripe must
+          resolve that invoice separately. Refresh its status in Koaryu after the provider record
+          changes.
+        </p>
+        <h3>Before you call the payment recorded</h3>
+        <ul className={styles.checklist}>
+          <li>Verify the payer, $150 USD amount, check method, and reference note.</li>
+          <li>Confirm exactly one external payment record appears for this check.</li>
+          <li>
+            Check any related Stripe invoice separately. A new external payment row is not evidence
+            that the invoice is paid.
+          </li>
+        </ul>
+        <Link className={styles.referenceLink} href="/features/billing">
+          See billing permissions and collection availability <span aria-hidden="true">→</span>
+        </Link>
+      </section>
+    </>
+  );
+}
+
+function BeltGuide() {
+  return (
+    <>
+      <section className={styles.section} aria-labelledby="shortlist-heading">
+        <h2 id="shortlist-heading">Start with a reason beside each name</h2>
+        <p>
+          This fictional school&#39;s next rank requires 24 qualifying classes, three months at
+          rank, and instructor approval. Koaryu calculates three months as 90 days. The table is a
+          worked review sheet you can follow when preparing your own list.
+        </p>
+        <GuideTable
+          caption="Fictional pre-test review"
+          columns={["Student", "Evidence", "Write on the shortlist"]}
+          rows={[
+            [
+              "Alex",
+              "24 qualifying classes; 96 days since a verified promotion date.",
+              "Instructor review. The numeric rules are met. Needs approval means an instructor must decide whether to promote.",
+            ],
+            [
+              "Sam",
+              "22 qualifying classes; 100 days since a verified promotion date.",
+              "More classes. Two qualifying classes short. If staff remembers additional visits, check those attendance records before deciding the count is wrong.",
+            ],
+            [
+              "Lee",
+              "30 recorded qualifying classes; 180 days calculated from membership start. Current belt was imported without old promotion history.",
+              "Verify history. Neither the 180 days nor the class total proves how much training happened at this belt. Check the actual rank date and which classes came after it.",
+            ],
+          ]}
+        />
+      </section>
+      <section className={styles.section} aria-labelledby="review-heading">
+        <h2 id="review-heading">Work through the evidence before test day</h2>
+        <ol className={styles.procedure}>
+          <li>
+            <h3>Select the program and check its next rank</h3>
+            <p>
+              Use the student&#39;s correct program membership and ladder. Read the next rank&#39;s
+              class requirement, time requirement, and approval setting. An Admin can configure
+              those rules. Students training in two programs need a separate review for each.
+            </p>
+            <p>
+              A new program membership with no rank selected starts at the program&#39;s first full
+              belt, skipping tips. If the program has no full belt, the student remains unranked.
+              That starting assignment does not supply a past promotion date.
+            </p>
+          </li>
+          <li>
+            <h3>Explain any surprising class count</h3>
+            <p>
+              Absent entries, canceled or deleted sessions, and attendance marked not to count
+              toward eligibility are excluded. A program-specific ladder counts classes in that
+              program. When a promotion is recorded, the count starts at that promotion&#39;s time.
+              Without promotion history, older qualifying classes can remain in the count.
+            </p>
+            <p>
+              For Sam, inspect the two visits staff remember. Confirm the dated sessions and correct
+              missing check-ins only if Sam attended. If those visits belong to another program or
+              were excluded from eligibility, they do not close this two-class gap.
+            </p>
+          </li>
+          <li>
+            <h3>Check what the time figure starts from</h3>
+            <p>
+              Koaryu uses the latest recorded promotion date. If none exists, it uses the program
+              membership start, then the student&#39;s membership start. If no date exists, the time
+              figure is zero. Importing a current belt does not supply the date it was earned.
+            </p>
+            <p>
+              For Lee, find the previous school&#39;s rank record or ask the instructor to verify
+              the date. Keep &quot;verify history&quot; on the shortlist until they can judge the
+              real time and classes at rank. A membership start six months ago does not establish
+              six months at the current belt.
+            </p>
+          </li>
+          <li>
+            <h3>Make the instructor&#39;s decision</h3>
+            <p>
+              Alex meets the example&#39;s numeric rules and still needs an instructor&#39;s
+              judgment. Needs approval reflects the rank&#39;s requirement; there is no separate
+              approval form or test booking created by that label. Keep the teaching decision on
+              your review list until the instructor is ready to record a promotion.
+            </p>
+          </li>
+        </ol>
+      </section>
+      <section className={styles.section} aria-labelledby="promotion-heading">
+        <h2 id="promotion-heading">Record a promotion when it happens</h2>
+        <p>
+          Admin and Instructor staff can choose Promote for a student whose numeric requirements are
+          met. Check the student, program, and target rank in the confirmation, add optional Notes,
+          then choose Confirm promotion. Verify the current rank and new history entry after saving.
+          Front Desk can take attendance but cannot configure ranks or promote students.
+        </p>
+        <p>
+          Koaryu records the promotion at the time of confirmation. There is no date picker for
+          backdating it. If a test happened earlier, mentioning that date in Notes does not change
+          the saved promotion timestamp or the starting point for the next review.
+        </p>
+        <Link className={styles.referenceLink} href="/features/belt-tracking">
+          See rank ladders and requirement settings <span aria-hidden="true">→</span>
+        </Link>
+      </section>
+    </>
+  );
+}
+
+const guideBodies: Record<WorkflowSlug, () => ReactNode> = {
+  "spreadsheets-to-studio-crm": RosterGuide,
+  "student-retention": RetentionGuide,
+  "trial-to-enrollment": TrialGuide,
+  "tuition-cleanup": TuitionGuide,
+  "belt-test-readiness": BeltGuide,
+};
 
 export function WorkflowDetailPage({
   page,
-  relatedPages,
 }: {
   page: MarketingPage;
   relatedPages: MarketingPage[];
 }) {
   const slug = page.slug as WorkflowSlug;
-  const story = workflowStories[slug];
-  const view = workflowViews[slug];
-  if (!story || !view) return null;
-  const { Example: StoryExample, Body } = view;
+  const guide = guides[slug];
+  const Body = guideBodies[slug];
+  if (!guide || !Body) return null;
 
   return (
     <PublicPageShell>
-      <div className={styles.workflow} data-workflow={slug}>
-        <section className={styles.detailHero}>
-          <div className={styles.heroCopy}>
-            <Link href="/use-cases" className={styles.backLink}>
-              <span aria-hidden="true">←</span> All studio workflows
-            </Link>
-            <Eyebrow>{page.eyebrow}</Eyebrow>
-            <h1>{story.title}</h1>
-            <p className={styles.lede}>{story.intro}</p>
-            <a href="#page-details" className={styles.textAction}>
-              {story.action}
-              <span aria-hidden="true">↓</span>
-            </a>
-          </div>
-          <StoryExample />
-        </section>
+      <article className={styles.guide} data-workflow={slug}>
+        <header className={styles.guideHeader}>
+          <Link href="/use-cases" className={styles.backLink}>
+            <span aria-hidden="true">←</span> All studio workflows
+          </Link>
+          <h1>{guide.title}</h1>
+          <p className={styles.intro}>{guide.intro}</p>
+        </header>
         <Body />
-        <WorkflowNextSteps pages={relatedPages} />
-      </div>
+      </article>
     </PublicPageShell>
   );
 }
@@ -853,94 +706,38 @@ export function WorkflowDetailPage({
 export function WorkflowIndexPage() {
   return (
     <PublicPageShell>
-      <div className={styles.workflow}>
-        <section className={styles.indexHero}>
-          <div>
-            <Eyebrow>Studio workflows</Eyebrow>
-            <h1>Start with the thing on your mind.</h1>
-            <p className={styles.lede}>
-              The roster is scattered. A student has gone quiet. A trial family needs a call. See
-              how Koaryu helps you work through the ordinary things that keep a school running.
-            </p>
-            <a href="#workflows" className={styles.textAction}>
-              Find your workflow<span aria-hidden="true">↓</span>
-            </a>
-          </div>
-          <div className={styles.indexNote}>
-            <span className={styles.noteLabel}>Before the doors open</span>
-            <p>
-              One record.
-              <br />
-              One next step.
-              <br />
-              <em>Back to class.</em>
-            </p>
-            <span>Five practical guides for the person running the school.</span>
-          </div>
-        </section>
-        <section
-          id="workflows"
-          className={styles.workflowDirectory}
-          aria-labelledby="workflow-heading"
-        >
-          <div className={styles.directoryHeading}>
-            <Eyebrow>Where to begin</Eyebrow>
-            <h2 id="workflow-heading">Which question sounds familiar?</h2>
-          </div>
-          <ol>
-            {useCasePages.map((page, index) => {
-              const story = workflowStories[page.slug as WorkflowSlug];
-              return (
-                <li key={page.slug}>
-                  <Link href={page.href} className={styles.directoryLink}>
-                    <span className={styles.directoryNumber}>
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <div className={styles.directoryMain}>
-                      <span className={styles.directoryLabel}>{page.eyebrow}</span>
-                      <h3>{story.question}</h3>
-                      <p>{story.answer}</p>
-                    </div>
-                    <div className={styles.directoryStart}>
-                      <span>First step</span>
-                      <strong>{story.step}</strong>
-                      <span className={styles.directoryAction}>
-                        Read the workflow <Arrow />
-                      </span>
-                    </div>
+      <div className={styles.directory}>
+        <header className={styles.directoryHeader}>
+          <h1>Studio workflows</h1>
+          <p>
+            Choose the job you need to work through. Each guide includes an example and the checks
+            needed to finish it.
+          </p>
+        </header>
+        <ul className={styles.directoryList}>
+          {useCasePages.map((page) => {
+            const guide = guides[page.slug as WorkflowSlug];
+            return (
+              <li key={page.slug}>
+                <h2>
+                  <Link href={page.href}>
+                    {guide.link} <span aria-hidden="true">→</span>
                   </Link>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-        <section className={styles.indexConnection}>
-          <div className={styles.sectionInner}>
-            <SectionHeading
-              eyebrow="The work connects"
-              title="Solve the next problem with the same records."
-            />
-            <div>
-              <p className={styles.featureCopy}>
-                The roster you import becomes the roster you take attendance against. Attendance
-                gives retention and rank reviews their history. A trial that becomes an enrolled
-                student joins that same record system.
-              </p>
-              <p className={styles.smallCopy}>
-                Each guide shows a practical starting point, what staff still decides, and where
-                product availability matters.
-              </p>
-              <div className={styles.indexActions}>
-                <MarketingActionLink href="/features" className={styles.action}>
-                  Explore the features
-                </MarketingActionLink>
-                <Link href="/studio-types/family-martial-arts-schools">
-                  Running a family school? <Arrow />
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
+                </h2>
+                <div className={styles.directoryDetails}>
+                  <p>
+                    <span className={styles.fieldLabel}>Have ready</span>
+                    {guide.ready}
+                  </p>
+                  <p>
+                    <span className={styles.fieldLabel}>Use this guide for</span>
+                    {guide.output}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </PublicPageShell>
   );

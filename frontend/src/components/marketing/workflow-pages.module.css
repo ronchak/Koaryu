@@ -1,1470 +1,381 @@
-.workflow {
-  --workflow-muted: #6b5e49;
-  --workflow-rule: rgb(59 47 28 / 16%);
-  font-size: 16px;
+.guide,
+.directory {
+  width: min(100% - 40px, 1040px);
+  margin-inline: auto;
+  padding-bottom: clamp(56px, 7vw, 96px);
+  color: var(--koaryu-ink);
+  font-size: 17px;
   line-height: 1.65;
+  overflow-wrap: break-word;
 }
 
-.workflow :where(h1, h2, h3, p, figure, dl, dd) {
-  margin: 0;
+.guideHeader {
+  padding-top: 28px;
+  padding-bottom: 28px;
 }
 
-.workflow :where(h1, h2, h3) {
-  font-weight: 720;
+.guide h1,
+.directory h1 {
+  max-width: 24ch;
+  margin: 22px 0 20px;
+  font-size: clamp(34px, 5vw, 58px);
+  font-weight: 650;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
 
-.workflow :where(a) {
-  color: inherit;
-  text-decoration: none;
+.guide p,
+.guide ul,
+.guide ol {
+  max-width: 76ch;
 }
 
-.workflow :where(a):focus-visible {
+.guide p {
+  margin: 0 0 18px;
+}
+
+.intro {
+  font-size: 19px;
+  line-height: 1.65;
+}
+
+.section {
+  padding-block: 28px 34px;
+  border-top: 1px solid var(--koaryu-rule);
+}
+
+.guide h2,
+.directory h2 {
+  margin: 0 0 18px;
+  font-size: clamp(25px, 3vw, 32px);
+  font-weight: 620;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.guide h3 {
+  margin: 26px 0 10px;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.backLink,
+.referenceLink,
+.download,
+.directory h2 a {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding-block: 8px;
+  color: var(--koaryu-deep-brown);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
+}
+
+.guide a:hover,
+.directory a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.guide a:focus-visible,
+.directory a:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 5px;
 }
 
-.detailHero,
-.indexHero,
-.section,
-.trialSection,
-.tuitionSection,
-.sectionInner,
-.workflowDirectory,
-.nextSteps {
-  width: min(1180px, calc(100% - clamp(40px, 8vw, 112px)));
-  margin-inline: auto;
+.download {
+  gap: 20px;
+  margin: 2px 0 16px;
+  padding: 12px 18px;
+  color: var(--koaryu-ink-light);
+  background: var(--koaryu-deep-brown);
+  font-weight: 600;
+  text-decoration: none;
 }
 
-.eyebrow,
-.noteLabel,
-.fileLabel,
-.directoryLabel,
-.pathNumber,
-.stageLabel {
-  font-size: 12px;
-  font-weight: 750;
-  line-height: 1.5;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.eyebrow {
-  color: var(--workflow-muted);
-}
-
-.detailHero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  align-items: center;
-  gap: clamp(32px, 6vw, 88px);
-  padding-block: 30px clamp(72px, 8vw, 112px);
-}
-
-.backLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  margin-bottom: 32px;
-  color: var(--workflow-muted) !important;
-  font-size: 12px;
-}
-
-.heroCopy h1,
-.indexHero h1 {
-  margin-top: 18px;
-  font-size: clamp(42px, 5.6vw, 76px);
-  line-height: 0.99;
-  letter-spacing: -0.055em;
-}
-
-.lede {
-  max-width: 48ch;
-  margin-top: 26px !important;
-  font-size: clamp(16px, 1.45vw, 18px);
-  color: var(--workflow-muted);
-}
-
-.textAction,
-.linkStack a,
-.contextList a,
-.lightLink,
-.indexActions > a:last-child {
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
-  gap: 16px;
+.table {
+  width: 100%;
+  margin: 18px 0 26px;
+  border-collapse: collapse;
+  table-layout: fixed;
   font-size: 16px;
-  font-weight: 680;
-}
-
-.textAction {
-  margin-top: 24px;
-}
-
-.textAction span,
-.directoryAction > span,
-.relatedLinks a > span:last-child {
-  font-size: 22px;
-}
-
-.workflow .action {
-  min-height: 48px;
-  border: 0;
-  border-radius: 4px;
-  padding: 15px 22px;
-  box-shadow: none;
-}
-
-.example {
-  min-width: 0;
-  margin-top: 58px !important;
-  padding: clamp(20px, 3vw, 36px);
-  background: var(--koaryu-sheet-warm);
-  border-radius: 3px;
-}
-
-.exampleCaption {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  justify-content: space-between;
-  margin-bottom: 24px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.exampleCaption > span:first-child {
-  font-weight: 750;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.exampleCaption > span:last-child {
-  color: var(--workflow-muted);
-}
-
-.importSlip,
-.studentSlip,
-.trialReceipt,
-.beltSheet {
-  padding: 24px;
-  background: var(--koaryu-sheet-raised);
-  box-shadow: 0 8px 16px rgb(59 47 28 / 5%);
-}
-
-.fileLabel {
-  display: block;
-  margin-bottom: 16px;
-}
-
-.csvFields {
-  display: grid;
-  grid-template-columns: 1.2fr 0.8fr 0.8fr;
-  gap: 12px;
-  font-size: 12px;
   line-height: 1.6;
 }
 
-.csvFields dt {
-  margin-bottom: 9px;
-  color: var(--workflow-muted);
+.table caption {
+  padding-bottom: 12px;
+  color: var(--koaryu-beam-light);
+  font-size: 14px;
+  text-align: left;
 }
 
-.csvFields dd {
-  font-size: 13px;
+.table th,
+.table td {
+  padding: 16px 18px 16px 0;
+  border-bottom: 1px solid var(--koaryu-rule);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.table th:last-child,
+.table td:last-child {
+  padding-right: 0;
+}
+
+.table th {
+  border-top: 1px solid var(--koaryu-rule);
   font-weight: 650;
 }
 
-.mapConnector {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding-block: 18px;
-  font-size: 12px;
-}
-
-.mapConnector span {
-  font-size: 22px;
-}
-
-.studentIdentity {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.monogram {
-  display: grid;
-  flex: 0 0 44px;
-  height: 44px;
-  place-items: center;
-  background: var(--koaryu-sheet-warm);
-  border-radius: 50%;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.studentIdentity strong,
-.studentIdentity div > span {
-  display: block;
-}
-
-.studentIdentity strong {
-  font-size: 19px;
-  letter-spacing: -0.025em;
-}
-
-.studentIdentity div > span {
-  font-size: 12px;
-  color: var(--workflow-muted);
-}
-
-.recordLinks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-top: 22px;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.attendanceHeading > span {
-  display: block;
-  font-size: 12px;
-  color: var(--workflow-muted);
-}
-
-.attendanceHeading strong {
-  display: block;
-  margin-top: 6px;
-  font-size: clamp(22px, 2.5vw, 30px);
-  line-height: 1.2;
-  letter-spacing: -0.04em;
-}
-
-.attendanceWeeks {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 28px;
-}
-
-.attendanceWeeks > div > span {
-  display: block;
-  margin-bottom: 10px;
-  font-size: 12px;
-}
-
-.attendanceWeeks > div > div {
-  display: flex;
-  gap: 5px;
-}
-
-.attended,
-.missed {
-  display: inline-block;
-  width: 22px;
-  height: 32px;
-  border-radius: 2px;
-  background: var(--koaryu-deep-brown);
-}
-
-.missed {
-  background: repeating-linear-gradient(135deg, var(--koaryu-wood-pale) 0 2px, transparent 2px 5px);
-}
-
-.attendanceKey {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  margin-top: 18px;
-  font-size: 12px;
-}
-
-.attendanceKey > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.attendanceKey i {
-  width: 10px;
-  height: 10px;
-}
-
-.deskNote {
-  padding: 24px;
-  background: var(--koaryu-sheet-raised);
-}
-
-.example .deskNote {
-  margin-top: 28px;
-}
-
-.deskNote p {
-  margin-top: 12px;
-  font-size: 23px;
-  font-weight: 580;
-  line-height: 1.3;
-  letter-spacing: -0.03em;
-}
-
-.noteLabel {
-  color: var(--workflow-muted);
-}
-
-.receiptTop {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--workflow-muted);
-}
-
-.receiptTop > span:last-child {
-  font-size: 18px;
-}
-
-.trialReceipt h2 {
-  margin-top: 24px;
-  font-size: 30px;
-  line-height: 1.05;
-  letter-spacing: -0.045em;
-}
-
-.receiptFields {
-  display: grid;
-  gap: 18px;
-  margin-top: 24px !important;
-}
-
-.receiptFields dt {
-  font-size: 12px;
-  color: var(--workflow-muted);
-}
-
-.receiptFields dd {
-  font-size: 13px;
+.table td:first-child {
   font-weight: 600;
 }
 
-.receiptAction {
-  display: grid;
-  gap: 5px;
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid var(--workflow-rule);
+.cellLabel {
+  display: none;
 }
 
-.receiptAction > span {
-  font-size: 12px;
-  color: var(--workflow-muted);
+.guide .sampleLabel,
+.fieldLabel,
+.date {
+  color: var(--koaryu-beam-light);
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.receiptAction strong {
-  font-size: 16px;
-  line-height: 1.5;
-}
-
-.tuitionLedger {
-  display: grid;
-  gap: 10px;
-}
-
-.tuitionLedger > div {
-  display: flex;
-  align-items: flex-start;
-  gap: 18px;
-  padding: 20px;
-  background: var(--koaryu-sheet-raised);
-}
-
-.ledgerNumber {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--workflow-muted);
-}
-
-.tuitionLedger small,
-.tuitionLedger strong {
-  display: block;
-}
-
-.tuitionLedger small {
-  font-size: 12px;
-  color: var(--workflow-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.tuitionLedger strong {
-  margin-top: 3px;
-  font-size: 20px;
-  letter-spacing: -0.025em;
-}
-
-.tuitionLedger p {
-  font-size: 12px;
-  color: var(--workflow-muted);
-}
-
-.exampleFootnote {
-  margin-top: 20px !important;
-  font-size: 12px;
-  color: var(--workflow-muted);
-}
-
-.beltHeading {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 32px;
-}
-
-.rankSwatch {
-  width: 34px;
-  height: 46px;
-  flex-shrink: 0;
-  background: var(--koaryu-wood-pale);
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%);
-}
-
-.beltHeading div > span,
-.beltHeading strong {
-  display: block;
-}
-
-.beltHeading div > span {
-  font-size: 12px;
-  color: var(--workflow-muted);
-}
-
-.beltHeading strong {
-  font-size: 20px;
-  line-height: 1.25;
-  letter-spacing: -0.035em;
-}
-
-.readinessRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  margin-top: 22px;
-  font-size: 12px;
-}
-
-.readinessRow strong {
-  font-size: 13px;
-}
-
-.readinessBar {
-  grid-column: 1 / -1;
-  height: 4px;
-  background: var(--koaryu-sheet-warm);
-}
-
-.readinessBar i {
-  display: block;
-  width: 100%;
-  height: 4px;
-  background: var(--koaryu-wood);
-}
-
-.approvalRow {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-top: 30px;
-}
-
-.approvalRow > span {
-  font-size: 24px;
-  line-height: 1.3;
-}
-
-.approvalRow strong,
-.approvalRow div > span {
-  display: block;
-  font-size: 12px;
-}
-
-.approvalRow div > span {
-  margin-top: 5px;
-  color: var(--workflow-muted);
-}
-
-.section {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  gap: clamp(40px, 7vw, 100px);
-  padding-block: clamp(64px, 8vw, 100px);
-}
-
-.sectionHeading h2,
-.directoryHeading h2,
-.nextHeading h2 {
-  margin-top: 16px;
-  font-size: clamp(30px, 3.5vw, 46px);
-  line-height: 1.05;
-  letter-spacing: -0.045em;
-}
-
-.sectionHeading > p:last-child:not(.eyebrow) {
-  margin-top: 22px;
-  max-width: 54ch;
-  color: var(--workflow-muted);
-  font-size: 16px;
-}
-
-.section[id],
-.trialSection[id],
-.tuitionSection[id],
-.workflowDirectory[id] {
-  scroll-margin-top: 28px;
-}
-
-.steps {
-  padding: 0;
+.csv {
   margin: 0;
-  list-style: none;
-}
-
-.step {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  gap: 20px;
-  padding-block: 26px;
-  border-top: 1px solid var(--workflow-rule);
-}
-
-.stepNumber {
-  display: inline-flex;
-  align-items: flex-start;
-  padding-top: 3px;
-  color: var(--workflow-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.step h3,
-.boundaryColumns h3,
-.contextList h3,
-.requirements h3,
-.handoffNotes h3 {
-  font-size: 21px;
-  line-height: 1.2;
-  letter-spacing: -0.025em;
-}
-
-.step p {
-  margin-top: 12px;
+  padding: 18px;
+  background: rgb(70 48 25 / 5%);
   font-size: 16px;
-  color: var(--workflow-muted);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.step .stepAside {
-  margin-top: 18px;
-  font-size: 13px;
-  color: var(--koaryu-ink);
+.checklist,
+.procedure {
+  padding-left: 25px;
 }
 
-.sectionInner {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  align-items: start;
-  gap: clamp(40px, 7vw, 100px);
-  padding-block: clamp(56px, 7vw, 92px);
+.checklist li {
+  margin-block: 12px;
+  padding-left: 6px;
 }
 
-.importBoundary,
-.trialHandoff,
-.indexConnection {
-  background: var(--koaryu-sheet);
-}
-
-.importBoundary .sectionInner {
-  display: block;
-}
-
-.importBoundary .sectionHeading {
-  max-width: 550px;
-}
-
-.boundaryColumns {
+.messagePair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(32px, 6vw, 80px);
-  margin-top: 44px;
-}
-
-.bulletList {
-  display: grid;
-  gap: 12px;
-  padding-left: 18px;
-  margin: 22px 0 0;
-  font-size: 16px;
-}
-
-.bulletList li {
-  padding-left: 5px;
-}
-
-.smallCopy {
-  margin-top: 24px !important;
-  font-size: 13px;
-  color: var(--workflow-muted);
-}
-
-.compactSection {
-  align-items: center;
-}
-
-.linkStack {
-  display: grid;
-  gap: 14px;
-  justify-items: start;
-}
-
-.retentionBand {
-  color: var(--koaryu-ink-light);
-  background: var(--koaryu-deep-brown);
-}
-
-.retentionBand .eyebrow,
-.billingBoundary .eyebrow,
-.beltDecision .eyebrow {
-  color: var(--koaryu-wood-pale);
-}
-
-.conversationPrompt {
-  font-size: 12px;
-  color: var(--koaryu-wood-pale);
-}
-
-.conversation blockquote {
-  margin: 18px 0 28px;
-  font-size: clamp(25px, 3vw, 36px);
-  font-weight: 550;
-  line-height: 1.3;
-  letter-spacing: -0.025em;
-}
-
-.conversation > p:last-child,
-.decisionCopy p {
-  color: var(--koaryu-sheet-warm);
-  font-size: 16px;
-}
-
-.contextList {
-  display: grid;
   gap: 32px;
+  margin-bottom: 30px;
 }
 
-.contextList article {
-  display: flex;
-  gap: 22px;
-}
-
-.contextList article > span {
-  color: var(--workflow-muted);
-  font-size: 12px;
-  padding-top: 4px;
-}
-
-.contextList p {
-  margin-top: 12px;
-  font-size: 16px;
-  color: var(--workflow-muted);
-}
-
-.contextList a {
+.messagePair h3 {
   margin-top: 10px;
 }
 
-.trialSection,
-.tuitionSection {
-  padding-block: 64px 96px;
+.guide blockquote {
+  max-width: 68ch;
+  margin: 12px 0 20px;
+  padding: 14px 0 14px 20px;
+  border-left: 3px solid var(--koaryu-wood);
 }
 
-.trialSection > .sectionHeading,
-.tuitionSection > .sectionHeading {
-  max-width: 680px;
-  margin-bottom: 50px;
+.timeline {
+  margin: 20px 0 0;
+  padding-left: 28px;
 }
 
-.trialStages {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 28px;
-  padding: 0;
-  margin: 0;
-  list-style: none;
+.timeline li,
+.procedure li {
+  padding-left: 8px;
 }
 
-.trialStages li {
-  grid-column: span 2;
-  padding: 28px;
-  background: var(--koaryu-sheet);
-}
-
-.trialStages li:nth-last-child(-n + 2) {
-  grid-column: span 3;
-}
-
-.stageNumber {
-  display: inline-block;
-  margin-bottom: 26px;
-  font-size: 34px;
-  line-height: 1;
-  font-weight: 500;
-  letter-spacing: -0.05em;
-  color: var(--koaryu-wood);
-}
-
-.stageLabel {
-  color: var(--workflow-muted);
-}
-
-.trialStages h3 {
-  margin-block: 14px;
-  font-size: 24px;
-  line-height: 1.15;
-  letter-spacing: -0.03em;
-}
-
-.trialStages div > p:last-child {
-  font-size: 16px;
-  color: var(--workflow-muted);
-}
-
-.featureCopy {
-  font-size: clamp(17px, 1.8vw, 22px);
-  line-height: 1.5;
-  letter-spacing: -0.015em;
-}
-
-.handoffNotes {
+.timeline li + li {
   margin-top: 28px;
-  padding-top: 26px;
-  border-top: 1px solid var(--workflow-rule);
 }
 
-.handoffNotes p {
-  margin-top: 12px;
-  font-size: 16px;
-  color: var(--workflow-muted);
+.timeline h3 {
+  margin-top: 4px;
 }
 
-.tuitionPaths {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px;
-}
-
-.tuitionPaths article {
-  display: flex;
-  flex-direction: column;
-  padding: 30px;
-  background: var(--koaryu-sheet);
-}
-
-.pathNumber {
-  color: var(--workflow-muted);
-  font-size: 12px;
-}
-
-.tuitionPaths h3 {
-  margin-block: 30px 18px;
-  font-size: clamp(25px, 2.6vw, 34px);
-  line-height: 1.1;
-  letter-spacing: -0.045em;
-}
-
-.tuitionPaths p {
-  font-size: 16px;
-  color: var(--workflow-muted);
-}
-
-.tuitionPaths article > p {
-  margin-bottom: 28px;
-}
-
-.pathDecision {
-  margin-top: auto;
-  padding-top: 22px;
-  border-top: 1px solid var(--workflow-rule);
-}
-
-.pathDecision strong {
+.date,
+.fieldLabel {
   display: block;
-  margin-bottom: 10px;
-  font-size: 12px;
 }
 
-.billingBoundary,
-.beltDecision {
-  color: var(--koaryu-ink-light);
-  background: var(--koaryu-deep-brown);
+.guide .scopeNote {
+  max-width: none;
+  padding: 20px 0 24px;
+  border-top: 1px solid var(--koaryu-rule);
 }
 
-.billingBoundary .bulletList {
-  color: var(--koaryu-sheet-warm);
-}
-
-.lightLink {
-  margin-top: 24px;
-}
-
-.requirements {
+.cases {
   display: grid;
-  gap: 30px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 44px;
 }
 
-.requirements article {
+.cases h3 {
+  margin-top: 12px;
+}
+
+.paymentFields {
+  max-width: 700px;
+  margin: 24px 0;
+  border-top: 1px solid var(--koaryu-rule);
+}
+
+.paymentFields > div {
   display: grid;
-  grid-template-columns: 68px minmax(0, 1fr);
-  gap: 10px 22px;
-  padding-bottom: 26px;
-  border-bottom: 1px solid var(--workflow-rule);
+  grid-template-columns: minmax(85px, 0.3fr) minmax(0, 1fr);
+  gap: 20px;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--koaryu-rule);
 }
 
-.requirementSymbol {
-  grid-row: span 2;
-  font-size: 34px;
-  line-height: 1;
-  font-weight: 500;
-  letter-spacing: -0.045em;
-  color: var(--koaryu-wood);
+.paymentFields dt {
+  font-weight: 600;
 }
 
-.requirements p {
-  font-size: 16px;
-  color: var(--workflow-muted);
+.paymentFields dd {
+  margin: 0;
 }
 
-.beltDecision h2 {
-  margin-top: 18px;
-  font-size: clamp(32px, 4vw, 50px);
-  line-height: 1.05;
-  letter-spacing: -0.045em;
+.directoryHeader {
+  padding-block: 36px 24px;
 }
 
-.beltDecision .sectionInner > div:first-child > p:last-child {
-  margin-top: 18px;
-  font-size: 24px;
-  color: var(--koaryu-wood-pale);
+.directoryHeader p {
+  max-width: 62ch;
 }
 
-.decisionCopy p + p {
-  margin-top: 22px;
-}
-
-.nextSteps {
-  padding-block: 64px 72px;
-  border-top: 1px solid var(--workflow-rule);
-}
-
-.relatedLinks {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 28px;
+.directoryList {
+  margin: 0;
   padding: 0;
-  margin: 32px 0 0;
   list-style: none;
 }
 
-.relatedLinks a {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  justify-content: space-between;
-  min-height: 44px;
-  padding-block: 16px;
+.directoryList li {
+  padding-block: 20px 24px;
+  border-top: 1px solid var(--koaryu-rule);
 }
 
-.relatedLinks strong {
-  display: block;
-  font-size: 20px;
-  line-height: 1.2;
-  letter-spacing: -0.025em;
+.directory h2 {
+  margin-bottom: 12px;
+  font-size: 25px;
 }
 
-.relatedLinks a > span:first-child > span {
-  display: block;
-  margin-top: 12px;
-  font-size: 16px;
-  color: var(--workflow-muted);
-}
-
-.closing {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.directoryDetails {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   gap: 32px;
-  margin-top: 44px;
-  padding: 36px;
-  background: var(--koaryu-sheet-warm);
 }
 
-.closing h3 {
-  font-size: 28px;
-  line-height: 1.1;
-  letter-spacing: -0.035em;
-}
-
-.closing p {
-  margin-top: 10px;
-  font-size: 16px;
-  color: var(--workflow-muted);
-}
-
-.closing .action {
-  flex-shrink: 0;
-}
-
-.indexHero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
-  align-items: center;
-  gap: clamp(40px, 8vw, 112px);
-  padding-block: clamp(64px, 8vw, 104px);
-}
-
-.indexHero h1 {
-  max-width: 12ch;
-}
-
-.indexNote {
-  padding: 36px;
-  background: var(--koaryu-sheet-warm);
-  transform: rotate(2deg);
-}
-
-.indexNote > p {
-  margin-block: 28px;
-  font-size: clamp(30px, 3.4vw, 43px);
-  font-weight: 620;
-  line-height: 1.15;
-  letter-spacing: -0.045em;
-}
-
-.indexNote em {
-  font-family: Georgia, serif;
-  font-weight: 400;
-}
-
-.indexNote > span:last-child {
-  display: block;
-  max-width: 26ch;
-  font-size: 12px;
-  color: var(--workflow-muted);
-}
-
-.workflowDirectory {
-  padding-block: 30px 96px;
-}
-
-.directoryHeading {
-  max-width: 620px;
-  margin-bottom: 40px;
-}
-
-.workflowDirectory > ol {
-  padding: 0;
+.directoryDetails p {
   margin: 0;
-  list-style: none;
 }
 
-.workflowDirectory li {
-  border-top: 1px solid var(--workflow-rule);
+.fieldLabel {
+  margin-bottom: 5px;
 }
 
-.directoryLink {
-  display: grid;
-  grid-template-columns: 65px minmax(0, 1.2fr) minmax(0, 0.6fr);
-  gap: 30px;
-  padding-block: 38px;
-}
-
-.directoryNumber {
-  padding-top: 2px;
-  font-size: 34px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  letter-spacing: -0.035em;
-  color: var(--koaryu-wood);
-}
-
-.directoryLabel {
-  color: var(--workflow-muted);
-}
-
-.directoryMain h3 {
-  max-width: 27ch;
-  margin-block: 12px;
-  font-size: clamp(24px, 2.7vw, 34px);
-  line-height: 1.1;
-  letter-spacing: -0.04em;
-}
-
-.directoryMain p {
-  max-width: 49ch;
-  font-size: 16px;
-  color: var(--workflow-muted);
-}
-
-.directoryStart {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding-left: 24px;
-}
-
-.directoryStart > span:first-child {
-  font-size: 12px;
-  color: var(--workflow-muted);
-}
-
-.directoryStart strong {
-  margin-top: 8px;
-  max-width: 22ch;
-  font-size: 16px;
-  line-height: 1.4;
-}
-
-.directoryAction {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  margin-top: auto;
-  padding-top: 18px;
-  font-size: 12px;
-  font-weight: 680;
-}
-
-.indexActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 18px 28px;
-  margin-top: 28px;
-}
-
-@media (hover: hover) {
-  .textAction:hover,
-  .linkStack a:hover,
-  .contextList a:hover,
-  .lightLink:hover,
-  .indexActions > a:last-child:hover,
-  .backLink:hover {
-    text-decoration: underline;
-    text-underline-offset: 5px;
+@media (max-width: 680px) {
+  .guide,
+  .directory {
+    font-size: 16px;
   }
 
-  .directoryLink:hover h3,
-  .relatedLinks a:hover strong {
-    text-decoration: underline;
-    text-decoration-thickness: 1px;
-    text-underline-offset: 5px;
-  }
-}
-
-@media (max-width: 1000px) {
-  .detailHero {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
-    gap: 32px;
+  .intro {
+    font-size: 18px;
   }
 
-  .example {
-    padding: 20px;
+  .guideHeader {
+    padding-top: 12px;
+    padding-bottom: 18px;
   }
 
-  .importSlip,
-  .studentSlip,
-  .trialReceipt,
-  .beltSheet {
-    padding: 20px;
-  }
-
-  .trialStages {
-    gap: 16px;
-  }
-
-  .trialStages li {
-    padding: 24px;
-  }
-
-  .tuitionPaths {
-    gap: 16px;
-  }
-
-  .tuitionPaths article {
-    padding: 24px;
-  }
-
-  .directoryLink {
-    grid-template-columns: 44px minmax(0, 1.1fr) minmax(0, 0.65fr);
-    gap: 22px;
-  }
-
-  .directoryStart {
-    padding-left: 0;
-  }
-}
-
-@media (max-width: 760px) {
-  .detailHero,
-  .indexHero,
-  .section,
-  .sectionInner {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 36px;
-  }
-
-  .detailHero {
-    padding-top: 16px;
-    padding-bottom: 48px;
-  }
-
-  .backLink {
-    margin-bottom: 22px;
-  }
-
-  .heroCopy h1,
-  .indexHero h1 {
-    max-width: 15ch;
-    font-size: clamp(40px, 8.8vw, 64px);
-  }
-
-  .heroCopy .lede {
-    max-width: 54ch;
-  }
-
-  .example {
-    width: 100%;
-    max-width: 520px;
-    margin-top: 0 !important;
-    justify-self: center;
-    padding: clamp(20px, 5vw, 32px);
-  }
-
-  .section,
-  .trialSection,
-  .tuitionSection,
-  .sectionInner {
-    padding-block: 52px;
-  }
-
-  .sectionHeading h2,
-  .directoryHeading h2 {
-    max-width: 21ch;
-  }
-
-  .sectionHeading > p:last-child:not(.eyebrow) {
+  .guide h1 {
     margin-top: 18px;
   }
 
-  .boundaryColumns {
-    gap: 32px;
+  .section {
+    padding-block: 24px;
   }
 
-  .trialStages {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
   }
 
-  .trialStages li,
-  .trialStages li:nth-last-child(-n + 2) {
-    grid-column: auto;
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
-  .trialStages li:last-child {
-    grid-column: 1 / -1;
+  .table caption {
+    display: block;
   }
 
-  .tuitionPaths {
+  .table tr {
+    padding-block: 14px;
+    border-top: 1px solid var(--koaryu-rule);
+  }
+
+  .table tbody tr:last-child {
+    border-bottom: 1px solid var(--koaryu-rule);
+  }
+
+  .table td {
+    padding: 5px 0 12px;
+    border: 0;
+  }
+
+  .table td:last-child {
+    padding-bottom: 2px;
+  }
+
+  .cellLabel {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--koaryu-beam-light);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .messagePair,
+  .cases,
+  .directoryDetails {
     grid-template-columns: minmax(0, 1fr);
     gap: 18px;
   }
 
-  .tuitionPaths article {
-    padding: 28px;
+  .cases > section + section {
+    border-top: 1px solid var(--koaryu-rule);
+    padding-top: 10px;
   }
 
-  .tuitionPaths h3 {
-    margin-top: 20px;
-  }
-
-  .tuitionPaths article > p {
-    margin-bottom: 22px;
-  }
-
-  .indexHero {
-    padding-block: 48px;
-  }
-
-  .indexHero h1 {
-    max-width: 13ch;
-  }
-
-  .indexNote {
-    padding: 28px;
-    transform: none;
-  }
-
-  .indexNote > p {
-    margin-block: 20px;
-    font-size: 36px;
-  }
-
-  .indexNote > span:last-child {
-    max-width: none;
-  }
-
-  .workflowDirectory {
-    padding-bottom: 52px;
-  }
-
-  .directoryLink {
-    grid-template-columns: 40px minmax(0, 1fr);
-    gap: 16px 20px;
-    padding-block: 28px;
-  }
-
-  .directoryNumber {
-    font-size: 28px;
-  }
-
-  .directoryStart {
-    grid-column: 2;
-  }
-
-  .directoryStart strong {
-    max-width: none;
-  }
-
-  .directoryAction {
-    min-height: 44px;
-    margin-top: 12px;
-    padding-top: 0;
-  }
-
-  .relatedLinks {
+  .paymentFields > div {
     grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
+    gap: 2px;
   }
 
-  .relatedLinks li + li {
-    border-top: 1px solid var(--workflow-rule);
+  .directoryHeader {
+    padding-top: 20px;
   }
 
-  .relatedLinks a {
-    padding-block: 20px;
-  }
-
-  .relatedLinks a > span:first-child > span {
-    max-width: 56ch;
-    margin-top: 8px;
-  }
-
-  .closing {
-    padding: 28px;
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 24px;
-  }
-
-  .nextSteps {
-    padding-block: 48px;
-  }
-}
-
-@media (max-width: 480px) {
-  .detailHero,
-  .indexHero,
-  .section,
-  .trialSection,
-  .tuitionSection,
-  .sectionInner,
-  .workflowDirectory,
-  .nextSteps {
-    width: calc(100% - 36px);
-  }
-
-  .heroCopy h1,
-  .indexHero h1 {
-    font-size: clamp(38px, 10.7vw, 50px);
-  }
-
-  .lede {
-    margin-top: 22px !important;
-  }
-
-  .textAction {
-    margin-top: 18px;
-  }
-
-  .example {
-    padding: 20px;
-  }
-
-  .importSlip,
-  .studentSlip,
-  .trialReceipt,
-  .beltSheet {
-    padding: 18px;
-  }
-
-  .csvFields {
-    gap: 8px;
-    font-size: 12px;
-  }
-
-  .mapConnector {
-    gap: 8px;
-    font-size: 12px;
-  }
-
-  .studentIdentity {
-    gap: 10px;
-  }
-
-  .studentIdentity strong {
-    font-size: 18px;
-  }
-
-  .recordLinks {
-    gap: 6px 12px;
-  }
-
-  .attendanceWeeks {
-    gap: 8px;
-  }
-
-  .attendanceWeeks .attended,
-  .attendanceWeeks .missed {
-    width: 19px;
-  }
-
-  .example .deskNote {
-    padding: 20px;
-  }
-
-  .deskNote p {
-    font-size: 22px;
-  }
-
-  .trialReceipt h2 {
-    font-size: 28px;
-  }
-
-  .tuitionLedger > div {
-    gap: 14px;
-    padding: 18px;
-  }
-
-  .tuitionLedger strong {
-    font-size: 18px;
-  }
-
-  .beltHeading {
-    gap: 12px;
-  }
-
-  .beltHeading strong {
-    font-size: 18px;
-  }
-
-  .readinessRow {
-    font-size: 12px;
-  }
-
-  .step {
-    grid-template-columns: 26px minmax(0, 1fr);
-    gap: 14px;
-    padding-block: 24px;
-  }
-
-  .step h3 {
-    font-size: 20px;
-  }
-
-  .boundaryColumns {
-    grid-template-columns: minmax(0, 1fr);
-    margin-top: 32px;
-  }
-
-  .boundaryColumns > div + div {
-    padding-top: 30px;
-    border-top: 1px solid var(--workflow-rule);
-  }
-
-  .trialStages {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 14px;
-  }
-
-  .trialStages li {
-    display: grid;
-    grid-template-columns: 32px minmax(0, 1fr);
-    gap: 16px;
-    padding: 24px;
-  }
-
-  .stageNumber {
-    font-size: 26px;
-  }
-
-  .trialStages h3 {
-    font-size: 23px;
-  }
-
-  .trialSection > .sectionHeading,
-  .tuitionSection > .sectionHeading {
-    margin-bottom: 32px;
-  }
-
-  .tuitionPaths article {
-    padding: 24px;
-  }
-
-  .requirements article {
-    grid-template-columns: 52px minmax(0, 1fr);
-    gap: 10px 16px;
-  }
-
-  .requirementSymbol {
-    font-size: 29px;
-  }
-
-  .directoryLink {
-    grid-template-columns: 28px minmax(0, 1fr);
-    gap: 12px 16px;
-  }
-
-  .directoryNumber {
-    font-size: 25px;
-  }
-
-  .directoryMain h3 {
-    font-size: 26px;
-  }
-
-  .directoryLabel {
-    font-size: 12px;
-    letter-spacing: 0.1em;
-  }
-
-  .closing {
-    padding: 24px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .workflow .action {
-    transition: none;
-    transform: none;
+  .csv {
+    padding: 14px;
   }
 }
