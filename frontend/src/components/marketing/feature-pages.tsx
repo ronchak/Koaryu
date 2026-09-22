@@ -774,6 +774,7 @@ function BillingStory() {
               <li>See who is associated with the student</li>
               <li>Find missing account details or failed payments</li>
               <li>See which invoices are overdue</li>
+              <li>Refresh existing Stripe invoices to see their latest status</li>
             </ul>
           </article>
           <article>
@@ -799,7 +800,6 @@ function BillingStory() {
             <ul>
               <li>Sign-up alone does not enable tuition collection</li>
               <li>Staff see the actions enabled for their school</li>
-              <li>Refresh existing Stripe invoices to see their latest status</li>
             </ul>
           </article>
         </div>

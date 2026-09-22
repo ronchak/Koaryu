@@ -148,7 +148,7 @@
 .ladderFigure figcaption,
 .trainingPattern figcaption {
   margin-bottom: 24px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   line-height: 1.6;
   letter-spacing: 0.1em;
@@ -380,7 +380,7 @@
 }
 
 .payerStudents span {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
