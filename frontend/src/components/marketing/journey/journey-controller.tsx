@@ -45,7 +45,7 @@ const mobileChapterLabels: Readonly<Record<string, string>> = {
   "use-cases": "Workflows",
   "signals-gather": "Attendance",
   explore: "Guides",
-  "class-ready": "History",
+  "class-ready": "Staff",
   pricing: "Pricing",
   about: "Studio fit",
   faq: "Questions",
