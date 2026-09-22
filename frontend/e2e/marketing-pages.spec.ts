@@ -273,6 +273,10 @@ test("every guide control reaches a distinct answer or provides the promised fil
       ).toBeFalsy();
       bodyDestinations.add(destination.href);
       inventory.push({ page: path, ...control });
+      if (destination.protocol === "mailto:") {
+        expect(control.href).toBe("mailto:support@koaryu.app");
+        continue;
+      }
       expect(destination.origin, `${path}: unexpected external action`).toBe(
         new URL(origin).origin,
       );
@@ -304,8 +308,15 @@ test("every guide control reaches a distinct answer or provides the promised fil
     const destination = new URL(url);
     const response = await page.goto(url);
     expect(response?.ok(), label).toBeTruthy();
-    await expect(page.locator("h1").first(), label).toBeVisible();
-    if (destination.hash)
+    if (destination.pathname === "/" && destination.hash) {
+      await expect(page.locator("[data-active-chapter]"), label).toHaveAttribute(
+        "data-active-chapter",
+        destination.hash.slice(1),
+      );
+    } else {
+      await expect(page.locator("h1").first(), label).toBeVisible();
+    }
+    if (destination.hash && destination.pathname !== "/")
       await expect(
         page.locator(`[id="${decodeURIComponent(destination.hash.slice(1))}"]`),
         label,
@@ -331,8 +342,10 @@ test("the shared shell supports skip navigation and identifies the current page"
     "aria-current",
     "page",
   );
-  await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
+  // Safari can exclude links from Tab order according to the host keyboard preference.
+  // Start on the skip link, then exercise its native keyboard activation and target focus.
+  await page.getByRole("link", { name: "Skip to content" }).focus();
+  await expect(page.getByRole("link", { name: "Skip to content" })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.locator("main")).toBeFocused();
   await expect(page.getByRole("link", { name: "Contact support", exact: true })).toHaveAttribute(
