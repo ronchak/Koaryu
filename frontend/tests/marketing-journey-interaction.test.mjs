@@ -42,8 +42,14 @@ describe("Journey hash model", () => {
   });
 
   it("uses one compact sequence for direct and relative navigation", () => {
-    assert.deepEqual(journeyChapterIndices(true), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13]);
+    assert.deepEqual(journeyChapterIndices(true), [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13]);
     assert.equal(journeyChapterIndices(false).length, 14);
+    assert.equal(normalizeJourneyChapter(7, true), 4);
+    assert.equal(normalizeJourneyChapter(7, true, 1), 8);
+    assert.equal(normalizeJourneyChapter(7, true, -1), 6);
+    assert.equal(resolveJourneyHash("#explore", true)?.canonicalHash, "features");
+    assert.equal(resolveJourneyHash("#patterns-form", true)?.canonicalHash, "features");
+    assert.equal(resolveJourneyHash("#explore", false)?.canonicalHash, "explore");
     assert.equal(normalizeJourneyChapter(12, true), 13);
     assert.equal(normalizeJourneyChapter(12, true, -1), 11);
     assert.equal(normalizeJourneyChapter(12, false), 12);

@@ -30,6 +30,13 @@ async function fits(page: Page, label: string) {
         clipped: Math.max(0, content.bottom - r.bottom, r.top - content.top),
         overflow: Math.max(0, section.scrollHeight - section.clientHeight),
         horizontal: Math.max(0, section.scrollWidth - section.clientWidth),
+        smallestControl: Math.min(
+          44,
+          ...Array.from(
+            section.querySelectorAll("a, button, select"),
+            (control) => control.getBoundingClientRect().height,
+          ),
+        ),
         windowY: scrollY,
         frameTop: frame.top,
         frameBottom: frame.bottom,
@@ -39,6 +46,7 @@ async function fits(page: Page, label: string) {
   expect(geometry.clipped, `${label}: clipped content`).toBeLessThanOrEqual(1);
   expect(geometry.overflow, `${label}: internal scrolling`).toBeLessThanOrEqual(1);
   expect(geometry.horizontal, `${label}: horizontal overflow`).toBeLessThanOrEqual(1);
+  expect(geometry.smallestControl, `${label}: touch target height`).toBeGreaterThanOrEqual(44);
   expect(geometry.windowY, label).toBe(0);
   expect(geometry.frameTop, label).toBe(0);
   expect(geometry.frameBottom, label).toBe(geometry.viewport);
@@ -77,6 +85,7 @@ async function inspectContent(page: Page, chapter: number) {
 }
 
 for (const [width, height] of [
+  [320, 480],
   [320, 568],
   [375, 667],
   [393, 617],
@@ -94,7 +103,7 @@ for (const [width, height] of [
     page.on("pageerror", (e) => errors.push(e.message));
     await openJourney(page);
     await expect(page.locator("html")).toHaveAttribute("data-koaryu-mobile-journey", "true");
-    for (const index of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13]) {
+    for (const index of [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13]) {
       await chooseChapter(page, index);
       await fits(page, `chapter ${index + 1}`);
       await inspectContent(page, index);
@@ -261,7 +270,7 @@ test("mobile animation settles after interruption and respects reduced motion", 
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await openJourney(page);
   await expect(page.locator("svg image")).toHaveCount(3);
-  await chooseChapter(page, 7);
+  await chooseChapter(page, 8);
   await chooseChapter(page, 2);
   await expect(page.locator("svg[data-scene-progress]")).toHaveAttribute(
     "data-scene-progress",
@@ -275,9 +284,7 @@ test("mobile animation settles after interruption and respects reduced motion", 
   );
 });
 
-test("mobile has thirteen stops and consistently normalizes the stillness hash", async ({
-  page,
-}) => {
+test("mobile has twelve stops and consistently normalizes the stillness hash", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await openJourney(page, "#stillness");
   await expect(page).toHaveURL(/#begin$/);
@@ -286,10 +293,10 @@ test("mobile has thirteen stops and consistently normalizes the stillness hash",
     "begin",
   );
   const picker = page.getByRole("combobox", { name: "Choose chapter", exact: true });
-  await expect(picker.locator("option")).toHaveCount(13);
+  await expect(picker.locator("option")).toHaveCount(12);
   await expect(page.locator("[data-journey-chapter]")).toHaveAttribute(
     "aria-label",
-    "Chapter 13 of 13",
+    "Chapter 12 of 12",
   );
   await page.getByRole("button", { name: "Previous chapter", exact: true }).focus();
   await page.keyboard.press("Enter");
@@ -330,7 +337,7 @@ test("mobile has thirteen stops and consistently normalizes the stillness hash",
 test("every mobile guide choice reaches its document in one action", async ({ page }) => {
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 393, height: 617 });
-  for (const hash of ["features", "use-cases", "explore", "about"]) {
+  for (const hash of ["features", "use-cases", "about"]) {
     await openJourney(page, `#${hash}`);
     const links = await page.locator("[data-mobile-stage] a").evaluateAll((anchors) =>
       anchors.map((a) => ({
@@ -349,4 +356,65 @@ test("every mobile guide choice reaches its document in one action", async ({ pa
       await expect(page.locator("html")).not.toHaveAttribute("data-koaryu-mobile-journey", "true");
     }
   }
+});
+
+test("mobile skips Guides in both directions and replaces its direct hash", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 480 });
+  await openJourney(page, "#signals-gather");
+  await page.getByRole("button", { name: "Next chapter", exact: true }).click();
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "class-ready",
+  );
+  await page.getByRole("button", { name: "Previous chapter", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "signals-gather",
+  );
+  await gesture(page);
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "class-ready",
+  );
+  await page.locator("[data-journey-chapter]").focus();
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "signals-gather",
+  );
+  const historyLength = await page.evaluate(() => {
+    const expectedLength = history.length + 1;
+    history.pushState(null, "", "#explore");
+    dispatchEvent(new HashChangeEvent("hashchange"));
+    return expectedLength;
+  });
+  await expect(page).toHaveURL(/#features$/);
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "features",
+  );
+  expect(await page.evaluate(() => history.length)).toBe(historyLength);
+  await page.goBack();
+  await expect(page).toHaveURL(/#signals-gather$/);
+  await page.goForward();
+  await expect(page).toHaveURL(/#features$/);
+  await openJourney(page, "#explore");
+  await expect(page).toHaveURL(/#features$/);
+  await openJourney(page, "#patterns-form");
+  await expect(page).toHaveURL(/#features$/);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openJourney(page, "#explore");
+  await expect(page).toHaveURL(/#explore$/);
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "explore",
+  );
+  await expect(page.locator("[data-journey-chapter]")).toHaveCount(14);
+  await page.setViewportSize({ width: 320, height: 480 });
+  await expect(page).toHaveURL(/#features$/);
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "features",
+  );
 });

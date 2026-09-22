@@ -40,19 +40,27 @@ const CHAPTER_INDEX = Object.freeze(
   >,
 );
 
+const MOBILE_CHAPTER_REDIRECTS: Readonly<Partial<Record<number, number>>> = Object.freeze({
+  [CHAPTER_INDEX.explore]: CHAPTER_INDEX.features,
+  [CHAPTER_INDEX.stillness]: CHAPTER_INDEX.begin,
+});
+
 export function journeyChapterIndices(compact: boolean): number[] {
-  return landingPageContent.chapters.flatMap((chapter, index) =>
-    compact && chapter.id === "stillness" ? [] : [index],
+  return landingPageContent.chapters.flatMap((_, index) =>
+    compact && MOBILE_CHAPTER_REDIRECTS[index] !== undefined ? [] : [index],
   );
 }
 
 export function normalizeJourneyChapter(
   index: number,
   compact: boolean,
-  direction: -1 | 1 = 1,
+  direction?: -1 | 1,
 ): number {
-  const bounded = Math.max(0, Math.min(landingPageContent.chapters.length - 1, Math.round(index)));
-  return compact && bounded === CHAPTER_INDEX.stillness ? bounded + direction : bounded;
+  let bounded = Math.max(0, Math.min(landingPageContent.chapters.length - 1, Math.round(index)));
+  if (!compact) return bounded;
+  if (direction === undefined) return MOBILE_CHAPTER_REDIRECTS[bounded] ?? bounded;
+  while (MOBILE_CHAPTER_REDIRECTS[bounded] !== undefined) bounded += direction;
+  return bounded;
 }
 
 const FAQ_HASH_INDEX = Object.freeze(
@@ -107,7 +115,9 @@ export function resolveJourneyHash(hash: string, compact = false): ResolvedJourn
   }
 
   if (Object.prototype.hasOwnProperty.call(JOURNEY_HASH_ALIASES, normalized)) {
-    const chapterId = JOURNEY_HASH_ALIASES[normalized as keyof typeof JOURNEY_HASH_ALIASES];
+    const requestedId = JOURNEY_HASH_ALIASES[normalized as keyof typeof JOURNEY_HASH_ALIASES];
+    const index = normalizeJourneyChapter(CHAPTER_INDEX[requestedId], compact);
+    const chapterId = landingPageContent.chapters[index]!.id;
     return {
       chapterId,
       chapterIndex: CHAPTER_INDEX[chapterId],
