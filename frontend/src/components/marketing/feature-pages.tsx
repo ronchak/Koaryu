@@ -1,547 +1,377 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { MarketingActionLink } from "@/components/marketing/marketing-primitives";
 import { PublicPageShell } from "@/components/marketing/public-pages";
-import { formatPublicPlatformPrice } from "@/lib/constants";
-import { featurePages, type MarketingPage } from "@/lib/marketing-pages";
+import { formatPublicPlatformPrice, PUBLIC_PAYMENTS_FEE_PERCENT } from "@/lib/constants";
+import type { MarketingPage } from "@/lib/marketing-pages";
 
 import styles from "./feature-pages.module.css";
-
-const featureStories = {
-  "student-management": {
-    title: "Know the student. Remember the details.",
-    description:
-      "The guardian at the desk, the instructor on the mat, the owner catching up later. Give your team one student record to work from.",
-    shortTitle: "Student records",
-    question: "Who trains here, and what should we know?",
-    summary:
-      "Keep programs, guardians, emergency contacts, notes, and rank history with the student they belong to.",
-    points: ["Students & guardians", "Programs & status", "Notes & history"],
-    jump: "Inside the record",
-  },
-  "belt-tracking": {
-    title: "Every belt has a history. Keep it.",
-    description:
-      "Build your school's rank ladders, see the requirements behind a promotion shortlist, and leave the teaching decision with the instructor.",
-    shortTitle: "Rank progression",
-    question: "Who is ready for the next conversation?",
-    summary:
-      "Bring class counts, time at rank, and instructor approval into the same review. Your programs keep their own rank ladders.",
-    points: ["Program ladders", "Readiness signals", "Promotion history"],
-    jump: "How readiness works",
-  },
-  attendance: {
-    title: "Take attendance. Put it to work.",
-    description:
-      "Open the class, mark the roster, and keep a record that is useful after everyone goes home. Training history feeds retention and rank review.",
-    shortTitle: "Schedule & attendance",
-    question: "Who came to class? Who hasn't been back?",
-    summary:
-      "Run recurring classes by program, take attendance from the roster, and use that history in your next student conversation.",
-    points: ["Weekly schedule", "Class check-in", "Attendance history"],
-    jump: "A class from start to finish",
-  },
-  billing: {
-    title: "Have the tuition conversation with the facts.",
-    description:
-      "See the student, family payer, and existing billing records together. Give authorized staff enough context to understand what needs attention.",
-    shortTitle: "Billing visibility",
-    question: "Who pays, what is recorded, and what needs attention?",
-    summary:
-      "Review existing plans, invoices, payment status, and external payment notes. Tuition collection requires separate studio activation.",
-    points: ["Family payers", "Existing invoices", "Payment attention"],
-    jump: "What is available",
-  },
-} as const;
-
-type FeatureSlug = keyof typeof featureStories;
-
-function isFeatureSlug(slug: string): slug is FeatureSlug {
-  return Object.hasOwn(featureStories, slug);
-}
-
-function Arrow() {
-  return <span aria-hidden="true">↗</span>;
-}
 
 function TextLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link href={href} prefetch={href === "/signup" ? false : undefined} className={styles.textLink}>
       <span>{children}</span>
-      <Arrow />
+      <span aria-hidden="true">↗</span>
     </Link>
   );
 }
 
-function SectionIntro({
-  eyebrow,
-  title,
-  children,
+function PageHeading({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <header className={styles.heading}>
+      <TextLink href="/features">All features</TextLink>
+      <h1>{title}</h1>
+      <p className={styles.lede}>{children}</p>
+    </header>
+  );
+}
+
+function ReferenceTable({
+  caption,
+  columns,
+  rows,
 }: {
-  eyebrow: string;
-  title: string;
-  children?: ReactNode;
+  caption: string;
+  columns: readonly string[];
+  rows: readonly (readonly ReactNode[])[];
 }) {
   return (
-    <div className={styles.sectionIntro}>
-      <p className={styles.eyebrow}>{eyebrow}</p>
-      <h2>{title}</h2>
-      {children ? <p>{children}</p> : null}
-    </div>
-  );
-}
-
-function StudentRecord() {
-  return (
-    <figure className={`${styles.example} ${styles.studentExample}`}>
-      <figcaption>Illustrative student record</figcaption>
-      <div className={styles.recordIdentity}>
-        <span className={styles.monogram} aria-hidden="true">
-          MT
-        </span>
-        <div>
-          <p className={styles.smallLabel}>Student / active</p>
-          <h2>Maya Tanaka</h2>
-          <p>Juniors karate · Yellow belt</p>
-        </div>
-      </div>
-      <dl className={styles.recordFields}>
-        <div>
-          <dt>Guardian</dt>
-          <dd>Alex Tanaka · Parent</dd>
-        </div>
-        <div>
-          <dt>Program</dt>
-          <dd>Juniors karate</dd>
-        </div>
-        <div>
-          <dt>Recent class</dt>
-          <dd>Tuesday · 4:30 pm</dd>
-        </div>
-      </dl>
-      <div className={styles.recordNote}>
-        <p className={styles.smallLabel}>Instructor note</p>
-        <p>Good focus in partner work. Review the opening sequence together next class.</p>
-      </div>
-      <p className={styles.exampleFootnote}>
-        One student&apos;s context, ready for the next member of staff.
-      </p>
-    </figure>
-  );
-}
-
-function RankReview() {
-  return (
-    <figure className={`${styles.example} ${styles.rankExample}`}>
-      <figcaption>Illustrative readiness review</figcaption>
-      <p className={styles.smallLabel}>Juniors karate / next rank</p>
-      <h2>Yellow → Orange</h2>
-      <div className={styles.beltDrawing} aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
-      <dl className={styles.readinessSignals}>
-        <div>
-          <dt>Classes at current rank</dt>
-          <dd>
-            <strong>24 / 24</strong>
-            <span>Requirement met</span>
-          </dd>
-        </div>
-        <div>
-          <dt>Time at current rank</dt>
-          <dd>
-            <strong>3 / 3 months</strong>
-            <span>Requirement met</span>
-          </dd>
-        </div>
-        <div>
-          <dt>Instructor approval</dt>
-          <dd>
-            <strong>To review</strong>
-            <span>Your decision</span>
-          </dd>
-        </div>
-      </dl>
-      <p className={styles.exampleFootnote}>Example requirements only. Your school sets its own.</p>
-    </figure>
-  );
-}
-
-function ClassRegister() {
-  return (
-    <figure className={`${styles.example} ${styles.attendanceExample}`}>
-      <figcaption>Illustrative class register</figcaption>
-      <div className={styles.classHeading}>
-        <div>
-          <p className={styles.smallLabel}>Tuesday / 4:30 pm</p>
-          <h2>Juniors karate</h2>
-        </div>
-        <span className={styles.classMark} aria-hidden="true">
-          道
-        </span>
-      </div>
-      <ul className={styles.register}>
-        <li>
-          <span>Maya Tanaka</span>
-          <span>
-            <i aria-hidden="true">✓</i> Present
-          </span>
-        </li>
-        <li>
-          <span>Leo Rivera</span>
-          <span>
-            <i aria-hidden="true">✓</i> Present
-          </span>
-        </li>
-        <li>
-          <span>Sam Patel</span>
-          <span>
-            <i aria-hidden="true">−</i> Unmarked
-          </span>
-        </li>
-      </ul>
-      <div className={styles.registerNote}>
-        <span aria-hidden="true">↳</span>
-        <p>Each attendance change saves as you mark it.</p>
-      </div>
-      <p className={styles.exampleFootnote}>A sample class, not a live check-in screen.</p>
-    </figure>
-  );
-}
-
-function PayerRecord() {
-  return (
-    <figure className={`${styles.example} ${styles.billingExample}`}>
-      <figcaption>Illustrative family billing context</figcaption>
-      <p className={styles.smallLabel}>Family payer</p>
-      <h2>Alex Tanaka</h2>
-      <div className={styles.payerStudents}>
-        <div>
-          <span>Student</span>
-          <strong>Maya</strong>
-          <span>Juniors karate</span>
-        </div>
-        <div>
-          <span>Student</span>
-          <strong>Ren</strong>
-          <span>Little dragons</span>
-        </div>
-      </div>
-      <dl className={styles.recordFields}>
-        <div>
-          <dt>Existing invoice</dt>
-          <dd>Needs attention</dd>
-        </div>
-        <div>
-          <dt>External payment</dt>
-          <dd>Check recorded locally</dd>
-        </div>
-      </dl>
-      <p className={styles.exampleFootnote}>Recording an external payment does not move money.</p>
-    </figure>
-  );
-}
-
-const illustrations = {
-  "student-management": StudentRecord,
-  "belt-tracking": RankReview,
-  attendance: ClassRegister,
-  billing: PayerRecord,
-};
-
-function FeatureMotif({ slug }: { slug: FeatureSlug }) {
-  return (
-    <div className={`${styles.motif} ${styles[`${slug}Motif`]}`} aria-hidden="true">
-      {slug === "student-management" ? (
-        <>
-          <span>MT</span>
-          <span>
-            Profile
-            <br />
-            Program
-            <br />
-            History
-          </span>
-        </>
-      ) : null}
-      {slug === "belt-tracking" ? (
-        <>
-          <span />
-          <span />
-          <span />
-          <span />
-        </>
-      ) : null}
-      {slug === "attendance" ? (
-        <>
-          <span>M</span>
-          <span>T</span>
-          <span>W</span>
-          <span>T</span>
-          <span>F</span>
-        </>
-      ) : null}
-      {slug === "billing" ? (
-        <>
-          <span>Family payer</span>
-          <span>
-            Student ↗<br />
-            Student ↗
-          </span>
-        </>
-      ) : null}
-    </div>
+    <table className={styles.referenceTable}>
+      <caption>{caption}</caption>
+      <thead>
+        <tr>
+          {columns.map((column) => (
+            <th key={column} scope="col">
+              {column}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, index) => (
+          <tr key={index}>
+            {row.map((cell, cellIndex) =>
+              cellIndex === 0 ? (
+                <th key={cellIndex} scope="row">
+                  {cell}
+                </th>
+              ) : (
+                <td key={cellIndex}>
+                  <span className={styles.mobileLabel} aria-hidden="true">
+                    {columns[cellIndex]}
+                  </span>
+                  {cell}
+                </td>
+              ),
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
 export function FeatureIndexPage() {
   return (
     <PublicPageShell>
-      <div className={styles.page}>
-        <section className={`${styles.hero} ${styles.indexHero}`}>
-          <div className={styles.heroCopy}>
-            <p className={styles.eyebrow}>The Koaryu product</p>
-            <h1>
-              One school.
-              <br />
-              One shared picture.
-            </h1>
-            <p className={styles.lede}>
-              Students, classes, rank progress, and tuition context. The everyday work of a martial
-              arts school, connected by the people who train there.
-            </p>
-            <div className={styles.actions}>
-              <MarketingActionLink href="#feature-map" className={styles.primaryAction}>
-                Find your starting point
-              </MarketingActionLink>
-              <TextLink href="/use-cases">See it in a workflow</TextLink>
-            </div>
-          </div>
-          <div className={styles.indexDiagram} aria-label="Students connect the four product areas">
-            <div className={styles.diagramCenter}>
-              <span className={styles.eyebrow}>At the center</span>
-              <strong>Your students</strong>
-              <p>The same people, throughout the school day.</p>
-            </div>
-            <ol>
-              <li>
-                <span>01</span>
-                <strong>Know the person</strong>
-                <small>Student records</small>
-              </li>
-              <li>
-                <span>02</span>
-                <strong>Record the class</strong>
-                <small>Attendance</small>
-              </li>
-              <li>
-                <span>03</span>
-                <strong>Review the progress</strong>
-                <small>Rank progression</small>
-              </li>
-              <li>
-                <span>04</span>
-                <strong>Understand the account</strong>
-                <small>Billing visibility</small>
-              </li>
-            </ol>
+      <article className={styles.page}>
+        <header className={styles.overviewHeading}>
+          <p className={styles.kicker}>Koaryu features</p>
+          <h1>Run your roster, classes, and rank progression in one studio.</h1>
+          <p className={styles.lede}>
+            Koaryu is staff software for independent martial arts schools. Keep student records,
+            take attendance, review belt requirements, and track inquiries through enrollment.
+            Billing has a narrower scope, explained below.
+          </p>
+        </header>
+
+        <section className={styles.section} aria-labelledby="coverage-heading">
+          <h2 id="coverage-heading">What your staff can do</h2>
+          <div className={styles.capabilityList}>
+            <section>
+              <div>
+                <h3>Student records</h3>
+                <TextLink href="/features/student-management">
+                  Fields, families, and editing
+                </TextLink>
+              </div>
+              <p>
+                Store contact and emergency details, notes, tags, status, and program memberships.
+                Import a CSV roster with column mapping and a validation preview.
+              </p>
+              <p className={styles.roleNote}>
+                Admin and Front Desk manage the roster. Instructors can edit ordinary profile
+                details, including notes, but cannot change student status or programs.
+              </p>
+            </section>
+            <section>
+              <div>
+                <h3>Classes and attendance</h3>
+                <TextLink href="/features/attendance">Running and correcting a session</TextLink>
+              </div>
+              <p>
+                Set weekly class times or one-off sessions. Mark each student Present, Late, or
+                Absent, or leave them Unmarked. Each change saves separately.
+              </p>
+              <p className={styles.roleNote}>
+                Admin and Front Desk manage the schedule. All three staff roles can take attendance,
+                including other-program drop-ins.
+              </p>
+            </section>
+            <section>
+              <div>
+                <h3>Belt progression</h3>
+                <TextLink href="/features/belt-tracking">
+                  Requirements and readiness calculations
+                </TextLink>
+              </div>
+              <p>
+                Give each program an ordered ladder of belts and tips. Set minimum classes, time,
+                and instructor approval for the next rank. Review progress and record promotions.
+              </p>
+              <p className={styles.roleNote}>
+                Admin configures ranks. Admin and Instructor can promote. Meeting the numerical
+                requirements does not promote anyone automatically.
+              </p>
+            </section>
+            <section>
+              <div>
+                <h3>Inquiries and trials</h3>
+                <TextLink href="/use-cases/trial-to-enrollment">
+                  Following an inquiry through enrollment
+                </TextLink>
+              </div>
+              <p>
+                Track a lead&apos;s stage, contact details, and next follow-up date. Review due
+                follow-ups and convert a lead into a student record when they enroll.
+              </p>
+              <p className={styles.roleNote}>
+                Admin and Front Desk manage leads. A stage change does not send an offer or a
+                message to the family.
+              </p>
+            </section>
+            <section>
+              <div>
+                <h3>Billing records</h3>
+                <TextLink href="/features/billing">Billing actions and availability</TextLink>
+              </div>
+              <p>
+                Review existing payers, plans, invoices, and payments. Record a payment received
+                outside Koaryu or attach an external billing record to a student.
+              </p>
+              <p className={styles.roleNote}>
+                Admin and Front Desk have routine billing access. Tuition collection needs separate
+                studio activation and is not generally available. New billing exports are
+                unavailable.
+              </p>
+            </section>
+            <section>
+              <div>
+                <h3>Reports and attendance follow-up</h3>
+                <TextLink href="/use-cases/student-retention">
+                  Interpreting an attendance gap
+                </TextLink>
+              </div>
+              <p>
+                Review recent attendance, class utilization, and lead-stage totals. The dashboard
+                flags attendance gaps for staff to investigate; it does not contact students.
+              </p>
+              <p className={styles.roleNote}>
+                CSV export access depends on the report and staff role. Front Desk can export
+                attendance, schedules, programs, and ranks. Broader exports require Admin access.
+              </p>
+            </section>
           </div>
         </section>
 
-        <section id="feature-map" className={styles.section} aria-labelledby="feature-map-heading">
-          <div className={styles.indexHeading}>
-            <div>
-              <p className={styles.eyebrow}>Four places to start</p>
-              <h2 id="feature-map-heading">What do you need to know?</h2>
-            </div>
+        <section
+          id="fit"
+          className={`${styles.section} ${styles.fit}`}
+          aria-labelledby="fit-heading"
+        >
+          <div>
+            <p className={styles.kicker}>School and subscription fit</p>
+            <h2 id="fit-heading">For one school&apos;s daily work</h2>
             <p>
-              Choose a product area for a closer look at the records, decisions, and daily work it
-              supports.
+              Each account belongs to one studio. Koaryu is organized around that studio&apos;s
+              students, programs, and staff. Students can train in more than one program, with rank
+              progression tracked for each program. Admin, Front Desk, and Instructor have different
+              permissions. Instructors do not have billing access.
             </p>
+            <p>
+              Families appear through student, guardian, and payer records. There is no parent
+              portal or combined household workspace to plan around. If you are moving from another
+              system, CSV import brings over student fields and current ranks, not historical
+              attendance, promotions, or billing.
+            </p>
+            <TextLink href="/use-cases/spreadsheets-to-studio-crm">
+              CSV fields and an import example
+            </TextLink>
           </div>
-          <div className={styles.featureGrid}>
-            {featurePages.map((page, index) => {
-              if (!isFeatureSlug(page.slug)) return null;
-              const story = featureStories[page.slug];
-              return (
-                <article key={page.slug} className={styles.featureEntry}>
-                  <div className={styles.entryTop}>
-                    <span className={styles.eyebrow}>
-                      0{index + 1} / {story.shortTitle}
-                    </span>
-                    <FeatureMotif slug={page.slug} />
-                  </div>
-                  <h3>{story.question}</h3>
-                  <p>{story.summary}</p>
-                  <ul className={styles.featurePoints}>
-                    {story.points.map((point) => (
-                      <li key={point}>{point}</li>
-                    ))}
-                  </ul>
-                  <TextLink href={page.href}>Explore {story.shortTitle.toLowerCase()}</TextLink>
-                </article>
-              );
-            })}
-          </div>
+          <aside className={styles.subscription} aria-label="Platform subscription">
+            <p className={styles.price}>
+              {formatPublicPlatformPrice()} <span>USD per month per studio</span>
+            </p>
+            <p>
+              This is the Koaryu platform subscription. It is separate from tuition charged to your
+              students.
+            </p>
+            <p>
+              Separately activated Koaryu Payments adds {PUBLIC_PAYMENTS_FEE_PERCENT}% on successful
+              charges, plus Stripe fees. Recording a payment received outside Koaryu does not incur
+              that processing fee.
+            </p>
+            <p>
+              Creating an account does not activate tuition collection. If collecting tuition or
+              creating billing exports is essential to your move, those availability limits matter
+              before you switch.
+            </p>
+            <TextLink href="/signup">Create an account</TextLink>
+          </aside>
         </section>
-
-        <section className={styles.connectionSection}>
-          <SectionIntro
-            eyebrow="The connection matters"
-            title="A class ends. The record keeps working."
-          >
-            A useful attendance record helps answer more than whether someone was in the room.
-          </SectionIntro>
-          <ol className={styles.connectionSteps}>
-            <li>
-              <span>01</span>
-              <div>
-                <h3>On the mat</h3>
-                <p>An instructor marks attendance for the class.</p>
-              </div>
-            </li>
-            <li>
-              <span>02</span>
-              <div>
-                <h3>At the next check-in</h3>
-                <p>Staff can review training history and notice when a student has gone quiet.</p>
-              </div>
-            </li>
-            <li>
-              <span>03</span>
-              <div>
-                <h3>Before the next test</h3>
-                <p>
-                  Class counts contribute to rank readiness where the school&apos;s requirements use
-                  them.
-                </p>
-              </div>
-            </li>
-          </ol>
-          <TextLink href="/use-cases/student-retention">Follow the retention workflow</TextLink>
-        </section>
-
-        <section className={`${styles.section} ${styles.fitSection}`}>
-          <SectionIntro eyebrow="A practical fit" title="Built around one independent school.">
-            Koaryu is for owners and small teams who teach, manage the roster, and run the front
-            desk. Current scope is one studio location.
-          </SectionIntro>
-          <div className={styles.fitNotes}>
-            <article>
-              <h3>Keep your existing roster</h3>
-              <p>
-                Use the CSV import path to bring student records forward. Review the fields and
-                resolve import issues before treating the roster as ready.
-              </p>
-              <TextLink href="/use-cases/spreadsheets-to-studio-crm">Plan the move</TextLink>
-            </article>
-            <article>
-              <h3>Understand billing before you start</h3>
-              <p>
-                Existing billing records and external payment notes are distinct from collecting
-                tuition. Provider actions require separate activation for the exact studio.
-              </p>
-              <TextLink href="/features/billing">Read the billing scope</TextLink>
-            </article>
-          </div>
-        </section>
-        <FeatureClosing />
-      </div>
+      </article>
     </PublicPageShell>
   );
 }
 
-function StudentStory() {
+function StudentManagementPage() {
   return (
     <>
-      <section id="page-details" className={`${styles.section} ${styles.studentStory}`}>
-        <SectionIntro eyebrow="Inside the record" title="The details you need before saying hello.">
-          A student profile should answer the questions that come up in a real lobby, with a family
-          waiting in front of you.
-        </SectionIntro>
-        <div className={styles.recordTopics}>
-          <article>
-            <span className={styles.topicNumber}>01</span>
-            <h3>Who trains here?</h3>
-            <p>
-              Names, student status, programs, and current rank help staff understand where someone
-              fits. Search and status filters make a growing roster easier to work through.
-            </p>
-          </article>
-          <article>
-            <span className={styles.topicNumber}>02</span>
-            <h3>Who should we contact?</h3>
-            <p>
-              Keep guardian details and emergency contacts with the student&apos;s record. A
-              child&apos;s class conversation and the family&apos;s account conversation do not have
-              to start from scratch.
-            </p>
-          </article>
-          <article>
-            <span className={styles.topicNumber}>03</span>
-            <h3>What happened last time?</h3>
-            <p>
-              Internal notes preserve the useful details between shifts. Training and promotion
-              history give the next instructor context before class begins.
-            </p>
-          </article>
-          <article>
-            <span className={styles.topicNumber}>04</span>
-            <h3>What needs attention?</h3>
-            <p>
-              Use status, attendance, and rank context to decide where to look next. Authorized
-              staff can connect the student to the relevant family payer and billing records.
-            </p>
-          </article>
-        </div>
-      </section>
-      <section className={styles.connectionSection}>
-        <div className={styles.splitSection}>
-          <SectionIntro
-            eyebrow="A handoff that holds up"
-            title="The note should outlast the shift."
-          >
-            A parent mentions a concern to the front desk. An instructor can review the
-            student&apos;s context before the next class. The owner can pick up the conversation
-            later.
-          </SectionIntro>
-          <div className={styles.handoff}>
-            <p className={styles.smallLabel}>Illustrative staff handoff</p>
-            <p className={styles.handoffQuote}>
-              &quot;Maya enjoyed partner drills. Her parent asked what to practice before the next
-              class.&quot;
-            </p>
-            <ol>
-              <li>Front desk records the conversation</li>
-              <li>Instructor reviews the student notes</li>
-              <li>The next conversation starts with context</li>
-            </ol>
-            <p className={styles.exampleFootnote}>
-              Sample note. Staff access depends on their role.
-            </p>
+      <PageHeading title="Student records">
+        Find a student by name, filter the roster by status, and open their contact details,
+        programs, notes, and recorded promotions. In Students, select a student&apos;s name and
+        choose Edit to change their profile fields.
+      </PageHeading>
+
+      <section className={styles.section} aria-labelledby="profile-heading">
+        <h2 id="profile-heading">What goes in the profile</h2>
+        <dl className={styles.fieldMap}>
+          <div>
+            <dt>Identity and contact</dt>
+            <dd>
+              Legal and preferred names, date of birth, email, phone, address, and a separate
+              emergency contact with a name, phone, and relationship. These fields remain editable
+              after enrollment.
+            </dd>
           </div>
+          <div>
+            <dt>Status and programs</dt>
+            <dd>
+              Admin and Front Desk can choose Active, Trialing, Inactive, Paused, or Canceled;
+              change the membership start date; and set a hold window. They can select more than one
+              program for the same student.
+            </dd>
+          </div>
+          <div>
+            <dt>Notes and tags</dt>
+            <dd>
+              Staff edit one notes field and comma-separated tags. Use the notes for details such as
+              a planned break or an instructor observation. This is not a dated message feed, and
+              saving a note does not notify the family.
+            </dd>
+          </div>
+          <div>
+            <dt>Current rank and history</dt>
+            <dd>
+              A current belt can exist without a recorded promotion history, for example after an
+              import. The history lists recorded rank changes. Editing contact details or notes does
+              not rewrite those entries.
+            </dd>
+          </div>
+        </dl>
+        <TextLink href="/features/belt-tracking">How ranks and promotion history work</TextLink>
+      </section>
+
+      <section id="families" className={styles.section} aria-labelledby="families-heading">
+        <h2 id="families-heading">A student, a guardian, and a payer have different records</h2>
+        <p className={styles.sectionLead}>
+          A parent may appear in both contact and billing information. That does not turn two
+          children into one training record.
+        </p>
+        <figure className={styles.household}>
+          <figcaption>Worked household example with fictional names</figcaption>
+          <div className={styles.siblings}>
+            <div>
+              <h3>Maya Tanaka</h3>
+              <p>Juniors karate, yellow belt. Her own attendance and promotion history.</p>
+            </div>
+            <div>
+              <h3>Leo Tanaka</h3>
+              <p>
+                Juniors karate and youth judo. His own program memberships and rank progression.
+              </p>
+            </div>
+          </div>
+          <dl>
+            <div>
+              <dt>Alex as guardian</dt>
+              <dd>
+                When staff add each child, they can enter one guardian&apos;s name, relationship,
+                email, and phone. A minor&apos;s profile displays the primary guardian. Entering
+                Alex on both records is not a shared household editor.
+              </dd>
+            </div>
+            <div>
+              <dt>Alex as payer</dt>
+              <dd>
+                Billing keeps the payer&apos;s contact details and payment records separately. When
+                an existing Alex payer is available, Admin or Front Desk can select that payer on
+                each child&apos;s external billing enrollment. This does not combine their training
+                records or charge Alex.
+              </dd>
+            </div>
+          </dl>
+          <p className={styles.note}>
+            Staff review each child&apos;s attendance in Schedule or Reports and recorded promotion
+            history on the student profile.
+          </p>
+        </figure>
+        <div className={styles.prose}>
+          <h3>Changing a phone number</h3>
+          <p>
+            The student and emergency-contact phone fields can be changed in Edit student. Guardian
+            fields in that form are read-only after creation. Changing the student&apos;s phone does
+            not update the guardian or billing payer, so the profile editor is not a way to update
+            the whole family at once.
+          </p>
+          <p>
+            Koaryu does not provide a parent portal or a shared sibling workspace. Do not treat
+            matching guardian names as automatic household linking, consolidated invoices, or a
+            family discount.
+          </p>
+          <TextLink href="/features/billing">What a payer record supports</TextLink>
         </div>
       </section>
-      <section className={`${styles.section} ${styles.splitSection}`}>
-        <SectionIntro
-          eyebrow="Start with the people you have"
-          title="Your roster does not need a fresh start."
-        >
-          Bring existing records through the CSV import path, then review the students, programs,
-          and family details your school uses every day.
-        </SectionIntro>
-        <div className={styles.plainCopy}>
-          <h3>Keep access appropriate to the job</h3>
+
+      <section className={`${styles.section} ${styles.twoColumns}`} aria-labelledby="staff-heading">
+        <div>
+          <h2 id="staff-heading">Who can edit what</h2>
+          <ul className={styles.plainList}>
+            <li>
+              <strong>Admin and Front Desk</strong> can add students and manage status, hold dates,
+              program assignments, and roster imports.
+            </li>
+            <li>
+              <strong>Instructors</strong> can edit ordinary profile information, including contact
+              details, emergency details, notes, and tags. They cannot change status, hold dates,
+              membership start date, or programs.
+            </li>
+            <li>
+              <strong>Admin and Instructor</strong> can record promotions. Front Desk cannot.
+              Billing is available to Admin and Front Desk only.
+            </li>
+          </ul>
+        </div>
+        <div>
+          <h2>What comes across in a CSV</h2>
           <p>
-            Admins, instructors, and front-desk staff have different responsibilities. Koaryu
-            applies role-aware access, including separate boundaries for sensitive billing
-            information.
+            Map names, contact and emergency details, guardian fields, notes, tags, programs, and
+            current belt. Preview and validate the rows before importing. This creates student
+            records; it does not reconstruct attendance or promotion history, and billing columns
+            are excluded.
           </p>
           <TextLink href="/use-cases/spreadsheets-to-studio-crm">
-            See the spreadsheet-to-roster workflow
+            CSV example and import instructions
           </TextLink>
         </div>
       </section>
@@ -549,514 +379,462 @@ function StudentStory() {
   );
 }
 
-function RankStory() {
+function BeltTrackingPage() {
   return (
     <>
-      <section id="page-details" className={styles.section}>
-        <SectionIntro
-          eyebrow="Your school's progression"
-          title="The ladder should match what you teach."
-        >
-          Kids, adults, and different disciplines can follow different rank ladders. Order the
-          ranks, include tips where you use them, and define the requirements for each step.
-        </SectionIntro>
-        <figure className={styles.ladderFigure}>
-          <figcaption>
-            Illustrative rank ladder / your names, order, and requirements may differ
-          </figcaption>
-          <ol className={styles.ladder}>
-            <li>
-              <span className={styles.rankSwatch} data-rank="white" />
-              <strong>White</strong>
-              <span>Starting point</span>
-            </li>
-            <li>
-              <span className={styles.rankSwatch} data-rank="yellow" />
-              <strong>Yellow</strong>
-              <span>Current rank</span>
-            </li>
-            <li>
-              <span className={styles.rankSwatch} data-rank="orange" />
-              <strong>Orange</strong>
-              <span>Next review</span>
-            </li>
-            <li>
-              <span className={styles.rankSwatch} data-rank="green" />
-              <strong>Green</strong>
-              <span>Later in the ladder</span>
-            </li>
-          </ol>
-        </figure>
-        <div className={styles.requirements}>
-          <article>
-            <h3>Classes at rank</h3>
-            <p>
-              Set a minimum class count when attendance is part of your requirements. Recorded
-              training contributes to the readiness review.
-            </p>
-          </article>
-          <article>
-            <h3>Time at rank</h3>
-            <p>
-              Set a minimum time requirement to give students room to develop between promotions.
-            </p>
-          </article>
-          <article>
-            <h3>Instructor approval</h3>
-            <p>
-              Require a human review where your school needs one. Meeting the numbers does not
-              replace the instructor&apos;s assessment.
-            </p>
-          </article>
+      <PageHeading title="Rank requirements and promotion readiness">
+        Build an ordered rank ladder for each program. Koaryu compares students with the next
+        rank&apos;s requirements, then an Admin or Instructor decides whether to record the
+        promotion.
+      </PageHeading>
+
+      <section
+        className={`${styles.section} ${styles.rankSetup}`}
+        aria-labelledby="rank-setup-heading"
+      >
+        <div>
+          <h2 id="rank-setup-heading">
+            Set the requirements on the rank a student is working toward
+          </h2>
+          <p>
+            In Belt Tracker, an Admin chooses the program and opens Rank Plan to name and reorder
+            belts, add tips within a belt, choose colors, and set minimum classes, minimum months,
+            and required instructor approval. Different programs can have different ladders.
+          </p>
+          <p>
+            For a student at yellow belt, the orange rank&apos;s settings determine what comes next.
+            A tip can also be the next rank. A student without a rank is compared with the first
+            step; a student at the top has no next-rank review.
+          </p>
         </div>
+        <figure className={styles.rankSettings}>
+          <figcaption>Example school rule, not a default</figcaption>
+          <h3>Orange belt in juniors karate</h3>
+          <dl>
+            <div>
+              <dt>Minimum classes</dt>
+              <dd>24</dd>
+            </div>
+            <div>
+              <dt>Minimum months</dt>
+              <dd>3, calculated as 90 days</dd>
+            </div>
+            <div>
+              <dt>Instructor approval</dt>
+              <dd>Required</dd>
+            </div>
+          </dl>
+        </figure>
       </section>
-      <section className={styles.judgmentSection}>
-        <p className={styles.eyebrow}>A shortlist, with reasons</p>
-        <h2>
-          Ready for review
-          <br />
-          is a conversation.
-        </h2>
+
+      <section className={styles.section} aria-labelledby="calculation-heading">
+        <h2 id="calculation-heading">Which classes and days count?</h2>
+        <p className={styles.sectionLead}>
+          Open Eligibility in Belt Tracker and choose the program. The list reviews students with
+          Active status against a matching configured ladder for their program. Trialing and Paused
+          students do not appear. Check the student&apos;s status, program, and ladder setup before
+          treating a missing row as a readiness result.
+        </p>
+        <div className={styles.calculation}>
+          <div>
+            <h3>Classes since the recorded rank change</h3>
+            <p>
+              Koaryu counts attendance at or after the latest recorded rank-change time for that
+              program. The class must belong to that program, must not be canceled or deleted, and
+              the attendance must count toward eligibility. Present and Late qualify; Absent does
+              not. Other-program drop-ins are excluded by default.
+            </p>
+          </div>
+          <div>
+            <h3>Time since the recorded rank change</h3>
+            <p>
+              Elapsed days start at the latest recorded promotion or demotion time for that program.
+              A configured month means 30 days, so three months means 90 days. This is not a count
+              of calendar-month anniversaries.
+            </p>
+          </div>
+          <div>
+            <h3>If there is no promotion history</h3>
+            <p>
+              Time starts at the program membership&apos;s start date, or the student&apos;s
+              membership start date if there is no program start date. With neither date, elapsed
+              time is zero. Class counts include all qualifying recorded attendance for that
+              program, even attendance before the membership start date.
+            </p>
+          </div>
+        </div>
+        <p className={styles.note}>
+          The class cutoff uses the attendance record&apos;s check-in timestamp. Selecting an older
+          class date is not the same as backdating that timestamp. Review the original records when
+          adding old attendance or bringing in an existing roster.
+        </p>
+        <TextLink href="/features/attendance">Attendance statuses and drop-in behavior</TextLink>
+      </section>
+
+      <section className={styles.section} aria-labelledby="comparison-heading">
+        <h2 id="comparison-heading">The same belt can produce different results</h2>
+        <p className={styles.sectionLead}>
+          Use the orange-belt rule above. Review Maya and Leo at the same time on September 30. Both
+          are at yellow belt.
+        </p>
+        <ReferenceTable
+          caption="Illustrative readiness calculation"
+          columns={["Student", "Recorded evidence", "Result"]}
+          rows={[
+            [
+              "Maya",
+              "Yellow promotion recorded July 1. Exactly 91 elapsed days and 24 qualifying classes since that time.",
+              "24 of 24 classes and 91 of 90 days. Numerical requirements met; instructor approval is still required.",
+            ],
+            [
+              "Leo",
+              "Yellow promotion recorded July 15. Exactly 77 elapsed days. There are 26 attended classes since then, but two are other-program drop-ins.",
+              "24 of 24 qualifying classes and 77 of 90 days. Time requirement is short by 13 days; attendance at another program does not remove that gap.",
+            ],
+          ]}
+        />
+        <p className={styles.note}>
+          For an imported yellow belt with no promotion history, a July 15 program start date would
+          supply the time calculation, but would not exclude earlier qualifying classes. A current
+          belt alone does not establish when that belt was earned.
+        </p>
+      </section>
+
+      <section
+        className={`${styles.section} ${styles.promotion}`}
+        aria-labelledby="promotion-heading"
+      >
+        <h2 id="promotion-heading">Recording the decision</h2>
         <p>
-          A student can meet the class and time requirements while still needing instructor
-          approval. Koaryu makes those signals visible so you can review the person behind the
-          numbers.
+          Readiness separates numerical progress from required approval. The approval setting keeps
+          a student in the approval group even when both numbers are met. It does not record an
+          instructor&apos;s decision on its own.
+        </p>
+        <p>
+          An Admin or Instructor opens the promotion confirmation, reviews the next rank, adds
+          optional notes, and confirms. Koaryu updates that program&apos;s current rank and adds a
+          history entry with the staff member and recording time. The confirmation has no date
+          picker, so it cannot backdate a test held last week.
         </p>
         <TextLink href="/use-cases/belt-test-readiness">
-          Walk through belt test preparation
+          Belt-test preparation and review worksheet
         </TextLink>
       </section>
-      <section className={`${styles.section} ${styles.splitSection}`}>
-        <SectionIntro eyebrow="After the decision" title="The next review starts with a history.">
-          Recorded promotions stay attached to the student. Profile edits do not rewrite those
-          chronological entries.
-        </SectionIntro>
-        <ol className={styles.history} aria-label="Illustrative promotion history">
+    </>
+  );
+}
+
+function AttendancePage() {
+  return (
+    <>
+      <PageHeading title="Schedule classes and take attendance">
+        In Schedule, Admin and Front Desk choose Add class to create a weekly template or a one-off
+        session. Admin, Front Desk, and Instructor can select a dated class to mark its roster.
+        Attendance saves one student at a time.
+      </PageHeading>
+
+      <section
+        className={`${styles.section} ${styles.twoColumns}`}
+        aria-labelledby="schedule-heading"
+      >
+        <div>
+          <h2 id="schedule-heading">Weekly template</h2>
+          <p>
+            Set a class name, program, weekday, start and end times, capacity, and a start date. An
+            optional end date limits the recurring slot. The calendar gives staff individual dated
+            sessions to open.
+          </p>
+        </div>
+        <div>
+          <h2>One-off session</h2>
+          <p>
+            Choose a specific date for a workshop or extra class without creating a weekly slot.
+            Attendance belongs to that session. Removing one dated class and stopping a recurring
+            series are separate actions.
+          </p>
+        </div>
+      </section>
+
+      <section className={styles.section} aria-labelledby="session-heading">
+        <div className={styles.sessionTitle}>
+          <p className={styles.kicker}>Worked example</p>
+          <h2 id="session-heading">
+            Tuesday, September 22
+            <br />
+            Juniors karate at 4:30 pm
+          </h2>
+        </div>
+        <ol className={styles.sessionWalkthrough}>
           <li>
-            <span>Joined the program</span>
-            <strong>White belt</strong>
-            <p>A clear starting point for the training record.</p>
+            <h3>Open this date&apos;s class</h3>
+            <p>
+              The roster puts students assigned to juniors karate first. Other active students
+              appear under Other program drop-ins. An unassigned class uses the full active roster.
+              Staff must wait for the complete roster and attendance records to load before marking
+              anyone.
+            </p>
           </li>
           <li>
-            <span>Promotion recorded</span>
-            <strong>Yellow belt</strong>
-            <p>The rank change and date remain in the student&apos;s history.</p>
+            <h3>Mark Maya when she arrives</h3>
+            <p>
+              Selecting an Unmarked row saves Present. The row shows a saving state and cannot be
+              changed again until that save finishes. There is no final Save class button.
+            </p>
+            <p>
+              Repeated selections cycle through <strong>Present → Late → Absent → Unmarked</strong>.
+              Late still counts as attended. Unmarked means there is no attendance record for that
+              student in this session, not a recorded absence.
+            </p>
+            <p>
+              Sam arrives late from another program. Find Sam under Other program drop-ins and cycle
+              the row from Unmarked through Present to Late. The saved row is an attended visit,
+              with a drop-in label.
+            </p>
           </li>
           <li>
-            <span>Next review</span>
-            <strong>Orange belt</strong>
-            <p>Review fresh attendance, time at rank, and the required approval.</p>
+            <h3>Correct an accidental check-in</h3>
+            <p>
+              If Leo was marked Present but did not attend, cycle his row through Late to Absent,
+              allowing each save to finish. Choose Unmarked if you want to remove the attendance
+              entry instead. Koaryu does not mark the untouched rows absent when class ends.
+            </p>
+          </li>
+          <li>
+            <h3>Check the save result</h3>
+            <p>
+              If a change fails, Koaryu restores the previous row state and shows an error. The
+              session tells staff that the last change was not saved. Review the error and retry
+              that student&apos;s row; the temporary mark is not a confirmed save.
+            </p>
           </li>
         </ol>
       </section>
-    </>
-  );
-}
 
-function AttendanceStory() {
-  return (
-    <>
-      <section id="page-details" className={styles.section}>
-        <SectionIntro eyebrow="A class from start to finish" title="Built for the weekly rhythm.">
-          Set up recurring classes with their program, day, time, and capacity. Work from
-          today&apos;s schedule when it is time to teach.
-        </SectionIntro>
-        <div className={styles.classDay}>
-          <article>
-            <p className={styles.eyebrow}>Before class</p>
-            <h3>Open the right session.</h3>
-            <p>
-              The class brings together its time, program, and current roster. Staff can work from
-              the session they are about to teach.
-            </p>
-            <span className={styles.dayDetail}>Program · Day · Time · Capacity</span>
-          </article>
-          <article>
-            <p className={styles.eyebrow}>As students arrive</p>
-            <h3>Mark the roster.</h3>
-            <p>
-              Attendance saves one student at a time. The class view shows the recorded status,
-              including who is still unmarked.
-            </p>
-            <span className={styles.dayDetail}>Present · Absent · Unmarked</span>
-          </article>
-          <article>
-            <p className={styles.eyebrow}>After class</p>
-            <h3>Keep the history.</h3>
-            <p>
-              Those check-ins become part of the student&apos;s training record and the reports you
-              use to review attendance.
-            </p>
-            <span className={styles.dayDetail}>Student history · Reports · Rank review</span>
-          </article>
-        </div>
-      </section>
-      <section className={styles.connectionSection}>
-        <div className={styles.splitSection}>
-          <SectionIntro
-            eyebrow="When someone goes quiet"
-            title="An empty place on the mat deserves a look."
-          >
-            Attendance history gives you somewhere to start when a regular student stops coming.
-            Review the record, check the notes, then decide whether to follow up.
-          </SectionIntro>
-          <figure className={styles.trainingPattern}>
-            <figcaption>Illustrative attendance pattern</figcaption>
-            <div className={styles.trainingWeeks}>
-              <div>
-                <span>Week 1</span>
-                <strong>2 classes</strong>
-                <i data-count="two" />
-              </div>
-              <div>
-                <span>Week 2</span>
-                <strong>2 classes</strong>
-                <i data-count="two" />
-              </div>
-              <div>
-                <span>Week 3</span>
-                <strong>1 class</strong>
-                <i data-count="one" />
-              </div>
-              <div>
-                <span>Week 4</span>
-                <strong>No classes</strong>
-                <i data-count="zero" />
-              </div>
+      <section className={styles.section} aria-labelledby="consequences-heading">
+        <h2 id="consequences-heading">What that session contributes</h2>
+        <figure className={styles.sessionOutcome}>
+          <figcaption>Continuing the fictional class example</figcaption>
+          <dl>
+            <div>
+              <dt>Maya, Present</dt>
+              <dd>
+                One attended visit. As a juniors-karate student in a juniors-karate class, the
+                record normally counts toward that program&apos;s rank requirement.
+              </dd>
             </div>
+            <div>
+              <dt>Leo, Absent</dt>
+              <dd>
+                No attended visit and no class toward rank eligibility. Clearing the row to Unmarked
+                would remove the explicit absence; it would not add a visit.
+              </dd>
+            </div>
+            <div>
+              <dt>Sam, Late drop-in</dt>
+              <dd>
+                One attended visit in the class totals. Sam trains in another program, so this
+                drop-in does not count toward rank eligibility by default.
+              </dd>
+            </div>
+          </dl>
+          <p>
+            The class has two attended visits in this example, but only Maya gains a qualifying
+            class for this program&apos;s rank review.
+          </p>
+        </figure>
+        <div className={styles.twoColumns}>
+          <div>
+            <h3>Reports count recorded attendance</h3>
             <p>
-              A change in attendance is a reason to check in. It does not tell you the reason on its
-              own.
+              Present and Late contribute to attendance totals and class utilization. Older records
+              labeled Excused also count as attended. Absent and Unmarked do not. Correcting a row
+              therefore changes the evidence in later reviews.
             </p>
-          </figure>
-        </div>
-        <TextLink href="/use-cases/student-retention">See the follow-up workflow</TextLink>
-      </section>
-      <section className={`${styles.section} ${styles.splitSection}`}>
-        <SectionIntro
-          eyebrow="Before the next belt test"
-          title="Count the classes you already recorded."
-        >
-          Where your school uses class minimums, attendance contributes to promotion readiness. The
-          instructor can review that signal alongside time at rank and any required approval.
-        </SectionIntro>
-        <div className={styles.plainCopy}>
-          <h3>One record, several useful questions</h3>
-          <ul>
-            <li>Has this student been training recently?</li>
-            <li>What does their class history look like?</li>
-            <li>Have they met the attendance requirement for the next rank?</li>
-          </ul>
-          <TextLink href="/features/belt-tracking">Connect attendance to rank progression</TextLink>
+            <TextLink href="/features/belt-tracking">
+              How qualifying classes affect rank readiness
+            </TextLink>
+          </div>
+          <div>
+            <h3>An attendance gap needs staff review</h3>
+            <p>
+              The dashboard uses non-absent check-in records to flag inactivity. It does not know
+              why someone missed class. Check for a hold, an unrecorded visit, or another
+              explanation before contacting the family through your usual channel.
+            </p>
+            <TextLink href="/use-cases/student-retention">
+              Reviewing and following up on attendance gaps
+            </TextLink>
+          </div>
         </div>
       </section>
     </>
   );
 }
 
-function BillingStory() {
+function BillingPage() {
   return (
     <>
-      <section id="page-details" className={styles.section}>
-        <SectionIntro eyebrow="Know the scope" title="See the account. Know what happens next.">
-          There is a difference between understanding an existing account, recording a payment
-          received elsewhere, and collecting tuition through Stripe.
-        </SectionIntro>
-        <div className={styles.billingScope}>
-          <article>
-            <p className={styles.eyebrow}>01 / Existing records</p>
-            <h3>Read the account.</h3>
-            <p>
-              Authorized Admin and Front Desk staff can review existing plans, family payers,
-              students linked to a plan, invoices, and payment status.
-            </p>
-            <ul>
-              <li>See who is associated with the student</li>
-              <li>Find missing account details or failed payments</li>
-              <li>See which invoices are overdue</li>
-              <li>Refresh existing Stripe invoices to see their latest status</li>
-            </ul>
-          </article>
-          <article>
-            <p className={styles.eyebrow}>02 / External payments</p>
-            <h3>Record what happened elsewhere.</h3>
-            <p>
-              Record cash, check, Zelle, Venmo, or payments received elsewhere. These notes stay in
-              Koaryu and do not change Stripe.
-            </p>
-            <ul>
-              <li>Keep payment notes with the family payer</li>
-              <li>Distinguish payments received elsewhere from Stripe payments</li>
-              <li>Record an outcome without moving money</li>
-            </ul>
-          </article>
-          <article className={styles.activationScope}>
-            <p className={styles.eyebrow}>03 / Collecting tuition</p>
-            <h3>Activate for the exact studio.</h3>
-            <p>
-              Tuition collection is not generally available. Stripe collection actions require
-              separate activation for your studio and the appropriate staff role.
-            </p>
-            <ul>
-              <li>Sign-up alone does not enable tuition collection</li>
-              <li>Staff see the actions enabled for their school</li>
-            </ul>
-          </article>
+      <PageHeading title="Billing records and tuition collection">
+        Admin and Front Desk can review existing billing records and record payments received
+        outside Koaryu. Tuition collection requires separate activation for your studio and is not
+        generally available. Creating an account does not turn it on.
+      </PageHeading>
+
+      <section
+        className={`${styles.section} ${styles.billingPrice}`}
+        aria-label="Platform price and tuition distinction"
+      >
+        <p className={styles.price}>
+          {formatPublicPlatformPrice()} <span>USD per month per studio</span>
+        </p>
+        <div>
+          <p>
+            This pays for the Koaryu platform subscription. Student tuition, a family&apos;s billing
+            plan, and payments to your school are separate records and charges.
+          </p>
+          <p>
+            Separately activated Koaryu Payments adds {PUBLIC_PAYMENTS_FEE_PERCENT}% on successful
+            charges, plus Stripe fees. Recording a cash, check, or other external payment does not
+            incur that processing fee.
+          </p>
         </div>
       </section>
-      <section className={styles.connectionSection}>
-        <div className={styles.splitSection}>
-          <SectionIntro
-            eyebrow="The family behind the account"
-            title="Start with who pays. Then understand the issue."
-          >
-            A student attends class. A parent may handle tuition for more than one child. Keeping
-            the family payer in view helps staff have a useful conversation.
-          </SectionIntro>
-          <ol className={styles.billingQuestions}>
-            <li>
-              <span>01</span>
-              <div>
-                <h3>Whose account is this?</h3>
-                <p>Review the payer and the associated student billing records.</p>
-              </div>
-            </li>
-            <li>
-              <span>02</span>
-              <div>
-                <h3>What is already recorded?</h3>
-                <p>
-                  Check existing invoices, status, and external payment notes before making
-                  assumptions.
-                </p>
-              </div>
-            </li>
-            <li>
-              <span>03</span>
-              <div>
-                <h3>What needs a conversation?</h3>
-                <p>
-                  Use the tuition attention view to identify gaps, overdue invoices, or
-                  failed-payment context.
-                </p>
-              </div>
-            </li>
-          </ol>
-        </div>
-        <TextLink href="/use-cases/tuition-cleanup">Walk through tuition cleanup</TextLink>
+
+      <section className={styles.section} aria-labelledby="billing-actions-heading">
+        <h2 id="billing-actions-heading">What each billing action does</h2>
+        <p className={styles.sectionLead}>
+          Instructors do not have billing access. Admin and Front Desk share routine record work;
+          actions that collect or change money have narrower permissions and availability.
+        </p>
+        <ReferenceTable
+          caption="Billing access and availability"
+          columns={["Action", "Who can use it", "Outcome and limit"]}
+          rows={[
+            [
+              "Review existing records",
+              "Admin and Front Desk",
+              "In Billing, Families shows payer contacts; Tuition Plans shows plans; Student Billing shows enrollments; Invoices shows invoice status. A missing payer or assignment still needs to be resolved; viewing a record does not create one.",
+            ],
+            [
+              "Attach external student billing",
+              "Admin and Front Desk",
+              "In Billing > Student Billing, select a student and an existing plan, optionally a payer, and record billing dates. Choose Attach to add the external billing enrollment. It does not create a Stripe subscription, collect money, or change training status.",
+            ],
+            [
+              "Record external payment",
+              "Admin and Front Desk",
+              "In Billing > Advanced, use Record external payment. Select an existing payer and enter a USD amount, method, and optional note for cash, check, or a payment collected elsewhere. This records receipt at payer level. It does not pay or close an invoice.",
+            ],
+            [
+              "Reconcile an existing Stripe invoice",
+              "Admin and Front Desk",
+              "In Billing > Invoices, choose Reconcile on the existing invoice to refresh Koaryu's record from its Stripe status. This does not charge the payer or create another invoice.",
+            ],
+            [
+              "Collect or change tuition through Stripe",
+              "Separately activated studios, with action-specific permissions",
+              "Creating, finalizing, retrying, or voiding invoices and issuing refunds require Admin access and availability for the studio. In Families, Front Desk may prepare a link the payer uses to enter their own payment details when that action is enabled. These are not general signup capabilities.",
+            ],
+            [
+              "Create a billing export",
+              "Unavailable",
+              "New billing export creation is unavailable. Do not plan an accounting migration around a downloadable billing ledger from Koaryu.",
+            ],
+          ]}
+        />
       </section>
-      <section className={`${styles.section} ${styles.billingBoundaries}`}>
-        <article>
-          <p className={styles.eyebrow}>Staff access</p>
-          <h2>The teaching role stays separate.</h2>
+
+      <section
+        className={`${styles.section} ${styles.paymentExample}`}
+        aria-labelledby="check-heading"
+      >
+        <p className={styles.kicker}>Worked payment example</p>
+        <h2 id="check-heading">A check payment will not close a Stripe invoice.</h2>
+        <p>
+          Alex has an open $120 Stripe invoice and hands the front desk a $120 check. Staff choose
+          Alex&apos;s payer record, enter $120 with Check as the method, and add a note identifying
+          what the check covers.
+        </p>
+        <div className={styles.paymentComparison}>
+          <div>
+            <h3>External payment record</h3>
+            <p>
+              Koaryu now records a $120 check received for Alex. That entry belongs to the payer. It
+              is not allocated to the open invoice.
+            </p>
+          </div>
+          <div>
+            <h3>Stripe invoice</h3>
+            <p>
+              The $120 invoice remains open unless its state changes separately in Stripe. Reconcile
+              only reads that state back. Repeating the external payment or refreshing the invoice
+              will not settle it.
+            </p>
+          </div>
+        </div>
+        <p>
+          Review the open invoice with the person responsible for your Stripe account before
+          attempting collection again. A payment received outside Stripe and an open invoice can
+          coexist, so checking only one record can lead to a second collection attempt.
+        </p>
+        <TextLink href="/use-cases/tuition-cleanup">
+          Steps for a missing payer or unresolved invoice
+        </TextLink>
+      </section>
+
+      <section
+        className={`${styles.section} ${styles.twoColumns}`}
+        aria-labelledby="accounting-heading"
+      >
+        <div>
+          <h2 id="accounting-heading">What the billing totals mean</h2>
           <p>
-            Billing visibility is for Admin and Front Desk. Instructors do not receive access to
-            billing records, so teaching staff can focus on the students without seeing family
-            finances.
+            In Billing &gt; Advanced, the totals cover payments processed in the current UTC month.
+            The Stripe total subtracts confirmed refunds and money returned through disputes tied to
+            those payments. A refund this month for a payment from a previous month is outside that
+            total. These figures are not a statement of bank deposits or recognized revenue.
           </p>
-        </article>
-        <article>
-          <p className={styles.eyebrow}>Platform subscription</p>
-          <h2>{formatPublicPlatformPrice()}</h2>
           <p>
-            This is the Koaryu platform price. It is separate from your students&apos; tuition and
-            does not by itself activate tuition collection.
+            Keep the accounting records you use to reconcile deposits and reporting periods. The
+            billing screen and its payment totals do not replace that reconciliation.
           </p>
-          <TextLink href="/#pricing">Review platform pricing</TextLink>
-        </article>
+        </div>
+        <div>
+          <h2>Who trains and who pays</h2>
+          <p>
+            Each student keeps their own training record. A payer is the billing contact, who may
+            also be a guardian. An external billing enrollment can link an existing payer and plan
+            to a student without changing their program, status, or rank.
+          </p>
+          <TextLink href="/features/student-management#families">
+            Student, guardian, and payer example
+          </TextLink>
+        </div>
       </section>
     </>
   );
 }
 
-const detailStories = {
-  "student-management": StudentStory,
-  "belt-tracking": RankStory,
-  attendance: AttendanceStory,
-  billing: BillingStory,
+const detailPages: Record<string, () => ReactNode> = {
+  "student-management": StudentManagementPage,
+  "belt-tracking": BeltTrackingPage,
+  attendance: AttendancePage,
+  billing: BillingPage,
 };
-
-const featureQuestions: Record<FeatureSlug, { question: string; answer: string }[]> = {
-  "student-management": [
-    {
-      question: "Can I bring over an existing student spreadsheet?",
-      answer:
-        "Koaryu has a CSV import path for student records. Review the import fields and resolve validation issues as part of the move. The switching workflow explains where to begin.",
-    },
-    {
-      question: "Does each staff member see the same information?",
-      answer:
-        "Staff work from the same underlying student records, but access depends on their role. Billing information has a separate access boundary for Admin and Front Desk.",
-    },
-    {
-      question: "What happens to promotion history when I edit a profile?",
-      answer:
-        "Recorded promotions remain chronological history entries. Editing the profile does not rewrite or remove those entries.",
-    },
-  ],
-  "belt-tracking": [
-    {
-      question: "Can different programs use different belts?",
-      answer:
-        "Yes. Programs can use their own ordered rank ladders and requirements, including tips where your school uses them.",
-    },
-    {
-      question: "Does meeting the requirements automatically promote a student?",
-      answer:
-        "Readiness supports a staff decision. Review the class and time requirements, complete any required instructor approval, and make the promotion decision through the school's workflow.",
-    },
-    {
-      question: "Which requirements can I set?",
-      answer:
-        "Ranks support minimum class counts, minimum time at rank, and instructor approval requirements. Set the rules to reflect how your school evaluates progress.",
-    },
-  ],
-  attendance: [
-    {
-      question: "Can I set up a recurring class schedule?",
-      answer:
-        "Yes. Recurring class templates include the program, day, time, and capacity, so the schedule reflects the school's weekly routine.",
-    },
-    {
-      question: "Does attendance need a separate save at the end?",
-      answer:
-        "Each attendance change saves as you mark a student. The class view shows saving and error states so staff can see whether a change was recorded.",
-    },
-    {
-      question: "Does a missed class explain why a student is absent?",
-      answer:
-        "No. Attendance is a signal to review alongside notes and other student context. Staff still need to decide whether and how to follow up.",
-    },
-  ],
-  billing: [
-    {
-      question: "Can every new studio start collecting tuition immediately?",
-      answer:
-        "No. Tuition collection is not generally available. Stripe collection actions require separate activation for your studio, and the staff member must have the appropriate role.",
-    },
-    {
-      question: "Does recording a cash or check payment charge the family?",
-      answer:
-        "No. It records a payment received elsewhere. It does not charge the family or move money through Stripe.",
-    },
-    {
-      question: "What happens when I refresh an existing Stripe invoice?",
-      answer:
-        "Koaryu checks the existing invoice in Stripe and updates its recorded status. That check does not charge the family or create another invoice.",
-    },
-    {
-      question: "Can instructors view billing records?",
-      answer:
-        "No. Billing access is for Admin and Front Desk. The instructor role cannot view family billing records.",
-    },
-  ],
-};
-
-function FeatureClosing() {
-  return (
-    <section className={styles.closing}>
-      <div>
-        <p className={styles.eyebrow}>Your next step</p>
-        <h2>
-          Start with the part
-          <br />
-          of the day that needs help.
-        </h2>
-        <p>Browse the workflows, or begin setting up your school&apos;s account.</p>
-      </div>
-      <div className={styles.closingActions}>
-        <MarketingActionLink href="/signup" prefetch={false} className={styles.primaryAction}>
-          Start setup
-        </MarketingActionLink>
-        <TextLink href="/use-cases">Browse studio workflows</TextLink>
-      </div>
-    </section>
-  );
-}
 
 export function FeatureDetailPage({
   page,
-  relatedPages,
 }: {
   page: MarketingPage;
   relatedPages: MarketingPage[];
 }) {
-  if (!isFeatureSlug(page.slug)) return null;
-  const story = featureStories[page.slug];
-  const Illustration = illustrations[page.slug];
-  const Story = detailStories[page.slug];
-
+  const Detail = detailPages[page.slug];
+  if (!Detail) return null;
   return (
     <PublicPageShell>
-      <div className={styles.page}>
-        <section className={styles.hero}>
-          <div className={styles.heroCopy}>
-            <Link className={styles.backLink} href="/features">
-              <span aria-hidden="true">←</span> All features
-            </Link>
-            <p className={styles.eyebrow}>{story.shortTitle} / Koaryu</p>
-            <h1>{story.title}</h1>
-            <p className={styles.lede}>{story.description}</p>
-            <div className={styles.actions}>
-              <MarketingActionLink href="#page-details" className={styles.primaryAction}>
-                {story.jump}
-              </MarketingActionLink>
-              <TextLink href="/signup">Start setup</TextLink>
-            </div>
-            {page.slug === "billing" ? (
-              <p className={styles.heroCaveat}>
-                Tuition collection requires separate activation for your studio.
-              </p>
-            ) : null}
-          </div>
-          <Illustration />
-        </section>
-        <Story />
-        <section className={`${styles.section} ${styles.faqSection}`}>
-          <SectionIntro eyebrow="A few practical questions" title="Before you get started." />
-          <div className={styles.questions}>
-            {featureQuestions[page.slug].map(({ question, answer }) => (
-              <details key={question}>
-                <summary>
-                  {question}
-                  <span aria-hidden="true">+</span>
-                </summary>
-                <p>{answer}</p>
-              </details>
-            ))}
-          </div>
-        </section>
-        <section className={styles.relatedSection} aria-labelledby="related-features-heading">
-          <div className={styles.indexHeading}>
-            <div>
-              <p className={styles.eyebrow}>Keep the picture connected</p>
-              <h2 id="related-features-heading">Where this goes next.</h2>
-            </div>
-            <TextLink href="/features">All features</TextLink>
-          </div>
-          <div className={styles.relatedGrid}>
-            {relatedPages.map((related) => (
-              <Link key={related.href} href={related.href}>
-                <span className={styles.eyebrow}>{related.eyebrow}</span>
-                <strong>
-                  {isFeatureSlug(related.slug)
-                    ? featureStories[related.slug].question
-                    : related.title}
-                </strong>
-                <span>
-                  {isFeatureSlug(related.slug)
-                    ? featureStories[related.slug].summary
-                    : related.description}
-                </span>
-                <span className={styles.relatedArrow} aria-hidden="true">
-                  ↗
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-        <FeatureClosing />
-      </div>
+      <article className={styles.page}>
+        <Detail />
+      </article>
     </PublicPageShell>
   );
 }
