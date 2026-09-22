@@ -87,6 +87,7 @@ interface SceneIds {
   readonly glow: string;
   readonly vignette: string;
   readonly lifted: string;
+  readonly grain: string;
   readonly pulp: string;
   readonly fine: string;
   readonly crumpleTile: string;
@@ -100,6 +101,7 @@ interface SceneIds {
 
 export interface JourneySceneProps {
   readonly progress: number;
+  readonly compact?: boolean;
   readonly frame?: SceneFrame;
   readonly viewportWidth?: number;
   readonly viewportHeight?: number;
@@ -258,6 +260,7 @@ function makeIds(reactId: string): SceneIds {
     glow: id("glow"),
     vignette: id("vignette"),
     lifted: id("lifted"),
+    grain: id("grain"),
     pulp: id("pulp"),
     fine: id("fine"),
     crumpleTile: id("crumple-tile"),
@@ -270,7 +273,13 @@ function makeIds(reactId: string): SceneIds {
   };
 }
 
-const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
+const SceneDefs = memo(function SceneDefs({
+  ids,
+  compact,
+}: {
+  readonly ids: SceneIds;
+  readonly compact: boolean;
+}) {
   return (
     <defs>
       <linearGradient id={ids.skyMountain} x1="0" y1="0" x2="0" y2="1">
@@ -361,7 +370,11 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
         />
       </filter>
       <pattern id={ids.crumple} patternUnits="userSpaceOnUse" x="0" y="0" width="360" height="360">
-        <rect x="0" y="0" width="360" height="360" filter={`url(#${ids.crumpleTile})`} />
+        {compact ? (
+          <image href="/marketing/crumple.webp" width="360" height="360" />
+        ) : (
+          <rect x="0" y="0" width="360" height="360" filter={`url(#${ids.crumpleTile})`} />
+        )}
       </pattern>
       <filter id={ids.washiNoise} x="0" y="0" width="100%" height="100%">
         <feTurbulence
@@ -376,20 +389,45 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
           <feFuncA type="linear" slope="0.76" />
         </feComponentTransfer>
       </filter>
+      <pattern id={ids.grain} width="360" height="360" patternUnits="userSpaceOnUse">
+        {compact ? <image href="/marketing/scene-grain.webp" width="360" height="360" /> : null}
+      </pattern>
       <pattern id={ids.washi} width="220" height="220" patternUnits="userSpaceOnUse">
-        <rect
-          width="220"
-          height="220"
-          fill="#8B7B60"
-          filter={`url(#${ids.washiNoise})`}
-          opacity="0.24"
-        />
+        {compact ? (
+          <image href="/marketing/washi.webp" width="220" height="220" />
+        ) : (
+          <rect
+            width="220"
+            height="220"
+            fill="#8B7B60"
+            filter={`url(#${ids.washiNoise})`}
+            opacity="0.24"
+          />
+        )}
       </pattern>
     </defs>
   );
 });
 
-const SceneGrain = memo(function SceneGrain({ ids }: { readonly ids: SceneIds }) {
+const SceneGrain = memo(function SceneGrain({
+  ids,
+  compact,
+}: {
+  readonly ids: SceneIds;
+  readonly compact: boolean;
+}) {
+  if (compact) {
+    return (
+      <g pointerEvents="none">
+        <rect
+          {...overscanRect()}
+          fill={`url(#${ids.grain})`}
+          style={{ mixBlendMode: "multiply" }}
+        />
+        <rect {...overscanRect()} fill={`url(#${ids.vignette})`} />
+      </g>
+    );
+  }
   return (
     <g pointerEvents="none">
       <rect
@@ -771,9 +809,13 @@ function dojoCamera(progress: number) {
 const Dojo = memo(function Dojo({
   progress,
   ids,
+  compact,
+  frame,
 }: {
   readonly progress: number;
   readonly ids: SceneIds;
+  readonly compact: boolean;
+  readonly frame: SceneFrame;
 }) {
   const door = easeInOut(rangeProgress(progress, SCENE_PHASES.door[0], SCENE_PHASES.door[1]));
   const camera = dojoCamera(progress);
@@ -786,10 +828,43 @@ const Dojo = memo(function Dojo({
     return null;
   }
 
+  // Once the open doorway covers the viewport, none of the dojo is visible.
+  // Avoid repainting its enlarged offscreen textures during the rest of the zoom.
+  if (compact && door === 1) {
+    const [, top, , height] = frame.viewBox.split(" ").map(Number);
+    const openingTop = camera.project(VIEW.doorLeft + 9, VIEW.doorTop + 4);
+    const openingBottom = camera.project(VIEW.doorRight - 9, VIEW.doorBottom - 10);
+    if (
+      openingTop.x < VIEW.centerX - frame.visibleHalfWidth &&
+      openingBottom.x > VIEW.centerX + frame.visibleHalfWidth &&
+      openingTop.y < top! &&
+      openingBottom.y > top! + height!
+    )
+      return null;
+  }
+
+  return (
+    <g opacity={opacity} transform={camera.transform} data-scene-layer="dojo">
+      <DojoInterior door={door} ids={ids} compact={compact} />
+    </g>
+  );
+});
+
+// The door is stationary by chapter 05. Keep its paper layers out of subsequent
+// camera-frame reconciliation, including the much larger 05 to 06 zoom.
+const DojoInterior = memo(function DojoInterior({
+  door,
+  ids,
+  compact,
+}: {
+  readonly door: number;
+  readonly ids: SceneIds;
+  readonly compact: boolean;
+}) {
   const slide = mix(0, 185, door);
   const panelWidth = 185;
   return (
-    <g opacity={opacity} transform={camera.transform} data-scene-layer="dojo">
+    <>
       <SideWall side="left" ids={ids} />
       <SideWall side="right" ids={ids} />
       <DojoFloor />
@@ -830,7 +905,10 @@ const Dojo = memo(function Dojo({
         opacity="0.9"
       />
       <g clipPath={`url(#${ids.back})`}>
-        <g transform={`translate(${-slide} 0)`} filter={`url(#${ids.lifted})`}>
+        <g
+          transform={`translate(${-slide} 0)`}
+          filter={compact ? undefined : `url(#${ids.lifted})`}
+        >
           <Shoji
             x={VIEW.doorLeft}
             y={VIEW.doorTop}
@@ -842,7 +920,7 @@ const Dojo = memo(function Dojo({
             ids={ids}
           />
         </g>
-        <g transform={`translate(${slide} 0)`} filter={`url(#${ids.lifted})`}>
+        <g transform={`translate(${slide} 0)`} filter={compact ? undefined : `url(#${ids.lifted})`}>
           <Shoji
             x={VIEW.doorLeft + panelWidth}
             y={VIEW.doorTop}
@@ -993,7 +1071,7 @@ const Dojo = memo(function Dojo({
         <rect x="0" y="186" width="86" height="14" fill={PALETTE.wood} />
         <rect x="30" y="44" width="26" height="94" rx="6" fill={PALETTE.beam} opacity="0.3" />
       </g>
-    </g>
+    </>
   );
 });
 
@@ -1394,6 +1472,7 @@ function isNear(progress: number, start: number, end: number, padding = 0.05): b
 
 export const JourneyScene = memo(function JourneyScene({
   progress,
+  compact = false,
   frame,
   viewportWidth = SCENE_WIDTH,
   viewportHeight = SCENE_HEIGHT,
@@ -1420,7 +1499,7 @@ export const JourneyScene = memo(function JourneyScene({
       data-scene-progress={round2(safeProgress)}
       data-scene-frame={resolvedFrame.variant}
     >
-      <SceneDefs ids={ids} />
+      <SceneDefs ids={ids} compact={compact} />
       <clipPath id={ids.back}>
         <rect
           x={VIEW.backLeft}
@@ -1438,7 +1517,7 @@ export const JourneyScene = memo(function JourneyScene({
       ) : null}
       {safeProgress > SCENE_PHASES.mountains[1] - 0.006 &&
       safeProgress < SCENE_PHASES.through[1] + 0.05 ? (
-        <Dojo progress={safeProgress} ids={ids} />
+        <Dojo progress={safeProgress} ids={ids} compact={compact} frame={resolvedFrame} />
       ) : null}
       {safeProgress < SCENE_PHASES.settle[1] + 0.03 ? (
         <Curtain progress={safeProgress} ids={ids} />
@@ -1452,7 +1531,7 @@ export const JourneyScene = memo(function JourneyScene({
       {isNear(safeProgress, SCENE_PHASES.students[0], 1.01, 0.04) ? (
         <Students progress={safeProgress} horizon={horizon} spread={resolvedFrame.studentSpread} />
       ) : null}
-      <SceneGrain ids={ids} />
+      <SceneGrain ids={ids} compact={compact} />
     </svg>
   );
 });

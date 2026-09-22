@@ -1,0 +1,435 @@
+/* Only mounted by the compact journey. Desktop keeps the original chapter tree. */
+.stage {
+  position: absolute;
+  z-index: 2;
+  inset: var(--mobile-header-height, 65px) 0 var(--mobile-footer-height, 82px);
+  padding: 16px;
+  overflow: clip;
+}
+.chapter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  outline-offset: -2px;
+}
+.panel,
+.openCopy {
+  width: min(100%, 344px);
+  flex-shrink: 0;
+}
+.panel {
+  padding: 18px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--koaryu-ink);
+  background: var(--koaryu-sheet);
+  box-shadow: 0 4px 16px rgb(45 34 18 / 7%);
+}
+.panel[data-dark] {
+  color: var(--koaryu-ink-light);
+  background: var(--koaryu-deep-brown);
+}
+.panel h2,
+.openCopy h2,
+.openCopy h1 {
+  margin: 0;
+  font-size: clamp(22px, 6vw, 26px);
+  font-weight: 675;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  text-wrap: pretty;
+}
+.panel p,
+.openCopy p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.panel .kicker,
+.openCopy .kicker {
+  margin-bottom: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.panel .lede {
+  margin-top: 12px;
+}
+.body {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+.choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.choices button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: inherit;
+  background: var(--koaryu-sheet-raised);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+.choices button:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+.choices button span {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+.link,
+.back,
+.primaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border: 0;
+  border-radius: 7px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-decoration: none;
+  cursor: pointer;
+}
+.link {
+  gap: 8px;
+  justify-content: flex-start;
+  padding: 0;
+}
+.back {
+  padding: 0;
+  justify-content: flex-start;
+  margin: -8px 0 4px;
+  opacity: 0.8;
+}
+.primaryAction {
+  margin-top: 2px;
+  padding: 10px 16px;
+  color: var(--koaryu-paper);
+  background: var(--koaryu-ink);
+}
+.panel .meta {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.panel select {
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--koaryu-ink);
+  background: var(--koaryu-sheet-raised);
+  font: inherit;
+  font-size: 16px;
+  text-overflow: ellipsis;
+}
+.priceRow {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+.priceRow .price {
+  font-size: 60px;
+  font-weight: 720;
+  letter-spacing: -0.07em;
+  line-height: 1;
+}
+.priceRow p:last-child {
+  max-width: 120px;
+  font-size: 13px;
+}
+.panel .feeNote {
+  font-size: 12px;
+}
+.panel .question {
+  font-size: 20px;
+  line-height: 1.2;
+}
+.openCopy {
+  align-self: center;
+  color: var(--koaryu-ink);
+}
+.openCopy[data-light] {
+  color: var(--koaryu-ink-light);
+}
+.openCopy[data-placement="upper"] {
+  align-self: flex-start;
+  padding-top: 20px;
+}
+.openCopy h2 {
+  font-size: clamp(30px, 8vw, 40px);
+}
+.openCopy h1 {
+  font-size: clamp(36px, 10vw, 46px);
+  line-height: 0.98;
+}
+.openCopy h1 span {
+  display: block;
+}
+.openCopy .aside {
+  font-size: 12px;
+  font-style: italic;
+  margin-top: 8px;
+}
+.actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+.actions .link {
+  justify-content: center;
+  border: 0;
+  background: var(--koaryu-paper);
+}
+.footerLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 14px;
+}
+.footerLinks a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+.panel .copyright {
+  font-size: 10px;
+  opacity: 0.7;
+}
+.panel :is(button, a, select):focus-visible,
+.openCopy a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+@media (max-height: 600px) {
+  .stage {
+    padding: 12px;
+  }
+  .panel {
+    padding: 14px;
+  }
+  .panel h2 {
+    font-size: 24px;
+  }
+  .panel p {
+    font-size: 13px;
+  }
+  .panel .kicker {
+    font-size: 10px;
+    margin-bottom: 8px;
+  }
+  .body {
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .choices {
+    gap: 6px;
+  }
+  .choices button {
+    padding: 7px 8px;
+    min-height: 44px;
+  }
+  .panel .question {
+    font-size: 18px;
+  }
+}
+@media (min-width: 480px) and (max-height: 500px) {
+  .panel,
+  .openCopy {
+    width: min(100%, 680px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    gap: 20px;
+    align-items: start;
+  }
+  .body {
+    margin-top: 0;
+  }
+  .openCopy {
+    align-self: center;
+  }
+  .openCopy h2,
+  .openCopy h1 {
+    font-size: 30px;
+  }
+  .openCopy[data-placement="upper"] {
+    align-self: flex-start;
+    padding-top: 8px;
+  }
+  .actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .choices button {
+    min-height: 44px;
+  }
+  .panel .lede {
+    margin-top: 8px;
+  }
+}
+
+.panel h2:focus {
+  outline: none;
+}
+
+@keyframes mobile-chapter-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.chapter {
+  animation: mobile-chapter-in 180ms ease 60ms both;
+}
+.chapter[data-kind="problem"] {
+  animation-delay: 160ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chapter {
+    animation: none;
+  }
+}
+
+.priceChoices {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.priceChoices button {
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+}
+.priceChoices button:last-child:nth-child(odd) {
+  grid-column: auto;
+}
+
+/* A landscape SE has 171px between its controls. Keep touch targets at 44px,
+   arranging navigation beside the copy instead of introducing a scroll area. */
+@media (min-width: 480px) and (max-height: 400px) {
+  .panel {
+    padding: 8px;
+    gap: 4px 12px;
+  }
+  .panel h2 {
+    font-size: 20px;
+  }
+  .panel p,
+  .openCopy p {
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .panel .kicker {
+    margin-bottom: 6px;
+    font-size: 10px;
+  }
+  .body {
+    gap: 6px;
+  }
+  .choices {
+    gap: 4px;
+  }
+  .choices button {
+    min-height: 44px;
+    padding: 4px 6px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .panel[data-layout="overview"] .body {
+    display: contents;
+  }
+  .panel[data-layout="overview"] .intro {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .panel[data-layout="overview"] .body > div {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .panel[data-layout="overview"] .body > .link {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: end;
+  }
+  .panel[data-layout="questions"] {
+    display: block;
+    padding: 6px;
+  }
+  .panel[data-layout="questions"] .intro {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .panel[data-layout="questions"] .back {
+    margin: 0;
+    flex-shrink: 0;
+  }
+  .panel[data-layout="questions"] .body {
+    margin-top: 4px;
+  }
+  .panel[data-layout="questions"] .choices[data-count="5"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .panel[data-layout="questions"] .choices button:last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+  .panel[data-layout="pricing"] .body {
+    display: contents;
+  }
+  .panel[data-layout="pricing"] .intro {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .panel[data-layout="pricing"] .priceRow {
+    grid-column: 1;
+    grid-row: 2;
+    gap: 10px;
+  }
+  .panel[data-layout="pricing"] .price {
+    font-size: 48px;
+  }
+  .panel[data-layout="pricing"] .feeNote {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .panel[data-layout="pricing"] .priceChoices {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  .panel[data-layout="pricing"] .primaryAction {
+    grid-column: 2;
+    grid-row: 3;
+    align-self: end;
+  }
+}
+@media (min-width: 480px) and (max-height: 340px) {
+  .panel[data-layout="pricing"] .price {
+    font-size: 36px;
+  }
+}

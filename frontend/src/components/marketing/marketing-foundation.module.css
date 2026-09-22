@@ -178,3 +178,8 @@
     transition: none;
   }
 }
+
+/* The mobile journey uses the same paper grain baked into a small repeat tile. */
+[data-koaryu-marketing].root:has([data-compact="true"])::after {
+  background-image: url("/marketing/paper.webp");
+}

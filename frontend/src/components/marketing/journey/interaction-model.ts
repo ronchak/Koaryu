@@ -369,6 +369,7 @@ export function decideJourneyKey(input: {
 export function decideTouchChapter(input: {
   readonly startY: number;
   readonly endY: number;
+  readonly deltaX?: number;
   readonly panelMoved: boolean;
   readonly panelCanScroll: boolean;
 }): -1 | 0 | 1 {
@@ -376,6 +377,7 @@ export function decideTouchChapter(input: {
   if (
     !Number.isFinite(distance) ||
     Math.abs(distance) < TOUCH_THRESHOLD_PX ||
+    Math.abs(input.deltaX ?? 0) >= Math.abs(distance) ||
     input.panelMoved ||
     input.panelCanScroll
   ) {

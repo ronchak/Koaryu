@@ -253,3 +253,17 @@ button {
     transition-delay: 0ms !important;
   }
 }
+
+/* The landing journey owns this flag only while its mobile controller is mounted.
+   Lock the document as well as the stage: iOS otherwise pans the whole page. */
+html[data-koaryu-mobile-journey="true"],
+html[data-koaryu-mobile-journey="true"] body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html[data-koaryu-mobile-journey="true"] body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}

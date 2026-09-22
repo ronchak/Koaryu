@@ -59,7 +59,10 @@ function HeroChapter({ chapter }: { chapter: JourneyHeroChapter }) {
         <ChapterAction {...chapter.actions[0]} variant="primary" />
         <ChapterAction {...chapter.actions[1]} />
       </div>
-      <p className={styles.scrollHint}>Scroll once</p>
+      <p className={styles.scrollHint}>
+        <span className={styles.desktopHint}>Scroll once</span>
+        <span className={styles.mobileHint}>Swipe to explore</span>
+      </p>
     </div>
   );
 }
@@ -231,6 +234,16 @@ function AboutChapter({ chapter }: { chapter: JourneyAboutChapter }) {
 function FaqChapter({ chapter }: { chapter: JourneyFaqChapter }) {
   return (
     <div className={styles.faqShell}>
+      <label className={styles.mobileFaqTopic}>
+        <span>Question topic</span>
+        <select aria-label="Question topic" data-faq-select="" defaultValue="0">
+          {chapter.groups.map((group, index) => (
+            <option key={group.title} value={index}>
+              {group.title}
+            </option>
+          ))}
+        </select>
+      </label>
       <nav className={styles.faqIndex} aria-label="FAQ topics">
         {chapter.groups.map((group, groupIndex) => (
           <Link key={group.title} href={`#${FAQ_HASHES[groupIndex]}`} data-faq-topic={groupIndex}>

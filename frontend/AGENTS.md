@@ -33,6 +33,7 @@ Use this file for work under `frontend/`. Fall back to the repo root `AGENTS.md`
 - First test setup on a fresh machine: `cd frontend && npx playwright install chromium` for mounted lifecycle tests. Linux CI uses `--with-deps`.
 - Live-mode workflow regressions (synthetic auth/I/O, no external data): `cd frontend && node --experimental-strip-types --test tests/workflow-stabilization-mounted.test.mjs`
 - Preview smoke e2e: `cd frontend && npm run test:e2e:preview-smoke` against a running preview-mode frontend
+- Landing page mobile checks: `cd frontend && npx playwright test e2e/marketing-journey-mobile.spec.ts e2e/marketing-journey-history.spec.ts --workers=1` against a loopback frontend. Covers all 14 chapters on small phones, landscape, tablet, tap-through details, stationary swipe navigation, FAQ, desktop and history behavior.
 - Build: `cd frontend && npm run build`
 - Analyze bundle: `cd frontend && npm run analyze`
 
@@ -53,6 +54,7 @@ If `npm run build` fails with missing Supabase URL or anon key errors, check the
 - Avoid editing `frontend/.next/`.
 - Prefer focused fixes over broad UI rewrites unless requested.
 - Keep the public landing page behavior intact unless the task is specifically about auth or warmup routing.
+- Preserve the landing journey's desktop artwork and sequence. Mobile chapters fit entirely between the header and pager. Use tap-through detail panels instead of internal scrolling or shrinking away copy. The mobile-only document lock must clean up on route exit and desktop resize. After changing SVG material filters, regenerate the matching mobile textures with `node scripts/generate-journey-textures.mjs` from `frontend/`.
 - When touching `src/app/api/` or proxy code, verify secrets stay server-side and response headers still match current safety expectations.
 - When touching dashboard pages, preserve partial-loading and preview/live-mode behavior unless the task explicitly changes it.
 
@@ -82,3 +84,13 @@ If `npm run build` fails with missing Supabase URL or anon key errors, check the
 - Package overview: `frontend/README.md`
 - Performance rollout notes: `docs/performance-rollout.md`
 - Deployment expectations: `docs/render-backend-deployment.md`
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

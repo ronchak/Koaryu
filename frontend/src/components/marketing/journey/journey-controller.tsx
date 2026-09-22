@@ -6,7 +6,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
@@ -25,25 +24,32 @@ import {
   normalizeWheelDelta,
   reduceWheelGesture,
   resolveJourneyHash,
-  sceneTransitionDuration,
   shouldHandleJourneyKeyboardFocus,
   type ResolvedJourneyHash,
   type ScrollMetrics,
 } from "./interaction-model";
-import { JourneyScene } from "./journey-scene";
-import {
-  SCENE_HEIGHT,
-  SCENE_WIDTH,
-  clamp,
-  easeInOut,
-  easeOut,
-  frameForDimensions,
-  mix,
-  rangeProgress,
-} from "./scene-model";
+import { AnimatedJourneyScene, type SceneTarget } from "./animated-journey-scene";
+import { MobileJourneyChapter } from "./mobile-journey-chapter";
+import { SCENE_HEIGHT, SCENE_WIDTH, clamp, frameForDimensions } from "./scene-model";
 import styles from "./journey.module.css";
 
 const chapters = landingPageContent.chapters;
+const mobileChapterLabels: Readonly<Record<string, string>> = {
+  welcome: "Welcome",
+  "the-problem": "Daily admin",
+  "studio-view": "Your morning",
+  product: "Connected records",
+  features: "Features",
+  "use-cases": "Use cases",
+  "signals-gather": "Attendance",
+  explore: "Explore",
+  "class-ready": "Shared history",
+  pricing: "Pricing",
+  about: "About Koaryu",
+  faq: "Questions",
+  stillness: "Your studio",
+  begin: "Get started",
+};
 const firstChapter = chapters[0];
 const lastChapterIndex = chapters.length - 1;
 const faqChapterIndex = chapters.findIndex(({ id }) => id === "faq");
@@ -92,10 +98,11 @@ function metricsFor(element: HTMLElement): ScrollMetrics {
   };
 }
 
-function closestFaqPanel(target: EventTarget | null): HTMLElement | null {
+function closestScrollPanel(target: EventTarget | null, compact: boolean): HTMLElement | null {
   if (typeof Element === "undefined" || !(target instanceof Element)) {
     return null;
   }
+  if (compact) return null;
   const panel = target.closest<HTMLElement>("[data-faq-scroll]");
   return panel instanceof HTMLElement ? panel : null;
 }
@@ -112,85 +119,42 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 export function JourneyController({ children }: JourneyControllerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef(0);
-  const progressRef = useRef<number>(firstChapter.scene);
-  const animationRef = useRef<number | null>(null);
   const reducedMotionRef = useRef(false);
   const [enhanced, setEnhanced] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
-  const [sceneProgress, setSceneProgress] = useState<number>(firstChapter.scene);
+  const [sceneTarget, setSceneTarget] = useState<SceneTarget>({
+    progress: firstChapter.scene,
+    animate: false,
+  });
+  const [compact, setCompact] = useState(false);
   const [frame, setFrame] = useState(() => frameForDimensions(SCENE_WIDTH, SCENE_HEIGHT));
   const [menuOpen, setMenuOpen] = useState(false);
   const [faqGroup, setFaqGroup] = useState(0);
   const [openFaq, setOpenFaq] = useState(0);
 
-  const stopAnimation = useCallback(() => {
-    if (typeof window === "undefined" || animationRef.current === null) {
+  const navigateTo = useCallback((requestedIndex: number, options: NavigateOptions = {}) => {
+    const nextIndex = Math.round(clamp(requestedIndex, 0, lastChapterIndex));
+    const nextChapter = chapters[nextIndex];
+    if (!nextChapter) {
       return;
     }
-    window.cancelAnimationFrame(animationRef.current);
-    animationRef.current = null;
+
+    pageRef.current = nextIndex;
+    setPageIndex(nextIndex);
+    setMenuOpen(false);
+    setOpenFaq(0);
+    if (nextChapter.id !== "faq") {
+      setFaqGroup(0);
+    } else if (options.faqGroup != null) {
+      setFaqGroup(Math.round(clamp(options.faqGroup, 0, FAQ_HASHES.length - 1)));
+    }
+    setSceneTarget({ progress: nextChapter.scene, animate: !reducedMotionRef.current });
+
+    if (options.writeHash !== false && typeof window !== "undefined") {
+      const nextHash = options.canonicalHash ?? nextChapter.id;
+      writeJourneyUrl(`#${nextHash}`, options.historyMode ?? "replace");
+    }
   }, []);
-
-  const animateScene = useCallback(
-    (destination: number) => {
-      if (typeof window === "undefined") {
-        return;
-      }
-
-      stopAnimation();
-      const origin = progressRef.current;
-      if (reducedMotionRef.current || Math.abs(destination - origin) < 0.0001) {
-        progressRef.current = destination;
-        setSceneProgress(destination);
-        return;
-      }
-
-      const started = window.performance.now();
-      const duration = sceneTransitionDuration(origin, destination);
-      const afterDoors = Math.max(origin, destination) > 0.52;
-      const tick = (now: number) => {
-        const raw = clamp((now - started) / duration);
-        const eased = afterDoors ? easeInOut(raw) : easeOut(raw);
-        const nextProgress = mix(origin, destination, eased);
-        progressRef.current = nextProgress;
-        setSceneProgress(nextProgress);
-        if (raw < 1) {
-          animationRef.current = window.requestAnimationFrame(tick);
-        } else {
-          animationRef.current = null;
-        }
-      };
-      animationRef.current = window.requestAnimationFrame(tick);
-    },
-    [stopAnimation],
-  );
-
-  const navigateTo = useCallback(
-    (requestedIndex: number, options: NavigateOptions = {}) => {
-      const nextIndex = Math.round(clamp(requestedIndex, 0, lastChapterIndex));
-      const nextChapter = chapters[nextIndex];
-      if (!nextChapter) {
-        return;
-      }
-
-      pageRef.current = nextIndex;
-      setPageIndex(nextIndex);
-      setMenuOpen(false);
-      setOpenFaq(0);
-      if (nextChapter.id !== "faq") {
-        setFaqGroup(0);
-      } else if (options.faqGroup != null) {
-        setFaqGroup(Math.round(clamp(options.faqGroup, 0, FAQ_HASHES.length - 1)));
-      }
-      animateScene(nextChapter.scene);
-
-      if (options.writeHash !== false && typeof window !== "undefined") {
-        const nextHash = options.canonicalHash ?? nextChapter.id;
-        writeJourneyUrl(`#${nextHash}`, options.historyMode ?? "replace");
-      }
-    },
-    [animateScene],
-  );
 
   const applyResolvedHash = useCallback(
     (resolved: ResolvedJourneyHash, animate: boolean, historyMode: HistoryMode = "replace") => {
@@ -206,11 +170,9 @@ export function JourneyController({ children }: JourneyControllerProps) {
           historyMode: resolved.wasAlias ? "replace" : historyMode,
         });
       } else {
-        stopAnimation();
         pageRef.current = resolved.chapterIndex;
-        progressRef.current = chapter.scene;
         setPageIndex(resolved.chapterIndex);
-        setSceneProgress(chapter.scene);
+        setSceneTarget({ progress: chapter.scene, animate: false });
         setFaqGroup(resolved.faqGroup ?? 0);
         setOpenFaq(0);
       }
@@ -219,7 +181,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         writeJourneyUrl(`#${resolved.canonicalHash}`, "replace");
       }
     },
-    [navigateTo, stopAnimation],
+    [navigateTo],
   );
 
   const selectFaqGroup = useCallback((requestedGroup: number) => {
@@ -238,26 +200,29 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     reducedMotionRef.current = motionQuery.matches;
+    const compactQuery = window.matchMedia(
+      "(max-width: 820px), (max-width: 1024px) and (max-height: 500px)",
+    );
     const activationFrame = window.requestAnimationFrame(() => {
       const initialHash = resolveJourneyHash(window.location.hash);
       if (initialHash) {
         applyResolvedHash(initialHash, false);
       }
       setFrame(frameForDimensions(window.innerWidth, window.innerHeight));
+      setCompact(compactQuery.matches);
       setEnhanced(true);
     });
 
     const onResize = () => {
+      setCompact(compactQuery.matches);
       setFrame(frameForDimensions(window.innerWidth, window.innerHeight));
     };
     const onMotionChange = (event: MediaQueryListEvent) => {
       reducedMotionRef.current = event.matches;
       if (event.matches) {
-        stopAnimation();
         const current = chapters[pageRef.current];
         if (current) {
-          progressRef.current = current.scene;
-          setSceneProgress(current.scene);
+          setSceneTarget({ progress: current.scene, animate: false });
         }
       }
     };
@@ -271,17 +236,17 @@ export function JourneyController({ children }: JourneyControllerProps) {
     };
 
     window.addEventListener("resize", onResize);
+    compactQuery.addEventListener("change", onResize);
     window.addEventListener("hashchange", onHashChange);
     motionQuery.addEventListener("change", onMotionChange);
     return () => {
       window.cancelAnimationFrame(activationFrame);
       window.removeEventListener("resize", onResize);
+      compactQuery.removeEventListener("change", onResize);
       window.removeEventListener("hashchange", onHashChange);
       motionQuery.removeEventListener("change", onMotionChange);
     };
-  }, [applyResolvedHash, navigateTo, stopAnimation]);
-
-  useEffect(() => stopAnimation, [stopAnimation]);
+  }, [applyResolvedHash, navigateTo]);
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -292,8 +257,12 @@ export function JourneyController({ children }: JourneyControllerProps) {
     for (const chapter of root.querySelectorAll<HTMLElement>("[data-journey-chapter]")) {
       const active = Number(chapter.dataset.chapterIndex) === pageIndex;
       chapter.inert = !active;
+      chapter.tabIndex = active && compact ? 0 : -1;
       chapter.setAttribute("aria-hidden", active ? "false" : "true");
     }
+
+    const faqSelect = root.querySelector<HTMLSelectElement>("[data-faq-select]");
+    if (faqSelect) faqSelect.value = String(faqGroup);
 
     for (const topic of root.querySelectorAll<HTMLElement>("[data-faq-topic]")) {
       const active = Number(topic.dataset.faqTopic) === faqGroup;
@@ -320,7 +289,43 @@ export function JourneyController({ children }: JourneyControllerProps) {
       question?.setAttribute("aria-expanded", active ? "true" : "false");
       answer?.setAttribute("aria-hidden", active ? "false" : "true");
     }
-  }, [enhanced, faqGroup, openFaq, pageIndex]);
+  }, [compact, enhanced, faqGroup, openFaq, pageIndex]);
+
+  useLayoutEffect(() => {
+    if (!compact || !enhanced) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const html = document.documentElement;
+    const previous = html.getAttribute("data-koaryu-mobile-journey");
+    html.setAttribute("data-koaryu-mobile-journey", "true");
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    const viewport = window.visualViewport;
+    const updateViewport = () => {
+      const zoomed = (viewport?.scale ?? 1) > 1.01;
+      root.dataset.zoomed = String(zoomed);
+      if (!zoomed) {
+        root.style.setProperty(
+          "--journey-viewport-height",
+          `${viewport?.height ?? window.innerHeight}px`,
+        );
+        root.style.setProperty("--journey-viewport-top", `${viewport?.offsetTop ?? 0}px`);
+      }
+    };
+    updateViewport();
+    viewport?.addEventListener("resize", updateViewport);
+    viewport?.addEventListener("scroll", updateViewport);
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      if (previous === null) html.removeAttribute("data-koaryu-mobile-journey");
+      else html.setAttribute("data-koaryu-mobile-journey", previous);
+      viewport?.removeEventListener("resize", updateViewport);
+      viewport?.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("resize", updateViewport);
+      root.style.removeProperty("--journey-viewport-height");
+      root.style.removeProperty("--journey-viewport-top");
+      delete root.dataset.zoomed;
+    };
+  }, [compact, enhanced]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -334,6 +339,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
     let wheelState = INITIAL_WHEEL_GESTURE_STATE;
     let touchStartY: number | null = null;
+    let touchStartX = 0;
+    let touchMetrics: ScrollMetrics | null = null;
     let touchPanel: HTMLElement | null = null;
     let touchPanelStart = 0;
 
@@ -347,6 +354,10 @@ export function JourneyController({ children }: JourneyControllerProps) {
     const onWheel = (event: WheelEvent) => {
       if (
         !eventBelongsToJourney(event.target) ||
+        menuOpen ||
+        (compact &&
+          event.target instanceof Element &&
+          Boolean(event.target.closest("select, input, textarea"))) ||
         event.ctrlKey ||
         Math.abs(event.deltaX) > Math.abs(event.deltaY)
       ) {
@@ -355,7 +366,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
       const delta = normalizeWheelDelta(event.deltaY, event.deltaMode, window.innerHeight);
       const direction = delta > 0 ? 1 : -1;
-      const panel = closestFaqPanel(event.target);
+      const panel = closestScrollPanel(event.target, compact);
       const faqCanScroll = panel ? canScrollablePanelMove(metricsFor(panel), direction) : false;
       const result = reduceWheelGesture(wheelState, {
         delta,
@@ -410,7 +421,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         }
       }
 
-      const panel = closestFaqPanel(activeElement);
+      const panel = closestScrollPanel(activeElement, compact);
       const decision = decideJourneyKey({
         key: event.key,
         shiftKey: event.shiftKey,
@@ -448,27 +459,67 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
     const onTouchStart = (event: TouchEvent) => {
       if (!eventBelongsToJourney(event.target) || event.touches.length !== 1) {
+        touchStartY = null;
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      const mobileControl =
+        !target?.closest("[data-mobile-stage]") ||
+        Boolean(target?.closest("select, input, textarea, [contenteditable='true']"));
+      if (
+        menuOpen ||
+        (compact
+          ? mobileControl || (window.visualViewport?.scale ?? 1) > 1.01
+          : isInteractiveTarget(event.target))
+      ) {
+        touchStartY = null;
         return;
       }
       touchStartY = event.touches[0]?.clientY ?? null;
-      touchPanel = closestFaqPanel(event.target);
+      touchStartX = event.touches[0]?.clientX ?? 0;
+      touchPanel = closestScrollPanel(event.target, compact);
+      touchMetrics = touchPanel ? metricsFor(touchPanel) : null;
       touchPanelStart = touchPanel?.scrollTop ?? 0;
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (
+        !compact ||
+        touchStartY === null ||
+        event.touches.length !== 1 ||
+        (window.visualViewport?.scale ?? 1) > 1.01
+      )
+        return;
+      const touch = event.touches[0];
+      if (
+        touch &&
+        Math.abs(touch.clientY - touchStartY) >= Math.abs(touch.clientX - touchStartX) &&
+        event.cancelable
+      ) {
+        event.preventDefault();
+      }
     };
 
     const onTouchEnd = (event: TouchEvent) => {
       const touch = event.changedTouches[0];
-      if (touchStartY === null || !touch || !eventBelongsToJourney(event.target)) {
+      if (
+        touchStartY === null ||
+        event.touches.length > 0 ||
+        !touch ||
+        !eventBelongsToJourney(event.target)
+      ) {
         return;
       }
 
       const direction = touchStartY - touch.clientY > 0 ? 1 : -1;
       const panelMoved = touchPanel ? Math.abs(touchPanel.scrollTop - touchPanelStart) > 4 : false;
-      const panelCanScroll = touchPanel
-        ? canScrollablePanelMove(metricsFor(touchPanel), direction)
-        : false;
+      const panelCanScroll =
+        Boolean(touchMetrics && canScrollablePanelMove(touchMetrics, direction)) ||
+        Boolean(touchPanel && canScrollablePanelMove(metricsFor(touchPanel), direction));
       const chapterDirection = decideTouchChapter({
         startY: touchStartY,
         endY: touch.clientY,
+        deltaX: touch.clientX - touchStartX,
         panelMoved,
         panelCanScroll,
       });
@@ -480,17 +531,27 @@ export function JourneyController({ children }: JourneyControllerProps) {
       touchPanel = null;
     };
 
+    const onTouchCancel = () => {
+      touchStartY = null;
+      touchPanel = null;
+      touchMetrics = null;
+    };
+
+    window.addEventListener("touchcancel", onTouchCancel, { passive: true });
     window.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
     window.addEventListener("touchend", onTouchEnd, { passive: false });
     return () => {
+      window.removeEventListener("touchcancel", onTouchCancel);
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("touchend", onTouchEnd);
     };
-  }, [enhanced, menuOpen, navigateTo, selectFaqGroup]);
+  }, [compact, enhanced, menuOpen, navigateTo, selectFaqGroup]);
 
   const onContentClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (
@@ -545,14 +606,6 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
   const activeChapter = chapters[pageIndex] ?? firstChapter;
   const activeInk = activeChapter.ink;
-  const chromeLightMix = clamp(
-    rangeProgress(sceneProgress, 0.048, 0.096) - rangeProgress(sceneProgress, 0.48, 0.52),
-  );
-  const journeyStyle = {
-    "--journey-chrome-color": `color-mix(in srgb, var(--koaryu-ink-light) ${Math.round(
-      chromeLightMix * 100,
-    )}%, var(--koaryu-ink))`,
-  } as CSSProperties;
 
   return (
     <div
@@ -563,11 +616,22 @@ export function JourneyController({ children }: JourneyControllerProps) {
       data-active-faq={FAQ_HASHES[faqGroup]}
       data-menu-open={menuOpen ? "true" : "false"}
       data-active-ink={activeInk}
-      style={journeyStyle}
+      data-compact={compact ? "true" : "false"}
       onClickCapture={onContentClickCapture}
+      onChangeCapture={(event) => {
+        const target = event.target;
+        if (target instanceof HTMLSelectElement && target.hasAttribute("data-faq-select")) {
+          selectFaqGroup(Number(target.value));
+        }
+      }}
     >
       <div className={styles.sceneLayer} aria-hidden="true">
-        <JourneyScene progress={sceneProgress} frame={frame} />
+        <AnimatedJourneyScene
+          target={sceneTarget}
+          frame={frame}
+          compact={compact}
+          rootRef={rootRef}
+        />
       </div>
 
       <header className={styles.topbar}>
@@ -579,15 +643,15 @@ export function JourneyController({ children }: JourneyControllerProps) {
             </MarketingNavLink>
           ))}
         </nav>
+        <MarketingNavLink href="/login" prefetch={false} className={styles.signIn}>
+          Sign In
+        </MarketingNavLink>
         <MarketingMenuButton
           className={styles.menuButton}
           aria-expanded={menuOpen}
           aria-controls="journey-mobile-navigation"
           onClick={() => setMenuOpen((open) => !open)}
         />
-        <MarketingNavLink href="/login" prefetch={false} className={styles.signIn}>
-          Sign In
-        </MarketingNavLink>
         <nav
           id="journey-mobile-navigation"
           className={styles.mobileNav}
@@ -605,7 +669,22 @@ export function JourneyController({ children }: JourneyControllerProps) {
         </nav>
       </header>
 
-      {children}
+      {compact ? (
+        <MobileJourneyChapter
+          key={`${activeChapter.id}:${activeChapter.id === "faq" ? faqGroup : ""}`}
+          chapter={activeChapter}
+          index={pageIndex}
+          count={chapters.length}
+          faqGroup={faqGroup}
+          faqItem={openFaq}
+          onFaqChange={(group, item) => {
+            selectFaqGroup(group);
+            setOpenFaq(item);
+          }}
+        />
+      ) : (
+        children
+      )}
 
       <div className={styles.pager} aria-label="Journey controls">
         <button
@@ -616,6 +695,24 @@ export function JourneyController({ children }: JourneyControllerProps) {
         >
           ↑
         </button>
+        {compact ? (
+          <label className={styles.mobileProgress}>
+            <span>
+              {String(pageIndex + 1).padStart(2, "0")} / {chapters.length}
+            </span>
+            <select
+              aria-label="Choose chapter"
+              value={pageIndex}
+              onChange={(event) => navigateTo(Number(event.target.value))}
+            >
+              {chapters.map((chapter, index) => (
+                <option key={chapter.id} value={index}>
+                  {mobileChapterLabels[chapter.id] ?? chapter.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <button
           type="button"
           onClick={() => navigateTo(pageIndex + 1)}
