@@ -1,25 +1,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { featurePages, studioTypePages, useCasePages } from "../src/lib/marketing-pages.ts";
 
-import { exploreSections, getMarketingPageByRef } from "../src/lib/marketing-pages.ts";
-
-const exploreSource = readFileSync(new URL("../src/app/explore/page.tsx", import.meta.url), "utf8");
-const aboutSource = readFileSync(new URL("../src/app/about/page.tsx", import.meta.url), "utf8");
-const publicPagesSource = readFileSync(
-  new URL("../src/components/marketing/public-pages.tsx", import.meta.url),
-  "utf8",
-);
-const css = readFileSync(
-  new URL("../src/components/marketing/public-pages.module.css", import.meta.url),
-  "utf8",
-);
-
-const routeSources = `${exploreSource}\n${aboutSource}`;
-const routeCss = css.slice(css.indexOf(".exploreHero {"), css.lastIndexOf(".footer {"));
+const readSource = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
+const exploreSource = readSource("app/explore/page.tsx");
+const aboutSource = readSource("app/about/page.tsx");
+const familySource = readSource("components/marketing/discovery-pages.tsx");
 const normalizeWhitespace = (value) => value.replace(/\s+/g, " ");
 
-describe("Explore and About editorial routes", () => {
+describe("Explore, About, and family-school guides", () => {
   it("preserves exact metadata, canonical URLs, and page structured data", () => {
     for (const [source, expectations] of [
       [
@@ -71,108 +61,50 @@ describe("Explore and About editorial routes", () => {
     }
   });
 
-  it("keeps one route-owned Explore heading and one shared About hero heading", () => {
-    assert.equal(exploreSource.match(/<h1\b/g)?.length, 1);
-    assert.equal(aboutSource.match(/<h1\b/g)?.length ?? 0, 0);
-    assert.equal(aboutSource.match(/<MarketingHero\b/g)?.length, 1);
-    assert.equal(publicPagesSource.match(/<h1\b/g)?.length, 1);
-  });
-
-  it("renders every Explore intent, route, and resolved included page from its source", () => {
-    const paths = exploreSections.flatMap((section) => section.paths);
-    const pageRefs = paths.flatMap((path) => path.pages);
-    const resolvedPages = pageRefs.map(getMarketingPageByRef);
-
-    assert.equal(exploreSections.length, 3);
-    assert.equal(paths.length, 4);
-    assert.equal(pageRefs.length, 10);
-    assert.ok(resolvedPages.every(Boolean));
-    assert.match(exploreSource, /exploreSections\.map\(\(section, sectionIndex\)/);
-    assert.match(exploreSource, /section\.paths\.map\(\(path\)/);
-    assert.match(exploreSource, /path\.pages\.flatMap\(\(pageRef\)/);
-    assert.match(exploreSource, /getMarketingPageByRef\(pageRef\)/);
-    assert.match(exploreSource, /includedPages\.map\(\(page\)/);
-    assert.match(exploreSource, /\{page\.eyebrow\}/);
-    assert.match(exploreSource, /\{page\.title\}/);
-    assert.match(exploreSource, /<Link href=\{path\.href\}/);
-    assert.match(exploreSource, /\{path\.eyebrow\}/);
-    assert.match(exploreSource, /\{path\.title\}/);
-    assert.match(exploreSource, /\{path\.description\}/);
-    assert.match(exploreSource, /\{path\.action\}/);
-    assert.doesNotMatch(exploreSource, /\.slice\(0,\s*4\)/);
-  });
-
-  it("preserves About principles, positioning, and both route actions", () => {
-    const normalizedAbout = normalizeWhitespace(aboutSource);
-
-    for (const copy of [
-      "Built for independent schools",
-      "Koaryu is focused on owner-operated and small-team martial arts studios, not enterprise gym chains.",
-      "Studio data should stay understandable",
-      "Daily action beats dashboard theater",
-      "The product should answer what needs attention today: follow-ups, classes, promotions, retention, and tuition issues.",
-      "Koaryu is intentionally narrower than generic gym software.",
-      "The product is built around the rhythm of a martial arts school: the student who misses class, the trial family waiting for a call, the instructor reviewing promotions, and the owner who needs to know whether the school is healthy before the evening rush.",
-    ]) {
-      assert.ok(normalizedAbout.includes(copy), `missing About copy: ${copy}`);
+  it("gives Explore a direct path to every feature, workflow, and school guide", () => {
+    assert.match(exploreSource, /featurePages\.map/);
+    assert.match(exploreSource, /href=\{page\.href\}/);
+    for (const page of [...useCasePages, ...studioTypePages]) {
+      assert.ok(exploreSource.includes(page.href), `missing direct route ${page.href}`);
     }
-
-    assert.match(aboutSource, /<MarketingActionLink href="\/features">\s*Explore features/);
-    assert.match(
-      aboutSource,
-      /<MarketingActionLink href="\/use-cases" variant="secondary">\s*See use cases/,
-    );
-    assert.match(aboutSource, /steps=\{detailNextSteps\}/);
-    assert.match(exploreSource, /steps=\{detailNextSteps\}/);
+    assert.equal(featurePages.length, 4);
+    assert.match(exploreSource, /href="\/about"/);
+    assert.match(exploreSource, /href="\/features"/);
+    assert.match(exploreSource, /href="\/use-cases"/);
   });
 
-  it("uses server-rendered route maps and paper statements without legacy UI seams", () => {
-    assert.doesNotMatch(
-      routeSources,
-      /["']use client["']|ScrollReveal|lucide-react|@\/components\/ui\/|\bButton\b|ProductScene|iconMap|use(?:State|Effect|Ref)\s*\(|\b(?:window|document|navigator)\s*\.|onWheel|onTouch|preventDefault|\.slice\(0,\s*4\)/,
-    );
-    assert.doesNotMatch(
-      routeSources,
-      /(?:bg-bg|bg-surface|text-text|border-border|text-accent)|var\(--(?:bg|surface|border|text-[\w-]+|accent)\b/,
-    );
-    assert.doesNotMatch(routeSources, /card|badge|pill|rounded|shadow|translate-y/i);
-    assert.doesNotMatch(
-      routeCss,
-      /gradient|backdrop|glass|#[fF]{6}|#[0]{6}|position:\s*fixed|height:\s*100dvh|overflow:\s*hidden/i,
-    );
-    assert.match(
-      routeCss,
-      /\.aboutScope\s*\{[^}]*color:\s*var\(--koaryu-ink-light\);[^}]*background:\s*var\(--koaryu-deep-brown\)/s,
-    );
-    assert.match(routeCss, /\.exploreRouteLink\s*\{[^}]*min-height:\s*132px/s);
-    assert.match(
-      routeCss,
-      /\.exploreRouteLink:hover \.exploreRouteAction > span\s*\{[^}]*translateX\(3px\)/s,
-    );
-
-    const includedTitleRule = routeCss.match(
-      /\.exploreIncludedList > span > span:last-child\s*\{([^}]*)\}/,
-    )?.[1];
-    const includedTitleOpacity = Number(includedTitleRule?.match(/opacity:\s*([\d.]+)/)?.[1]);
-
-    assert.ok(Number.isFinite(includedTitleOpacity));
-    assert.ok(includedTitleOpacity >= 0.72);
+  it("states real product limits where owners evaluate fit", () => {
+    for (const source of [aboutSource, familySource]) {
+      const text = normalizeWhitespace(source);
+      assert.match(text, /one studio per user/i);
+      assert.match(text, /separate activation for the exact studio/);
+      assert.match(text, /not generally available/);
+      assert.match(text, /billing exports are currently unavailable/i);
+      assert.match(text, /Instructors do not have access to billing data/);
+    }
+    assert.match(aboutSource, /formatPublicPlatformPrice\(\)/);
+    assert.doesNotMatch(aboutSource, /\$27|2700|["']27["']/);
   });
 
-  it("keeps the feature ledger calm and gives use cases a separate workflow rail", () => {
-    const indexSection = css.match(/\.indexSection\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+  it("separates family responsibilities and labels illustrative records", () => {
+    for (const role of ["The student", "The guardian", "The payer", "The program"]) {
+      assert.ok(familySource.includes(role));
+    }
+    assert.match(familySource, /illustrative family, not live student data/);
+    assert.match(familySource, /It does not move money/);
+    assert.match(familySource, /Readiness is a review signal/);
+    assert.match(familySource, /relatedPages\.map/);
+  });
 
-    assert.match(
-      indexSection,
-      /grid-template-columns:\s*minmax\(230px, 0\.55fr\) minmax\(0, 1\.45fr\)/,
-    );
-    assert.doesNotMatch(css, /\.indexSection::before/);
-    assert.match(css, /\.featureIndex \.indexHeading\s*\{[^}]*max-width:\s*34ch/s);
-    assert.match(css, /\.useCaseIndex\s*\{[^}]*grid-template-columns:\s*1fr/s);
-    assert.match(
-      css,
-      /\.useCaseIndex \.ledger li::before\s*\{[^}]*position:\s*absolute[^}]*background:\s*var\(--koaryu-rule-soft\)/s,
-    );
-    assert.match(css, /\.useCaseIndex \.ledger li::after\s*\{[^}]*border-radius:\s*50%/s);
+  it("keeps information pages server-rendered without scroll interception or heavyweight scenes", () => {
+    for (const source of [exploreSource, aboutSource, familySource]) {
+      assert.doesNotMatch(
+        source,
+        /["']use client["']|onWheel|onTouch|preventDefault|use(?:State|Effect|Ref)\s*\(|ProductScene|JourneyScene/,
+      );
+    }
+    assert.equal(exploreSource.match(/<h1\b/g)?.length, 1);
+    assert.equal(aboutSource.match(/<h1\b/g)?.length, 1);
+    assert.equal(familySource.match(/<h1\b/g)?.length, 1);
   });
 });

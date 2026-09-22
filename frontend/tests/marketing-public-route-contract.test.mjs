@@ -62,7 +62,7 @@ describe("public marketing route contract", () => {
     }
   });
 
-  it("keeps route and detail structured data alongside complete detail content", () => {
+  it("keeps structured data alongside the page-family renderers", () => {
     for (const routePath of [
       "app/features/page.tsx",
       "app/use-cases/page.tsx",
@@ -75,12 +75,16 @@ describe("public marketing route contract", () => {
     }
 
     const detailSource = readSource("lib/marketing-detail-route.tsx");
-    const rendererSource = readSource("components/marketing/public-pages.tsx");
+
     assert.match(detailSource, /<BreadcrumbJsonLd\b/);
     assert.match(detailSource, /<PageStructuredData\b/);
-    assert.match(rendererSource, /page\.sections\.map/);
-    assert.match(rendererSource, /section\.bullets\.map/);
-    assert.match(rendererSource, /\{section\.description\}/);
+    assert.match(detailSource, /page\.kind === "feature"/);
+    assert.match(detailSource, /page\.kind === "useCase"/);
+    for (const renderer of ["FeatureDetailPage", "WorkflowDetailPage", "StudioTypeDetailPage"]) {
+      assert.ok(detailSource.includes(renderer));
+    }
+    assert.match(detailSource, /<DetailPage page=\{page\} relatedPages=\{relatedPages\}/);
+    assert.match(detailSource, /if \(!page\) \{\s*notFound\(\)/);
   });
 
   it("derives public price data and keeps tuition availability conditional", () => {

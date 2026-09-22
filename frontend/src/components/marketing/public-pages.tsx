@@ -6,6 +6,7 @@ import {
   MarketingNavLink,
 } from "@/components/marketing/marketing-primitives";
 import { MarketingRoot } from "@/components/marketing/marketing-root";
+import { PublicMobileNavigation } from "@/components/marketing/public-navigation";
 import type { MarketingPage } from "@/lib/marketing-pages";
 import {
   detailNextSteps,
@@ -51,21 +52,16 @@ export function MarketingHeader() {
         <MarketingNavLink href="/login" prefetch={false} className={styles.desktopSignIn}>
           Sign in
         </MarketingNavLink>
-        <details className={styles.mobileNavigation}>
-          <summary aria-label="Navigation menu">
-            <span className={styles.mobileMenuIcon} aria-hidden="true" />
-          </summary>
-          <nav className={styles.mobileMenu} aria-label="Mobile navigation">
-            {publicNavLinks.map((link) => (
-              <MarketingNavLink key={link.href} href={link.href}>
-                {link.label}
-              </MarketingNavLink>
-            ))}
-            <MarketingNavLink href="/login" prefetch={false}>
-              Sign in
+        <PublicMobileNavigation>
+          {publicNavLinks.map((link) => (
+            <MarketingNavLink key={link.href} href={link.href}>
+              {link.label}
             </MarketingNavLink>
-          </nav>
-        </details>
+          ))}
+          <MarketingNavLink href="/login" prefetch={false}>
+            Sign in
+          </MarketingNavLink>
+        </PublicMobileNavigation>
       </div>
     </header>
   );
@@ -77,7 +73,14 @@ export function MarketingFooter() {
       <div className={styles.footerInner}>
         <div className={styles.footerStatement}>
           <MarketingBrandLink href="/" className={styles.brand} />
-          <p>Flat-rate studio software for independent martial arts schools.</p>
+          <p>
+            More time on the mat.
+            <br />
+            Less work after the last class.
+          </p>
+          <span className={styles.footerNote}>
+            Studio software for independent martial arts schools.
+          </span>
         </div>
         <nav className={styles.footerNavigation} aria-label="Footer navigation">
           {publicFooterLinks.map((link) => (
@@ -94,8 +97,13 @@ export function MarketingFooter() {
 export function PublicPageShell({ children }: { children: React.ReactNode }) {
   return (
     <MarketingRoot layout="document" className={styles.shell}>
+      <a href="#main-content" className={styles.skipLink}>
+        Skip to content
+      </a>
       <MarketingHeader />
-      <main className={styles.main}>{children}</main>
+      <main id="main-content" tabIndex={-1} className={styles.main}>
+        {children}
+      </main>
       <MarketingFooter />
     </MarketingRoot>
   );
