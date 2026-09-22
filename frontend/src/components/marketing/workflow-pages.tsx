@@ -99,7 +99,8 @@ function RosterGuide() {
         <p>
           These are fictional records. Replace them with your own students before importing. For the
           results shown here, the school already has a Juniors program with White and Yellow ranks
-          in its ladder. Match your program and belt names before reviewing your own file.
+          in its ladder. Use each student&#39;s confirmed date of birth, and match your program and
+          belt names before reviewing your own file.
         </p>
         <a
           className={styles.download}
@@ -117,6 +118,11 @@ function RosterGuide() {
               "First Name: Alex / Last Name: Morgan",
               "First Name / Last Name",
               "Alex Morgan has separate first and last names.",
+            ],
+            [
+              "Date of Birth: 2016-06-15 for Alex / 2017-03-08 for Sam",
+              "Date of Birth",
+              "Both example students are under 18 in September 2026. Koaryu derives minor status from this date, so their profiles can display Primary guardian.",
             ],
             [
               "Guardian Name: Jordan Morgan / Guardian Email: jordan@example.com",
@@ -204,9 +210,11 @@ function RosterGuide() {
             Compare the imported count with the number you intended to add. Keep a list of every
             blocked row.
           </li>
+          <li>Open a student and verify the program, status, start date, and combined notes.</li>
           <li>
-            Open a student and verify the guardian contact, program, status, start date, and
-            combined notes.
+            For a child, choose Edit and check Date of birth in Basic Info. On the profile, check
+            the Minor indicator and Primary guardian. Without a birth date, Primary guardian will
+            not appear; inspect the linked contact under Edit, then Guardian.
           </li>
           <li>
             Check a matched belt and, if present, a student whose belt could not be matched. A
@@ -369,9 +377,10 @@ function TrialGuide() {
             <h3>Convert only after the family agrees</h3>
             <p>
               When Jordan confirms enrollment, choose Convert to student. Koaryu opens Alex&#39;s
-              new profile. Check the program, student contact, guardian, and initial notes there. If
-              Jordan declines because the schedule won&#39;t work, use Mark lost with Timing
-              instead. Other reasons are No-show, Price objection, No response, and Other.
+              new profile. Check the program, student contact, and initial notes. Choose Edit, then
+              Guardian, to verify Jordan&#39;s linked contact details. If Jordan declines because
+              the schedule won&#39;t work, use Mark lost with Timing instead. Other reasons are
+              No-show, Price objection, No response, and Other.
             </p>
           </li>
         </ol>
@@ -419,7 +428,7 @@ function TrialGuide() {
             ],
             [
               "Minor selected and guardian name Jordan Morgan entered",
-              "Creates a linked guardian with the supplied guardian email and phone. Both the minor flag and a guardian name are needed.",
+              "Creates a linked guardian with the supplied guardian email and phone. Both the minor flag and a guardian name are needed. Verify the contact under Edit, then Guardian; the lead does not supply a date of birth for the student's minor status.",
             ],
             [
               "Initial Notes",
@@ -431,6 +440,14 @@ function TrialGuide() {
             ],
           ]}
         />
+        <h3>Add the child&#39;s confirmed date of birth</h3>
+        <p>
+          In Students, open the new student and choose Edit. Guardian shows the linked contact for
+          reference, even when it is not visible on the main profile. Those guardian fields cannot
+          be changed in this form. Open Basic Info, enter the child&#39;s confirmed Date of birth,
+          and choose Save changes. The student profile derives minor status from that date and shows
+          Primary guardian for students under 18.
+        </p>
         <p>
           Conversion creates the student record. It does not attach tuition, start a subscription,
           or charge the family. Admin and Front Desk can manage and convert leads; Instructors
