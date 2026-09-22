@@ -10,7 +10,7 @@ const guides = {
   "spreadsheets-to-studio-crm": {
     title: "Prepare a student roster for CSV import",
     intro:
-      "Use the sample below to map your spreadsheet, check the preview, and account for every imported or rejected row. The import creates student records. Keep your old attendance, promotion history, and billing records separately.",
+      "In Koaryu, open Students and choose Import CSV. Upload your file, map its columns, and review the rows before importing. Use the sample below to prepare that file. Keep your old attendance, promotion history, and billing records separately.",
     link: "Prepare a roster import",
     ready: "Your student CSV and the program and belt names used by your school.",
     output: "A checked column mapping, a sample CSV, and a way to verify the import result.",
@@ -18,7 +18,7 @@ const guides = {
   "student-retention": {
     title: "Review an attendance gap before contacting a family",
     intro:
-      "A student can appear absent because they stopped coming, took a planned break, or attended a class nobody marked. Check which explanation fits before you send a message.",
+      "Open the dashboard item for students going quiet to reach the filtered Students list. A student can appear there because they stopped coming, took a planned break, or attended a class nobody marked. Check which explanation fits before you send a message.",
     link: "Review an attendance gap",
     ready: "Attendance history, student status, any hold dates, and the family contact.",
     output:
@@ -27,7 +27,7 @@ const guides = {
   "trial-to-enrollment": {
     title: "Follow up with a trial family and create their student record",
     intro:
-      "Admin and Front Desk staff can assign a lead, change its stage, schedule a follow-up, and convert it to a student. This guide follows one inquiry through those actions and explains what the new student record receives.",
+      "Open Leads and choose Add lead for a new inquiry, or select an existing lead to open its details. Admin and Front Desk can assign it, change its stage, schedule a follow-up, and convert it to a student. This example follows the actions and resulting records.",
     link: "Follow up on a trial inquiry",
     ready: "The lead's contact details, selected program, stage, and follow-up date.",
     output: "A supported follow-up action and a field-by-field check after conversion.",
@@ -43,7 +43,7 @@ const guides = {
   "belt-test-readiness": {
     title: "Prepare a belt-test shortlist with reasons",
     intro:
-      "Use the next rank's requirements to review class counts and time at rank. Keep a reason beside each student's name so instructors can distinguish a teaching decision from missing attendance or uncertain rank history.",
+      "Open Belt Tracker, select the program, and choose Eligibility. Compare the class counts and time at rank with the next rank's requirements. Keep a reason beside each student's name so instructors can distinguish a teaching decision from missing or uncertain records.",
     link: "Prepare a belt-test review",
     ready: "The program's rank ladder, qualifying attendance, and each student's rank history.",
     output: "A shortlist marked for instructor review, more classes, or a history check.",
@@ -51,11 +51,6 @@ const guides = {
 } as const;
 
 type WorkflowSlug = keyof typeof guides;
-
-// Kept identical to the downloadable file; both are checked with the roster parser.
-const sampleCsv = `First Name,Last Name,Guardian Name,Guardian Email,Program,Current Belt,Status,Membership Start Date,Schedule note,Office note,Tuition balance
-Alex,Morgan,Jordan Morgan,jordan@example.com,Juniors,Yellow,Active,2026-06-01,Tuesday classes,Prefers email,150
-Sam,Lee,Taylor Lee,taylor@example.com,Juniors,White,Trial,2026-09-01,Thursday classes,Call after 4pm,0`;
 
 function GuideTable({
   caption,
@@ -155,10 +150,6 @@ function RosterGuide() {
             ],
           ]}
         />
-        <p className={styles.sampleLabel}>The complete downloadable CSV</p>
-        <pre className={styles.csv}>
-          <code>{sampleCsv}</code>
-        </pre>
       </section>
 
       <section className={styles.section} aria-labelledby="mapping-heading">
@@ -277,7 +268,12 @@ function RetentionGuide() {
           date if no start date exists.
         </p>
         <p>
-          This does not count how many scheduled classes the student missed. For an imported
+          To check the visits, open Schedule, navigate to the relevant dates, and select each class
+          session to inspect its roster. Open the student in Students for contact details, hold
+          dates, and Notes.
+        </p>
+        <p>
+          The watch does not count how many scheduled classes the student missed. For an imported
           student, an old membership date can trigger the watch immediately even if they trained
           yesterday. Review the actual check-ins and ask the instructor before treating the gap as a
           reason to contact the family.
@@ -353,17 +349,19 @@ function TrialGuide() {
               The follow-up is due today; it becomes overdue if left for a later day. Staff call
               Jordan outside Koaryu. Jordan is still deciding, so choose Mark contacted. That clears
               September 24 from the lead&#39;s follow-up date and adds a generic contact entry to
-              its activity trail. It does not save a transcript or a new note.
+              its activity trail. The saved status reads &quot;No follow-up scheduled&quot;, even if
+              the date input still displays the previous date. It does not save a transcript or a
+              new note.
             </p>
           </li>
           <li>
             <span className={styles.date}>After Thursday&#39;s call</span>
             <h3>Give the pending inquiry another date</h3>
             <p>
-              Enter September 28 in Follow-up date and choose Reschedule. Confirm that the new date
-              appears on the lead. If you change the date before Mark contacted, that action clears
-              it again. Keep detailed call notes in your staff&#39;s existing record while the lead
-              inspector has no notes editor.
+              Explicitly enter September 28 in Follow-up date and choose Reschedule. Confirm that
+              the new date appears on the lead. If you change the date before Mark contacted, that
+              action clears it again. Keep detailed call notes in your staff&#39;s existing record
+              while the lead inspector has no notes editor.
             </p>
           </li>
           <li>
@@ -461,9 +459,10 @@ function TuitionGuide() {
           <section>
             <h3>The student has no external billing enrollment</h3>
             <p>
-              Confirm the arrangement, student, existing plan, and payer. In Attach external student
-              billing, choose the Student and Plan, select the existing Payer when appropriate, and
-              enter the Start, End, and Next bill dates that apply. Choose Attach.
+              Open Billing, then Student Billing. Confirm the arrangement, student, existing plan,
+              and payer. In Attach external student billing, choose the Student and Plan, select the
+              existing Payer when appropriate, and enter the Start, End, and Next bill dates that
+              apply. Choose Attach.
             </p>
             <p>
               Check that the enrollment appears with the right student and plan. This creates a
@@ -474,9 +473,10 @@ function TuitionGuide() {
           <section>
             <h3>The payer is missing</h3>
             <p>
-              Check Families for an existing payer under the adult&#39;s name and confirm who is
-              responsible for payment. A guardian record alone is not a payer. The Attach form can
-              leave Payer blank, but that does not create or recover the missing payer.
+              Open Billing, then Families, and check for an existing payer under the adult&#39;s
+              name and confirm who is responsible for payment. A guardian record alone is not a
+              payer. The Attach form can leave Payer blank, but that does not create or recover the
+              missing payer.
             </p>
             <p>
               Stop before recording an external payment, which requires a payer. Have the studio
@@ -487,9 +487,10 @@ function TuitionGuide() {
           <section>
             <h3>A Stripe invoice looks stale or overdue</h3>
             <p>
-              Confirm that it is the intended invoice and compare its status with the linked Stripe
-              record. When Reconcile is available on that existing invoice, use it to refresh
-              Koaryu&#39;s status from Stripe. An external invoice has no Stripe status to refresh.
+              Open Billing, then Invoices. Confirm that it is the intended invoice and compare its
+              status with the linked Stripe record. When Reconcile is available on that existing
+              invoice, use it to refresh Koaryu&#39;s status from Stripe. An external invoice has no
+              Stripe status to refresh.
             </p>
             <p>
               Read the refreshed result. If it still says open or overdue, the invoice still needs
@@ -500,9 +501,10 @@ function TuitionGuide() {
           <section>
             <h3>The family paid outside Stripe</h3>
             <p>
-              Confirm the payment evidence, payer, amount, and method, then use Record external
-              payment. Check for an existing record first so the same check or transfer isn&#39;t
-              recorded twice. The example below shows exactly what to enter and what it changes.
+              Open Billing, then Advanced. Confirm the payment evidence, payer, amount, and method,
+              then use Record external payment. Check for an existing record first so the same check
+              or transfer isn&#39;t recorded twice. The example below shows exactly what to enter
+              and what it changes.
             </p>
           </section>
         </div>
@@ -599,8 +601,9 @@ function BeltGuide() {
             <h3>Select the program and check its next rank</h3>
             <p>
               Use the student&#39;s correct program membership and ladder. Read the next rank&#39;s
-              class requirement, time requirement, and approval setting. An Admin can configure
-              those rules. Students training in two programs need a separate review for each.
+              class requirement, time requirement, and approval setting. An Admin can check and
+              configure those rules in Rank Plan, then return to Eligibility. Students training in
+              two programs need a separate review for each.
             </p>
             <p>
               A new program membership with no rank selected starts at the program&#39;s first full
