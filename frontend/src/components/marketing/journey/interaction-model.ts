@@ -40,6 +40,21 @@ const CHAPTER_INDEX = Object.freeze(
   >,
 );
 
+export function journeyChapterIndices(compact: boolean): number[] {
+  return landingPageContent.chapters.flatMap((chapter, index) =>
+    compact && chapter.id === "stillness" ? [] : [index],
+  );
+}
+
+export function normalizeJourneyChapter(
+  index: number,
+  compact: boolean,
+  direction: -1 | 1 = 1,
+): number {
+  const bounded = Math.max(0, Math.min(landingPageContent.chapters.length - 1, Math.round(index)));
+  return compact && bounded === CHAPTER_INDEX.stillness ? bounded + direction : bounded;
+}
+
 const FAQ_HASH_INDEX = Object.freeze(
   Object.fromEntries(FAQ_HASHES.map((hash, index) => [hash, index])) as Record<FaqHash, number>,
 );
@@ -61,7 +76,7 @@ export type JourneyHashChangeDecision =
   | { readonly action: "navigate"; readonly resolved: ResolvedJourneyHash }
   | { readonly action: "ignore" };
 
-export function resolveJourneyHash(hash: string): ResolvedJourneyHash | null {
+export function resolveJourneyHash(hash: string, compact = false): ResolvedJourneyHash | null {
   const normalized = hash.trim().replace(/^#/, "").toLowerCase();
   if (!normalized) {
     return null;
@@ -79,13 +94,15 @@ export function resolveJourneyHash(hash: string): ResolvedJourneyHash | null {
   }
 
   if (Object.prototype.hasOwnProperty.call(CHAPTER_INDEX, normalized)) {
-    const chapterId = normalized as JourneyChapterId;
+    const requestedId = normalized as JourneyChapterId;
+    const index = normalizeJourneyChapter(CHAPTER_INDEX[requestedId], compact);
+    const chapterId = landingPageContent.chapters[index]!.id;
     return {
       chapterId,
       chapterIndex: CHAPTER_INDEX[chapterId],
       faqGroup: null,
       canonicalHash: chapterId,
-      wasAlias: false,
+      wasAlias: chapterId !== requestedId,
     };
   }
 
@@ -103,7 +120,7 @@ export function resolveJourneyHash(hash: string): ResolvedJourneyHash | null {
   return null;
 }
 
-export function decideJourneyHashChange(hash: string): JourneyHashChangeDecision {
+export function decideJourneyHashChange(hash: string, compact = false): JourneyHashChangeDecision {
   const normalized = hash.trim().replace(/^#/, "");
   if (!normalized) {
     return {
@@ -113,7 +130,7 @@ export function decideJourneyHashChange(hash: string): JourneyHashChangeDecision
     };
   }
 
-  const resolved = resolveJourneyHash(hash);
+  const resolved = resolveJourneyHash(hash, compact);
   return resolved ? { action: "navigate", resolved } : { action: "ignore" };
 }
 

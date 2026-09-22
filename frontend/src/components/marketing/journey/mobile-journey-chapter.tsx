@@ -1,33 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { PUBLIC_PAYMENTS_FEE_PERCENT } from "../../../lib/constants";
 import type {
   JourneyAction,
   JourneyChapter,
   JourneyFaqChapter,
 } from "../../../lib/landing-page-content";
 import styles from "./mobile-journey-chapter.module.css";
-
-type Detail = { title: string; body: string; href?: string; meta?: string };
-
-function useDetailFocus(selected: number | null) {
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  const overviewRef = useRef<HTMLDivElement>(null);
-  const previous = useRef<number | null>(null);
-  useLayoutEffect(() => {
-    if (selected !== null) titleRef.current?.focus({ preventScroll: true });
-    else if (previous.current !== null) {
-      overviewRef.current
-        ?.querySelector<HTMLElement>(
-          `[data-detail-index="${previous.current}"], select, [data-detail-trigger]`,
-        )
-        ?.focus({ preventScroll: true });
-    }
-    previous.current = selected;
-  }, [selected]);
-  return { titleRef, overviewRef };
-}
 
 function Action({ action, primary = false }: { action: JourneyAction; primary?: boolean }) {
   return (
@@ -37,7 +18,7 @@ function Action({ action, primary = false }: { action: JourneyAction; primary?: 
       className={primary ? styles.primaryAction : styles.link}
     >
       {action.label}
-      <span aria-hidden="true">{primary ? "" : " →"}</span>
+      {!primary ? <span aria-hidden="true"> →</span> : null}
     </Link>
   );
 }
@@ -51,7 +32,7 @@ function Panel({
   intro: ReactNode;
   children: ReactNode;
   dark?: boolean;
-  layout?: "overview" | "questions" | "pricing";
+  layout?: "directory" | "morning" | "faq" | "pricing";
 }) {
   return (
     <article className={styles.panel} data-dark={dark || undefined} data-layout={layout}>
@@ -70,68 +51,32 @@ function Heading({ kicker, title }: { kicker: string; title: string }) {
   );
 }
 
-function Choices({
+function Directory({
   label,
   heading,
   entries,
-  link,
+  overview,
 }: {
   label: string;
   heading: string;
-  entries: readonly Detail[];
-  link: JourneyAction;
+  entries: readonly JourneyAction[];
+  overview?: JourneyAction;
 }) {
-  const [selected, setSelected] = useState<number | null>(null);
-  const { titleRef, overviewRef } = useDetailFocus(selected);
-  const detail = selected === null ? null : entries[selected];
-  if (detail)
-    return (
-      <Panel
-        intro={
-          <>
-            <button type="button" className={styles.back} onClick={() => setSelected(null)}>
-              ← {label}
-            </button>
-            <h2 ref={titleRef} tabIndex={-1}>
-              {detail.title}
-            </h2>
-          </>
-        }
-      >
-        <p>{detail.body}</p>
-        {detail.meta ? <p className={styles.meta}>{detail.meta}</p> : null}
-        {detail.href ? (
-          <Action
-            action={{
-              href: detail.href,
-              label:
-                "Explore this " +
-                (label === "Features" ? "feature" : label === "Use cases" ? "workflow" : "guide"),
-            }}
-          />
-        ) : (
-          <Action action={link} />
-        )}
-      </Panel>
-    );
   return (
-    <Panel layout="overview" intro={<Heading kicker={label} title={heading} />}>
-      <div ref={overviewRef}>
-        <div className={styles.choices} aria-label={`${label} details`}>
-          {entries.map((entry, index) => (
-            <button
-              key={entry.title}
-              data-detail-index={index}
-              type="button"
-              onClick={() => setSelected(index)}
-            >
-              {entry.title}
-              <span aria-hidden="true">↗</span>
-            </button>
-          ))}
-        </div>
-      </div>
-      <Action action={link} />
+    <Panel
+      layout="directory"
+      intro={
+        <>
+          <Heading kicker={label} title={heading} />
+          {overview ? <Action action={overview} /> : null}
+        </>
+      }
+    >
+      <nav className={styles.destinations} aria-label={label}>
+        {entries.map((entry) => (
+          <Action key={entry.href} action={entry} />
+        ))}
+      </nav>
     </Panel>
   );
 }
@@ -147,104 +92,42 @@ function MobileFaq({
   itemIndex: number;
   onChange: (group: number, item: number) => void;
 }) {
-  const [view, setView] = useState<"topics" | "questions" | "answer">(() =>
-    typeof window !== "undefined" && window.location.hash.startsWith("#faq-")
-      ? "questions"
-      : "topics",
-  );
   const group = chapter.groups[groupIndex] ?? chapter.groups[0]!;
   const item = group.items[Math.max(0, itemIndex)] ?? group.items[0]!;
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  const topicsRef = useRef<HTMLDivElement>(null);
-  const questionsRef = useRef<HTMLDivElement>(null);
-  const previousView = useRef<typeof view | null>(null);
-  useLayoutEffect(() => {
-    if (view === "topics" && previousView.current !== null) {
-      topicsRef.current
-        ?.querySelector<HTMLElement>(`[data-mobile-topic="${groupIndex}"]`)
-        ?.focus({ preventScroll: true });
-    } else if (view === "questions" && previousView.current === "answer") {
-      questionsRef.current
-        ?.querySelector<HTMLElement>(`[data-mobile-question="${itemIndex}"]`)
-        ?.focus({ preventScroll: true });
-    } else if (view !== "topics" && previousView.current !== view) {
-      titleRef.current?.focus({ preventScroll: true });
-    }
-    previousView.current = view;
-  }, [view, groupIndex, itemIndex]);
-  if (view === "topics")
-    return (
-      <Panel layout="overview" intro={<h2>{chapter.kicker}</h2>}>
-        <div ref={topicsRef} className={styles.choices} aria-label="Question topics">
-          {chapter.groups.map((topic, i) => (
-            <button
-              key={topic.title}
-              type="button"
-              data-mobile-topic={i}
-              onClick={() => {
-                setView("questions");
-                onChange(i, 0);
-              }}
-            >
-              {topic.title}
-              <span aria-hidden="true">↗</span>
-            </button>
-          ))}
-        </div>
-      </Panel>
-    );
-  if (view === "questions")
-    return (
-      <Panel
-        layout="questions"
-        intro={
-          <>
-            <button type="button" className={styles.back} onClick={() => setView("topics")}>
-              ← Question topics
-            </button>
-            <h2 ref={titleRef} tabIndex={-1}>
-              {group.title}
-            </h2>
-          </>
-        }
-      >
-        <div
-          ref={questionsRef}
-          className={styles.choices}
-          data-count={group.items.length}
-          aria-label="Questions"
-        >
-          {group.items.map((question, i) => (
-            <button
-              key={question.question}
-              data-mobile-question={i}
-              type="button"
-              onClick={() => {
-                setView("answer");
-                onChange(groupIndex, i);
-              }}
-            >
-              {question.question}
-              <span aria-hidden="true">↗</span>
-            </button>
-          ))}
-        </div>
-      </Panel>
-    );
   return (
     <Panel
+      layout="faq"
       intro={
         <>
-          <button type="button" className={styles.back} onClick={() => setView("questions")}>
-            ← {group.title}
-          </button>
-          <h2 className={styles.question} ref={titleRef} tabIndex={-1}>
-            {item.question}
-          </h2>
+          <label className={styles.kicker} htmlFor="mobile-faq-question">
+            Questions owners ask
+          </label>
+          <select
+            id="mobile-faq-question"
+            aria-label="Choose a question"
+            value={`${groupIndex}:${Math.max(0, itemIndex)}`}
+            onChange={(event) => {
+              const [nextGroup, nextItem] = event.target.value.split(":").map(Number);
+              onChange(nextGroup!, nextItem!);
+            }}
+          >
+            {chapter.groups.map((topic, topicIndex) => (
+              <optgroup key={topic.title} label={topic.title}>
+                {topic.items.map((question, questionIndex) => (
+                  <option key={question.question} value={`${topicIndex}:${questionIndex}`}>
+                    {question.question}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
         </>
       }
     >
-      <p>{item.answer}</p>
+      <div aria-live="polite" aria-atomic="true" className={styles.answer}>
+        <h2 className={styles.question}>{item.question}</h2>
+        <p>{item.answer}</p>
+      </div>
     </Panel>
   );
 }
@@ -252,6 +135,7 @@ function MobileFaq({
 export function MobileJourneyChapter({
   chapter,
   index,
+  position,
   count,
   faqGroup,
   faqItem,
@@ -259,86 +143,58 @@ export function MobileJourneyChapter({
 }: {
   chapter: JourneyChapter;
   index: number;
+  position: number;
   count: number;
   faqGroup: number;
   faqItem: number;
   onFaqChange: (group: number, item: number) => void;
 }) {
-  const [detail, setDetail] = useState<number | null>(null);
-  const { titleRef, overviewRef } = useDetailFocus(detail);
   let content: ReactNode;
   switch (chapter.kind) {
     case "features":
     case "use-cases":
       content = (
-        <Choices
-          label={chapter.kind === "features" ? "Features" : "Use cases"}
+        <Directory
+          label={chapter.kind === "features" ? "Features" : "Workflows"}
           heading={chapter.heading}
-          entries={chapter.rows.map((row, rowIndex) => ({
-            title: row.title,
-            body:
-              chapter.kind === "features" && rowIndex === 0
-                ? `${chapter.lede} ${row.description}`
-                : row.description,
-            href: row.detail.href,
-          }))}
-          link={chapter.link}
+          entries={chapter.rows.map((row) => ({ label: row.title, href: row.detail.href }))}
+          overview={chapter.link}
         />
       );
       break;
     case "explore":
       content = (
-        <Choices
-          label="Explore"
+        <Directory
+          label="Reading guides"
           heading={chapter.heading}
-          entries={chapter.routes}
-          link={chapter.link}
+          entries={chapter.routes.map((route) => ({ label: route.title, href: route.href }))}
         />
       );
       break;
     case "about":
       content = (
-        <Choices
-          label="About Koaryu"
-          heading={chapter.heading}
-          entries={[
-            { title: "Why Koaryu", body: chapter.lede },
-            ...chapter.principles.map((item) => ({ title: item.title, body: item.description })),
-          ]}
-          link={chapter.link}
-        />
+        <Panel intro={<Heading kicker={chapter.kicker} title={chapter.heading} />}>
+          <p>{chapter.lede}</p>
+          <Action action={chapter.link} />
+        </Panel>
       );
       break;
     case "morning":
-      content =
-        detail === null ? (
-          <Panel intro={<Heading kicker={chapter.kicker} title={chapter.title} />}>
-            <p>{chapter.lede}</p>
-            <button
-              type="button"
-              className={styles.link}
-              data-detail-trigger=""
-              onClick={() => setDetail(0)}
-            >
-              {chapter.proofLabel} →
-            </button>
-          </Panel>
-        ) : (
-          <Panel
-            intro={
-              <>
-                <button type="button" className={styles.back} onClick={() => setDetail(null)}>
-                  ← Your morning
-                </button>
-                <h2 ref={titleRef} tabIndex={-1}>
-                  {chapter.proofLabel}
-                </h2>
-              </>
-            }
-          >
-            <p>{chapter.proof}</p>
-          </Panel>
-        );
+      content = (
+        <Panel
+          layout="morning"
+          intro={<Heading kicker={chapter.proofLabel} title={chapter.title} />}
+        >
+          <dl className={styles.examples}>
+            {chapter.examples.map((example) => (
+              <div key={example.condition}>
+                <dt>{example.condition}</dt>
+                <dd>{example.action}</dd>
+              </div>
+            ))}
+          </dl>
+        </Panel>
+      );
       break;
     case "product-intro":
       content = (
@@ -347,48 +203,28 @@ export function MobileJourneyChapter({
         </Panel>
       );
       break;
-    case "pricing": {
-      const fact = detail === null ? null : chapter.facts[detail];
-      content = fact ? (
+    case "pricing":
+      content = (
         <Panel
+          layout="pricing"
           intro={
             <>
-              <button type="button" className={styles.back} onClick={() => setDetail(null)}>
-                ← Pricing
-              </button>
-              <h2 ref={titleRef} tabIndex={-1}>
-                {fact.label}
-              </h2>
+              <p className={styles.kicker}>{chapter.kicker}</p>
+              <h2 className={styles.price}>{chapter.displayPrice}</h2>
+              <p>{chapter.period}</p>
+              <p className={styles.studentCount}>No per-student tiers.</p>
+              <Action action={chapter.setupAction} primary />
             </>
           }
         >
-          <p>{fact.description}</p>
-          <Action action={chapter.setupAction} primary />
-        </Panel>
-      ) : (
-        <Panel layout="pricing" intro={<Heading kicker={chapter.kicker} title={chapter.heading} />}>
-          <div className={styles.priceRow}>
-            <p className={styles.price}>{chapter.displayPrice}</p>
-            <p>{chapter.period}</p>
-          </div>
-          <p className={styles.feeNote}>Stripe processing fees are billed separately.</p>
-          <div className={`${styles.choices} ${styles.priceChoices}`} aria-label="Pricing details">
-            {chapter.facts.map((item, i) => (
-              <button
-                key={item.label}
-                data-detail-index={i}
-                type="button"
-                onClick={() => setDetail(i)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-          <Action action={chapter.setupAction} primary />
+          <p>Students, ranks, leads, attendance, reports and billing records.</p>
+          <p>
+            Koaryu Payments: {PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees.
+          </p>
+          <p>Tuition collection requires separate activation and is not generally available.</p>
         </Panel>
       );
       break;
-    }
     case "faq":
       content = (
         <MobileFaq
@@ -401,7 +237,7 @@ export function MobileJourneyChapter({
       break;
     case "hero":
       content = (
-        <div className={`${styles.openCopy} ${styles.hero}`}>
+        <div className={styles.openCopy}>
           <div className={styles.intro}>
             <p className={styles.kicker}>{chapter.kicker}</p>
             <h1>
@@ -429,7 +265,6 @@ export function MobileJourneyChapter({
           </div>
           <div className={styles.body}>
             <p>{chapter.question}</p>
-            <p className={styles.aside}>{chapter.aside}</p>
           </div>
         </div>
       );
@@ -472,7 +307,7 @@ export function MobileJourneyChapter({
       break;
   }
   return (
-    <main ref={overviewRef} className={styles.stage} data-mobile-stage="">
+    <main className={styles.stage} data-mobile-stage="">
       <section
         id={chapter.id}
         className={styles.chapter}
@@ -480,7 +315,7 @@ export function MobileJourneyChapter({
         data-chapter-index={index}
         data-chapter-id={chapter.id}
         data-kind={chapter.kind}
-        aria-label={`Chapter ${index + 1} of ${count}`}
+        aria-label={`Chapter ${position + 1} of ${count}`}
         aria-hidden="false"
       >
         {content}

@@ -18,6 +18,8 @@ import {
   decideTouchChapter,
   nextFaqTopicIndex,
   normalizeWheelDelta,
+  normalizeJourneyChapter,
+  journeyChapterIndices,
   reduceWheelGesture,
   resolveJourneyHash,
   sceneTransitionDuration,
@@ -37,6 +39,18 @@ describe("Journey hash model", () => {
     });
     assert.equal(resolveJourneyHash(""), null);
     assert.equal(resolveJourneyHash("#not-a-journey-stop"), null);
+  });
+
+  it("uses one compact sequence for direct and relative navigation", () => {
+    assert.deepEqual(journeyChapterIndices(true), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13]);
+    assert.equal(journeyChapterIndices(false).length, 14);
+    assert.equal(normalizeJourneyChapter(12, true), 13);
+    assert.equal(normalizeJourneyChapter(12, true, -1), 11);
+    assert.equal(normalizeJourneyChapter(12, false), 12);
+    assert.equal(resolveJourneyHash("#stillness", true)?.canonicalHash, "begin");
+    assert.equal(resolveJourneyHash("#stillness", true)?.wasAlias, true);
+    assert.equal(decideJourneyHashChange("#stillness", true).resolved.chapterIndex, 13);
+    assert.equal(resolveJourneyHash("#faq-pricing", true)?.faqGroup, 3);
   });
 
   it("resets only an empty hash without writing one and ignores invalid hashes", () => {

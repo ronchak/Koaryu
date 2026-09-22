@@ -22,6 +22,8 @@ import {
   decideTouchChapter,
   nextFaqTopicIndex,
   normalizeWheelDelta,
+  normalizeJourneyChapter,
+  journeyChapterIndices,
   reduceWheelGesture,
   resolveJourneyHash,
   shouldHandleJourneyKeyboardFocus,
@@ -37,17 +39,16 @@ const chapters = landingPageContent.chapters;
 const mobileChapterLabels: Readonly<Record<string, string>> = {
   welcome: "Welcome",
   "the-problem": "Daily admin",
-  "studio-view": "Your morning",
-  product: "Connected records",
+  "studio-view": "Morning example",
+  product: "Recorded class",
   features: "Features",
-  "use-cases": "Use cases",
-  "signals-gather": "Attendance",
-  explore: "Explore",
-  "class-ready": "Shared history",
+  "use-cases": "Workflows",
+  "signals-gather": "Attendance review",
+  explore: "Reading guides",
+  "class-ready": "Staff access",
   pricing: "Pricing",
-  about: "About Koaryu",
+  about: "Product fit",
   faq: "Questions",
-  stillness: "Your studio",
   begin: "Get started",
 };
 const firstChapter = chapters[0];
@@ -119,6 +120,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 export function JourneyController({ children }: JourneyControllerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef(0);
+  const compactRef = useRef(false);
   const reducedMotionRef = useRef(false);
   const [enhanced, setEnhanced] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
@@ -133,7 +135,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
   const [openFaq, setOpenFaq] = useState(0);
 
   const navigateTo = useCallback((requestedIndex: number, options: NavigateOptions = {}) => {
-    const nextIndex = Math.round(clamp(requestedIndex, 0, lastChapterIndex));
+    const nextIndex = normalizeJourneyChapter(requestedIndex, compactRef.current);
     const nextChapter = chapters[nextIndex];
     if (!nextChapter) {
       return;
@@ -155,6 +157,15 @@ export function JourneyController({ children }: JourneyControllerProps) {
       writeJourneyUrl(`#${nextHash}`, options.historyMode ?? "replace");
     }
   }, []);
+
+  const navigateRelative = useCallback(
+    (direction: -1 | 1) => {
+      navigateTo(
+        normalizeJourneyChapter(pageRef.current + direction, compactRef.current, direction),
+      );
+    },
+    [navigateTo],
+  );
 
   const applyResolvedHash = useCallback(
     (resolved: ResolvedJourneyHash, animate: boolean, historyMode: HistoryMode = "replace") => {
@@ -204,7 +215,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
       "(max-width: 820px), (max-width: 1024px) and (max-height: 500px)",
     );
     const activationFrame = window.requestAnimationFrame(() => {
-      const initialHash = resolveJourneyHash(window.location.hash);
+      compactRef.current = compactQuery.matches;
+      const initialHash = resolveJourneyHash(window.location.hash, compactRef.current);
       if (initialHash) {
         applyResolvedHash(initialHash, false);
       }
@@ -214,6 +226,9 @@ export function JourneyController({ children }: JourneyControllerProps) {
     });
 
     const onResize = () => {
+      compactRef.current = compactQuery.matches;
+      const normalized = normalizeJourneyChapter(pageRef.current, compactRef.current);
+      if (normalized !== pageRef.current) navigateTo(normalized);
       setCompact(compactQuery.matches);
       setFrame(frameForDimensions(window.innerWidth, window.innerHeight));
     };
@@ -227,7 +242,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
     };
     const onHashChange = () => {
-      const decision = decideJourneyHashChange(window.location.hash);
+      const decision = decideJourneyHashChange(window.location.hash, compactRef.current);
       if (decision.action === "reset") {
         navigateTo(decision.chapterIndex, { writeHash: decision.writeHash });
       } else if (decision.action === "navigate") {
@@ -378,7 +393,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         event.preventDefault();
       }
       if (result.action === "advance") {
-        navigateTo(pageRef.current + result.direction);
+        navigateRelative(result.direction as -1 | 1);
       }
     };
 
@@ -434,7 +449,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
       event.preventDefault();
       if (decision.action === "chapter") {
-        navigateTo(pageRef.current + decision.direction);
+        navigateRelative(decision.direction);
         return;
       }
       if (decision.action === "chapter-edge") {
@@ -525,7 +540,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       });
       if (chapterDirection) {
         event.preventDefault();
-        navigateTo(pageRef.current + chapterDirection);
+        navigateRelative(chapterDirection);
       }
       touchStartY = null;
       touchPanel = null;
@@ -551,7 +566,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("touchend", onTouchEnd);
     };
-  }, [compact, enhanced, menuOpen, navigateTo, selectFaqGroup]);
+  }, [compact, enhanced, menuOpen, navigateRelative, navigateTo, selectFaqGroup]);
 
   const onContentClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (
@@ -591,7 +606,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       return;
     }
 
-    const decision = decideJourneyHashChange(destination.hash);
+    const decision = decideJourneyHashChange(destination.hash, compactRef.current);
     if (decision.action === "ignore") {
       return;
     }
@@ -605,6 +620,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
   };
 
   const activeChapter = chapters[pageIndex] ?? firstChapter;
+  const visibleIndices = journeyChapterIndices(compact);
+  const visiblePosition = visibleIndices.indexOf(pageIndex);
   const activeInk = activeChapter.ink;
 
   return (
@@ -671,10 +688,11 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
       {compact ? (
         <MobileJourneyChapter
-          key={`${activeChapter.id}:${activeChapter.id === "faq" ? faqGroup : ""}`}
+          key={activeChapter.id}
           chapter={activeChapter}
           index={pageIndex}
-          count={chapters.length}
+          count={visibleIndices.length}
+          position={visiblePosition}
           faqGroup={faqGroup}
           faqItem={openFaq}
           onFaqChange={(group, item) => {
@@ -689,7 +707,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       <div className={styles.pager} aria-label="Journey controls">
         <button
           type="button"
-          onClick={() => navigateTo(pageIndex - 1)}
+          onClick={() => navigateRelative(-1)}
           disabled={pageIndex === 0}
           aria-label="Previous chapter"
         >
@@ -698,16 +716,16 @@ export function JourneyController({ children }: JourneyControllerProps) {
         {compact ? (
           <label className={styles.mobileProgress}>
             <span>
-              {String(pageIndex + 1).padStart(2, "0")} / {chapters.length}
+              {String(visiblePosition + 1).padStart(2, "0")} / {visibleIndices.length}
             </span>
             <select
               aria-label="Choose chapter"
               value={pageIndex}
               onChange={(event) => navigateTo(Number(event.target.value))}
             >
-              {chapters.map((chapter, index) => (
-                <option key={chapter.id} value={index}>
-                  {mobileChapterLabels[chapter.id] ?? chapter.title}
+              {visibleIndices.map((index) => (
+                <option key={chapters[index]!.id} value={index}>
+                  {mobileChapterLabels[chapters[index]!.id] ?? chapters[index]!.title}
                 </option>
               ))}
             </select>
@@ -715,7 +733,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         ) : null}
         <button
           type="button"
-          onClick={() => navigateTo(pageIndex + 1)}
+          onClick={() => navigateRelative(1)}
           disabled={pageIndex === lastChapterIndex}
           aria-label="Next chapter"
         >
@@ -738,7 +756,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       </nav>
 
       <p className={styles.liveStatus} aria-live="polite" aria-atomic="true">
-        Chapter {pageIndex + 1} of {chapters.length}: {activeChapter.title}
+        Chapter {visiblePosition + 1} of {visibleIndices.length}: {activeChapter.title}
       </p>
     </div>
   );

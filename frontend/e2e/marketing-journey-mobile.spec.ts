@@ -43,46 +43,35 @@ async function fits(page: Page, label: string) {
   expect(geometry.frameTop, label).toBe(0);
   expect(geometry.frameBottom, label).toBe(geometry.viewport);
 }
-async function inspectDetails(page: Page, chapter: number) {
+async function inspectContent(page: Page, chapter: number) {
   const section = page.locator("[data-mobile-stage] section");
-  if ([4, 5, 7, 9, 10].includes(chapter)) {
-    const names = await section
-      .getByRole("button")
-      .evaluateAll((buttons) => buttons.map((b) => b.textContent!.replace("↗", "").trim()));
-    for (const name of names) {
-      await section.getByRole("button", { name, exact: true }).click();
-      await expect(section.getByRole("heading", { name, exact: true })).toBeVisible();
-      await fits(page, name);
-      await section.getByRole("button", { name: /^←/ }).click();
-      await expect(section.getByRole("button", { name, exact: true })).toBeFocused();
-    }
-  } else if (chapter === 2) {
-    await section.getByRole("button", { name: "This morning →", exact: true }).click();
-    await expect(section.getByRole("heading", { name: "This morning", exact: true })).toBeVisible();
-    await fits(page, "morning example");
+  await expect(section.getByRole("button")).toHaveCount(0);
+  if (chapter === 2) {
+    await expect(section.getByText("Illustrative studio morning", { exact: true })).toBeVisible();
+    await expect(section.getByText("6 attendance gaps of 14+ days", { exact: true })).toBeVisible();
+    await expect(section.getByText("Review attendance and notes.", { exact: true })).toBeVisible();
+  } else if (chapter === 9) {
+    for (const fact of [
+      "No per-student tiers.",
+      "Koaryu Payments: 0.5% per successful charge, plus Stripe fees.",
+      "Tuition collection requires separate activation and is not generally available.",
+    ])
+      await expect(section.getByText(fact, { exact: true })).toBeVisible();
   } else if (chapter === 11) {
-    const topics = await section
-      .getByRole("button")
-      .evaluateAll((buttons) => buttons.map((b) => b.textContent!.replace("↗", "").trim()));
-    for (const topic of topics) {
-      await section.getByRole("button", { name: topic, exact: true }).click();
-      await expect(section.getByRole("heading", { name: topic, exact: true })).toBeVisible();
-      await fits(page, `FAQ topic ${topic}`);
-      const questions = await section
-        .getByRole("button")
-        .evaluateAll((buttons) =>
-          buttons
-            .filter((b) => !b.textContent!.startsWith("←"))
-            .map((b) => b.textContent!.replace("↗", "").trim()),
-        );
-      for (const question of questions) {
-        await section.getByRole("button", { name: question, exact: true }).click();
-        await expect(section.getByRole("heading", { name: question, exact: true })).toBeVisible();
-        await fits(page, question);
-        await section.getByRole("button", { name: `← ${topic}`, exact: true }).click();
-        await expect(section.getByRole("button", { name: question, exact: true })).toBeFocused();
-      }
-      await section.getByRole("button", { name: "← Question topics", exact: true }).click();
+    const picker = section.getByRole("combobox", { name: "Choose a question", exact: true });
+    const questions = await picker.locator("option").evaluateAll((options) =>
+      options.map((option) => ({
+        value: option.getAttribute("value")!,
+        text: option.textContent!,
+      })),
+    );
+    for (const question of questions) {
+      await picker.selectOption(question.value);
+      await expect(
+        section.getByRole("heading", { name: question.text, exact: true }),
+      ).toBeVisible();
+      await expect(picker).toHaveValue(question.value);
+      await fits(page, question.text);
     }
   }
 }
@@ -97,7 +86,7 @@ for (const [width, height] of [
   [667, 375],
   [768, 1024],
 ]) {
-  test(`every chapter and detail fits without scrolling at ${width} × ${height}`, async ({
+  test(`every useful chapter and FAQ answer fits without scrolling at ${width} × ${height}`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height });
@@ -105,10 +94,10 @@ for (const [width, height] of [
     page.on("pageerror", (e) => errors.push(e.message));
     await openJourney(page);
     await expect(page.locator("html")).toHaveAttribute("data-koaryu-mobile-journey", "true");
-    for (let index = 0; index < 14; index++) {
+    for (const index of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13]) {
       await chooseChapter(page, index);
       await fits(page, `chapter ${index + 1}`);
-      await inspectDetails(page, index);
+      await inspectContent(page, index);
     }
     expect(errors).toEqual([]);
   });
@@ -225,8 +214,7 @@ test("mobile document lock cleans up on desktop resize and route exit", async ({
   expect(await page.evaluate(() => getComputedStyle(document.body).position)).not.toBe("fixed");
   await page.setViewportSize({ width: 393, height: 617 });
   await expect(page.locator("[data-mobile-stage]")).toBeVisible();
-  await page.getByRole("button", { name: "Student CRM", exact: true }).click();
-  await page.getByRole("link", { name: "Explore this feature", exact: true }).click();
+  await page.getByRole("link", { name: "Student records", exact: true }).click();
   await expect(page).toHaveURL(/\/features\/student-management$/);
   await expect(page.locator("html")).not.toHaveAttribute("data-koaryu-mobile-journey", "true");
   expect(await page.evaluate(() => getComputedStyle(document.body).position)).not.toBe("fixed");
@@ -243,17 +231,16 @@ test("FAQ deep links, question selection and landscape menu stay usable without 
   await page.setViewportSize({ width: 393, height: 617 });
   await openJourney(page, "#faq-pricing");
   await expect(
-    page.getByRole("heading", { name: "Pricing & Payments", exact: true }),
+    page.getByRole("heading", { name: "What does $27/month include?", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "← Question topics", exact: true }).click();
-  await page.getByRole("button", { name: "Data & Access", exact: true }).click();
+  const picker = page.getByRole("combobox", { name: "Choose a question", exact: true });
+  await picker.focus();
+  await picker.selectOption("4:1");
   await expect(page).toHaveURL(/#faq-data$/);
-  await page
-    .getByRole("button", { name: "Can staff have different permissions?", exact: true })
-    .click();
   await expect(
-    page.getByRole("heading", { name: "Can staff have different permissions?", exact: true }),
+    page.getByRole("heading", { name: "Can staff see billing records?", exact: true }),
   ).toBeVisible();
+  await expect(picker).toBeFocused();
   await page.setViewportSize({ width: 844, height: 390 });
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   const menu = page.getByRole("navigation", { name: "Mobile", exact: true });
@@ -286,4 +273,80 @@ test("mobile animation settles after interruption and respects reduced motion", 
     "data-scene-progress",
     "0.29",
   );
+});
+
+test("mobile has thirteen stops and consistently normalizes the stillness hash", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await openJourney(page, "#stillness");
+  await expect(page).toHaveURL(/#begin$/);
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "begin",
+  );
+  const picker = page.getByRole("combobox", { name: "Choose chapter", exact: true });
+  await expect(picker.locator("option")).toHaveCount(13);
+  await expect(page.locator("[data-journey-chapter]")).toHaveAttribute(
+    "aria-label",
+    "Chapter 13 of 13",
+  );
+  await page.getByRole("button", { name: "Previous chapter", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute("data-active-chapter", "faq");
+  await page.getByRole("button", { name: "Next chapter", exact: true }).click();
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "begin",
+  );
+  await page.evaluate(() => {
+    location.hash = "faq-pricing";
+  });
+  await expect(
+    page.getByRole("heading", { name: "What does $27/month include?", exact: true }),
+  ).toBeVisible();
+  await page.goBack();
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "begin",
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => {
+    location.hash = "stillness";
+  });
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "stillness",
+  );
+  await expect(page.locator("[data-journey-chapter]")).toHaveCount(14);
+  await page.setViewportSize({ width: 568, height: 320 });
+  await expect(page).toHaveURL(/#begin$/);
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "begin",
+  );
+});
+
+test("every mobile guide choice reaches its document in one action", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 393, height: 617 });
+  for (const hash of ["features", "use-cases", "explore", "about"]) {
+    await openJourney(page, `#${hash}`);
+    const links = await page.locator("[data-mobile-stage] a").evaluateAll((anchors) =>
+      anchors.map((a) => ({
+        label: a.textContent!.replace("→", "").trim(),
+        href: a.getAttribute("href")!,
+      })),
+    );
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      await openJourney(page, `#${hash}`);
+      await page
+        .locator("[data-mobile-stage]")
+        .getByRole("link", { name: link.label, exact: true })
+        .click();
+      await expect(page).toHaveURL(new URL(link.href, origin).toString());
+      await expect(page.locator("html")).not.toHaveAttribute("data-koaryu-mobile-journey", "true");
+    }
+  }
 });
