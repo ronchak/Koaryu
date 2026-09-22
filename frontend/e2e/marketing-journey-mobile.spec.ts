@@ -418,3 +418,58 @@ test("mobile skips Guides in both directions and replaces its direct hash", asyn
     "features",
   );
 });
+
+test("hash navigation uses the current viewport before resize notifications arrive", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const holdResize = (event: Event) => {
+      if (document.documentElement.dataset.holdJourneyResize === "true") {
+        event.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener("resize", holdResize);
+    const matchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) => {
+      const media = matchMedia(query);
+      media.addEventListener("change", holdResize);
+      return media;
+    };
+  });
+  await page.setViewportSize({ width: 320, height: 480 });
+  await openJourney(page, "#features");
+  await page.evaluate(() => {
+    document.documentElement.dataset.holdJourneyResize = "true";
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => {
+    location.hash = "explore";
+  });
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "explore",
+  );
+  await expect(page).toHaveURL(/#explore$/);
+  await page.evaluate(() => {
+    delete document.documentElement.dataset.holdJourneyResize;
+    dispatchEvent(new Event("resize"));
+  });
+  await expect(page.locator("[data-journey-chapter]")).toHaveCount(14);
+  await page.evaluate(() => {
+    document.documentElement.dataset.holdJourneyResize = "true";
+  });
+  await page.setViewportSize({ width: 320, height: 480 });
+  await page.evaluate(() => {
+    location.hash = "patterns-form";
+  });
+  await expect(page).toHaveURL(/#features$/);
+  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
+    "data-active-chapter",
+    "features",
+  );
+  await page.evaluate(() => {
+    delete document.documentElement.dataset.holdJourneyResize;
+    dispatchEvent(new Event("resize"));
+  });
+  await expect(page.locator("html")).toHaveAttribute("data-koaryu-mobile-journey", "true");
+});

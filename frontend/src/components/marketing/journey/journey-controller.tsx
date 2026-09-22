@@ -119,7 +119,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 export function JourneyController({ children }: JourneyControllerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef(0);
-  const compactRef = useRef(false);
+  const compactQueryRef = useRef<MediaQueryList | null>(null);
   const reducedMotionRef = useRef(false);
   const [enhanced, setEnhanced] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
@@ -134,7 +134,10 @@ export function JourneyController({ children }: JourneyControllerProps) {
   const [openFaq, setOpenFaq] = useState(0);
 
   const navigateTo = useCallback((requestedIndex: number, options: NavigateOptions = {}) => {
-    const nextIndex = normalizeJourneyChapter(requestedIndex, compactRef.current);
+    const nextIndex = normalizeJourneyChapter(
+      requestedIndex,
+      compactQueryRef.current?.matches ?? false,
+    );
     const nextChapter = chapters[nextIndex];
     if (!nextChapter) {
       return;
@@ -160,7 +163,11 @@ export function JourneyController({ children }: JourneyControllerProps) {
   const navigateRelative = useCallback(
     (direction: -1 | 1) => {
       navigateTo(
-        normalizeJourneyChapter(pageRef.current + direction, compactRef.current, direction),
+        normalizeJourneyChapter(
+          pageRef.current + direction,
+          compactQueryRef.current?.matches ?? false,
+          direction,
+        ),
       );
     },
     [navigateTo],
@@ -213,9 +220,10 @@ export function JourneyController({ children }: JourneyControllerProps) {
     const compactQuery = window.matchMedia(
       "(max-width: 820px), (max-width: 1024px) and (max-height: 500px)",
     );
+    // Hash navigation can precede resize/change events. Read the live query when navigating.
+    compactQueryRef.current = compactQuery;
     const activationFrame = window.requestAnimationFrame(() => {
-      compactRef.current = compactQuery.matches;
-      const initialHash = resolveJourneyHash(window.location.hash, compactRef.current);
+      const initialHash = resolveJourneyHash(window.location.hash, compactQuery.matches);
       if (initialHash) {
         applyResolvedHash(initialHash, false);
       }
@@ -225,8 +233,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     });
 
     const onResize = () => {
-      compactRef.current = compactQuery.matches;
-      const normalized = normalizeJourneyChapter(pageRef.current, compactRef.current);
+      const normalized = normalizeJourneyChapter(pageRef.current, compactQuery.matches);
       if (normalized !== pageRef.current) navigateTo(normalized);
       setCompact(compactQuery.matches);
       setFrame(frameForDimensions(window.innerWidth, window.innerHeight));
@@ -241,7 +248,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
     };
     const onHashChange = () => {
-      const decision = decideJourneyHashChange(window.location.hash, compactRef.current);
+      const decision = decideJourneyHashChange(window.location.hash, compactQuery.matches);
       if (decision.action === "reset") {
         navigateTo(decision.chapterIndex, { writeHash: decision.writeHash });
       } else if (decision.action === "navigate") {
@@ -605,7 +612,10 @@ export function JourneyController({ children }: JourneyControllerProps) {
       return;
     }
 
-    const decision = decideJourneyHashChange(destination.hash, compactRef.current);
+    const decision = decideJourneyHashChange(
+      destination.hash,
+      compactQueryRef.current?.matches ?? false,
+    );
     if (decision.action === "ignore") {
       return;
     }
