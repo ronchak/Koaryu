@@ -53,6 +53,12 @@ const mobileChapterLabels: Readonly<Record<string, string>> = {
 const firstChapter = chapters[0];
 const lastChapterIndex = chapters.length - 1;
 const faqChapterIndex = chapters.findIndex(({ id }) => id === "faq");
+const COMPACT_QUERY = "(max-width: 820px), (max-width: 1024px) and (max-height: 500px)";
+
+function isCompactViewport(): boolean {
+  // WebKit can retain old matches until its change event. A fresh query reads the current layout.
+  return typeof window !== "undefined" && window.matchMedia(COMPACT_QUERY).matches;
+}
 
 if (!firstChapter || faqChapterIndex < 0) {
   throw new Error("The Koaryu Journey requires at least one chapter.");
@@ -119,7 +125,6 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 export function JourneyController({ children }: JourneyControllerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef(0);
-  const compactQueryRef = useRef<MediaQueryList | null>(null);
   const reducedMotionRef = useRef(false);
   const [enhanced, setEnhanced] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
@@ -134,10 +139,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
   const [openFaq, setOpenFaq] = useState(0);
 
   const navigateTo = useCallback((requestedIndex: number, options: NavigateOptions = {}) => {
-    const nextIndex = normalizeJourneyChapter(
-      requestedIndex,
-      compactQueryRef.current?.matches ?? false,
-    );
+    const nextIndex = normalizeJourneyChapter(requestedIndex, isCompactViewport());
     const nextChapter = chapters[nextIndex];
     if (!nextChapter) {
       return;
@@ -163,11 +165,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
   const navigateRelative = useCallback(
     (direction: -1 | 1) => {
       navigateTo(
-        normalizeJourneyChapter(
-          pageRef.current + direction,
-          compactQueryRef.current?.matches ?? false,
-          direction,
-        ),
+        normalizeJourneyChapter(pageRef.current + direction, isCompactViewport(), direction),
       );
     },
     [navigateTo],
@@ -217,25 +215,23 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     reducedMotionRef.current = motionQuery.matches;
-    const compactQuery = window.matchMedia(
-      "(max-width: 820px), (max-width: 1024px) and (max-height: 500px)",
-    );
-    // Hash navigation can precede resize/change events. Read the live query when navigating.
-    compactQueryRef.current = compactQuery;
+    const compactQuery = window.matchMedia(COMPACT_QUERY);
     const activationFrame = window.requestAnimationFrame(() => {
-      const initialHash = resolveJourneyHash(window.location.hash, compactQuery.matches);
+      const currentCompact = isCompactViewport();
+      const initialHash = resolveJourneyHash(window.location.hash, currentCompact);
       if (initialHash) {
         applyResolvedHash(initialHash, false);
       }
       setFrame(frameForDimensions(window.innerWidth, window.innerHeight));
-      setCompact(compactQuery.matches);
+      setCompact(currentCompact);
       setEnhanced(true);
     });
 
     const onResize = () => {
-      const normalized = normalizeJourneyChapter(pageRef.current, compactQuery.matches);
+      const currentCompact = isCompactViewport();
+      const normalized = normalizeJourneyChapter(pageRef.current, currentCompact);
       if (normalized !== pageRef.current) navigateTo(normalized);
-      setCompact(compactQuery.matches);
+      setCompact(currentCompact);
       setFrame(frameForDimensions(window.innerWidth, window.innerHeight));
     };
     const onMotionChange = (event: MediaQueryListEvent) => {
@@ -248,7 +244,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
     };
     const onHashChange = () => {
-      const decision = decideJourneyHashChange(window.location.hash, compactQuery.matches);
+      const decision = decideJourneyHashChange(window.location.hash, isCompactViewport());
       if (decision.action === "reset") {
         navigateTo(decision.chapterIndex, { writeHash: decision.writeHash });
       } else if (decision.action === "navigate") {
@@ -612,10 +608,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       return;
     }
 
-    const decision = decideJourneyHashChange(
-      destination.hash,
-      compactQueryRef.current?.matches ?? false,
-    );
+    const decision = decideJourneyHashChange(destination.hash, isCompactViewport());
     if (decision.action === "ignore") {
       return;
     }
