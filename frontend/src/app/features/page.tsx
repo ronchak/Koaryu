@@ -1,16 +1,12 @@
 import type { Metadata } from "next";
-import {
-  BreadcrumbJsonLd,
-  MarketingIndexPage,
-  PageStructuredData,
-} from "@/components/marketing/public-pages";
+import { BreadcrumbJsonLd, PageStructuredData } from "@/components/marketing/public-pages";
+import { FeatureIndexPage } from "@/components/marketing/feature-pages";
 import {
   APP_DESCRIPTION,
   APP_NAME,
   PUBLIC_PLATFORM_PRICE,
   publicPlatformPriceAmount,
 } from "@/lib/constants";
-import { featurePages } from "@/lib/marketing-pages";
 
 export const metadata: Metadata = {
   title: "Martial Arts Studio Software Features | Koaryu",
@@ -49,16 +45,7 @@ export default function FeaturesPage() {
           },
         }}
       />
-      <MarketingIndexPage
-        eyebrow="Koaryu features"
-        title="Tools for running a martial arts studio."
-        description="Compare Koaryu's student records, belt progression, attendance, and billing tools."
-        pages={featurePages}
-        sectionTitle="Feature map"
-        basePath="/features"
-        listHeading="Product areas owners can compare"
-        listDescription="Open any product area to see what staff can do there."
-      />
+      <FeatureIndexPage />
     </>
   );
 }
