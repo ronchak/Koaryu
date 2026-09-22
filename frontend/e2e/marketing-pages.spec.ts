@@ -106,6 +106,10 @@ for (const viewport of [
         await page.evaluate(() => scrollY),
         `${path}: ordinary document scrolling`,
       ).toBeGreaterThan(0);
+      // Revealing footer links starts Next prefetches. Let this document finish
+      // before the next hard goto; WebKit otherwise reports cancelled RSC reads
+      // from the outgoing page as access-control errors. Keep all pageerrors.
+      await page.waitForLoadState("networkidle");
     }
     expect(errors).toEqual([]);
   });
