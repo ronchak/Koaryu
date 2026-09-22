@@ -129,6 +129,7 @@ function RetentionExample() {
       </div>
       <div
         className={styles.attendanceWeeks}
+        role="img"
         aria-label="Example pattern: four attended classes, followed by four missed classes"
       >
         {[
