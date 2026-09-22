@@ -367,9 +367,9 @@ const faqGroups: readonly FaqGroup[] = [
           "Yes. Admin and Front Desk staff can record payments received outside Koaryu. These payer-level records do not settle a Stripe invoice or charge a family.",
       },
       {
-        question: "How do I request cancellation?",
+        question: "Where do I manage my subscription?",
         answer:
-          "Email support@koaryu.app with your studio name and account email for cancellation help. Admins with an existing Koaryu subscription can also open its customer portal from Billing.",
+          "Admins with an existing Koaryu subscription can open Billing, find Koaryu Core, then choose Customer portal.",
       },
     ],
   },
@@ -414,7 +414,7 @@ const faqGroups: readonly FaqGroup[] = [
       {
         question: "How do I get support?",
         answer:
-          "Email support@koaryu.app with your studio name, account email and the workflow you need help with. Include an invoice or payment identifier for billing questions.",
+          "After signing in, open your account menu, then Help, Help center and Contact support. Submit the form to get a ticket reference in the app.",
       },
     ],
   },
@@ -630,7 +630,6 @@ export const landingPageContent = {
       footerLinks: [
         { label: "Features", href: "/features" },
         { label: "Workflows", href: "/use-cases" },
-        { label: "Support", href: "mailto:support@koaryu.app" },
         { label: "Terms of Service", href: "/terms" },
         { label: "Privacy Policy", href: "/privacy" },
       ],
