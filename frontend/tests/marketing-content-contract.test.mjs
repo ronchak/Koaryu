@@ -102,7 +102,7 @@ describe("marketing content contract", () => {
     );
     assert.deepEqual(
       chapter("begin").footerLinks.map((link) => link.href),
-      ["/features", "/use-cases", "mailto:support@koaryu.app", "/terms", "/privacy"],
+      ["/features", "/use-cases", "/terms", "/privacy"],
     );
 
     const serialized = JSON.stringify(landingPageContent);

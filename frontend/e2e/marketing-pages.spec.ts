@@ -277,10 +277,6 @@ test("every guide control reaches a distinct answer or provides the promised fil
       ).toBeFalsy();
       bodyDestinations.add(destination.href);
       inventory.push({ page: path, ...control });
-      if (destination.protocol === "mailto:") {
-        expect(control.href).toBe("mailto:support@koaryu.app");
-        continue;
-      }
       expect(destination.origin, `${path}: unexpected external action`).toBe(
         new URL(origin).origin,
       );
@@ -391,8 +387,7 @@ test("the shared shell supports skip navigation and identifies the current page"
   await expect(page.getByRole("link", { name: "Skip to content" })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.locator("main")).toBeFocused();
-  await expect(page.getByRole("link", { name: "Contact support", exact: true })).toHaveAttribute(
-    "href",
-    "mailto:support@koaryu.app",
-  );
+  await expect(
+    page.getByRole("navigation", { name: "Footer navigation" }).getByRole("link"),
+  ).toHaveCount(4);
 });

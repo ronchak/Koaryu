@@ -14,7 +14,7 @@ describe("public navigation", () => {
   it("keeps footer public routes in one exported list", () => {
     assert.deepEqual(
       publicFooterLinks.map((link) => link.href),
-      ["/features", "/use-cases", "mailto:support@koaryu.app", "/terms", "/privacy"],
+      ["/features", "/use-cases", "/terms", "/privacy"],
     );
   });
 });

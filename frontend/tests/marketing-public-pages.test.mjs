@@ -12,10 +12,10 @@ describe("public document navigation", () => {
     assert.equal(new Set(publicNavLinks.map(({ href }) => href)).size, publicNavLinks.length);
   });
 
-  it("provides product recovery, real support contact, and legal destinations in the footer", () => {
+  it("provides product recovery and legal destinations in the footer", () => {
     assert.deepEqual(
       publicFooterLinks.map(({ href }) => href),
-      ["/features", "/use-cases", "mailto:support@koaryu.app", "/terms", "/privacy"],
+      ["/features", "/use-cases", "/terms", "/privacy"],
     );
     assert.equal(new Set(publicFooterLinks.map(({ href }) => href)).size, publicFooterLinks.length);
     for (const { href, label } of [...publicFooterLinks, ...publicNavLinks]) {
