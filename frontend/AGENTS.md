@@ -34,7 +34,7 @@ Use this file for work under `frontend/`. Fall back to the repo root `AGENTS.md`
 - Live-mode workflow regressions (synthetic auth/I/O, no external data): `cd frontend && node --experimental-strip-types --test tests/workflow-stabilization-mounted.test.mjs`
 - Preview smoke e2e: `cd frontend && npm run test:e2e:preview-smoke` against a running preview-mode frontend
 - Landing page mobile checks: `cd frontend && npx playwright test e2e/marketing-journey-mobile.spec.ts e2e/marketing-journey-history.spec.ts --workers=1` against a loopback frontend. Covers all 14 chapters on small phones, landscape, tablet, tap-through details, stationary swipe navigation, FAQ, desktop and history behavior.
-- Linked marketing-page checks: `cd frontend && npx playwright test e2e/marketing-pages.spec.ts --workers=1` against a loopback frontend. Covers all 14 guides, mobile/desktop overflow, touch targets, disclosure navigation, local anchors, and landing/document history. Repeat with `--browser=webkit` for WebKit.
+- Linked marketing-page checks: `cd frontend && npx playwright test e2e/marketing-pages.spec.ts --workers=1` against a loopback frontend. Covers the 11 marketing guides, permanent redirects from Explore/About/the family guide, unknown-slug 404s, useful link and download outcomes, mobile/desktop overflow, touch targets, navigation without JavaScript, local anchors, and landing/document history. Repeat with `--browser=webkit` for WebKit.
 - Build: `cd frontend && npm run build`
 - Analyze bundle: `cd frontend && npm run analyze`
 
@@ -56,7 +56,7 @@ If `npm run build` fails with missing Supabase URL or anon key errors, check the
 - Prefer focused fixes over broad UI rewrites unless requested.
 - Keep the public landing page behavior intact unless the task is specifically about auth or warmup routing.
 - Preserve the landing journey's desktop artwork and sequence. Mobile chapters fit entirely between the header and pager. Use tap-through detail panels instead of internal scrolling or shrinking away copy. The mobile-only document lock must clean up on route exit and desktop resize. After changing SVG material filters, regenerate the matching mobile textures with `node scripts/generate-journey-textures.mjs` from `frontend/`.
-- Linked marketing guides use normal document scrolling and server-rendered page-specific layouts in `feature-pages`, `workflow-pages`, and `discovery-pages`. Keep their shared document header/footer and baked paper texture scoped to `public-pages`; do not change the landing journey through shared styles. Label illustrative product records and preserve current tuition-activation, export, and staff-access limits.
+- Linked marketing guides use normal document scrolling and server-rendered page-specific layouts in `feature-pages` and `workflow-pages`. Keep their shared document header/footer and baked paper texture scoped to `public-pages`; do not change the landing journey through shared styles. Label illustrative product records and preserve current tuition-activation, export, and staff-access limits.
 - When touching `src/app/api/` or proxy code, verify secrets stay server-side and response headers still match current safety expectations.
 - When touching dashboard pages, preserve partial-loading and preview/live-mode behavior unless the task explicitly changes it.
 

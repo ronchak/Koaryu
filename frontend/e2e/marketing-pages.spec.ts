@@ -17,14 +17,11 @@ const routes = [
   "/use-cases/trial-to-enrollment",
   "/use-cases/tuition-cleanup",
   "/use-cases/belt-test-readiness",
-  "/explore",
-  "/about",
-  "/studio-types/family-martial-arts-schools",
 ];
 
 test.use({ contextOptions: { reducedMotion: "reduce", hasTouch: true } });
 
-async function openDocument(page: Page, path: string) {
+async function openDocument(page: Page, path: string, canonicalPath = path.split("#")[0]) {
   await page.route("**/api/proxy/health", (route) => route.fulfill({ json: { status: "ok" } }));
   const response = await page.goto(`${origin}${path}`);
   expect(response?.ok(), path).toBeTruthy();
@@ -33,7 +30,7 @@ async function openDocument(page: Page, path: string) {
   await expect(page.locator("h1")).toBeVisible();
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     "href",
-    `https://koaryu.app${path}`,
+    `https://koaryu.app${canonicalPath}`,
   );
 }
 
@@ -119,7 +116,7 @@ test("mobile document navigation dismisses, restores focus, and follows routes",
   page,
 }) => {
   await page.setViewportSize({ width: 393, height: 617 });
-  await openDocument(page, "/explore");
+  await openDocument(page, "/features");
   // Summary semantics differ between engines; use the native element as the stable target.
   const summary = page.locator('summary[aria-label="Navigation menu"]');
   const menu = page.getByRole("navigation", { name: "Mobile navigation" });
@@ -136,8 +133,8 @@ test("mobile document navigation dismisses, restores focus, and follows routes",
   await page.locator("main").click({ position: { x: 4, y: 10 } });
   await expect(menu).not.toBeVisible();
   await summary.click();
-  await menu.getByRole("link", { name: "About", exact: true }).click();
-  await expect(page).toHaveURL(`${origin}/about`);
+  await menu.getByRole("link", { name: "Workflows", exact: true }).click();
+  await expect(page).toHaveURL(`${origin}/use-cases`);
   await expect(menu).not.toBeVisible();
 });
 
@@ -148,13 +145,16 @@ test("document navigation and guide links work before JavaScript", async ({ brow
   });
   const page = await context.newPage();
   try {
-    await openDocument(page, "/explore");
+    await openDocument(page, "/features");
     await page.locator('summary[aria-label="Navigation menu"]').click();
     const menu = page.getByRole("navigation", { name: "Mobile navigation" });
     await expect(menu).toBeVisible();
-    await menu.getByRole("link", { name: "About", exact: true }).click();
-    await expect(page).toHaveURL(`${origin}/about`);
+    await menu.getByRole("link", { name: "Workflows", exact: true }).click();
+    await expect(page).toHaveURL(`${origin}/use-cases`);
     await expect(page.locator("h1")).toBeVisible();
+    await page.locator('main a[href="/use-cases/spreadsheets-to-studio-crm"]').click();
+    await expect(page).toHaveURL(`${origin}/use-cases/spreadsheets-to-studio-crm`);
+    await expect(page.locator("main a[download]")).toBeVisible();
   } finally {
     await context.close();
   }
@@ -167,8 +167,7 @@ test("a marketing detail releases the landing lock and Back restores the journey
   await page.route("**/api/proxy/health", (route) => route.fulfill({ json: { status: "ok" } }));
   await page.goto(`${origin}/#features`);
   await expect(page.locator("[data-enhanced]")).toHaveAttribute("data-enhanced", "true");
-  await page.getByRole("button", { name: "Student CRM", exact: true }).click();
-  await page.getByRole("link", { name: "Explore this feature", exact: true }).click();
+  await page.locator('a[href="/features/student-management"]:visible').click();
   await expect(page).toHaveURL(`${origin}/features/student-management`);
   await expect(page.locator("html")).not.toHaveAttribute("data-koaryu-mobile-journey", "true");
   await page.locator("footer").scrollIntoViewIfNeeded();
@@ -198,4 +197,146 @@ test("legal pages retain readable documents and shared navigation", async ({ pag
       }
     }
   }
+});
+
+test("retired routes redirect permanently to their replacement answers", async ({
+  page,
+  request,
+}) => {
+  for (const [oldPath, destination] of [
+    ["/explore", "/features"],
+    ["/about", "/features#fit"],
+    ["/studio-types/family-martial-arts-schools", "/features/student-management#families"],
+  ]) {
+    const response = await request.get(`${origin}${oldPath}`, { maxRedirects: 0 });
+    expect(response.status(), oldPath).toBe(308);
+    expect(new URL(response.headers().location, origin).href).toBe(`${origin}${destination}`);
+    await openDocument(page, oldPath, destination.split("#")[0]);
+    await expect(page).toHaveURL(`${origin}${destination}`);
+    if (destination.includes("#")) {
+      const section = page.locator(`#${destination.split("#")[1]}`);
+      await expect(section).toBeInViewport();
+      await expect(section.locator("h2,h3").first()).toBeVisible();
+    }
+  }
+});
+
+test("unknown marketing slugs return 404 rather than unrelated guide content", async ({
+  request,
+}) => {
+  for (const path of [
+    "/features/not-a-feature",
+    "/use-cases/not-a-workflow",
+    "/studio-types/not-a-school",
+    "/studio-types/family-martial-arts-school",
+  ]) {
+    const response = await request.get(`${origin}${path}`, { maxRedirects: 0 });
+    expect(response.status(), path).toBe(404);
+    expect(response.headers().location, path).toBeUndefined();
+  }
+});
+
+test("every guide control reaches a distinct answer or provides the promised file", async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 393, height: 800 });
+  const inventory: Array<{ page: string; label: string; href: string; download: boolean }> = [];
+  const destinations = new Map<string, string>();
+  const retired = new Set(["/explore", "/about", "/studio-types/family-martial-arts-schools"]);
+  for (const path of routes) {
+    await openDocument(page, path);
+    const controls = await page.locator("main a").evaluateAll((elements) =>
+      elements.map((element) => ({
+        label:
+          element.textContent?.trim().replace(/\s+/g, " ") ||
+          element.getAttribute("aria-label") ||
+          "",
+        href: element.getAttribute("href") || "",
+        download: element.hasAttribute("download"),
+      })),
+    );
+    // These guides provide worked examples and documents. They have no app action to simulate.
+    await expect(page.locator("main button, main input, main select, main textarea")).toHaveCount(
+      0,
+    );
+    const bodyDestinations = new Set<string>();
+    for (const control of controls) {
+      const destination = new URL(control.href, `${origin}${path}`);
+      expect(control.label, `${path}: unnamed link`).not.toBe("");
+      expect(control.href, `${path}: empty link`).not.toBe("");
+      expect(retired.has(destination.pathname), `${path}: link through a retired page`).toBeFalsy();
+      expect(
+        bodyDestinations.has(destination.href),
+        `${path}: repeated destination ${control.href}`,
+      ).toBeFalsy();
+      bodyDestinations.add(destination.href);
+      inventory.push({ page: path, ...control });
+      expect(destination.origin, `${path}: unexpected external action`).toBe(
+        new URL(origin).origin,
+      );
+      if (control.download) {
+        const response = await request.get(destination.href);
+        expect(response.ok()).toBeTruthy();
+        expect(response.headers()["content-type"]).toMatch(/csv|text\/plain|octet-stream/);
+        const contents = await response.text();
+        expect(contents).toMatch(/first.?name/i);
+        expect(contents).toMatch(/last.?name/i);
+        expect(contents).toMatch(/example\.com/);
+        const downloadEvent = page.waitForEvent("download");
+        await page.locator(`main a[href="${control.href}"]`).click();
+        const download = await downloadEvent;
+        expect(await download.failure()).toBeNull();
+        expect(download.suggestedFilename()).toMatch(/\.csv$/);
+      } else {
+        destinations.set(destination.href, `${path}: ${control.label}`);
+      }
+    }
+    expect(controls.filter(({ href }) => href === "/signup").length).toBeLessThanOrEqual(1);
+    const navigation = await page
+      .locator("header a, footer a")
+      .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+    for (const href of navigation)
+      expect(retired.has(href || ""), `${path}: retired navigation`).toBeFalsy();
+  }
+  for (const [url, label] of destinations) {
+    const destination = new URL(url);
+    const response = await page.goto(url);
+    expect(response?.ok(), label).toBeTruthy();
+    await expect(page.locator("h1").first(), label).toBeVisible();
+    if (destination.hash)
+      await expect(
+        page.locator(`[id="${decodeURIComponent(destination.hash.slice(1))}"]`),
+        label,
+      ).toBeInViewport();
+  }
+  await testInfo.attach("marketing-action-inventory", {
+    body: JSON.stringify(inventory, null, 2),
+    contentType: "application/json",
+  });
+});
+
+test("the shared shell supports skip navigation and identifies the current page", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openDocument(page, "/features");
+  const primary = page.getByRole("navigation", { name: "Primary navigation", exact: true });
+  await expect(primary.getByRole("link", { name: "Features", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(primary.getByRole("link", { name: "Workflows", exact: true })).not.toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("main")).toBeFocused();
+  await expect(page.getByRole("link", { name: "Contact support", exact: true })).toHaveAttribute(
+    "href",
+    "mailto:support@koaryu.app",
+  );
 });

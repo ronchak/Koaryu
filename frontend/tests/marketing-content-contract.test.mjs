@@ -106,7 +106,7 @@ describe("marketing content contract", () => {
     );
     assert.deepEqual(
       chapter("begin").footerLinks.map((link) => link.href),
-      ["/explore", "/features", "/use-cases", "/about", "/terms", "/privacy"],
+      ["/features", "/use-cases", "mailto:support@koaryu.app", "/terms", "/privacy"],
     );
 
     const serialized = JSON.stringify(landingPageContent);
@@ -148,7 +148,6 @@ describe("marketing content contract", () => {
     const authoritativeSources = [
       "src/lib/landing-page-content.ts",
       "src/lib/marketing-pages.ts",
-      "src/lib/marketing-public-content.ts",
     ].map((path) => readFileSync(join(frontendRoot, path), "utf8"));
     const hardcodedPrice = /\$27|\b2700\b|(["'])27\1/;
     authoritativeSources.forEach((source) => assert.doesNotMatch(source, hardcodedPrice));
@@ -157,7 +156,7 @@ describe("marketing content contract", () => {
     assert.ok(billingPage);
     assert.equal(
       billingPage.proof.find((item) => item.label === "Pricing")?.value,
-      formatPublicPlatformPrice(),
+      `${formatPublicPlatformPrice()} per month per studio`,
     );
   });
 

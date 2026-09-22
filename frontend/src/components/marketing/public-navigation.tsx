@@ -1,8 +1,28 @@
 "use client";
 
+import { usePathname } from "next/navigation";
+import { MarketingNavLink } from "./marketing-primitives";
 import { useEffect, useRef, type ReactNode } from "react";
 
 import styles from "./public-pages.module.css";
+
+export function PublicDocumentLink({
+  href,
+  children,
+  ...props
+}: {
+  href: string;
+  children: ReactNode;
+  className?: string;
+  prefetch?: false;
+}) {
+  const pathname = usePathname();
+  return (
+    <MarketingNavLink href={href} aria-current={pathname === href ? "page" : undefined} {...props}>
+      {children}
+    </MarketingNavLink>
+  );
+}
 
 /** Native details remains usable before JavaScript, with familiar dismissal after hydration. */
 export function PublicMobileNavigation({ children }: { children: ReactNode }) {

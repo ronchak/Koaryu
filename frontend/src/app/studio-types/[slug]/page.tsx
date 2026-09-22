@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
-import {
-  generateMarketingDetailMetadata,
-  generateMarketingDetailStaticParams,
-  renderMarketingDetailRoute,
-} from "@/lib/marketing-detail-route";
-import { studioTypeMarketingDetailRouteConfig } from "@/lib/marketing-detail-route-configs";
+import { notFound, permanentRedirect } from "next/navigation";
+import { buildMarketingDetailMetadata } from "@/lib/marketing-detail-route-model";
+import { getFeaturePage, getStudioTypePage, studioTypePages } from "@/lib/marketing-pages";
 
 export function generateStaticParams() {
-  return generateMarketingDetailStaticParams(studioTypeMarketingDetailRouteConfig.pages);
+  return studioTypePages.map(({ slug }) => ({ slug }));
 }
 
 export async function generateMetadata({
@@ -15,7 +12,9 @@ export async function generateMetadata({
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
-  return generateMarketingDetailMetadata({ params }, studioTypeMarketingDetailRouteConfig);
+  const { slug } = await params;
+  if (!getStudioTypePage(slug)) return {};
+  return buildMarketingDetailMetadata(getFeaturePage("student-management")!);
 }
 
 export default async function StudioTypeDetailPage({
@@ -23,5 +22,7 @@ export default async function StudioTypeDetailPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  return renderMarketingDetailRoute({ params }, studioTypeMarketingDetailRouteConfig);
+  const { slug } = await params;
+  if (!getStudioTypePage(slug)) notFound();
+  permanentRedirect("/features/student-management#families");
 }
