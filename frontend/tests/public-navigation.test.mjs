@@ -7,14 +7,14 @@ describe("public navigation", () => {
   it("keeps primary public routes in one exported list", () => {
     assert.deepEqual(
       publicNavLinks.map((link) => link.href),
-      ["/features", "/use-cases", "/explore", "/#pricing", "/about"],
+      ["/features", "/use-cases", "/#pricing"],
     );
   });
 
   it("keeps footer public routes in one exported list", () => {
     assert.deepEqual(
       publicFooterLinks.map((link) => link.href),
-      ["/explore", "/features", "/use-cases", "/about", "/terms", "/privacy"],
+      ["/features", "/use-cases", "mailto:support@koaryu.app", "/terms", "/privacy"],
     );
   });
 });
