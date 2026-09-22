@@ -49,6 +49,7 @@
 }
 
 .desktopSignIn {
+  min-width: 44px;
   justify-self: end;
 }
 
@@ -273,7 +274,6 @@
 .legalNotice {
   max-width: 68ch;
   padding: clamp(22px, 3vw, 30px);
-  border: 1px solid var(--koaryu-rule);
   color: var(--koaryu-ink);
   background: var(--koaryu-sheet);
   font-size: 14px;
@@ -357,14 +357,13 @@
   }
 
   .headerInner {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr auto auto;
     gap: 16px;
     min-height: 72px;
     padding-block: 8px;
   }
 
-  .primaryNavigation,
-  .desktopSignIn {
+  .primaryNavigation {
     display: none;
   }
 

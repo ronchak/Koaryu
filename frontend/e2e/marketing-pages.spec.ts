@@ -115,8 +115,11 @@ for (const viewport of [
 test("mobile document navigation dismisses, restores focus, and follows routes", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 393, height: 617 });
+  await page.setViewportSize({ width: 320, height: 568 });
   await openDocument(page, "/features");
+  await expect(
+    page.locator("header").getByRole("link", { name: "Sign in", exact: true }),
+  ).toBeVisible();
   // Summary semantics differ between engines; use the native element as the stable target.
   const summary = page.locator('summary[aria-label="Navigation menu"]');
   const menu = page.getByRole("navigation", { name: "Mobile navigation" });
