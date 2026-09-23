@@ -1101,7 +1101,7 @@
 }
 
 /* Server chapter fallback during the responsive handoff. The hydrated compact
-   controller replaces this tree with MobileJourneyChapter's tap-through panels. */
+   controller replaces this tree with MobileJourneyChapter. */
 @media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
   .journey[data-enhanced="true"] .chapter,
   .journey[data-enhanced="true"] .chapter[data-placement="upper"] {
@@ -1522,6 +1522,29 @@
   .journey[data-enhanced="true"] .pager {
     padding-block: 4px max(4px, env(safe-area-inset-bottom));
   }
+}
+
+/* The short mobile crop puts the pale room behind Daily admin's light copy.
+   Shade the scene itself so the artwork and transparent navigation stay visible. */
+.journey[data-enhanced="true"][data-compact="true"] .sceneLayer::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background: rgb(25 18 8 / 68%);
+  opacity: 0;
+  transition: opacity 360ms ease;
+}
+
+.journey[data-enhanced="true"][data-compact="true"][data-active-chapter="the-problem"]
+  .sceneLayer::after {
+  opacity: 1;
+  transition: none;
+}
+
+.journey[data-enhanced="true"][data-compact="true"][data-active-chapter="the-problem"] .topbar {
+  color: var(--koaryu-ink-light);
 }
 
 @media (pointer: coarse) {

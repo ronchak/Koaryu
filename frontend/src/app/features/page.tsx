@@ -1,25 +1,23 @@
 import type { Metadata } from "next";
+import { BreadcrumbJsonLd, PageStructuredData } from "@/components/marketing/public-pages";
+import { FeatureIndexPage } from "@/components/marketing/feature-pages";
 import {
-  BreadcrumbJsonLd,
-  MarketingIndexPage,
-  PageStructuredData,
-} from "@/components/marketing/public-pages";
-import {
-  APP_DESCRIPTION,
   APP_NAME,
   PUBLIC_PLATFORM_PRICE,
+  formatPublicPlatformPrice,
   publicPlatformPriceAmount,
 } from "@/lib/constants";
-import { featurePages } from "@/lib/marketing-pages";
+
+const description =
+  "Compare Koaryu's student records, leads, schedules, rank tracking, staff access, and billing limits for an independent martial arts studio.";
 
 export const metadata: Metadata = {
   title: "Martial Arts Studio Software Features | Koaryu",
-  description:
-    "Explore Koaryu features for martial arts student management, belt tracking, attendance, leads, billing, and retention workflows.",
+  description,
   alternates: { canonical: "https://koaryu.app/features" },
   openGraph: {
     title: "Martial Arts Studio Software Features | Koaryu",
-    description: "Feature pages for Koaryu's martial-arts-native studio operating system.",
+    description,
     url: "https://koaryu.app/features",
   },
 };
@@ -40,25 +38,17 @@ export default function FeaturesPage() {
           name: APP_NAME,
           applicationCategory: "BusinessApplication",
           operatingSystem: "Web",
-          description: APP_DESCRIPTION,
+          description,
           offers: {
             "@type": "Offer",
             price: publicPlatformPriceAmount(),
             priceCurrency: PUBLIC_PLATFORM_PRICE.currency,
             category: "Subscription",
+            description: `${formatPublicPlatformPrice()} USD per month per studio for the Koaryu platform. Tuition collection requires separate studio activation and is not generally available.`,
           },
         }}
       />
-      <MarketingIndexPage
-        eyebrow="Koaryu features"
-        title="Tools for running a martial arts studio."
-        description="Compare Koaryu's student records, belt progression, attendance, and billing tools."
-        pages={featurePages}
-        sectionTitle="Feature map"
-        basePath="/features"
-        listHeading="Product areas owners can compare"
-        listDescription="Open any product area to see what staff can do there."
-      />
+      <FeatureIndexPage />
     </>
   );
 }

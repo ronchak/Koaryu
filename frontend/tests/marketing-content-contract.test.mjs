@@ -65,7 +65,7 @@ describe("marketing content contract", () => {
     assertPlainJsonValue(landingPageContent);
   });
 
-  it("preserves approved rows, routes, FAQ counts, actions, and caveat language", () => {
+  it("preserves direct destinations and makes current product limits explicit", () => {
     assert.deepEqual(
       chapter("features").rows.map((row) => row.detail.href),
       [
@@ -74,10 +74,6 @@ describe("marketing content contract", () => {
         "/features/attendance",
         "/features/billing",
       ],
-    );
-    assert.deepEqual(
-      chapter("features").rows.map((row) => row.title),
-      chapter("features").rows.map((row) => row.detail.eyebrow),
     );
     assert.deepEqual(
       chapter("use-cases").rows.map((row) => row.detail.href),
@@ -91,7 +87,7 @@ describe("marketing content contract", () => {
     );
     assert.deepEqual(
       chapter("explore").routes.map((route) => route.href),
-      ["/features", "/use-cases", "/studio-types/family-martial-arts-schools"],
+      ["/features", "/use-cases", "/features/student-management#families"],
     );
     assert.equal(chapter("features").rows.length, 4);
     assert.equal(chapter("use-cases").rows.length, 5);
@@ -99,32 +95,26 @@ describe("marketing content contract", () => {
     assert.equal(chapter("pricing").facts.length, 3);
     assert.equal(chapter("pricing").setupAction.href, "/signup");
     assert.equal(chapter("about").principles.length, 3);
-    assert.equal(chapter("about").link.href, "/about");
+    assert.equal(chapter("about").link.href, "/features#fit");
     assert.deepEqual(
       chapter("faq").groups.map((group) => group.items.length),
-      [4, 4, 5, 5, 4, 4],
+      [3, 3, 4, 4, 4, 3],
     );
     assert.deepEqual(
       chapter("begin").footerLinks.map((link) => link.href),
-      ["/explore", "/features", "/use-cases", "/about", "/terms", "/privacy"],
+      ["/features", "/use-cases", "/terms", "/privacy"],
     );
 
     const serialized = JSON.stringify(landingPageContent);
-    assert.match(serialized, /Student-roster CSV import supports program and current-belt mapping/);
-    assert.match(
-      serialized,
-      /Ordered ladders support class-count, time-at-rank, and instructor-approval requirements/,
-    );
-    assert.doesNotMatch(serialized, /CSV import is planned/);
-    assert.doesNotMatch(
-      serialized,
-      /Are configurable belt ladders planned|The plan covers ordered ranks/,
-    );
-    assert.match(serialized, /web-first/);
-    assert.match(serialized, /before activating payments/);
-    assert.match(serialized, /fees separately/);
-    assert.match(serialized, /Very convenient! Right up until class starts/);
-    assert.match(serialized, /Six students haven't trained in 14 days/);
+    assert.match(serialized, /Student CSV import maps names, contacts, programs and current belts/);
+    assert.match(serialized, /does not deduplicate existing students/);
+    assert.match(serialized, /class-count, time-at-rank and instructor-approval requirements/);
+    assert.match(serialized, /requires separate activation and is not generally available/);
+    assert.match(serialized, /0\.5% per successful charge, plus Stripe fees/);
+    assert.match(serialized, /Instructors cannot access billing/);
+    assert.match(serialized, /Illustrative studio morning/);
+    assert.equal(chapter("studio-view").examples.length, 3);
+    assert.doesNotMatch(serialized, /already sorted|Koaryu’s now|web-first|Very convenient/);
   });
 
   it("derives every authoritative public price representation from one fact", () => {
@@ -138,7 +128,7 @@ describe("marketing content contract", () => {
     assert.equal(formatPublicPlatformPrice(), "$27");
     assert.equal(chapter("pricing").amount, publicPlatformPriceAmount());
     assert.equal(chapter("pricing").displayPrice, formatPublicPlatformPrice());
-    assert.match(chapter("welcome").lede, /\$27 a month for the whole studio/);
+    assert.match(chapter("welcome").lede, /\$27 per studio per month/);
     assert.equal(chapter("begin").lede, "$27 per studio, per month.");
 
     const constantsPath = join(frontendRoot, "src/lib/constants.ts");
@@ -148,7 +138,6 @@ describe("marketing content contract", () => {
     const authoritativeSources = [
       "src/lib/landing-page-content.ts",
       "src/lib/marketing-pages.ts",
-      "src/lib/marketing-public-content.ts",
     ].map((path) => readFileSync(join(frontendRoot, path), "utf8"));
     const hardcodedPrice = /\$27|\b2700\b|(["'])27\1/;
     authoritativeSources.forEach((source) => assert.doesNotMatch(source, hardcodedPrice));
@@ -157,7 +146,7 @@ describe("marketing content contract", () => {
     assert.ok(billingPage);
     assert.equal(
       billingPage.proof.find((item) => item.label === "Pricing")?.value,
-      formatPublicPlatformPrice(),
+      `${formatPublicPlatformPrice()} per month per studio`,
     );
   });
 

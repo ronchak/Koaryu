@@ -1,4 +1,8 @@
-import { formatPublicPlatformPrice, publicPlatformPriceAmount } from "./constants.ts";
+import {
+  formatPublicPlatformPrice,
+  publicPlatformPriceAmount,
+  PUBLIC_PAYMENTS_FEE_PERCENT,
+} from "./constants.ts";
 import {
   getMarketingPageByRef,
   type MarketingPageKind,
@@ -84,6 +88,7 @@ export interface JourneyMorningChapter extends Omit<JourneyBaseChapter, "kind"> 
   lede: string;
   proofLabel: string;
   proof: string;
+  examples: readonly { condition: string; action: string }[];
 }
 
 export interface JourneyProductIntroChapter extends Omit<JourneyBaseChapter, "kind"> {
@@ -220,58 +225,60 @@ function landingDetail(ref: MarketingPageRef): LandingDetailReference {
 
 const featureRows: readonly LandingSummaryRow[] = [
   {
-    title: "Student CRM",
+    title: "Student records",
     description:
-      "Guardians, programs, notes, rank history, and billing follow the student. Exactly where you would look for them.",
+      "Keep programs, ranks, guardian contacts and notes in each student's profile. Staff access depends on their role.",
     detail: landingDetail({ kind: "feature", slug: "student-management" }),
   },
   {
-    title: "Rank Progression",
-    description: "See the history behind the shortlist. The instructor still makes the call.",
+    title: "Rank requirements",
+    description:
+      "Set class-count, time-at-rank and approval requirements. Review the evidence before recording a promotion.",
     detail: landingDetail({ kind: "feature", slug: "belt-tracking" }),
   },
   {
-    title: "Schedule & Attendance",
-    description: "Take attendance fast. Missed classes stop disappearing into a log.",
+    title: "Classes & attendance",
+    description:
+      "Open a dated class roster, mark attendance and correct individual entries when needed.",
     detail: landingDetail({ kind: "feature", slug: "attendance" }),
   },
   {
-    title: "Billing",
+    title: "Billing & availability",
     description:
-      "Stripe Connect, family payers, invoices, and failed payments stay tied to the right account.",
+      "Review payer and invoice records. Tuition collection requires separate activation and is not generally available.",
     detail: landingDetail({ kind: "feature", slug: "billing" }),
   },
 ];
 
 const useCaseRows: readonly LandingSummaryRow[] = [
   {
-    title: "Switching from spreadsheets",
-    description: "Bring over the roster now. Untangle the weird columns later.",
-    detail: landingDetail({
-      kind: "useCase",
-      slug: "spreadsheets-to-studio-crm",
-    }),
+    title: "Import a roster",
+    description:
+      "Map your CSV columns to student fields, resolve program and belt matches, then review validation results.",
+    detail: landingDetail({ kind: "useCase", slug: "spreadsheets-to-studio-crm" }),
   },
   {
-    title: "Retention workflow",
+    title: "Review absences",
     description:
-      "A student misses enough classes to matter. Koaryu puts them on the list before they quietly disappear.",
+      "Check attendance and student notes before contacting a family about a training gap.",
     detail: landingDetail({ kind: "useCase", slug: "student-retention" }),
   },
   {
-    title: "Trial conversion",
+    title: "Follow up on trials",
     description:
-      "Inquiry, trial, notes, and follow-up stay together. Nobody has to remember which tab got the lead.",
+      "Track inquiry stages and follow-up dates. Contact the family yourself, then record the outcome.",
     detail: landingDetail({ kind: "useCase", slug: "trial-to-enrollment" }),
   },
   {
-    title: "Tuition cleanup",
-    description: "See missing payer details and overdue invoices before month-end gets awkward.",
+    title: "Check tuition",
+    description:
+      "Separate missing payer details, overdue invoices and payments received outside Stripe.",
     detail: landingDetail({ kind: "useCase", slug: "tuition-cleanup" }),
   },
   {
-    title: "Test readiness",
-    description: "Get a shortlist with the reasons attached. The instructor still decides.",
+    title: "Prepare a belt test",
+    description:
+      "Check requirements, attendance and promotion history before deciding whom to test.",
     detail: landingDetail({ kind: "useCase", slug: "belt-test-readiness" }),
   },
 ];
@@ -283,22 +290,17 @@ const faqGroups: readonly FaqGroup[] = [
       {
         question: "Who is Koaryu built for?",
         answer:
-          "Owner-operated martial arts schools with recurring memberships, rank progression, and a small staff.",
+          "Independent martial arts schools with a small staff. It covers student records, programs, rank ladders, attendance and lead follow-up.",
       },
       {
-        question: "Is this a generic gym CRM?",
+        question: "Can I use my own belt system?",
         answer:
-          "No. Programs, ranks, guardians, trials, attendance, and promotions are built in. You do not have to fake them with custom fields.",
+          "Yes. Create ordered ranks for each program, with class-count, time-at-rank and instructor-approval requirements. Staff review eligibility and record each promotion.",
       },
       {
-        question: "Which martial arts styles does it support?",
+        question: "Does it manage multiple locations?",
         answer:
-          "Karate, taekwondo, jiu-jitsu, kickboxing, mixed programs, and family schools. Any structured program with progression fits.",
-      },
-      {
-        question: "Is this for single-location schools?",
-        answer:
-          "Yes. Independent, one-location schools are the focus. Multi-location and franchise workflows are not the first priority.",
+          "Koaryu is designed around one studio workspace. It does not provide a franchise-wide or multi-location management dashboard.",
       },
     ],
   },
@@ -306,130 +308,113 @@ const faqGroups: readonly FaqGroup[] = [
     title: "Switching",
     items: [
       {
-        question: "Is CSV import available?",
-        answer: "Yes. Student-roster CSV import supports program and current-belt mapping.",
+        question: "What can I import?",
+        answer:
+          "Student CSV import maps names, contacts, programs and current belts. It does not reconstruct past attendance, promotion history or billing records.",
       },
       {
-        question: "What if my existing data is messy?",
+        question: "What happens to invalid rows?",
         answer:
-          "Messy data is normal. Bring over the useful parts and clean up the rest as you go.",
+          "Validation identifies rows needing correction. Valid rows can import while invalid rows are skipped. Review the result before retrying; import does not deduplicate existing students.",
       },
       {
-        question: "How long should setup take?",
+        question: "Where should I start setup?",
         answer:
-          "It depends on the roster and how much cleanup it needs. Start with programs, students, ranks, and attendance. The rest can follow.",
-      },
-      {
-        question: "What does Koaryu replace?",
-        answer:
-          "The roster spreadsheet, lead tracker, attendance sheet, belt list, payment notes, and reminder pile.",
+          "Create an account, configure programs and ranks, then add or import students. Set up recurring classes and their rosters before taking attendance.",
       },
     ],
   },
   {
-    title: "Daily Use",
+    title: "Daily use",
     items: [
       {
-        question: "Can instructors use it during class?",
+        question: "Can instructors take attendance?",
         answer:
-          "That is the target. Rosters and attendance are meant to be quick from a laptop, tablet, or phone between classes.",
+          "Yes. Instructors can open a dated session roster, mark students Present, Late or Absent and correct entries. Each change saves separately; check for save errors.",
       },
       {
-        question: "Does attendance affect belt readiness?",
+        question: "How does attendance affect ranks?",
         answer:
-          "Yes. Attendance can inform promotion readiness, inactivity alerts, and the student's history instead of dying in a separate log.",
+          "Recorded non-absent entries can count toward configured class requirements. Time at rank and any required instructor approval are checked separately. Staff decide whether to promote.",
       },
       {
-        question: "Can I track multiple programs?",
+        question: "What happens after a trial?",
         answer:
-          "Yes. Keep kids, teens, adults, beginner tracks, and different disciplines separate without splitting the school into different systems.",
+          "Staff update the lead's stage, schedule follow-up and contact the family themselves. Mark contacted clears the follow-up date. Conversion creates a student record.",
       },
       {
-        question: "Can I configure belt ladders?",
+        question: "Does Koaryu send reminders?",
         answer:
-          "Yes. Ordered ladders support class-count, time-at-rank, and instructor-approval requirements.",
-      },
-      {
-        question: "Does Koaryu handle leads and trials?",
-        answer:
-          "Yes. Source, notes, follow-up dates, and conversion history stay with the lead from inquiry through enrollment.",
+          "No automated email or SMS follow-up is available. Staff use the due and overdue follow-up queue, contact families through their usual channel and update the lead.",
       },
     ],
   },
   {
-    title: "Pricing & Payments",
+    title: "Pricing & payments",
     items: [
       {
-        question: `What does the ${formatPublicPlatformPrice()} include?`,
-        answer: `Students, ranks, leads, attendance, billing, and reports. Automations are planned. One studio is ${formatPublicPlatformPrice()} a month.`,
-      },
-      {
-        question: "Do I pay more when the school grows?",
+        question: `What does ${formatPublicPlatformPrice()}/month include?`,
         answer:
-          "No. There are no per-student software tiers, so adding students does not raise the Koaryu subscription.",
+          "One studio's student records, ranks, leads, scheduling, attendance, reports and billing records. No per-student tiers. Tuition collection requires separate activation; automations are planned.",
       },
       {
-        question: "Are Stripe fees included?",
+        question: "What payment fees apply?",
+        answer: `The standard Koaryu Payments fee is ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees. Your studio's configured rate may differ. These are separate from the studio subscription. Collection is not generally available.`,
+      },
+      {
+        question: "Can I use my existing payment method?",
         answer:
-          "No. Stripe charges its payment-processing fees separately from the Koaryu subscription.",
+          "Yes. Admin and Front Desk staff can record payments received outside Koaryu. These payer-level records do not settle a Stripe invoice or charge a family.",
       },
       {
-        question: "Do I have to use Koaryu for payments?",
+        question: "Where do I manage my subscription?",
         answer:
-          "Koaryu works best with Stripe-connected billing. You can still use the rest of the platform before activating payments.",
-      },
-      {
-        question: "Can I cancel?",
-        answer: "Koaryu is month to month.",
+          "Admins with an existing Koaryu subscription can open Billing, find Koaryu Core, then choose Customer portal.",
       },
     ],
   },
   {
-    title: "Data & Access",
+    title: "Data & access",
     items: [
       {
-        question: "Who owns the studio data?",
-        answer: "The studio does. Records stay scoped to the school that owns them.",
+        question: "Can I export or delete records?",
+        answer:
+          "Admins can export operational records from Reports and use confirmed data-cleanup tools. New billing exports are unavailable. The Privacy Policy explains exports, deletion and retained access records.",
       },
       {
-        question: "Can staff have different permissions?",
+        question: "Can staff see billing records?",
         answer:
-          "Yes. Admin, instructor, and front-desk roles keep financial settings and sensitive exports away from people who do not need them.",
+          "Admin and Front Desk staff can review billing records. Instructors can use student and attendance records, but cannot access billing. Admins manage staff roles.",
       },
       {
-        question: "What about minors and guardian contacts?",
+        question: "How are siblings and guardians recorded?",
         answer:
-          "Student profiles account for youth programs with guardian contacts, emergency details, and staff permission boundaries.",
+          "Each child keeps a separate student profile, program, rank and attendance history. Guardian contacts and billing payers are separate records; a guardian is not automatically the payer.",
       },
       {
-        question: "Is studio data separated between customers?",
+        question: "Is my studio's data separate?",
         answer:
-          "Yes. Records are scoped and isolated by studio. One school should never see another school's data.",
+          "Access is checked against studio membership and staff role. The Privacy Policy describes the records Koaryu stores, how they are used and where to request help.",
       },
     ],
   },
   {
-    title: "Roadmap",
+    title: "Support & availability",
     items: [
       {
-        question: "Will there be a mobile app?",
+        question: "Is there a mobile app?",
         answer:
-          "Koaryu is web-first. Fast rosters, attendance, and student lookup on phones and tablets come before a separate native app.",
+          "Koaryu runs in a web browser on phones, tablets and computers. There is no separate native mobile app.",
       },
       {
-        question: "Will it support SMS?",
+        question: "What payment actions are available?",
         answer:
-          "Maybe. SMS has added cost and compliance requirements. Automated email is also planned, not available today.",
+          "Staff can review existing invoices, refresh Stripe status and record external payments. Tuition collection needs separate activation and is not generally available. New billing exports are unavailable.",
       },
       {
-        question: "Is this AI-powered?",
+        question: "How do I get support?",
         answer:
-          "No. Koaryu is built around records, schedules, attendance, billing, rules, and reports that behave the same way twice.",
-      },
-      {
-        question: "What support should I expect?",
-        answer:
-          "The product should be self-serve. Setup guidance, migration help, and direct support still matter for early studios making the switch.",
+          "After signing in, open your account menu, then Help, Help center and Contact support. Submit the form to get a ticket reference in the app.",
       },
     ],
   },
@@ -445,10 +430,10 @@ export const landingPageContent = {
       ink: "dark",
       kicker: "For independent martial arts studios",
       headline: ["Run the school.", "Teach the art."],
-      lede: `Koaryu keeps the daily mess in one place, from first trial to next belt test. It's ${formatPublicPlatformPrice()} a month for the whole studio, even when the kids class gets suspiciously popular.`,
+      lede: `Manage students, attendance, ranks and lead follow-up. ${formatPublicPlatformPrice()} per studio per month.`,
       actions: [
-        { label: "Create your studio", href: "/signup" },
-        { label: "See how it works", href: "#studio-view" },
+        { label: "Create an account", href: "/signup" },
+        { label: "See a studio morning", href: "#studio-view" },
       ],
     },
     {
@@ -459,29 +444,34 @@ export const landingPageContent = {
       ink: "light",
       question:
         "So why are the roster, belt ranks, trials, and payment notes still spread across five of them?",
-      aside: "Very convenient! Right up until class starts...",
+      aside: "Class is starting. Which record is up to date?",
     },
     {
       id: "studio-view",
-      title: "Your morning is already sorted.",
+      title: "Review the day before class.",
       scene: 0.235,
       kind: "morning",
       ink: "dark",
       kicker: "Before the first class",
-      lede: "The people who need attention rise to the top. The rest can wait.",
-      proofLabel: "This morning",
+      lede: "The dashboard surfaces attendance gaps, due follow-ups and today's sessions for staff to review.",
+      proofLabel: "Illustrative studio morning",
       proof:
-        "Six students haven't trained in 14 days. Nine leads need a reply. Eight classes across four programs are ready to go.",
+        "Six students have a 14-day attendance gap: review their records. Nine leads have follow-ups due: contact them. Eight classes today: open the session rosters.",
+      examples: [
+        { condition: "6 attendance gaps of 14+ days", action: "Review attendance and notes." },
+        { condition: "9 lead follow-ups due", action: "Contact leads; update follow-up." },
+        { condition: "8 classes today", action: "Open the session rosters." },
+      ],
     },
     {
       id: "product",
-      title: "One update should do the rest of its job.",
+      title: "After you mark attendance.",
       scene: 0.288,
       kind: "product-intro",
       ink: "light",
       framed: true,
-      kicker: "One operating loop",
-      lede: "Take attendance once. Missed classes reach the follow-up list, and the student history is already there when promotion time comes.",
+      kicker: "A recorded class",
+      lede: "Mark a student Present. The saved entry appears in their attendance history and can count toward the next rank's class requirement. An instructor still decides whether to promote.",
     },
     {
       id: "features",
@@ -490,10 +480,10 @@ export const landingPageContent = {
       kind: "features",
       ink: "dark",
       kicker: "Features",
-      heading: "One student record. Imagine that.",
-      lede: "Update a student once. The front desk and instructors see the same thing.",
+      heading: "What you can manage",
+      lede: "Student records connect programs, ranks and attendance. Billing access is limited to Admin and Front Desk staff.",
       rows: featureRows,
-      link: { label: "See all features", href: "/features" },
+      link: { label: "Product overview", href: "/features" },
     },
     {
       id: "use-cases",
@@ -502,18 +492,18 @@ export const landingPageContent = {
       kind: "use-cases",
       ink: "dark",
       kicker: "Use Cases",
-      heading: "The stuff that became your job is Koaryu’s now.",
+      heading: "Work between classes",
       rows: useCaseRows,
-      link: { label: "All five workflows", href: "/use-cases" },
+      link: { label: "Compare workflows", href: "/use-cases" },
     },
     {
       id: "signals-gather",
-      title: "Attendance should do more than sit there.",
+      title: "Check the reason for an absence.",
       scene: 0.802,
       kind: "transition",
       ink: "dark",
-      kicker: "Attendance with a point",
-      lede: "Missed classes become follow-up work. A steady streak stays with the student when promotion time comes.",
+      kicker: "Illustrative attendance review",
+      lede: "Maya has a 14-day attendance gap. Her notes mention a family trip. Check the return date before contacting her guardian; an attendance gap alone does not explain the absence.",
     },
     {
       id: "explore",
@@ -522,38 +512,38 @@ export const landingPageContent = {
       kind: "explore",
       ink: "dark",
       kicker: "Explore Koaryu",
-      heading: "Start with the headache you already have.",
+      heading: "Choose a guide",
       routes: [
         {
-          title: "Show me what it does",
-          body: "Start with the features and see how the pieces connect.",
+          title: "Product overview",
+          body: "Compare product capabilities and current limits.",
           meta: "Features",
           href: "/features",
         },
         {
-          title: "I have a specific mess",
-          body: "Trials, retention, tuition, testing, or the spreadsheet situation.",
+          title: "Workflow guides",
+          body: "Instructions for importing, follow-up, tuition review and belt tests.",
           meta: "Five studio workflows",
           href: "/use-cases",
         },
         {
-          title: "I run a family-focused school",
-          body: "See the same system built around kids, guardians, trials, and tuition.",
-          meta: "Family martial arts schools",
-          href: "/studio-types/family-martial-arts-schools",
+          title: "Family records",
+          body: "See how students, guardians and payers differ.",
+          meta: "Students, guardians and payers",
+          href: "/features/student-management#families",
         },
       ],
-      link: { label: "Open the full guide", href: "/explore" },
+      link: { label: "Product fit and limits", href: "/features#fit" },
     },
     {
       id: "class-ready",
-      title: "Now the roster knows what happened in class.",
+      title: "Hand off to the right staff.",
       scene: 0.952,
       kind: "transition",
       ink: "dark",
       placement: "upper",
-      kicker: "One shared history",
-      lede: "The front desk and instructors are looking at the same student history.",
+      kicker: "Staff access",
+      lede: "Instructors use student profiles, attendance and rank history. Admin and Front Desk staff can also review payer and invoice records. Instructors cannot access billing.",
     },
     {
       id: "pricing",
@@ -562,7 +552,7 @@ export const landingPageContent = {
       kind: "pricing",
       ink: "dark",
       kicker: "Pricing",
-      heading: "Fill the mats. The price stays put.",
+      heading: "One studio subscription",
       amount: publicPlatformPriceAmount(),
       displayPrice: formatPublicPlatformPrice(),
       period: "per studio per month",
@@ -570,19 +560,18 @@ export const landingPageContent = {
         {
           label: "Included",
           description:
-            "Students, ranks, leads, scheduling, attendance, billing workflows, and reports. Automations are planned.",
+            "Students, ranks, leads, attendance, reports and billing records. Automations are planned.",
         },
         {
-          label: "Stripe fees",
-          description: "Payment-processing fees are billed separately by Stripe.",
+          label: "Payments",
+          description: `Standard Koaryu Payments fee: ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees. Your studio's configured rate may differ. Collection requires separate activation and is not generally available.`,
         },
         {
           label: "Student count",
-          description:
-            "No per-student software tiers. The Koaryu price does not climb with your roster.",
+          description: "No per-student tiers.",
         },
       ],
-      setupAction: { label: "Create your studio", href: "/signup" },
+      setupAction: { label: "Create an account", href: "/signup" },
     },
     {
       id: "about",
@@ -591,23 +580,24 @@ export const landingPageContent = {
       kind: "about",
       ink: "dark",
       kicker: "About Koaryu",
-      heading: "Built for the school you actually run.",
-      lede: "Koaryu starts with one-location, owner-operated studios. If the org chart is three people and a group chat, enterprise gym software is a very weird fit.",
+      heading: "For independent schools",
+      lede: "A single studio workspace for a small staff, with separate Admin, Instructor and Front Desk roles. Multi-location management is outside its scope.",
       principles: [
         {
-          title: "Independent schools first",
-          description: "Koaryu starts with owner-operated and small-team studios.",
+          title: "One studio",
+          description: "Programs and recurring classes share one studio workspace.",
         },
         {
-          title: "Your data stays yours",
-          description: "Records stay scoped to the school that owns them.",
+          title: "Different staff roles",
+          description: "Instructors can use student records without access to billing.",
         },
         {
-          title: "Daily action beats dashboard theater",
-          description: "Koaryu shows what needs attention today, then gets out of the way.",
+          title: "Staff make the decisions",
+          description:
+            "Contact families and review rank evidence yourself. Automated outreach is unavailable.",
         },
       ],
-      link: { label: "Why Koaryu exists", href: "/about" },
+      link: { label: "Product fit and limits", href: "/features#fit" },
     },
     {
       id: "faq",
@@ -636,12 +626,10 @@ export const landingPageContent = {
       framed: true,
       kicker: "Koaryu",
       lede: `${formatPublicPlatformPrice()} per studio, per month.`,
-      action: { label: "Create your studio", href: "/signup" },
+      action: { label: "Create an account", href: "/signup" },
       footerLinks: [
-        { label: "Explore", href: "/explore" },
         { label: "Features", href: "/features" },
-        { label: "Use Cases", href: "/use-cases" },
-        { label: "About", href: "/about" },
+        { label: "Workflows", href: "/use-cases" },
         { label: "Terms of Service", href: "/terms" },
         { label: "Privacy Policy", href: "/privacy" },
       ],

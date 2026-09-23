@@ -40,6 +40,29 @@ const CHAPTER_INDEX = Object.freeze(
   >,
 );
 
+const MOBILE_CHAPTER_REDIRECTS: Readonly<Partial<Record<number, number>>> = Object.freeze({
+  [CHAPTER_INDEX.explore]: CHAPTER_INDEX.features,
+  [CHAPTER_INDEX.stillness]: CHAPTER_INDEX.begin,
+});
+
+export function journeyChapterIndices(compact: boolean): number[] {
+  return landingPageContent.chapters.flatMap((_, index) =>
+    compact && MOBILE_CHAPTER_REDIRECTS[index] !== undefined ? [] : [index],
+  );
+}
+
+export function normalizeJourneyChapter(
+  index: number,
+  compact: boolean,
+  direction?: -1 | 1,
+): number {
+  let bounded = Math.max(0, Math.min(landingPageContent.chapters.length - 1, Math.round(index)));
+  if (!compact) return bounded;
+  if (direction === undefined) return MOBILE_CHAPTER_REDIRECTS[bounded] ?? bounded;
+  while (MOBILE_CHAPTER_REDIRECTS[bounded] !== undefined) bounded += direction;
+  return bounded;
+}
+
 const FAQ_HASH_INDEX = Object.freeze(
   Object.fromEntries(FAQ_HASHES.map((hash, index) => [hash, index])) as Record<FaqHash, number>,
 );
@@ -61,7 +84,7 @@ export type JourneyHashChangeDecision =
   | { readonly action: "navigate"; readonly resolved: ResolvedJourneyHash }
   | { readonly action: "ignore" };
 
-export function resolveJourneyHash(hash: string): ResolvedJourneyHash | null {
+export function resolveJourneyHash(hash: string, compact = false): ResolvedJourneyHash | null {
   const normalized = hash.trim().replace(/^#/, "").toLowerCase();
   if (!normalized) {
     return null;
@@ -79,18 +102,22 @@ export function resolveJourneyHash(hash: string): ResolvedJourneyHash | null {
   }
 
   if (Object.prototype.hasOwnProperty.call(CHAPTER_INDEX, normalized)) {
-    const chapterId = normalized as JourneyChapterId;
+    const requestedId = normalized as JourneyChapterId;
+    const index = normalizeJourneyChapter(CHAPTER_INDEX[requestedId], compact);
+    const chapterId = landingPageContent.chapters[index]!.id;
     return {
       chapterId,
       chapterIndex: CHAPTER_INDEX[chapterId],
       faqGroup: null,
       canonicalHash: chapterId,
-      wasAlias: false,
+      wasAlias: chapterId !== requestedId,
     };
   }
 
   if (Object.prototype.hasOwnProperty.call(JOURNEY_HASH_ALIASES, normalized)) {
-    const chapterId = JOURNEY_HASH_ALIASES[normalized as keyof typeof JOURNEY_HASH_ALIASES];
+    const requestedId = JOURNEY_HASH_ALIASES[normalized as keyof typeof JOURNEY_HASH_ALIASES];
+    const index = normalizeJourneyChapter(CHAPTER_INDEX[requestedId], compact);
+    const chapterId = landingPageContent.chapters[index]!.id;
     return {
       chapterId,
       chapterIndex: CHAPTER_INDEX[chapterId],
@@ -103,7 +130,7 @@ export function resolveJourneyHash(hash: string): ResolvedJourneyHash | null {
   return null;
 }
 
-export function decideJourneyHashChange(hash: string): JourneyHashChangeDecision {
+export function decideJourneyHashChange(hash: string, compact = false): JourneyHashChangeDecision {
   const normalized = hash.trim().replace(/^#/, "");
   if (!normalized) {
     return {
@@ -113,7 +140,7 @@ export function decideJourneyHashChange(hash: string): JourneyHashChangeDecision
     };
   }
 
-  const resolved = resolveJourneyHash(hash);
+  const resolved = resolveJourneyHash(hash, compact);
   return resolved ? { action: "navigate", resolved } : { action: "ignore" };
 }
 

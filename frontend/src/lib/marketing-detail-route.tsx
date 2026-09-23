@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import {
-  BreadcrumbJsonLd,
-  MarketingDetailPage,
-  PageStructuredData,
-} from "@/components/marketing/public-pages";
+import { FeatureDetailPage } from "@/components/marketing/feature-pages";
+import { WorkflowDetailPage } from "@/components/marketing/workflow-pages";
+import { BreadcrumbJsonLd, PageStructuredData } from "@/components/marketing/public-pages";
 import { APP_NAME } from "@/lib/constants";
 import { getMarketingPageByRef } from "@/lib/marketing-pages";
 import {
@@ -52,6 +50,7 @@ export async function renderMarketingDetailRoute(
   const pageUrl = publicMarketingUrl(page.href);
   const relatedPages = relatedMarketingPages(page, getMarketingPageByRef);
   const leafCrumbName = config.leafCrumbName?.(page) ?? page.eyebrow;
+  const DetailPage = page.kind === "feature" ? FeatureDetailPage : WorkflowDetailPage;
 
   return (
     <>
@@ -63,12 +62,7 @@ export async function renderMarketingDetailRoute(
         ]}
       />
       <PageStructuredData data={buildMarketingDetailStructuredData(page, APP_NAME)} />
-      <MarketingDetailPage
-        page={page}
-        relatedPages={relatedPages}
-        basePath={config.basePath}
-        {...config.detailCopy}
-      />
+      <DetailPage page={page} relatedPages={relatedPages} />
     </>
   );
 }

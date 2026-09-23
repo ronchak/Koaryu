@@ -1,100 +1,83 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-
-import { PUBLIC_PLATFORM_PRICE, publicPlatformPriceAmount } from "../src/lib/constants.ts";
 import {
   buildMarketingDetailMetadata,
   buildMarketingDetailStructuredData,
   generateMarketingDetailStaticParams,
 } from "../src/lib/marketing-detail-route-model.ts";
-import { featurePages, studioTypePages, useCasePages } from "../src/lib/marketing-pages.ts";
+import {
+  featurePages,
+  useCasePages,
+  getFeaturePage,
+  getUseCasePage,
+} from "../src/lib/marketing-pages.ts";
 import { buildPublicSitemap } from "../src/lib/sitemap-model.ts";
+import { formatPublicPlatformPrice } from "../src/lib/constants.ts";
 
-const sourceUrl = (path) => new URL(`../src/${path}`, import.meta.url);
-const readSource = (path) => readFileSync(sourceUrl(path), "utf8");
-
-const staticRoutes = ["/features", "/use-cases", "/explore", "/about", "/privacy", "/terms"];
-
-const detailRoutes = [...featurePages, ...useCasePages, ...studioTypePages];
+const detailPages = [...featurePages, ...useCasePages];
 
 describe("public marketing route contract", () => {
-  it("accounts for exactly 16 non-root routes and every sitemap URL", () => {
-    const routes = [...staticRoutes, ...detailRoutes.map((page) => page.href)];
-
-    assert.equal(featurePages.length, 4);
-    assert.equal(useCasePages.length, 5);
-    assert.equal(studioTypePages.length, 1);
-    assert.equal(routes.length, 16);
-    assert.equal(new Set(routes).size, 16);
-
-    const sitemapUrls = buildPublicSitemap({
+  it("indexes eleven distinct marketing pages, home, and the two legal pages", () => {
+    const entries = buildPublicSitemap({
       baseUrl: "https://koaryu.app",
       featurePages,
-      publicContentLastModified: new Date("2026-05-23T00:00:00.000Z"),
-      studioTypePages,
       useCasePages,
-    })
-      .map((entry) => entry.url)
-      .filter((url) => url !== "https://koaryu.app/")
-      .sort();
-
-    assert.deepEqual(sitemapUrls, routes.map((route) => `https://koaryu.app${route}`).sort());
+      publicContentLastModified: new Date("2026-09-22T00:00:00.000Z"),
+    });
+    const expected = [
+      "/",
+      "/features",
+      "/use-cases",
+      "/privacy",
+      "/terms",
+      ...detailPages.map(({ href }) => href),
+    ];
+    assert.equal(detailPages.length, 9);
+    assert.equal(entries.length, 14);
+    assert.equal(new Set(entries.map(({ url }) => url)).size, entries.length);
+    assert.deepEqual(
+      entries.map(({ url }) => url).sort(),
+      expected.map((path) => `https://koaryu.app${path}`).sort(),
+    );
   });
 
-  it("derives every detail metadata, structured URL, and static parameter from its record", () => {
-    for (const page of detailRoutes) {
+  it("keeps each detail page’s search and social descriptions consistent with structured data", () => {
+    for (const page of detailPages) {
       const metadata = buildMarketingDetailMetadata(page);
-      const structuredData = buildMarketingDetailStructuredData(page, "Koaryu");
-
+      const structured = buildMarketingDetailStructuredData(page, "Koaryu");
       assert.equal(metadata.title, page.metaTitle);
       assert.equal(metadata.description, page.description);
-      assert.equal(metadata.alternates?.canonical, `https://koaryu.app${page.href}`);
-      assert.equal(metadata.openGraph?.url, `https://koaryu.app${page.href}`);
-      assert.equal(structuredData.url, `https://koaryu.app${page.href}`);
+      assert.equal(metadata.openGraph.description, page.description);
+      assert.equal(metadata.twitter.description, page.description);
+      assert.equal(structured.description, page.description);
+      assert.equal(metadata.alternates.canonical, `https://koaryu.app${page.href}`);
+      assert.equal(metadata.openGraph.url, metadata.alternates.canonical);
+      assert.equal(structured.url, metadata.alternates.canonical);
     }
-
-    for (const pages of [featurePages, useCasePages, studioTypePages]) {
+    for (const pages of [featurePages, useCasePages]) {
       assert.deepEqual(
         generateMarketingDetailStaticParams(pages),
-        pages.map((page) => ({ slug: page.slug })),
+        pages.map(({ slug }) => ({ slug })),
       );
     }
   });
 
-  it("keeps route and detail structured data alongside complete detail content", () => {
-    for (const routePath of [
-      "app/features/page.tsx",
-      "app/use-cases/page.tsx",
-      "app/explore/page.tsx",
-      "app/about/page.tsx",
-    ]) {
-      const source = readSource(routePath);
-      assert.match(source, /<BreadcrumbJsonLd\b/);
-      assert.match(source, /<PageStructuredData\b/);
+  it("does not resolve invented feature or workflow slugs", () => {
+    for (const slug of ["unknown", "__proto__", "toString"]) {
+      assert.equal(getFeaturePage(slug), undefined);
+      assert.equal(getUseCasePage(slug), undefined);
     }
-
-    const detailSource = readSource("lib/marketing-detail-route.tsx");
-    const rendererSource = readSource("components/marketing/public-pages.tsx");
-    assert.match(detailSource, /<BreadcrumbJsonLd\b/);
-    assert.match(detailSource, /<PageStructuredData\b/);
-    assert.match(rendererSource, /page\.sections\.map/);
-    assert.match(rendererSource, /section\.bullets\.map/);
-    assert.match(rendererSource, /\{section\.description\}/);
   });
 
-  it("derives public price data and keeps tuition availability conditional", () => {
-    const featuresSource = readSource("app/features/page.tsx");
-    assert.match(featuresSource, /price:\s*publicPlatformPriceAmount\(\)/);
-    assert.match(featuresSource, /priceCurrency:\s*PUBLIC_PLATFORM_PRICE\.currency/);
-    assert.doesNotMatch(featuresSource, /\$27|2700|["']27["']/);
-    assert.equal(publicPlatformPriceAmount(), "27");
-    assert.equal(PUBLIC_PLATFORM_PRICE.currency, "USD");
-
-    const billingPage = featurePages.find((page) => page.slug === "billing");
-    assert.ok(billingPage);
-    const billingCopy = JSON.stringify(billingPage);
-    assert.match(billingCopy, /separate activation/i);
-    assert.match(billingCopy, /not generally available/i);
+  it("qualifies platform price and preserves the payment-record and collection boundaries", () => {
+    const billing = getFeaturePage("billing");
+    assert.equal(
+      billing.proof.find(({ label }) => label === "Pricing").value,
+      `${formatPublicPlatformPrice()} per month per studio`,
+    );
+    assert.match(billing.summary, /separate activation/);
+    assert.match(billing.summary, /not generally available/);
+    assert.match(billing.summary, /billing exports are unavailable/);
+    assert.match(JSON.stringify(billing.sections), /does not settle a Stripe invoice/);
   });
 });

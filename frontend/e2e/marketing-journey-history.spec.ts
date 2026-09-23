@@ -7,7 +7,7 @@ if (!["localhost", "127.0.0.1", "[::1]"].includes(frontendTarget.hostname)) {
 }
 
 const ROOT_URL = new URL("/", frontendTarget).toString();
-const ABOUT_URL = new URL("/about", frontendTarget).toString();
+const ABOUT_URL = new URL("/features", frontendTarget).toString();
 
 function collectPageErrors(page: Page) {
   const errors: string[] = [];
@@ -40,7 +40,7 @@ test("explicit landing links preserve Back, Forward, and duplicate history", asy
   await expect(journey).toHaveAttribute("data-active-chapter", "welcome");
   const initialHistoryLength = await page.evaluate(() => window.history.length);
 
-  await page.getByRole("link", { name: "See how it works", exact: true }).click();
+  await page.getByRole("link", { name: "See a studio morning", exact: true }).click();
   await expectJourneyChapter(page, "#studio-view", "studio-view");
   await expect
     .poll(() => page.evaluate(() => window.history.length))
