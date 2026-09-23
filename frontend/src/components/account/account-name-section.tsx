@@ -98,6 +98,8 @@ export function AccountNameSection({
             <span className="font-medium text-text-primary">Display name</span>
             <input
               value={nameValue}
+              // Success clears the edited flag, so typing during a save would be lost.
+              disabled={isSaving}
               onChange={(event) => {
                 setHasEditedName(true);
                 setNameDraft(event.target.value);
