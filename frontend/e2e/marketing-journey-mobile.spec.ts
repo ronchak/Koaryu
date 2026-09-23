@@ -61,7 +61,7 @@ async function inspectContent(page: Page, chapter: number) {
   } else if (chapter === 9) {
     for (const fact of [
       "No per-student tiers.",
-      "Koaryu Payments: 0.5% per successful charge, plus Stripe fees.",
+      "Standard Koaryu Payments fee: 0.5% per successful charge, plus Stripe fees. Your studio's configured rate may differ.",
       "Tuition collection requires separate activation and is not generally available.",
     ])
       await expect(section.getByText(fact, { exact: true })).toBeVisible();
