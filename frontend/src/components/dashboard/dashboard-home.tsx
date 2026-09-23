@@ -25,6 +25,7 @@ import {
   UserPlus,
   Users,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { DatasetReadinessErrorPanel } from "@/components/dataset-readiness-panel";
 import {
@@ -60,7 +61,10 @@ import {
   type DashboardWidgetId,
   type DashboardWidgetSize,
 } from "@/lib/dashboard-widget-catalog";
-import type { DashboardWidgetViewModel } from "@/lib/dashboard-widget-view-models";
+import type {
+  DashboardWidgetActionId,
+  DashboardWidgetViewModel,
+} from "@/lib/dashboard-widget-view-models";
 import styles from "./dashboard-home.module.css";
 
 type DashboardHomeProps = {
@@ -369,7 +373,12 @@ function SetupContent({
   );
 }
 
-const QUICK_ACTION_ICONS = [UserPlus, Upload, Users, CalendarCheck] as const;
+const QUICK_ACTION_ICONS: Record<DashboardWidgetActionId, LucideIcon> = {
+  add_student: UserPlus,
+  import_students: Upload,
+  open_leads: Users,
+  take_attendance: CalendarCheck,
+};
 
 function QuickActionsContent({
   actionCapacity,
@@ -378,10 +387,13 @@ function QuickActionsContent({
   actionCapacity: number;
   model: DashboardWidgetViewModel;
 }) {
+  if (model.actions.length === 0) {
+    return <p className={styles.detail}>{model.detail}</p>;
+  }
   return (
     <div className={styles.quickActions}>
-      {model.actions.slice(0, actionCapacity).map((action, index) => {
-        const Icon = QUICK_ACTION_ICONS[index] ?? Plus;
+      {model.actions.slice(0, actionCapacity).map((action) => {
+        const Icon = QUICK_ACTION_ICONS[action.id];
         return <Link href={action.href} key={action.href}><Icon aria-hidden="true" size={18} /><span>{action.label}</span></Link>;
       })}
     </div>

@@ -1,6 +1,8 @@
+import { NAV_ITEMS } from "./constants.ts";
 import type { DashboardPageComposition } from "./dashboard-page-composition";
-import type { DashboardWidgetId } from "./dashboard-widget-catalog";
+import type { DashboardWidgetId, DashboardWidgetRole } from "./dashboard-widget-catalog";
 import { readDashboardWidgetSummaryEnrichments } from "./dashboard-widget-summary-adapter.ts";
+import { hasStaffPermission } from "./staff-permissions.ts";
 import type { ClassSession, EligibilityEntry, Lead, Student } from "@/types";
 
 export type DashboardWidgetState =
@@ -14,7 +16,11 @@ export type DashboardWidgetRow = {
   href?: string;
 };
 
+export type DashboardWidgetActionId =
+  "add_student" | "import_students" | "open_leads" | "take_attendance";
+
 export type DashboardWidgetAction = {
+  id: DashboardWidgetActionId;
   label: string;
   href: string;
 };
@@ -47,6 +53,7 @@ export type DashboardWidgetViewModelInput = {
   allDatasetEvidenceReady: boolean;
   canSeeBilling: boolean;
   canSeeLeads: boolean;
+  role: DashboardWidgetRole | null;
   hasDashboardSummary: boolean;
   hasPartialStudentSample: boolean;
   studentsLoaded: boolean;
@@ -115,6 +122,44 @@ function hasNamedEmergencyContact(student: Student): boolean {
   return Boolean(student.emergency_contact_name?.trim());
 }
 
+// Mirrors the sidebar's role filter so shortcuts never outrun navigation.
+function canNavigateTo(role: DashboardWidgetRole | null, href: string): boolean {
+  const item = NAV_ITEMS.find((entry) => entry.href === href);
+  return Boolean(role && item && (!item.roles || item.roles.includes(role)));
+}
+
+function quickActionsForRole(role: DashboardWidgetRole | null): DashboardWidgetAction[] {
+  const candidates: Array<DashboardWidgetAction & { permitted: boolean }> = [
+    {
+      id: "add_student",
+      label: "Add student",
+      href: "/students",
+      permitted: hasStaffPermission(role, "create_students"),
+    },
+    {
+      id: "import_students",
+      label: "Import CSV",
+      href: "/students/import",
+      permitted: hasStaffPermission(role, "manage_roster_bulk"),
+    },
+    {
+      id: "open_leads",
+      label: "Open leads",
+      href: "/leads",
+      permitted: canNavigateTo(role, "/leads"),
+    },
+    {
+      id: "take_attendance",
+      label: "Take attendance",
+      href: "/schedule",
+      permitted: hasStaffPermission(role, "take_attendance"),
+    },
+  ];
+  return candidates
+    .filter((action) => action.permitted)
+    .map(({ id, label, href }) => ({ id, label, href }));
+}
+
 export function buildDashboardWidgetViewModels(
   input: DashboardWidgetViewModelInput,
 ): Record<DashboardWidgetId, DashboardWidgetViewModel> {
@@ -129,6 +174,7 @@ export function buildDashboardWidgetViewModels(
     setupSteps,
   } = input.composition;
   const summaryEnrichments = readDashboardWidgetSummaryEnrichments(input.dashboardSummary);
+  const quickActions = quickActionsForRole(input.role);
 
   const dueLeads = input.leads
     .filter(
@@ -576,15 +622,13 @@ export function buildDashboardWidgetViewModels(
     }),
     model(input, {
       id: "quick_actions",
-      state: "ready",
-      detail: "Open a source-owned workflow.",
+      state: quickActions.length > 0 ? "ready" : "empty",
+      detail:
+        quickActions.length > 0
+          ? "Open a source-owned workflow."
+          : "No workflow shortcuts are available for your role.",
       rows: [],
-      actions: [
-        { label: "Add student", href: "/students" },
-        { label: "Import CSV", href: "/students/import" },
-        { label: "Open leads", href: "/leads" },
-        { label: "Take attendance", href: "/schedule" },
-      ],
+      actions: quickActions,
     }),
     model(input, {
       id: "emergency_contacts",

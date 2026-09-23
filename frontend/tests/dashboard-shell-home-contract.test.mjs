@@ -157,6 +157,16 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /prefers-reduced-motion: reduce/);
   });
 
+  it("binds quick-action icons to action identity after role filtering", () => {
+    assert.match(controllerSource, /role: normalizedRole,/);
+    assert.match(
+      homeSource,
+      /const QUICK_ACTION_ICONS: Record<DashboardWidgetActionId, LucideIcon> = \{/,
+    );
+    assert.match(homeSource, /const Icon = QUICK_ACTION_ICONS\[action\.id\];/);
+    assert.doesNotMatch(homeSource, /QUICK_ACTION_ICONS\[index\]/);
+  });
+
   it("mounts Home on authoritative identity", () => {
     assert.match(controllerSource, /const isDashboardIdentityReady = Boolean\(/);
     assert.match(controllerSource, /isDashboardDataReady: datasetReadiness\.status === "ready"/);
