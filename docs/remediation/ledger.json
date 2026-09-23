@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "7d7308afe8c77578094db8ffb81ee0c9a9e37fe2",
+  "last_reconciled_main": "fe2a37bf97bb87897b3f8e03d83611c81d69b9c0",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -7436,15 +7436,18 @@
       "id": "FR1-04",
       "title": "Authentication callback errors are discarded by the login page",
       "cluster": "access_and_recovery",
-      "disposition": "pending",
-      "reason": "Callback failures still redirect with known error codes that Login never consumes.",
+      "disposition": "fixed",
+      "reason": "Login renders fixed recovery guidance for known callback errors through CallbackError and authErrorMessage.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No hosted activity or new runtime tests in this normalization.",
+      "verified_against": "fe2a37bf97bb87897b3f8e03d83611c81d69b9c0",
+      "verification": "Commits 808331c and 75d96cf are ancestors of the verified production SHA. frontend/tests/google-auth.test.mjs passed in the 15-case focused run; candidate CI 35856600323 passed. Production exact-SHA verifier passed September 23, 2026.",
       "source_paths": [
         "frontend/src/app/auth/callback/route.ts",
-        "frontend/src/app/(auth)/login/page.tsx"
+        "frontend/src/app/(auth)/login/page.tsx",
+        "frontend/src/components/auth/callback-error.tsx",
+        "frontend/src/lib/auth-error.ts",
+        "frontend/tests/google-auth.test.mjs"
       ],
       "pull_requests": [],
       "track": "Sol",
@@ -7452,18 +7455,28 @@
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "frontend/src/app/auth/callback/route.ts",
-          "line": 31,
-          "observation": "Missing code and exchange failure redirect with missing_code or callback_failed."
+          "path": "frontend/src/app/(auth)/login/page.tsx",
+          "line": 144,
+          "observation": "Login renders CallbackError inside Suspense."
         },
         {
-          "path": "frontend/src/app/(auth)/login/page.tsx",
-          "line": 18,
-          "observation": "Error starts empty; the page has no query-error decoding."
+          "path": "frontend/src/components/auth/callback-error.tsx",
+          "line": 6,
+          "observation": "Reads the error query code and renders only the fixed mapped message as an alert."
+        },
+        {
+          "path": "frontend/src/lib/auth-error.ts",
+          "line": 1,
+          "observation": "Maps access_denied, callback_failed, and missing_code to fixed recovery guidance; unknown codes return null."
+        },
+        {
+          "path": "frontend/tests/google-auth.test.mjs",
+          "line": 6,
+          "observation": "Tests all three known codes, ignores unknown/untrusted codes, and retains the redirect guard."
         }
       ],
-      "next_change": "Map only the two known callback codes to fixed recovery messages, pointing to the existing magic-link sign-in action.",
-      "validation_plan": "Render Login for each known code, unknown code, and no code; verify visible recovery guidance and no arbitrary query-text rendering.",
+      "next_change": "None; fix is in production.",
+      "validation_plan": "Completed: focused Google-auth tests, candidate CI, commit ancestry, and production exact-SHA verification.",
       "scope_constraints": [
         "Code exchange, redirect validation, session handling, and membership routing."
       ],
@@ -13192,16 +13205,16 @@
     }
   },
   "current_counts": {
-    "fixed": 139,
+    "fixed": 140,
     "rejected_after_verification": 1,
-    "pending": 123,
+    "pending": 122,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 98,
+    "Sol": 97,
     "Astra": 25
   },
   "execution_policy": {
@@ -13214,14 +13227,14 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 113,
+      "Sol": 114,
       "Astra": 26
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 98,
+      "Sol": 97,
       "Astra": 25
     },
     "deferred_intentionally": {

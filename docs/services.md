@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September 20 release readback: both databases are V50, 145 migrations. Production and staging frontend/backend pairs now serve Microsoft sign-in candidate `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225`. See [Microsoft SSO verification](microsoft-sso-setup.md#september-20-release-verification). Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
+Inventory baseline: 2026-08-24. September 20 release readback: both databases are V50, 145 migrations. Production frontend/backend now serve PR240 candidate `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0`. Staging was last verified at Microsoft sign-in candidate `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225` and was not changed or reverified for PR240. See [Microsoft SSO verification](microsoft-sso-setup.md#september-20-release-verification). Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
 
 ## Quick map
 
