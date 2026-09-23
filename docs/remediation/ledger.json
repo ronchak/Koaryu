@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "fe2a37bf97bb87897b3f8e03d83611c81d69b9c0",
+  "last_reconciled_main": "f403732274cad520eadf113f479ee44ac736379d",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -8220,16 +8220,18 @@
       "id": "FC1-06",
       "title": "Saving an account name can discard newer typing",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "The display-name input still accepts newer typing while success clears hasEditedName. Staff store settlement changes did not repair this form.",
+      "disposition": "fixed",
+      "reason": "The account display-name input is disabled during a pending save, so newer typing cannot be discarded when that save settles. Failed saves preserve the submitted draft. Merged into main; not deployed in this experiment.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and prior merged implementation evidence. No runtime test or hosted activity during normalization.",
+      "verified_against": "23856d2ee5dbddde6ef4079ddf7ca4b5337f36e1",
+      "verification": "Worker demonstrated two mounted failures before the fix and 11 focused passes afterward; full suite 910/910. Coordinator repeated the 11 focused tests and reviewed the complete diff. Exact-head release CI passed.",
       "source_paths": [
         "frontend/src/components/account/account-name-section.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        242
+      ],
       "track": "Sol",
       "root_cause": "submitted-draft-ownership",
       "collapse_with": [
@@ -8239,22 +8241,12 @@
       "current_evidence": [
         {
           "path": "frontend/src/components/account/account-name-section.tsx",
-          "line": 63,
-          "observation": "Successful update unconditionally clears dirty state."
-        },
-        {
-          "path": "frontend/src/components/account/account-name-section.tsx",
-          "line": 97,
-          "observation": "The display-name input has no saving guard."
-        },
-        {
-          "path": "frontend/src/lib/store-studio-actions.ts",
-          "line": 125,
-          "observation": "The underlying SDK update preserves USER_UPDATED access revalidation, a separate concern."
+          "line": 102,
+          "observation": "Input is disabled while saving; the existing failure path retains the submitted draft."
         }
       ],
-      "next_change": "Disable the display-name input while saving, or retain newer draft revisions when the submitted revision settles.",
-      "validation_plan": "Delay updateUserName, attempt another edit, and resolve success/failure while checking draft preservation.",
+      "next_change": "No implementation change remains for this finding. Release is separately authorized after the experiment postmortem.",
+      "validation_plan": "Completed local regression proof, coordinator review and exact-head CI. No hosted validation or deployment in this experiment.",
       "scope_constraints": "Preserve USER_UPDATED access resets and the distinction between display and legal names.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
@@ -10329,19 +10321,21 @@
       "id": "FSH1-11",
       "title": "Instructor dashboard shortcuts advertise actions their role cannot take",
       "cluster": "access_and_recovery",
-      "disposition": "pending",
-      "reason": "Quick Actions still advertises student creation and CSV import to instructors. Open leads differs from sidebar policy, but current read access does not establish a blanket Leads authorization denial.",
+      "disposition": "fixed",
+      "reason": "Dashboard shortcuts follow current action permissions and Leads navigation policy. Instructors retain attendance without creation/import shortcuts, null identity has no actions, and icons follow action IDs. Merged into main; not deployed in this experiment.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No hosted activity or new runtime tests in this normalization.",
+      "verified_against": "f403732274cad520eadf113f479ee44ac736379d",
+      "verification": "Worker observed three failures before the fix and 20 focused passes afterward; full suite 910/910. Coordinator repeated all 20 focused checks and reviewed the full diff, role dependencies and permission definitions. Original and rebased exact-head release CI passed.",
       "source_paths": [
         "frontend/src/lib/dashboard-widget-view-models.ts",
         "frontend/src/lib/dashboard-widget-catalog.ts",
         "frontend/src/lib/staff-permissions.ts",
         "frontend/src/components/dashboard/dashboard-home.tsx"
       ],
-      "pull_requests": [],
+      "pull_requests": [
+        245
+      ],
       "track": "Sol",
       "root_cause": "navigation_ignores_action_permissions",
       "collapse_with": [
@@ -10350,27 +10344,22 @@
       "current_evidence": [
         {
           "path": "frontend/src/lib/dashboard-widget-view-models.ts",
-          "line": 531,
-          "observation": "Quick Actions always includes Add student, Import CSV, Open leads, and Take attendance."
-        },
-        {
-          "path": "frontend/src/lib/staff-permissions.ts",
-          "line": 33,
-          "observation": "Instructor permissions include promotion and attendance only."
-        },
-        {
-          "path": "frontend/src/lib/student-import-page-controller.ts",
-          "line": 43,
-          "observation": "Import requires manage_roster_bulk."
+          "line": 131,
+          "observation": "Quick Actions filters by staff permissions and the existing navigation policy."
         },
         {
           "path": "frontend/src/components/dashboard/dashboard-home.tsx",
-          "line": 383,
-          "observation": "Renderer forwards actions and assigns icons by array index."
+          "line": 396,
+          "observation": "The renderer selects the icon by action ID after filtering."
+        },
+        {
+          "path": "frontend/src/lib/dashboard-page-controller.ts",
+          "line": 314,
+          "observation": "The live controller passes normalizedRole into the view model; role remains a memo dependency."
         }
       ],
-      "next_change": "Filter creation/import shortcuts by action permissions and Leads by existing navigation policy. Retain attendance and bind icons to action identity so filtering does not mislabel them.",
-      "validation_plan": "Check action labels, destinations, and icons for each role and null identity; instructors retain attendance without creation/import shortcuts.",
+      "next_change": "No implementation change remains for this finding. Release is separately authorized after the experiment postmortem.",
+      "validation_plan": "Completed local regression proof, coordinator review and exact-head CI. No hosted validation or deployment in this experiment.",
       "scope_constraints": [
         "Backend permissions, Leads read access, and allowed dashboard widget roles."
       ],
@@ -13205,16 +13194,16 @@
     }
   },
   "current_counts": {
-    "fixed": 140,
+    "fixed": 142,
     "rejected_after_verification": 1,
-    "pending": 122,
+    "pending": 120,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 97,
+    "Sol": 95,
     "Astra": 25
   },
   "execution_policy": {
@@ -13227,14 +13216,14 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 114,
+      "Sol": 116,
       "Astra": 26
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 97,
+      "Sol": 95,
       "Astra": 25
     },
     "deferred_intentionally": {

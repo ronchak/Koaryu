@@ -7,26 +7,28 @@ Preserve working behavior and safeguards while removing verified accidental comp
 
 ## Current position
 
+The September 23 Astra/Opus experiment merged FC1-06 in [PR242](https://github.com/ronchak/Koaryu/pull/242) and FSH1-11 in [PR245](https://github.com/ronchak/Koaryu/pull/245). Both are on main and **not deployed**. Production and staging remain at the recorded releases below. The original execution tracks remain historical ledger assignments; Opus 5.5 implemented these two changes and Astra reviewed and merged them. See [the handoff](docs/remediation/HANDOFF.md#september-23-astraopus-experiment).
+
 The seven queued corrections are live in V50, 145 migrations. The production frontend/backend pair serves `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0` after the September 23 PR240 frontend release, which changed no database state. Staging was last verified at `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225` in [Microsoft SSO verification](docs/microsoft-sso-setup.md#september-20-release-verification) and was not reverified in that release. The single production V50 apply preserved all 2,684 tracked original rows, backed by a fresh verified V49 backup/restore. No live billing activation or historical financial backfill occurred. See [verification](docs/remediation/production-release-verification.md) and [HANDOFF](docs/remediation/HANDOFF.md), which records the PR240 release and the FR1-04 closeout.
 
 PR222 fixes fabricated billing zeroes. PR223 preserves confirmed rank saves through token renewal and protects pending program/student drafts. PR224 preserves attendance across program promotion boundaries; PR225 honors weekly template dates. PR226 separates outstanding, overdue and uncollectible invoice facts. PR227 derives current minor status without rewriting stored rows. All seven requested findings are fixed. [The record](docs/remediation/queued-findings-verification.md) includes exact heads, review, tests and limits.
 
-The earlier V48–V49 release fixed activation quantity ownership and unknown subscription facts. Mixed-currency reads remain deliberately deferred after the USD-only production query. [Measurement](docs/remediation/live-measurement-20260920.md) retains the actual provider signals and the navigation metrics still unavailable. The remaining 122 pending audit observations are outside this bounded follow-up; the wider program remains open.
+The earlier V48–V49 release fixed activation quantity ownership and unknown subscription facts. Mixed-currency reads remain deliberately deferred after the USD-only production query. [Measurement](docs/remediation/live-measurement-20260920.md) retains the actual provider signals and the navigation metrics still unavailable. The remaining 120 pending audit observations are outside this bounded follow-up; the wider program remains open.
 
 All 278 retained audit observations now have an individual disposition, reason, source evidence and execution track in the [ledger](docs/remediation/ledger.json). There are no repeated placeholder reasons. The [normalized map](docs/remediation/normalized-map.md) explains shared causes, dependencies, deliberate exclusions and verification limits. [Sol batches](docs/remediation/delegated/README.md) contain the delegated recipes.
 
 | Disposition | Audit findings |
 | --- | ---: |
-| Fixed | 140 |
+| Fixed | 142 |
 | Resolved indirectly | 2 |
-| Pending | 122 |
+| Pending | 120 |
 | Deferred intentionally | 11 |
 | Deferred pending owner action | 1 |
 | Rejected after verification | 1 |
 | Obsolete | 1 |
 | Total | 278 |
 
-Pending work is split between 25 Astra and 97 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
+Pending work is split between 25 Astra and 95 Sol observations. Across all dispositions, 56 are Astra and 222 are Sol. Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger. These are observations, not ticket or PR counts.
 
 The ledger separately records the authorized release-attestation generator, a newly verified mixed-currency reporting defect, and dependency maintenance discovered during this program. [PR166](https://github.com/ronchak/Koaryu/pull/166), merged as `84ac2a8`, patches the dependency advisories with a compatible Python lock compiler; see [verification](docs/remediation/dependency-maintenance-verification.md). Those entries do not inflate the original 278.
 
