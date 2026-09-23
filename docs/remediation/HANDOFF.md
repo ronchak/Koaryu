@@ -1,6 +1,24 @@
-# Koaryu handoff, September 20, 2026
+# Koaryu handoff, September 23, 2026
 
-## Current state
+## PR #240 production release
+
+Owner ronchak authorized Codex root coordinator to squash-merge and release PR #240, then resolve its two outstanding review findings. PR #240 merged at 2026-09-23T11:54:08Z as `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0`. Its tree matches the passing candidate `d9f2a53bfc5f684b6090e7c5791f234a3ce3fbce`. [Candidate CI](https://github.com/ronchak/Koaryu/actions/runs/35856600323) passed all checks. The guarded merge retained its head/base, CI, and Render auto-deploy checks; a private copy changed only the merge method to the owner-requested squash.
+
+- The release changes marketing/navigation frontend files and `docs/design-language.md`. No backend code, Supabase files, or migrations changed. V50 remains in place. No database apply, backup, restore, billing activation, or staging release was performed.
+- Both review threads are resolved. The route contract now records the retired Explore, About, and studio-type redirects. Public payment copy qualifies 0.5% as the standard rate and preserves studio-specific rates. The mobile wording was shortened after CI caught clipping. All 19 local mobile tests, the local production build, targeted lint, and 15 focused tests passed; final candidate CI passed its browser checks.
+- Render deployment `dep-daprrtgu01pc73doa3j0` is live at `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0`. Both readiness paths report ready, production, and Stripe live. This was a code-identical backend redeploy to align release identities.
+- Vercel deployment `dpl_BceyLK5DGRu4yPucsE3p151gwZqh` is READY: [production build](https://koaryu-acwkkbj4b-ronakchak2569-8303s-projects.vercel.app). It was built from the exact merged SHA with `target=production`, production variables, and region `pdx1`. Provider readback confirms `koaryu.app` and `www.koaryu.app`. Production API, Supabase, and site URLs were verified without exposing values or credentials. Render auto-deploy and Vercel main auto-deploy remain off.
+- `npm run verify:deployed-release -- --environment production --expected-sha fe2a37bf97bb87897b3f8e03d83611c81d69b9c0 --frontend-origin https://koaryu.app --backend-api https://koaryu.onrender.com/api/v1` passed with `verified: true`; frontend and backend both report production and the exact SHA.
+- `/` and `/features/billing` loaded in Chrome with no observed console errors and returned HTTP 200. `/sitemap.xml` returned HTTP 200, parsed as XML with 14 canonical URLs, and includes the billing guide. Chrome blocked direct XML navigation with `ERR_BLOCKED_BY_CLIENT`; the HTTP/XML check passed. A request without cookies to `/dashboard` returned HTTP 307 with `Location: /login`.
+- FR1-04 is fixed by existing commits `808331c` and `75d96cf`, both ancestors of the production SHA. `CallbackError` renders fixed `authErrorMessage` guidance for `access_denied`, `callback_failed`, and `missing_code`; unknown/untrusted codes produce no message. `frontend/tests/google-auth.test.mjs` passed. Only FR1-04 and its derived ledger counts change in this closeout.
+
+Private operator evidence is under `/Users/openclaw/Koaryu Releases/20260923-pr240`, including the merge, deployment requests/readbacks, CI and local checks, production verifier, and HTTP results. This documentation-only closeout needs no deployment. No other remediation work was performed.
+
+## Archived September 20 handoff
+
+The following is historical; the production identity above supersedes its production deployment statements. Staging was not reverified or changed in this release.
+
+### Current state
 
 The seven queued findings are fixed and live. The bounded run is complete; the wider remediation program remains open. Production and staging are V50, 145 migrations, head `20260920154441`, manifest `release-db-attestation-v50`. Both frontend/backend pairs serve `dce52efff1d28358eca421769d00791b60045c6c`. Production readiness, frontend proxy, environment and `pdx1` checks passed. Both web services are active; production auto-deploy stays off and the staging billing cron remains suspended. No billing activation changed.
 
@@ -8,7 +26,7 @@ Code main at closeout is `7d7308afe8c77578094db8ffb81ee0c9a9e37fe2`, PR227 merge
 
 PR222 fixes FC1-04. PR223 fixes FSH2-02/FC2-02 together. PR224 fixes OPS1-02; PR225 fixes OPS2-03; PR226 fixes BB1-03; PR227 fixes DM1-01. No queued finding was dropped or left half-implemented. [Verification](queued-findings-verification.md) records each reviewed head, merge and test change. The earlier V48–V49 release is [archived separately](production-v48-v49-verification.md).
 
-## Verification and recovery
+### Verification and recovery
 
 - Final candidate CI passed 1,930 backend tests, 904 frontend tests, build/lint/security/API checks and the database gate. The complete local replay passed 145 migrations, 54 contracts, restore continuations, tamper checks and concurrency proofs. All 54 hosted staging contracts passed.
 - One production migration invocation followed its own 30-second announcement. All 2,684 original rows across 69 tables remained unchanged after apply. Staging preserved 909 original rows after both apply and contracts. The scope includes public/private customer data, Auth users and Storage metadata, excluding attestation expectation tables and provider session/operational tables.
@@ -16,13 +34,13 @@ PR222 fixes FC1-04. PR223 fixes FSH2-02/FC2-02 together. PR224 fixes OPS1-02; PR
 - The reviewed helper supports exact mappings through V50. No post-V50 backup has been taken. A future V50 backup starts from count 145/head `20260920154441` only after fresh provider checks. Historical V38/V47/V49 commands are not current approval.
 - No approved down-migration or automated hosted restore exists. The previous V49 app remains schema/readiness-compatible through V50, but compatibility alone does not authorize rollback. Older apps are not approved after V48 receipts or V49 unknown terms exist. See the [completed packet](PRODUCTION-RELEASE.md) and [release proof](production-release-verification.md).
 
-## Budget and limits
+### Budget and limits
 
 The allocation is 40 additional weekly percentage points from a 5%-used baseline, including the initial V48–V49 release and this queued follow-up. At the closeout check on September 20, the meter was 35% used: 30 points spent, 10 left. No further implementation is being started. The final report supplies the last meter after closeout; unused allocation remains unspent. Do not reuse the old 51% baseline or 45-point cap.
 
 The earlier read-only production query found USD only in seven invoices, five payments and five plans. Mixed-currency reporting remains intentionally deferred; no conversion or financial backfill occurred. [Measurement](live-measurement-20260920.md) retains 171 Render requests: 165 HTTP 200, three 401, two 404, one unclassified 502, plus 12 memory warnings and one retained Vercel HTTP 200. Retention/plan limits prevent a complete launch-wide assessment. FCP/LCP and four-route navigation latency/request counts remain unmeasured. No synthetic production load or fabricated green result was used. Five active enrollments had no provider subscription links; the earlier activation reproduction was not proof of live undercharging.
 
-## Ledger
+### Ledger
 
 | Disposition | Astra | Sol | Total |
 | --- | ---: | ---: | ---: |
@@ -39,7 +57,7 @@ The separate seven program findings remain fixed Astra 3/Sol 2, pending Astra 1 
 
 Delegated batches 01, 02, 03, 05, 08, 09, 10, 12 and 13, plus recipes 14/15, are complete. Batches 04, 06 and 11 retain BT4-06, BT3-07 and FC3-08 behind database prerequisites; batch 07 retains FT1-11/FT2-08. The original 55-observation cohort remains 49 fixed, one obsolete and five pending. These remainders were not started in this follow-up. See [the index](delegated/README.md).
 
-## Next work and traps
+### Next work and traps
 
 The next bounded code proposal should address PROGRAM-IMPORT-01: preview accepts a program-specific belt with Program omitted, while execution safely rejects it. Reconcile that ownership before implementation; do not infer a program or weaken execution merely to match preview. Obtain the still-missing read-only live navigation measurements before choosing performance work.
 
