@@ -61,8 +61,8 @@ async function inspectContent(page: Page, chapter: number) {
   } else if (chapter === 9) {
     for (const fact of [
       "No per-student tiers.",
-      "Payments: standard 0.5% + Stripe fees per charge. Studio rates may vary.",
-      "Tuition collection requires separate activation and is not generally available.",
+      "Payments: 0.5% standard fee + Stripe. Studio rates vary.",
+      "Tuition collection needs separate activation; not generally available.",
     ])
       await expect(section.getByText(fact, { exact: true })).toBeVisible();
   } else if (chapter === 11) {

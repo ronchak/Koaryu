@@ -218,11 +218,8 @@ export function MobileJourneyChapter({
           }
         >
           <p>Students, ranks, leads, attendance, reports and billing records.</p>
-          <p>
-            Payments: standard {PUBLIC_PAYMENTS_FEE_PERCENT}% + Stripe fees per charge. Studio rates
-            may vary.
-          </p>
-          <p>Tuition collection requires separate activation and is not generally available.</p>
+          <p>Payments: {PUBLIC_PAYMENTS_FEE_PERCENT}% standard fee + Stripe. Studio rates vary.</p>
+          <p>Tuition collection needs separate activation; not generally available.</p>
         </Panel>
       );
       break;
