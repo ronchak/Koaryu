@@ -110,6 +110,11 @@ export function useSchedulePageController({
   );
 
   const visibleRangeKey = `${visibleRange.start}:${visibleRange.end}`;
+  const currentRangeKeyRef = useRef(visibleRangeKey);
+
+  useEffect(() => {
+    currentRangeKeyRef.current = visibleRangeKey;
+  }, [visibleRangeKey]);
 
   useResumeRefresh(() => {
     resumedRangeRef.current = visibleRangeKey;
@@ -226,24 +231,37 @@ export function useSchedulePageController({
           program_id: payload.program_id,
           capacity: payload.capacity,
         });
-
-        if (recurringClassOverlapsRange(payload.recurrence, visibleRange)) {
-          await refreshScheduleRange(visibleRange.start, visibleRange.end, "materialize");
-        }
       }
-      setShowAddClass(false);
-      setActionMessage(
-        payload.kind === "single_session"
-          ? "Class added to the schedule."
-          : "Recurring class created and visible sessions refreshed.",
-      );
     } catch (error) {
       console.error("Failed to create class", error);
       setCreateClassError(
         error instanceof Error ? error.message : "Could not create this class. Please try again.",
       );
+      return;
     } finally {
       setIsCreatingClass(false);
+    }
+
+    // The create is confirmed. A later refresh failure must not reopen it as retryable.
+    setShowAddClass(false);
+    if (payload.kind === "single_session") {
+      setActionMessage("Class added to the schedule.");
+      return;
+    }
+    setActionMessage("Recurring class created.");
+    if (!recurringClassOverlapsRange(payload.recurrence, visibleRange)) return;
+
+    const rangeKey = visibleRangeKey;
+    try {
+      await refreshScheduleRange(visibleRange.start, visibleRange.end, "materialize");
+      setActionMessage("Recurring class created and visible sessions refreshed.");
+    } catch (error) {
+      console.error("Failed to refresh schedule after creating a class", error);
+      if (currentRangeKeyRef.current === rangeKey) {
+        setScheduleLoadError(
+          "Recurring class created, but its visible sessions could not refresh. Retry to load them.",
+        );
+      }
     }
   }
 
