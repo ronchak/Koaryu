@@ -49,7 +49,7 @@ export const APP_NAME = "Koaryu";
 export const APP_TAGLINE = "A warrior's flow.";
 export const APP_DESCRIPTION = "The daily operating system for independent martial arts studios.";
 
-// Optional Koaryu Payments fee, separate from processor fees and platform access.
+// Advertised standard only; an activated studio's configured rate takes precedence.
 export const PUBLIC_PAYMENTS_FEE_PERCENT = 0.5;
 
 export const PUBLIC_PLATFORM_PRICE = {

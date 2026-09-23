@@ -359,7 +359,7 @@ const faqGroups: readonly FaqGroup[] = [
       },
       {
         question: "What payment fees apply?",
-        answer: `Koaryu Payments adds ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees. These are separate from the studio subscription. Collection is not generally available.`,
+        answer: `The standard Koaryu Payments fee is ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees. Your studio's configured rate may differ. These are separate from the studio subscription. Collection is not generally available.`,
       },
       {
         question: "Can I use my existing payment method?",
@@ -564,7 +564,7 @@ export const landingPageContent = {
         },
         {
           label: "Payments",
-          description: `Koaryu Payments: ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees. Collection requires separate activation and is not generally available.`,
+          description: `Standard Koaryu Payments fee: ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees. Your studio's configured rate may differ. Collection requires separate activation and is not generally available.`,
         },
         {
           label: "Student count",

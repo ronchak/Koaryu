@@ -217,9 +217,10 @@ export function FeatureIndexPage() {
               students.
             </p>
             <p>
-              Separately activated Koaryu Payments adds {PUBLIC_PAYMENTS_FEE_PERCENT}% on successful
-              charges, plus Stripe fees. Recording a payment received outside Koaryu does not incur
-              that processing fee.
+              Separately activated Koaryu Payments has a standard fee of{" "}
+              {PUBLIC_PAYMENTS_FEE_PERCENT}% on successful charges, plus Stripe fees. Your
+              studio&apos;s configured rate may differ. Recording a payment received outside Koaryu
+              does not incur that processing fee.
             </p>
             <p>
               Creating an account does not activate tuition collection. If collecting tuition or
@@ -693,9 +694,10 @@ function BillingPage() {
             plan, and payments to your school are separate records and charges.
           </p>
           <p>
-            Separately activated Koaryu Payments adds {PUBLIC_PAYMENTS_FEE_PERCENT}% on successful
-            charges, plus Stripe fees. Recording a cash, check, or other external payment does not
-            incur that processing fee.
+            Separately activated Koaryu Payments has a standard fee of {PUBLIC_PAYMENTS_FEE_PERCENT}
+            % on successful charges, plus Stripe fees. Your studio&apos;s configured rate may
+            differ. Recording a cash, check, or other external payment does not incur that
+            processing fee.
           </p>
         </div>
       </section>

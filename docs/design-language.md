@@ -1,7 +1,7 @@
 # Koaryu Design Language
 
 Status: authoritative marketing and public-site design specification
-Last reconciled with the approved Koaryu Journey prototype: 2026-08-16
+Last reconciled with the marketing routes: 2026-09-23
 Applies to: the public marketing site, marketing route templates, public navigation, pricing, FAQ, legal pages, and brand-facing product presentations
 
 ## 1. Purpose
@@ -13,7 +13,7 @@ The approved Koaryu Journey prototype establishes the visual direction. This doc
 The design language is broader than the landing page's choreography:
 
 - The landing page may use a fixed cinematic scene, chapter stops, and one-scroll navigation.
-- Feature, use-case, Explore, About, pricing, legal, and other public pages should use ordinary document scrolling.
+- Feature, use-case, pricing, legal, and other public pages should use ordinary document scrolling.
 - All public pages should share the same palette, typography, materials, composition, component grammar, motion restraint, and writing voice.
 - The authenticated product may inherit brand tokens and typographic restraint, but it should remain optimized for operational density. Do not turn the dashboard into a cinematic marketing page.
 
@@ -705,7 +705,7 @@ These values are the current reference implementation, not arbitrary examples. R
 
 ### 13.2 Secondary marketing pages
 
-Do not reuse the landing page's wheel interception on Features, Use Cases, Explore, About, legal pages, or detail routes.
+Do not reuse the landing page's wheel interception on Features, Use Cases, legal pages, or detail routes.
 
 These pages use normal scrolling with restrained section entrances, clear anchor targets, and conventional browser behavior.
 
@@ -726,7 +726,7 @@ Canonical breakpoints from the prototype:
 - `820px`: mobile navigation, full-width planes, simplified bands.
 - `560px`: compact display typography and single-column rows.
 - `800px` viewport height on desktop: compact vertical density. In the cinematic journey only, the feature ledger, use-case band, Explore map, and About statement hide their supporting ledes so the core content remains inside the fixed story region.
-- `700px` viewport height on mobile: the cinematic feature ledger and use-case band hide row descriptions; Explore and About hide supporting ledes. The full information remains available on their linked conventional-scroll routes.
+- `700px` viewport height on mobile: the cinematic feature ledger and use-case band hide row descriptions; Explore and About hide supporting ledes. The full information remains available on the linked Features and Workflows guides.
 - Coarse pointer: enlarge navigation-dot hit targets.
 
 Responsive priority:
@@ -817,11 +817,11 @@ Use the complete cinematic journey, chapter navigation, environmental morphs, an
 - Keep body sections readable and semantic.
 - Related pages use a route list or shared band, not a grid of floating cards.
 
-### 17.4 Explore
+### 17.4 Retired Explore route
 
-- Organize around visitor intent: “what it does,” “the mess I have,” and “the school I run.”
-- Use route-map rows and quiet metadata.
-- Let the page function as a directory rather than another sales deck.
+- `/explore` permanently redirects to `/features`.
+- Features and Workflows are the public directories; navigation links directly to `/features` and `/use-cases`.
+- The desktop landing Explore chapter remains part of the journey, not a standalone directory.
 
 ### 17.5 Pricing chapter and `#pricing` anchor
 
@@ -831,11 +831,11 @@ Use the complete cinematic journey, chapter navigation, environmental morphs, an
 - Use a single setup action.
 - Pricing is not currently a standalone route. These rules apply to the landing chapter, the `/#pricing` destination, and any pricing block embedded in another public page. Do not create `/pricing` solely to satisfy this guide.
 
-### 17.6 About
+### 17.6 Retired About route
 
-- Use an editorial statement surface and a small number of operating principles.
-- Keep the focus on independent, one-location schools and daily action.
-- Avoid startup biography, founder mythology, or generic mission prose.
+- `/about` permanently redirects to `/features#fit`.
+- The fit section explains the focus on independent, one-location schools and daily action.
+- The desktop landing About chapter remains; do not restore a separate About page.
 
 ### 17.7 Legal pages
 
@@ -843,12 +843,11 @@ Use the complete cinematic journey, chapter navigation, environmental morphs, an
 - Use normal document scrolling and excellent text measures.
 - Do not add cinematic illustration or playful copy where legal clarity matters.
 
-### 17.8 Studio-type detail pages
+### 17.8 Retired studio-type detail routes
 
-- Treat `/studio-types/[slug]` as a detail-page variant framed around the shape of a school rather than one feature or pressure point.
-- Use the same paper, ledger, related-route, and conventional-scroll grammar as feature and use-case details.
-- Connect family, guardian, trial, rank, and tuition realities without implying that every school of that type runs identically.
-- There is no `/studio-types` index route today. Studio-type details are reached through Explore; do not invent an index without a separate navigation decision.
+- Known `/studio-types/[slug]` routes permanently redirect to `/features/student-management#families`; unknown slugs return 404.
+- Link family and guardian guidance directly to that section. There is no `/studio-types` index.
+- The sitemap lists surviving canonical pages and excludes these redirects, `/explore`, and `/about`.
 
 ## 18. Production implementation rules
 
@@ -858,7 +857,7 @@ Use the complete cinematic journey, chapter navigation, environmental morphs, an
 - Scope fixed positioning, overflow locking, grain, and paper textures to the marketing journey root.
 - Reuse shared public navigation and footer data.
 - Keep one authoritative content source for pricing, FAQ, features, use cases, and product claims, following §18.1.
-- Preserve real route links to Features, Use Cases, Explore, About, signup, login, Terms, and Privacy.
+- Preserve real route links to Features, Workflows (`/use-cases`), Pricing (`/#pricing`), signup, login, Terms, and Privacy. Retired routes remain compatibility redirects, not navigation destinations.
 - Server-render all important marketing copy even when only one chapter is visually active.
 - Make inactive chapters inert without deleting them from the semantic document.
 - Avoid hydration-time dependence on unguarded `window` access.
@@ -875,7 +874,7 @@ The production content boundary is:
 | --- | --- |
 | Application identity | `frontend/src/lib/constants.ts` |
 | Landing narrative, landing summaries, pricing explanation, and FAQ | `frontend/src/lib/landing-page-content.ts` |
-| Feature, use-case, studio-type, and Explore route content | `frontend/src/lib/marketing-pages.ts` |
+| Feature and use-case guide content, plus legacy studio-type slug lookup | `frontend/src/lib/marketing-pages.ts` |
 | Shared public CTA and next-step defaults | `frontend/src/lib/marketing-public-content.ts` |
 | Detail-route composition and parent routing | `frontend/src/lib/marketing-detail-route-configs.ts` |
 

@@ -219,7 +219,8 @@ export function MobileJourneyChapter({
         >
           <p>Students, ranks, leads, attendance, reports and billing records.</p>
           <p>
-            Koaryu Payments: {PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees.
+            Standard Koaryu Payments fee: {PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus
+            Stripe fees. Your studio&apos;s configured rate may differ.
           </p>
           <p>Tuition collection requires separate activation and is not generally available.</p>
         </Panel>
