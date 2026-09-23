@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { BillingActionRuntime } from "@/lib/billing-action-runtime";
 import {
   acknowledgeConnectOnboardingBeforeNavigation,
+  createConnectOnboardingOwnerTracker,
   createConnectOnboardingRequestKey,
 } from "@/lib/billing-connect-delivery";
 import { connectRefreshUrl, connectReturnUrl } from "@/lib/billing-page-utils";
@@ -23,9 +24,19 @@ function createCoreCheckoutRequestKey() {
   return `core-checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function useBillingConnectActions(runtime: BillingActionRuntime) {
+export function useBillingConnectActions(
+  runtime: BillingActionRuntime,
+  identityKey: string | null,
+) {
   const coreCheckoutRequestKeyRef = useRef<string | null>(null);
   const connectOnboardingRequestKeyRef = useRef<string | null>(null);
+  const [connectOnboardingOwner] = useState(createConnectOnboardingOwnerTracker);
+
+  // Route exit or an identity change ends ownership of any in-flight onboarding navigation.
+  useLayoutEffect(() => {
+    connectOnboardingOwner.enter(identityKey);
+    return () => connectOnboardingOwner.leave();
+  }, [connectOnboardingOwner, identityKey]);
 
   async function openBillingLink(
     path: string,
@@ -81,7 +92,12 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
     if (!runtime.token || !runtime.claimAction("connect")) {
       return;
     }
+    const ownsNavigation = connectOnboardingOwner.begin();
     try {
+      if (!ownsNavigation) {
+        runtime.setError("Stripe onboarding is not available for the current studio and role.");
+        return;
+      }
       connectOnboardingRequestKeyRef.current ??= createConnectOnboardingRequestKey();
       const link = await api.post<ConnectOnboardingLinkResponse>(
         "/billing/connect/onboarding-link",
@@ -107,10 +123,13 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
           );
         },
         (url) => window.location.assign(url),
+        ownsNavigation,
       );
       connectOnboardingRequestKeyRef.current = null;
     } catch (err) {
-      runtime.setError(err instanceof Error ? err.message : "Stripe link could not be created.");
+      if (ownsNavigation?.()) {
+        runtime.setError(err instanceof Error ? err.message : "Stripe link could not be created.");
+      }
     } finally {
       runtime.releaseAction("connect");
     }

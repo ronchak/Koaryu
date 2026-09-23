@@ -9,8 +9,11 @@ import { api } from "@/lib/api";
 import {
   acknowledgeConnectOnboardingBeforeNavigation,
   createConnectOnboardingRequestKey,
+  ownsConnectOnboardingNavigation,
+  type ConnectOnboardingOwner,
 } from "@/lib/billing-connect-delivery";
 import { hasConnectOnboardingCapability } from "@/lib/billing-route-access";
+import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import { createClient } from "@/lib/supabase/client";
 import type {
   BillingSystemStatus,
@@ -41,6 +44,10 @@ export default function StripeConnectRefreshPage() {
         if (!session) {
           throw new Error("Sign in again to continue Stripe onboarding.");
         }
+        const owner: ConnectOnboardingOwner = {
+          userId: session.user.id,
+          studioId: getActiveStudioIdCookie(),
+        };
 
         const status = await api.get<BillingSystemStatus>(
           "/billing/system/status",
@@ -75,6 +82,18 @@ export default function StripeConnectRefreshPage() {
               );
             },
             (url) => window.location.assign(url),
+            ownsConnectOnboardingNavigation(
+              owner,
+              () => !cancelled,
+              async () => {
+                const {
+                  data: { session: currentSession },
+                } = await supabase.auth.getSession();
+                return currentSession
+                  ? { userId: currentSession.user.id, studioId: getActiveStudioIdCookie() }
+                  : null;
+              },
+            ),
           );
         }
       } catch (err) {

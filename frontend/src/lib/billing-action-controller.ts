@@ -42,7 +42,7 @@ export function useBillingActionController({
     setMessage,
     token,
   });
-  const connectActions = useBillingConnectActions(runtime);
+  const connectActions = useBillingConnectActions(runtime, identityKey);
   const planActions = useBillingPlanActions({
     billingConnect,
     operationIdentity: payerOperationIdentity,
