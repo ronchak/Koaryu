@@ -16,11 +16,11 @@ import {
   isCompleteScheduleRoster,
   isSessionAttendanceReady,
   navigateScheduleDate,
-  recurringClassOverlapsRange,
   runSessionAttendanceRefresh,
   type SessionAttendanceRefreshState,
   type SchedulePageView,
 } from "@/lib/schedule-page-model";
+import type { ScheduleTemplateCreateResult } from "@/lib/schedule-store-model";
 import type { ScheduleSessionDeleteScope } from "@/lib/session-detail-model";
 import type {
   ConfigStoreContextValue,
@@ -82,6 +82,7 @@ export function useSchedulePageController({
   const [classFormInitialValues, setClassFormInitialValues] = useState<ClassFormInitialValues>();
   const [showAddClass, setShowAddClass] = useState(false);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
+  const createClassInFlightRef = useRef(false);
   const [createClassError, setCreateClassError] = useState<string | null>(null);
   const [rangeLoadAttempt, setRangeLoadAttempt] = useState(0);
   const [attendanceRefreshAttempt, setAttendanceRefreshAttempt] = useState(0);
@@ -205,10 +206,13 @@ export function useSchedulePageController({
   }
 
   async function handleCreateClass(payload: ClassFormSubmitPayload) {
-    if (!canManageSchedule) return;
+    if (!canManageSchedule || createClassInFlightRef.current) return;
 
+    createClassInFlightRef.current = true;
     setCreateClassError(null);
     setIsCreatingClass(true);
+    const rangeKey = visibleRangeKey;
+    let createdTemplate: ScheduleTemplateCreateResult | null = null;
 
     try {
       if (payload.kind === "single_session") {
@@ -221,7 +225,7 @@ export function useSchedulePageController({
           capacity: payload.capacity,
         });
       } else {
-        await addTemplate({
+        createdTemplate = await addTemplate({
           name: payload.name,
           day_of_week: payload.recurrence.dayOfWeek,
           start_time: payload.startTime,
@@ -239,29 +243,27 @@ export function useSchedulePageController({
       );
       return;
     } finally {
+      createClassInFlightRef.current = false;
       setIsCreatingClass(false);
     }
 
-    // The create is confirmed. A later refresh failure must not reopen it as retryable.
+    // The create is confirmed. The store owns its follow-up refresh, and a failed
+    // refresh must not reopen the confirmed create as retryable.
     setShowAddClass(false);
-    if (payload.kind === "single_session") {
+    if (!createdTemplate) {
       setActionMessage("Class added to the schedule.");
       return;
     }
-    setActionMessage("Recurring class created.");
-    if (!recurringClassOverlapsRange(payload.recurrence, visibleRange)) return;
-
-    const rangeKey = visibleRangeKey;
-    try {
-      await refreshScheduleRange(visibleRange.start, visibleRange.end, "materialize");
+    if (createdTemplate.scheduleRefresh === "refreshed") {
       setActionMessage("Recurring class created and visible sessions refreshed.");
-    } catch (error) {
-      console.error("Failed to refresh schedule after creating a class", error);
-      if (currentRangeKeyRef.current === rangeKey) {
-        setScheduleLoadError(
-          "Recurring class created, but its visible sessions could not refresh. Retry to load them.",
-        );
-      }
+      return;
+    }
+    setActionMessage("Recurring class created.");
+    // After navigation, the new range's own load reports its outcome.
+    if (createdTemplate.scheduleRefresh === "failed" && currentRangeKeyRef.current === rangeKey) {
+      setScheduleLoadError(
+        "Recurring class created, but its visible sessions could not refresh. Retry to load them.",
+      );
     }
   }
 

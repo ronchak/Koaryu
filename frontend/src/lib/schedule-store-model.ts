@@ -198,6 +198,16 @@ export async function runScheduleRangeRefreshWithRetry<T>(
 
 export type ScheduleRangeRefreshIntent = "read" | "materialize";
 
+// The store owns the reconciliation that follows a schedule mutation. Callers observe
+// its outcome instead of starting a second refresh. "deferred" means another in-flight
+// mutation or a newer schedule generation now owns the refresh.
+export type ScheduleMutationRefresh = "refreshed" | "failed" | "deferred";
+
+export interface ScheduleTemplateCreateResult {
+  template: ClassTemplate;
+  scheduleRefresh: ScheduleMutationRefresh;
+}
+
 export interface ScheduleWindowTransport {
   get<T>(path: string, token: string): Promise<T>;
   post<T>(path: string, body: unknown, token: string): Promise<T>;

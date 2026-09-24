@@ -16,7 +16,9 @@ import {
   setScheduleRequestedRangeState,
   updateSessionAttendanceCount,
   type ScheduleCoordinatorState,
+  type ScheduleMutationRefresh,
   type ScheduleRangeRefreshIntent,
+  type ScheduleTemplateCreateResult,
   type SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
@@ -111,20 +113,23 @@ export function useStoreScheduleActions({
       request,
       isCurrent: () =>
         request.isCurrent() && scheduleCoordinatorRef.current.generation === generation,
-      finish: async () => {
+      finish: async (): Promise<ScheduleMutationRefresh> => {
         if (finished) {
-          return;
+          return "deferred";
         }
         finished = true;
         const beforeFinish = scheduleCoordinatorRef.current;
         const afterFinish = finishScheduleMutationState(beforeFinish, generation);
         scheduleCoordinatorRef.current = afterFinish;
         try {
-          if (afterFinish !== beforeFinish && shouldReconcileSchedule(afterFinish)) {
-            await reconcileSchedule("materialize");
+          if (afterFinish === beforeFinish || !shouldReconcileSchedule(afterFinish)) {
+            return "deferred";
           }
+          await reconcileSchedule("materialize");
+          return scheduleCoordinatorRef.current.hasAuthoritativeSnapshot ? "refreshed" : "deferred";
         } catch (error) {
           console.error("Failed to reconcile schedule after a mutation", error);
+          return "failed";
         } finally {
           releaseScheduleMutationWaiters();
         }
@@ -294,7 +299,7 @@ export function useStoreScheduleActions({
   );
 
   const addTemplate = useCallback(
-    async (data: ClassTemplateCreate): Promise<ClassTemplate> => {
+    async (data: ClassTemplateCreate): Promise<ScheduleTemplateCreateResult> => {
       if (isPreviewMode) {
         const startDate = data.start_date || new Date().toISOString().split("T")[0];
         const newTemplate: ClassTemplate = {
@@ -340,31 +345,30 @@ export function useStoreScheduleActions({
         if (generatedSessions.length > 0) {
           persistSessions([...sessionsRef.current, ...generatedSessions].sort(compareSessions));
         }
-        return newTemplate;
+        return { template: newTemplate, scheduleRefresh: "refreshed" };
       }
 
       const mutation = beginScheduleMutation();
+      let result: ClassTemplate;
       try {
-        const result = await api.post<ClassTemplate>(
-          "/schedule/templates",
-          data,
-          mutation.request.token,
-        );
-        if (mutation.isCurrent()) {
-          setTemplates((current) =>
-            [...current, result].sort((left, right) => {
-              const dayCompare = left.day_of_week - right.day_of_week;
-              if (dayCompare !== 0) {
-                return dayCompare;
-              }
-              return left.start_time.localeCompare(right.start_time);
-            }),
-          );
-        }
-        return result;
-      } finally {
+        result = await api.post<ClassTemplate>("/schedule/templates", data, mutation.request.token);
+      } catch (error) {
         await mutation.finish();
+        throw error;
       }
+      if (mutation.isCurrent()) {
+        setTemplates((current) =>
+          [...current, result].sort((left, right) => {
+            const dayCompare = left.day_of_week - right.day_of_week;
+            if (dayCompare !== 0) {
+              return dayCompare;
+            }
+            return left.start_time.localeCompare(right.start_time);
+          }),
+        );
+      }
+      // This mutation's finish is the only post-create materialization.
+      return { template: result, scheduleRefresh: await mutation.finish() };
     },
     [
       beginScheduleMutation,
