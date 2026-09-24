@@ -4,10 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repositoryRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-);
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const LEDGER_PATH = "docs/remediation/ledger.json";
 export const MARKDOWN_PATHS = ["REMEDIATION.md", "docs/remediation/HANDOFF.md"];
 export const BLOCK_BEGIN =
@@ -24,6 +21,20 @@ const DISPOSITION_LABELS = {
   obsolete: "Obsolete",
 };
 
+// Every counted finding must use a declared disposition, a known track and a unique ID.
+function validateFindings(findings, declared, label) {
+  if (!Array.isArray(findings)) throw new Error(`Ledger ${label} must be an array.`);
+  const seen = new Set();
+  for (const finding of findings) {
+    if (seen.has(finding.id)) throw new Error(`Duplicate ${label} id: ${finding.id}`);
+    seen.add(finding.id);
+    if (!declared.includes(finding.disposition))
+      throw new Error(`${finding.id} has undeclared disposition ${finding.disposition}`);
+    if (!TRACKS.includes(finding.track))
+      throw new Error(`${finding.id} has unknown track ${finding.track}`);
+  }
+}
+
 export function deriveLedgerCounts(ledger) {
   const declared = ledger.dispositions;
   if (!Array.isArray(declared) || declared.length === 0)
@@ -32,23 +43,11 @@ export function deriveLedgerCounts(ledger) {
     if (!(disposition in DISPOSITION_LABELS))
       throw new Error(`Unlabeled disposition: ${disposition}`);
   }
-  const seen = new Set();
-  const counts = Object.fromEntries(
-    declared.map((disposition) => [disposition, 0]),
-  );
-  const tracks = Object.fromEntries(
-    declared.map((disposition) => [disposition, {}]),
-  );
-  for (const finding of ledger.findings ?? []) {
-    if (seen.has(finding.id))
-      throw new Error(`Duplicate finding id: ${finding.id}`);
-    seen.add(finding.id);
-    if (!declared.includes(finding.disposition))
-      throw new Error(
-        `${finding.id} has undeclared disposition ${finding.disposition}`,
-      );
-    if (!TRACKS.includes(finding.track))
-      throw new Error(`${finding.id} has unknown track ${finding.track}`);
+  validateFindings(ledger.findings, declared, "findings");
+  validateFindings(ledger.program_findings ?? [], declared, "program_findings");
+  const counts = Object.fromEntries(declared.map((disposition) => [disposition, 0]));
+  const tracks = Object.fromEntries(declared.map((disposition) => [disposition, {}]));
+  for (const finding of ledger.findings) {
     counts[finding.disposition] += 1;
     tracks[finding.disposition][finding.track] =
       (tracks[finding.disposition][finding.track] ?? 0) + 1;
@@ -64,9 +63,8 @@ export function deriveLedgerCounts(ledger) {
 
 // Preserve the ledger's existing key order so regeneration only changes values.
 function ordered(existing, derived) {
-  const keys = [...Object.keys(existing ?? {}).filter((key) => key in derived)];
-  for (const key of Object.keys(derived))
-    if (!keys.includes(key)) keys.push(key);
+  const keys = Object.keys(existing ?? {}).filter((key) => key in derived);
+  for (const key of Object.keys(derived)) if (!keys.includes(key)) keys.push(key);
   return Object.fromEntries(keys.map((key) => [key, derived[key]]));
 }
 
@@ -76,10 +74,7 @@ export function applyLedgerCounts(ledger) {
     ordered(
       existing,
       Object.fromEntries(
-        TRACKS.filter((track) => byTrack[track]).map((track) => [
-          track,
-          byTrack[track],
-        ]),
+        TRACKS.filter((track) => byTrack[track]).map((track) => [track, byTrack[track]]),
       ),
     );
   const dispositionTracks = Object.fromEntries(
@@ -87,36 +82,29 @@ export function applyLedgerCounts(ledger) {
       .filter((disposition) => counts[disposition] > 0)
       .map((disposition) => [
         disposition,
-        nonzeroTracks(
-          tracks[disposition],
-          ledger.current_disposition_tracks?.[disposition],
-        ),
+        nonzeroTracks(tracks[disposition], ledger.current_disposition_tracks?.[disposition]),
       ]),
   );
   return {
     ...ledger,
     current_counts: ordered(ledger.current_counts, counts),
-    current_pending_tracks: nonzeroTracks(
-      tracks.pending ?? {},
-      ledger.current_pending_tracks,
-    ),
-    current_disposition_tracks: ordered(
-      ledger.current_disposition_tracks,
-      dispositionTracks,
-    ),
+    current_pending_tracks: nonzeroTracks(tracks.pending ?? {}, ledger.current_pending_tracks),
+    current_disposition_tracks: ordered(ledger.current_disposition_tracks, dispositionTracks),
   };
 }
 
-// Matches the committed format: two-space JSON with non-ASCII characters escaped.
+// Matches the committed format: two-space JSON with every UTF-16 code unit above
+// U+007E escaped as \uXXXX, as Python's json.dumps(indent=2, ensure_ascii=True) writes it.
 export function serializeLedger(ledger) {
   return (
     JSON.stringify(ledger, null, 2).replace(
-      /[\u007f-￿]/g,
-      (character) =>
-        `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+      /[\u007f-\uffff]/g,
+      (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
     ) + "\n"
   );
 }
+
+const plural = (count, singular, pluralForm) => `${count} ${count === 1 ? singular : pluralForm}`;
 
 export function renderCountsBlock(ledger) {
   const { counts, tracks, trackTotals, total } = deriveLedgerCounts(ledger);
@@ -131,13 +119,17 @@ export function renderCountsBlock(ledger) {
   const programCounts = Object.keys(DISPOSITION_LABELS)
     .map((disposition) => [
       disposition,
-      programFindings.filter((finding) => finding.disposition === disposition)
-        .length,
+      programFindings.filter((finding) => finding.disposition === disposition).length,
     ])
     .filter(([, count]) => count > 0)
-    .map(
-      ([disposition, count]) =>
-        `${count} ${DISPOSITION_LABELS[disposition].toLowerCase()}`,
+    .map(([disposition, count]) => `${count} ${DISPOSITION_LABELS[disposition].toLowerCase()}`);
+  const summary = [
+    `${plural(counts.pending ?? 0, "audit observation is", "audit observations are")} pending: ${pending.Astra ?? 0} Astra and ${pending.Sol ?? 0} Sol.`,
+    "These are observations, not ticket or PR counts.",
+  ];
+  if (programFindings.length > 0)
+    summary.push(
+      `${plural(programFindings.length, "program finding", "program findings")}, tracked separately: ${programCounts.join(", ")}.`,
     );
   return [
     BLOCK_BEGIN,
@@ -146,26 +138,23 @@ export function renderCountsBlock(ledger) {
     ...rows,
     `| Total | ${trackTotals.Astra} | ${trackTotals.Sol} | ${total} |`,
     "",
-    `${counts.pending ?? 0} audit observations are pending: ${pending.Astra ?? 0} Astra and ${pending.Sol ?? 0} Sol. These are observations, not ticket or PR counts. ${programFindings.length} program findings, tracked separately: ${programCounts.join(", ")}.`,
+    summary.join(" "),
     BLOCK_END,
   ].join("\n");
 }
+
+const occurrences = (text, marker) => text.split(marker).length - 1;
 
 export function replaceCountsBlock(markdown, block, label) {
   const start = markdown.indexOf(BLOCK_BEGIN);
   const end = markdown.indexOf(BLOCK_END);
   if (
-    start === -1 ||
-    end === -1 ||
-    end < start ||
-    markdown.indexOf(BLOCK_BEGIN, start + 1) !== -1
+    occurrences(markdown, BLOCK_BEGIN) !== 1 ||
+    occurrences(markdown, BLOCK_END) !== 1 ||
+    end < start
   )
-    throw new Error(
-      `${label} needs exactly one generated ledger-counts block.`,
-    );
-  return (
-    markdown.slice(0, start) + block + markdown.slice(end + BLOCK_END.length)
-  );
+    throw new Error(`${label} needs exactly one generated ledger-counts block.`);
+  return markdown.slice(0, start) + block + markdown.slice(end + BLOCK_END.length);
 }
 
 export function planLedgerCountFiles(root = repositoryRoot) {
@@ -173,13 +162,7 @@ export function planLedgerCountFiles(root = repositoryRoot) {
   const ledgerSource = read(LEDGER_PATH);
   const ledger = applyLedgerCounts(JSON.parse(ledgerSource));
   const block = renderCountsBlock(ledger);
-  const files = [
-    {
-      path: LEDGER_PATH,
-      current: ledgerSource,
-      expected: serializeLedger(ledger),
-    },
-  ];
+  const files = [{ path: LEDGER_PATH, current: ledgerSource, expected: serializeLedger(ledger) }];
   for (const markdownPath of MARKDOWN_PATHS) {
     const current = read(markdownPath);
     files.push({
@@ -191,20 +174,22 @@ export function planLedgerCountFiles(root = repositoryRoot) {
   return files;
 }
 
-function main(argv) {
+// Returns the process exit code: 0 current or written, 1 drift or invalid ledger, 2 usage.
+export function main(argv, root = repositoryRoot) {
   const mode = argv[0];
-  if (mode !== "--check" && mode !== "--write") {
-    console.error(
-      "Usage: node scripts/remediation-ledger-counts.mjs --check|--write",
-    );
+  if (argv.length !== 1 || (mode !== "--check" && mode !== "--write")) {
+    console.error("Usage: node scripts/remediation-ledger-counts.mjs --check|--write");
     return 2;
   }
-  const drifted = planLedgerCountFiles().filter(
-    (file) => file.current !== file.expected,
-  );
+  let drifted;
+  try {
+    drifted = planLedgerCountFiles(root).filter((file) => file.current !== file.expected);
+  } catch (error) {
+    console.error(`Remediation ledger counts cannot be derived: ${error.message}`);
+    return 1;
+  }
   if (mode === "--write") {
-    for (const file of drifted)
-      fs.writeFileSync(path.join(repositoryRoot, file.path), file.expected);
+    for (const file of drifted) fs.writeFileSync(path.join(root, file.path), file.expected);
     console.log(
       drifted.length
         ? `Updated ${drifted.map((file) => file.path).join(", ")}`
@@ -222,9 +207,6 @@ function main(argv) {
   return 0;
 }
 
-if (
-  process.argv[1] &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }
