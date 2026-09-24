@@ -37,6 +37,7 @@ import type {
 } from "@/types";
 import type {
   ScheduleRangeRefreshIntent,
+  ScheduleTemplateCreateResult,
   SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
 import type { StudentListQuery } from "@/lib/student-list-page";
@@ -144,7 +145,7 @@ export interface StoreContextValue {
 
   sessions: ClassSession[];
   addSession: (data: ClassSessionCreate) => Promise<void>;
-  addTemplate: (data: ClassTemplateCreate) => Promise<ClassTemplate>;
+  addTemplate: (data: ClassTemplateCreate) => Promise<ScheduleTemplateCreateResult>;
   deleteSession: (sessionId: string, scope?: ClassSessionDeleteScope) => Promise<void>;
   refreshScheduleRange: (
     startDate: string,

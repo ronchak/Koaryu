@@ -16,7 +16,6 @@ import {
   isSessionAttendanceReady,
   layoutScheduleTimeItems,
   navigateScheduleDate,
-  recurringClassOverlapsRange,
   runSessionAttendanceRefresh,
 } from "../src/lib/schedule-page-model.ts";
 
@@ -108,17 +107,7 @@ describe("schedule page model", () => {
     assert.equal(c.overlaps, false);
   });
 
-  it("checks recurring-class overlap and selected-session attendance outside the route", () => {
-    const visibleRange = { start: "2026-05-17", end: "2026-05-23" };
-
-    assert.equal(
-      recurringClassOverlapsRange({ startDate: "2026-05-01", endDate: "2026-05-18" }, visibleRange),
-      true,
-    );
-    assert.equal(
-      recurringClassOverlapsRange({ startDate: "2026-05-24", endDate: null }, visibleRange),
-      false,
-    );
+  it("checks selected-session attendance outside the route", () => {
     assert.deepEqual(
       getScheduleSessionAttendance(
         [

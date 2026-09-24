@@ -36,10 +36,18 @@ describe("schedule range intent contracts", () => {
   });
 
   it("keeps calendar and attendance workflows explicitly materializing recurring sessions", () => {
-    assert.equal(
-      scheduleControllerSource.match(/refreshScheduleRange\([\s\S]*?"materialize"\s*\)/g)?.length,
-      1,
+    // Post-create materialization belongs to the store's mutation finish, not a second
+    // controller refresh. The controller observes that owner's outcome instead.
+    assert.doesNotMatch(
+      scheduleControllerSource,
+      /refreshScheduleRange\([\s\S]*?"materialize"\s*\)/,
     );
+    assert.match(
+      scheduleActionsSource,
+      /scheduleRefresh: mutation\.finish\(\{ awaitSharedRefresh: true \}\)/,
+    );
+    assert.match(scheduleControllerSource, /await createdTemplate\.scheduleRefresh;/);
+    assert.match(scheduleControllerSource, /scheduleRefresh === "failed"/);
     assert.match(
       scheduleControllerSource,
       /resumedRangeRef\.current === visibleRangeKey \? "read" : "materialize"/,

@@ -16,11 +16,11 @@ import {
   isCompleteScheduleRoster,
   isSessionAttendanceReady,
   navigateScheduleDate,
-  recurringClassOverlapsRange,
   runSessionAttendanceRefresh,
   type SessionAttendanceRefreshState,
   type SchedulePageView,
 } from "@/lib/schedule-page-model";
+import type { ScheduleTemplateCreateResult } from "@/lib/schedule-store-model";
 import type { ScheduleSessionDeleteScope } from "@/lib/session-detail-model";
 import type {
   ConfigStoreContextValue,
@@ -82,6 +82,8 @@ export function useSchedulePageController({
   const [classFormInitialValues, setClassFormInitialValues] = useState<ClassFormInitialValues>();
   const [showAddClass, setShowAddClass] = useState(false);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
+  const createClassInFlightRef = useRef(false);
+  const createSequenceRef = useRef(0);
   const [createClassError, setCreateClassError] = useState<string | null>(null);
   const [rangeLoadAttempt, setRangeLoadAttempt] = useState(0);
   const [attendanceRefreshAttempt, setAttendanceRefreshAttempt] = useState(0);
@@ -110,6 +112,11 @@ export function useSchedulePageController({
   );
 
   const visibleRangeKey = `${visibleRange.start}:${visibleRange.end}`;
+  const currentRangeKeyRef = useRef(visibleRangeKey);
+
+  useEffect(() => {
+    currentRangeKeyRef.current = visibleRangeKey;
+  }, [visibleRangeKey]);
 
   useResumeRefresh(() => {
     resumedRangeRef.current = visibleRangeKey;
@@ -200,10 +207,13 @@ export function useSchedulePageController({
   }
 
   async function handleCreateClass(payload: ClassFormSubmitPayload) {
-    if (!canManageSchedule) return;
+    if (!canManageSchedule || createClassInFlightRef.current) return;
 
+    createClassInFlightRef.current = true;
     setCreateClassError(null);
     setIsCreatingClass(true);
+    const rangeKey = visibleRangeKey;
+    let createdTemplate: ScheduleTemplateCreateResult | null = null;
 
     try {
       if (payload.kind === "single_session") {
@@ -216,7 +226,7 @@ export function useSchedulePageController({
           capacity: payload.capacity,
         });
       } else {
-        await addTemplate({
+        createdTemplate = await addTemplate({
           name: payload.name,
           day_of_week: payload.recurrence.dayOfWeek,
           start_time: payload.startTime,
@@ -226,24 +236,36 @@ export function useSchedulePageController({
           program_id: payload.program_id,
           capacity: payload.capacity,
         });
-
-        if (recurringClassOverlapsRange(payload.recurrence, visibleRange)) {
-          await refreshScheduleRange(visibleRange.start, visibleRange.end, "materialize");
-        }
       }
-      setShowAddClass(false);
-      setActionMessage(
-        payload.kind === "single_session"
-          ? "Class added to the schedule."
-          : "Recurring class created and visible sessions refreshed.",
-      );
     } catch (error) {
       console.error("Failed to create class", error);
       setCreateClassError(
         error instanceof Error ? error.message : "Could not create this class. Please try again.",
       );
+      return;
     } finally {
+      createClassInFlightRef.current = false;
       setIsCreatingClass(false);
+    }
+
+    // The create is confirmed. The store owns its follow-up refresh, and a failed
+    // refresh must not reopen the confirmed create as retryable.
+    setShowAddClass(false);
+    if (!createdTemplate) {
+      setActionMessage("Class added to the schedule.");
+      return;
+    }
+    setActionMessage("Recurring class created.");
+    const createSequence = (createSequenceRef.current += 1);
+    const scheduleRefresh = await createdTemplate.scheduleRefresh;
+    // A newer create owns the messages; after navigation the new range's load reports.
+    if (createSequence !== createSequenceRef.current) return;
+    if (scheduleRefresh === "refreshed") {
+      setActionMessage("Recurring class created and visible sessions refreshed.");
+    } else if (scheduleRefresh === "failed" && currentRangeKeyRef.current === rangeKey) {
+      setScheduleLoadError(
+        "Recurring class created, but its visible sessions could not refresh. Retry to load them.",
+      );
     }
   }
 

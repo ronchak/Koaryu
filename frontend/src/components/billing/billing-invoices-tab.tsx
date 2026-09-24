@@ -2,6 +2,12 @@
 
 import { AlertTriangle, ArrowUpRight, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  billingInvoiceReference,
+  billingPayerLabel,
+  billingPayerNameById,
+  invoiceVoidConfirmation,
+} from "@/lib/billing-page-model";
 import { formatBillingCalendarDate, formatMoney } from "@/lib/billing-page-utils";
 import type { BillingInvoice, BillingPayer } from "@/types";
 import { SectionHeader, StatusPill } from "./billing-page-sections";
@@ -26,6 +32,7 @@ export function BillingInvoicesTab({
   onInvoiceAction: (invoiceId: string, action: "finalize" | "void" | "retry" | "reconcile") => void;
 }) {
   const failedPayers = billingPayers.filter((payer) => payer.billing_status === "past_due" || payer.billing_status === "failed");
+  const payerNameById = billingPayerNameById(billingPayers);
 
   return (
     <div className="space-y-5">
@@ -95,7 +102,8 @@ export function BillingInvoicesTab({
               <div className="min-w-0">
                 <p className="mb-1 text-xs font-medium text-muted md:hidden">Invoice</p>
                 <p className="font-medium text-text-primary">{invoice.invoice_type.replace(/_/g, " ")}</p>
-                <p className="break-words text-xs text-muted [overflow-wrap:anywhere]">{invoice.external ? "External payment record" : invoice.number || "Connected invoice"}</p>
+                <p className="break-words text-xs text-text-secondary [overflow-wrap:anywhere]">{billingPayerLabel(invoice.payer_id, payerNameById)}</p>
+                <p className="break-words text-xs text-muted [overflow-wrap:anywhere]">{invoice.external ? `External payment record · ${billingInvoiceReference(invoice)}` : billingInvoiceReference(invoice)}</p>
                 {invoice.hosted_invoice_url && !isPreviewMode ? (
                   <a className="mt-1 inline-flex items-center gap-1 text-xs text-accent hover:underline" href={invoice.hosted_invoice_url} target="_blank" rel="noreferrer">
                     Hosted invoice <ArrowUpRight className="h-3 w-3" />
@@ -146,7 +154,7 @@ export function BillingInvoicesTab({
                     disabled={isActionLoading}
                     isLoading={isLoadingAction(`invoice:${invoice.id}:void`)}
                     onClick={() => {
-                      if (window.confirm("Void this invoice? The invoice will no longer be collectible and this action cannot be undone.")) {
+                      if (window.confirm(invoiceVoidConfirmation(invoice, payerNameById))) {
                         onInvoiceAction(invoice.id, "void");
                       }
                     }}
