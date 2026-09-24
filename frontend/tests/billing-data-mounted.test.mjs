@@ -2289,6 +2289,7 @@ test("the enrollments tab pages enrollments and never reads the capped lists", a
   const browser = await chromium.launch();
   try {
     const page = await mountBillingFixture(browser);
+    const paths = (n) => page.evaluate((i) => fixture.requests.slice(i).map((r) => r.path), n);
     const before = await page.evaluate(() => {
       fixture.more = true;
       fixture.options = { ...fixture.options, activeTab: "enrollments" };
@@ -2297,10 +2298,7 @@ test("the enrollments tab pages enrollments and never reads the capped lists", a
     });
     await page.waitForFunction(() => fixture.state.enrollments.length === 1);
     await page.waitForFunction(() => fixture.state.hasBillingLoadSettled);
-    const firstReads = await page.evaluate(
-      (n) => fixture.requests.slice(n).map((r) => r.path),
-      before,
-    );
+    const firstReads = await paths(before);
     assert.ok(firstReads.includes("/billing/enrollments/page"), firstReads.join(", "));
     assert.ok(!firstReads.includes("/billing/enrollments"), "no capped enrollment list");
     assert.ok(
@@ -2308,24 +2306,56 @@ test("the enrollments tab pages enrollments and never reads the capped lists", a
       "no capped subscription list; live subscription totals come from landing aggregates",
     );
     assert.equal(await page.evaluate(() => fixture.state.hasMoreHistory), true);
-    const beforeMore = await page.evaluate(() => fixture.requests.length);
-    await page.evaluate(() => fixture.state.loadMoreHistory());
-    assert.deepEqual(
-      await page.evaluate((n) => fixture.requests.slice(n).map((r) => r.path), beforeMore),
-      ["/billing/enrollments/page?cursor=older"],
-    );
-    assert.equal(await page.evaluate(() => fixture.state.enrollments.length), 2);
-    assert.equal(await page.evaluate(() => fixture.state.hasMoreHistory), false);
+
+    // An unused enrollment cursor must not advertise history on another tab.
     await page.evaluate(() => {
+      fixture.moreInvoices = false;
       fixture.options = { ...fixture.options, activeTab: "invoices" };
-      fixture.more = false;
       fixture.render();
     });
     await page.waitForFunction(() => fixture.state.hasBillingLoadSettled);
-    assert.equal(
-      await page.evaluate(() => fixture.state.hasMoreHistory),
-      false,
-      "an enrollment cursor cannot advertise invisible invoice history",
+    assert.equal(await page.evaluate(() => fixture.state.hasMoreHistory), false);
+    await page.evaluate(() => {
+      fixture.options = { ...fixture.options, activeTab: "enrollments" };
+      fixture.render();
+    });
+    await page.waitForFunction(() => fixture.state.hasMoreHistory);
+
+    const beforeMore = await page.evaluate(() => fixture.requests.length);
+    await page.evaluate(() => fixture.state.loadMoreHistory());
+    assert.deepEqual(await paths(beforeMore), ["/billing/enrollments/page?cursor=older"]);
+    assert.equal(await page.evaluate(() => fixture.state.enrollments.length), 2);
+    assert.equal(await page.evaluate(() => fixture.state.hasMoreHistory), false);
+
+    // A refresh replaces the loaded pages with a fresh first page instead of appending.
+    await page.evaluate(() => fixture.state.refreshBilling());
+    assert.equal(await page.evaluate(() => fixture.state.enrollments.length), 1);
+    assert.equal(await page.evaluate(() => fixture.state.hasMoreHistory), true);
+
+    // A later page that settles after an identity change is not appended to the new identity.
+    await page.evaluate(() => {
+      fixture.held = "/billing/enrollments/page?cursor=older";
+      fixture.lateMore = fixture.state.loadMoreHistory();
+    });
+    await page.waitForFunction(() => fixture.waiters.length === 1);
+    await page.evaluate(() => {
+      fixture.held = null;
+      fixture.options = { ...fixture.options, identityKey: "other:studio:admin:2" };
+      fixture.render();
+    });
+    await page.waitForFunction(
+      () =>
+        fixture.state.enrollments.length === 1 &&
+        fixture.state.enrollments[0].id === "other:studio:admin:2",
+    );
+    await page.evaluate(async () => {
+      fixture.waiters.shift()();
+      await fixture.lateMore;
+    });
+    assert.deepEqual(
+      await page.evaluate(() => fixture.state.enrollments.map((row) => row.id)),
+      ["other:studio:admin:2"],
+      "the previous identity's late page is dropped",
     );
   } finally {
     await browser.close();
@@ -2368,7 +2398,9 @@ test("the Enrollments page says when more enrollments exist and loads every late
     await loadMore.click();
     await page.getByText("Showing 200 billing enrollments. More enrollments exist.").waitFor();
     await loadMore.click();
-    await page.getByText("All 305 billing enrollments are shown.").waitFor();
+    await page
+      .getByText("All 305 billing enrollments from the last successful read are shown.")
+      .waitFor();
     assert.equal(await loadMore.count(), 0);
     assert.equal(
       await page.evaluate(() => fixture.page.tabContentProps.billingEnrollments.length),

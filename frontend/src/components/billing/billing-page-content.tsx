@@ -40,7 +40,7 @@ export function BillingPageContent({
     activeTab === "enrollments"
       ? {
           more: `Showing ${enrollmentCount} billing enrollments. More enrollments exist.`,
-          all: `All ${enrollmentCount} billing enrollments are shown.`,
+          all: `All ${enrollmentCount} billing enrollments from the last successful read are shown.`,
           load: "Load more enrollments",
           loading: "Loading more enrollments…",
         }
