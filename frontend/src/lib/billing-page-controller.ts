@@ -77,6 +77,8 @@ type BillingPageControllerOptions = {
   >;
 };
 
+const LIVE_SUBSCRIPTIONS_NOT_READ: typeof PREVIEW_SUBSCRIPTIONS = [];
+
 export function useBillingPageController({
   config,
   programsStore,
@@ -146,7 +148,6 @@ export function useBillingPageController({
     refreshBilling,
     refreshPaymentAfterRefund,
     refreshConnectStatus,
-    subscriptions,
   } = useBillingDataController({
     activeTab,
     identityKey: billingIdentityKey,
@@ -207,7 +208,8 @@ export function useBillingPageController({
   const billingConnect = isPreviewMode ? PREVIEW_CONNECT : paymentAccount;
   const billingPlans = isPreviewMode ? PREVIEW_PLANS : plans;
   const billingPayers = isPreviewMode ? PREVIEW_PAYERS : payers;
-  const billingSubscriptions = isPreviewMode ? PREVIEW_SUBSCRIPTIONS : subscriptions;
+  // Live subscription totals come from the landing aggregates; the capped list is not read.
+  const billingSubscriptions = isPreviewMode ? PREVIEW_SUBSCRIPTIONS : LIVE_SUBSCRIPTIONS_NOT_READ;
   const billingEnrollments = isPreviewMode ? PREVIEW_ENROLLMENTS : enrollments;
   const billingInvoices = isPreviewMode ? PREVIEW_INVOICES : invoices;
   const billingPayments = isPreviewMode ? PREVIEW_PAYMENTS : payments;

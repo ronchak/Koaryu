@@ -6,6 +6,7 @@ from supabase import Client
 
 from app.core.config import get_settings
 from app.schemas.billing import (
+    BillingEnrollmentPageResponse,
     BillingInvoiceCreate,
     BillingLinkResponse,
     BillingPaymentResponse,
@@ -307,6 +308,11 @@ class BillingService:
 
     async def list_enrollments(self, studio_id: str) -> list[StudentBillingEnrollmentResponse]:
         return await self._enrollment_manager().list_enrollments(studio_id)
+
+    async def list_enrollments_page(
+        self, studio_id: str, cursor: str | None, limit: int
+    ) -> BillingEnrollmentPageResponse:
+        return await self._enrollment_manager().list_enrollments_page(studio_id, cursor, limit)
 
     async def list_student_billing(
         self, student_id: str, studio_id: str

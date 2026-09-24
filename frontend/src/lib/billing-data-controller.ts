@@ -7,7 +7,12 @@ import {
   type RefundIdentity,
   type RefundPaymentRefreshResult,
 } from "@/lib/billing-refund-model";
-import type { BillingLanding, BillingInvoicePage, BillingPaymentPage } from "@/lib/billing-landing";
+import type {
+  BillingEnrollmentPage,
+  BillingInvoicePage,
+  BillingLanding,
+  BillingPaymentPage,
+} from "@/lib/billing-landing";
 import type { BillingTab } from "@/lib/billing-page-state";
 import type {
   BillingInvoice,
@@ -16,7 +21,6 @@ import type {
   BillingPayer,
   BillingPlan,
   BillingSystemStatus,
-  BillingSubscription,
   PlatformBillingStatus,
   StudentBillingEnrollment,
   StudioPaymentAccount,
@@ -65,8 +69,8 @@ export function useBillingDataController({
   const [paymentAccount, setPaymentAccount] = useState<StudioPaymentAccount | null>(null);
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [payers, setPayers] = useState<BillingPayer[]>([]);
-  const [subscriptions, setSubscriptions] = useState<BillingSubscription[]>([]);
   const [enrollments, setEnrollments] = useState<StudentBillingEnrollment[]>([]);
+  const [enrollmentCursor, setEnrollmentCursor] = useState<string | null>(null);
   const [invoiceCursor, setInvoiceCursor] = useState<string | null>(null);
   const [paymentCursor, setPaymentCursor] = useState<string | null>(null);
   const loadMoreInFlightRef = useRef<symbol | null>(null);
@@ -113,8 +117,8 @@ export function useBillingDataController({
     paymentReadRevisionRef.current += 1;
     setPlans([]);
     setPayers([]);
-    setSubscriptions([]);
     setEnrollments([]);
+    setEnrollmentCursor(null);
     setInvoices([]);
     setPayments([]);
     setInvoiceCursor(null);
@@ -240,9 +244,13 @@ export function useBillingDataController({
           load("/billing/plans", setPlans);
         if (["families", "enrollments", "invoices", "reports"].includes(activeTab))
           load("/billing/payers", setPayers);
+        // Enrollments are paged so none are silently cut off. Live subscription totals
+        // come from the landing aggregates, so the capped subscription list is not read.
         if (activeTab === "enrollments") {
-          load("/billing/enrollments", setEnrollments);
-          load("/billing/subscriptions", setSubscriptions);
+          load<BillingEnrollmentPage>("/billing/enrollments/page", (page) => {
+            setEnrollments(page.items);
+            setEnrollmentCursor(page.next_cursor ?? null);
+          });
         }
         if (activeTab === "invoices") {
           load<BillingInvoicePage>("/billing/invoices/page", (page) => {
@@ -306,6 +314,18 @@ export function useBillingDataController({
     setIsLoadingMore(true);
     try {
       const results = await Promise.allSettled([
+        activeTab === "enrollments" && enrollmentCursor
+          ? api
+              .get<BillingEnrollmentPage>(
+                `/billing/enrollments/page?cursor=${encodeURIComponent(enrollmentCursor)}`,
+                currentToken,
+              )
+              .then((page) => {
+                if (!isCurrentRequest(requestId, { accessKey: activeAccessKey })) return;
+                setEnrollments((current) => [...current, ...page.items]);
+                setEnrollmentCursor(page.next_cursor ?? null);
+              })
+          : Promise.resolve(),
         activeTab === "invoices" && invoiceCursor
           ? api
               .get<BillingInvoicePage>(
@@ -350,7 +370,15 @@ export function useBillingDataController({
       if (loadMoreInFlightRef.current === operation) loadMoreInFlightRef.current = null;
       if (isCurrentRequest(requestId, { accessKey: activeAccessKey })) setIsLoadingMore(false);
     }
-  }, [activeAccessKey, activeTab, invoiceCursor, paymentCursor, isCurrentRequest, showTabError]);
+  }, [
+    activeAccessKey,
+    activeTab,
+    enrollmentCursor,
+    invoiceCursor,
+    paymentCursor,
+    isCurrentRequest,
+    showTabError,
+  ]);
 
   const identityUserId = identity?.userId;
   const identityStudioId = identity?.studioId;
@@ -547,13 +575,14 @@ export function useBillingDataController({
     hasMoreHistory:
       hasVisibleBillingData &&
       Boolean(
-        (activeTab === "invoices" && invoiceCursor) || (activeTab === "reports" && paymentCursor),
+        (activeTab === "enrollments" && enrollmentCursor) ||
+        (activeTab === "invoices" && invoiceCursor) ||
+        (activeTab === "reports" && paymentCursor),
       ),
     isLoadingMore,
     landing: hasVisibleBillingData ? landing : null,
     refreshBilling,
     refreshPaymentAfterRefund,
     refreshConnectStatus,
-    subscriptions: hasVisibleBillingData ? subscriptions : [],
   };
 }

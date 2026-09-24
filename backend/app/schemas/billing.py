@@ -867,3 +867,9 @@ class BillingPaymentPageResponse(BaseModel):
     items: list[BillingPaymentResponse]
     next_cursor: str | None = None
     complete: bool
+
+
+class BillingEnrollmentPageResponse(BaseModel):
+    items: list[StudentBillingEnrollmentResponse]
+    next_cursor: str | None = None
+    complete: bool

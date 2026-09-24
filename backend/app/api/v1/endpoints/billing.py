@@ -25,6 +25,7 @@ from app.core.deps import (
 )
 from app.core.provider_runtime import SupabaseProviderRuntime
 from app.schemas.billing import (
+    BillingEnrollmentPageResponse,
     BillingLandingResponse,
     BillingInvoicePageResponse,
     BillingPaymentPageResponse,
@@ -720,7 +721,15 @@ async def disable_autopay(
     )
 
 
-@router.get("/subscriptions", response_model=list[BillingSubscriptionResponse])
+@router.get(
+    "/subscriptions",
+    response_model=list[BillingSubscriptionResponse],
+    deprecated=True,
+    description=(
+        "Legacy capped list: returns at most the 200 newest subscriptions without completeness "
+        "metadata. Retained only for clients released before paged billing reads."
+    ),
+)
 async def list_subscriptions(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
@@ -742,7 +751,39 @@ async def list_subscriptions(
     )
 
 
-@router.get("/enrollments", response_model=list[StudentBillingEnrollmentResponse])
+@router.get("/enrollments/page", response_model=BillingEnrollmentPageResponse)
+async def get_enrollments_page(
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=100, ge=1, le=100),
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        studio_id = _manager_studio_id(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
+        )
+        return await BillingService(client).list_enrollments_page(studio_id, cursor, limit)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
+
+
+@router.get(
+    "/enrollments",
+    response_model=list[StudentBillingEnrollmentResponse],
+    deprecated=True,
+    description=(
+        "Legacy capped list: returns at most the 300 newest enrollments without completeness "
+        "metadata. Use /billing/enrollments/page."
+    ),
+)
 async def list_enrollments(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),

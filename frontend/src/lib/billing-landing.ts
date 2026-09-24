@@ -1,6 +1,7 @@
 import type {
   ApiBillingLandingResponse,
   ApiBillingLandingAggregatesResponse,
+  ApiBillingEnrollmentPageResponse,
   ApiBillingInvoicePageResponse,
   ApiBillingPaymentPageResponse,
 } from "@/types/generated/api-contracts";
@@ -10,3 +11,4 @@ export type BillingLandingAggregates = ApiBillingLandingAggregatesResponse;
 
 export type BillingInvoicePage = ApiBillingInvoicePageResponse;
 export type BillingPaymentPage = ApiBillingPaymentPageResponse;
+export type BillingEnrollmentPage = ApiBillingEnrollmentPageResponse;
