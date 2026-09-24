@@ -2097,12 +2097,12 @@
       "id": "BB1-02",
       "title": "Studio-wide enrollments and subscriptions silently stop at 300 and 200 records",
       "cluster": "bounded_reads_and_runtime",
-      "disposition": "pending",
-      "reason": "Enrollment and subscription lists still silently cap results, and the enrollment tab consumes those lists. Invoice/payment pagination does not resolve this separate gap.",
+      "disposition": "fixed",
+      "reason": "The Enrollments tab reads keyset pages from GET /billing/enrollments/page, which covers every enrollment with studio- and dataset-scoped cursors and per-page scheduled-transition enrichment. The tab says whether more enrollments exist and loads later pages. It no longer reads the capped subscription list, whose data fed only a preview fallback; live subscription totals come from landing aggregates. The capped legacy lists remain, deprecated, for older clients. Merged into main; not deployed.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "7113d130a1523d5048cb9cb15529aed6277a4770",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted activity during normalization.",
+      "verified_against": "37575adfe35da8f6d12629412112b2c7185fa4a8",
+      "verification": "Backend: test_billing_enrollment_pages.py traverses 301 and 1005 enrollments (beyond the 300 legacy cap and the hosted 1000-row response cap) with timestamp ties, per-page enrichment, cross-studio and cross-dataset cursor rejection, page-size bounds and endpoint access before reads; the legacy caps are pinned as deprecated. Frontend: mounted tests show the tab reads pages, never the capped lists, advertises more enrollments and reaches 305 rows through Load more. Tests failed before the change and fail for a page-one-only UI. Full suites and API types passed locally.",
       "source_paths": [
         "backend/app/services/billing_enrollments.py"
       ],
@@ -2112,23 +2112,33 @@
       "collapse_with": [],
       "current_evidence": [
         {
+          "path": "backend/app/api/v1/endpoints/billing.py",
+          "line": 754,
+          "observation": "GET /billing/enrollments/page returns bounded keyset pages with complete and next_cursor; the legacy capped lists are marked deprecated (lines 727 and 781)."
+        },
+        {
           "path": "backend/app/services/billing_enrollments.py",
-          "line": 93,
-          "observation": "Subscriptions stop at 200; enrollments stop at 300 without completeness metadata."
+          "line": 72,
+          "observation": "Each page enriches only its own rows with scheduled period-end transitions."
+        },
+        {
+          "path": "backend/app/services/billing_read_pages.py",
+          "line": 52,
+          "observation": "The existing invoice/payment keyset reader now also serves enrollments with dataset-bound cursors."
         },
         {
           "path": "frontend/src/lib/billing-data-controller.ts",
-          "line": 216,
-          "observation": "Enrollment tab loads the unpaged enrollment and subscription endpoints."
+          "line": 250,
+          "observation": "The Enrollments tab loads enrollment pages and no capped enrollment or subscription list."
         },
         {
-          "path": "backend/app/api/v1/endpoints/billing.py",
-          "line": 694,
-          "observation": "Enrollment endpoint returns a plain list after manager/subscription checks."
+          "path": "frontend/src/components/billing/billing-page-content.tsx",
+          "line": 42,
+          "observation": "The tab states whether more enrollments exist and offers Load more enrollments."
         }
       ],
-      "next_change": "Remove silent truncation using the existing completeness/pagination mechanisms, with an explicit backward-compatible contract for callers. Preserve per-page transition enrichment and never label a capped list complete; do not introduce a new pagination framework.",
-      "validation_plan": "More than 300 enrollments and 200 subscriptions, tied timestamps, complete traversal and cross-studio cursor rejection; check API types.",
+      "next_change": "No implementation change remains for this finding. Remove the deprecated capped list endpoints once no released client calls them; release requires owner authorization (backend before frontend).",
+      "validation_plan": "Completed: backend and mounted frontend regression proofs, API type check and exact-head CI. No hosted validation.",
       "scope_constraints": [
         "Existing invoice/payment pagination",
         "Enrollment dates and activation semantics",
@@ -13205,16 +13215,16 @@
     }
   },
   "current_counts": {
-    "fixed": 144,
+    "fixed": 145,
     "rejected_after_verification": 1,
-    "pending": 118,
+    "pending": 117,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 93,
+    "Sol": 92,
     "Astra": 25
   },
   "execution_policy": {
@@ -13227,14 +13237,14 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 118,
+      "Sol": 119,
       "Astra": 26
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 93,
+      "Sol": 92,
       "Astra": 25
     },
     "deferred_intentionally": {
