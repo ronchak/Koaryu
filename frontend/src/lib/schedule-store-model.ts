@@ -199,13 +199,14 @@ export async function runScheduleRangeRefreshWithRetry<T>(
 export type ScheduleRangeRefreshIntent = "read" | "materialize";
 
 // The store owns the reconciliation that follows a schedule mutation. Callers observe
-// its outcome instead of starting a second refresh. "deferred" means another in-flight
-// mutation or a newer schedule generation now owns the refresh.
+// its outcome instead of starting a second refresh. "deferred" makes no claim: a newer
+// write, coordinator reset or auth change owns the refresh.
 export type ScheduleMutationRefresh = "refreshed" | "failed" | "deferred";
 
+// The create is confirmed when this resolves; its store-owned refresh settles separately.
 export interface ScheduleTemplateCreateResult {
   template: ClassTemplate;
-  scheduleRefresh: ScheduleMutationRefresh;
+  scheduleRefresh: Promise<ScheduleMutationRefresh>;
 }
 
 export interface ScheduleWindowTransport {
@@ -266,6 +267,8 @@ export type ScheduleCoordinatorState = {
   mutationsInFlight: number;
   requestedRange: ScheduleDateRange | null;
   rangeRequestSequence: number;
+  // Advances only on a destructive reset, which abandons every earlier in-flight write.
+  resetEpoch: number;
 };
 
 export function createScheduleCoordinatorState(): ScheduleCoordinatorState {
@@ -278,6 +281,7 @@ export function createScheduleCoordinatorState(): ScheduleCoordinatorState {
     mutationsInFlight: 0,
     requestedRange: null,
     rangeRequestSequence: 0,
+    resetEpoch: 0,
   };
 }
 
@@ -294,6 +298,7 @@ export function resetScheduleCoordinatorState(
     mutationsInFlight: 0,
     requestedRange: null,
     rangeRequestSequence: current.rangeRequestSequence + 1,
+    resetEpoch: current.resetEpoch + 1,
   };
 }
 

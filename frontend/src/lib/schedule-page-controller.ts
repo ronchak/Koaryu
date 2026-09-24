@@ -83,6 +83,7 @@ export function useSchedulePageController({
   const [showAddClass, setShowAddClass] = useState(false);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
   const createClassInFlightRef = useRef(false);
+  const createSequenceRef = useRef(0);
   const [createClassError, setCreateClassError] = useState<string | null>(null);
   const [rangeLoadAttempt, setRangeLoadAttempt] = useState(0);
   const [attendanceRefreshAttempt, setAttendanceRefreshAttempt] = useState(0);
@@ -254,13 +255,14 @@ export function useSchedulePageController({
       setActionMessage("Class added to the schedule.");
       return;
     }
-    if (createdTemplate.scheduleRefresh === "refreshed") {
-      setActionMessage("Recurring class created and visible sessions refreshed.");
-      return;
-    }
     setActionMessage("Recurring class created.");
-    // After navigation, the new range's own load reports its outcome.
-    if (createdTemplate.scheduleRefresh === "failed" && currentRangeKeyRef.current === rangeKey) {
+    const createSequence = (createSequenceRef.current += 1);
+    const scheduleRefresh = await createdTemplate.scheduleRefresh;
+    // A newer create owns the messages; after navigation the new range's load reports.
+    if (createSequence !== createSequenceRef.current) return;
+    if (scheduleRefresh === "refreshed") {
+      setActionMessage("Recurring class created and visible sessions refreshed.");
+    } else if (scheduleRefresh === "failed" && currentRangeKeyRef.current === rangeKey) {
       setScheduleLoadError(
         "Recurring class created, but its visible sessions could not refresh. Retry to load them.",
       );

@@ -44,9 +44,10 @@ describe("schedule range intent contracts", () => {
     );
     assert.match(
       scheduleActionsSource,
-      /scheduleRefresh: await mutation\.finish\(\{ awaitSharedRefresh: true \}\)/,
+      /scheduleRefresh: mutation\.finish\(\{ awaitSharedRefresh: true \}\)/,
     );
-    assert.match(scheduleControllerSource, /createdTemplate\.scheduleRefresh === "failed"/);
+    assert.match(scheduleControllerSource, /await createdTemplate\.scheduleRefresh;/);
+    assert.match(scheduleControllerSource, /scheduleRefresh === "failed"/);
     assert.match(
       scheduleControllerSource,
       /resumedRangeRef\.current === visibleRangeKey \? "read" : "materialize"/,

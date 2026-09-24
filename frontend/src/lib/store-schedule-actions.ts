@@ -101,20 +101,28 @@ export function useStoreScheduleActions({
     });
   }, [scheduleCoordinatorRef]);
 
-  // A finish that is not the last in-flight mutation waits here for the outcome of the
-  // single reconciliation that the last finish runs for all of them.
-  const postMutationRefreshWaitersRef = useRef(new Set<(value: ScheduleMutationRefresh) => void>());
+  // A finish that is not the last in-flight write of its reset epoch waits here for the
+  // single reconciliation that the epoch's last finish runs after every earlier write.
+  const postMutationRefreshWaitersRef = useRef(
+    new Set<{ resetEpoch: number; resolve: (value: ScheduleMutationRefresh) => void }>(),
+  );
 
-  const settlePostMutationRefresh = useCallback((outcome: ScheduleMutationRefresh) => {
-    const waiters = [...postMutationRefreshWaitersRef.current];
-    postMutationRefreshWaitersRef.current.clear();
-    for (const resolve of waiters) {
-      resolve(outcome);
-    }
-  }, []);
+  // Waiters registered before a reconciliation starts are covered by it. Later waiters
+  // belong to a write that began afterwards, whose own last finish reconciles again.
+  const takePostMutationRefreshWaiters = useCallback(
+    (includes: (resetEpoch: number) => boolean) => {
+      const waiters = [...postMutationRefreshWaitersRef.current].filter((waiter) =>
+        includes(waiter.resetEpoch),
+      );
+      for (const waiter of waiters) postMutationRefreshWaitersRef.current.delete(waiter);
+      return waiters;
+    },
+    [],
+  );
 
   const materializeAfterMutation = useCallback(async (): Promise<ScheduleMutationRefresh> => {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    const maximumAttempts = 3;
+    for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       const attemptRequest = beginLiveAuthRequest();
       try {
         await reconcileSchedule("materialize");
@@ -124,7 +132,9 @@ export function useStoreScheduleActions({
       if (attemptRequest.isCurrent()) {
         return scheduleCoordinatorRef.current.hasAuthoritativeSnapshot ? "refreshed" : "deferred";
       }
-      if (!attemptRequest.canRetryAfterTokenChange?.()) return "deferred";
+      if (!attemptRequest.canRetryAfterTokenChange?.() || attempt === maximumAttempts) {
+        return "deferred";
+      }
       // A token renewal discarded this attempt, and the renewal's own read may have
       // satisfied the snapshot. That read cannot stand in for materialization.
       scheduleCoordinatorRef.current = {
@@ -148,7 +158,7 @@ export function useStoreScheduleActions({
       isCurrent: () =>
         request.isCurrent() && scheduleCoordinatorRef.current.generation === generation,
       // Callers that report the refresh can wait for the shared outcome when another
-      // mutation is still in flight; others keep settling as soon as their own write does.
+      // write is still in flight; others keep settling as soon as their own write does.
       finish: async ({ awaitSharedRefresh = false } = {}): Promise<ScheduleMutationRefresh> => {
         if (finished) {
           return "deferred";
@@ -157,15 +167,31 @@ export function useStoreScheduleActions({
         const beforeFinish = scheduleCoordinatorRef.current;
         const afterFinish = finishScheduleMutationState(beforeFinish, generation);
         scheduleCoordinatorRef.current = afterFinish;
-        if (afterFinish !== beforeFinish && afterFinish.mutationsInFlight > 0) {
+        if (afterFinish === beforeFinish) {
+          // A reset abandoned this write's epoch; the reset's reload owns the schedule now.
+          for (const waiter of takePostMutationRefreshWaiters(
+            (resetEpoch) => resetEpoch < afterFinish.resetEpoch,
+          )) {
+            waiter.resolve("deferred");
+          }
+          releaseScheduleMutationWaiters();
+          return "deferred";
+        }
+        if (afterFinish.mutationsInFlight > 0) {
           if (!awaitSharedRefresh) return "deferred";
           return new Promise<ScheduleMutationRefresh>((resolve) => {
-            postMutationRefreshWaitersRef.current.add(resolve);
+            postMutationRefreshWaitersRef.current.add({
+              resetEpoch: afterFinish.resetEpoch,
+              resolve,
+            });
           });
         }
+        const covered = takePostMutationRefreshWaiters(
+          (resetEpoch) => resetEpoch === afterFinish.resetEpoch,
+        );
         let outcome: ScheduleMutationRefresh = "deferred";
         try {
-          if (afterFinish !== beforeFinish && shouldReconcileSchedule(afterFinish)) {
+          if (shouldReconcileSchedule(afterFinish)) {
             outcome = await materializeAfterMutation();
           }
         } catch (error) {
@@ -173,7 +199,7 @@ export function useStoreScheduleActions({
           outcome = "failed";
         } finally {
           releaseScheduleMutationWaiters();
-          settlePostMutationRefresh(outcome);
+          for (const waiter of covered) waiter.resolve(outcome);
         }
         return outcome;
       },
@@ -185,7 +211,7 @@ export function useStoreScheduleActions({
     scheduleCoordinatorRef,
     setScheduleLoadError,
     setScheduleStatus,
-    settlePostMutationRefresh,
+    takePostMutationRefreshWaiters,
   ]);
 
   const refreshScheduleRange = useCallback(
@@ -389,7 +415,7 @@ export function useStoreScheduleActions({
         if (generatedSessions.length > 0) {
           persistSessions([...sessionsRef.current, ...generatedSessions].sort(compareSessions));
         }
-        return { template: newTemplate, scheduleRefresh: "refreshed" };
+        return { template: newTemplate, scheduleRefresh: Promise.resolve("refreshed") };
       }
 
       const mutation = beginScheduleMutation();
@@ -411,12 +437,9 @@ export function useStoreScheduleActions({
           }),
         );
       }
-      // This mutation's finish, or the shared one it waits for, is the only post-create
-      // materialization.
-      return {
-        template: result,
-        scheduleRefresh: await mutation.finish({ awaitSharedRefresh: true }),
-      };
+      // The create is confirmed now. This write's finish, or the shared one it waits for,
+      // is the only post-create materialization; callers report it without waiting.
+      return { template: result, scheduleRefresh: mutation.finish({ awaitSharedRefresh: true }) };
     },
     [
       beginScheduleMutation,
