@@ -311,6 +311,7 @@ export function useDashboardPageController({
         allDatasetEvidenceReady: setupReadiness.status === "ready",
         canSeeBilling,
         canSeeLeads: normalizedRole === "admin" || normalizedRole === "front_desk",
+        role: normalizedRole,
         hasDashboardSummary,
         hasPartialStudentSample,
         studentsLoaded,

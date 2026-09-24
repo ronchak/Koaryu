@@ -36,6 +36,7 @@ function baseInput(overrides = {}) {
     allDatasetEvidenceReady: true,
     canSeeBilling: true,
     canSeeLeads: true,
+    role: "admin",
     hasDashboardSummary: true,
     hasPartialStudentSample: false,
     rosterSummaryPending: false,
@@ -151,6 +152,10 @@ describe("dashboard widget view models", () => {
       loading.quick_actions.actions.map((action) => action.href),
       ["/students", "/students/import", "/leads", "/schedule"],
     );
+    assert.deepEqual(
+      loading.quick_actions.actions.map((action) => action.id),
+      ["add_student", "import_students", "open_leads", "take_attendance"],
+    );
     for (const id of [
       "needs_attention",
       "classes_today",
@@ -168,6 +173,33 @@ describe("dashboard widget view models", () => {
     }
     assert.equal(loading.revenue_due.state, "unavailable");
     assert.equal(loading.saved_report.state, "unavailable");
+  });
+
+  it("offers only the quick actions each staff role can take", () => {
+    const quickActions = (role) =>
+      buildDashboardWidgetViewModels(baseInput({ role })).quick_actions;
+    const operationsActions = [
+      { id: "add_student", label: "Add student", href: "/students" },
+      { id: "import_students", label: "Import CSV", href: "/students/import" },
+      { id: "open_leads", label: "Open leads", href: "/leads" },
+      { id: "take_attendance", label: "Take attendance", href: "/schedule" },
+    ];
+
+    for (const role of ["admin", "front_desk"]) {
+      const model = quickActions(role);
+      assert.equal(model.state, "ready", role);
+      assert.deepEqual(model.actions, operationsActions, role);
+    }
+
+    const instructor = quickActions("instructor");
+    assert.equal(instructor.state, "ready");
+    assert.deepEqual(instructor.actions, [
+      { id: "take_attendance", label: "Take attendance", href: "/schedule" },
+    ]);
+
+    const unidentified = quickActions(null);
+    assert.equal(unidentified.state, "empty");
+    assert.deepEqual(unidentified.actions, []);
   });
 
   it("uses exact summary attendance while the schedule source is still pending", () => {
