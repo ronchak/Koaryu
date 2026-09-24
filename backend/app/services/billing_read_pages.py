@@ -1,4 +1,4 @@
-"""Bounded stable invoice and payment history pages; totals are separate RPC reads."""
+"""Bounded stable billing pages; totals are separate RPC reads."""
 
 import base64
 import json
@@ -32,24 +32,34 @@ def get_billing_payment(client, studio_id: str, payment_id: str) -> BillingPayme
     return BillingPaymentResponse.model_validate(rows[0])
 
 
+BillingPageDataset = Literal["invoices", "payments", "enrollments"]
+
+_PAGE_TABLES: dict[str, str] = {
+    "invoices": "billing_invoices",
+    "payments": "billing_payments",
+    "enrollments": "student_billing_enrollments",
+}
+
+
 class _BillingCursor(BaseModel):
     model_config = ConfigDict(extra="forbid")
     studio_id: str
-    dataset: Literal["invoices", "payments"]
+    dataset: BillingPageDataset
     created_at: datetime
     id: UUID
 
 
-def get_billing_page(
+def read_billing_page_rows(
     client,
     studio_id: str,
-    dataset: Literal["invoices", "payments"],
+    dataset: BillingPageDataset,
     cursor: str | None,
     limit: int,
-) -> BillingInvoicePageResponse | BillingPaymentPageResponse:
+) -> tuple[list[dict], str | None, bool]:
+    """Return one keyset page of studio rows, newest first, with its continuation."""
     if not 1 <= limit <= 100:
         raise HTTPException(400, "Billing page size must be between 1 and 100.")
-    query = client.table(f"billing_{dataset}").select("*").eq("studio_id", studio_id)
+    query = client.table(_PAGE_TABLES[dataset]).select("*").eq("studio_id", studio_id)
     if cursor:
         try:
             anchor = _BillingCursor.model_validate_json(base64.urlsafe_b64decode(cursor))
@@ -84,5 +94,16 @@ def get_billing_page(
                 }
             ).encode()
         ).decode()
+    return items, next_cursor, complete
+
+
+def get_billing_page(
+    client,
+    studio_id: str,
+    dataset: Literal["invoices", "payments"],
+    cursor: str | None,
+    limit: int,
+) -> BillingInvoicePageResponse | BillingPaymentPageResponse:
+    items, next_cursor, complete = read_billing_page_rows(client, studio_id, dataset, cursor, limit)
     response = BillingInvoicePageResponse if dataset == "invoices" else BillingPaymentPageResponse
     return response(items=items, next_cursor=next_cursor, complete=complete)

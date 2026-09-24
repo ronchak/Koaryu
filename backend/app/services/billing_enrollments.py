@@ -8,6 +8,7 @@ from supabase import Client
 
 from app.core.config import Settings
 from app.schemas.billing import (
+    BillingEnrollmentPageResponse,
     BillingEnrollmentScheduledTransitionResponse,
     BillingSubscriptionResponse,
     StudentBillingEnrollmentCreate,
@@ -20,6 +21,7 @@ from app.services.billing_enrollment_transitions import BillingEnrollmentTransit
 from app.services.billing_audit import record_billing_audit
 from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_payers import recompute_payer_balance
+from app.services.billing_read_pages import read_billing_page_rows
 from app.services.supabase_rpc import execute_required_rpc, rpc_rows
 from app.services.stripe_service import StripeService
 
@@ -65,6 +67,19 @@ class BillingEnrollmentManager:
         return self._enrollment_responses_with_scheduled_transitions(
             result.data or [],
             studio_id,
+        )
+
+    async def list_enrollments_page(
+        self, studio_id: str, cursor: str | None, limit: int
+    ) -> BillingEnrollmentPageResponse:
+        # Keyset pages replace the capped list; each page carries its own transitions.
+        rows, next_cursor, complete = read_billing_page_rows(
+            self.supabase, studio_id, "enrollments", cursor, limit
+        )
+        return BillingEnrollmentPageResponse(
+            items=self._enrollment_responses_with_scheduled_transitions(rows, studio_id),
+            next_cursor=next_cursor,
+            complete=complete,
         )
 
     async def list_student_billing(

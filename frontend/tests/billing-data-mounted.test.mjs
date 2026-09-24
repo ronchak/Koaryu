@@ -6,7 +6,7 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 // Mount real billing hooks and page controls in local Chromium; replace I/O and decoration.
 function bundle({ realApi = false, refunds = false, pageController = false } = {}) {
   const stubs = {
-    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router; const search=new URLSearchParams('tab=reports'); exports.useSearchParams=()=>search;`,
+    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router; const search=new URLSearchParams(window.fixture.search??'tab=reports'); exports.useSearchParams=()=>search;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=window.fixture.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
     "@/lib/performance": `exports.markPerformance=()=>{};exports.measurePerformance=()=>{};exports.markDashboardReadiness=()=>{};`,
@@ -285,7 +285,14 @@ async function mountRefundFixture(browser) {
 // browser state at the I/O boundary, before either committing or holding the response.
 async function mountExternalPaymentFixture(
   browser,
-  { role = "admin", preview = false, workflow = true, storageFault = null } = {},
+  {
+    role = "admin",
+    preview = false,
+    workflow = true,
+    storageFault = null,
+    search = undefined,
+    extraReads = undefined,
+  } = {},
 ) {
   const page = await browser.newPage();
   await page.route("http://localhost:4173/", (route) =>
@@ -403,6 +410,8 @@ async function mountExternalPaymentFixture(
               external_net_amount_cents: 7525,
               stripe_net_amount_cents: 0,
             };
+          const extra = f.extraReads?.(path);
+          if (extra !== undefined) return extra;
           throw new Error(`Unexpected read ${path}`);
         },
         post: async (path, body, token, options) => {
@@ -442,6 +451,15 @@ async function mountExternalPaymentFixture(
     },
     { role, preview, workflow, storageFault },
   );
+  if (search !== undefined || extraReads !== undefined)
+    await page.evaluate(
+      ({ search, extraReads }) => {
+        fixture.search = search;
+        // Source of an optional `(path) => response | undefined` read handler.
+        if (extraReads) fixture.extraReads = new Function(`return (${extraReads})`)();
+      },
+      { search, extraReads: extraReads?.toString() },
+    );
   await page.addScriptTag({ content: bundle({ pageController: true }) });
   await page.waitForFunction(() => fixture.page && !fixture.page.showBillingLoading);
   return page;
@@ -2262,6 +2280,136 @@ test("mounted Billing keeps denied landing diagnostics during Connect reads with
       assert.equal(await page.evaluate(() => fixture.error), "");
       await page.close();
     }
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the enrollments tab pages enrollments and never reads the capped lists", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await mountBillingFixture(browser);
+    const paths = (n) => page.evaluate((i) => fixture.requests.slice(i).map((r) => r.path), n);
+    const before = await page.evaluate(() => {
+      fixture.more = true;
+      fixture.options = { ...fixture.options, activeTab: "enrollments" };
+      fixture.render();
+      return fixture.requests.length;
+    });
+    await page.waitForFunction(() => fixture.state.enrollments.length === 1);
+    await page.waitForFunction(() => fixture.state.hasBillingLoadSettled);
+    const firstReads = await paths(before);
+    assert.ok(firstReads.includes("/billing/enrollments/page"), firstReads.join(", "));
+    assert.ok(!firstReads.includes("/billing/enrollments"), "no capped enrollment list");
+    assert.ok(
+      !firstReads.includes("/billing/subscriptions"),
+      "no capped subscription list; live subscription totals come from landing aggregates",
+    );
+    assert.equal(await page.evaluate(() => fixture.state.hasMoreHistory), true);
+
+    // An unused enrollment cursor must not advertise history on another tab.
+    await page.evaluate(() => {
+      fixture.moreInvoices = false;
+      fixture.options = { ...fixture.options, activeTab: "invoices" };
+      fixture.render();
+    });
+    await page.waitForFunction(() => fixture.state.hasBillingLoadSettled);
+    assert.equal(await page.evaluate(() => fixture.state.hasMoreHistory), false);
+    await page.evaluate(() => {
+      fixture.options = { ...fixture.options, activeTab: "enrollments" };
+      fixture.render();
+    });
+    await page.waitForFunction(() => fixture.state.hasMoreHistory);
+
+    const beforeMore = await page.evaluate(() => fixture.requests.length);
+    await page.evaluate(() => fixture.state.loadMoreHistory());
+    assert.deepEqual(await paths(beforeMore), ["/billing/enrollments/page?cursor=older"]);
+    assert.equal(await page.evaluate(() => fixture.state.enrollments.length), 2);
+    assert.equal(await page.evaluate(() => fixture.state.hasMoreHistory), false);
+
+    // A refresh replaces the loaded pages with a fresh first page instead of appending.
+    await page.evaluate(() => fixture.state.refreshBilling());
+    assert.equal(await page.evaluate(() => fixture.state.enrollments.length), 1);
+    assert.equal(await page.evaluate(() => fixture.state.hasMoreHistory), true);
+
+    // A later page that settles after an identity change is not appended to the new identity.
+    await page.evaluate(() => {
+      fixture.held = "/billing/enrollments/page?cursor=older";
+      fixture.lateMore = fixture.state.loadMoreHistory();
+    });
+    await page.waitForFunction(() => fixture.waiters.length === 1);
+    await page.evaluate(() => {
+      fixture.held = null;
+      fixture.options = { ...fixture.options, identityKey: "other:studio:admin:2" };
+      fixture.render();
+    });
+    await page.waitForFunction(
+      () =>
+        fixture.state.enrollments.length === 1 &&
+        fixture.state.enrollments[0].id === "other:studio:admin:2",
+    );
+    await page.evaluate(async () => {
+      fixture.waiters.shift()();
+      await fixture.lateMore;
+    });
+    assert.deepEqual(
+      await page.evaluate(() => fixture.state.enrollments.map((row) => row.id)),
+      ["other:studio:admin:2"],
+      "the previous identity's late page is dropped",
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the Enrollments page says when more enrollments exist and loads every later page", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await mountExternalPaymentFixture(browser, {
+      search: "tab=enrollments",
+      extraReads: (path) => {
+        const enrollment = (index) => ({
+          id: `enrollment-${index}`,
+          studio_id: "studio",
+          student_id: `student-${index}`,
+          payer_id: "payer-1",
+          billing_plan_id: "plan-1",
+          collection_mode: "external",
+          status: "active",
+          billing_status: "current",
+          start_date: "2026-09-01",
+          created_at: "2026-09-01T00:00:00Z",
+          updated_at: "2026-09-01T00:00:00Z",
+        });
+        const range = (start, end) =>
+          Array.from({ length: end - start + 1 }, (_, i) => enrollment(start + i));
+        if (path === "/billing/plans") return [];
+        if (path === "/billing/enrollments/page")
+          return { items: range(1, 100), next_cursor: "page-2", complete: false };
+        if (path === "/billing/enrollments/page?cursor=page-2")
+          return { items: range(101, 200), next_cursor: "page-3", complete: false };
+        if (path === "/billing/enrollments/page?cursor=page-3")
+          return { items: range(201, 305), next_cursor: null, complete: true };
+        return undefined;
+      },
+    });
+    await page.getByText("Showing 100 billing enrollments. More enrollments exist.").waitFor();
+    const loadMore = page.getByRole("button", { name: "Load more enrollments" });
+    await loadMore.click();
+    await page.getByText("Showing 200 billing enrollments. More enrollments exist.").waitFor();
+    await loadMore.click();
+    await page
+      .getByText("All 305 billing enrollments from the last successful read are shown.")
+      .waitFor();
+    assert.equal(await loadMore.count(), 0);
+    assert.equal(
+      await page.evaluate(() => fixture.page.tabContentProps.billingEnrollments.length),
+      305,
+      "enrollments beyond the old 300-row cap are reachable",
+    );
+    const paths = await page.evaluate(() => fixture.requests.map((r) => r.path));
+    assert.ok(!paths.includes("/billing/enrollments"));
+    assert.ok(!paths.includes("/billing/subscriptions"));
   } finally {
     await browser.close();
   }

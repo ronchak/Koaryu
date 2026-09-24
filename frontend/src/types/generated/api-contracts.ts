@@ -146,6 +146,12 @@ export interface ApiBeltRankUpdate {
   tip_color_hex?: string | null;
 }
 
+export interface ApiBillingEnrollmentPageResponse {
+  items: ApiStudentBillingEnrollmentResponse[];
+  next_cursor?: string | null;
+  complete: boolean;
+}
+
 export interface ApiBillingEnrollmentScheduledTransitionResponse {
   intent_id: string;
   revision: number;
