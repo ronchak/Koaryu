@@ -38,6 +38,8 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Check frontend formatting: `cd frontend && npm run format:check`
 - Check candidate-wide workflow coverage: `npm run check:release-workflow`
 - Check generated release statements, restore scripts and readiness metadata: `npm run check:release-attestation`
+- Regenerate remediation ledger counts after changing a finding's disposition or track: `npm run generate:remediation-ledger`
+- Check that ledger, `REMEDIATION.md` and `docs/remediation/HANDOFF.md` counts match the findings: `npm run check:remediation-ledger`
 - Summarize an approved private performance-log export: `npm run summarize:performance < /absolute/private/export.ndjson`
 - Check deterministic performance regression gate: `npm run check:performance-regression -- --expected-sha <full-sha>`
 - Generate or verify the guarded studio-comp database rollout packet: `node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>`

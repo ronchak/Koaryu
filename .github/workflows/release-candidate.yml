@@ -43,6 +43,9 @@ jobs:
       - name: Verify generated release attestations
         run: npm run check:release-attestation
 
+      - name: Verify derived remediation ledger counts
+        run: npm run check:remediation-ledger
+
       - name: Test exact-SHA deployed-release verifier
         run: node --test scripts/verify-deployed-release.test.mjs
 
