@@ -256,16 +256,6 @@ export function navigateScheduleDate(currentDate: Date, view: SchedulePageView, 
   return next;
 }
 
-export function recurringClassOverlapsRange(
-  recurrence: { startDate: string; endDate?: string | null },
-  visibleRange: { start: string; end: string },
-) {
-  return (
-    recurrence.startDate <= visibleRange.end &&
-    (!recurrence.endDate || recurrence.endDate >= visibleRange.start)
-  );
-}
-
 export function getActiveScheduleStudents(students: Student[], businessDate: string) {
   return students
     .filter((student) => student.status === "active" || student.status === "trialing")

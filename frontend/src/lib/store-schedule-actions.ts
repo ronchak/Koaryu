@@ -101,6 +101,40 @@ export function useStoreScheduleActions({
     });
   }, [scheduleCoordinatorRef]);
 
+  // A finish that is not the last in-flight mutation waits here for the outcome of the
+  // single reconciliation that the last finish runs for all of them.
+  const postMutationRefreshWaitersRef = useRef(new Set<(value: ScheduleMutationRefresh) => void>());
+
+  const settlePostMutationRefresh = useCallback((outcome: ScheduleMutationRefresh) => {
+    const waiters = [...postMutationRefreshWaitersRef.current];
+    postMutationRefreshWaitersRef.current.clear();
+    for (const resolve of waiters) {
+      resolve(outcome);
+    }
+  }, []);
+
+  const materializeAfterMutation = useCallback(async (): Promise<ScheduleMutationRefresh> => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const attemptRequest = beginLiveAuthRequest();
+      try {
+        await reconcileSchedule("materialize");
+      } catch (error) {
+        if (!attemptRequest.canRetryAfterTokenChange?.()) throw error;
+      }
+      if (attemptRequest.isCurrent()) {
+        return scheduleCoordinatorRef.current.hasAuthoritativeSnapshot ? "refreshed" : "deferred";
+      }
+      if (!attemptRequest.canRetryAfterTokenChange?.()) return "deferred";
+      // A token renewal discarded this attempt, and the renewal's own read may have
+      // satisfied the snapshot. That read cannot stand in for materialization.
+      scheduleCoordinatorRef.current = {
+        ...scheduleCoordinatorRef.current,
+        hasAuthoritativeSnapshot: false,
+      };
+    }
+    return "deferred";
+  }, [beginLiveAuthRequest, reconcileSchedule, scheduleCoordinatorRef]);
+
   const beginScheduleMutation = useCallback(() => {
     const request = beginLiveAuthRequest();
     const generation = scheduleCoordinatorRef.current.generation;
@@ -113,7 +147,9 @@ export function useStoreScheduleActions({
       request,
       isCurrent: () =>
         request.isCurrent() && scheduleCoordinatorRef.current.generation === generation,
-      finish: async (): Promise<ScheduleMutationRefresh> => {
+      // Callers that report the refresh can wait for the shared outcome when another
+      // mutation is still in flight; others keep settling as soon as their own write does.
+      finish: async ({ awaitSharedRefresh = false } = {}): Promise<ScheduleMutationRefresh> => {
         if (finished) {
           return "deferred";
         }
@@ -121,27 +157,35 @@ export function useStoreScheduleActions({
         const beforeFinish = scheduleCoordinatorRef.current;
         const afterFinish = finishScheduleMutationState(beforeFinish, generation);
         scheduleCoordinatorRef.current = afterFinish;
+        if (afterFinish !== beforeFinish && afterFinish.mutationsInFlight > 0) {
+          if (!awaitSharedRefresh) return "deferred";
+          return new Promise<ScheduleMutationRefresh>((resolve) => {
+            postMutationRefreshWaitersRef.current.add(resolve);
+          });
+        }
+        let outcome: ScheduleMutationRefresh = "deferred";
         try {
-          if (afterFinish === beforeFinish || !shouldReconcileSchedule(afterFinish)) {
-            return "deferred";
+          if (afterFinish !== beforeFinish && shouldReconcileSchedule(afterFinish)) {
+            outcome = await materializeAfterMutation();
           }
-          await reconcileSchedule("materialize");
-          return scheduleCoordinatorRef.current.hasAuthoritativeSnapshot ? "refreshed" : "deferred";
         } catch (error) {
           console.error("Failed to reconcile schedule after a mutation", error);
-          return "failed";
+          outcome = "failed";
         } finally {
           releaseScheduleMutationWaiters();
+          settlePostMutationRefresh(outcome);
         }
+        return outcome;
       },
     };
   }, [
     beginLiveAuthRequest,
-    reconcileSchedule,
+    materializeAfterMutation,
     releaseScheduleMutationWaiters,
     scheduleCoordinatorRef,
     setScheduleLoadError,
     setScheduleStatus,
+    settlePostMutationRefresh,
   ]);
 
   const refreshScheduleRange = useCallback(
@@ -367,8 +411,12 @@ export function useStoreScheduleActions({
           }),
         );
       }
-      // This mutation's finish is the only post-create materialization.
-      return { template: result, scheduleRefresh: await mutation.finish() };
+      // This mutation's finish, or the shared one it waits for, is the only post-create
+      // materialization.
+      return {
+        template: result,
+        scheduleRefresh: await mutation.finish({ awaitSharedRefresh: true }),
+      };
     },
     [
       beginScheduleMutation,
