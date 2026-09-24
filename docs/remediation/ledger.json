@@ -7402,12 +7402,12 @@
       "id": "FR1-03",
       "title": "Late status reads can overwrite confirmed support and deletion actions",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "Support GETs and token-triggered deletion-status GETs can still replace state established by a later successful mutation.",
+      "disposition": "fixed",
+      "reason": "The support page lets only its latest ticket-list read commit and keeps tickets confirmed after a read started ahead of that read's snapshot, on both the initial read and Retry. Account settings tracks a deletion revision, so a status read that started before a schedule or cancel settled cannot restore or clear the confirmed state. Merged into main; not deployed.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and prior merged implementation evidence. No runtime test or hosted activity during normalization.",
+      "verified_against": "cd062ca6b812ec7d4d63307d01f34191726a4557",
+      "verification": "status-read-ownership-mounted.test.mjs mounts both real pages. A pre-submit support read resolving after ticket creation (initial and retried), an older retry read resolving after a renewal read, and renewal status reads resolving after cancel or schedule all failed before the change. They also fail for a discard-the-stale-read fix, a Retry-path-unfixed fix and a cancel-only guard. Full frontend suite 936/936 and production build passed locally.",
       "source_paths": [
         "frontend/src/app/(dashboard)/help/contact/page.tsx",
         "frontend/src/app/(dashboard)/account/settings/page.tsx"
@@ -7421,22 +7421,22 @@
       "current_evidence": [
         {
           "path": "frontend/src/app/(dashboard)/help/contact/page.tsx",
-          "line": 116,
-          "observation": "Initial GET replaces recentTickets without checking the ticket insertion at line 209."
+          "line": 96,
+          "observation": "A read sequence lets only the latest ticket-list read commit; commitTicketsRead (line 109) keeps tickets confirmed after the read started."
+        },
+        {
+          "path": "frontend/src/app/(dashboard)/help/contact/page.tsx",
+          "line": 262,
+          "observation": "A confirmed ticket is recorded before it is inserted into the visible list."
         },
         {
           "path": "frontend/src/app/(dashboard)/account/settings/page.tsx",
           "line": 57,
-          "observation": "Token changes start status reads without mutation revisions or resetting loading."
-        },
-        {
-          "path": "frontend/src/app/(dashboard)/account/settings/page.tsx",
-          "line": 155,
-          "observation": "Successful cancellation clears deletionRequest, which the pending GET may restore."
+          "observation": "A deletion-status read commits only if no schedule or cancel settled after it started (revisions advance at lines 133 and 157)."
         }
       ],
-      "next_change": "Give each resource a scoped request sequence and mutation revision. Invalidate pre-mutation reads and reconcile after settlement when necessary.",
-      "validation_plan": "Resolve a pre-submit support GET after ticket creation and a renewal GET after deletion cancellation; confirmed state must survive.",
+      "next_change": "No implementation change remains for this finding. Release requires separate owner authorization.",
+      "validation_plan": "Completed: mounted regression proofs on the real pages, full frontend suite, production build and exact-head CI. No hosted validation.",
       "scope_constraints": "Preserve deletion confirmations, server lifecycle behavior, identity isolation and support privacy.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
@@ -13215,16 +13215,16 @@
     }
   },
   "current_counts": {
-    "fixed": 145,
+    "fixed": 146,
     "rejected_after_verification": 1,
-    "pending": 117,
+    "pending": 116,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 92,
+    "Sol": 91,
     "Astra": 25
   },
   "execution_policy": {
@@ -13237,14 +13237,14 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 119,
+      "Sol": 120,
       "Astra": 26
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 92,
+      "Sol": 91,
       "Astra": 25
     },
     "deferred_intentionally": {
