@@ -26,6 +26,15 @@ test("release-candidate workflow rejects a path-filtered pull request", () => {
   );
 });
 
+test("release-candidate workflow rejects a missing remediation ledger count check", () => {
+  const weakened = workflow.replace("npm run check:remediation-ledger", "npm run omitted-ledger-check");
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /npm run check:remediation-ledger/,
+  );
+});
+
 test("release-candidate workflow rejects a missing required suite", () => {
   const weakened = workflow.replace(
     "scripts/verify-supabase-contracts.sh",

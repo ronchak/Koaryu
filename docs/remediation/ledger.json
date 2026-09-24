@@ -10718,8 +10718,8 @@
       "current_evidence": [
         {
           "path": "frontend/src/lib/schedule-page-controller.ts",
-          "line": 212,
-          "observation": "A ref guard refuses a second create while one is pending, including same-tick and bypassed-button submissions."
+          "line": 210,
+          "observation": "The early return refuses a second create while one is pending, including same-tick and bypassed-button submissions."
         },
         {
           "path": "frontend/src/lib/schedule-page-controller.ts",

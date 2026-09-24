@@ -23,6 +23,8 @@
     "dev:stripe-connect-smoke": "backend/venv/bin/python scripts/verify-connect-webhook-smoke.py --target local",
     "summarize:performance": "node --experimental-strip-types scripts/summarize-performance.mjs",
     "generate:release-attestation": "node scripts/generate-release-attestation.mjs",
-    "check:release-attestation": "node --test scripts/generate-release-attestation.test.mjs && node scripts/generate-release-attestation.mjs --check"
+    "check:release-attestation": "node --test scripts/generate-release-attestation.test.mjs && node scripts/generate-release-attestation.mjs --check",
+    "generate:remediation-ledger": "node scripts/remediation-ledger-counts.mjs --write",
+    "check:remediation-ledger": "node --test scripts/remediation-ledger-counts.test.mjs && node scripts/remediation-ledger-counts.mjs --check"
   }
 }
