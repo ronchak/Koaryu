@@ -2,9 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  billingInvoiceReference,
+  billingPayerLabel,
+  billingPayerNameById,
+  billingPaymentReference,
   buildBillingPageModel,
   currentMonthPaymentTotals,
+  invoiceVoidConfirmation,
   paymentAdjustmentNotice,
+  paymentRefundConfirmation,
+  paymentRefundRecoveryConfirmation,
 } from "../src/lib/billing-page-model.ts";
 import {
   PREVIEW_CONNECT,
@@ -436,5 +443,54 @@ describe("billing page model", () => {
     assert.equal(model.failedInvoiceCount, 1);
     assert.equal(model.activeSubscriptionCount, 1);
     assert.equal(model.paymentsReady, true);
+  });
+});
+
+describe("billing action target labels", () => {
+  const payerNameById = billingPayerNameById([
+    { id: "payer-a", display_name: "Lee Family" },
+    { id: "payer-b", display_name: "Lee Family" },
+    { id: "payer-blank", display_name: "  " },
+  ]);
+
+  it("uses an explicit unknown payer label instead of guessing", () => {
+    assert.equal(billingPayerLabel("payer-a", payerNameById), "Lee Family");
+    for (const payerId of [null, undefined, "", "payer-missing", "payer-blank"]) {
+      assert.equal(billingPayerLabel(payerId, payerNameById), "Unknown payer");
+    }
+  });
+
+  it("derives stable references from the original record", () => {
+    const id = "1a2b3c4d-0000-4000-8000-000000000001";
+    assert.equal(billingInvoiceReference({ id, number: "INV-7" }), "Invoice INV-7 · Ref 1a2b3c4d");
+    assert.equal(
+      billingInvoiceReference({ id, number: null, invoice_number: "LOCAL-7" }),
+      "Invoice LOCAL-7 · Ref 1a2b3c4d",
+    );
+    assert.equal(billingInvoiceReference({ id }), "Invoice Ref 1a2b3c4d");
+    assert.equal(billingPaymentReference({ id }), "Payment Ref 1a2b3c4d");
+  });
+
+  it("names the payer and record in every money confirmation", () => {
+    const first = { id: "aaaaaaaa-0000", payer_id: "payer-a" };
+    const second = { id: "bbbbbbbb-0000", payer_id: "payer-b" };
+    const orphan = { id: "cccccccc-0000", payer_id: null };
+
+    assert.equal(
+      invoiceVoidConfirmation(first, payerNameById),
+      "Void this invoice? Lee Family, Invoice Ref aaaaaaaa. The invoice will no longer be collectible and this action cannot be undone.",
+    );
+    assert.notEqual(
+      invoiceVoidConfirmation(first, payerNameById),
+      invoiceVoidConfirmation(second, payerNameById),
+    );
+    assert.equal(
+      paymentRefundConfirmation(orphan, payerNameById, "$50"),
+      "Refund $50 to Unknown payer, Payment Ref cccccccc? The provider will receive this request immediately.",
+    );
+    assert.equal(
+      paymentRefundRecoveryConfirmation(second, payerNameById),
+      "Check the original refund request for Lee Family, Payment Ref bbbbbbbb, again? This may finish a refund whose result was not confirmed.",
+    );
   });
 });

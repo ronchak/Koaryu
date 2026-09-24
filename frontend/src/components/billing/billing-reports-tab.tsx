@@ -5,7 +5,14 @@ import { Banknote, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatMoney } from "@/lib/billing-page-utils";
-import { paymentAdjustmentNotice } from "@/lib/billing-page-model";
+import {
+  billingPayerLabel,
+  billingPayerNameById,
+  billingPaymentReference,
+  paymentAdjustmentNotice,
+  paymentRefundConfirmation,
+  paymentRefundRecoveryConfirmation,
+} from "@/lib/billing-page-model";
 import {
   isPaymentRefundEligible,
   parseRefundAmount,
@@ -67,6 +74,7 @@ export function BillingReportsTab({
   const paymentGridColumns = refundController.canRefundPayments
     ? "sm:grid-cols-[1fr_auto_auto_auto]"
     : "sm:grid-cols-[1fr_auto_auto]";
+  const payerNameById = billingPayerNameById(billingPayers);
   return (
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-2">
@@ -201,6 +209,10 @@ export function BillingReportsTab({
                   <p className="font-medium text-text-primary">
                     {payment.external_method || payment.payment_method_type || "Payment"}
                   </p>
+                  <p className="break-words text-xs text-text-secondary [overflow-wrap:anywhere]">
+                    {billingPayerLabel(payment.payer_id, payerNameById)}
+                  </p>
+                  <p className="text-xs text-muted">{billingPaymentReference(payment)}</p>
                   <p className="text-xs text-muted">
                     {payment.note || formatDate(payment.processed_at)}
                   </p>
@@ -273,7 +285,7 @@ export function BillingReportsTab({
                             if (
                               refundRecovery === "refresh" ||
                               window.confirm(
-                                "Check the original refund request again? This may finish a refund whose result was not confirmed.",
+                                paymentRefundRecoveryConfirmation(payment, payerNameById),
                               )
                             )
                               void refundController.recoverRefund(payment);
@@ -336,7 +348,11 @@ export function BillingReportsTab({
                             if (
                               refundAmountCents !== null &&
                               window.confirm(
-                                `Refund ${formatMoney(refundAmountCents, payment.currency)}? The provider will receive this request immediately.`,
+                                paymentRefundConfirmation(
+                                  payment,
+                                  payerNameById,
+                                  formatMoney(refundAmountCents, payment.currency),
+                                ),
                               )
                             ) {
                               void refundController.refundPayment(

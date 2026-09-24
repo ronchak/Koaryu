@@ -1276,3 +1276,573 @@ test("resumed schedule updates or closes its selected session and refreshes its 
     await browser.close();
   }
 });
+
+const syntheticWeeklyTemplate = (businessDate) => ({
+  id: "template-1",
+  studio_id: "studio-a",
+  name: "Synthetic Weekly",
+  day_of_week: 1,
+  start_time: "17:00",
+  end_time: "18:00",
+  start_date: businessDate,
+  is_active: true,
+  created_at: "2026-09-12T12:00:00Z",
+  updated_at: "2026-09-12T12:00:00Z",
+});
+
+// Let any timer-delayed follow-up request surface before counting.
+const settle = async (page) => {
+  await page.waitForTimeout(250);
+  await flush(page);
+};
+
+// Records every schedule window read and materialization with its token, so a test can
+// prove the store is the only post-create refresh owner.
+async function mountCountedSchedule(page) {
+  await page.evaluate(() => {
+    const get = fixture.api.get,
+      post = fixture.api.post;
+    fixture.windowRequests = [];
+    fixture.heldWindows = [];
+    const windowRead = (method, path, token, read) => {
+      fixture.windowRequests.push({ call: `${method} ${path.split("?")[0]}`, token });
+      if (fixture.holdWindow)
+        return new Promise((resolve, reject) =>
+          fixture.heldWindows.push({ release: () => read().then(resolve, reject) }),
+        );
+      return fixture.failWindow
+        ? Promise.reject(new Error("Synthetic schedule window failure"))
+        : read();
+    };
+    fixture.api.get = (path, token, ...rest) =>
+      path.startsWith("/schedule/window")
+        ? windowRead("GET", path, token, () => get(path, token, ...rest))
+        : get(path, token, ...rest);
+    fixture.api.post = (path, body, token, ...rest) =>
+      path.startsWith("/schedule/window")
+        ? windowRead("POST", path, token, () => post(path, body, token, ...rest))
+        : post(path, body, token, ...rest);
+    fixture.mountSchedule();
+  });
+  await page.waitForFunction(() => fixture.controller?.hasLoadedRange);
+}
+
+const windowCallsSince = (page, before) =>
+  page.evaluate((index) => fixture.windowRequests.slice(index), before);
+
+async function startWeeklyCreate(page) {
+  await page.evaluate(() => fixture.controller.onOpenAddClass());
+  await page.waitForFunction(() => fixture.controller.showAddClass);
+  await page.evaluate(() => {
+    fixture.create = fixture.controller.onCreateClass({
+      kind: "weekly_template",
+      name: "Synthetic Weekly",
+      startTime: "17:00",
+      endTime: "18:00",
+      recurrence: { frequency: "weekly", dayOfWeek: 1, startDate: fixture.store.businessDate },
+    });
+  });
+  await page.waitForFunction(() => fixture.writes.some((w) => w.path === "/schedule/templates"));
+}
+
+async function confirmTemplatePost(page) {
+  const before = await page.evaluate(() => fixture.windowRequests.length);
+  const businessDate = await page.evaluate(() => fixture.store.businessDate);
+  await page.evaluate(
+    (template) => fixture.writes.find((w) => w.path === "/schedule/templates").resolve(template),
+    syntheticWeeklyTemplate(businessDate),
+  );
+  return before;
+}
+
+async function createOutcome(page, before) {
+  await page.evaluate(() => fixture.create);
+  await settle(page);
+  return page.evaluate(
+    (index) => ({
+      actionMessage: fixture.controller.actionMessage,
+      createClassError: fixture.controller.createClassError,
+      isCreatingClass: fixture.controller.isCreatingClass,
+      scheduleLoadError: fixture.controller.scheduleLoadError,
+      showAddClass: fixture.controller.showAddClass,
+      templatePosts: fixture.writes.filter((w) => w.path === "/schedule/templates").length,
+      postCreateWindowCalls: fixture.windowRequests.slice(index).map((request) => request.call),
+    }),
+    before,
+  );
+}
+
+test("a confirmed recurring class is materialized once, by the store, before its form closes", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startWeeklyCreate(page);
+    const created = await createOutcome(page, await confirmTemplatePost(page));
+    assert.deepEqual(
+      created.postCreateWindowCalls,
+      ["POST /schedule/window/materialize"],
+      "the store's reconciliation is the only post-create schedule refresh",
+    );
+    assert.equal(created.showAddClass, false);
+    assert.equal(created.isCreatingClass, false);
+    assert.equal(created.createClassError, null);
+    assert.equal(created.scheduleLoadError, null);
+    assert.equal(created.actionMessage, "Recurring class created and visible sessions refreshed.");
+    assert.equal(created.templatePosts, 1);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a confirmed recurring class closes its form when the follow-up refresh fails, and Retry only refreshes", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startWeeklyCreate(page);
+    await page.evaluate(() => {
+      fixture.failWindow = true;
+    });
+    const created = await createOutcome(page, await confirmTemplatePost(page));
+    assert.deepEqual(
+      created.postCreateWindowCalls,
+      ["POST /schedule/window/materialize"],
+      "a failed store reconciliation is not followed by a second post-create refresh",
+    );
+    assert.equal(created.showAddClass, false, "the acknowledged create must close its draft");
+    assert.equal(created.isCreatingClass, false);
+    assert.equal(created.createClassError, null, "a refresh failure is not a creation failure");
+    assert.equal(created.actionMessage, "Recurring class created.");
+    assert.match(created.scheduleLoadError, /created, but its visible sessions could not refresh/i);
+    assert.equal(created.templatePosts, 1);
+
+    const beforeRetry = await page.evaluate(() => {
+      fixture.failWindow = false;
+      const index = fixture.windowRequests.length;
+      fixture.controller.onRetryRange();
+      return index;
+    });
+    await page.waitForFunction(
+      (index) =>
+        fixture.windowRequests.length > index &&
+        fixture.controller.scheduleLoadError === null &&
+        !fixture.controller.isRefreshingRange,
+      beforeRetry,
+    );
+    await settle(page);
+    assert.deepEqual(
+      (await windowCallsSince(page, beforeRetry)).map((request) => request.call),
+      ["POST /schedule/window/materialize"],
+      "Retry materializes the visible range",
+    );
+    assert.equal(
+      await page.evaluate(
+        () => fixture.writes.filter((w) => w.path === "/schedule/templates").length,
+      ),
+      1,
+      "Retry refreshes the range without submitting another template",
+    );
+    assert.equal(await page.evaluate(() => fixture.controller.showAddClass), false);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+async function startHeldSessionWrite(page, name) {
+  const count = await page.evaluate(
+    () => fixture.writes.filter((w) => w.path === "/schedule/sessions").length,
+  );
+  await page.evaluate((key) => {
+    fixture[key] = fixture.store.addSession({
+      name: "Held one-off",
+      date: fixture.store.businessDate,
+      start_time: "09:00",
+      end_time: "10:00",
+    });
+  }, name);
+  await page.waitForFunction(
+    (before) => fixture.writes.filter((w) => w.path === "/schedule/sessions").length > before,
+    count,
+  );
+  return count;
+}
+
+async function resolveSessionWrite(page, index, id) {
+  await page.evaluate(
+    ({ index, id }) =>
+      fixture.writes
+        .filter((w) => w.path === "/schedule/sessions")
+        [index].resolve({ ...fixture.heldSessionTemplate, id }),
+    { index, id },
+  );
+}
+
+async function trackCreateSettlement(page) {
+  await page.evaluate(() => {
+    fixture.heldSessionTemplate = {
+      studio_id: "studio-a",
+      name: "Held one-off",
+      date: fixture.store.businessDate,
+      start_time: "09:00",
+      end_time: "10:00",
+      status: "scheduled",
+      created_at: "2026-09-12T12:00:00Z",
+      attendance_count: 0,
+    };
+    fixture.createSettled = false;
+    void fixture.create.then(() => {
+      fixture.createSettled = true;
+    });
+  });
+}
+
+for (const sharedRefreshFails of [true, false]) {
+  test(`a recurring class confirmed during another schedule write closes, then reports the shared refresh ${sharedRefreshFails ? "failure" : "success"}`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+      await mountCountedSchedule(page);
+      await startHeldSessionWrite(page, "otherWrite");
+      await startWeeklyCreate(page);
+      await trackCreateSettlement(page);
+      await page.evaluate((fail) => {
+        fixture.failWindow = fail;
+      }, sharedRefreshFails);
+      const before = await confirmTemplatePost(page);
+      await settle(page);
+      assert.deepEqual(
+        await windowCallsSince(page, before),
+        [],
+        "the shared reconciliation waits for the other write to settle",
+      );
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          showAddClass: fixture.controller.showAddClass,
+          isCreatingClass: fixture.controller.isCreatingClass,
+          actionMessage: fixture.controller.actionMessage,
+          createSettled: fixture.createSettled,
+        })),
+        {
+          showAddClass: false,
+          isCreatingClass: false,
+          actionMessage: "Recurring class created.",
+          createSettled: false,
+        },
+        "the confirmed create closes at once while its refresh waits",
+      );
+      await resolveSessionWrite(page, 0, "session-held");
+      await page.evaluate(() => fixture.otherWrite);
+      const created = await createOutcome(page, before);
+      assert.deepEqual(created.postCreateWindowCalls, ["POST /schedule/window/materialize"]);
+      assert.equal(created.createClassError, null);
+      if (sharedRefreshFails) {
+        assert.equal(created.actionMessage, "Recurring class created.");
+        assert.match(
+          created.scheduleLoadError,
+          /created, but its visible sessions could not refresh/i,
+          "the create reports the shared refresh failure instead of dropping it",
+        );
+      } else {
+        assert.equal(
+          created.actionMessage,
+          "Recurring class created and visible sessions refreshed.",
+        );
+        assert.equal(created.scheduleLoadError, null);
+      }
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+test("an earlier write's reconciliation does not settle a create waiting on a later write", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startHeldSessionWrite(page, "firstWrite");
+    await page.evaluate(() => {
+      fixture.holdWindow = true;
+    });
+    const before = await page.evaluate(() => fixture.windowRequests.length);
+    await resolveSessionWrite(page, 0, "session-first");
+    // The first write's own promise includes its held reconciliation, so it is not awaited here.
+    await page.waitForFunction(() => fixture.heldWindows.length === 1);
+    await startHeldSessionWrite(page, "secondWrite");
+    await startWeeklyCreate(page);
+    await trackCreateSettlement(page);
+    await confirmTemplatePost(page);
+    // The first write's reconciliation started before the second write, so it cannot cover it.
+    await page.evaluate(() => {
+      fixture.holdWindow = false;
+      fixture.heldWindows[0].release();
+    });
+    await settle(page);
+    assert.equal(await page.evaluate(() => fixture.createSettled), false);
+    await page.evaluate(() => {
+      fixture.failWindow = true;
+    });
+    await resolveSessionWrite(page, 1, "session-second");
+    await page.evaluate(() => fixture.secondWrite);
+    const created = await createOutcome(page, before);
+    assert.deepEqual(created.postCreateWindowCalls, [
+      "POST /schedule/window/materialize",
+      "POST /schedule/window/materialize",
+    ]);
+    assert.match(created.scheduleLoadError, /created, but its visible sessions could not refresh/i);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a write abandoned by a coordinator reset does not settle a create from the new epoch", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startHeldSessionWrite(page, "abandonedWrite");
+    await page.evaluate(() =>
+      fixture.emit("SIGNED_IN", { ...fixture.session, access_token: "synthetic-reset" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-reset");
+    await startHeldSessionWrite(page, "currentWrite");
+    await startWeeklyCreate(page);
+    await trackCreateSettlement(page);
+    const before = await confirmTemplatePost(page);
+    await resolveSessionWrite(page, 0, "session-abandoned");
+    await page.evaluate(() => fixture.abandonedWrite);
+    await settle(page);
+    assert.equal(await page.evaluate(() => fixture.createSettled), false);
+    await page.evaluate(() => {
+      fixture.failWindow = true;
+    });
+    await resolveSessionWrite(page, 1, "session-current");
+    await page.evaluate(() => fixture.currentWrite);
+    const created = await createOutcome(page, before);
+    assert.deepEqual(created.postCreateWindowCalls, ["POST /schedule/window/materialize"]);
+    assert.match(created.scheduleLoadError, /created, but its visible sessions could not refresh/i);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a create waiting on a write that a reset abandons still settles without a failure", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startHeldSessionWrite(page, "abandonedWrite");
+    await startWeeklyCreate(page);
+    await trackCreateSettlement(page);
+    const before = await confirmTemplatePost(page);
+    await page.evaluate(() =>
+      fixture.emit("SIGNED_IN", { ...fixture.session, access_token: "synthetic-reset" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-reset");
+    await resolveSessionWrite(page, 0, "session-abandoned");
+    await page.waitForFunction(() => fixture.createSettled, null, { timeout: 5000 });
+    const created = await createOutcome(page, before);
+    assert.equal(created.actionMessage, "Recurring class created.");
+    assert.equal(created.scheduleLoadError, null);
+    assert.equal(created.createClassError, null);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("other schedule writes settle without waiting for a pending create's refresh", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startWeeklyCreate(page);
+    await startHeldSessionWrite(page, "otherWrite");
+    await trackCreateSettlement(page);
+    await resolveSessionWrite(page, 0, "session-other");
+    assert.equal(
+      await page.evaluate(() =>
+        Promise.race([
+          fixture.otherWrite.then(() => "settled"),
+          new Promise((resolve) => setTimeout(() => resolve("waiting"), 1000)),
+        ]),
+      ),
+      "settled",
+      "a one-off session write does not wait for the template create",
+    );
+    const created = await createOutcome(page, await confirmTemplatePost(page));
+    assert.deepEqual(created.postCreateWindowCalls, ["POST /schedule/window/materialize"]);
+    assert.equal(created.actionMessage, "Recurring class created and visible sessions refreshed.");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const replayFails of [false, true]) {
+  test(`a token renewal during the post-create materialization replays it with current auth (${replayFails ? "replay fails" : "replay succeeds"})`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+      await mountCountedSchedule(page);
+      await startWeeklyCreate(page);
+      await page.evaluate(() => {
+        fixture.holdWindow = true;
+      });
+      const before = await confirmTemplatePost(page);
+      await page.waitForFunction(() => fixture.heldWindows.length === 1);
+      assert.deepEqual(
+        await page.evaluate(() => [
+          fixture.controller.showAddClass,
+          fixture.controller.isCreatingClass,
+        ]),
+        [false, false],
+        "the confirmed create closes before its refresh settles",
+      );
+      await page.evaluate(() =>
+        fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+      );
+      await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+      await page.evaluate((fail) => {
+        fixture.holdWindow = false;
+        fixture.failWindow = fail;
+        fixture.heldWindows[0].release();
+      }, replayFails);
+      const created = await createOutcome(page, before);
+      const materializations = (await windowCallsSince(page, before)).filter(
+        (request) => request.call === "POST /schedule/window/materialize",
+      );
+      assert.deepEqual(
+        materializations.map((request) => request.token),
+        ["synthetic-a", "synthetic-renewed"],
+        "the renewal's background read does not stand in for the discarded materialization",
+      );
+      assert.equal(created.showAddClass, false);
+      assert.equal(created.createClassError, null);
+      assert.equal(created.templatePosts, 1);
+      if (replayFails) {
+        assert.equal(created.actionMessage, "Recurring class created.");
+        assert.match(
+          created.scheduleLoadError,
+          /created, but its visible sessions could not refresh/i,
+        );
+      } else {
+        assert.equal(
+          created.actionMessage,
+          "Recurring class created and visible sessions refreshed.",
+        );
+        assert.equal(created.scheduleLoadError, null);
+      }
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+test("a sign-out during the post-create materialization neither replays nor reports a failure", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startWeeklyCreate(page);
+    await page.evaluate(() => {
+      fixture.holdWindow = true;
+    });
+    const before = await confirmTemplatePost(page);
+    await page.waitForFunction(() => fixture.heldWindows.length === 1);
+    await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+    await page.waitForFunction(() => fixture.store.token === null);
+    await page.evaluate(() => {
+      fixture.holdWindow = false;
+      fixture.heldWindows[0].release();
+    });
+    const created = await createOutcome(page, before);
+    assert.deepEqual(
+      created.postCreateWindowCalls,
+      ["POST /schedule/window/materialize"],
+      "no replay runs without the same signed-in identity",
+    );
+    assert.equal(created.scheduleLoadError, null, "a sign-out is not a refresh failure");
+    assert.equal(created.createClassError, null);
+    assert.equal(created.actionMessage, "Recurring class created.");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a pending recurring class cannot be submitted twice, and its confirmed form is gone", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/schedule",
+      scheduleController: true,
+      scheduleForm: true,
+    });
+    await mountCountedSchedule(page);
+    await page.evaluate(() => fixture.controller.onOpenAddClass());
+    const dialog = page.getByRole("dialog", { name: "Add class" });
+    await dialog.waitFor();
+    await dialog.getByLabel("Class name *").fill("Synthetic Weekly");
+    // Two submissions in one tick read the same render; only a synchronous guard refuses both.
+    await page.evaluate(() => {
+      const controller = fixture.controller;
+      const payload = {
+        kind: "weekly_template",
+        name: "Synthetic Weekly",
+        startTime: "18:00",
+        endTime: "19:30",
+        recurrence: { frequency: "weekly", dayOfWeek: 1, startDate: fixture.store.businessDate },
+      };
+      void controller.onCreateClass(payload);
+      void controller.onCreateClass(payload);
+    });
+    await page.waitForFunction(() => fixture.controller.isCreatingClass);
+    const submit = dialog.getByRole("button", { name: "Create weekly template" });
+    assert.equal(await submit.isDisabled(), true, "the pending submit button is disabled");
+    // A form submission that bypasses the disabled button is still refused.
+    await dialog.locator("form").evaluate((form) => form.requestSubmit());
+    await settle(page);
+    assert.equal(
+      await page.evaluate(
+        () => fixture.writes.filter((w) => w.path === "/schedule/templates").length,
+      ),
+      1,
+    );
+    await page.evaluate(() => {
+      fixture.failWindow = true;
+      fixture.writes
+        .find((w) => w.path === "/schedule/templates")
+        .resolve({
+          id: "template-1",
+          studio_id: "studio-a",
+          name: "Synthetic Weekly",
+          day_of_week: 1,
+          start_time: "18:00",
+          end_time: "19:30",
+          start_date: fixture.store.businessDate,
+          is_active: true,
+          created_at: "2026-09-12T12:00:00Z",
+          updated_at: "2026-09-12T12:00:00Z",
+        });
+    });
+    await dialog.waitFor({ state: "detached" });
+    assert.equal(await page.evaluate(() => fixture.controller.createClassError), null);
+    assert.equal(
+      await page.evaluate(
+        () => fixture.writes.filter((w) => w.path === "/schedule/templates").length,
+      ),
+      1,
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});

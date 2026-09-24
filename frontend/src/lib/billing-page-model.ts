@@ -48,6 +48,54 @@ const BALANCE_BEARING_INVOICE_STATUSES = new Set([
   "uncollectible",
 ]);
 
+export const UNKNOWN_PAYER_LABEL = "Unknown payer";
+
+export function billingPayerNameById(billingPayers: Pick<BillingPayer, "id" | "display_name">[]) {
+  return new Map(billingPayers.map((payer) => [payer.id, payer.display_name]));
+}
+
+// Money actions name the family and the exact record. Never guess a payer from other data.
+export function billingPayerLabel(
+  payerId: string | null | undefined,
+  payerNameById: ReadonlyMap<string, string>,
+) {
+  return (payerId && payerNameById.get(payerId)?.trim()) || UNKNOWN_PAYER_LABEL;
+}
+
+export function billingInvoiceReference(
+  invoice: Pick<BillingInvoice, "id" | "invoice_number" | "number">,
+) {
+  const number = invoice.number || invoice.invoice_number;
+  const reference = `Ref ${invoice.id.slice(0, 8)}`;
+  return number ? `Invoice ${number} · ${reference}` : `Invoice ${reference}`;
+}
+
+export function billingPaymentReference(payment: Pick<BillingPayment, "id">) {
+  return `Payment Ref ${payment.id.slice(0, 8)}`;
+}
+
+export function invoiceVoidConfirmation(
+  invoice: Pick<BillingInvoice, "id" | "invoice_number" | "number" | "payer_id">,
+  payerNameById: ReadonlyMap<string, string>,
+) {
+  return `Void this invoice? ${billingPayerLabel(invoice.payer_id, payerNameById)}, ${billingInvoiceReference(invoice)}. The invoice will no longer be collectible and this action cannot be undone.`;
+}
+
+export function paymentRefundConfirmation(
+  payment: Pick<BillingPayment, "id" | "payer_id">,
+  payerNameById: ReadonlyMap<string, string>,
+  formattedAmount: string,
+) {
+  return `Refund ${formattedAmount} to ${billingPayerLabel(payment.payer_id, payerNameById)}, ${billingPaymentReference(payment)}? The provider will receive this request immediately.`;
+}
+
+export function paymentRefundRecoveryConfirmation(
+  payment: Pick<BillingPayment, "id" | "payer_id">,
+  payerNameById: ReadonlyMap<string, string>,
+) {
+  return `Check the original refund request for ${billingPayerLabel(payment.payer_id, payerNameById)}, ${billingPaymentReference(payment)}, again? This may finish a refund whose result was not confirmed.`;
+}
+
 export function paymentAdjustmentNotice(payment: BillingPayment): string | null {
   return payment.adjustment_reconciliation_required
     ? "Provider adjustments need reconciliation before these totals are final."
@@ -190,7 +238,7 @@ export function buildBillingPageModel({
     openInvoiceTotal: billingLandingAggregates?.open_invoice_amount_cents ?? openInvoiceTotal,
     paidRevenue,
     paymentCohortAvailable: isPreviewMode || Boolean(billingPaymentCohortSummary),
-    payerNameById: new Map(billingPayers.map((payer) => [payer.id, payer.display_name])),
+    payerNameById: billingPayerNameById(billingPayers),
     paymentsReady: Boolean(billingConnect?.charges_enabled),
     planNameById: new Map(billingPlans.map((plan) => [plan.id, plan.name])),
     stripePaymentTotal,

@@ -146,7 +146,10 @@ describe("billing invoice retry request keys", () => {
       assert.match(invoiceTab, new RegExp(`canUseWorkflow\\("invoice\\.${action}"\\)`));
       assert.match(invoiceTab, new RegExp(`onInvoiceAction\\(invoice\\.id, "${action}"\\)`));
     }
-    assert.match(invoiceTab, /window\.confirm\("Void this invoice\?/);
+    assert.match(
+      invoiceTab,
+      /window\.confirm\(invoiceVoidConfirmation\(invoice, payerNameById\)\)/,
+    );
     assert.doesNotMatch(model, /\btoken\b|authorization/i);
   });
 
