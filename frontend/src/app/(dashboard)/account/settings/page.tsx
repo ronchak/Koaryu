@@ -2,7 +2,7 @@
 
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CreditCard, ExternalLink, LogOut, Mail, ShieldCheck, Trash2, UserCircle, Users } from "lucide-react";
 import {
   AccountInfoRow,
@@ -47,20 +47,25 @@ export default function AccountSettingsPage() {
   const [confirmAction, setConfirmAction] = useState<AccountConfirmAction>(null);
   const [deletionConfirmation, setDeletionConfirmation] = useState("");
   const isAdmin = currentRole === "admin";
+  // A schedule or cancel response is newer than any status read that started before it.
+  const deletionRevisionRef = useRef(0);
 
   useEffect(() => {
     if (!token) return;
 
     const controller = new AbortController();
+    const revisionAtStart = deletionRevisionRef.current;
     api
       .get<AccountDeletionRequest | null>("/account/deletion-request", token, { signal: controller.signal })
       .then((request) => {
-        setDeletionRequest(request);
+        if (deletionRevisionRef.current === revisionAtStart) setDeletionRequest(request);
         setIsLoadingDeletionRequest(false);
       })
       .catch((error) => {
         if (error instanceof Error && error.name === "AbortError") return;
-        setDeletionError(error instanceof Error ? error.message : "Could not load account deletion status.");
+        if (deletionRevisionRef.current === revisionAtStart) {
+          setDeletionError(error instanceof Error ? error.message : "Could not load account deletion status.");
+        }
         setIsLoadingDeletionRequest(false);
       });
 
@@ -125,6 +130,7 @@ export default function AccountSettingsPage() {
 
     try {
       const request = await api.post<AccountDeletionRequest>("/account/deletion-request", {}, token);
+      deletionRevisionRef.current += 1;
       setDeletionRequest(request);
       setDeletionMessage(`Your account has been scheduled for deletion within 30 days. You have until ${formatDeadline(request.scheduled_for)} to cancel deletion.`);
     } catch (error) {
@@ -148,6 +154,7 @@ export default function AccountSettingsPage() {
 
     try {
       await api.post<AccountDeletionRequest | null>("/account/deletion-request/cancel", {}, token);
+      deletionRevisionRef.current += 1;
       setDeletionRequest(null);
       setDeletionMessage("Account deletion canceled.");
     } catch (error) {

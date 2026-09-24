@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Bug, CheckCircle2, LifeBuoy, Mail, Send } from "lucide-react";
 import { AccountNotice, AccountPageShell, AccountSection } from "@/components/account-page-shell";
@@ -22,6 +22,8 @@ const topicOptions: { value: SupportTicketTopic; label: string }[] = [
   { value: "product_question", label: "Product question" },
   { value: "other", label: "Other" },
 ];
+
+type TicketsRead = { sequence: number; confirmedAtStart: number };
 
 const severityOptions: { value: SupportTicketSeverity; label: string }[] = [
   { value: "normal", label: "Normal" },
@@ -89,6 +91,29 @@ export default function ContactSupportPage() {
     };
   }, [searchParams]);
 
+  // Only the latest list read may commit. Tickets this page confirmed after a read
+  // started are newer than that read's snapshot, so they are kept ahead of it.
+  const ticketReadSequenceRef = useRef(0);
+  const confirmedTicketsRef = useRef<SupportTicket[]>([]);
+  const beginTicketsRead = useCallback(
+    (): TicketsRead => ({
+      sequence: (ticketReadSequenceRef.current += 1),
+      confirmedAtStart: confirmedTicketsRef.current.length,
+    }),
+    [],
+  );
+  const isCurrentTicketsRead = useCallback(
+    (read: TicketsRead) => read.sequence === ticketReadSequenceRef.current,
+    [],
+  );
+  const commitTicketsRead = useCallback((read: TicketsRead, tickets: SupportTicket[]) => {
+    const confirmed = confirmedTicketsRef.current;
+    const confirmedSince = confirmed.slice(0, confirmed.length - read.confirmedAtStart);
+    const confirmedIds = new Set(confirmedSince.map((item) => item.id));
+    setRecentTickets([...confirmedSince, ...tickets.filter((item) => !confirmedIds.has(item.id))]);
+    setRecentTicketsStatus("ready");
+  }, []);
+
   const loadRecentTickets = useCallback(
     async (signal?: AbortSignal) => {
       if (!token) {
@@ -96,21 +121,22 @@ export default function ContactSupportPage() {
         return;
       }
 
+      const read = beginTicketsRead();
       setRecentTicketsStatus("loading");
       setRecentTicketsError("");
       try {
         const tickets = await api.get<SupportTicket[]>("/support/tickets", token, { signal });
-        setRecentTickets(tickets);
-        setRecentTicketsStatus("ready");
+        if (isCurrentTicketsRead(read)) commitTicketsRead(read, tickets);
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") return;
+        if (!isCurrentTicketsRead(read)) return;
         setRecentTicketsError(
           error instanceof Error ? error.message : "Recent support requests could not be loaded.",
         );
         setRecentTicketsStatus("error");
       }
     },
-    [token],
+    [beginTicketsRead, commitTicketsRead, isCurrentTicketsRead, token],
   );
 
   useEffect(() => {
@@ -122,14 +148,15 @@ export default function ContactSupportPage() {
     });
 
     if (token) {
+      const read = beginTicketsRead();
       void api
         .get<SupportTicket[]>("/support/tickets", token, { signal: controller.signal })
         .then((tickets) => {
-          setRecentTickets(tickets);
-          setRecentTicketsStatus("ready");
+          if (isCurrentTicketsRead(read)) commitTicketsRead(read, tickets);
         })
         .catch((error: unknown) => {
           if (error instanceof Error && error.name === "AbortError") return;
+          if (!isCurrentTicketsRead(read)) return;
           setRecentTicketsError(
             error instanceof Error ? error.message : "Recent support requests could not be loaded.",
           );
@@ -140,7 +167,7 @@ export default function ContactSupportPage() {
     return () => {
       controller.abort();
     };
-  }, [token]);
+  }, [beginTicketsRead, commitTicketsRead, isCurrentTicketsRead, token]);
 
   const mailto = useMemo(() => {
     const selectedTopic = topicOptions.find((option) => option.value === topic)?.label || "Support";
@@ -232,6 +259,10 @@ export default function ContactSupportPage() {
         },
       );
       setCreatedTicket(ticket);
+      confirmedTicketsRef.current = [
+        ticket,
+        ...confirmedTicketsRef.current.filter((item) => item.id !== ticket.id),
+      ];
       setRecentTickets((current) =>
         [ticket, ...current.filter((item) => item.id !== ticket.id)].slice(0, 5),
       );
