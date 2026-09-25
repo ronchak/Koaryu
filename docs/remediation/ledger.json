@@ -12442,11 +12442,12 @@
       "id": "DM5-01",
       "title": "Invoice closeout retries reverse the underlying invoice lock order",
       "cluster": "database_concurrency_and_workers",
-      "disposition": "pending",
-      "reason": "V34 still locks an existing alias/resource/operation before nonterminal fallthrough into the invoice-first V31 writer. Existing-key and new-key calls can therefore hold opposite sides of the reported lock cycle.",
+      "disposition": "fixed",
+      "reason": "Migration 20260925030000 (V51) makes claim_billing_invoice_closeout_operation_v1 take the V31 writer's leading locks (invoice, matching payer, invoice mutation owner) before any alias, resource or operation lock, so an existing-key finalize or void retry can no longer hold the far side of the cycle with a new-key claim. Terminal replay and validation are unchanged; no rows change. Merged into main; not applied to staging or production.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "eb45f61310c58c53fdfcaf3f030c6e08bb897bc6",
+      "verification": "scripts/verify-billing-command-concurrency.py adds finalize and void cases: a writer holds the invoice, the existing-key retry must wait there without holding its alias, resource or operation rows (NOWAIT probes), then the writer's new-key claim adopts the same operation with one owner. Both failed on V50 at the probe, and without the probe the same interleaving produced 40P01; they also fail for a variant that locks the invoice only just before the V31 call. The V50-to-V51 restore continuation replays a retained completed and started closeout claim on canonical/restored copies. Preflight V31 still reports the V50 identity when V32 verifies, so the released backend stays ready. Full local replay, release attestation, rollout tool and backend readiness tests passed.",
       "source_paths": [
         "supabase/migrations/20260830151714_invoice_retry_closeout_contract_v34.sql",
         "supabase/migrations/20260826185651_payment_refund_payer_sync_resource_ownership.sql",
@@ -12460,28 +12461,28 @@
       ],
       "current_evidence": [
         {
-          "path": "supabase/migrations/20260830151714_invoice_retry_closeout_contract_v34.sql",
-          "line": 244,
-          "observation": "Existing-key lookup locks alias, resource, and operation before checking terminal state."
+          "path": "supabase/migrations/20260925030000_invoice_closeout_lock_order_v51.sql",
+          "line": 43,
+          "observation": "Before the terminal-alias replay, the closeout claim locks the invoice, then the payer only when it matches (line 47), then the invoice mutation owner (line 52)."
         },
         {
-          "path": "supabase/migrations/20260830151714_invoice_retry_closeout_contract_v34.sql",
-          "line": 319,
-          "observation": "Nonterminal requests retain those locks while invoking private.claim_billing_invoice_mutation_v31."
+          "path": "scripts/verify-billing-command-concurrency.py",
+          "line": 589,
+          "observation": "Closeout cases hold the invoice in a writer and probe alias/resource/operation with NOWAIT while the retry waits (ProofFailure at line 613)."
         },
         {
-          "path": "supabase/migrations/20260826185651_payment_refund_payer_sync_resource_ownership.sql",
-          "line": 1762,
-          "observation": "V31 locks invoice, payer, and mutation owner before alias/operation; current owner operation is locked at line 1824."
+          "path": "supabase/migrations/20260826051527_billing_provider_operations_and_payer_consent.sql",
+          "line": 879,
+          "observation": "Provider completion locks only the operation row, so it cannot close a cycle with the invoice-first order."
         },
         {
           "path": "backend/app/services/billing_provider_operations.py",
           "line": 312,
-          "observation": "Finalize and void actively select the affected closeout RPC."
+          "observation": "Finalize and void still select the closeout RPC; its signature and response are unchanged."
         }
       ],
-      "next_change": "Add a migration separating unlocked replay discovery from locked validation and making nonterminal claims follow the writer's lock order. Check terminal replay and provider-completion paths for compatible ordering.",
-      "validation_plan": "Synchronize existing-key nonterminal finalize/void with a new-key claim for the same invoice; assert no deadlock, one owner, and unchanged terminal-alias replay validation.",
+      "next_change": "No implementation change remains for this finding. Applying V51 to staging and production requires separate owner authorization.",
+      "validation_plan": "Completed: deterministic concurrency proofs, V50-to-V51 restore continuation, full local replay and exact-head CI. No hosted validation.",
       "scope_constraints": [
         "Preserve exact terminal receipt checks, fresh invoice-state validation, tenant authorization, and idempotency.",
         "Do not retry provider mutations blindly or change financial projections."
@@ -13215,9 +13216,9 @@
     }
   },
   "current_counts": {
-    "fixed": 146,
+    "fixed": 147,
     "rejected_after_verification": 1,
-    "pending": 116,
+    "pending": 115,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
@@ -13225,7 +13226,7 @@
   },
   "current_pending_tracks": {
     "Sol": 91,
-    "Astra": 25
+    "Astra": 24
   },
   "execution_policy": {
     "updated": "2026-09-20",
@@ -13238,14 +13239,14 @@
   "current_disposition_tracks": {
     "fixed": {
       "Sol": 120,
-      "Astra": 26
+      "Astra": 27
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
       "Sol": 91,
-      "Astra": 25
+      "Astra": 24
     },
     "deferred_intentionally": {
       "Sol": 7,
