@@ -220,3 +220,64 @@ test("a deletion status read from before scheduling cannot clear the scheduled r
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test("a stale ticket read that fails cannot replace a newer list with an error", async () => {
+  const { errors, page } = await mountPage(sources.support);
+  await page.waitForFunction(() => fixture.reads.length === 1);
+  await page.evaluate(() => fixture.reads[0].reject(new Error("Recent requests unavailable")));
+  await page.getByRole("button", { name: "Retry recent requests" }).click();
+  await page.waitForFunction(() => fixture.reads.length === 2);
+  await page.evaluate(() => fixture.setToken("token-b"));
+  await page.waitForFunction(() => fixture.reads.length === 3);
+  await page.evaluate(
+    (newer) => fixture.reads[2].resolve([newer]),
+    ticket("ticket-current", "Current list", "2026-09-22T12:00:00Z"),
+  );
+  await page.getByText("Current list").waitFor();
+  await page.evaluate(() => fixture.reads[1].reject(new Error("Stale retry failed")));
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  assert.deepEqual(await recentSubjects(page), ["Current list"]);
+  assert.equal(await page.getByText("Stale retry failed").count(), 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test("a deletion status read from before a cancellation cannot report its failure afterwards", async () => {
+  const { errors, page } = await mountPage(sources.settings);
+  await page.waitForFunction(() => fixture.reads.length === 1);
+  await page.evaluate((request) => fixture.reads[0].resolve(request), scheduledDeletion);
+  const cancel = page.getByRole("button", { name: "Cancel deletion request" });
+  await cancel.waitFor();
+  await page.evaluate(() => fixture.setToken("token-b"));
+  await page.waitForFunction(() => fixture.reads.length === 2);
+  await cancel.click();
+  await page.waitForFunction(() => fixture.writes.length === 1);
+  await page.evaluate(() => fixture.writes[0].resolve(null));
+  await page.getByText("Account deletion canceled.").waitFor();
+  await page.evaluate(() => fixture.reads[1].reject(new Error("Status read failed")));
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  assert.equal(await page.getByText("Status read failed").count(), 0);
+  assert.equal(await page.getByText("Account deletion canceled.").count(), 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test("a failed cancellation leaves the pending status read in charge", async () => {
+  const { errors, page } = await mountPage(sources.settings);
+  await page.waitForFunction(() => fixture.reads.length === 1);
+  await page.evaluate((request) => fixture.reads[0].resolve(request), scheduledDeletion);
+  const cancel = page.getByRole("button", { name: "Cancel deletion request" });
+  await cancel.waitFor();
+  await page.evaluate(() => fixture.setToken("token-b"));
+  await page.waitForFunction(() => fixture.reads.length === 2);
+  await cancel.click();
+  await page.waitForFunction(() => fixture.writes.length === 1);
+  await page.evaluate(() => fixture.writes[0].reject(new Error("Cancellation failed")));
+  await page.getByText("Cancellation failed").waitFor();
+  // The server canceled the request some other way; the status read reports that truth.
+  await page.evaluate(() => fixture.reads[1].resolve(null));
+  await page.getByRole("button", { name: "Delete account" }).waitFor();
+  assert.equal(await cancel.count(), 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
