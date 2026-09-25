@@ -572,6 +572,54 @@ SELECT public.claim_billing_subscription_quantity_sync('{f['studio']}','{f['grou
         activation_denied(begin_activation(later).replace("'activation-proof'","'activation-later'"),'billing_enrollment_activation_prior_attempt_unresolved')
         assert activation_facts(later)==prior and activation_facts(f)==observed
         results.append({'case':'activation_unresolved_attempt_blocks_new_quantity','attempts':0})
+        # DM5-01: an existing-key closeout retry follows the V31 writer's lock order (invoice, payer, owner, then
+        # alias, resource and operation). A new-key claim that already holds the invoice can therefore finish
+        # instead of deadlocking against a retry that holds the claimed resource.
+        c={key:str(uuid4()) for key in ['studio','admin','payer']}
+        sql(f"""BEGIN;
+INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+VALUES('{c['admin']}','authenticated','authenticated','{c['admin']}@example.invalid','{{}}','{{}}',now(),now());
+INSERT INTO public.studios(id,name,slug,owner_id) VALUES('{c['studio']}','Closeout lock fixture','closeout-{c['studio']}','{c['admin']}');
+INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES('{c['studio']}','{c['admin']}','admin');
+INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,metadata)
+VALUES('{c['studio']}','acct_closeoutlock',jsonb_build_object('connect_account_generation',1));
+INSERT INTO public.billing_payers(id,studio_id,display_name,stripe_account_id,stripe_customer_id,connect_account_generation)
+VALUES('{c['payer']}','{c['studio']}','Closeout payer','acct_closeoutlock','cus_closeoutlock',1);
+COMMIT;""")
+        def closeout(kind,invoice,key):
+            resource_type='invoice_finalize' if kind=='invoice.finalize' else 'invoice_void'
+            return (f"SELECT public.claim_billing_invoice_closeout_operation_v1('{c['studio']}','{c['admin']}','{kind}',"
+                    f"'{resource_type}','{invoice}','{c['payer']}','{kind}-{key}','{'e'*64}','acct_closeoutlock',1,"
+                    f"'{uuid4()}',30);")
+        for kind in ['invoice.finalize','invoice.void']:
+            invoice=str(uuid4())
+            sql(f"""INSERT INTO public.billing_invoices(id,studio_id,payer_id,invoice_type,status,amount_due_cents,amount_paid_cents,
+amount_remaining_cents,currency,stripe_invoice_id,stripe_account_id,stripe_customer_id,collection_method,metadata)
+VALUES('{invoice}','{c['studio']}','{c['payer']}','manual','{'draft' if kind=='invoice.finalize' else 'open'}',500,0,500,'usd',
+'in_{invoice.replace('-','')}','acct_closeoutlock','cus_closeoutlock','send_invoice',jsonb_build_object('connect_account_generation',1));""")
+            existing=json.loads(sql(closeout(kind,invoice,'existing')))
+            operation,resource=existing['operation']['id'],existing['resource']['id']
+            assert existing['operation']['state']=='started',existing
+            writer=start('closeout_writer',f"SELECT id FROM public.billing_invoices WHERE id='{invoice}' FOR UPDATE;")
+            ready(writer)
+            retry=start('closeout_retry',closeout(kind,invoice,'existing'),hold=False)
+            lock=wait_blocked(writer,retry)
+            # While the retry waits for the invoice, it must hold none of the claim rows a new-key claim needs next.
+            for table,row in [('billing_provider_operation_resource_aliases',f"caller_request_key='{kind}-existing'"),
+                              ('billing_provider_operation_resources',f"id='{resource}'"),
+                              ('billing_provider_operations',f"id='{operation}'")]:
+                try:sql(f"BEGIN; SELECT 1 FROM public.{table} WHERE {row} FOR UPDATE NOWAIT; ROLLBACK;")
+                except RuntimeError as error:
+                    raise ProofFailure('closeout_retry_holds_claim_rows_before_invoice',{'kind':kind,'table':table,'lock':lock,'error':str(error)[-300:]})
+            writer['process'].stdin.write(closeout(kind,invoice,'adopted')+"\nCOMMIT;\n");writer['process'].stdin.close()
+            finish(writer);ready(retry);finish(retry)
+            observed=json.loads(sql(f"""SELECT jsonb_build_object(
+'operations',(SELECT count(*) FROM public.billing_provider_operations op JOIN public.billing_provider_operation_resources r ON r.operation_id=op.id WHERE r.resource_id='{invoice}'),
+'aliases',(SELECT jsonb_agg(caller_request_key ORDER BY caller_request_key) FROM public.billing_provider_operation_resource_aliases WHERE operation_id='{operation}'),
+'owner',(SELECT operation_id FROM public.billing_invoice_mutation_owners WHERE invoice_id='{invoice}'));"""))
+            expected={'operations':1,'aliases':[f'{kind}-adopted',f'{kind}-existing'],'owner':operation}
+            if observed!=expected:raise ProofFailure('closeout_retry_outcome',{'kind':kind,'actual':observed,'expected':expected})
+            results.append({'case':f"closeout_existing_key_retry_follows_writer_lock_order_{kind.split('.')[1]}",'lock':lock,'facts':observed})
         return results
     finally:
         for child in children:
