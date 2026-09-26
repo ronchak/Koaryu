@@ -145,22 +145,26 @@ look for it is wrong. `"status": "ready"` *is* the proof the attestation matched
 If migration 113 commits and migration 114 does not, stop. No approved
 application is eligible to serve at that partially migrated history. During the historical V24 release,
 the prior `709239` application required V16 and that release candidate required V24.
-The current candidate requires V50. Older V2 consumers from
+The current candidate requires V51. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
 Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
 post-110 rollback set. A database still at exact 110 must classify `state=staff-identity` and use its
-state-bound inspection token. The tool must select migrations 111 through 145 in
+state-bound inspection token. The tool must select migrations 111 through 146 in
 their immutable order. A separately approved disaster recovery to the proved
 restored V22 snapshot must classify exact `state=restored-v22` and select only
-migrations 116 through 145. Use the generated remaining-file list and its source
+migrations 116 through 146. Use the generated remaining-file list and its source
 manifest; do not maintain a second manual list. These are hypothetical recovery
 cases, not the current live state. Only the authorized operator runs production
-apply. Candidate promotion remains blocked until migration 145 produces exact
-V50 readiness and the final raw catalog/provider fingerprint. That raw evidence
-must independently attest the retained plan RPC and demo-clear facts, import receipts, refund ownership,
-the V48 activation, V49 subscription terms and V50 invoice facts, and the V50 release facts. V40 rank-command,
+apply. Candidate promotion remains blocked until migration 146,
+`20260925030000_invoice_closeout_lock_order_v51.sql`, produces exact V51 readiness
+through `koaryu_release_schema_preflight_v32()` and the final raw catalog/provider
+fingerprint. Require 146 migrations, head `20260925030000`, and manifest
+`release-db-attestation-v51`. That raw evidence must independently attest the
+retained plan RPC and demo-clear facts, import receipts, refund ownership,
+the V48 activation, V49 subscription terms, V50 invoice facts, V51 closeout lock
+order, and V51 release facts. V40 rank-command,
 V42 catalog and semantic and V43 external-payment pins remain unchanged. V50 updates the V41 balance function to consume the shared date rule while preserving its serialization.
 
 The V33 retry-hash capture stays enabled throughout the database-first rolling
