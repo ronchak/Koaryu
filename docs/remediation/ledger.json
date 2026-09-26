@@ -12472,7 +12472,7 @@
         },
         {
           "path": "supabase/migrations/20260826051527_billing_provider_operations_and_payer_consent.sql",
-          "line": 879,
+          "line": 782,
           "observation": "Provider completion locks only the operation row, so it cannot close a cycle with the invoice-first order."
         },
         {
