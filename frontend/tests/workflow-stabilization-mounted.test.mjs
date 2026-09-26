@@ -1927,3 +1927,312 @@ test("keyed follow-up cannot restore lead data or navigate after sign-out", asyn
     await browser.close();
   }
 });
+
+async function prepareFollowUpReplay(browser, { enroll = false } = {}) {
+  const page = await fixturePage(browser, { leadController: true });
+  await page.evaluate((enroll) => {
+    fixture.replayEnroll = enroll;
+  }, enroll);
+  await page.evaluate(() => {
+    crypto.randomUUID ??= () => "3d606900-5b93-4b00-85a8-09afaa549d54";
+    fixture.replayReads = [];
+    fixture.commandWrites = [];
+    const get = fixture.api.get;
+    fixture.api.get = (path, token) => {
+      if (path === "/leads")
+        return new Promise((resolve, reject) =>
+          fixture.replayReads.push({ token, resolve, reject }),
+        );
+      if (path.endsWith("/activities")) return Promise.resolve([]);
+      return get(path, token);
+    };
+    fixture.api.post = (path, body, token) =>
+      new Promise((resolve, reject) =>
+        fixture.commandWrites.push({ path, body, token, resolve, reject }),
+      );
+    fixture.api.patch = fixture.api.post;
+    fixture.otherLead = { ...fixture.lead, id: "lead-2", first_name: "Other", stage: "inquiry" };
+    fixture.receipt = {
+      ...fixture.lead,
+      stage: fixture.replayEnroll ? "enrolled" : "trial_scheduled",
+      converted_student_id: fixture.replayEnroll ? "student-1" : null,
+      assigned_staff_id: null,
+      follow_up_date: null,
+    };
+    fixture.read = fixture.store.refreshLeads();
+  });
+  await page.waitForFunction(() => fixture.replayReads.length === 1);
+  await page.evaluate(() =>
+    fixture.replayReads[0].resolve([
+      {
+        ...fixture.receipt,
+        stage: fixture.replayEnroll ? "offer_sent" : "inquiry",
+        converted_student_id: null,
+      },
+      fixture.otherLead,
+    ]),
+  );
+  await page.evaluate(() => fixture.read);
+  await page.evaluate(() => {
+    fixture.action = fixture.leadController.handleMarkContacted(fixture.store.leads[0], true);
+  });
+  await page.waitForFunction(() => fixture.commandWrites.length === 1);
+  await page.evaluate(() => fixture.commandWrites[0].reject(new fixture.CommandOutcomeUnknown()));
+  await page.evaluate(() => fixture.action);
+  await page.evaluate(() => {
+    fixture.newerLead = {
+      ...fixture.receipt,
+      stage: fixture.replayEnroll ? "enrolled" : "offer_sent",
+      assigned_staff_id: "staff-later",
+      follow_up_date: "2026-10-10",
+    };
+    fixture.read = fixture.store.refreshLeads();
+  });
+  await page.waitForFunction(() => fixture.replayReads.length === 2);
+  await page.evaluate(() => fixture.replayReads[1].resolve([fixture.newerLead, fixture.otherLead]));
+  await page.evaluate(() => fixture.read);
+  await page.evaluate(() => fixture.leadController.selectLead("lead-1"));
+  await flush(page);
+  return page;
+}
+
+for (const refreshFails of [false, true])
+  test(`follow-up replay preserves a newer observed lead when reconciliation ${refreshFails ? "fails" : "succeeds"}`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await prepareFollowUpReplay(browser);
+      await page.evaluate(() => {
+        fixture.retry = fixture.leadController.handleRetryFollowUp(fixture.store.leads[0]);
+        fixture.retry.then(() => {
+          fixture.retryDone = true;
+        });
+      });
+      await page.waitForFunction(() => fixture.commandWrites.length === 2);
+      assert.deepEqual(
+        await page.evaluate(() => fixture.commandWrites[1].body),
+        await page.evaluate(() => fixture.commandWrites[0].body),
+      );
+      assert.deepEqual(
+        await page.evaluate(() => fixture.leadController.model.selectedLead),
+        await page.evaluate(() => fixture.newerLead),
+        "replay must not optimistically restage a known newer lead",
+      );
+      await page.evaluate(() => fixture.commandWrites[1].resolve(fixture.receipt));
+      await page.waitForFunction(() => fixture.retryDone);
+      assert.deepEqual(
+        await page.evaluate(() => fixture.store.leads[0]),
+        await page.evaluate(() => fixture.newerLead),
+      );
+      assert.equal(
+        await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
+        false,
+      );
+      assert.equal(
+        await page.evaluate(() => fixture.leadController.unknownFollowUpLeadIds.has("lead-1")),
+        false,
+      );
+      await page.waitForFunction(() => fixture.replayReads.length === 3);
+      if (refreshFails) {
+        await page.evaluate(() =>
+          fixture.replayReads[2].reject(Error("Replay reconciliation failed")),
+        );
+        await page.waitForFunction(
+          () => fixture.store.leadsLoadError === "Replay reconciliation failed",
+        );
+        assert.deepEqual(
+          await page.evaluate(() => fixture.store.leads[0]),
+          await page.evaluate(() => fixture.newerLead),
+        );
+      } else {
+        await page.evaluate(() =>
+          fixture.replayReads[2].resolve([
+            { ...fixture.newerLead, notes: "Authoritative reconciliation" },
+            fixture.otherLead,
+          ]),
+        );
+        await page.waitForFunction(
+          () => fixture.store.leads[0].notes === "Authoritative reconciliation",
+        );
+      }
+      assert.equal(await page.evaluate(() => fixture.leadController.leadActionError), null);
+      assert.equal(await page.evaluate(() => fixture.commandWrites.length), 2);
+      assert.equal(await page.evaluate(() => fixture.replayReads.length), 3);
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+
+test("follow-up replay A settles while unrelated row B is still pending", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser);
+    await page.evaluate(() => {
+      fixture.retry = fixture.leadController.handleRetryFollowUp(fixture.store.leads[0]);
+      fixture.retry.then(() => {
+        fixture.retryDone = true;
+      });
+      fixture.other = fixture.leadController.handleAssignedStaff(fixture.store.leads[1], "staff-b");
+    });
+    await page.waitForFunction(() => fixture.commandWrites.length === 3);
+    await page.evaluate(() => fixture.commandWrites[1].resolve(fixture.receipt));
+    await page.waitForFunction(() => fixture.retryDone, null, { timeout: 3000 });
+    assert.equal(
+      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
+      false,
+    );
+    assert.equal(
+      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-2")),
+      true,
+    );
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.newerLead),
+    );
+    assert.equal(
+      await page.evaluate(() => fixture.replayReads.length),
+      2,
+      "guarded refresh waits for B without blocking A's confirmation",
+    );
+    await page.evaluate(() =>
+      fixture.commandWrites[2].resolve({ ...fixture.otherLead, assigned_staff_id: "staff-b" }),
+    );
+    await page.evaluate(() => fixture.other);
+    await page.waitForFunction(() => fixture.replayReads.length === 3);
+    await page.evaluate(() =>
+      fixture.replayReads[2].resolve([
+        fixture.newerLead,
+        { ...fixture.otherLead, assigned_staff_id: "staff-b" },
+      ]),
+    );
+    await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-2"));
+    assert.equal(await page.evaluate(() => fixture.store.leads[1].assigned_staff_id), "staff-b");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("follow-up replay returns its immutable result while background reconciliation follows token renewal", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser);
+    await page.evaluate(() => {
+      fixture.retry = fixture.store.followUpLead("lead-1", fixture.commandWrites[0].body, {
+        replay: true,
+      });
+      fixture.retry.then((result) => {
+        fixture.retryResult = result;
+      });
+    });
+    await page.waitForFunction(() => fixture.commandWrites.length === 2);
+    await page.evaluate(() => fixture.commandWrites[1].resolve(fixture.receipt));
+    await page.waitForFunction(() => fixture.retryResult);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.retryResult),
+      await page.evaluate(() => fixture.receipt),
+    );
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.newerLead),
+    );
+    await page.waitForFunction(() => fixture.replayReads.length === 3);
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "replay-renewed" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "replay-renewed");
+    await page.evaluate(() => fixture.replayReads[2].resolve([fixture.receipt, fixture.otherLead]));
+    await page.waitForFunction(() => fixture.replayReads.length === 4);
+    assert.equal(await page.evaluate(() => fixture.replayReads[3].token), "replay-renewed");
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.newerLead),
+    );
+    await page.evaluate(() =>
+      fixture.replayReads[3].resolve([fixture.newerLead, fixture.otherLead]),
+    );
+    await flush(page);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const beforeReceipt of [true, false])
+  test(`follow-up replay cannot repopulate data after access replacement ${beforeReceipt ? "before receipt" : "during reconciliation"}`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await prepareFollowUpReplay(browser);
+      await page.evaluate(() => {
+        fixture.retry = fixture.leadController.handleRetryFollowUp(fixture.store.leads[0]);
+      });
+      await page.waitForFunction(() => fixture.commandWrites.length === 2);
+      if (!beforeReceipt) {
+        await page.evaluate(() => fixture.commandWrites[1].resolve(fixture.receipt));
+        await page.evaluate(() => fixture.retry);
+        await page.waitForFunction(() => fixture.replayReads.length === 3);
+      }
+      await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+      await page.waitForFunction(() => !fixture.store.identityReady);
+      if (beforeReceipt) {
+        await page.evaluate(() => fixture.commandWrites[1].resolve(fixture.receipt));
+        await page.evaluate(() => fixture.retry);
+      } else {
+        await page.evaluate(() =>
+          fixture.replayReads[2].resolve([fixture.newerLead, fixture.otherLead]),
+        );
+        await flush(page);
+      }
+      assert.deepEqual(await page.evaluate(() => fixture.store.leads), []);
+      assert.equal(await page.evaluate(() => fixture.leadController.actionMessage), null);
+      assert.deepEqual(await page.evaluate(() => fixture.redirects), ["/login"]);
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+
+test("follow-up replay enrollment settles before roster reconciliation and keeps refresh failures nonblocking", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser, { enroll: true });
+    await page.evaluate(() => {
+      const get = fixture.api.get;
+      fixture.api.get = (path, token) =>
+        path.startsWith("/students?")
+          ? new Promise((_resolve, reject) => {
+              fixture.rejectReplayRoster = reject;
+            })
+          : get(path, token);
+      fixture.retry = fixture.leadController.handleRetryFollowUp(fixture.store.leads[0]);
+      fixture.retry.then(() => {
+        fixture.retryDone = true;
+      });
+    });
+    await page.waitForFunction(() => fixture.commandWrites.length === 2);
+    assert.equal(await page.evaluate(() => fixture.commandWrites[1].body.next_stage), "enrolled");
+    await page.evaluate(() => fixture.commandWrites[1].resolve(fixture.receipt));
+    await page.waitForFunction(() => fixture.retryDone && fixture.rejectReplayRoster, null, {
+      timeout: 3000,
+    });
+    assert.equal(
+      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
+      false,
+    );
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.newerLead),
+    );
+    assert.deepEqual(await page.evaluate(() => fixture.redirects), ["/students/student-1"]);
+    await page.evaluate(() => {
+      fixture.rejectReplayRoster(Error("Roster reconciliation failed"));
+      fixture.replayReads[2].reject(Error("Lead reconciliation failed"));
+    });
+    await page.waitForFunction(() => fixture.store.leadsLoadError === "Lead reconciliation failed");
+    assert.equal(await page.evaluate(() => fixture.leadController.leadActionError), null);
+    assert.equal(await page.evaluate(() => fixture.commandWrites.length), 2);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});

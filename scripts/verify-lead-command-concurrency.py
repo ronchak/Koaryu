@@ -56,8 +56,10 @@ COMMIT;""")
         return (f"SELECT to_jsonb(r) FROM public.follow_up_lead_atomic('{ids['studio']}',"
                 f"'{ids[actor]}','{ids[lead]}','{operation}','{payload}'::jsonb) r;")
 
-    def session(name, statement, *, hold=False):
+    def session(name, statement, *, hold=False, role="service_role", rollback=False):
         name = f"lead_{os.getpid()}_{name}"
+        if len(name) > 63:
+            name = name[:50] + "_" + hashlib.sha256(name.encode()).hexdigest()[:12]
         process = subprocess.Popen(
             [psql, *local.connection, f"--dbname={database}", "--no-psqlrc", "--quiet",
              "--tuples-only", "--no-align", "--set=ON_ERROR_STOP=1", "--set=VERBOSITY=verbose"],
@@ -78,13 +80,13 @@ COMMIT;""")
         for thread in item["threads"]:
             thread.start()
         process.stdin.write(f"SET application_name='{name}';\nBEGIN;\n"
-                            "SET LOCAL statement_timeout='30s';\nSET LOCAL ROLE service_role;\n"
+                            f"SET LOCAL statement_timeout='30s';\nSET LOCAL ROLE {role};\n"
                             f"{statement}\n")
         if hold:
             process.stdin.write("SELECT 'RESULT_READY';\n")
             process.stdin.flush()
         else:
-            process.stdin.write("COMMIT;\n")
+            process.stdin.write("ROLLBACK;\n" if rollback else "COMMIT;\n")
             process.stdin.close()
         return item
 
@@ -116,18 +118,27 @@ COMMIT;""")
                 f"AND b.application_name='{second['name']}' AND b.state='active' "
                 "AND a.pid=ANY(pg_blocking_pids(b.pid));"))
             if rows:
-                require(len(rows) == 1 and rows[0]["type"] == "Lock", "Ambiguous lock observation")
-                require(not operation or rows[0]["wait"] == "advisory", "Same operation did not wait on its advisory lock")
-                return rows[0]
+                require(len(rows) == 1, f"Ambiguous lock observation: {rows}")
+                # pg_stat_activity can sample the waiter immediately before
+                # pg_blocking_pids observes its lock. Wait for both to agree.
+                if rows[0]["type"] == "Lock":
+                    require(not operation or rows[0]["wait"] == "advisory", "Same operation did not wait on its advisory lock")
+                    return rows[0]
             time.sleep(0.025)
         raise RuntimeError("Competing command did not reach the required lock")
 
-    def finish(item, *, error=False):
+    def finish(item, *, error=False, expected_error=None):
         code = item["process"].wait(timeout=15)
         for thread in item["threads"]:
             thread.join(timeout=2)
         require(not any(thread.is_alive() for thread in item["threads"]), "Session output did not finish")
         errors = "\n".join(item["errors"])
+        require("ERROR:  40P01:" not in errors, f"Command deadlocked: {errors}")
+        if expected_error is not None:
+            state, message = expected_error
+            require(code != 0 and f"ERROR:  {state}:" in errors and message in errors,
+                    f"Command failed for the wrong reason: {errors}")
+            return None
         if error:
             require(code != 0 and "ERROR:  23505:" in errors and "Follow-up operation identity conflict" in errors,
                     f"Mismatched operation failed for the wrong reason: {errors}")
@@ -249,6 +260,137 @@ COMMIT;""")
                 "Different lead did not commit independently while first lead remained held")
         settle(first)
         passed("different_leads_complete_independently")
+
+        # Account cleanup deletes staff memberships before clearing authored
+        # activities and assignments. Lock referenced Auth rows first so those
+        # cascades cannot hold Auth while waiting on this command's staff row.
+        def auth_command(ids, kind):
+            if kind == "actor_follow_up":
+                return follow(ids, ids["operation"], "trial_scheduled", actor="actor2")
+            actor = ids["actor2"] if kind == "actor_patch" else ids["actor"]
+            payload = {"stage": "trial_scheduled"}
+            if kind == "assignee_patch":
+                payload["assigned_staff_id"] = ids["actor2"]
+            return (f"SELECT to_jsonb(r) FROM public.update_lead_atomic('{ids['studio']}',"
+                    f"'{actor}','{ids['lead']}','{json.dumps(payload)}'::jsonb) r;")
+
+        def auth_fixture():
+            ids = fixture()
+            ids["operation"] = str(uuid4())
+            return ids
+
+        def cleanup_command(ids):
+            # actor2 is a non-owner front-desk user. Both leads start unassigned.
+            return f"DELETE FROM auth.users WHERE id='{ids['actor2']}'; SELECT '{{}}'::jsonb;"
+
+        def check_auth_outcome(ids, kind, *, deleted, changed):
+            state = facts(ids)
+            require(sql(f"SELECT EXISTS(SELECT 1 FROM auth.users WHERE id='{ids['actor2']}') "
+                        f"AND EXISTS(SELECT 1 FROM public.staff_roles WHERE user_id='{ids['actor2']}' "
+                        f"AND studio_id='{ids['studio']}');") == ("f" if deleted else "t"),
+                    "Account cleanup committed or rolled back incorrectly")
+            if deleted:
+                require(sql(f"SELECT NOT EXISTS(SELECT 1 FROM auth.users WHERE id='{ids['actor2']}') "
+                            f"AND NOT EXISTS(SELECT 1 FROM public.staff_roles WHERE user_id='{ids['actor2']}');") == "t",
+                        "Account cleanup left a user or membership")
+            expected_activities = [["stage_change", "Stage changed from inquiry to trial_scheduled"]] if changed else []
+            is_follow = kind == "actor_follow_up"
+            if is_follow and changed:
+                expected_activities.insert(0, ["follow_up", "Contacted lead and moved to trial_scheduled"])
+            require(state["activities"] == expected_activities
+                    and state["lead"]["stage"] == ("trial_scheduled" if changed else "inquiry")
+                    and state["lead"]["follow_up_date"] == (None if changed and is_follow else "2030-01-01")
+                    and state["receipts"] == (1 if is_follow and changed and not deleted else 0)
+                    and state["lead"]["assigned_staff_id"] == (
+                        ids["actor2"] if changed and kind == "assignee_patch" and not deleted else None),
+                    f"Account cleanup or command changed the wrong persisted facts: {state}")
+            expected_author = ids["actor"] if kind == "assignee_patch" else None if deleted else ids["actor2"]
+            require(sql(f"SELECT count(*) FROM public.lead_activities WHERE lead_id='{ids['lead']}' "
+                        + ("AND created_by IS NOT NULL;" if expected_author is None else
+                           f"AND created_by IS DISTINCT FROM '{expected_author}'::uuid;")) == "0",
+                    "Account cleanup changed the wrong activity author")
+            return state
+
+        for kind in ("actor_patch", "actor_follow_up", "assignee_patch"):
+            for rollback in (False, True):
+                ids = auth_fixture()
+                case = f"{kind}_before_auth_cleanup_{'rollback' if rollback else 'commit'}"
+                if kind == "assignee_patch":
+                    # Pause after the requested assignee's membership was checked
+                    # but before UPDATE performs its new assigned_staff_id FK check.
+                    # The trigger exists only in this script's disposable clone.
+                    sql("""CREATE FUNCTION public.koaryu_test_lead_assignment_barrier()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF current_setting('koaryu.test_lead_assignment_barrier', true) = 'on' THEN
+        PERFORM pg_advisory_xact_lock(835910224);
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER koaryu_test_lead_assignment_barrier BEFORE UPDATE ON public.leads
+FOR EACH ROW EXECUTE FUNCTION public.koaryu_test_lead_assignment_barrier();""")
+                    barrier = "SELECT pg_advisory_xact_lock(835910224); SELECT '{}'::jsonb;"
+                    command = "SET LOCAL koaryu.test_lead_assignment_barrier='on'; " + auth_command(ids, kind)
+                else:
+                    barrier = f"SELECT to_jsonb(l) FROM public.leads l WHERE id='{ids['lead']}' FOR UPDATE;"
+                    command = auth_command(ids, kind)
+                holder = session(case + "_holder", barrier, hold=True, role="postgres")
+                await_result(holder)
+                writer = session(case + "_writer", command)
+                writer_wait = observed_blocker(holder, writer, operation=kind == "assignee_patch")
+                cleanup = session(case + "_cleanup", cleanup_command(ids), role="postgres", rollback=rollback)
+                cleanup_wait = observed_blocker(writer, cleanup)
+                settle(holder)
+                require(finish(writer)["stage"] == "trial_scheduled", "Authorized command did not finish")
+                finish(cleanup)
+                state = check_auth_outcome(ids, kind, deleted=not rollback, changed=True)
+                if kind == "assignee_patch":
+                    sql("DROP TRIGGER koaryu_test_lead_assignment_barrier ON public.leads; "
+                        "DROP FUNCTION public.koaryu_test_lead_assignment_barrier();")
+                passed(case, writer_wait=writer_wait, cleanup_wait=cleanup_wait, activities=state["activities"])
+
+            for rollback in (False, True):
+                ids = auth_fixture()
+                case = f"auth_cleanup_before_{kind}_{'rollback' if rollback else 'commit'}"
+                cleanup = session(case + "_cleanup", cleanup_command(ids), hold=True, role="postgres")
+                await_result(cleanup)
+                writer = session(case + "_writer", auth_command(ids, kind))
+                blocking = observed_blocker(cleanup, writer)
+                settle(cleanup, rollback=rollback)
+                if rollback:
+                    require(finish(writer)["stage"] == "trial_scheduled", "Cleanup rollback did not release the command")
+                else:
+                    expected = ("P0002", "Assigned staff not found for studio") if kind == "assignee_patch" else (
+                        "42501", "Lead management permission required")
+                    finish(writer, expected_error=expected)
+                state = check_auth_outcome(ids, kind, deleted=not rollback, changed=rollback)
+                passed(case, blocking=blocking, activities=state["activities"])
+
+            # A lock taken immediately before INSERT/UPDATE would still be too
+            # late. Auth must already be protected while either dependent row
+            # acquisition is blocked. NOWAIT makes this ordering deterministic.
+            for dependency in ("membership", "lead"):
+                ids = auth_fixture()
+                case = f"{kind}_locks_auth_before_{dependency}"
+                barrier = (
+                    f"SELECT to_jsonb(s) FROM public.staff_roles s WHERE user_id='{ids['actor2']}' "
+                    f"AND studio_id='{ids['studio']}' FOR UPDATE;"
+                ) if dependency == "membership" else (
+                    f"SELECT to_jsonb(l) FROM public.leads l WHERE id='{ids['lead']}' FOR UPDATE;"
+                )
+                holder = session(case + "_holder", barrier, hold=True, role="postgres")
+                await_result(holder)
+                writer = session(case + "_writer", auth_command(ids, kind))
+                blocking = observed_blocker(holder, writer)
+                probe = session(case + "_probe",
+                    f"SELECT to_jsonb(u) FROM auth.users u WHERE id='{ids['actor2']}' FOR UPDATE NOWAIT;",
+                    role="postgres")
+                finish(probe, expected_error=("55P03", 'could not obtain lock on row in relation "users"'))
+                settle(holder)
+                finish(writer)
+                check_auth_outcome(ids, kind, deleted=False, changed=True)
+                passed(case, blocking=blocking, probe_sqlstate="55P03")
+
         evidence = {"script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                     "local_tools_sha256": hashlib.sha256(Path(__file__).with_name("local_postgres_verification.py").read_bytes()).hexdigest(),
                     "cases": results}

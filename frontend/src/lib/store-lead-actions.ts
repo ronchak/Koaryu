@@ -19,6 +19,10 @@ export interface LeadFollowUpCommand {
   next_stage: LeadStage | null;
 }
 
+export interface LeadFollowUpOptions {
+  replay?: boolean;
+}
+
 interface UseStoreLeadActionsOptions {
   leadMutationScopeRef: StoreRef<ResourceScope>;
   businessDateRef: StoreRef<string>;
@@ -232,7 +236,11 @@ export function useStoreLeadActions({
   );
 
   const followUpLead = useCallback(
-    async (leadId: string, command: LeadFollowUpCommand): Promise<Lead> => {
+    async (
+      leadId: string,
+      command: LeadFollowUpCommand,
+      options?: LeadFollowUpOptions,
+    ): Promise<Lead> => {
       if (isPreviewMode) {
         if (command.next_stage === "enrolled") {
           return (await convertLeadToStudent(leadId)).lead;
@@ -253,14 +261,29 @@ export function useStoreLeadActions({
           liveRequest.token,
         );
         if (!canCommitLiveMutation(liveRequest)) return result;
-        setLeads((current) => current.map((item) => (item.id === leadId ? result : item)));
+        if (options?.replay) {
+          // The immutable receipt may predate a later observed edit. Only the
+          // guarded loader may reconcile current data. Release this mutation
+          // first, and do not keep this row pending while other rows finish.
+          finishMutation();
+          void refreshLeads().catch((error) => {
+            console.error("Failed to refresh leads after confirmed follow-up replay", error);
+          });
+        } else {
+          setLeads((current) => current.map((item) => (item.id === leadId ? result : item)));
+        }
         if (command.next_stage === "enrolled") {
-          try {
-            await refreshStudents();
-          } catch (error) {
-            console.error("Failed to refresh students after lead follow-up", error);
-          }
-          if (canCommitLiveMutation(liveRequest)) onStudentMutation();
+          const refreshConvertedStudents = async () => {
+            if (!canCommitLiveMutation(liveRequest)) return;
+            try {
+              await refreshStudents();
+            } catch (error) {
+              console.error("Failed to refresh students after lead follow-up", error);
+            }
+            if (canCommitLiveMutation(liveRequest)) onStudentMutation();
+          };
+          if (options?.replay) void refreshConvertedStudents();
+          else await refreshConvertedStudents();
         }
         return result;
       } finally {
@@ -275,6 +298,7 @@ export function useStoreLeadActions({
       leadsRef,
       onStudentMutation,
       persistLeads,
+      refreshLeads,
       refreshStudents,
       setLeads,
     ],

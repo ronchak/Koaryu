@@ -6,7 +6,7 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 function bundle() {
   const stubs = {
     "next/navigation": `exports.useRouter=()=>({push:p=>window.f.navigation.push(p)});`,
-    "@/lib/api": `exports.api={get:async()=>[],post:(...args)=>window.f.request('post',...args),patch:(...args)=>window.f.request('patch',...args)};exports.CommandOutcomeUnknown=require('@/lib/command-outcome').CommandOutcomeUnknown;window.f.Unknown=exports.CommandOutcomeUnknown;`,
+    "@/lib/api": `exports.api={get:async(path)=>path==='/leads'?[...window.f.leads]:[],post:(...args)=>window.f.request('post',...args),patch:(...args)=>window.f.request('patch',...args)};exports.CommandOutcomeUnknown=require('@/lib/command-outcome').CommandOutcomeUnknown;window.f.Unknown=exports.CommandOutcomeUnknown;`,
     "@/components/programs/program-picker": `exports.ProgramBadge=()=>null;`,
     "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
     "./leads-ledger.module.css": `module.exports={};`,
@@ -14,6 +14,7 @@ function bundle() {
   const { add, modules } = createCommonJsPacker(stubs);
   const react = add("react"),
     dom = add("react-dom/client");
+  const resource = add("@/lib/store-resource-scope");
   const hook = add("@/lib/leads-page-controller"),
     actions = add("@/lib/store-lead-actions");
   const board = add("@/components/leads/lead-pipeline-board"),
@@ -24,8 +25,8 @@ function bundle() {
     const [leads,setLeads]=React.useState(f.initialLeads), [scope,setScope]=React.useState(1),[token,setToken]=React.useState('token-1');
     f.setScope=setScope;f.setToken=setToken;f.setLeads=setLeads; f.scope=scope;
     const leadsRef=React.useRef(leads);leadsRef.current=leads;
-    const studentsRef=React.useRef([]), scopeRef=React.useRef({generation:0,pending:0});
-    const a=require(${actions}).useStoreLeadActions({leadsRef,studentsRef,leadMutationScopeRef:scopeRef,businessDateRef:{current:'2026-09-26'},beginLeadMutation:()=>()=>{},beginLiveAuthRequest:()=>({token,isCurrent:()=>f.scope===scope,isSameIdentity:()=>f.scope===scope}),beltLaddersRef:{current:[]},beltRanksRef:{current:[]},isPreviewMode:f.preview,programsRef:{current:[]},persistLeads:setLeads,persistStudents:v=>{studentsRef.current=v;f.students=v;},onStudentMutation:()=>f.studentMutations++,refreshStudents:async()=>{f.refreshes++;if(f.failRefresh)throw Error('refresh failed');return [];},setLeads,setLeadsLoaded:()=>{},setLeadsLoadError:()=>{}});
+    const studentsRef=React.useRef([]), scopeRef=React.useRef(require(${resource}).createResourceScope());
+    const a=require(${actions}).useStoreLeadActions({leadsRef,studentsRef,leadMutationScopeRef:scopeRef,businessDateRef:{current:'2026-09-26'},beginLeadMutation:()=>require(${resource}).beginResourceMutation(scopeRef.current),beginLiveAuthRequest:()=>({token,isCurrent:()=>f.scope===scope,isSameIdentity:()=>f.scope===scope}),beltLaddersRef:{current:[]},beltRanksRef:{current:[]},isPreviewMode:f.preview,programsRef:{current:[]},persistLeads:setLeads,persistStudents:v=>{studentsRef.current=v;f.students=v;},onStudentMutation:()=>f.studentMutations++,refreshStudents:async()=>{f.refreshes++;if(f.failRefresh)throw Error('refresh failed');return [];},setLeads,setLeadsLoaded:()=>{},setLeadsLoadError:()=>{}});
     const c=require(${hook}).useLeadsPageController({...a,baseLeads:leads,currentRole:'admin',identityGeneration:scope,identityReady:true,isPreviewMode:f.preview,programs:[],today:'2026-09-26',token});f.c=c;f.actions=a;f.leads=leads;
     const selected=c.model.selectedLead;
     return React.createElement(React.Fragment,null,
@@ -189,7 +190,7 @@ test("lost-response retry keeps the original key and displayed target and blocks
     await p.getByRole("button", { name: "Retry follow-up", exact: true }).click();
     assert.deepEqual(await p.evaluate(() => f.writes[1].body), body);
     await settle(p, 1);
-    assert.equal(await p.evaluate(() => f.leads[0].stage), "trial_scheduled");
+    assert.equal(await p.evaluate(() => f.leads[0].stage), "trial_completed");
     assert.equal(
       await p.getByRole("button", { name: "Mark contacted", exact: true }).isDisabled(),
       false,

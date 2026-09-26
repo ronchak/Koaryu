@@ -45,8 +45,34 @@ AS $function$
 DECLARE
     v_lead public.leads;
     v_update public.leads;
+    v_assigned_user UUID;
     v_program public.programs;
 BEGIN
+    -- Use the existing narrow Auth-owner helper before locking memberships or
+    -- leads. Account cleanup locks Auth first and then visits these FK children.
+    IF NOT private.lock_student_import_actor(p_actor_id) THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.staff_roles WHERE studio_id=p_studio_id
+          AND user_id=p_actor_id AND archived_at IS NULL
+          AND role IN ('admin','front_desk')
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
+    END IF;
+    -- Validate tenant membership without a row lock, acquire the referenced
+    -- Auth parent, then revalidate membership below under its existing lock.
+    IF p_patch ? 'assigned_staff_id' AND p_patch->>'assigned_staff_id' IS NOT NULL THEN
+        v_assigned_user := (p_patch->>'assigned_staff_id')::UUID;
+        IF NOT EXISTS (SELECT 1 FROM public.staff_roles
+            WHERE user_id=v_assigned_user AND studio_id=p_studio_id AND archived_at IS NULL) THEN
+            RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Assigned staff not found for studio.';
+        END IF;
+        IF NOT private.lock_student_import_actor(v_assigned_user) THEN
+            RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Assigned staff not found for studio.';
+        END IF;
+    END IF;
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE;
     PERFORM 1 FROM public.staff_roles
     WHERE studio_id=p_studio_id AND user_id=p_actor_id
       AND archived_at IS NULL AND role IN ('admin','front_desk') FOR SHARE;
@@ -129,6 +155,19 @@ DECLARE
     v_timezone TEXT;
     v_start DATE;
 BEGIN
+    -- Use the existing narrow Auth-owner helper before locking memberships or
+    -- leads. Account cleanup locks Auth first and then visits these FK children.
+    IF NOT private.lock_student_import_actor(p_actor_id) THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.staff_roles WHERE studio_id=p_studio_id
+          AND user_id=p_actor_id AND archived_at IS NULL
+          AND role IN ('admin','front_desk')
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
+    END IF;
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE;
     PERFORM 1 FROM public.staff_roles
     WHERE studio_id=p_studio_id AND user_id=p_actor_id
       AND archived_at IS NULL AND role IN ('admin','front_desk') FOR SHARE;
@@ -1197,7 +1236,7 @@ BEGIN
           AND p.prorettype='public.leads'::REGTYPE AND NOT p.proretset
           AND p.proconfig=ARRAY['search_path=""']::TEXT[]
           AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
-              = '280399813af918fba2fd6c2ae342521a34d1d244fc2e498d89a6321b28ef7398'
+              = '7ffdcf9c76f7c58e0efb097a14488a983f6bffc0b83f783525c37560bebd7803'
           AND (SELECT jsonb_agg(jsonb_build_array(
                 CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
                 pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)
@@ -1218,7 +1257,7 @@ BEGIN
           AND p.prorettype='public.leads'::REGTYPE AND NOT p.proretset
           AND p.proconfig=ARRAY['search_path=""']::TEXT[]
           AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
-              = '669c93c2bdcb27b854decffee039ce6204a09a7094a506fa33d9651cc6b36165'
+              = '9e7582870528a42eb72a0df78a032f306cd26b0d25d3d84517a8faea09043566'
           AND (SELECT jsonb_agg(jsonb_build_array(
                 CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
                 pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)

@@ -18,7 +18,7 @@ import {
 } from "@/lib/leads-page-model";
 import type { Lead, LeadActivity, LeadStage, LostReason, Program, StaffRoleName } from "@/types";
 
-import type { LeadFollowUpCommand } from "@/lib/store-lead-actions";
+import type { LeadFollowUpCommand, LeadFollowUpOptions } from "@/lib/store-lead-actions";
 
 type LeadOperation = { scope: string; followUp?: LeadFollowUpCommand; unknown: boolean };
 
@@ -27,7 +27,11 @@ type LeadActivityStatus = "idle" | "loading" | "ready" | "error";
 type LeadStoreActions = {
   addLead: (data: Partial<Lead>) => Promise<void>;
   convertLeadToStudent: (leadId: string) => Promise<{ lead: Lead; studentId: string | null }>;
-  followUpLead: (leadId: string, command: LeadFollowUpCommand) => Promise<Lead>;
+  followUpLead: (
+    leadId: string,
+    command: LeadFollowUpCommand,
+    options?: LeadFollowUpOptions,
+  ) => Promise<Lead>;
   updateLead: (id: string, data: Partial<Lead>) => Promise<void>;
 };
 
@@ -369,19 +373,23 @@ export function useLeadsPageController({
     if (command.next_stage === "enrolled" && !canConvertLeads) return;
     const owner = claimLead(lead.id, command, retry);
     if (!owner) return;
-    beginOptimisticLeadUpdate(lead, {
-      stage: command.next_stage ?? lead.stage,
-      follow_up_date: null,
-    });
+    if (!retry) {
+      beginOptimisticLeadUpdate(lead, {
+        stage: command.next_stage ?? lead.stage,
+        follow_up_date: null,
+      });
+    }
     try {
-      const result = await followUpLead(lead.id, command);
+      const result = await followUpLead(lead.id, command, { replay: retry });
       if (!ownsLead(lead.id, owner)) return;
       if (command.next_stage === "enrolled")
         closeCompletedLead(lead.id, result.converted_student_id);
       setActionMessage(
-        command.next_stage
-          ? `${fullName(lead)} moved to ${getStageLabel(command.next_stage)}.`
-          : `${fullName(lead)} marked contacted.`,
+        retry
+          ? `${fullName(lead)} follow-up confirmed.`
+          : command.next_stage
+            ? `${fullName(lead)} moved to ${getStageLabel(command.next_stage)}.`
+            : `${fullName(lead)} marked contacted.`,
       );
       if (selectedLeadIdRef.current === lead.id) setActivityRefreshKey((current) => current + 1);
     } catch (error) {
